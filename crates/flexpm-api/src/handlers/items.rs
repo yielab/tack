@@ -1,0 +1,148 @@
+use axum::extract::{Path, Query, State};
+use axum::Json;
+use tracing::instrument;
+use uuid::Uuid;
+
+use flexpm_core::models::{CreateItem, ItemFilter, UpdateItem};
+
+use crate::error::{ApiError, ApiResult};
+use crate::router::AppState;
+
+#[instrument(skip(state))]
+pub async fn create_item(
+    State(state): State<AppState>,
+    Path(project_id): Path<Uuid>,
+    Json(input): Json<CreateItem>,
+) -> ApiResult<Json<serde_json::Value>> {
+    // Get project to find initial status from workflow
+    let project = state
+        .repo
+        .get_project(project_id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Project {project_id} not found")))?;
+
+    let initial_status = project
+        .workflow
+        .initial_status()
+        .map_err(|e| ApiError::Core(e))?;
+
+    let item = state
+        .repo
+        .create_item(project_id, &initial_status, input)
+        .await?;
+
+    Ok(Json(serde_json::to_value(item).unwrap()))
+}
+
+#[instrument(skip(state))]
+pub async fn list_items(
+    State(state): State<AppState>,
+    Path(project_id): Path<Uuid>,
+    Query(filter): Query<ItemFilter>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let items = state.repo.list_items(project_id, &filter).await?;
+    Ok(Json(serde_json::to_value(items).unwrap()))
+}
+
+#[instrument(skip(state))]
+pub async fn get_item(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let item = state
+        .repo
+        .get_item(id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
+
+    // Also fetch roles and dependencies for the detail view
+    let roles = state.repo.get_roles_for_item(id).await?;
+    let deps = state.repo.list_dependencies_for_item(id).await?;
+
+    Ok(Json(serde_json::json!({
+        "item": item,
+        "roles": roles,
+        "dependencies": deps,
+    })))
+}
+
+#[instrument(skip(state))]
+pub async fn update_item(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<UpdateItem>,
+) -> ApiResult<Json<serde_json::Value>> {
+    // If status is being changed, validate the transition
+    if let Some(ref new_status) = input.status {
+        let item = state
+            .repo
+            .get_item(id)
+            .await?
+            .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
+
+        let project = state
+            .repo
+            .get_project(item.project_id)
+            .await?
+            .ok_or_else(|| ApiError::NotFound("Project not found".into()))?;
+
+        // Validate transition
+        project
+            .workflow
+            .validate_transition(&item.status, new_status)?;
+
+        // Check WIP limit for target column
+        let count = state
+            .repo
+            .count_items_by_status(item.project_id, new_status)
+            .await? as usize;
+        project.workflow.check_wip_limit(new_status, count)?;
+    }
+
+    let item = state
+        .repo
+        .update_item(id, input)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
+
+    Ok(Json(serde_json::to_value(item).unwrap()))
+}
+
+#[instrument(skip(state))]
+pub async fn delete_item(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let deleted = state.repo.delete_item(id).await?;
+    if !deleted {
+        return Err(ApiError::NotFound(format!("Item {id} not found")));
+    }
+    Ok(Json(serde_json::json!({"deleted": true})))
+}
+
+#[instrument(skip(state))]
+pub async fn get_item_tree(
+    State(state): State<AppState>,
+    Path(project_id): Path<Uuid>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let items = state.repo.get_item_tree(project_id).await?;
+    Ok(Json(serde_json::to_value(items).unwrap()))
+}
+
+#[instrument(skip(state))]
+pub async fn search_items(
+    State(state): State<AppState>,
+    Path(project_id): Path<Uuid>,
+    Query(params): Query<SearchParams>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let items = state
+        .repo
+        .search_items(project_id, &params.q)
+        .await?;
+    Ok(Json(serde_json::to_value(items).unwrap()))
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct SearchParams {
+    pub q: String,
+}
