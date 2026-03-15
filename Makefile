@@ -1,4 +1,4 @@
-.PHONY: build run test check lint fmt clean dev reset-db help
+.PHONY: build run test check lint fmt clean dev reset-db help docker-up docker-down docker-build docker-logs
 
 # ─── Default ──────────────────────────────────────
 help: ## Show this help
@@ -64,6 +64,22 @@ api-stats: ## Show database statistics
 
 api-projects: ## List all projects
 	@curl -s http://localhost:3210/api/projects | python3 -m json.tool 2>/dev/null || curl -s http://localhost:3210/api/projects
+
+# ─── Docker ──────────────────────────────────────
+docker-up: ## Start FlexPM in Docker
+	docker compose up -d
+
+docker-down: ## Stop FlexPM container
+	docker compose down
+
+docker-build: ## Rebuild Docker image and restart
+	docker compose up -d --build
+
+docker-logs: ## Tail container logs
+	docker compose logs -f
+
+docker-clean: ## Stop container and delete all data
+	docker compose down -v
 
 # ─── Cleanup ─────────────────────────────────────
 clean: ## Remove build artifacts

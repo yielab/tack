@@ -7,14 +7,42 @@ Handles everything from software sprints to construction builds to homework trac
 
 ## Quick Start
 
-### Prerequisites
-
-- [Rust 1.75+](https://rustup.rs/) (install via `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
-
-### Build & Run
+### Option A: Docker (recommended)
 
 ```bash
-# Clone the repository
+# Clone and start
+git clone <repo-url> && cd flexpm
+docker compose up -d
+
+# Verify
+curl http://localhost:3210/api/health
+```
+
+That's it. The database, migrations, and storage are handled automatically.
+Data persists in a Docker volume (`flexpm-data`).
+
+```bash
+# View logs
+docker compose logs -f
+
+# Stop
+docker compose down
+
+# Stop and delete all data
+docker compose down -v
+
+# Rebuild after code changes
+docker compose up -d --build
+
+# Use the CLI inside the container
+docker compose exec flexpm flexpm-cli --help
+```
+
+### Option B: Build from source
+
+**Prerequisites:** [Rust 1.75+](https://rustup.rs/)
+
+```bash
 git clone <repo-url> && cd flexpm
 
 # Build in release mode
@@ -32,10 +60,7 @@ The server auto-creates a SQLite database (`flexpm.db`) and runs all migrations 
 ### Verify It Works
 
 ```bash
-# Health check
 curl http://localhost:3210/api/health
-
-# Expected response:
 # {"status":"ok","service":"flexpm","version":"0.1.0"}
 ```
 
@@ -352,6 +377,62 @@ FLEXPM_LOG_JSON=true cargo run --bin flexpm-api
 
 Every API request is traced with method, URI, and timing. Every database
 operation logs at `debug` level with parameters and results.
+
+## Docker
+
+### Production Deployment
+
+```bash
+# Build and run
+docker compose up -d
+
+# Custom port
+FLEXPM_PORT=8080 docker compose up -d
+
+# With JSON logs (for log aggregators)
+# Edit docker-compose.yml: set FLEXPM_LOG_JSON=true
+```
+
+### Docker Image Only (no compose)
+
+```bash
+# Build the image
+docker build -t flexpm .
+
+# Run with a named volume for persistent data
+docker run -d \
+  --name flexpm \
+  -p 3210:3210 \
+  -v flexpm-data:/data \
+  flexpm
+
+# Run with a host directory for data
+docker run -d \
+  --name flexpm \
+  -p 3210:3210 \
+  -v $(pwd)/data:/data \
+  flexpm
+```
+
+### Container Details
+
+| Property | Value |
+|----------|-------|
+| Base image | `debian:bookworm-slim` (~80MB) |
+| Runs as | Non-root user `flexpm` |
+| Data directory | `/data` (SQLite DB + attachments) |
+| Default port | `3210` |
+| Health check | `GET /api/health` every 30s |
+| Includes | `sqlite3` CLI for DB inspection |
+
+```bash
+# Inspect the database inside the container
+docker compose exec flexpm sqlite3 /data/flexpm.db ".tables"
+
+# Backup the database
+docker compose exec flexpm sqlite3 /data/flexpm.db ".backup /data/backup.db"
+docker cp flexpm:/data/backup.db ./flexpm-backup.db
+```
 
 ## Architecture
 
