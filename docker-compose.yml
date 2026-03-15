@@ -1,0 +1,20 @@
+services:
+  flexpm:
+    build: .
+    container_name: flexpm
+    ports:
+      - "3210:3210"
+    volumes:
+      - flexpm-data:/data
+    environment:
+      - FLEXPM_HOST=0.0.0.0
+      - FLEXPM_PORT=3210
+      - FLEXPM_DATABASE_URL=sqlite:/data/flexpm.db?mode=rwc
+      - FLEXPM_STORAGE_DIR=/data/storage
+      - FLEXPM_LOG_LEVEL=info
+      # - FLEXPM_LOG_JSON=true    # Uncomment for structured JSON logs
+    restart: unless-stopped
+
+volumes:
+  flexpm-data:
+    driver: local

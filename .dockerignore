@@ -1,0 +1,12 @@
+target/
+.git/
+*.db
+*.db-shm
+*.db-wal
+storage/
+logs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+TODO-ARCHITECTURE.md
