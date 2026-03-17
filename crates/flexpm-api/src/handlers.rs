@@ -1,6 +1,13 @@
-pub mod projects;
-pub mod items;
-pub mod sprints;
-pub mod roles;
+pub mod attachments;
+pub mod board;
+pub mod boards_multi;
 pub mod comments;
+pub mod custom_fields;
 pub mod dependencies;
+pub mod export;
+pub mod items;
+pub mod projects;
+pub mod roles;
+pub mod sprints;
+pub mod templates;
+pub mod websocket;

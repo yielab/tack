@@ -7,6 +7,7 @@ use flexpm_core::models::{CreateItem, ItemFilter, UpdateItem};
 
 use crate::error::{ApiError, ApiResult};
 use crate::router::AppState;
+use crate::handlers::websocket::{self, BoardEvent};
 
 #[instrument(skip(state))]
 pub async fn create_item(
@@ -30,6 +31,13 @@ pub async fn create_item(
         .repo
         .create_item(project_id, &initial_status, input)
         .await?;
+
+    // Broadcast WebSocket event
+    websocket::broadcast_event(&state, BoardEvent::ItemCreated {
+        project_id,
+        item_id: item.id,
+        status: item.status.clone(),
+    });
 
     Ok(Json(serde_json::to_value(item).unwrap()))
 }
@@ -72,29 +80,32 @@ pub async fn update_item(
     Path(id): Path<Uuid>,
     Json(input): Json<UpdateItem>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    // Get old item state for status change detection
+    let old_item = state
+        .repo
+        .get_item(id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
+
+    let old_status = old_item.status.clone();
+
     // If status is being changed, validate the transition
     if let Some(ref new_status) = input.status {
-        let item = state
-            .repo
-            .get_item(id)
-            .await?
-            .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
-
         let project = state
             .repo
-            .get_project(item.project_id)
+            .get_project(old_item.project_id)
             .await?
             .ok_or_else(|| ApiError::NotFound("Project not found".into()))?;
 
         // Validate transition
         project
             .workflow
-            .validate_transition(&item.status, new_status)?;
+            .validate_transition(&old_item.status, new_status)?;
 
         // Check WIP limit for target column
         let count = state
             .repo
-            .count_items_by_status(item.project_id, new_status)
+            .count_items_by_status(old_item.project_id, new_status)
             .await? as usize;
         project.workflow.check_wip_limit(new_status, count)?;
     }
@@ -105,6 +116,42 @@ pub async fn update_item(
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
 
+    // Broadcast WebSocket event
+    websocket::broadcast_event(&state, BoardEvent::ItemUpdated {
+        project_id: item.project_id,
+        item_id: item.id,
+        old_status: Some(old_status.clone()),
+        new_status: item.status.clone(),
+    });
+
+    // Auto-propagate parent status if this item has a parent and was completed
+    if let Some(parent_id) = item.parent_id {
+        if item.status != old_status {
+            // Get the project's workflow to find completed status
+            let project = state
+                .repo
+                .get_project(item.project_id)
+                .await?
+                .ok_or_else(|| ApiError::NotFound("Project not found".into()))?;
+
+            // Check if the new status is a "done" category
+            if let Some(done_status) = project.workflow.statuses.iter()
+                .find(|s| s.category == flexpm_core::workflow::StatusCategory::Done)
+            {
+                if item.status == done_status.name {
+                    // Try to update parent - check if all siblings are complete
+                    let _ = state
+                        .repo
+                        .check_and_update_parent_status(parent_id, &done_status.name)
+                        .await;
+
+                    // If parent was updated, broadcast event for it too
+                    // (We ignore errors here as this is a "nice to have" feature)
+                }
+            }
+        }
+    }
+
     Ok(Json(serde_json::to_value(item).unwrap()))
 }
 
@@ -113,10 +160,24 @@ pub async fn delete_item(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    // Get item before deleting to get project_id for event
+    let item = state
+        .repo
+        .get_item(id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
+
     let deleted = state.repo.delete_item(id).await?;
     if !deleted {
         return Err(ApiError::NotFound(format!("Item {id} not found")));
     }
+
+    // Broadcast WebSocket event
+    websocket::broadcast_event(&state, BoardEvent::ItemDeleted {
+        project_id: item.project_id,
+        item_id: id,
+    });
+
     Ok(Json(serde_json::json!({"deleted": true})))
 }
 
@@ -145,4 +206,16 @@ pub async fn search_items(
 #[derive(Debug, serde::Deserialize)]
 pub struct SearchParams {
     pub q: String,
+}
+
+#[instrument(skip(state))]
+pub async fn search_items_global(
+    State(state): State<AppState>,
+    Query(params): Query<SearchParams>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let items = state
+        .repo
+        .search_items_global(state.workspace_id, &params.q)
+        .await?;
+    Ok(Json(serde_json::to_value(items).unwrap()))
 }

@@ -29,6 +29,9 @@ pub async fn run_all(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         ("008_attachments", &MIGRATION_008[..]),
         ("009_board_views", &MIGRATION_009[..]),
         ("010_fts", &MIGRATION_010[..]),
+        ("011_project_templates", &MIGRATION_011[..]),
+        ("012_custom_fields", &MIGRATION_012[..]),
+        ("013_boards", &MIGRATION_013[..]),
     ];
 
     for (name, statements) in migrations {
@@ -228,4 +231,64 @@ const MIGRATION_010: [&str; 4] = [
         INSERT INTO items_fts(rowid, title, description, tags)
         VALUES (new.rowid, new.title, COALESCE(new.description, ''), new.tags);
     END",
+];
+
+const MIGRATION_011: [&str; 2] = [
+    "CREATE TABLE IF NOT EXISTS project_templates (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        project_type TEXT NOT NULL DEFAULT 'software',
+        vocabulary TEXT NOT NULL DEFAULT '{}',
+        workflow TEXT NOT NULL DEFAULT '{}',
+        custom_fields TEXT NOT NULL DEFAULT '[]',
+        default_boards TEXT NOT NULL DEFAULT '[]',
+        is_builtin INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_templates_type ON project_templates(project_type)",
+];
+
+const MIGRATION_012: [&str; 4] = [
+    "CREATE TABLE IF NOT EXISTS custom_field_definitions (
+        id TEXT PRIMARY KEY NOT NULL,
+        project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        field_type TEXT NOT NULL,
+        description TEXT,
+        required INTEGER NOT NULL DEFAULT 0,
+        default_value TEXT,
+        options TEXT,
+        validation TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_custom_fields_project ON custom_field_definitions(project_id)",
+    "CREATE TABLE IF NOT EXISTS custom_field_values (
+        id TEXT PRIMARY KEY NOT NULL,
+        item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        field_id TEXT NOT NULL REFERENCES custom_field_definitions(id) ON DELETE CASCADE,
+        value TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(item_id, field_id)
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_custom_values_item ON custom_field_values(item_id)",
+];
+
+const MIGRATION_013: [&str; 3] = [
+    "CREATE TABLE IF NOT EXISTS boards (
+        id TEXT PRIMARY KEY NOT NULL,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        description TEXT,
+        filters TEXT,
+        grouping TEXT,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_boards_project ON boards(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_boards_default ON boards(project_id, is_default)",
 ];

@@ -273,6 +273,29 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
+    pub async fn search_items_global(
+        &self,
+        workspace_id: Uuid,
+        query: &str,
+    ) -> Result<Vec<Item>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, ItemRow>(
+            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.due_date, i.started_at, i.completed_at, i.created_at, i.updated_at
+             FROM items i
+             JOIN items_fts fts ON i.rowid = fts.rowid
+             JOIN projects p ON i.project_id = p.id
+             WHERE p.workspace_id = ? AND items_fts MATCH ?
+             ORDER BY rank
+             LIMIT 100"
+        )
+        .bind(workspace_id.to_string())
+        .bind(query)
+        .fetch_all(self.pool())
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into_item()).collect())
+    }
+
+    #[instrument(skip(self))]
     pub async fn get_item_tree(
         &self,
         project_id: Uuid,
@@ -286,6 +309,47 @@ impl Repository {
         .await?;
 
         Ok(rows.into_iter().map(|r| r.into_item()).collect())
+    }
+
+    /// Check if all children of a parent item are completed, and update parent status
+    #[instrument(skip(self))]
+    pub async fn check_and_update_parent_status(
+        &self,
+        parent_id: Uuid,
+        completed_status: &str,
+    ) -> Result<bool, sqlx::Error> {
+        // Get all children of this parent
+        let children = sqlx::query_as::<_, ItemRow>(
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, due_date, started_at, completed_at, created_at, updated_at
+             FROM items WHERE parent_id = ?"
+        )
+        .bind(parent_id.to_string())
+        .fetch_all(self.pool())
+        .await?;
+
+        if children.is_empty() {
+            return Ok(false);
+        }
+
+        // Check if all children are completed
+        let all_completed = children.iter().all(|child| child.status == completed_status);
+
+        if all_completed {
+            // Update parent status to completed
+            let now = Utc::now().to_rfc3339();
+            sqlx::query("UPDATE items SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?")
+                .bind(completed_status)
+                .bind(&now)
+                .bind(&now)
+                .bind(parent_id.to_string())
+                .execute(self.pool())
+                .await?;
+
+            debug!(parent_id = %parent_id, "Parent item auto-completed");
+            return Ok(true);
+        }
+
+        Ok(false)
     }
 }
 

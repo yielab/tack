@@ -1,9 +1,13 @@
-pub mod projects;
-pub mod items;
-pub mod sprints;
-pub mod roles;
+pub mod attachments;
+pub mod boards;
 pub mod comments;
+pub mod custom_fields;
 pub mod dependencies;
+pub mod items;
+pub mod projects;
+pub mod roles;
+pub mod sprints;
+pub mod templates;
 
 use sqlx::SqlitePool;
 
