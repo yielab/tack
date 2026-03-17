@@ -1,0 +1,3 @@
+flexpm.local {
+    reverse_proxy localhost:3210
+}
