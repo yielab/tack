@@ -32,10 +32,15 @@ async fn main() -> anyhow::Result<()> {
 
     // Build application state
     let repo = Repository::new(pool);
+
+    // Create broadcast channel for WebSocket updates (capacity: 100 messages)
+    let (broadcast_tx, _) = tokio::sync::broadcast::channel(100);
+
     let state = AppState {
         repo,
         config: config.clone(),
         workspace_id,
+        broadcast_tx,
     };
 
     // Build router

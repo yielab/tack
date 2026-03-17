@@ -370,3 +370,152 @@ pub struct ItemFilter {
     pub page: Option<u32>,
     pub per_page: Option<u32>,
 }
+
+// ─── Project Template ────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectTemplate {
+    pub id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub project_type: ProjectType,
+    pub vocabulary: VocabularyMap,
+    pub workflow: WorkflowConfig,
+    pub custom_fields: Vec<CustomFieldDefinition>,
+    pub default_boards: Vec<BoardTemplate>,
+    pub is_builtin: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BoardTemplate {
+    pub name: String,
+    pub description: Option<String>,
+    pub columns: Vec<BoardColumn>,
+    pub filters: Option<serde_json::Value>,
+    pub grouping: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateProjectTemplate {
+    pub name: String,
+    pub description: Option<String>,
+    pub project_type: ProjectType,
+    pub vocabulary: Option<VocabularyMap>,
+    pub workflow: Option<WorkflowConfig>,
+    pub custom_fields: Option<Vec<CustomFieldDefinition>>,
+    pub default_boards: Option<Vec<BoardTemplate>>,
+}
+
+// ─── Custom Fields ───────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomFieldDefinition {
+    pub id: Uuid,
+    pub project_id: Option<Uuid>, // None for template-level fields
+    pub name: String,
+    pub field_type: CustomFieldType,
+    pub description: Option<String>,
+    pub required: bool,
+    pub default_value: Option<serde_json::Value>,
+    pub options: Option<Vec<String>>, // For select/multi-select types
+    pub validation: Option<serde_json::Value>, // JSON schema or regex
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum CustomFieldType {
+    Text,
+    Number,
+    Date,
+    Boolean,
+    Select,      // Single select from options
+    MultiSelect, // Multiple select from options
+    Url,
+    Email,
+    LongText,    // Textarea
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomFieldValue {
+    pub id: Uuid,
+    pub item_id: Uuid,
+    pub field_id: Uuid,
+    pub value: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateCustomField {
+    pub name: String,
+    pub field_type: CustomFieldType,
+    pub description: Option<String>,
+    pub required: Option<bool>,
+    pub default_value: Option<serde_json::Value>,
+    pub options: Option<Vec<String>>,
+    pub validation: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateCustomField {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub required: Option<bool>,
+    pub default_value: Option<serde_json::Value>,
+    pub options: Option<Vec<String>>,
+    pub validation: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetCustomFieldValue {
+    pub field_id: Uuid,
+    pub value: serde_json::Value,
+}
+
+// ─── Board (Multiple Boards per Project) ────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Board {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub filters: Option<serde_json::Value>, // Filter criteria for this board
+    pub grouping: Option<BoardGrouping>,
+    pub is_default: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum BoardGrouping {
+    Status,      // Group by status (default Kanban)
+    Priority,    // Group by priority
+    ItemType,    // Group by item type
+    Sprint,      // Group by sprint
+    Assignee,    // Group by assignee (if we add that)
+    CustomField(Uuid), // Group by custom field
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateBoard {
+    pub name: String,
+    pub description: Option<String>,
+    pub filters: Option<serde_json::Value>,
+    pub grouping: Option<BoardGrouping>,
+    pub is_default: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateBoard {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub filters: Option<serde_json::Value>,
+    pub grouping: Option<BoardGrouping>,
+    pub is_default: Option<bool>,
+}
