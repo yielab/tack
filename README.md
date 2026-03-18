@@ -16,12 +16,25 @@ Handles everything from software sprints to construction builds to homework trac
 git clone <repo-url> && cd flexpm
 docker compose up -d
 
-# Verify
-curl http://localhost:3210/api/health
+# Access the application
+# Via Caddy proxy (unified endpoint):
+open http://localhost:9000
+
+# Direct access (API + Frontend):
+curl http://localhost:3210/api/health  # Backend API
+open http://localhost:8080              # Frontend
 ```
 
 That's it. The database, migrations, and storage are handled automatically.
 Data persists in a Docker volume (`flexpm-data`).
+
+**Access Points:**
+- **Caddy Proxy:** http://localhost:9000 (HTTP) or https://localhost:9443 (HTTPS)
+- **Backend API:** http://localhost:3210
+- **Frontend:** http://localhost:8080
+- **Custom Domain:** http://flexpm.local:9000 (requires /etc/hosts entry)
+
+Caddy uses ports 9000/9443 to avoid conflicts with other applications in multi-app environments.
 
 ```bash
 # View logs
