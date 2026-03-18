@@ -1,8 +1,10 @@
 # FlexPM API Reference
 
-**Version:** 1.0
+**Version:** 1.2
 **Base URL:** `http://localhost:3210/api`
 **WebSocket URL:** `ws://localhost:3210/api/projects/{id}/board/live`
+
+**Total Endpoints:** 54 (34 in v1.0 + 20 in v1.2)
 
 ---
 
@@ -19,8 +21,11 @@
 9. [Comments](#comments)
 10. [Search](#search)
 11. [Export/Import](#exportimport)
-12. [WebSocket Events](#websocket-events)
-13. [Error Responses](#error-responses)
+12. **[NEW v1.2]** [Templates](#templates)
+13. **[NEW v1.2]** [Custom Fields](#custom-fields)
+14. **[NEW v1.2]** [Multiple Boards](#multiple-boards)
+15. [WebSocket Events](#websocket-events)
+16. [Error Responses](#error-responses)
 
 ---
 
@@ -556,6 +561,442 @@ Content-Type: application/json
 ```
 
 **Status:** Basic validation implemented, full import pending
+
+---
+
+## Templates
+
+**NEW in v1.2** - Reusable project blueprints with workflow, vocabulary, custom fields, and boards
+
+### Create Template
+
+```http
+POST /api/templates
+Content-Type: application/json
+
+{
+  "name": "Software Development (Scrum)",
+  "description": "Full-featured scrum template with sprints and roles",
+  "project_type": "software",
+  "vocabulary": {
+    "task": "User Story",
+    "sprint": "Sprint",
+    "epic": "Epic"
+  },
+  "workflow": {
+    "workflow_type": "scrum",
+    "statuses": [
+      {"name": "Backlog", "category": "todo", "wip_limit": null, "order": 0},
+      {"name": "In Progress", "category": "in_progress", "wip_limit": 5, "order": 1},
+      {"name": "Done", "category": "done", "wip_limit": null, "order": 2}
+    ]
+  },
+  "custom_fields": [
+    {"name": "Customer", "field_type": "text", "required": false}
+  ],
+  "default_boards": [
+    {"name": "Main Board", "grouping": "status", "is_default": true}
+  ],
+  "is_builtin": false
+}
+```
+
+**Response:**
+```json
+{
+  "id": "template-uuid",
+  "name": "Software Development (Scrum)",
+  "description": "Full-featured scrum template",
+  "project_type": "software",
+  "is_builtin": false,
+  "created_at": "2026-03-17T10:00:00Z",
+  "updated_at": "2026-03-17T10:00:00Z"
+}
+```
+
+### List Templates
+
+```http
+GET /api/templates
+GET /api/templates?project_type=software
+```
+
+**Response:**
+```json
+[
+  {
+    "id": "template-uuid",
+    "name": "Software Development (Scrum)",
+    "project_type": "software",
+    "is_builtin": false,
+    "created_at": "2026-03-17T10:00:00Z"
+  }
+]
+```
+
+### Get Template
+
+```http
+GET /api/templates/{id}
+```
+
+**Response:** Full template object with all configuration
+
+### Delete Template
+
+```http
+DELETE /api/templates/{id}
+```
+
+**Note:** Built-in templates (is_builtin=true) cannot be deleted
+
+**Response:** 204 No Content
+
+### Create Project from Template
+
+```http
+POST /api/projects/from-template/{template_id}
+Content-Type: application/json
+
+{
+  "name": "My New Project",
+  "description": "Created from template"
+}
+```
+
+**Response:** Complete project object with template configuration applied
+
+**What Gets Applied:**
+- Workflow configuration (statuses, WIP limits)
+- Vocabulary mappings
+- Custom field definitions
+- Default boards
+
+---
+
+## Custom Fields
+
+**NEW in v1.2** - User-defined metadata fields with 9 types
+
+### Field Types
+
+- `text` - Short text input
+- `long_text` - Multi-line text area
+- `number` - Numeric input
+- `date` - Date picker
+- `boolean` - True/false checkbox
+- `select` - Single choice dropdown (requires options)
+- `multi_select` - Multiple choice (requires options)
+- `url` - Website link with validation
+- `email` - Email address with validation
+
+### Create Custom Field
+
+```http
+POST /api/projects/{project_id}/custom-fields
+Content-Type: application/json
+
+{
+  "name": "Customer",
+  "field_type": "text",
+  "description": "Customer name for this work item",
+  "required": false,
+  "default_value": null,
+  "options": null,
+  "validation": null
+}
+```
+
+**For select/multi_select fields:**
+```json
+{
+  "name": "Priority Level",
+  "field_type": "select",
+  "options": ["Low", "Medium", "High", "Critical"],
+  "required": true
+}
+```
+
+**Response:**
+```json
+{
+  "id": "field-uuid",
+  "project_id": "project-uuid",
+  "name": "Customer",
+  "field_type": "text",
+  "description": "Customer name for this work item",
+  "required": false,
+  "default_value": null,
+  "options": null,
+  "validation": null,
+  "created_at": "2026-03-17T10:00:00Z",
+  "updated_at": "2026-03-17T10:00:00Z"
+}
+```
+
+### List Custom Fields
+
+```http
+GET /api/projects/{project_id}/custom-fields
+```
+
+**Response:**
+```json
+[
+  {
+    "id": "field-uuid",
+    "project_id": "project-uuid",
+    "name": "Customer",
+    "field_type": "text",
+    "required": false
+  }
+]
+```
+
+### Get Custom Field
+
+```http
+GET /api/custom-fields/{id}
+```
+
+**Response:** Full field definition object
+
+### Update Custom Field
+
+```http
+PATCH /api/custom-fields/{id}
+Content-Type: application/json
+
+{
+  "name": "Client Name",
+  "description": "Updated description",
+  "required": true
+}
+```
+
+**Response:** Updated field object
+
+### Delete Custom Field
+
+```http
+DELETE /api/custom-fields/{id}
+```
+
+**Note:** Cascade deletes all field values for items
+
+**Response:** 204 No Content
+
+### Set Field Value (Upsert)
+
+```http
+PUT /api/items/{item_id}/custom-fields/{field_id}
+Content-Type: application/json
+
+{
+  "value": "Acme Corp"
+}
+```
+
+**For different field types:**
+- `text`, `long_text`, `url`, `email`: String value
+- `number`: Numeric value
+- `date`: ISO 8601 string ("2026-03-17T00:00:00Z")
+- `boolean`: true/false
+- `select`: Single string from options
+- `multi_select`: Array of strings from options
+
+**Response:**
+```json
+{
+  "item_id": "item-uuid",
+  "field_id": "field-uuid",
+  "value": "Acme Corp",
+  "updated_at": "2026-03-17T10:00:00Z"
+}
+```
+
+### Get Field Value
+
+```http
+GET /api/items/{item_id}/custom-fields/{field_id}
+```
+
+**Response:** Field value object or 404 if not set
+
+### Get All Field Values for Item
+
+```http
+GET /api/items/{item_id}/custom-fields
+```
+
+**Response:**
+```json
+[
+  {
+    "field_id": "field-uuid",
+    "field_name": "Customer",
+    "field_type": "text",
+    "value": "Acme Corp"
+  }
+]
+```
+
+### Delete Field Value
+
+```http
+DELETE /api/items/{item_id}/custom-fields/{field_id}
+```
+
+**Response:** 204 No Content
+
+---
+
+## Multiple Boards
+
+**NEW in v1.2** - Create unlimited boards per project with different groupings
+
+### Grouping Options
+
+- `status` - Group by item status (default)
+- `priority` - Group by priority level
+- `item_type` - Group by item type (epic, task, etc.)
+- `sprint` - Group by sprint
+- `assignee` - Group by assigned role
+- `custom_field` - Group by custom field value (use `{"custom_field": "field-uuid"}`)
+
+### Create Board
+
+```http
+POST /api/projects/{project_id}/boards
+Content-Type: application/json
+
+{
+  "name": "Priority View",
+  "description": "Items grouped by priority",
+  "grouping": "priority",
+  "filters": null,
+  "is_default": false
+}
+```
+
+**For custom field grouping:**
+```json
+{
+  "name": "Customer Board",
+  "grouping": {"custom_field": "field-uuid"},
+  "is_default": false
+}
+```
+
+**Response:**
+```json
+{
+  "id": "board-uuid",
+  "project_id": "project-uuid",
+  "name": "Priority View",
+  "description": "Items grouped by priority",
+  "grouping": "priority",
+  "filters": null,
+  "is_default": false,
+  "created_at": "2026-03-17T10:00:00Z",
+  "updated_at": "2026-03-17T10:00:00Z"
+}
+```
+
+**Note:** When creating a board with is_default=true, other boards are automatically unmarked
+
+### List Boards
+
+```http
+GET /api/projects/{project_id}/boards
+```
+
+**Response:**
+```json
+[
+  {
+    "id": "board-uuid",
+    "name": "Main Board",
+    "grouping": "status",
+    "is_default": true
+  },
+  {
+    "id": "board-uuid-2",
+    "name": "Priority View",
+    "grouping": "priority",
+    "is_default": false
+  }
+]
+```
+
+### Get Board
+
+```http
+GET /api/boards/{id}
+```
+
+**Response:** Full board object
+
+### Update Board
+
+```http
+PATCH /api/boards/{id}
+Content-Type: application/json
+
+{
+  "name": "Updated Name",
+  "grouping": "sprint",
+  "is_default": true
+}
+```
+
+**Response:** Updated board object
+
+### Delete Board
+
+```http
+DELETE /api/boards/{id}
+```
+
+**Note:** Cannot delete the last board or a default board without setting another as default first
+
+**Response:** 204 No Content
+
+### Get Board View (with Grouped Items)
+
+```http
+GET /api/boards/{id}/view
+```
+
+**Response:**
+```json
+{
+  "board": {
+    "id": "board-uuid",
+    "name": "Priority View",
+    "grouping": "priority"
+  },
+  "columns": [
+    {
+      "name": "Critical",
+      "items": [
+        {
+          "id": "item-uuid",
+          "title": "Fix production bug",
+          "priority": "critical",
+          "status": "In Progress"
+        }
+      ]
+    },
+    {
+      "name": "High",
+      "items": [...]
+    }
+  ]
+}
+```
+
+**Smart Grouping:** Items are automatically grouped based on the board's grouping configuration
 
 ---
 
