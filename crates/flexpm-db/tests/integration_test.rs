@@ -497,3 +497,420 @@ fn test_wip_limits() {
     // Backlog has no limit
     assert!(wf.check_wip_limit("Backlog", 9999).is_ok());
 }
+
+// ─── Template Tests (v1.2) ───────────────────────────────────
+
+#[tokio::test]
+async fn test_create_and_get_template() {
+    let repo = setup_test_db().await;
+
+    use flexpm_db::repo::templates;
+    use flexpm_core::models::CreateProjectTemplate;
+
+    let template_data = CreateProjectTemplate {
+        name: "My Software Template".into(),
+        description: Some("A custom scrum template".into()),
+        project_type: ProjectType::Software,
+        vocabulary: None,
+        workflow: None,
+        custom_fields: vec![],
+        default_boards: vec![],
+        is_builtin: false,
+    };
+
+    let template = templates::create_template(repo.pool(), template_data).await.unwrap();
+
+    assert_eq!(template.name, "My Software Template");
+    assert_eq!(template.project_type, ProjectType::Software);
+    assert!(!template.is_builtin);
+
+    let fetched = templates::get_template(repo.pool(), template.id).await.unwrap();
+    assert_eq!(fetched.name, "My Software Template");
+}
+
+#[tokio::test]
+async fn test_list_templates_with_filter() {
+    let repo = setup_test_db().await;
+
+    use flexpm_db::repo::templates;
+    use flexpm_core::models::CreateProjectTemplate;
+
+    // Create templates of different types
+    templates::create_template(repo.pool(), CreateProjectTemplate {
+        name: "Software Template".into(),
+        description: None,
+        project_type: ProjectType::Software,
+        vocabulary: None,
+        workflow: None,
+        custom_fields: vec![],
+        default_boards: vec![],
+        is_builtin: false,
+    }).await.unwrap();
+
+    templates::create_template(repo.pool(), CreateProjectTemplate {
+        name: "Construction Template".into(),
+        description: None,
+        project_type: ProjectType::Construction,
+        vocabulary: None,
+        workflow: None,
+        custom_fields: vec![],
+        default_boards: vec![],
+        is_builtin: false,
+    }).await.unwrap();
+
+    // List all templates
+    let all = templates::list_templates(repo.pool(), None).await.unwrap();
+    assert_eq!(all.len(), 2);
+
+    // Filter by type
+    let software_only = templates::list_templates(repo.pool(), Some(ProjectType::Software)).await.unwrap();
+    assert_eq!(software_only.len(), 1);
+    assert_eq!(software_only[0].name, "Software Template");
+}
+
+#[tokio::test]
+async fn test_delete_template_not_builtin() {
+    let repo = setup_test_db().await;
+
+    use flexpm_db::repo::templates;
+    use flexpm_core::models::CreateProjectTemplate;
+
+    let user_template = templates::create_template(repo.pool(), CreateProjectTemplate {
+        name: "User Template".into(),
+        description: None,
+        project_type: ProjectType::Personal,
+        vocabulary: None,
+        workflow: None,
+        custom_fields: vec![],
+        default_boards: vec![],
+        is_builtin: false,
+    }).await.unwrap();
+
+    // Should be able to delete user template
+    templates::delete_template(repo.pool(), user_template.id).await.unwrap();
+
+    // Verify deleted
+    let result = templates::get_template(repo.pool(), user_template.id).await;
+    assert!(result.is_err());
+}
+
+// ─── Custom Fields Tests (v1.2) ──────────────────────────────
+
+#[tokio::test]
+async fn test_create_and_list_custom_fields() {
+    let repo = setup_test_db().await;
+    let ws_id = create_test_workspace(&repo).await;
+
+    let project = repo
+        .create_project(ws_id, CreateProject {
+            name: "Custom Field Test".into(),
+            description: None,
+            project_type: ProjectType::Software,
+            template: None,
+        })
+        .await
+        .unwrap();
+
+    use flexpm_db::repo::custom_fields;
+    use flexpm_core::models::{CreateCustomField, CustomFieldType};
+
+    // Create a text field
+    let field1 = custom_fields::create_field(repo.pool(), project.id, CreateCustomField {
+        name: "Customer".into(),
+        field_type: CustomFieldType::Text,
+        description: Some("Customer name".into()),
+        required: false,
+        default_value: None,
+        options: None,
+        validation: None,
+    }).await.unwrap();
+
+    assert_eq!(field1.name, "Customer");
+    assert_eq!(field1.field_type, CustomFieldType::Text);
+    assert!(!field1.required);
+
+    // Create a select field with options
+    let field2 = custom_fields::create_field(repo.pool(), project.id, CreateCustomField {
+        name: "Priority Level".into(),
+        field_type: CustomFieldType::Select,
+        description: None,
+        required: true,
+        default_value: None,
+        options: Some(vec!["Low".into(), "Medium".into(), "High".into()]),
+        validation: None,
+    }).await.unwrap();
+
+    assert_eq!(field2.field_type, CustomFieldType::Select);
+    assert!(field2.required);
+    assert_eq!(field2.options.as_ref().unwrap().len(), 3);
+
+    // List fields
+    let fields = custom_fields::list_fields(repo.pool(), project.id).await.unwrap();
+    assert_eq!(fields.len(), 2);
+}
+
+#[tokio::test]
+async fn test_custom_field_value_upsert() {
+    let repo = setup_test_db().await;
+    let ws_id = create_test_workspace(&repo).await;
+
+    let project = repo
+        .create_project(ws_id, CreateProject {
+            name: "Field Value Test".into(),
+            description: None,
+            project_type: ProjectType::Software,
+            template: None,
+        })
+        .await
+        .unwrap();
+
+    let item = repo
+        .create_item(project.id, "Backlog", CreateItem {
+            title: "Test Item".into(),
+            description: None,
+            item_type: None,
+            parent_id: None,
+            priority: None,
+            estimate: None,
+            estimate_unit: None,
+            tags: None,
+            due_date: None,
+            sprint_id: None,
+        })
+        .await
+        .unwrap();
+
+    use flexpm_db::repo::custom_fields;
+    use flexpm_core::models::{CreateCustomField, CustomFieldType};
+
+    let field = custom_fields::create_field(repo.pool(), project.id, CreateCustomField {
+        name: "Customer".into(),
+        field_type: CustomFieldType::Text,
+        description: None,
+        required: false,
+        default_value: None,
+        options: None,
+        validation: None,
+    }).await.unwrap();
+
+    // Set value
+    custom_fields::set_field_value(
+        repo.pool(),
+        item.id,
+        field.id,
+        serde_json::json!("Acme Corp"),
+    ).await.unwrap();
+
+    // Get value
+    let value = custom_fields::get_field_value(repo.pool(), item.id, field.id).await.unwrap();
+    assert_eq!(value.value, serde_json::json!("Acme Corp"));
+
+    // Update value (upsert)
+    custom_fields::set_field_value(
+        repo.pool(),
+        item.id,
+        field.id,
+        serde_json::json!("Updated Corp"),
+    ).await.unwrap();
+
+    let updated_value = custom_fields::get_field_value(repo.pool(), item.id, field.id).await.unwrap();
+    assert_eq!(updated_value.value, serde_json::json!("Updated Corp"));
+}
+
+#[tokio::test]
+async fn test_custom_field_cascade_delete() {
+    let repo = setup_test_db().await;
+    let ws_id = create_test_workspace(&repo).await;
+
+    let project = repo
+        .create_project(ws_id, CreateProject {
+            name: "Cascade Test".into(),
+            description: None,
+            project_type: ProjectType::Software,
+            template: None,
+        })
+        .await
+        .unwrap();
+
+    let item = repo
+        .create_item(project.id, "Backlog", CreateItem {
+            title: "Test Item".into(),
+            description: None,
+            item_type: None,
+            parent_id: None,
+            priority: None,
+            estimate: None,
+            estimate_unit: None,
+            tags: None,
+            due_date: None,
+            sprint_id: None,
+        })
+        .await
+        .unwrap();
+
+    use flexpm_db::repo::custom_fields;
+    use flexpm_core::models::{CreateCustomField, CustomFieldType};
+
+    let field = custom_fields::create_field(repo.pool(), project.id, CreateCustomField {
+        name: "Test Field".into(),
+        field_type: CustomFieldType::Text,
+        description: None,
+        required: false,
+        default_value: None,
+        options: None,
+        validation: None,
+    }).await.unwrap();
+
+    // Set value
+    custom_fields::set_field_value(
+        repo.pool(),
+        item.id,
+        field.id,
+        serde_json::json!("Test Value"),
+    ).await.unwrap();
+
+    // Delete field - should cascade delete values
+    custom_fields::delete_field(repo.pool(), field.id).await.unwrap();
+
+    // Value should be gone
+    let result = custom_fields::get_field_value(repo.pool(), item.id, field.id).await;
+    assert!(result.is_err());
+}
+
+// ─── Multiple Boards Tests (v1.2) ────────────────────────────
+
+#[tokio::test]
+async fn test_create_and_list_boards() {
+    let repo = setup_test_db().await;
+    let ws_id = create_test_workspace(&repo).await;
+
+    let project = repo
+        .create_project(ws_id, CreateProject {
+            name: "Board Test".into(),
+            description: None,
+            project_type: ProjectType::Software,
+            template: None,
+        })
+        .await
+        .unwrap();
+
+    use flexpm_db::repo::boards;
+    use flexpm_core::models::{CreateBoard, BoardGrouping};
+
+    // Create main board
+    let board1 = boards::create_board(repo.pool(), project.id, CreateBoard {
+        name: "Main Board".into(),
+        description: Some("Default status board".into()),
+        grouping: Some(BoardGrouping::Status),
+        filters: None,
+        is_default: true,
+    }).await.unwrap();
+
+    assert_eq!(board1.name, "Main Board");
+    assert!(board1.is_default);
+
+    // Create priority board
+    let board2 = boards::create_board(repo.pool(), project.id, CreateBoard {
+        name: "Priority View".into(),
+        description: None,
+        grouping: Some(BoardGrouping::Priority),
+        filters: None,
+        is_default: false,
+    }).await.unwrap();
+
+    assert!(!board2.is_default);
+
+    // List boards
+    let all_boards = boards::list_boards(repo.pool(), project.id).await.unwrap();
+    assert_eq!(all_boards.len(), 2);
+}
+
+#[tokio::test]
+async fn test_default_board_management() {
+    let repo = setup_test_db().await;
+    let ws_id = create_test_workspace(&repo).await;
+
+    let project = repo
+        .create_project(ws_id, CreateProject {
+            name: "Default Board Test".into(),
+            description: None,
+            project_type: ProjectType::Software,
+            template: None,
+        })
+        .await
+        .unwrap();
+
+    use flexpm_db::repo::boards;
+    use flexpm_core::models::{CreateBoard, UpdateBoard, BoardGrouping};
+
+    // Create first board as default
+    let board1 = boards::create_board(repo.pool(), project.id, CreateBoard {
+        name: "Board 1".into(),
+        description: None,
+        grouping: Some(BoardGrouping::Status),
+        filters: None,
+        is_default: true,
+    }).await.unwrap();
+
+    // Create second board and make it default
+    let board2 = boards::create_board(repo.pool(), project.id, CreateBoard {
+        name: "Board 2".into(),
+        description: None,
+        grouping: Some(BoardGrouping::Priority),
+        filters: None,
+        is_default: true,
+    }).await.unwrap();
+
+    // Board 1 should no longer be default
+    let board1_updated = boards::get_board(repo.pool(), board1.id).await.unwrap();
+    assert!(!board1_updated.is_default);
+
+    // Board 2 should be default
+    assert!(board2.is_default);
+
+    // Get default board
+    let default = boards::get_default_board(repo.pool(), project.id).await.unwrap();
+    assert_eq!(default.id, board2.id);
+}
+
+#[tokio::test]
+async fn test_board_grouping_types() {
+    let repo = setup_test_db().await;
+    let ws_id = create_test_workspace(&repo).await;
+
+    let project = repo
+        .create_project(ws_id, CreateProject {
+            name: "Grouping Test".into(),
+            description: None,
+            project_type: ProjectType::Software,
+            template: None,
+        })
+        .await
+        .unwrap();
+
+    use flexpm_db::repo::boards;
+    use flexpm_core::models::{CreateBoard, BoardGrouping};
+
+    // Test all grouping types
+    let groupings = vec![
+        ("Status Board", BoardGrouping::Status),
+        ("Priority Board", BoardGrouping::Priority),
+        ("Type Board", BoardGrouping::ItemType),
+        ("Sprint Board", BoardGrouping::Sprint),
+    ];
+
+    for (name, grouping) in groupings {
+        let board = boards::create_board(repo.pool(), project.id, CreateBoard {
+            name: name.into(),
+            description: None,
+            grouping: Some(grouping),
+            filters: None,
+            is_default: false,
+        }).await.unwrap();
+
+        assert_eq!(board.name, name);
+    }
+
+    let all_boards = boards::list_boards(repo.pool(), project.id).await.unwrap();
+    assert_eq!(all_boards.len(), 4);
+}
