@@ -2,14 +2,18 @@
 
 This document provides comprehensive testing instructions for FlexPM, including unit tests, integration tests, and end-to-end testing workflows.
 
+**Test Coverage:** 32+ tests (22 integration + 10 unit tests)
+**v1.2 Features:** Includes tests for Templates, Custom Fields, and Multiple Boards
+
 ## Table of Contents
 
 1. [Quick Start](#quick-start)
 2. [Backend Testing](#backend-testing)
-3. [Frontend Testing](#frontend-testing)
-4. [End-to-End Testing](#end-to-end-testing)
-5. [Docker Testing](#docker-testing)
-6. [Manual Testing Workflows](#manual-testing-workflows)
+3. [v1.2 Feature Tests](#v12-feature-tests)
+4. [Frontend Testing](#frontend-testing)
+5. [End-to-End Testing](#end-to-end-testing)
+6. [Docker Testing](#docker-testing)
+7. [Manual Testing Workflows](#manual-testing-workflows)
 
 ## Quick Start
 
@@ -82,6 +86,169 @@ cargo tarpaulin --out Html --output-dir coverage
 xdg-open coverage/index.html  # Linux
 open coverage/index.html      # macOS
 ```
+
+## v1.2 Feature Tests
+
+FlexPM v1.2 introduces comprehensive tests for three major features: **Templates**, **Custom Fields**, and **Multiple Boards**.
+
+### Test Summary
+
+| Feature | Tests | Coverage |
+|---------|-------|----------|
+| **Templates** | 3 tests | Create, List with filters, Delete |
+| **Custom Fields** | 3 tests | CRUD, Value upsert, Cascade delete |
+| **Multiple Boards** | 4 tests | CRUD, Default management, Grouping types |
+| **Total v1.2** | 10 tests | Full feature coverage |
+
+### Template Tests
+
+Located in `crates/flexpm-db/tests/integration_test.rs`:
+
+```bash
+# Run template-specific tests
+cargo test test_create_and_get_template
+cargo test test_list_templates_with_filter
+cargo test test_delete_template_not_builtin
+```
+
+**Test Coverage:**
+- ✅ Create custom template with workflow and vocabulary
+- ✅ List all templates and filter by project type
+- ✅ Protect built-in templates from deletion
+- ✅ Delete user-created templates
+
+**Example Test:**
+```rust
+#[tokio::test]
+async fn test_create_and_get_template() {
+    let repo = setup_test_db().await;
+    let template_data = CreateProjectTemplate {
+        name: "My Software Template".into(),
+        project_type: ProjectType::Software,
+        vocabulary: None,
+        workflow: None,
+        custom_fields: vec![],
+        default_boards: vec![],
+        is_builtin: false,
+    };
+    let template = templates::create_template(repo.pool(), template_data).await.unwrap();
+    assert_eq!(template.name, "My Software Template");
+}
+```
+
+### Custom Fields Tests
+
+```bash
+# Run custom field tests
+cargo test test_create_and_list_custom_fields
+cargo test test_custom_field_value_upsert
+cargo test test_custom_field_cascade_delete
+```
+
+**Test Coverage:**
+- ✅ Create fields with all 9 field types (text, number, date, select, etc.)
+- ✅ Set and update field values (upsert logic)
+- ✅ Cascade delete field values when field is deleted
+- ✅ Validate required fields and options for select types
+
+**Example Test:**
+```rust
+#[tokio::test]
+async fn test_custom_field_value_upsert() {
+    let field = custom_fields::create_field(repo.pool(), project.id, CreateCustomField {
+        name: "Customer".into(),
+        field_type: CustomFieldType::Text,
+        required: false,
+        // ...
+    }).await.unwrap();
+
+    // Set value
+    custom_fields::set_field_value(repo.pool(), item.id, field.id, json!("Acme Corp")).await.unwrap();
+
+    // Update value (upsert)
+    custom_fields::set_field_value(repo.pool(), item.id, field.id, json!("Updated Corp")).await.unwrap();
+
+    let value = custom_fields::get_field_value(repo.pool(), item.id, field.id).await.unwrap();
+    assert_eq!(value.value, json!("Updated Corp"));
+}
+```
+
+### Multiple Boards Tests
+
+```bash
+# Run board tests
+cargo test test_create_and_list_boards
+cargo test test_default_board_management
+cargo test test_board_grouping_types
+```
+
+**Test Coverage:**
+- ✅ Create unlimited boards per project
+- ✅ Auto-manage default board (unset previous default)
+- ✅ Test all 6 grouping types (status, priority, type, sprint, assignee, custom field)
+- ✅ Get default board for project
+- ✅ List all boards with filtering
+
+**Example Test:**
+```rust
+#[tokio::test]
+async fn test_default_board_management() {
+    // Create first board as default
+    let board1 = boards::create_board(repo.pool(), project.id, CreateBoard {
+        name: "Board 1".into(),
+        grouping: Some(BoardGrouping::Status),
+        is_default: true,
+    }).await.unwrap();
+
+    // Create second board and make it default
+    let board2 = boards::create_board(repo.pool(), project.id, CreateBoard {
+        name: "Board 2".into(),
+        grouping: Some(BoardGrouping::Priority),
+        is_default: true, // This should unset board1's default
+    }).await.unwrap();
+
+    // Board 1 should no longer be default
+    let board1_updated = boards::get_board(repo.pool(), board1.id).await.unwrap();
+    assert!(!board1_updated.is_default);
+}
+```
+
+### Running All v1.2 Tests
+
+```bash
+# Run all v1.2 tests at once
+cargo test test_create_and_get_template \
+           test_list_templates_with_filter \
+           test_delete_template_not_builtin \
+           test_create_and_list_custom_fields \
+           test_custom_field_value_upsert \
+           test_custom_field_cascade_delete \
+           test_create_and_list_boards \
+           test_default_board_management \
+           test_board_grouping_types
+
+# Or run all integration tests
+cargo test --test integration_test
+```
+
+### Test Statistics
+
+**Before v1.2:**
+- Integration tests: 12
+- Unit tests: 10
+- Total: 22 tests
+
+**After v1.2:**
+- Integration tests: 22 (+10)
+- Unit tests: 10
+- Total: 32 tests (+45% increase)
+
+**Coverage by Feature:**
+- Core features (v1.0): 12 tests
+- Templates (v1.2): 3 tests
+- Custom Fields (v1.2): 3 tests
+- Multiple Boards (v1.2): 4 tests
+- Workflow/Vocabulary: 2 tests
 
 ## Frontend Testing
 
@@ -481,6 +648,33 @@ ab -n 1000 -c 10 http://localhost:3210/api/health
   - [ ] Upload attachment
   - [ ] Download attachment
   - [ ] Delete comment/attachment
+
+- [ ] **v1.2: Project Templates**
+  - [ ] Create custom template
+  - [ ] List templates with type filter
+  - [ ] Create project from template
+  - [ ] Verify workflow/vocabulary applied
+  - [ ] Delete user template
+  - [ ] Verify builtin templates protected
+
+- [ ] **v1.2: Custom Fields**
+  - [ ] Create text field
+  - [ ] Create select field with options
+  - [ ] Create date/number/boolean fields
+  - [ ] Set field value on item
+  - [ ] Update field value (upsert)
+  - [ ] Delete field (cascade delete values)
+  - [ ] View all field values for item
+
+- [ ] **v1.2: Multiple Boards**
+  - [ ] Create multiple boards per project
+  - [ ] Set default board
+  - [ ] Switch between boards
+  - [ ] Test status grouping
+  - [ ] Test priority grouping
+  - [ ] Test item type grouping
+  - [ ] Test sprint grouping
+  - [ ] Delete board
 
 ## Continuous Integration
 
