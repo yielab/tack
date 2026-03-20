@@ -61,13 +61,13 @@ export default function Calendar() {
     });
   };
 
-  const getPriorityColor = (priority: string) => {
+  const getPriorityStyle = (priority: string) => {
     switch (priority) {
-      case 'critical': return 'bg-red-500 text-white';
-      case 'high': return 'bg-orange-500 text-white';
-      case 'medium': return 'bg-yellow-500 text-white';
-      case 'low': return 'bg-green-500 text-white';
-      default: return 'bg-gray-500 text-white';
+      case 'critical': return { "background-color": '#ef4444', color: 'var(--color-text-inverse)' };
+      case 'high': return { "background-color": '#f97316', color: 'var(--color-text-inverse)' };
+      case 'medium': return { "background-color": '#eab308', color: 'var(--color-text-inverse)' };
+      case 'low': return { "background-color": '#22c55e', color: 'var(--color-text-inverse)' };
+      default: return { "background-color": 'var(--color-border-medium)', color: 'var(--color-text-inverse)' };
     }
   };
 
@@ -98,34 +98,55 @@ export default function Calendar() {
   });
 
   return (
-    <div class="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
+    <div class="min-h-screen p-6" style={{ "background-color": 'var(--color-bg-base)' }}>
       <div class="max-w-7xl mx-auto">
         {/* Header */}
         <div class="mb-6 flex items-center justify-between">
           <div>
-            <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
+            <h1 class="text-3xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
               {project()?.name || 'Loading...'} - Calendar
             </h1>
-            <p class="text-gray-600 dark:text-gray-400 mt-1">
+            <p class="mt-1" style={{ color: 'var(--color-text-secondary)' }}>
               Items by due date
             </p>
           </div>
           <div class="flex gap-2">
             <button
               onClick={() => navigate(`/projects/${projectId}/board`)}
-              class="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              class="px-4 py-2 rounded-lg transition-colors"
+              style={{
+                "background-color": 'var(--color-bg-elevated)',
+                border: '1px solid var(--color-border-light)',
+                color: 'var(--color-text-primary)'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-elevated)'}
             >
               Board View
             </button>
             <button
               onClick={() => navigate(`/projects/${projectId}/list`)}
-              class="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              class="px-4 py-2 rounded-lg transition-colors"
+              style={{
+                "background-color": 'var(--color-bg-elevated)',
+                border: '1px solid var(--color-border-light)',
+                color: 'var(--color-text-primary)'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-elevated)'}
             >
               List View
             </button>
             <button
               onClick={() => navigate('/projects')}
-              class="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              class="px-4 py-2 rounded-lg transition-colors"
+              style={{
+                "background-color": 'var(--color-bg-elevated)',
+                border: '1px solid var(--color-border-light)',
+                color: 'var(--color-text-primary)'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-elevated)'}
             >
               Back to Projects
             </button>
@@ -133,22 +154,34 @@ export default function Calendar() {
         </div>
 
         {/* Calendar Controls */}
-        <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
+        <div class="rounded-lg p-4 mb-6" style={{ "background-color": 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
           <div class="flex items-center justify-between">
             <button
               onClick={previousMonth}
-              class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              class="px-4 py-2 rounded-lg transition-colors"
+              style={{
+                "background-color": 'var(--color-bg-subtle)',
+                color: 'var(--color-text-primary)'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-border-light)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'}
             >
               ← Previous
             </button>
 
             <div class="flex items-center gap-4">
-              <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
+              <h2 class="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
                 {monthName()}
               </h2>
               <button
                 onClick={today}
-                class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
+                class="px-4 py-2 rounded-lg transition-colors text-sm"
+                style={{
+                  "background-color": 'var(--color-primary-600)',
+                  color: 'var(--color-text-inverse)'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-primary-700)'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-primary-600)'}
               >
                 Today
               </button>
@@ -156,7 +189,13 @@ export default function Calendar() {
 
             <button
               onClick={nextMonth}
-              class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              class="px-4 py-2 rounded-lg transition-colors"
+              style={{
+                "background-color": 'var(--color-bg-subtle)',
+                color: 'var(--color-text-primary)'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-border-light)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'}
             >
               Next →
             </button>
@@ -164,12 +203,19 @@ export default function Calendar() {
         </div>
 
         {/* Calendar Grid */}
-        <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="rounded-lg overflow-hidden" style={{ "background-color": 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
           {/* Weekday Headers */}
-          <div class="grid grid-cols-7 border-b border-gray-200 dark:border-gray-700">
+          <div class="grid grid-cols-7" style={{ "border-bottom": '1px solid var(--color-border-light)' }}>
             <For each={['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']}>
               {(day) => (
-                <div class="p-4 text-center font-semibold text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 last:border-r-0">
+                <div
+                  class="p-4 text-center font-semibold last:border-r-0"
+                  style={{
+                    color: 'var(--color-text-primary)',
+                    "background-color": 'var(--color-bg-base)',
+                    "border-right": '1px solid var(--color-border-light)'
+                  }}
+                >
                   {day}
                 </div>
               )}
@@ -181,19 +227,23 @@ export default function Calendar() {
             <For each={calendarDays()}>
               {(day) => (
                 <div
-                  class="min-h-32 p-2 border-r border-b border-gray-200 dark:border-gray-700 last:border-r-0"
-                  classList={{
-                    'bg-gray-50 dark:bg-gray-900': day === null,
-                    'bg-blue-50 dark:bg-blue-900/20': day !== null && isToday(day),
+                  class="min-h-32 p-2 last:border-r-0"
+                  style={{
+                    "border-right": '1px solid var(--color-border-light)',
+                    "border-bottom": '1px solid var(--color-border-light)',
+                    "background-color": day === null
+                      ? 'var(--color-bg-base)'
+                      : (day !== null && isToday(day) ? 'rgba(59, 130, 246, 0.1)' : 'transparent')
                   }}
                 >
                   <Show when={day !== null}>
                     <div class="flex flex-col h-full">
                       <div
                         class="text-sm font-semibold mb-2"
-                        classList={{
-                          'text-blue-600 dark:text-blue-400': isToday(day!),
-                          'text-gray-900 dark:text-white': !isToday(day!),
+                        style={{
+                          color: isToday(day!)
+                            ? 'var(--color-primary-600)'
+                            : 'var(--color-text-primary)'
                         }}
                       >
                         {day}
@@ -203,7 +253,8 @@ export default function Calendar() {
                         <For each={getItemsForDate(day!)}>
                           {(item) => (
                             <div
-                              class={`text-xs p-1 rounded cursor-pointer hover:opacity-80 transition-opacity ${getPriorityColor(item.priority)}`}
+                              class="text-xs p-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
+                              style={getPriorityStyle(item.priority)}
                               title={`${item.title} - ${item.status}`}
                             >
                               <div class="font-medium truncate">{item.title}</div>
@@ -214,7 +265,7 @@ export default function Calendar() {
                       </div>
 
                       <Show when={getItemsForDate(day!).length > 3}>
-                        <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        <div class="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
                           +{getItemsForDate(day!).length - 3} more
                         </div>
                       </Show>
@@ -227,35 +278,35 @@ export default function Calendar() {
         </div>
 
         {/* Legend */}
-        <div class="mt-6 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-          <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Priority Legend</h3>
+        <div class="mt-6 rounded-lg p-4" style={{ "background-color": 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
+          <h3 class="text-sm font-semibold mb-3" style={{ color: 'var(--color-text-primary)' }}>Priority Legend</h3>
           <div class="flex flex-wrap gap-4">
             <div class="flex items-center gap-2">
-              <div class="w-4 h-4 rounded bg-red-500"></div>
-              <span class="text-sm text-gray-700 dark:text-gray-300">Critical</span>
+              <div class="w-4 h-4 rounded" style={{ "background-color": '#ef4444' }}></div>
+              <span class="text-sm" style={{ color: 'var(--color-text-primary)' }}>Critical</span>
             </div>
             <div class="flex items-center gap-2">
-              <div class="w-4 h-4 rounded bg-orange-500"></div>
-              <span class="text-sm text-gray-700 dark:text-gray-300">High</span>
+              <div class="w-4 h-4 rounded" style={{ "background-color": '#f97316' }}></div>
+              <span class="text-sm" style={{ color: 'var(--color-text-primary)' }}>High</span>
             </div>
             <div class="flex items-center gap-2">
-              <div class="w-4 h-4 rounded bg-yellow-500"></div>
-              <span class="text-sm text-gray-700 dark:text-gray-300">Medium</span>
+              <div class="w-4 h-4 rounded" style={{ "background-color": '#eab308' }}></div>
+              <span class="text-sm" style={{ color: 'var(--color-text-primary)' }}>Medium</span>
             </div>
             <div class="flex items-center gap-2">
-              <div class="w-4 h-4 rounded bg-green-500"></div>
-              <span class="text-sm text-gray-700 dark:text-gray-300">Low</span>
+              <div class="w-4 h-4 rounded" style={{ "background-color": '#22c55e' }}></div>
+              <span class="text-sm" style={{ color: 'var(--color-text-primary)' }}>Low</span>
             </div>
           </div>
         </div>
 
         {/* Items without due dates */}
         <Show when={(items() || []).filter(i => !i.due_date).length > 0}>
-          <div class="mt-6 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-            <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">
+          <div class="mt-6 rounded-lg p-4" style={{ "background-color": 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
+            <h3 class="text-lg font-semibold mb-3" style={{ color: 'var(--color-text-primary)' }}>
               Items Without Due Date ({(items() || []).filter(i => !i.due_date).length})
             </h3>
-            <p class="text-sm text-gray-600 dark:text-gray-400">
+            <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
               These items don't have a due date set and won't appear on the calendar.
             </p>
           </div>

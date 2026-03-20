@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Local Domain (Caddy Reverse Proxy)
+
+This project is served at **https://flexpm.test** via a centralized Caddy + dnsmasq setup.
+
+- The `Caddyfile.local` in this directory is auto-imported by the global `/home/ox/Sites/Caddyfile`
+- **Do NOT add a global `{}` block** to `Caddyfile.local` — it conflicts with the main config
+- **Do NOT run a separate Caddy instance** — use `sudo systemctl reload caddy` after changes
+- **Do NOT use custom ports** — Caddy runs on standard 80/443 via systemd
+- See `/home/ox/Sites/LOCAL-DOMAINS.md` for full documentation
+
 ## Project Overview
 
 FlexPM is a lightweight, versatile project management tool built in Rust (backend) and SolidJS (frontend). It supports multiple workflows (Scrum, Kanban, phase-based) with fully customizable terminology and statuses. Designed for solo developers and small teams across diverse domains: software development, construction, personal tasks, etc.

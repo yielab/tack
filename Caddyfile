@@ -1,8 +1,9 @@
-# Caddy configuration for FlexPM local development
-# Smart multi-app environment - uses port 9000 to avoid conflicts
+# Caddy configuration for FlexPM with custom domain support
+# Uses dnsmasq for automatic *.test domain resolution
+# Ports 9000/9443 to avoid conflicts in multi-app environments
 
-# FlexPM on port 9000 (HTTP) - multi-app friendly
-http://localhost:9000, http://flexpm.local:9000 {
+# FlexPM custom domain - HTTP
+http://flexpm.test:9000 {
     # API routes go to backend
     handle /api/* {
         reverse_proxy flexpm:3210
@@ -43,11 +44,53 @@ http://localhost:9000, http://flexpm.local:9000 {
     }
 }
 
-# HTTPS version on port 9443 with self-signed cert
-https://localhost:9443, https://flexpm.local:9443 {
-    # Self-signed certificate for local development
+# FlexPM custom domain - HTTPS with self-signed certificate
+https://flexpm.test:9443 {
+    # Self-signed certificate for .test domain
     tls internal
 
+    # API routes go to backend
+    handle /api/* {
+        reverse_proxy flexpm:3210
+    }
+
+    # WebSocket endpoint for board live updates
+    handle /ws/* {
+        reverse_proxy flexpm:3210 {
+            # WebSocket headers
+            header_up Connection {>Connection}
+            header_up Upgrade {>Upgrade}
+        }
+    }
+
+    # All other routes go to frontend
+    handle /* {
+        reverse_proxy frontend:80
+    }
+
+    # Enable CORS for development
+    header {
+        Access-Control-Allow-Origin *
+        Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        Access-Control-Allow-Headers "Content-Type, Authorization"
+    }
+
+    # Handle CORS preflight requests
+    @options {
+        method OPTIONS
+    }
+    respond @options 204
+
+    # Logging
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}
+
+# Also respond to localhost for quick testing (no custom domain needed)
+http://localhost:9000 {
     # API routes go to backend
     handle /api/* {
         reverse_proxy flexpm:3210
