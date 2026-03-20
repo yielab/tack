@@ -1,5 +1,5 @@
 import { createResource, For, Show, createSignal, createEffect, type Component } from 'solid-js';
-import { useSearchParams, useNavigate } from '@solidjs/router';
+import { useParams, useNavigate } from '@solidjs/router';
 import { api } from '../lib/api';
 import type { BoardColumn, Item, BoardState } from '../types/api';
 import CreateItemModal from '../components/CreateItemModal';
@@ -40,22 +40,28 @@ const ItemCard: Component<{
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onClick={handleClick}
-      class="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-sm border border-gray-200 dark:border-gray-700 hover:border-purple-500 dark:hover:border-purple-500 transition-colors cursor-pointer group"
+      class="rounded-lg p-4 shadow-sm border transition-colors cursor-pointer group"
+      style={{
+        "background-color": "var(--color-bg-elevated)",
+        "border-color": "var(--color-border-light)",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--color-primary-500)")}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--color-border-light)")}
       classList={{
         'opacity-40': isDragging(),
       }}
     >
       <div class="item-card-content">
         <div class="flex items-start justify-between mb-2">
-          <h4 class="font-medium text-gray-900 dark:text-white flex-1">
+          <h4 class="font-medium flex-1" style={{ color: "var(--color-text-primary)" }}>
             {props.item.title}
           </h4>
-          <span class="text-xs text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
+          <span class="text-xs opacity-0 group-hover:opacity-100 transition-opacity ml-2" style={{ color: "var(--color-text-tertiary)" }}>
             Click to edit
           </span>
         </div>
         <Show when={props.item.description}>
-          <p class="text-sm text-gray-600 dark:text-gray-400 mb-2 line-clamp-2">
+          <p class="text-sm mb-2 line-clamp-2" style={{ color: "var(--color-text-secondary)" }}>
             {props.item.description}
           </p>
         </Show>
@@ -63,22 +69,28 @@ const ItemCard: Component<{
       <div class="flex items-center gap-2 flex-wrap">
         <span
           class="text-xs px-2 py-1 rounded"
-          classList={{
-            'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300':
-              props.item.priority === 'critical' || props.item.priority === 'high',
-            'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300':
-              props.item.priority === 'medium',
-            'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300':
-              props.item.priority === 'low' || props.item.priority === 'none',
+          style={{
+            "background-color":
+              props.item.priority === 'critical' || props.item.priority === 'high'
+                ? "var(--color-danger-light)"
+                : props.item.priority === 'medium'
+                ? "var(--color-warning-light)"
+                : "var(--color-bg-subtle)",
+            color:
+              props.item.priority === 'critical' || props.item.priority === 'high'
+                ? "var(--color-danger)"
+                : props.item.priority === 'medium'
+                ? "var(--color-warning)"
+                : "var(--color-text-secondary)",
           }}
         >
           {props.item.priority}
         </span>
-        <span class="text-xs text-gray-500 dark:text-gray-400">
+        <span class="text-xs" style={{ color: "var(--color-text-secondary)" }}>
           {props.item.item_type.toString()}
         </span>
         <Show when={props.item.estimate}>
-          <span class="text-xs text-purple-600 dark:text-purple-400">
+          <span class="text-xs" style={{ color: "var(--color-primary-600)" }}>
             {props.item.estimate} pts
           </span>
         </Show>
@@ -118,7 +130,8 @@ const BoardColumn: Component<{
   return (
     <div class="flex-shrink-0 w-80">
       <div
-        class="bg-gray-100 dark:bg-gray-800 rounded-lg p-4 min-h-[500px]"
+        class="rounded-lg p-4 min-h-[500px]"
+        style={{ "background-color": "var(--color-bg-subtle)" }}
         classList={{
           'ring-2 ring-purple-500 ring-inset': isDragOver(),
         }}
@@ -127,21 +140,23 @@ const BoardColumn: Component<{
         onDrop={handleDrop}
       >
         <div class="flex items-center justify-between mb-4">
-          <h3 class="font-semibold text-gray-900 dark:text-white">
+          <h3 class="font-semibold" style={{ color: "var(--color-text-primary)" }}>
             {props.column.status}
           </h3>
           <div class="flex items-center gap-2">
-            <span class="text-sm text-gray-500">
+            <span class="text-sm" style={{ color: "var(--color-text-secondary)" }}>
               {props.column.items.length}
             </span>
             <Show when={props.column.wip_limit}>
               <span
                 class="text-xs px-2 py-1 rounded"
-                classList={{
-                  'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300':
-                    props.column.wip_exceeded,
-                  'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300':
-                    !props.column.wip_exceeded,
+                style={{
+                  "background-color": props.column.wip_exceeded
+                    ? "var(--color-danger-light)"
+                    : "var(--color-bg-subtle)",
+                  color: props.column.wip_exceeded
+                    ? "var(--color-danger)"
+                    : "var(--color-text-secondary)",
                 }}
               >
                 / {props.column.wip_limit}
@@ -162,7 +177,7 @@ const BoardColumn: Component<{
           </For>
 
           <Show when={props.column.items.length === 0}>
-            <div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center text-sm text-gray-500 dark:text-gray-400">
+            <div class="border-2 border-dashed rounded-lg p-8 text-center text-sm" style={{ "border-color": "var(--color-border-medium)", color: "var(--color-text-secondary)" }}>
               Drop items here or click "+ Add item" below
             </div>
           </Show>
@@ -170,7 +185,10 @@ const BoardColumn: Component<{
 
         <button
           onClick={() => props.onAddItem(props.column.status)}
-          class="w-full mt-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+          class="w-full mt-3 py-2 text-sm transition-colors"
+          style={{ color: "var(--color-text-secondary)" }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-primary-600)")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-text-secondary)")}
         >
           + Add item
         </button>
@@ -181,11 +199,8 @@ const BoardColumn: Component<{
 
 const Board: Component = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const projectId = () => {
-    const id = searchParams.project;
-    return Array.isArray(id) ? id[0] : id;
-  };
+  const params = useParams();
+  const projectId = () => params.id;
 
   const [board, { refetch }] = createResource(
     projectId,
@@ -421,8 +436,8 @@ const Board: Component = () => {
       <div class="mb-8">
         <div class="flex items-center justify-between">
           <div>
-            <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Board</h1>
-            <p class="mt-2 text-gray-600 dark:text-gray-400">
+            <h1 class="text-3xl font-bold" style={{ color: "var(--color-text-primary)" }}>Board</h1>
+            <p class="mt-2" style={{ color: "var(--color-text-secondary)" }}>
               Drag items between columns to change their status
             </p>
           </div>
@@ -438,31 +453,86 @@ const Board: Component = () => {
               <div class="flex items-center gap-2">
                 <button
                   onClick={() => navigate(`/projects/${projectId()}/dashboard`)}
-                  class="px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  class="px-3 py-2 text-sm border rounded-lg transition-colors"
+                  style={{
+                    "background-color": "var(--color-bg-elevated)",
+                    color: "var(--color-text-secondary)",
+                    "border-color": "var(--color-border-medium)",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "var(--color-bg-subtle)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "var(--color-bg-elevated)";
+                  }}
                 >
                   Dashboard
                 </button>
                 <button
                   onClick={() => navigate(`/projects/${projectId()}/list`)}
-                  class="px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  class="px-3 py-2 text-sm border rounded-lg transition-colors"
+                  style={{
+                    "background-color": "var(--color-bg-elevated)",
+                    color: "var(--color-text-secondary)",
+                    "border-color": "var(--color-border-medium)",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "var(--color-bg-subtle)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "var(--color-bg-elevated)";
+                  }}
                 >
                   List
                 </button>
                 <button
                   onClick={() => navigate(`/projects/${projectId()}/sprints`)}
-                  class="px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  class="px-3 py-2 text-sm border rounded-lg transition-colors"
+                  style={{
+                    "background-color": "var(--color-bg-elevated)",
+                    color: "var(--color-text-secondary)",
+                    "border-color": "var(--color-border-medium)",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "var(--color-bg-subtle)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "var(--color-bg-elevated)";
+                  }}
                 >
                   Sprints
                 </button>
                 <button
                   onClick={() => navigate(`/projects/${projectId()}/calendar`)}
-                  class="px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  class="px-3 py-2 text-sm border rounded-lg transition-colors"
+                  style={{
+                    "background-color": "var(--color-bg-elevated)",
+                    color: "var(--color-text-secondary)",
+                    "border-color": "var(--color-border-medium)",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "var(--color-bg-subtle)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "var(--color-bg-elevated)";
+                  }}
                 >
                   Calendar
                 </button>
                 <button
                   onClick={() => navigate(`/projects/${projectId()}/timeline`)}
-                  class="px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  class="px-3 py-2 text-sm border rounded-lg transition-colors"
+                  style={{
+                    "background-color": "var(--color-bg-elevated)",
+                    color: "var(--color-text-secondary)",
+                    "border-color": "var(--color-border-medium)",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "var(--color-bg-subtle)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "var(--color-bg-elevated)";
+                  }}
                 >
                   Timeline
                 </button>
@@ -472,7 +542,19 @@ const Board: Component = () => {
             {/* Keyboard Shortcut Hint */}
             <button
               onClick={() => setShowCommandPalette(true)}
-              class="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white border border-gray-300 dark:border-gray-600 rounded-md hover:border-purple-500 dark:hover:border-purple-500 transition-colors"
+              class="px-3 py-1.5 text-sm border rounded-md transition-colors"
+              style={{
+                color: "var(--color-text-secondary)",
+                "border-color": "var(--color-border-medium)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = "var(--color-text-primary)";
+                e.currentTarget.style.borderColor = "var(--color-primary-500)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "var(--color-text-secondary)";
+                e.currentTarget.style.borderColor = "var(--color-border-medium)";
+              }}
             >
               <span class="font-mono">Ctrl+K</span>
               <span class="ml-2">Commands</span>
@@ -490,7 +572,7 @@ const Board: Component = () => {
                     'bg-red-500': wsManager!.status() === 'error',
                   }}
                 />
-                <span class="text-gray-600 dark:text-gray-400">
+                <span style={{ color: "var(--color-text-secondary)" }}>
                   {wsManager!.status() === 'connected' && 'Live'}
                   {wsManager!.status() === 'connecting' && 'Connecting...'}
                   {wsManager!.status() === 'disconnected' && 'Offline'}
@@ -522,7 +604,7 @@ const Board: Component = () => {
         </Show>
 
         <Show when={!projectId()}>
-          <div class="text-center py-12 text-gray-500">
+          <div class="text-center py-12" style={{ color: "var(--color-text-secondary)" }}>
             Please select a project from the Projects page
           </div>
         </Show>

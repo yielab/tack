@@ -36,18 +36,29 @@ fi
 echo ""
 echo "✨ FlexPM is now running!"
 echo ""
-echo "📍 Access points:"
-echo "   🌐 API Server:    http://localhost:3210"
-echo "   🌐 Health check:  http://localhost:3210/api/health"
+echo "📍 Access Points:"
+echo ""
+echo "   🌐 Via Caddy (recommended):  http://localhost:9000"
+echo "   🔒 Via Caddy HTTPS:          https://localhost:9443 (self-signed cert)"
+echo ""
+echo "   🔧 Direct Backend API:       http://localhost:3210"
+echo "   🔧 Direct Frontend:          http://localhost:8080"
+echo ""
+echo "   💡 Caddy uses ports 9000/9443 to avoid conflicts with other apps"
 echo ""
 
 # Check if flexpm.local is in /etc/hosts
 if grep -q "flexpm.local" /etc/hosts 2>/dev/null; then
-    echo "   🌐 Custom domain: https://flexpm.local (via Caddy)"
-    echo "   🌐 Custom domain: http://flexpm.local (redirects to HTTPS)"
+    echo "🎯 Custom Domain: ENABLED"
+    echo "   🌐 http://flexpm.local:9000"
+    echo "   🔒 https://flexpm.local:9443"
 else
-    echo "   ℹ️  To use https://flexpm.local, add to /etc/hosts:"
-    echo "      sudo sh -c 'echo \"127.0.0.1 flexpm.local\" >> /etc/hosts'"
+    echo "🎯 Optional: Custom Domain Setup"
+    echo ""
+    echo "   To use http://flexpm.local:9000 instead of localhost:"
+    echo "   sudo sh -c 'echo \"127.0.0.1 flexpm.local\" >> /etc/hosts'"
+    echo ""
+    echo "   Note: .local domains are handled by mDNS, so /etc/hosts entry is needed"
 fi
 
 echo ""

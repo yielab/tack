@@ -13,8 +13,9 @@ RUN npm ci
 # Copy source files
 COPY . .
 
-# Build the application
-RUN npm run build
+# Build the application with production API URL
+# VITE_ prefixed vars are embedded at build time
+RUN VITE_API_URL=/api npm run build
 
 # ─── Stage 2: Production ────────────────────────────────────
 

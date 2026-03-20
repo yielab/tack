@@ -1,27 +1,37 @@
-import { A } from '@solidjs/router';
-import { FiHome, FiGrid, FiList, FiSettings, FiMenu, FiX } from 'solid-icons/fi';
-import { createSignal, Show, type Component } from 'solid-js';
-import clsx from 'clsx';
+import { A, useParams, useLocation } from '@solidjs/router';
+import { FiHome, FiGrid, FiList, FiSettings, FiMenu, FiX, FiBarChart2, FiCalendar, FiGitBranch } from 'solid-icons/fi';
+import { createSignal, Show, For, createResource, type Component, createMemo } from 'solid-js';
+import { api } from '../lib/api';
 
 const Sidebar: Component = () => {
-  const [isOpen, setIsOpen] = createSignal(false);
+  const params = useParams();
+  const location = useLocation();
+  const currentProjectId = () => params.id;
 
-  const navigation = [
-    { name: 'Projects', href: '/', icon: FiHome },
-    { name: 'Board', href: '/board', icon: FiGrid },
-    { name: 'List', href: '/list', icon: FiList },
-    { name: 'Settings', href: '/settings', icon: FiSettings },
-  ];
+  const [isOpen, setIsOpen] = createSignal(false);
+  const [projects] = createResource(() => api.listProjects());
+
+  // Determine current view
+  const currentView = createMemo(() => {
+    const path = location.pathname;
+    if (path.includes('/board')) return 'board';
+    if (path.includes('/list')) return 'list';
+    if (path.includes('/dashboard')) return 'dashboard';
+    if (path.includes('/sprints')) return 'sprints';
+    if (path.includes('/calendar')) return 'calendar';
+    if (path.includes('/timeline')) return 'timeline';
+    return null;
+  });
 
   return (
     <>
       {/* Mobile menu button */}
-      <div class="lg:hidden fixed top-0 left-0 right-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 z-20">
+      <div class="lg:hidden fixed top-0 left-0 right-0 bg-[var(--color-bg-elevated)] border-b border-[var(--color-border-light)] z-20 shadow-sm">
         <div class="flex items-center justify-between px-4 py-3">
-          <h1 class="text-xl font-bold text-gray-900 dark:text-white">FlexPM</h1>
+          <h1 class="text-xl font-bold text-[var(--color-text-primary)]">FlexPM</h1>
           <button
             onClick={() => setIsOpen(!isOpen())}
-            class="p-2 rounded-md text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+            class="p-2 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] transition-colors"
           >
             <Show when={isOpen()} fallback={<FiMenu size={24} />}>
               <FiX size={24} />
@@ -32,38 +42,168 @@ const Sidebar: Component = () => {
 
       {/* Sidebar */}
       <div
-        class={clsx(
-          'fixed inset-y-0 left-0 z-10 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-200 ease-in-out',
-          'lg:translate-x-0 lg:static',
-          isOpen() ? 'translate-x-0' : '-translate-x-full'
-        )}
+        class={`fixed inset-y-0 left-0 z-10 w-64 border-r transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static ${isOpen() ? 'translate-x-0' : '-translate-x-full'}`}
+        style={{
+          "background-color": "var(--color-bg-sidebar)",
+          "border-color": "var(--color-border-medium)"
+        }}
       >
         <div class="flex flex-col h-full">
           {/* Logo */}
-          <div class="hidden lg:flex items-center px-6 py-5 border-b border-gray-200 dark:border-gray-700">
-            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">FlexPM</h1>
+          <div class="hidden lg:flex items-center px-6 py-5 border-b border-[var(--color-border-light)]">
+            <div class="flex items-center gap-2">
+              <div class="w-8 h-8 bg-gradient-to-br from-violet-500 to-purple-600 rounded-lg flex items-center justify-center">
+                <span class="text-white font-bold text-lg">F</span>
+              </div>
+              <h1 class="text-xl font-bold text-[var(--color-text-primary)]">FlexPM</h1>
+            </div>
           </div>
 
           {/* Navigation */}
-          <nav class="flex-1 px-4 py-4 space-y-1 overflow-y-auto mt-14 lg:mt-0">
-            {navigation.map((item) => (
+          <nav class="flex-1 px-3 py-4 space-y-6 overflow-y-auto mt-14 lg:mt-0">
+            {/* Home / All Projects */}
+            <div>
               <A
-                href={item.href}
-                activeClass="bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400"
-                inactiveClass="text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                class="flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors"
+                href="/"
+                end
+                activeClass="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 font-semibold"
+                inactiveClass="text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+                class="flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all"
                 onClick={() => setIsOpen(false)}
               >
-                <item.icon class="mr-3" size={20} />
-                {item.name}
+                <FiHome class="mr-3" size={18} />
+                All Projects
               </A>
-            ))}
+            </div>
+
+            {/* Current Project Section */}
+            <Show when={currentProjectId()}>
+              <div>
+                <div class="px-3 pb-2">
+                  <p class="text-xs font-bold text-[var(--color-text-tertiary)] uppercase tracking-wider">
+                    Current Project
+                  </p>
+                </div>
+
+                {/* Project Selector */}
+                <div class="px-3 pb-3">
+                  <select
+                    value={currentProjectId()}
+                    onChange={(e) => {
+                      const newProjectId = e.currentTarget.value;
+                      window.location.href = `/projects/${newProjectId}/${currentView() || 'board'}`;
+                    }}
+                    class="w-full px-3 py-2.5 text-sm font-semibold bg-[var(--color-bg-subtle)] border border-[var(--color-border-medium)] rounded-lg text-[var(--color-text-primary)] focus:ring-2 focus:ring-violet-500 focus:border-violet-500 transition-all cursor-pointer hover:border-[var(--color-border-strong)]"
+                  >
+                    <For each={projects()}>
+                      {(project) => (
+                        <option value={project.id}>{project.name}</option>
+                      )}
+                    </For>
+                  </select>
+                </div>
+
+                {/* Project Views */}
+                <div class="space-y-0.5">
+                  <A
+                    href={`/projects/${currentProjectId()}/board`}
+                    activeClass="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 font-semibold"
+                    inactiveClass="text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+                    class="flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all"
+                    onClick={() => setIsOpen(false)}
+                  >
+                    <FiGrid class="mr-3" size={18} />
+                    Board
+                  </A>
+                  <A
+                    href={`/projects/${currentProjectId()}/list`}
+                    activeClass="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 font-semibold"
+                    inactiveClass="text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+                    class="flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all"
+                    onClick={() => setIsOpen(false)}
+                  >
+                    <FiList class="mr-3" size={18} />
+                    List
+                  </A>
+                  <A
+                    href={`/projects/${currentProjectId()}/dashboard`}
+                    activeClass="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 font-semibold"
+                    inactiveClass="text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+                    class="flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all"
+                    onClick={() => setIsOpen(false)}
+                  >
+                    <FiBarChart2 class="mr-3" size={18} />
+                    Dashboard
+                  </A>
+                  <A
+                    href={`/projects/${currentProjectId()}/sprints`}
+                    activeClass="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 font-semibold"
+                    inactiveClass="text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+                    class="flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all"
+                    onClick={() => setIsOpen(false)}
+                  >
+                    <FiGitBranch class="mr-3" size={18} />
+                    Sprints
+                  </A>
+                  <A
+                    href={`/projects/${currentProjectId()}/calendar`}
+                    activeClass="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 font-semibold"
+                    inactiveClass="text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+                    class="flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all"
+                    onClick={() => setIsOpen(false)}
+                  >
+                    <FiCalendar class="mr-3" size={18} />
+                    Calendar
+                  </A>
+                </div>
+              </div>
+            </Show>
+
+            {/* All Projects List */}
+            <Show when={!currentProjectId() || (projects() && projects()!.length > 1)}>
+              <div>
+                <div class="px-3 pb-2">
+                  <p class="text-xs font-bold text-[var(--color-text-tertiary)] uppercase tracking-wider">
+                    {currentProjectId() ? 'Other Projects' : 'Projects'}
+                  </p>
+                </div>
+                <div class="space-y-0.5">
+                  <For each={projects()}>
+                    {(project) => (
+                      <Show when={!currentProjectId() || project.id !== currentProjectId()}>
+                        <A
+                          href={`/projects/${project.id}/board`}
+                          class="block px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] rounded-lg transition-all"
+                          onClick={() => setIsOpen(false)}
+                        >
+                          {project.name}
+                        </A>
+                      </Show>
+                    )}
+                  </For>
+                </div>
+              </div>
+            </Show>
+
+            {/* Settings */}
+            <div class="pt-4 border-t border-[var(--color-border-light)]">
+              <A
+                href="/settings"
+                activeClass="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 font-semibold"
+                inactiveClass="text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+                class="flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all"
+                onClick={() => setIsOpen(false)}
+              >
+                <FiSettings class="mr-3" size={18} />
+                Settings
+              </A>
+            </div>
           </nav>
 
           {/* Footer */}
-          <div class="px-4 py-4 border-t border-gray-200 dark:border-gray-700">
-            <p class="text-xs text-gray-500 dark:text-gray-400">
-              FlexPM v0.1.0
+          <div class="px-4 py-4 border-t border-[var(--color-border-light)]">
+            <p class="text-xs text-[var(--color-text-tertiary)] font-medium">
+              FlexPM v1.0
             </p>
           </div>
         </div>
