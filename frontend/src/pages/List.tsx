@@ -1,137 +1,104 @@
-import { createSignal, createMemo, For, Show, createResource } from 'solid-js';
-import { useParams, useNavigate } from '@solidjs/router';
+import { createSignal, createResource, For, Show, createMemo } from 'solid-js';
+import { useParams } from '@solidjs/router';
+import {
+  DragDropProvider,
+  DragDropSensors,
+  SortableProvider,
+  createSortable,
+  closestCenter
+} from '@thisbeyond/solid-dnd';
 import { api } from '../lib/api';
 import { toast } from '../lib/toast';
-import { withOptimisticUpdate } from '../lib/optimistic';
 import type { Item } from '../types/api';
+import CreateItemModal from '../components/CreateItemModal';
+import { FiPlus, FiMenu, FiCheck, FiX, FiChevronRight, FiChevronDown, FiTrash2 } from 'solid-icons/fi';
 
-type SortField = 'title' | 'status' | 'priority' | 'item_type' | 'created_at' | 'updated_at';
-type SortDirection = 'asc' | 'desc';
+type ItemType = 'epic' | 'feature' | 'task' | 'subtask' | 'bug' | 'requirement';
+type ItemWithChildren = Item & { children: ItemWithChildren[]; level: number };
 
-interface FilterState {
-  search: string;
-  status: string;
-  priority: string;
-  itemType: string;
-}
+const TYPES: { value: ItemType; emoji: string; label: string; color: string }[] = [
+  { value: 'epic', emoji: '🎯', label: 'Epic', color: 'purple' },
+  { value: 'feature', emoji: '✨', label: 'Feature', color: 'blue' },
+  { value: 'task', emoji: '📝', label: 'Task', color: 'green' },
+  { value: 'subtask', emoji: '📌', label: 'Subtask', color: 'gray' },
+  { value: 'bug', emoji: '🐛', label: 'Bug', color: 'red' },
+  { value: 'requirement', emoji: '📋', label: 'Req', color: 'yellow' },
+];
+
+const PRIORITIES = [
+  { value: 'critical', emoji: '🔥', label: 'Critical' },
+  { value: 'high', emoji: '⬆️', label: 'High' },
+  { value: 'medium', emoji: '➡️', label: 'Medium' },
+  { value: 'low', emoji: '⬇️', label: 'Low' },
+];
 
 export default function List() {
   const params = useParams();
-  const navigate = useNavigate();
-  const projectId = params.id!;
+  const projectId = params.id;
 
-  // Resources
-  const [project] = createResource(() => api.getProject(projectId));
-  const [items, { refetch }] = createResource(() => api.listItems(projectId));
+  const [items, { refetch }] = createResource(() => projectId ? api.listItems(projectId) : Promise.resolve([]));
+  const [project] = createResource(() => projectId ? api.getProject(projectId) : Promise.resolve(null));
 
-  // State
-  const [sortField, setSortField] = createSignal<SortField>('created_at');
-  const [sortDirection, setSortDirection] = createSignal<SortDirection>('desc');
-  const [filters, setFilters] = createSignal<FilterState>({
-    search: '',
-    status: '',
-    priority: '',
-    itemType: '',
-  });
-  const [selectedItems, setSelectedItems] = createSignal<Set<string>>(new Set());
-  const [showFilters, setShowFilters] = createSignal(false);
+  const [expandedItems, setExpandedItems] = createSignal<Set<string>>(new Set());
+  const [creatingAt, setCreatingAt] = createSignal<{ parentId?: string } | null>(null);
+  const [editingItem, setEditingItem] = createSignal<Item | undefined>();
+  const [viewingItem, setViewingItem] = createSignal<Item | undefined>();
+  const [newItemTitle, setNewItemTitle] = createSignal('');
+  const [newItemType, setNewItemType] = createSignal<ItemType>('task');
+  const [newItemPriority, setNewItemPriority] = createSignal('medium');
 
-  // Computed values
-  const statuses = createMemo(() => {
-    const proj = project();
-    return proj?.workflow?.statuses || [];
-  });
+  const organizedItems = createMemo(() => {
+    const allItems = items() || [];
+    const itemMap = new Map<string, ItemWithChildren>();
+    const rootItems: ItemWithChildren[] = [];
 
-  const uniqueItemTypes = createMemo(() => {
-    const allItems = items();
-    if (!allItems) return [];
-    return Array.from(new Set(allItems.map((item: Item) => {
-      const type = item.item_type;
-      return typeof type === 'string' ? type : type.custom;
-    }))).sort();
-  });
-
-  const filteredAndSortedItems = createMemo(() => {
-    let result: Item[] = items() || [];
-    const currentFilters = filters();
-
-    // Apply filters
-    if (currentFilters.search) {
-      const search = currentFilters.search.toLowerCase();
-      result = result.filter((item: Item) =>
-        item.title.toLowerCase().includes(search) ||
-        (item.description?.toLowerCase().includes(search)) ||
-        (item.tags?.some((tag: string) => tag.toLowerCase().includes(search)))
-      );
-    }
-
-    if (currentFilters.status) {
-      result = result.filter((item: Item) => item.status === currentFilters.status);
-    }
-
-    if (currentFilters.priority) {
-      result = result.filter((item: Item) => item.priority === currentFilters.priority);
-    }
-
-    if (currentFilters.itemType) {
-      result = result.filter((item: Item) => {
-        const type = item.item_type;
-        const typeStr = typeof type === 'string' ? type : type.custom;
-        return typeStr === currentFilters.itemType;
-      });
-    }
-
-    // Apply sorting
-    const field = sortField();
-    const direction = sortDirection();
-
-    result.sort((a: Item, b: Item) => {
-      let aVal: any = a[field];
-      let bVal: any = b[field];
-
-      // Handle null/undefined
-      if (aVal == null && bVal == null) return 0;
-      if (aVal == null) return 1;
-      if (bVal == null) return -1;
-
-      // String comparison
-      if (typeof aVal === 'string') {
-        aVal = aVal.toLowerCase();
-        bVal = bVal.toLowerCase();
-      }
-
-      const comparison = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-      return direction === 'asc' ? comparison : -comparison;
+    allItems.forEach(item => {
+      itemMap.set(item.id, { ...item, children: [], level: 0 });
     });
 
+    allItems.forEach(item => {
+      const itemWithChildren = itemMap.get(item.id)!;
+      if (item.parent_id) {
+        const parent = itemMap.get(item.parent_id);
+        if (parent) {
+          itemWithChildren.level = parent.level + 1;
+          parent.children.push(itemWithChildren);
+        } else {
+          rootItems.push(itemWithChildren);
+        }
+      } else {
+        rootItems.push(itemWithChildren);
+      }
+    });
+
+    const sortItems = (items: ItemWithChildren[]) => {
+      items.sort((a, b) => a.created_at.localeCompare(b.created_at));
+      items.forEach(item => sortItems(item.children));
+    };
+    sortItems(rootItems);
+
+    return rootItems;
+  });
+
+  const flattenedItems = createMemo(() => {
+    const result: ItemWithChildren[] = [];
+    const expanded = expandedItems();
+
+    const flatten = (items: ItemWithChildren[]) => {
+      items.forEach(item => {
+        result.push(item);
+        if (expanded.has(item.id) && item.children.length > 0) {
+          flatten(item.children);
+        }
+      });
+    };
+
+    flatten(organizedItems());
     return result;
   });
 
-  // Handlers
-  const handleSort = (field: SortField) => {
-    if (sortField() === field) {
-      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
-  };
-
-  const handleFilterChange = (key: keyof FilterState, value: string) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
-  };
-
-  const clearFilters = () => {
-    setFilters({
-      search: '',
-      status: '',
-      priority: '',
-      itemType: '',
-    });
-  };
-
-  const toggleItemSelection = (itemId: string) => {
-    setSelectedItems(prev => {
+  const toggleExpand = (itemId: string) => {
+    setExpandedItems(prev => {
       const newSet = new Set(prev);
       if (newSet.has(itemId)) {
         newSet.delete(itemId);
@@ -142,359 +109,502 @@ export default function List() {
     });
   };
 
-  const toggleSelectAll = () => {
-    const allItems = filteredAndSortedItems();
-    if (selectedItems().size === allItems.length) {
-      setSelectedItems(new Set<string>());
-    } else {
-      setSelectedItems(new Set<string>(allItems.map((item: Item) => item.id)));
-    }
+  const startCreating = (parentId?: string) => {
+    setCreatingAt({ parentId });
+    setNewItemTitle('');
+    setNewItemType('task');
+    setNewItemPriority('medium');
   };
 
-  const handleBulkStatusChange = async (newStatus: string) => {
-    const selected = Array.from(selectedItems());
-    if (selected.length === 0) {
-      toast.error('No items selected');
-      return;
-    }
+  const cancelCreating = () => {
+    setCreatingAt(null);
+    setNewItemTitle('');
+  };
 
-    await withOptimisticUpdate(
-      async () => {
-        await Promise.all(selected.map(id => api.updateItem(id, { status: newStatus })));
-      },
-      () => {},
-      async () => { await refetch(); },
-      {
-        showSuccessToast: true,
-        successMessage: `Updated ${selected.length} item(s)`,
+  const handleCreate = async () => {
+    const title = newItemTitle().trim();
+    if (!title) return;
+
+    const creating = creatingAt();
+    if (!creating || !projectId) return;
+
+    try {
+      await api.createItem(projectId, {
+        title,
+        item_type: newItemType(),
+        priority: newItemPriority() as any,
+        parent_id: creating.parentId,
+      });
+      toast.success('Item created');
+      await refetch();
+      setCreatingAt(null);
+      setNewItemTitle('');
+
+      if (creating.parentId) {
+        setExpandedItems(prev => new Set([...prev, creating.parentId!]));
       }
-    );
-
-    setSelectedItems(new Set<string>());
-    await refetch();
+    } catch (err) {
+      toast.error('Failed to create item');
+    }
   };
 
-  const handleDeleteSelected = async () => {
-    const selected = Array.from(selectedItems());
-    if (selected.length === 0) {
-      toast.error('No items selected');
-      return;
+  const handleDelete = async (item: Item) => {
+    if (!confirm(`Delete "${item.title}"?`)) return;
+    try {
+      await api.deleteItem(item.id);
+      toast.success('Deleted');
+      await refetch();
+    } catch {
+      toast.error('Failed to delete');
     }
+  };
 
-    if (!confirm(`Delete ${selected.length} item(s)? This cannot be undone.`)) {
-      return;
+  const handleMove = async (itemId: string, newParentId: string | null) => {
+    try {
+      await api.updateItem(itemId, { parent_id: newParentId || undefined });
+      toast.success('Item moved');
+      await refetch();
+    } catch {
+      toast.error('Failed to move');
     }
+  };
 
-    await withOptimisticUpdate(
-      async () => {
-        await Promise.all(selected.map(id => api.deleteItem(id)));
-      },
-      () => {},
-      async () => { await refetch(); },
-      {
-        showSuccessToast: true,
-        successMessage: `Deleted ${selected.length} item(s)`,
+  const onDragEnd = ({ draggable, droppable }: any) => {
+    if (draggable && droppable && draggable.id !== droppable.id) {
+      const draggedItem = flattenedItems().find(i => i.id === draggable.id);
+      const targetItem = flattenedItems().find(i => i.id === droppable.id);
+
+      if (draggedItem && targetItem) {
+        handleMove(draggedItem.id, targetItem.parent_id || null);
       }
-    );
-
-    setSelectedItems(new Set<string>());
-    await refetch();
-  };
-
-  const getPriorityBadgeClass = (priority: string) => {
-    switch (priority) {
-      case 'critical': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-      case 'high': return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200';
-      case 'medium': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
-      case 'low': return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
     }
   };
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    }).format(date);
+  const handleViewItem = (item: Item) => {
+    setViewingItem(item);
   };
 
-  const SortIcon = (props: { field: SortField }) => (
-    <Show when={sortField() === props.field}>
-      <span class="ml-1 text-xs">
-        {sortDirection() === 'asc' ? '↑' : '↓'}
-      </span>
-    </Show>
+  const handleModalClose = () => {
+    setViewingItem(undefined);
+    setEditingItem(undefined);
+  };
+
+  const handleModalSuccess = async () => {
+    await refetch();
+    setViewingItem(undefined);
+    setEditingItem(undefined);
+  };
+
+  return (
+    <div class="h-full flex flex-col">
+      {/* Modern Header */}
+      <div class="sticky top-0 z-10 bg-[var(--color-bg-base)] border-b border-[var(--color-border-light)] shadow-sm">
+        <div class="px-8 py-6">
+          <div class="flex items-center justify-between">
+            <div>
+              <h1 class="text-3xl font-bold text-[var(--color-text-primary)] tracking-tight">
+                {project()?.name || 'List View'}
+              </h1>
+              <p class="text-sm text-[var(--color-text-secondary)] mt-1 font-medium">
+                {flattenedItems().length} {flattenedItems().length === 1 ? 'item' : 'items'}
+              </p>
+            </div>
+
+            <button
+              onClick={() => startCreating()}
+              class="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-all flex items-center gap-2 shadow-sm hover:shadow-md font-medium"
+            >
+              <FiPlus size={18} />
+              New Item
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex-1 overflow-auto px-8 py-6">
+        <Show when={projectId} fallback={
+          <div class="flex items-center justify-center h-64">
+            <div class="text-center">
+              <div class="text-4xl mb-4">📋</div>
+              <p class="text-[var(--color-text-secondary)] text-lg">Select a project from the sidebar</p>
+            </div>
+          </div>
+        }>
+          {/* Modern Items List */}
+          <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
+            <DragDropSensors />
+            <SortableProvider ids={flattenedItems().map(i => i.id)}>
+              <div class="max-w-6xl">
+                <Show when={flattenedItems().length > 0} fallback={
+                  <div class="flex items-center justify-center h-64 bg-[var(--color-bg-elevated)] rounded-xl border-2 border-dashed border-[var(--color-border-light)]">
+                    <div class="text-center">
+                      <div class="text-5xl mb-4">✨</div>
+                      <p class="text-[var(--color-text-secondary)] text-lg mb-4">No items yet</p>
+                      <button
+                        onClick={() => startCreating()}
+                        class="px-4 py-2 text-violet-600 hover:text-violet-700 font-medium"
+                      >
+                        Create your first item
+                      </button>
+                    </div>
+                  </div>
+                }>
+                  <div class="space-y-1">
+                    <For each={flattenedItems()}>
+                      {(item) => (
+                        <>
+                          <ItemRow
+                            item={item}
+                            onToggleExpand={() => toggleExpand(item.id)}
+                            onAddChild={() => startCreating(item.id)}
+                            onDelete={() => handleDelete(item)}
+                            onView={() => handleViewItem(item)}
+                            isExpanded={expandedItems().has(item.id)}
+                          />
+
+                          {/* Inline creation form */}
+                          <Show when={creatingAt()?.parentId === item.id && expandedItems().has(item.id)}>
+                            <CreateForm
+                              level={item.level + 1}
+                              title={newItemTitle()}
+                              type={newItemType()}
+                              priority={newItemPriority()}
+                              onTitleChange={setNewItemTitle}
+                              onTypeChange={setNewItemType}
+                              onPriorityChange={setNewItemPriority}
+                              onSave={handleCreate}
+                              onCancel={cancelCreating}
+                            />
+                          </Show>
+                        </>
+                      )}
+                    </For>
+
+                    {/* Top-level create form */}
+                    <Show when={creatingAt() && !creatingAt()?.parentId}>
+                      <CreateForm
+                        level={0}
+                        title={newItemTitle()}
+                        type={newItemType()}
+                        priority={newItemPriority()}
+                        onTitleChange={setNewItemTitle}
+                        onTypeChange={setNewItemType}
+                        onPriorityChange={setNewItemPriority}
+                        onSave={handleCreate}
+                        onCancel={cancelCreating}
+                      />
+                    </Show>
+                  </div>
+                </Show>
+              </div>
+            </SortableProvider>
+          </DragDropProvider>
+        </Show>
+      </div>
+
+      {/* Detail/Edit Modal */}
+      <Show when={viewingItem() || editingItem()}>
+        <CreateItemModal
+          isOpen={true}
+          onClose={handleModalClose}
+          onSuccess={handleModalSuccess}
+          projectId={projectId!}
+          mode={editingItem() ? 'edit' : 'edit'}
+          existingItem={editingItem() || viewingItem()}
+        />
+      </Show>
+    </div>
   );
+}
 
-  const hasActiveFilters = createMemo(() => {
-    const f = filters();
-    return f.search || f.status || f.priority || f.itemType;
+// Modern Sortable Item Row
+function ItemRow(props: {
+  item: ItemWithChildren;
+  onToggleExpand: () => void;
+  onAddChild: () => void;
+  onDelete: () => void;
+  onView: () => void;
+  isExpanded: boolean;
+}) {
+  const sortable = createSortable(props.item.id);
+  const [showActions, setShowActions] = createSignal(false);
+  const itemType = (typeof props.item.item_type === 'string' ? props.item.item_type : 'task') as ItemType;
+  const typeConfig = TYPES.find(t => t.value === itemType) || TYPES[2];
+  const priorityConfig = PRIORITIES.find(p => p.value === props.item.priority) || PRIORITIES[2];
+  const hasChildren = props.item.children.length > 0;
+
+  // Indent based on level
+  const indentStyle = () => ({
+    'padding-left': `${props.item.level * 2.5}rem`
   });
 
   return (
-    <div class="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div class="max-w-7xl mx-auto px-4 py-6">
-        {/* Header */}
-        <div class="mb-6">
-          <div class="flex items-center justify-between mb-4">
-            <div>
-              <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
-                {project()?.name || 'Loading...'}
-              </h1>
-              <p class="text-gray-600 dark:text-gray-400 mt-1">
-                {filteredAndSortedItems().length} item(s)
-                <Show when={selectedItems().size > 0}>
-                  {' '}• {selectedItems().size} selected
-                </Show>
-              </p>
-            </div>
-            <div class="flex gap-2">
-              <button
-                onClick={() => navigate(`/projects/${projectId}/board`)}
-                class="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-              >
-                Board View
-              </button>
-              <button
-                onClick={() => navigate('/projects')}
-                class="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-              >
-                Back to Projects
-              </button>
-            </div>
-          </div>
-
-          {/* Toolbar */}
-          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-            <div class="flex items-center justify-between gap-4">
-              {/* Search */}
-              <input
-                type="text"
-                placeholder="Search items..."
-                value={filters().search}
-                onInput={(e) => handleFilterChange('search', e.currentTarget.value)}
-                class="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-
-              {/* Filter Toggle */}
-              <button
-                onClick={() => setShowFilters(!showFilters())}
-                class={`px-4 py-2 rounded-lg border transition-colors ${
-                  hasActiveFilters()
-                    ? 'bg-blue-500 text-white border-blue-500'
-                    : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
-                }`}
-              >
-                Filters {hasActiveFilters() ? '(Active)' : ''}
-              </button>
-
-              {/* Bulk Actions */}
-              <Show when={selectedItems().size > 0}>
-                <div class="flex gap-2">
-                  <select
-                    onChange={(e) => {
-                      const value = e.currentTarget.value;
-                      if (value) {
-                        handleBulkStatusChange(value);
-                        e.currentTarget.value = '';
-                      }
-                    }}
-                    class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                  >
-                    <option value="">Change Status...</option>
-                    <For each={statuses()}>
-                      {(status) => <option value={status.name}>{status.name}</option>}
-                    </For>
-                  </select>
-                  <button
-                    onClick={handleDeleteSelected}
-                    class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </Show>
-            </div>
-
-            {/* Advanced Filters */}
-            <Show when={showFilters()}>
-              <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 grid grid-cols-3 gap-4">
-                <select
-                  value={filters().status}
-                  onChange={(e) => handleFilterChange('status', e.currentTarget.value)}
-                  class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                >
-                  <option value="">All Statuses</option>
-                  <For each={statuses()}>
-                    {(status) => <option value={status.name}>{status.name}</option>}
-                  </For>
-                </select>
-
-                <select
-                  value={filters().priority}
-                  onChange={(e) => handleFilterChange('priority', e.currentTarget.value)}
-                  class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                >
-                  <option value="">All Priorities</option>
-                  <option value="critical">Critical</option>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
-                </select>
-
-                <select
-                  value={filters().itemType}
-                  onChange={(e) => handleFilterChange('itemType', e.currentTarget.value)}
-                  class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                >
-                  <option value="">All Types</option>
-                  <For each={uniqueItemTypes()}>
-                    {(type: string) => <option value={type}>{type}</option>}
-                  </For>
-                </select>
-
-                <button
-                  onClick={clearFilters}
-                  class="col-span-3 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
-                >
-                  Clear All Filters
-                </button>
-              </div>
-            </Show>
-          </div>
+    <div
+      ref={sortable.ref}
+      class={`
+        group relative rounded-lg mb-2 transition-all duration-200
+        ${sortable.isActiveDraggable ? 'opacity-50 scale-95 shadow-lg' : ''}
+      `}
+      style={{
+        "background-color": "var(--color-bg-elevated)",
+        "border": "1px solid var(--color-border-light)"
+      }}
+      onMouseEnter={(e) => {
+        setShowActions(true);
+        e.currentTarget.style.boxShadow = "0 4px 6px -1px rgba(0, 0, 0, 0.1)";
+        e.currentTarget.style.borderColor = "var(--color-primary-200)";
+      }}
+      onMouseLeave={(e) => {
+        setShowActions(false);
+        e.currentTarget.style.boxShadow = "";
+        e.currentTarget.style.borderColor = "var(--color-border-light)";
+      }}
+    >
+      <div class="flex items-center gap-3 px-4 py-3" style={indentStyle()}>
+        {/* Drag Handle */}
+        <div {...sortable.dragActivators} class="cursor-grab active:cursor-grabbing flex-shrink-0">
+          <FiMenu size={16} class="text-[var(--color-text-tertiary)] hover:text-violet-600 transition-colors" />
         </div>
 
-        {/* Table */}
-        <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div class="overflow-x-auto">
-            <table class="w-full">
-              <thead class="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-                <tr>
-                  <th class="px-4 py-3 text-left">
-                    <input
-                      type="checkbox"
-                      checked={selectedItems().size > 0 && selectedItems().size === filteredAndSortedItems().length}
-                      onChange={toggleSelectAll}
-                      class="rounded border-gray-300 dark:border-gray-600"
-                    />
-                  </th>
-                  <th
-                    onClick={() => handleSort('title')}
-                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  >
-                    Title <SortIcon field="title" />
-                  </th>
-                  <th
-                    onClick={() => handleSort('item_type')}
-                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  >
-                    Type <SortIcon field="item_type" />
-                  </th>
-                  <th
-                    onClick={() => handleSort('status')}
-                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  >
-                    Status <SortIcon field="status" />
-                  </th>
-                  <th
-                    onClick={() => handleSort('priority')}
-                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  >
-                    Priority <SortIcon field="priority" />
-                  </th>
-                  <th
-                    onClick={() => handleSort('created_at')}
-                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  >
-                    Created <SortIcon field="created_at" />
-                  </th>
-                  <th
-                    onClick={() => handleSort('updated_at')}
-                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  >
-                    Updated <SortIcon field="updated_at" />
-                  </th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                <For each={filteredAndSortedItems()}>
-                  {(item) => (
-                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                      <td class="px-4 py-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedItems().has(item.id)}
-                          onChange={() => toggleItemSelection(item.id)}
-                          class="rounded border-gray-300 dark:border-gray-600"
-                        />
-                      </td>
-                      <td class="px-4 py-3">
-                        <div class="flex flex-col">
-                          <span class="font-medium text-gray-900 dark:text-white">
-                            {item.title}
-                          </span>
-                          <Show when={item.description}>
-                            <span class="text-sm text-gray-500 dark:text-gray-400 truncate max-w-md">
-                              {item.description}
-                            </span>
-                          </Show>
-                          <Show when={item.tags && item.tags.length > 0}>
-                            <div class="flex gap-1 mt-1">
-                              <For each={item.tags}>
-                                {(tag) => (
-                                  <span class="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded">
-                                    {tag}
-                                  </span>
-                                )}
-                              </For>
-                            </div>
-                          </Show>
-                        </div>
-                      </td>
-                      <td class="px-4 py-3">
-                        <span class="text-sm text-gray-900 dark:text-white capitalize">
-                          {typeof item.item_type === 'string' ? item.item_type : item.item_type.custom}
-                        </span>
-                      </td>
-                      <td class="px-4 py-3">
-                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                          {item.status}
-                        </span>
-                      </td>
-                      <td class="px-4 py-3">
-                        <span class={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPriorityBadgeClass(item.priority)}`}>
-                          {item.priority}
-                        </span>
-                      </td>
-                      <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
-                        {formatDate(item.created_at)}
-                      </td>
-                      <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
-                        {formatDate(item.updated_at)}
-                      </td>
-                    </tr>
-                  )}
-                </For>
-              </tbody>
-            </table>
+        {/* Expand/Collapse */}
+        <button
+          onClick={props.onToggleExpand}
+          class={`flex-shrink-0 p-1 rounded transition-colors ${hasChildren ? '' : 'invisible'}`}
+          style={{
+            color: hasChildren ? "var(--color-text-secondary)" : undefined
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+        >
+          {props.isExpanded ? <FiChevronDown size={16} /> : <FiChevronRight size={16} />}
+        </button>
 
-            <Show when={filteredAndSortedItems().length === 0}>
-              <div class="text-center py-12 text-gray-500 dark:text-gray-400">
-                <Show when={hasActiveFilters()} fallback={<p>No items yet</p>}>
-                  <p>No items match your filters</p>
-                  <button
-                    onClick={clearFilters}
-                    class="mt-2 text-blue-500 hover:text-blue-600"
-                  >
-                    Clear Filters
-                  </button>
-                </Show>
-              </div>
+        {/* Type Badge */}
+        <div
+          class="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-lg"
+          style={{ "background-color": "var(--color-primary-50)" }}
+          title={typeConfig.label}
+        >
+          {typeConfig.emoji}
+        </div>
+
+        {/* Title - Clickable */}
+        <button
+          onClick={props.onView}
+          class="flex-1 min-w-0 text-left group/title"
+        >
+          <div class="flex items-center gap-2">
+            <span class="text-base font-medium text-[var(--color-text-primary)] group-hover/title:text-violet-600 transition-colors truncate">
+              {props.item.title}
+            </span>
+            <Show when={hasChildren}>
+              <span
+                class="flex-shrink-0 text-xs px-2 py-0.5 rounded-full"
+                style={{
+                  "background-color": "var(--color-bg-subtle)",
+                  color: "var(--color-text-secondary)"
+                }}
+              >
+                {props.item.children.length}
+              </span>
             </Show>
           </div>
+          <Show when={props.item.description}>
+            <p class="text-xs text-[var(--color-text-tertiary)] truncate mt-1">
+              {props.item.description?.replace(/<[^>]*>/g, '').substring(0, 80)}
+            </p>
+          </Show>
+        </button>
+
+        {/* Priority Badge */}
+        <div
+          class="flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-md"
+          style={{ "background-color": "var(--color-bg-subtle)" }}
+        >
+          <span class="text-sm">{priorityConfig.emoji}</span>
+          <span class="text-xs font-medium" style={{ color: "var(--color-text-secondary)" }}>{priorityConfig.label}</span>
         </div>
+
+        {/* Status Badge */}
+        <span
+          class="flex-shrink-0 text-xs px-3 py-1.5 rounded-full font-medium whitespace-nowrap"
+          style={{
+            "background-color": "var(--color-primary-100)",
+            color: "var(--color-primary-700)"
+          }}
+        >
+          {props.item.status}
+        </span>
+
+        {/* Tags */}
+        <Show when={props.item.tags && props.item.tags.length > 0}>
+          <div class="flex-shrink-0 flex gap-1">
+            <For each={props.item.tags?.slice(0, 2)}>
+              {(tag) => (
+                <span
+                  class="text-xs px-2 py-1 rounded-md font-medium"
+                  style={{
+                    "background-color": "var(--color-info-light)",
+                    color: "var(--color-info)"
+                  }}
+                >
+                  {tag}
+                </span>
+              )}
+            </For>
+          </div>
+        </Show>
+
+        {/* Actions */}
+        <div class={`flex-shrink-0 flex items-center gap-1 transition-opacity ${showActions() ? 'opacity-100' : 'opacity-0'}`}>
+          <button
+            onClick={props.onAddChild}
+            class="p-2 rounded-md transition-colors"
+            style={{ color: "var(--color-text-tertiary)" }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "var(--color-primary-600)";
+              e.currentTarget.style.backgroundColor = "var(--color-primary-50)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "var(--color-text-tertiary)";
+              e.currentTarget.style.backgroundColor = "transparent";
+            }}
+            title="Add child item"
+          >
+            <FiPlus size={16} />
+          </button>
+          <button
+            onClick={props.onDelete}
+            class="p-2 rounded-md transition-colors"
+            style={{ color: "var(--color-text-tertiary)" }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "var(--color-danger)";
+              e.currentTarget.style.backgroundColor = "var(--color-danger-light)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "var(--color-text-tertiary)";
+              e.currentTarget.style.backgroundColor = "transparent";
+            }}
+            title="Delete"
+          >
+            <FiTrash2 size={16} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Modern Inline Create Form
+function CreateForm(props: {
+  level: number;
+  title: string;
+  type: ItemType;
+  priority: string;
+  onTitleChange: (v: string) => void;
+  onTypeChange: (v: ItemType) => void;
+  onPriorityChange: (v: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const indentStyle = () => ({
+    'padding-left': `${props.level * 2.5}rem`
+  });
+
+  return (
+    <div
+      class="rounded-lg mb-2"
+      style={{
+        "background-color": "var(--color-primary-50)",
+        border: "2px solid var(--color-primary-200)"
+      }}
+    >
+      <div class="flex items-center gap-3 px-4 py-3" style={indentStyle()}>
+        {/* Spacer for alignment */}
+        <div class="w-4 flex-shrink-0" />
+        <div class="w-6 flex-shrink-0" />
+
+        {/* Type Selector */}
+        <select
+          value={props.type}
+          onChange={(e) => props.onTypeChange(e.currentTarget.value as ItemType)}
+          class="flex-shrink-0 text-sm px-3 py-2 border rounded-lg focus:ring-2"
+          style={{
+            "border-color": "var(--color-primary-300)",
+            "background-color": "var(--color-bg-base)",
+            color: "var(--color-text-primary)",
+            "outline-color": "var(--color-primary-500)"
+          }}
+        >
+          <For each={TYPES}>
+            {(t) => <option value={t.value}>{t.emoji} {t.label}</option>}
+          </For>
+        </select>
+
+        {/* Priority Selector */}
+        <select
+          value={props.priority}
+          onChange={(e) => props.onPriorityChange(e.currentTarget.value)}
+          class="flex-shrink-0 text-sm px-3 py-2 border rounded-lg focus:ring-2"
+          style={{
+            "border-color": "var(--color-primary-300)",
+            "background-color": "var(--color-bg-base)",
+            color: "var(--color-text-primary)",
+            "outline-color": "var(--color-primary-500)"
+          }}
+        >
+          <For each={PRIORITIES}>
+            {(p) => <option value={p.value}>{p.emoji} {p.label}</option>}
+          </For>
+        </select>
+
+        {/* Title Input */}
+        <input
+          type="text"
+          value={props.title}
+          onInput={(e) => props.onTitleChange(e.currentTarget.value)}
+          onKeyPress={(e) => {
+            if (e.key === 'Enter') props.onSave();
+            if (e.key === 'Escape') props.onCancel();
+          }}
+          placeholder="Item title... (Enter to save, Esc to cancel)"
+          class="flex-1 text-sm px-4 py-2 border rounded-lg focus:ring-2"
+          style={{
+            "border-color": "var(--color-primary-300)",
+            "background-color": "var(--color-bg-base)",
+            color: "var(--color-text-primary)",
+            "outline-color": "var(--color-primary-500)"
+          }}
+          classList={{
+            "placeholder-[var(--color-text-tertiary)]": true
+          }}
+          autofocus
+        />
+
+        {/* Actions */}
+        <button
+          onClick={props.onSave}
+          class="flex-shrink-0 p-2 rounded-lg transition-colors shadow-sm"
+          style={{
+            color: "var(--color-text-inverse)",
+            "background-color": "var(--color-primary-600)"
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "var(--color-primary-700)"}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "var(--color-primary-600)"}
+          title="Save (Enter)"
+        >
+          <FiCheck size={18} />
+        </button>
+        <button
+          onClick={props.onCancel}
+          class="flex-shrink-0 p-2 rounded-lg transition-colors"
+          style={{ color: "var(--color-text-secondary)" }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+          title="Cancel (Esc)"
+        >
+          <FiX size={18} />
+        </button>
       </div>
     </div>
   );
