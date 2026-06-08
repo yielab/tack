@@ -39,8 +39,8 @@ impl Repository {
         let sort_order = max_sort.unwrap_or(0) + 1;
 
         sqlx::query(
-            "INSERT INTO items (id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, due_date, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO items (id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(id.to_string())
         .bind(project_id.to_string())
@@ -55,6 +55,7 @@ impl Repository {
         .bind(&tags_json)
         .bind(sort_order)
         .bind(input.sprint_id.map(|s| s.to_string()))
+        .bind(&input.assignee)
         .bind(input.due_date.map(|d| d.to_rfc3339()))
         .bind(&now_str)
         .bind(&now_str)
@@ -77,6 +78,7 @@ impl Repository {
             tags,
             sort_order,
             sprint_id: input.sprint_id,
+            assignee: input.assignee,
             due_date: input.due_date,
             started_at: None,
             completed_at: None,
@@ -88,7 +90,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn get_item(&self, id: Uuid) -> Result<Option<Item>, sqlx::Error> {
         let row = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, due_date, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, started_at, completed_at, created_at, updated_at
              FROM items WHERE id = ?"
         )
         .bind(id.to_string())
@@ -105,7 +107,7 @@ impl Repository {
         filter: &ItemFilter,
     ) -> Result<Vec<Item>, sqlx::Error> {
         let mut query = String::from(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, due_date, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, started_at, completed_at, created_at, updated_at
              FROM items WHERE project_id = ?"
         );
         let mut binds: Vec<String> = vec![project_id.to_string()];
@@ -129,6 +131,10 @@ impl Repository {
         if let Some(ref parent_id) = filter.parent_id {
             query.push_str(" AND parent_id = ?");
             binds.push(parent_id.to_string());
+        }
+        if let Some(ref assignee) = filter.assignee {
+            query.push_str(" AND assignee = ?");
+            binds.push(assignee.clone());
         }
 
         query.push_str(" ORDER BY sort_order ASC");
@@ -221,6 +227,14 @@ impl Repository {
                 .execute(self.pool())
                 .await?;
         }
+        if input.assignee.is_some() {
+            sqlx::query("UPDATE items SET assignee = ?, updated_at = ? WHERE id = ?")
+                .bind(&input.assignee)
+                .bind(&now)
+                .bind(id.to_string())
+                .execute(self.pool())
+                .await?;
+        }
 
         self.get_item(id).await
     }
@@ -257,7 +271,7 @@ impl Repository {
         query: &str,
     ) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.due_date, i.started_at, i.completed_at, i.created_at, i.updated_at
+            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.started_at, i.completed_at, i.created_at, i.updated_at
              FROM items i
              JOIN items_fts fts ON i.rowid = fts.rowid
              WHERE i.project_id = ? AND items_fts MATCH ?
@@ -279,7 +293,7 @@ impl Repository {
         query: &str,
     ) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.due_date, i.started_at, i.completed_at, i.created_at, i.updated_at
+            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.started_at, i.completed_at, i.created_at, i.updated_at
              FROM items i
              JOIN items_fts fts ON i.rowid = fts.rowid
              JOIN projects p ON i.project_id = p.id
@@ -301,7 +315,7 @@ impl Repository {
         project_id: Uuid,
     ) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, due_date, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, started_at, completed_at, created_at, updated_at
              FROM items WHERE project_id = ? ORDER BY parent_id NULLS FIRST, sort_order ASC"
         )
         .bind(project_id.to_string())
@@ -309,6 +323,36 @@ impl Repository {
         .await?;
 
         Ok(rows.into_iter().map(|r| r.into_item()).collect())
+    }
+
+    /// Returns true if every direct child of `parent_id` has exactly `done_status` as its status.
+    /// Returns false when the parent has no children (nothing to complete).
+    #[instrument(skip(self))]
+    pub async fn siblings_all_done(
+        &self,
+        parent_id: Uuid,
+        done_status: &str,
+    ) -> Result<bool, sqlx::Error> {
+        let total: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM items WHERE parent_id = ?"
+        )
+        .bind(parent_id.to_string())
+        .fetch_one(self.pool())
+        .await?;
+
+        if total == 0 {
+            return Ok(false);
+        }
+
+        let not_done: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM items WHERE parent_id = ? AND status != ?"
+        )
+        .bind(parent_id.to_string())
+        .bind(done_status)
+        .fetch_one(self.pool())
+        .await?;
+
+        Ok(not_done == 0)
     }
 
     /// Check if all children of a parent item are completed, and update parent status
@@ -320,7 +364,7 @@ impl Repository {
     ) -> Result<bool, sqlx::Error> {
         // Get all children of this parent
         let children = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, due_date, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, started_at, completed_at, created_at, updated_at
              FROM items WHERE parent_id = ?"
         )
         .bind(parent_id.to_string())
@@ -370,6 +414,7 @@ struct ItemRow {
     tags: String,
     sort_order: i32,
     sprint_id: Option<String>,
+    assignee: Option<String>,
     due_date: Option<String>,
     started_at: Option<String>,
     completed_at: Option<String>,
@@ -393,6 +438,7 @@ impl ItemRow {
             tags: serde_json::from_str(&self.tags).unwrap_or_default(),
             sort_order: self.sort_order,
             sprint_id: self.sprint_id.and_then(|s| Uuid::parse_str(&s).ok()),
+            assignee: self.assignee,
             due_date: self.due_date.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&Utc))),
             started_at: self.started_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&Utc))),
             completed_at: self.completed_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&Utc))),

@@ -4,6 +4,7 @@ use axum::{
     Json,
 };
 use flexpm_core::models::*;
+use flexpm_core::workflow::WorkflowConfig;
 use flexpm_db::repo;
 use serde::Serialize;
 use tracing::instrument;
@@ -19,9 +20,10 @@ pub async fn create_board(
     Json(data): Json<CreateBoard>,
 ) -> Result<Json<Board>, StatusCode> {
     // Verify project exists
-    repo::projects::get_project(state.pool(), project_id)
+    state.repo.get_project(project_id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
 
     repo::boards::create_board(state.pool(), project_id, data)
         .await
@@ -122,15 +124,19 @@ pub async fn get_board_view(
         })?;
 
     // Get the project to access workflow
-    let project = repo::projects::get_project(state.pool(), board.project_id)
+    let project = state.repo.get_project(board.project_id)
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, project_id = %board.project_id, "Project not found");
+            tracing::error!(error = %e, project_id = %board.project_id, "Failed to fetch project");
             StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or_else(|| {
+            tracing::error!(project_id = %board.project_id, "Project not found");
+            StatusCode::NOT_FOUND
         })?;
 
     // Get all items for the project
-    let mut items = repo::items::list_items(state.pool(), board.project_id, Default::default())
+    let items = state.repo.list_items(board.project_id, &Default::default())
         .await
         .map_err(|e| {
             tracing::error!(error = %e, project_id = %board.project_id, "Failed to fetch items");
@@ -159,15 +165,14 @@ pub async fn get_board_view(
         }
         Some(BoardGrouping::Sprint) => {
             // Group by sprint
-            group_by_sprint(state.pool(), board.project_id, items).await?
+            group_by_sprint(&state, board.project_id, items).await?
         }
         Some(BoardGrouping::Assignee) => {
-            // Group by assignee (not yet implemented)
-            vec![]
+            group_by_assignee(items)
         }
         Some(BoardGrouping::CustomField(field_id)) => {
             // Group by custom field
-            group_by_custom_field(state.pool(), *field_id, items).await?
+            group_by_custom_field(&state, *field_id, items).await?
         }
     };
 
@@ -250,13 +255,33 @@ fn group_by_item_type(items: Vec<Item>) -> Vec<BoardColumnWithItems> {
     columns
 }
 
+/// Helper: Group items by assignee (free-text field; None → "Unassigned")
+fn group_by_assignee(items: Vec<Item>) -> Vec<BoardColumnWithItems> {
+    let mut groups: std::collections::BTreeMap<String, Vec<Item>> = std::collections::BTreeMap::new();
+
+    for item in items {
+        let lane = item.assignee.clone().unwrap_or_else(|| "Unassigned".to_string());
+        groups.entry(lane).or_default().push(item);
+    }
+
+    groups
+        .into_iter()
+        .map(|(name, items)| BoardColumnWithItems {
+            name,
+            items,
+            wip_limit: None,
+            wip_exceeded: false,
+        })
+        .collect()
+}
+
 /// Helper: Group items by sprint
 async fn group_by_sprint(
-    pool: &sqlx::SqlitePool,
+    state: &AppState,
     project_id: Uuid,
     items: Vec<Item>,
 ) -> Result<Vec<BoardColumnWithItems>, StatusCode> {
-    let sprints = repo::sprints::list_sprints(pool, project_id)
+    let sprints = state.repo.list_sprints(project_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to fetch sprints");
@@ -300,12 +325,12 @@ async fn group_by_sprint(
 
 /// Helper: Group items by custom field value
 async fn group_by_custom_field(
-    pool: &sqlx::SqlitePool,
+    state: &AppState,
     field_id: Uuid,
     items: Vec<Item>,
 ) -> Result<Vec<BoardColumnWithItems>, StatusCode> {
     // Get the field definition
-    let _field = repo::custom_fields::get_field(pool, field_id)
+    let _field = state.repo.get_field(field_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, field_id = %field_id, "Custom field not found");
@@ -316,7 +341,7 @@ async fn group_by_custom_field(
     let mut value_groups: std::collections::HashMap<String, Vec<Item>> = std::collections::HashMap::new();
 
     for item in items {
-        if let Ok(field_value) = repo::custom_fields::get_field_value(pool, item.id, field_id).await {
+        if let Ok(field_value) = state.repo.get_field_value(item.id, field_id).await {
             let value_str = field_value.value.to_string();
             value_groups.entry(value_str).or_default().push(item);
         } else {

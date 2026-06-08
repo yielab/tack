@@ -1,9 +1,13 @@
 use std::time::Duration;
 
+use axum::extract::DefaultBodyLimit;
+use axum::handler::Handler;
+use axum::http::{header, HeaderValue, Method};
 use axum::routing::{delete, get, patch, post, put};
-use axum::Router;
+use axum::{middleware, Router};
 use tokio::sync::broadcast;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer};
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
@@ -12,9 +16,10 @@ use flexpm_db::Repository;
 use crate::config::AppConfig;
 use crate::debug;
 use crate::handlers::{
-    attachments, board, boards_multi, comments, custom_fields, dependencies, export, items,
+    attachments, boards_multi, comments, custom_fields, dependencies, export, items,
     projects, roles, sprints, templates, websocket,
 };
+use crate::middleware::require_token;
 
 /// Shared application state passed to all handlers.
 #[derive(Clone)]
@@ -27,33 +32,56 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// Get direct access to the database pool
     pub fn pool(&self) -> &sqlx::SqlitePool {
         self.repo.pool()
     }
 }
 
+const ATTACH_LIMIT: usize = 50 * 1024 * 1024; // 50 MB for file uploads
+
 /// Build the full Axum router with all routes, middleware, and state.
 pub fn build_router(state: AppState) -> Router {
+    // ── CORS ─────────────────────────────────────────────────────────────────
+    let allowed_origins: Vec<HeaderValue> = state
+        .config
+        .allowed_origins
+        .iter()
+        .filter_map(|o| o.parse().ok())
+        .collect();
+
+    let cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::list(allowed_origins))
+        .allow_methods(AllowMethods::list([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ]))
+        .allow_headers(AllowHeaders::list([
+            header::CONTENT_TYPE,
+            header::AUTHORIZATION,
+            header::ACCEPT,
+        ]))
+        .max_age(Duration::from_secs(3600));
+
+    // ── API routes ───────────────────────────────────────────────────────────
     let api = Router::new()
-        // ─── Health & Debug ──────────────────────────
+        // ─── Health & Debug (always public) ──────────────────────────────
         .route("/health", get(debug::health))
         .route("/debug/info", get(debug::debug_info))
         .route("/debug/db-stats", get(debug::db_stats))
-        // ─── Projects ────────────────────────────────
+        // ─── Projects ────────────────────────────────────────────────────
         .route("/projects", post(projects::create_project))
         .route("/projects", get(projects::list_projects))
         .route("/projects/{id}", get(projects::get_project))
         .route("/projects/{id}", patch(projects::update_project))
         .route("/projects/{id}", delete(projects::delete_project))
-        // ─── Export/Import ───────────────────────────
+        // ─── Export/Import ───────────────────────────────────────────────
         .route("/projects/{id}/export", get(export::export_project))
         .route("/projects/import", post(export::import_project))
-        // ─── Board ───────────────────────────────────
-        .route("/projects/{id}/board", get(board::get_board))
-        .route("/projects/{id}/board", patch(board::update_board_config))
-        .route("/projects/{id}/board/live", get(websocket::board_live))
-        // ─── Items ───────────────────────────────────
+        // ─── Items ───────────────────────────────────────────────────────
         .route("/projects/{project_id}/items", post(items::create_item))
         .route("/projects/{project_id}/items", get(items::list_items))
         .route("/projects/{project_id}/items/tree", get(items::get_item_tree))
@@ -62,36 +90,39 @@ pub fn build_router(state: AppState) -> Router {
         .route("/items/{id}", get(items::get_item))
         .route("/items/{id}", patch(items::update_item))
         .route("/items/{id}", delete(items::delete_item))
-        // ─── Sprints ─────────────────────────────────
+        // ─── Sprints ─────────────────────────────────────────────────────
         .route("/projects/{project_id}/sprints", post(sprints::create_sprint))
         .route("/projects/{project_id}/sprints", get(sprints::list_sprints))
         .route("/sprints/{id}", get(sprints::get_sprint))
         .route("/sprints/{id}/status", patch(sprints::update_sprint_status))
-        // ─── Roles ───────────────────────────────────
+        // ─── Roles ───────────────────────────────────────────────────────
         .route("/projects/{project_id}/roles", post(roles::create_role))
         .route("/projects/{project_id}/roles", get(roles::list_roles))
         .route("/roles/{id}", delete(roles::delete_role))
         .route("/items/{item_id}/roles/{role_id}", put(roles::assign_role))
         .route("/items/{item_id}/roles/{role_id}", delete(roles::remove_role))
-        // ─── Comments ────────────────────────────────
+        // ─── Comments ────────────────────────────────────────────────────
         .route("/items/{item_id}/comments", post(comments::create_comment))
         .route("/items/{item_id}/comments", get(comments::list_comments))
-        // ─── Dependencies ────────────────────────────
+        // ─── Dependencies ────────────────────────────────────────────────
         .route("/items/{item_id}/dependencies", post(dependencies::create_dependency))
         .route("/items/{item_id}/dependencies", get(dependencies::list_dependencies))
         .route("/items/{item_id}/dependencies/{dep_id}", delete(dependencies::delete_dependency))
-        // ─── Attachments ─────────────────────────────
-        .route("/items/{item_id}/attachments", post(attachments::upload_attachment))
-        .route("/items/{item_id}/attachments", get(attachments::list_attachments))
+        // ─── Attachments (upload has its own higher body limit) ──────────
+        .route(
+            "/items/{item_id}/attachments",
+            post(attachments::upload_attachment.layer(DefaultBodyLimit::max(ATTACH_LIMIT)))
+                .get(attachments::list_attachments),
+        )
         .route("/attachments/{id}", get(attachments::download_attachment))
         .route("/attachments/{id}", delete(attachments::delete_attachment))
-        // ─── Project Templates ───────────────────────
+        // ─── Project Templates ───────────────────────────────────────────
         .route("/templates", post(templates::create_template))
         .route("/templates", get(templates::list_templates))
         .route("/templates/{id}", get(templates::get_template))
         .route("/templates/{id}", delete(templates::delete_template))
         .route("/projects/from-template/{id}", post(templates::create_project_from_template))
-        // ─── Custom Fields ───────────────────────────
+        // ─── Custom Fields ───────────────────────────────────────────────
         .route("/projects/{project_id}/custom-fields", post(custom_fields::create_field))
         .route("/projects/{project_id}/custom-fields", get(custom_fields::list_fields))
         .route("/custom-fields/{id}", get(custom_fields::get_field))
@@ -101,29 +132,45 @@ pub fn build_router(state: AppState) -> Router {
         .route("/items/{item_id}/custom-fields/{field_id}", get(custom_fields::get_field_value))
         .route("/items/{item_id}/custom-fields/{field_id}", delete(custom_fields::delete_field_value))
         .route("/items/{item_id}/custom-fields", get(custom_fields::get_all_field_values))
-        // ─── Multiple Boards ─────────────────────────
+        // ─── Multiple Boards ─────────────────────────────────────────────
         .route("/projects/{project_id}/boards", post(boards_multi::create_board))
         .route("/projects/{project_id}/boards", get(boards_multi::list_boards))
+        .route("/projects/{id}/boards/live", get(websocket::board_live))
         .route("/boards/{id}", get(boards_multi::get_board))
         .route("/boards/{id}", patch(boards_multi::update_board))
         .route("/boards/{id}", delete(boards_multi::delete_board))
-        .route("/boards/{id}/view", get(boards_multi::get_board_view));
+        .route("/boards/{id}/view", get(boards_multi::get_board_view))
+        // ─── Auth token gate (T-104) ──────────────────────────────────────
+        .layer(middleware::from_fn_with_state(state.clone(), require_token));
 
     Router::new()
         .nest("/api", api)
+        // ── Global body limit (attachments route overrides above) ────────
+        .layer(DefaultBodyLimit::max(state.config.max_body_size_bytes))
+        // ── Minimal security response headers ────────────────────────────
+        .layer(SetResponseHeaderLayer::overriding(
+            header::HeaderName::from_static("x-content-type-options"),
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::HeaderName::from_static("referrer-policy"),
+            HeaderValue::from_static("same-origin"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::HeaderName::from_static("x-frame-options"),
+            HeaderValue::from_static("DENY"),
+        ))
+        // ── CORS ─────────────────────────────────────────────────────────
+        .layer(cors)
+        // ── Request tracing ──────────────────────────────────────────────
         .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(|request: &axum::http::Request<_>| {
-                    tracing::info_span!(
-                        "http_request",
-                        method = %request.method(),
-                        uri = %request.uri(),
-                    )
-                })
-        )
-        .layer(
-            CorsLayer::permissive()
-                .max_age(Duration::from_secs(3600))
+            TraceLayer::new_for_http().make_span_with(|request: &axum::http::Request<_>| {
+                tracing::info_span!(
+                    "http_request",
+                    method = %request.method(),
+                    uri = %request.uri(),
+                )
+            }),
         )
         .with_state(state)
 }

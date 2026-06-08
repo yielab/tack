@@ -32,6 +32,8 @@ pub async fn run_all(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         ("011_project_templates", &MIGRATION_011[..]),
         ("012_custom_fields", &MIGRATION_012[..]),
         ("013_boards", &MIGRATION_013[..]),
+        ("014_consolidate_boards", &MIGRATION_014[..]),
+        ("015_item_assignee", &MIGRATION_015[..]),
     ];
 
     for (name, statements) in migrations {
@@ -291,4 +293,26 @@ const MIGRATION_013: [&str; 3] = [
     )",
     "CREATE INDEX IF NOT EXISTS idx_boards_project ON boards(project_id)",
     "CREATE INDEX IF NOT EXISTS idx_boards_default ON boards(project_id, is_default)",
+];
+
+// Backfill a Default Board for every project that has no boards yet, then retire board_views.
+// The UUID-like id is generated from randomblob(16) — unique and compatible with how the app
+// stores UUIDs as TEXT.
+const MIGRATION_014: [&str; 2] = [
+    "INSERT INTO boards (id, project_id, name, is_default, created_at, updated_at)
+     SELECT
+       lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(2))) || '-' || lower(hex(randomblob(6))),
+       id,
+       'Default Board',
+       1,
+       datetime('now'),
+       datetime('now')
+     FROM projects
+     WHERE id NOT IN (SELECT DISTINCT project_id FROM boards)",
+    "DROP TABLE IF EXISTS board_views",
+];
+
+const MIGRATION_015: [&str; 2] = [
+    "ALTER TABLE items ADD COLUMN assignee TEXT",
+    "CREATE INDEX IF NOT EXISTS idx_items_assignee ON items(project_id, assignee)",
 ];
