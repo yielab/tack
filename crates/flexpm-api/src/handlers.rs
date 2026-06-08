@@ -1,5 +1,4 @@
 pub mod attachments;
-pub mod board;
 pub mod boards_multi;
 pub mod comments;
 pub mod custom_fields;

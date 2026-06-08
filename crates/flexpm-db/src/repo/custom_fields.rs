@@ -1,7 +1,32 @@
 use flexpm_core::models::*;
-use sqlx::SqlitePool;
+use sqlx::{FromRow, SqlitePool};
 use tracing::instrument;
 use uuid::Uuid;
+
+#[derive(FromRow)]
+struct CustomFieldRow {
+    id: String,
+    project_id: Option<String>,
+    name: String,
+    field_type: String,
+    description: Option<String>,
+    required: i32,
+    default_value: Option<String>,
+    options: Option<String>,
+    validation: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(FromRow)]
+struct CustomFieldValueRow {
+    id: String,
+    item_id: String,
+    field_id: String,
+    value: String,
+    created_at: String,
+    updated_at: String,
+}
 
 /// Create a custom field definition for a project
 #[instrument(skip(pool))]
@@ -57,12 +82,12 @@ pub async fn get_field(
     pool: &SqlitePool,
     id: Uuid,
 ) -> Result<CustomFieldDefinition, sqlx::Error> {
-    let row = sqlx::query!(
+    let row = sqlx::query_as::<_, CustomFieldRow>(
         "SELECT id, project_id, name, field_type, description, required, default_value, options, validation, created_at, updated_at
          FROM custom_field_definitions
-         WHERE id = ?",
-        id.to_string()
+         WHERE id = ?"
     )
+    .bind(id.to_string())
     .fetch_one(pool)
     .await?;
 
@@ -79,13 +104,13 @@ pub async fn get_field(
         _ => CustomFieldType::Text,
     };
 
-    let default_value = row.default_value.and_then(|v| serde_json::from_str(&v).ok());
-    let options = row.options.and_then(|o| serde_json::from_str(&o).ok());
-    let validation = row.validation.and_then(|v| serde_json::from_str(&v).ok());
+    let default_value = row.default_value.as_ref().and_then(|v| serde_json::from_str(v).ok());
+    let options = row.options.as_ref().and_then(|o| serde_json::from_str(o).ok());
+    let validation = row.validation.as_ref().and_then(|v| serde_json::from_str(v).ok());
 
     Ok(CustomFieldDefinition {
         id: Uuid::parse_str(&row.id).unwrap(),
-        project_id: row.project_id.map(|pid| Uuid::parse_str(&pid).unwrap()),
+        project_id: row.project_id.as_ref().map(|pid| Uuid::parse_str(pid).unwrap()),
         name: row.name,
         field_type,
         description: row.description,
@@ -104,13 +129,13 @@ pub async fn list_fields_for_project(
     pool: &SqlitePool,
     project_id: Uuid,
 ) -> Result<Vec<CustomFieldDefinition>, sqlx::Error> {
-    let rows = sqlx::query!(
+    let rows = sqlx::query_as::<_, CustomFieldRow>(
         "SELECT id, project_id, name, field_type, description, required, default_value, options, validation, created_at, updated_at
          FROM custom_field_definitions
          WHERE project_id = ?
-         ORDER BY name ASC",
-        project_id.to_string()
+         ORDER BY name ASC"
     )
+    .bind(project_id.to_string())
     .fetch_all(pool)
     .await?;
 
@@ -128,13 +153,13 @@ pub async fn list_fields_for_project(
             _ => CustomFieldType::Text,
         };
 
-        let default_value = row.default_value.and_then(|v| serde_json::from_str(&v).ok());
-        let options = row.options.and_then(|o| serde_json::from_str(&o).ok());
-        let validation = row.validation.and_then(|v| serde_json::from_str(&v).ok());
+        let default_value = row.default_value.as_ref().and_then(|v| serde_json::from_str(v).ok());
+        let options = row.options.as_ref().and_then(|o| serde_json::from_str(o).ok());
+        let validation = row.validation.as_ref().and_then(|v| serde_json::from_str(v).ok());
 
         CustomFieldDefinition {
             id: Uuid::parse_str(&row.id).unwrap(),
-            project_id: row.project_id.map(|pid| Uuid::parse_str(&pid).unwrap()),
+            project_id: row.project_id.as_ref().map(|pid| Uuid::parse_str(pid).unwrap()),
             name: row.name,
             field_type,
             description: row.description,
@@ -160,41 +185,53 @@ pub async fn update_field(
     let now = chrono::Utc::now();
 
     if let Some(name) = &data.name {
-        sqlx::query!("UPDATE custom_field_definitions SET name = ?, updated_at = ? WHERE id = ?",
-            name, now.to_rfc3339(), id.to_string())
+        sqlx::query("UPDATE custom_field_definitions SET name = ?, updated_at = ? WHERE id = ?")
+            .bind(name)
+            .bind(now.to_rfc3339())
+            .bind(id.to_string())
             .execute(pool).await?;
     }
 
     if let Some(description) = &data.description {
-        sqlx::query!("UPDATE custom_field_definitions SET description = ?, updated_at = ? WHERE id = ?",
-            description, now.to_rfc3339(), id.to_string())
+        sqlx::query("UPDATE custom_field_definitions SET description = ?, updated_at = ? WHERE id = ?")
+            .bind(description)
+            .bind(now.to_rfc3339())
+            .bind(id.to_string())
             .execute(pool).await?;
     }
 
     if let Some(required) = data.required {
-        sqlx::query!("UPDATE custom_field_definitions SET required = ?, updated_at = ? WHERE id = ?",
-            required as i32, now.to_rfc3339(), id.to_string())
+        sqlx::query("UPDATE custom_field_definitions SET required = ?, updated_at = ? WHERE id = ?")
+            .bind(required as i32)
+            .bind(now.to_rfc3339())
+            .bind(id.to_string())
             .execute(pool).await?;
     }
 
     if let Some(default_value) = data.default_value {
         let value_str = default_value.to_string();
-        sqlx::query!("UPDATE custom_field_definitions SET default_value = ?, updated_at = ? WHERE id = ?",
-            value_str, now.to_rfc3339(), id.to_string())
+        sqlx::query("UPDATE custom_field_definitions SET default_value = ?, updated_at = ? WHERE id = ?")
+            .bind(value_str)
+            .bind(now.to_rfc3339())
+            .bind(id.to_string())
             .execute(pool).await?;
     }
 
     if let Some(options) = data.options {
         let options_str = serde_json::to_string(&options).unwrap();
-        sqlx::query!("UPDATE custom_field_definitions SET options = ?, updated_at = ? WHERE id = ?",
-            options_str, now.to_rfc3339(), id.to_string())
+        sqlx::query("UPDATE custom_field_definitions SET options = ?, updated_at = ? WHERE id = ?")
+            .bind(options_str)
+            .bind(now.to_rfc3339())
+            .bind(id.to_string())
             .execute(pool).await?;
     }
 
     if let Some(validation) = data.validation {
         let validation_str = validation.to_string();
-        sqlx::query!("UPDATE custom_field_definitions SET validation = ?, updated_at = ? WHERE id = ?",
-            validation_str, now.to_rfc3339(), id.to_string())
+        sqlx::query("UPDATE custom_field_definitions SET validation = ?, updated_at = ? WHERE id = ?")
+            .bind(validation_str)
+            .bind(now.to_rfc3339())
+            .bind(id.to_string())
             .execute(pool).await?;
     }
 
@@ -207,7 +244,8 @@ pub async fn delete_field(
     pool: &SqlitePool,
     id: Uuid,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query!("DELETE FROM custom_field_definitions WHERE id = ?", id.to_string())
+    sqlx::query("DELETE FROM custom_field_definitions WHERE id = ?")
+        .bind(id.to_string())
         .execute(pool)
         .await?;
     Ok(())
@@ -254,13 +292,13 @@ pub async fn get_field_value(
     item_id: Uuid,
     field_id: Uuid,
 ) -> Result<CustomFieldValue, sqlx::Error> {
-    let row = sqlx::query!(
+    let row = sqlx::query_as::<_, CustomFieldValueRow>(
         "SELECT id, item_id, field_id, value, created_at, updated_at
          FROM custom_field_values
-         WHERE item_id = ? AND field_id = ?",
-        item_id.to_string(),
-        field_id.to_string()
+         WHERE item_id = ? AND field_id = ?"
     )
+    .bind(item_id.to_string())
+    .bind(field_id.to_string())
     .fetch_one(pool)
     .await?;
 
@@ -282,12 +320,12 @@ pub async fn get_all_field_values_for_item(
     pool: &SqlitePool,
     item_id: Uuid,
 ) -> Result<Vec<CustomFieldValue>, sqlx::Error> {
-    let rows = sqlx::query!(
+    let rows = sqlx::query_as::<_, CustomFieldValueRow>(
         "SELECT id, item_id, field_id, value, created_at, updated_at
          FROM custom_field_values
-         WHERE item_id = ?",
-        item_id.to_string()
+         WHERE item_id = ?"
     )
+    .bind(item_id.to_string())
     .fetch_all(pool)
     .await?;
 
@@ -314,12 +352,10 @@ pub async fn delete_field_value(
     item_id: Uuid,
     field_id: Uuid,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query!(
-        "DELETE FROM custom_field_values WHERE item_id = ? AND field_id = ?",
-        item_id.to_string(),
-        field_id.to_string()
-    )
-    .execute(pool)
-    .await?;
+    sqlx::query("DELETE FROM custom_field_values WHERE item_id = ? AND field_id = ?")
+        .bind(item_id.to_string())
+        .bind(field_id.to_string())
+        .execute(pool)
+        .await?;
     Ok(())
 }

@@ -86,6 +86,25 @@ impl Repository {
         Ok(result.rows_affected() > 0)
     }
 
+    #[instrument(skip(self))]
+    pub async fn list_dependencies_for_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<Dependency>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, DepRow>(
+            "SELECT d.id, d.source_item_id, d.target_item_id, d.dependency_type, d.created_at
+             FROM dependencies d
+             JOIN items i ON d.source_item_id = i.id
+             WHERE i.project_id = ?
+             ORDER BY d.created_at"
+        )
+        .bind(project_id.to_string())
+        .fetch_all(self.pool())
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into_dependency()).collect())
+    }
+
     /// Load all dependency edges from the same project as the given item.
     async fn load_dependency_edges(
         &self,

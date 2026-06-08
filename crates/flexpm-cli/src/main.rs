@@ -1,16 +1,23 @@
-use clap::{Parser, Subcommand};
-use flexpm_core::models::{CreateProject, ProjectType, CreateItem, ItemType, Priority, CreateWorkspace};
-use flexpm_db::repo;
-use sqlx::SqlitePool;
-use std::path::PathBuf;
-use uuid::Uuid;
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::Shell;
+use serde_json::json;
+
+use flexpm_cli::client::FlexpmClient;
+use flexpm_cli::config::{self, Config};
+use flexpm_cli::vocab;
+
+// ─── CLI structure ────────────────────────────────────────────────────────────
 
 #[derive(Parser)]
-#[command(name = "flexpm", version, about = "FlexPM - Flexible Project Management")]
+#[command(name = "flexpm", version, about = "FlexPM — Flexible Project Management CLI")]
 struct Cli {
-    /// Database file path
-    #[arg(short, long, default_value = "flexpm.db", env = "FLEXPM_DATABASE")]
-    database: PathBuf,
+    /// FlexPM API base URL
+    #[arg(long, env = "FLEXPM_API_URL")]
+    api_url: Option<String>,
+
+    /// Bearer token for authentication
+    #[arg(long, env = "FLEXPM_API_TOKEN")]
+    token: Option<String>,
 
     #[command(subcommand)]
     command: Commands,
@@ -18,461 +25,662 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Initialize a new project
+    /// Create a new project
     Init {
         /// Project name
         name: String,
-        /// Project type (software, web, mobile, construction, personal, homework, maintenance)
-        #[arg(short, long, default_value = "software")]
+        /// Project type (software, web, mobile, construction, personal, homework, maintenance, custom)
+        #[arg(short = 't', long, default_value = "software")]
         r#type: String,
+        /// Optional description
+        #[arg(short, long)]
+        description: Option<String>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
     },
-    /// Add a new item (task, epic, etc.)
+
+    /// List projects
+    Projects {
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Add a new item to a project
     Add {
-        /// Item type
-        item_type: String,
         /// Item title
         title: String,
-        /// Priority
-        #[arg(short, long, default_value = "medium")]
+        /// Project ID
+        #[arg(short = 'p', long)]
+        project: String,
+        /// Item type (task, epic, feature, bug, subtask, requirement)
+        #[arg(short = 't', long, default_value = "task")]
+        item_type: String,
+        /// Priority (critical, high, medium, low)
+        #[arg(long, default_value = "medium")]
         priority: String,
         /// Parent item ID
         #[arg(long)]
         parent: Option<String>,
+        /// Assignee name
+        #[arg(short, long)]
+        assignee: Option<String>,
+        /// Sprint ID
+        #[arg(short, long)]
+        sprint: Option<String>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
     },
-    /// List items with optional filters
+
+    /// List items in a project
     List {
+        /// Project ID
+        #[arg(short = 'p', long)]
+        project: String,
         /// Filter by status
         #[arg(short, long)]
         status: Option<String>,
-        /// Filter by type
-        #[arg(short = 't', long)]
-        item_type: Option<String>,
-        /// Show as tree
+        /// Filter by item type
         #[arg(long)]
-        tree: bool,
+        item_type: Option<String>,
+        /// Filter by assignee
+        #[arg(short, long)]
+        assignee: Option<String>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
     },
+
     /// Move an item to a new status
     Move {
-        /// Item ID (short UUID prefix accepted)
+        /// Item ID
         id: String,
         /// Target status
         status: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
     },
-    /// Show board in terminal (ASCII)
-    Board,
+
+    /// Show board view for a project
+    Board {
+        /// Project ID
+        #[arg(short = 'p', long)]
+        project: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Search items
+    Search {
+        /// Search query
+        query: String,
+        /// Project ID (optional; searches globally if omitted)
+        #[arg(short = 'p', long)]
+        project: Option<String>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Sprint management
     Sprint {
         #[command(subcommand)]
         action: SprintAction,
     },
-    /// Search items
-    Search {
-        /// Search query
-        query: String,
+
+    /// Write ~/.flexpmrc with connection settings
+    Config {
+        /// API base URL to save
+        #[arg(long)]
+        url: Option<String>,
+        /// Bearer token to save (omit to clear)
+        #[arg(long)]
+        token: Option<String>,
+        /// Show current config without changing it
+        #[arg(long)]
+        show: bool,
+    },
+
+    /// Print shell completion script to stdout
+    Completions {
+        /// Target shell (bash, zsh, fish, powershell, elvish)
+        shell: Shell,
     },
 }
 
 #[derive(Subcommand)]
 enum SprintAction {
     /// Create a new sprint
-    Create { name: String },
-    /// Start the current sprint
-    Start,
-    /// Close the current sprint
-    Close,
-    /// List sprints
-    List,
+    Create {
+        /// Project ID
+        #[arg(short = 'p', long)]
+        project: String,
+        /// Sprint name
+        name: String,
+        /// Sprint goal
+        #[arg(short, long)]
+        goal: Option<String>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Start a sprint (sets status to active)
+    Start {
+        /// Sprint ID
+        id: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Move sprint to review
+    Review {
+        /// Sprint ID
+        id: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Close a sprint
+    Close {
+        /// Sprint ID
+        id: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List sprints in a project
+    List {
+        /// Project ID
+        #[arg(short = 'p', long)]
+        project: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // Initialize tracing for CLI
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("flexpm=info".parse().unwrap()),
-        )
-        .with_target(false)
-        .compact()
-        .init();
+// ─── Entry point ─────────────────────────────────────────────────────────────
 
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    // Connect to database
-    let db_url = format!("sqlite:{}?mode=rwc", cli.database.display());
-    let pool = SqlitePool::connect(&db_url).await?;
+    // Config and Completions don't need a live client.
+    match &cli.command {
+        Commands::Config { url, token, show } => {
+            return cmd_config(url.as_deref(), token.as_deref(), *show, &cli.api_url, &cli.token);
+        }
+        Commands::Completions { shell } => {
+            let mut cmd = Cli::command();
+            clap_complete::generate(*shell, &mut cmd, "flexpm", &mut std::io::stdout());
+            return Ok(());
+        }
+        _ => {}
+    }
 
-    // Run migrations
-    flexpm_db::run_migrations(&pool).await?;
+    let config = Config::load(cli.api_url, cli.token);
+    let client = FlexpmClient::new(&config)?;
 
     match cli.command {
-        Commands::Init { name, r#type } => {
-            init_project(&pool, name, r#type).await?;
+        Commands::Init {
+            name,
+            r#type,
+            description,
+            json,
+        } => cmd_init(&client, name, r#type, description, json),
+
+        Commands::Projects { json } => cmd_projects(&client, json),
+
+        Commands::Add {
+            title,
+            project,
+            item_type,
+            priority,
+            parent,
+            assignee,
+            sprint,
+            json,
+        } => cmd_add(
+            &client, title, project, item_type, priority, parent, assignee, sprint, json,
+        ),
+
+        Commands::List {
+            project,
+            status,
+            item_type,
+            assignee,
+            json,
+        } => cmd_list(&client, project, status, item_type, assignee, json),
+
+        Commands::Move { id, status, json } => cmd_move(&client, id, status, json),
+
+        Commands::Board { project, json } => cmd_board(&client, project, json),
+
+        Commands::Search {
+            query,
+            project,
+            json,
+        } => cmd_search(&client, query, project, json),
+
+        Commands::Sprint { action } => match action {
+            SprintAction::Create {
+                project,
+                name,
+                goal,
+                json,
+            } => cmd_sprint_create(&client, project, name, goal, json),
+            SprintAction::Start { id, json } => cmd_sprint_status(&client, id, "active", json),
+            SprintAction::Review { id, json } => cmd_sprint_status(&client, id, "review", json),
+            SprintAction::Close { id, json } => cmd_sprint_status(&client, id, "closed", json),
+            SprintAction::List { project, json } => cmd_sprint_list(&client, project, json),
+        },
+
+        // Already handled above; unreachable but required for exhaustiveness.
+        Commands::Config { .. } | Commands::Completions { .. } => unreachable!(),
+    }
+}
+
+// ─── Command implementations ─────────────────────────────────────────────────
+
+fn cmd_config(
+    url: Option<&str>,
+    token: Option<&str>,
+    show: bool,
+    cli_url: &Option<String>,
+    cli_token: &Option<String>,
+) -> anyhow::Result<()> {
+    if show || (url.is_none() && token.is_none()) {
+        let cfg = Config::load(cli_url.clone(), cli_token.clone());
+        println!("base_url: {}", cfg.base_url);
+        match &cfg.token {
+            Some(t) => println!("token:    {}", "*".repeat(t.len().min(8))),
+            None => println!("token:    (none)"),
         }
-        Commands::Add { item_type, title, priority, parent } => {
-            add_item(&pool, item_type, title, priority, parent).await?;
-        }
-        Commands::List { status, item_type, tree } => {
-            list_items(&pool, status, item_type, tree).await?;
-        }
-        Commands::Move { id, status } => {
-            move_item(&pool, id, status).await?;
-        }
-        Commands::Board => {
-            show_board(&pool).await?;
-        }
-        Commands::Sprint { action } => {
-            handle_sprint(&pool, action).await?;
-        }
-        Commands::Search { query } => {
-            search_items(&pool, query).await?;
-        }
+        return Ok(());
+    }
+    let base_url = url.unwrap_or("http://127.0.0.1:3210");
+    config::save(base_url, token)?;
+    println!("Saved to ~/.flexpmrc");
+    println!("  base_url: {base_url}");
+    if token.is_some() {
+        println!("  token:    (set)");
+    }
+    Ok(())
+}
+
+fn cmd_init(
+    client: &FlexpmClient,
+    name: String,
+    project_type: String,
+    description: Option<String>,
+    as_json: bool,
+) -> anyhow::Result<()> {
+    let body = json!({
+        "name": name,
+        "project_type": project_type,
+        "description": description,
+    });
+    let resp = client.post("/projects", &body)?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+    let id = resp["id"].as_str().unwrap_or("?");
+    println!("Created project: {} ({})", name, &id[..8.min(id.len())]);
+    println!("  type: {project_type}");
+    println!("  id:   {id}");
+    Ok(())
+}
+
+fn cmd_projects(client: &FlexpmClient, as_json: bool) -> anyhow::Result<()> {
+    let resp = client.get("/projects")?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+    let empty = vec![];
+    let projects = resp.as_array().unwrap_or(&empty);
+    if projects.is_empty() {
+        println!("No projects found.");
+        return Ok(());
+    }
+    print_table_header(&["ID", "NAME", "TYPE", "UPDATED"]);
+    for p in projects {
+        print_table_row(&[
+            short_id(p["id"].as_str()),
+            p["name"].as_str().unwrap_or("?"),
+            p["project_type"].as_str().unwrap_or("?"),
+            short_date(p["updated_at"].as_str()),
+        ]);
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cmd_add(
+    client: &FlexpmClient,
+    title: String,
+    project: String,
+    item_type: String,
+    priority: String,
+    parent: Option<String>,
+    assignee: Option<String>,
+    sprint: Option<String>,
+    as_json: bool,
+) -> anyhow::Result<()> {
+    let mut body = json!({
+        "title": title,
+        "item_type": item_type,
+        "priority": priority,
+    });
+    if let Some(p) = parent {
+        body["parent_id"] = json!(p);
+    }
+    if let Some(a) = assignee {
+        body["assignee"] = json!(a);
+    }
+    if let Some(s) = sprint {
+        body["sprint_id"] = json!(s);
+    }
+    let resp = client.post(&format!("/projects/{project}/items"), &body)?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+    let id = resp["id"].as_str().unwrap_or("?");
+    // Translate item_type through the project's vocabulary.
+    let v = vocab::fetch(client, &project);
+    let type_label = vocab::term(&v, &item_type);
+    println!("Created {}: {} ({})", type_label, title, &id[..8.min(id.len())]);
+    println!("  priority: {priority}");
+    println!("  id:       {id}");
+    Ok(())
+}
+
+fn cmd_list(
+    client: &FlexpmClient,
+    project: String,
+    status: Option<String>,
+    item_type: Option<String>,
+    assignee: Option<String>,
+    as_json: bool,
+) -> anyhow::Result<()> {
+    let mut params = vec![];
+    if let Some(s) = &status {
+        params.push(format!("status={}", urlenc(s)));
+    }
+    if let Some(t) = &item_type {
+        params.push(format!("item_type={}", urlenc(t)));
+    }
+    if let Some(a) = &assignee {
+        params.push(format!("assignee={}", urlenc(a)));
+    }
+    let qs = if params.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", params.join("&"))
+    };
+    let resp = client.get(&format!("/projects/{project}/items{qs}"))?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+    let empty = vec![];
+    let items = resp.as_array().unwrap_or(&empty);
+    if items.is_empty() {
+        println!("No items found.");
+        return Ok(());
+    }
+    let v = vocab::fetch(client, &project);
+    print_table_header(&["ID", "TITLE", "TYPE", "STATUS", "PRIORITY", "ASSIGNEE"]);
+    for item in items {
+        let raw_type = item["item_type"].as_str().unwrap_or("task");
+        print_table_row(&[
+            short_id(item["id"].as_str()),
+            item["title"].as_str().unwrap_or("?"),
+            vocab::term(&v, raw_type),
+            item["status"].as_str().unwrap_or("?"),
+            item["priority"].as_str().unwrap_or("?"),
+            item["assignee"].as_str().unwrap_or("-"),
+        ]);
+    }
+    Ok(())
+}
+
+fn cmd_move(
+    client: &FlexpmClient,
+    id: String,
+    status: String,
+    as_json: bool,
+) -> anyhow::Result<()> {
+    let body = json!({ "status": status });
+    let resp = client.patch(&format!("/items/{id}"), &body)?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+    println!("Moved {}: → {status}", &id[..8.min(id.len())]);
+    Ok(())
+}
+
+fn cmd_board(client: &FlexpmClient, project: String, as_json: bool) -> anyhow::Result<()> {
+    let boards = client.get(&format!("/projects/{project}/boards"))?;
+    let empty = vec![];
+    let boards = boards.as_array().unwrap_or(&empty);
+
+    let board_id = boards
+        .iter()
+        .find(|b| b["is_default"].as_bool().unwrap_or(false))
+        .or_else(|| boards.first())
+        .and_then(|b| b["id"].as_str())
+        .ok_or_else(|| anyhow::anyhow!("No boards found for project {project}"))?;
+
+    let view = client.get(&format!("/boards/{board_id}/view"))?;
+
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&view)?);
+        return Ok(());
     }
 
-    Ok(())
-}
+    let v = vocab::fetch(client, &project);
+    let board_name = view["name"].as_str().unwrap_or("Board");
+    println!("── {board_name} ────────────────────────────");
 
-async fn init_project(pool: &SqlitePool, name: String, type_str: String) -> anyhow::Result<()> {
-    println!("Initializing project '{name}' with type '{type_str}'...");
+    let cols = view["columns"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
+    for col in cols {
+        let name = col["name"].as_str().unwrap_or("?");
+        let items = col["items"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
+        let wip = col["wip_limit"].as_u64();
+        let exceeded = col["wip_exceeded"].as_bool().unwrap_or(false);
 
-    // Parse project type
-    let project_type = match type_str.as_str() {
-        "software" => ProjectType::Software,
-        "web" => ProjectType::Web,
-        "mobile" => ProjectType::Mobile,
-        "construction" => ProjectType::Construction,
-        "personal" => ProjectType::Personal,
-        "homework" => ProjectType::Homework,
-        "maintenance" => ProjectType::Maintenance,
-        "custom" => ProjectType::Custom,
-        _ => anyhow::bail!("Invalid project type: {type_str}"),
-    };
-
-    // Get or create default workspace
-    let workspace_id = get_or_create_default_workspace(pool).await?;
-
-    // Create project
-    let create_data = CreateProject {
-        name: name.clone(),
-        description: None,
-        project_type,
-        vocabulary: None,
-        workflow: None,
-    };
-
-    let project = repo::projects::create_project(pool, workspace_id, create_data).await?;
-
-    println!("✓ Project created successfully");
-    println!("  ID: {}", project.id);
-    println!("  Name: {}", project.name);
-    println!("  Type: {:?}", project.project_type);
-    println!("  Workflow: {} statuses", project.workflow.statuses.len());
-
-    Ok(())
-}
-
-async fn add_item(
-    pool: &SqlitePool,
-    item_type_str: String,
-    title: String,
-    priority_str: String,
-    parent: Option<String>,
-) -> anyhow::Result<()> {
-    // Get the first project
-    let projects = repo::projects::list_projects(pool).await?;
-    let project = projects.first().ok_or_else(|| anyhow::anyhow!("No projects found. Run 'flexpm init' first."))?;
-
-    // Parse item type
-    let item_type = match item_type_str.as_str() {
-        "epic" => ItemType::Epic,
-        "feature" => ItemType::Feature,
-        "task" => ItemType::Task,
-        "subtask" => ItemType::Subtask,
-        "bug" => ItemType::Bug,
-        "spike" => ItemType::Spike,
-        _ => anyhow::bail!("Invalid item type: {item_type_str}"),
-    };
-
-    // Parse priority
-    let priority = match priority_str.as_str() {
-        "critical" => Priority::Critical,
-        "high" => Priority::High,
-        "medium" => Priority::Medium,
-        "low" => Priority::Low,
-        "none" => Priority::None,
-        _ => anyhow::bail!("Invalid priority: {priority_str}"),
-    };
-
-    // Parse parent ID if provided
-    let parent_id = if let Some(p) = parent {
-        Some(Uuid::parse_str(&p)?)
-    } else {
-        None
-    };
-
-    // Get first status from workflow
-    let first_status = project.workflow.statuses.first()
-        .ok_or_else(|| anyhow::anyhow!("Project has no statuses"))?;
-
-    // Create item
-    let create_data = CreateItem {
-        title: title.clone(),
-        description: None,
-        item_type,
-        status: first_status.name.clone(),
-        priority,
-        estimate: None,
-        tags: vec![],
-        parent_id,
-        sprint_id: None,
-        sort_order: None,
-        due_date: None,
-    };
-
-    let item = repo::items::create_item(pool, project.id, create_data).await?;
-
-    println!("✓ Item created successfully");
-    println!("  ID: {}", item.id);
-    println!("  Title: {}", item.title);
-    println!("  Type: {:?}", item.item_type);
-    println!("  Status: {}", item.status);
-    println!("  Priority: {:?}", item.priority);
-
-    Ok(())
-}
-
-async fn list_items(
-    pool: &SqlitePool,
-    status_filter: Option<String>,
-    type_filter: Option<String>,
-    tree: bool,
-) -> anyhow::Result<()> {
-    // Get the first project
-    let projects = repo::projects::list_projects(pool).await?;
-    let project = projects.first().ok_or_else(|| anyhow::anyhow!("No projects found. Run 'flexpm init' first."))?;
-
-    println!("Items in project '{}':", project.name);
-    println!();
-
-    if tree {
-        // Fetch tree view
-        let items = repo::items::get_item_tree(pool, project.id).await?;
-        print_item_tree(&items, 0, status_filter.as_deref(), type_filter.as_deref());
-    } else {
-        // Fetch flat list
-        let query = repo::items::ItemQuery {
-            status: status_filter.clone(),
-            item_type: type_filter.clone(),
-            priority: None,
-            parent_id: None,
-            sprint_id: None,
-            tags: None,
-            page: None,
-            per_page: None,
+        let wip_label = match wip {
+            Some(limit) if exceeded => format!(" ({}/{limit} ⚠)", items.len()),
+            Some(limit) => format!(" ({}/{})", items.len(), limit),
+            None => format!(" ({})", items.len()),
         };
 
-        let items = repo::items::list_items(pool, project.id, query).await?;
+        println!("\n{name}{wip_label}");
+        println!("{}", "─".repeat(name.len() + wip_label.len()));
 
         if items.is_empty() {
-            println!("No items found.");
-        } else {
-            // Print table header
-            println!("{:<36} {:<30} {:<10} {:<15} {:<10}", "ID", "TITLE", "TYPE", "STATUS", "PRIORITY");
-            println!("{}", "-".repeat(105));
-
-            for item in items {
-                let id_short = &item.id.to_string()[..8];
-                let title_trunc = if item.title.len() > 28 {
-                    format!("{}...", &item.title[..25])
-                } else {
-                    item.title.clone()
-                };
-
-                println!(
-                    "{:<36} {:<30} {:<10} {:<15} {:<10}",
-                    id_short,
-                    title_trunc,
-                    format!("{:?}", item.item_type),
-                    item.status,
-                    format!("{:?}", item.priority)
-                );
-            }
-
-            println!();
-            println!("Total: {} items", items.len());
+            println!("  (empty)");
+        }
+        for item in items {
+            let title = item["title"].as_str().unwrap_or("?");
+            let raw_type = item["item_type"].as_str().unwrap_or("task");
+            let type_label = vocab::term(&v, raw_type);
+            let assignee = item["assignee"].as_str();
+            let suffix = match assignee {
+                Some(a) => format!(" [{a}]"),
+                None => String::new(),
+            };
+            println!("  · {title} ({type_label}){suffix}");
         }
     }
-
     Ok(())
 }
 
-fn print_item_tree(items: &[flexpm_core::models::Item], indent: usize, status_filter: Option<&str>, type_filter: Option<&str>) {
+fn cmd_search(
+    client: &FlexpmClient,
+    query: String,
+    project: Option<String>,
+    as_json: bool,
+) -> anyhow::Result<()> {
+    let path = match &project {
+        Some(pid) => format!("/projects/{pid}/search?q={}", urlenc(&query)),
+        None => format!("/search?q={}", urlenc(&query)),
+    };
+    let resp = client.get(&path)?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+    let empty = vec![];
+    let items = resp.as_array().unwrap_or(&empty);
+    if items.is_empty() {
+        println!("No results for '{query}'.");
+        return Ok(());
+    }
+    println!("{} result(s) for '{query}':", items.len());
+    print_table_header(&["ID", "TITLE", "STATUS", "PROJECT"]);
     for item in items {
-        // Apply filters
-        if let Some(status) = status_filter {
-            if item.status != status {
-                continue;
-            }
-        }
-        if let Some(item_type) = type_filter {
-            if format!("{:?}", item.item_type).to_lowercase() != item_type.to_lowercase() {
-                continue;
-            }
-        }
+        print_table_row(&[
+            short_id(item["id"].as_str()),
+            item["title"].as_str().unwrap_or("?"),
+            item["status"].as_str().unwrap_or("?"),
+            short_id(item["project_id"].as_str()),
+        ]);
+    }
+    Ok(())
+}
 
-        let indent_str = "  ".repeat(indent);
-        let id_short = &item.id.to_string()[..8];
-        println!("{indent_str}[{id_short}] {} ({:?}, {})", item.title, item.item_type, item.status);
+fn cmd_sprint_create(
+    client: &FlexpmClient,
+    project: String,
+    name: String,
+    goal: Option<String>,
+    as_json: bool,
+) -> anyhow::Result<()> {
+    let body = json!({ "name": name, "goal": goal });
+    let resp = client.post(&format!("/projects/{project}/sprints"), &body)?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+    let id = resp["id"].as_str().unwrap_or("?");
+    // Translate "sprint" via project vocabulary.
+    let v = vocab::fetch(client, &project);
+    let sprint_label = vocab::term(&v, "sprint");
+    println!("Created {sprint_label}: {} ({})", name, &id[..8.min(id.len())]);
+    println!("  id:     {id}");
+    println!("  status: planning");
+    Ok(())
+}
+
+fn cmd_sprint_status(
+    client: &FlexpmClient,
+    id: String,
+    status: &str,
+    as_json: bool,
+) -> anyhow::Result<()> {
+    let body = json!({ "status": status });
+    let resp = client.patch(&format!("/sprints/{id}/status"), &body)?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+    println!("Sprint {}: → {status}", &id[..8.min(id.len())]);
+    Ok(())
+}
+
+fn cmd_sprint_list(
+    client: &FlexpmClient,
+    project: String,
+    as_json: bool,
+) -> anyhow::Result<()> {
+    let resp = client.get(&format!("/projects/{project}/sprints"))?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+    let empty = vec![];
+    let sprints = resp.as_array().unwrap_or(&empty);
+    if sprints.is_empty() {
+        println!("No sprints found.");
+        return Ok(());
+    }
+    print_table_header(&["ID", "NAME", "STATUS", "START", "END"]);
+    for s in sprints {
+        print_table_row(&[
+            short_id(s["id"].as_str()),
+            s["name"].as_str().unwrap_or("?"),
+            s["status"].as_str().unwrap_or("?"),
+            short_date(s["start_date"].as_str()),
+            short_date(s["end_date"].as_str()),
+        ]);
+    }
+    Ok(())
+}
+
+// ─── Formatting helpers ───────────────────────────────────────────────────────
+
+fn print_table_header(cols: &[&str]) {
+    print_table_row(cols);
+    let divider: Vec<String> = cols.iter().map(|c| "─".repeat(col_width(c))).collect();
+    println!("{}", divider.join("  "));
+}
+
+fn print_table_row(cols: &[&str]) {
+    let widths = [8, 32, 12, 16, 10, 12];
+    let parts: Vec<String> = cols
+        .iter()
+        .enumerate()
+        .map(|(i, &val)| {
+            let w = widths.get(i).copied().unwrap_or(12);
+            trunc_pad(val, w)
+        })
+        .collect();
+    println!("{}", parts.join("  "));
+}
+
+fn col_width(header: &str) -> usize {
+    match header {
+        "ID" => 8,
+        "NAME" | "TITLE" => 32,
+        "TYPE" | "ITEM TYPE" => 12,
+        "STATUS" => 16,
+        "PRIORITY" => 10,
+        "ASSIGNEE" => 12,
+        _ => 12,
     }
 }
 
-async fn move_item(pool: &SqlitePool, id_str: String, new_status: String) -> anyhow::Result<()> {
-    // Try to parse full UUID or find by prefix
-    let item_id = if let Ok(uuid) = Uuid::parse_str(&id_str) {
-        uuid
+fn trunc_pad(s: &str, width: usize) -> String {
+    if s.len() > width {
+        format!("{}…", &s[..width - 1])
     } else {
-        // Search for item by ID prefix
-        let projects = repo::projects::list_projects(pool).await?;
-        let project = projects.first().ok_or_else(|| anyhow::anyhow!("No projects found"))?;
-
-        let items = repo::items::list_items(pool, project.id, Default::default()).await?;
-        items.iter()
-            .find(|item| item.id.to_string().starts_with(&id_str))
-            .ok_or_else(|| anyhow::anyhow!("No item found with ID prefix: {id_str}"))?
-            .id
-    };
-
-    // Update item status
-    let update = flexpm_core::models::UpdateItem {
-        title: None,
-        description: None,
-        status: Some(new_status.clone()),
-        priority: None,
-        estimate: None,
-        tags: None,
-        parent_id: None,
-        sprint_id: None,
-        sort_order: None,
-        due_date: None,
-    };
-
-    let updated_item = repo::items::update_item(pool, item_id, update).await?;
-
-    println!("✓ Item moved successfully");
-    println!("  ID: {}", updated_item.id);
-    println!("  Title: {}", updated_item.title);
-    println!("  New Status: {}", updated_item.status);
-
-    Ok(())
+        format!("{:<width$}", s)
+    }
 }
 
-async fn show_board(pool: &SqlitePool) -> anyhow::Result<()> {
-    // Get the first project
-    let projects = repo::projects::list_projects(pool).await?;
-    let project = projects.first().ok_or_else(|| anyhow::anyhow!("No projects found. Run 'flexpm init' first."))?;
-
-    println!("Board: {}", project.name);
-    println!("{}", "=".repeat(80));
-    println!();
-
-    // Get all items
-    let items = repo::items::list_items(pool, project.id, Default::default()).await?;
-
-    // Group by status
-    for status in &project.workflow.statuses {
-        let status_items: Vec<_> = items.iter()
-            .filter(|item| item.status == status.name)
-            .collect();
-
-        // Print column header
-        let header = format!("{} ({})", status.name, status_items.len());
-        println!("{}", header);
-        println!("{}", "-".repeat(header.len()));
-
-        // Print items in column
-        for item in status_items {
-            let id_short = &item.id.to_string()[..8];
-            println!("[{id_short}] {}", item.title);
-            println!("  Type: {:?} | Priority: {:?}", item.item_type, item.priority);
-            if let Some(estimate) = item.estimate {
-                println!("  Estimate: {estimate}");
-            }
-            println!();
-        }
-
-        println!();
-    }
-
-    Ok(())
+fn short_id(id: Option<&str>) -> &str {
+    id.map(|s| &s[..8.min(s.len())]).unwrap_or("?")
 }
 
-async fn handle_sprint(pool: &SqlitePool, action: SprintAction) -> anyhow::Result<()> {
-    match action {
-        SprintAction::Create { name } => {
-            println!("Creating sprint: {name}");
-            println!("⚠  Not yet implemented");
-        }
-        SprintAction::Start => {
-            println!("Starting sprint...");
-            println!("⚠  Not yet implemented");
-        }
-        SprintAction::Close => {
-            println!("Closing sprint...");
-            println!("⚠  Not yet implemented");
-        }
-        SprintAction::List => {
-            println!("Listing sprints...");
-            println!("⚠  Not yet implemented");
-        }
-    }
-    Ok(())
+fn short_date(dt: Option<&str>) -> &str {
+    dt.map(|s| &s[..10.min(s.len())]).unwrap_or("-")
 }
 
-async fn search_items(pool: &SqlitePool, query: String) -> anyhow::Result<()> {
-    // Get the first project
-    let projects = repo::projects::list_projects(pool).await?;
-    let project = projects.first().ok_or_else(|| anyhow::anyhow!("No projects found. Run 'flexpm init' first."))?;
-
-    println!("Searching for: '{query}'");
-    println!();
-
-    let results = repo::items::search_items(pool, project.id, &query).await?;
-
-    if results.is_empty() {
-        println!("No results found.");
-    } else {
-        println!("Found {} results:", results.len());
-        println!();
-
-        for item in results {
-            let id_short = &item.id.to_string()[..8];
-            println!("[{id_short}] {}", item.title);
-            println!("  Type: {:?} | Status: {} | Priority: {:?}", item.item_type, item.status, item.priority);
-            if let Some(desc) = &item.description {
-                let desc_short = if desc.len() > 80 { format!("{}...", &desc[..77]) } else { desc.clone() };
-                println!("  {desc_short}");
-            }
-            println!();
-        }
-    }
-
-    Ok(())
-}
-
-async fn get_or_create_default_workspace(pool: &SqlitePool) -> anyhow::Result<Uuid> {
-    // Try to get existing workspaces
-    let workspaces = repo::workspaces::list_workspaces(pool).await?;
-
-    if let Some(workspace) = workspaces.first() {
-        Ok(workspace.id)
-    } else {
-        // Create default workspace
-        let create_data = CreateWorkspace {
-            name: "Default Workspace".to_string(),
-            description: Some("Auto-created workspace".to_string()),
-        };
-
-        let workspace = repo::workspaces::create_workspace(pool, create_data).await?;
-        Ok(workspace.id)
-    }
+/// Minimal percent-encoding for query parameter values (spaces → %20, etc.)
+fn urlenc(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => vec![c],
+            ' ' => vec!['%', '2', '0'],
+            _ => format!("%{:02X}", c as u32).chars().collect(),
+        })
+        .collect()
 }

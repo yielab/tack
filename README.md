@@ -1,80 +1,32 @@
 # FlexPM - Flexible Project Management
 
-> ✅ **Production-Ready** - Backend 100% | Frontend 100%
+> **v1.2** · Local-first single-binary project management · Rust + SolidJS
 
 A lightweight, versatile project management tool for solo developers and small teams.
 Built with Rust (backend) and SolidJS (frontend). Supports Scrum, Kanban, phase-based workflows with fully customizable terminology.
+
+**New in v1.2:** Project Templates, Custom Fields (9 types), Multiple Boards per Project
 
 Handles everything from software sprints to construction builds to homework tracking.
 
 ## Quick Start
 
-### Option A: Docker (recommended)
-
-```bash
-# Clone and start
-git clone <repo-url> && cd flexpm
-docker compose up -d
-
-# Access the application
-# Via Caddy proxy (unified endpoint):
-open http://localhost:9000
-
-# Direct access (API + Frontend):
-curl http://localhost:3210/api/health  # Backend API
-open http://localhost:8080              # Frontend
-```
-
-That's it. The database, migrations, and storage are handled automatically.
-Data persists in a Docker volume (`flexpm-data`).
-
-**Access Points:**
-- **Caddy Proxy:** http://localhost:9000 (HTTP) or https://localhost:9443 (HTTPS)
-- **Backend API:** http://localhost:3210
-- **Frontend:** http://localhost:8080
-- **Custom Domain:** http://flexpm.local:9000 (requires /etc/hosts entry)
-
-Caddy uses ports 9000/9443 to avoid conflicts with other applications in multi-app environments.
-
-```bash
-# View logs
-docker compose logs -f
-
-# Stop
-docker compose down
-
-# Stop and delete all data
-docker compose down -v
-
-# Rebuild after code changes
-docker compose up -d --build
-
-# Use the CLI inside the container
-docker compose exec flexpm flexpm-cli --help
-```
-
-### Option B: Build from source
-
-**Prerequisites:** [Rust 1.75+](https://rustup.rs/)
+**Prerequisites:** [Rust 1.75+](https://rustup.rs/) · [Node.js 18+](https://nodejs.org/)
 
 ```bash
 git clone <repo-url> && cd flexpm
 
-# Build in release mode
-cargo build --release
-
-# Run the API server (starts on http://127.0.0.1:3210)
+# Run the API server (http://127.0.0.1:3210)
 cargo run --bin flexpm-api
 
-# Or run the CLI
-cargo run --bin flexpm-cli -- --help
+# In another terminal — frontend dev server (http://localhost:5173)
+cd frontend && npm install && npm run dev
 ```
 
-The server auto-creates a SQLite database (`flexpm.db`) and runs all migrations on first start.
-
-### Verify It Works
+The server auto-creates `flexpm.db` and runs all migrations on first start.
 
 ```bash
+# Verify
 curl http://localhost:3210/api/health
 # {"status":"ok","service":"flexpm","version":"0.1.0"}
 ```
@@ -329,6 +281,9 @@ Environment variable equivalents (override the file):
 | `FLEXPM_LOG_JSON` | `false` | JSON structured logging |
 | `FLEXPM_LOG_FILE` | _(none)_ | Optional log file path |
 | `FLEXPM_STORAGE_DIR` | `./storage` | Attachment storage directory |
+| `FLEXPM_API_TOKEN` | _(none)_ | Optional Bearer token — set to require `Authorization: Bearer <token>` on all API requests |
+| `FLEXPM_ALLOWED_ORIGINS` | `localhost:8080,127.0.0.1:8080` | Comma-separated CORS allow-list |
+| `FLEXPM_MAX_BODY_SIZE` | `2097152` | Global request body limit in bytes (default 2 MB; upload endpoint is always 50 MB) |
 
 ## Project Types & Defaults
 
@@ -393,80 +348,16 @@ FLEXPM_LOG_JSON=true cargo run --bin flexpm-api
 Every API request is traced with method, URI, and timing. Every database
 operation logs at `debug` level with parameters and results.
 
-## Docker
-
-### Production Deployment
-
-```bash
-# Build and run
-docker compose up -d
-
-# Custom port
-FLEXPM_PORT=8080 docker compose up -d
-
-# With JSON logs (for log aggregators)
-# Edit docker-compose.yml: set FLEXPM_LOG_JSON=true
-```
-
-### Docker Image Only (no compose)
-
-```bash
-# Build the image
-docker build -t flexpm .
-
-# Run with a named volume for persistent data
-docker run -d \
-  --name flexpm \
-  -p 3210:3210 \
-  -v flexpm-data:/data \
-  flexpm
-
-# Run with a host directory for data
-docker run -d \
-  --name flexpm \
-  -p 3210:3210 \
-  -v $(pwd)/data:/data \
-  flexpm
-```
-
-### Container Details
-
-| Property | Value |
-|----------|-------|
-| Base image | `debian:bookworm-slim` (~80MB) |
-| Runs as | Non-root user `flexpm` |
-| Data directory | `/data` (SQLite DB + attachments) |
-| Default port | `3210` |
-| Health check | `GET /api/health` every 30s |
-| Includes | `sqlite3` CLI for DB inspection |
-
-```bash
-# Inspect the database inside the container
-docker compose exec flexpm sqlite3 /data/flexpm.db ".tables"
-
-# Backup the database
-docker compose exec flexpm sqlite3 /data/flexpm.db ".backup /data/backup.db"
-docker cp flexpm:/data/backup.db ./flexpm-backup.db
-```
-
 ## Frontend Web UI
 
-FlexPM includes a modern web frontend built with SolidJS:
+FlexPM includes a modern web frontend built with SolidJS.
 
 ```bash
-# Run with Docker Compose (recommended)
-docker compose up -d
-
-# Access the UI
-open http://localhost:8080          # Frontend
-open http://localhost:3210/api      # Backend API
-
-# Or access via Caddy reverse proxy (with local domain)
-./setup-local-domain.sh
-open https://flexpm.local
+cd frontend && npm install && npm run dev
+# → http://localhost:5173 (proxies /api to http://127.0.0.1:3210)
 ```
 
-**Frontend Features (100% Complete):**
+**Frontend Features:**
 - ✅ **Six View Modes** for comprehensive project management:
   - **Board View** - Interactive Kanban with HTML5 drag-and-drop
   - **List View** - Sortable table with filtering and bulk operations
@@ -474,7 +365,7 @@ open https://flexpm.local
   - **Sprint View** - Scrum workflow with sprint management
   - **Calendar View** - Due date visualization on calendar
   - **Timeline View** - Gantt-style date-based visualization
-- ✅ **Real-time collaboration** via WebSocket (live updates)
+- ✅ **Live board updates** via WebSocket
 - ✅ **Optimistic UI updates** (instant feedback, rollback on error)
 - ✅ **Keyboard shortcuts** (Ctrl+K command palette, Ctrl+/ search)
 - ✅ **Global search** with FTS5 full-text search
@@ -483,13 +374,10 @@ open https://flexpm.local
 - ✅ **Dark mode support**
 - ✅ **Project & Item Management** with create/edit modals
 
-See [docs/KEYBOARD-SHORTCUTS.md](docs/KEYBOARD-SHORTCUTS.md) for shortcuts guide and [docs/FRONTEND-FEATURES.md](docs/FRONTEND-FEATURES.md) for complete feature list.
+## New in v1.2
 
-## 🎉 New in v1.2: Enterprise Features
+### 1. **Project Templates**
 
-FlexPM v1.2 adds three major features that bring it to feature parity with enterprise tools like Jira, Asana, and ClickUp:
-
-### 1. **Project Templates** (5 endpoints)
 Create reusable project blueprints that include workflow, vocabulary, custom fields, and default boards. Reduces project setup time by 80%.
 
 ```bash
@@ -504,7 +392,8 @@ curl -X POST http://localhost:3210/api/projects/from-template/$TEMPLATE_ID \
 
 **Frontend:** Templates gallery at `/templates` with type-based filtering and "Use Template" workflow.
 
-### 2. **Custom Fields** (9 endpoints)
+### 2. **Custom Fields**
+
 Add user-defined metadata to items with 9 field types: Text, LongText, Number, Date, Boolean, Select, MultiSelect, URL, Email.
 
 ```bash
@@ -526,7 +415,8 @@ curl -X PUT http://localhost:3210/api/items/$ITEM_ID/custom-fields/$FIELD_ID \
 
 **Frontend:** Custom Fields Manager at `/projects/:id/settings/fields` with visual field type selector.
 
-### 3. **Multiple Boards per Project** (6 endpoints)
+### 3. **Multiple Boards per Project**
+
 Create unlimited boards per project with different groupings and filters. Group by Status, Priority, ItemType, Sprint, Assignee, or CustomField.
 
 ```bash
@@ -552,30 +442,27 @@ curl http://localhost:3210/api/boards/$BOARD_ID/view
 - **Frontend Routes:** 10 → 15 (+5, +50%)
 - **Bundle Size:** 137.9 KB → 170.8 KB JS (+23%), 37.6 KB → 39.9 KB CSS (+6%)
 
-See [CHANGELOG.md](CHANGELOG.md) for complete v1.2 release notes and [FINAL-V1.2-SUMMARY.md](FINAL-V1.2-SUMMARY.md) for detailed feature documentation.
+See [CHANGELOG.md](CHANGELOG.md) for complete version history.
 
 ## Documentation
 
-### Quick Start
-- **[Quick Reference](QUICK-REFERENCE.md)** - ⚡ Cheat sheet: shortcuts, commands, troubleshooting
+### Essential Documents
+
+- **[Documentation Index](docs/README.md)** - Complete documentation directory
+- **[Project Status](docs/PROJECT-STATUS.md)** - Current implementation status and roadmap
 - **[Changelog](CHANGELOG.md)** - Version history and release notes
 
-### User Guides
-- **[API Reference](docs/API-REFERENCE.md)** - Complete API documentation for all 54 endpoints
-- **[API Examples](docs/API-EXAMPLES.md)** - Practical curl examples for common workflows
-- **[Keyboard Shortcuts](docs/KEYBOARD-SHORTCUTS.md)** - Frontend keyboard shortcuts guide
-- **[Frontend Features](docs/FRONTEND-FEATURES.md)** - Complete frontend feature list
+### API & Development
+
+- **[API Reference](docs/API-REFERENCE.md)** - Complete API endpoint reference
+- **[Testing Guide](docs/TESTING.md)** - Unit, integration, and end-to-end testing
+- **[Engineering Roadmap](docs/PLAN-A-ROADMAP.md)** - Planned work with per-task specs
 
 ### Deployment & Operations
-- **[Deployment Guide](docs/DEPLOYMENT-GUIDE.md)** - Production deployment instructions
-- **[Testing Guide](docs/TESTING.md)** - Unit, integration, and end-to-end testing workflows
 
-### Developer Resources
-- **[Architecture Roadmap](TODO-ARCHITECTURE.md)** - Implementation progress and technical decisions
-- **[Development Guide](CLAUDE.md)** - For contributors and Claude Code sessions
-- **[Project Summary](PROJECT-SUMMARY.md)** - Executive summary and metrics
-- **[Implementation Notes](IMPLEMENTATION-NOTES.md)** - Technical deep dive
-- **[Frontend API Coverage](FRONTEND-API-COVERAGE.md)** - UI implementation status vs backend API
+- **[Deployment Guide](docs/DEPLOYMENT-GUIDE.md)** - Production deployment instructions
+- **[Development Guide](CLAUDE.md)** - Dev environment and architecture notes
+- **[Contributing](CONTRIBUTING.md)** - Contribution guidelines
 
 ## Architecture
 
@@ -588,10 +475,10 @@ crates/
 │   ├── dependency.rs DAG graph with cycle detection
 │   └── error.rs     Typed domain error hierarchy
 ├── flexpm-db/       Database layer (SQLite via sqlx)
-│   ├── migrations.rs 10 migrations with FTS5 full-text search
+│   ├── migrations.rs 13 migrations with FTS5 full-text search
 │   └── repo/        Repository pattern: CRUD for all entities
 ├── flexpm-api/      HTTP server (Axum)
-│   ├── router.rs    54 REST endpoints (100% complete)
+│   ├── router.rs    59 REST routes
 │   ├── handlers/    Request handlers per entity
 │   ├── error.rs     API error -> HTTP status mapping
 │   ├── debug.rs     Health & diagnostics endpoints

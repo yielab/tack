@@ -18,87 +18,61 @@ FlexPM is a lightweight, versatile project management tool built in Rust (backen
 
 **Core Philosophy:** Universal work tracking with domain-specific vocabulary. The same underlying system adapts to different project types through configurable workflows and terminology.
 
-**Current Status:** ✅ **Production-Ready** (Phase 4 Complete - 100%)
-- Backend: 100% complete (34 REST endpoints + WebSocket)
-- Frontend: 100% complete (Board view, List view, optimistic UI, real-time updates)
-- CLI: 20% complete (structure exists, needs implementation)
+**Current Status:** Phase 2 (Architectural correctness) in progress
+
+- Backend: complete (REST endpoints + WebSocket, 15 migrations)
+- Frontend: complete (Board view, List view, optimistic UI, real-time updates)
+- CLI: stub only — commands compile but return "not implemented" (T-203 pending)
 
 ## Development Commands
 
 ### Building and Running
 
 ```bash
-# Build everything (workspace)
+# Check the whole workspace compiles
 cargo build
 
-# Build release binary
-cargo build --release
-
-# Run API server (http://127.0.0.1:3210)
+# Run the API server (http://127.0.0.1:3210)
 cargo run --bin flexpm-api
 
-# Run CLI tool
+# Run the CLI tool
 cargo run --bin flexpm-cli -- --help
+
+# Release binary (slow compile — use sparingly)
+cargo build --release
 ```
 
 ### Testing
 
 ```bash
-# Run all tests (unit + integration)
-cargo test
+# Run all tests
+cargo test --workspace
 
 # Show test output
-cargo test -- --nocapture
+cargo test --workspace -- --nocapture
 
-# Run specific test
+# Single test by name
 cargo test test_workflow_transition_validation
 
-# Run tests for a specific crate
+# One crate only
 cargo test -p flexpm-core
 cargo test -p flexpm-db
+cargo test -p flexpm-api
 ```
 
-### Docker (Recommended)
-
-```bash
-# Start all services (backend + frontend + Caddy)
-docker compose up -d
-
-# View logs
-docker compose logs -f
-
-# Rebuild after code changes
-docker compose up -d --build
-
-# Stop and remove all data
-docker compose down -v
-
-# Use CLI inside container
-docker compose exec flexpm flexpm-cli --help
-```
-
-**Services:**
-- `flexpm` - Backend API (http://localhost:3210)
-- `frontend` - Frontend SPA (http://localhost:8080)
-- `caddy` - Reverse proxy (https://flexpm.local - requires hosts file entry)
+Integration tests use in-memory SQLite — no external services needed.
 
 ### Frontend Development
 
 ```bash
 cd frontend
-
-# Install dependencies
-npm install
-
-# Development server with hot reload
-npm run dev
-
-# Build for production
-npm run build
-
-# Type checking
+npm install          # once
+npm run dev          # http://localhost:5173 — proxies /api to 127.0.0.1:3210
 npm run type-check
+npm run build
 ```
+
+Start the API server before the frontend dev server.
 
 ### Configuration
 
@@ -113,6 +87,9 @@ The API server loads configuration from `flexpm.toml` (if present) or environmen
 | `FLEXPM_LOG_JSON` | `false` | Structured JSON logging |
 | `FLEXPM_LOG_FILE` | _(none)_ | Optional log file path |
 | `FLEXPM_STORAGE_DIR` | `./storage` | Attachment storage directory |
+| `FLEXPM_API_TOKEN` | _(none)_ | Optional Bearer token — requires `Authorization: Bearer <token>` on all API requests |
+| `FLEXPM_ALLOWED_ORIGINS` | `localhost:8080,127.0.0.1:8080` | Comma-separated CORS allow-list |
+| `FLEXPM_MAX_BODY_SIZE` | `2097152` | Global request body limit in bytes (default 2 MB; upload endpoint is always 50 MB) |
 
 ### Debugging
 
@@ -220,33 +197,32 @@ docs/                Documentation
 
 ### Database Schema Highlights
 
-- **10 migrations** tracked in `_migrations` table
+- **15 migrations** tracked in `_migrations` table
 - **FTS5 virtual table** (`items_fts`) for full-text search across titles, descriptions, tags
 - **Triggers** maintain FTS index on INSERT/UPDATE/DELETE
 - **Foreign keys** enforce referential integrity (e.g., items → projects, items → sprints)
 - **Indexes** on common queries: project_id, status, priority, parent_id
 - **Attachments table** with file metadata (filename, mime_type, storage_path, size)
 
-### API Endpoint Structure (34 endpoints - 100% complete)
+### API Endpoint Structure
 
 All routes follow RESTful conventions:
-- `/api/projects` - CRUD for projects (5 endpoints)
-- `/api/projects/{id}/board` - Board view with WIP limits (3 endpoints)
-  - GET `/api/projects/{id}/board` - Get board state
-  - PATCH `/api/projects/{id}/board` - Update board config (broadcasts WebSocket event)
-  - GET `/api/projects/{id}/board/live` - **WebSocket** for real-time updates
-- `/api/projects/{id}/export` - Export to JSON/CSV (1 endpoint)
-- `/api/projects/import` - Import from JSON (1 endpoint)
-- `/api/projects/{id}/items` - Items scoped to project (3 endpoints)
-- `/api/items/{id}` - Individual item operations (3 endpoints with WebSocket broadcasting)
-- `/api/items/{id}/dependencies` - Dependency management (3 endpoints)
-- `/api/items/{id}/attachments` - File attachments (2 endpoints)
-- `/api/attachments/{id}` - Download/delete attachments (2 endpoints)
-- `/api/projects/{id}/sprints` - Sprint management (4 endpoints)
-- `/api/projects/{id}/roles` - Role/specialty management (5 endpoints)
-- `/api/items/{id}/comments` - Comments on items (2 endpoints)
-- `/api/projects/{id}/search` - Full-text search within project (1 endpoint)
-- `/api/search` - **Global search** across all projects (1 endpoint)
+
+- `/api/projects` — CRUD for projects (5 endpoints)
+- `/api/projects/{id}/boards` — Multiple boards per project (CRUD + view)
+  - `GET /api/projects/{id}/boards/live` — **WebSocket** for real-time updates
+- `/api/projects/{id}/export` — Export to JSON/CSV (1 endpoint)
+- `/api/projects/import` — Import from JSON (1 endpoint)
+- `/api/projects/{id}/items` — Items scoped to project (3 endpoints)
+- `/api/items/{id}` — Individual item operations (3 endpoints with WebSocket broadcasting)
+- `/api/items/{id}/dependencies` — Dependency management (3 endpoints)
+- `/api/items/{id}/attachments` — File attachments (2 endpoints)
+- `/api/attachments/{id}` — Download/delete attachments (2 endpoints)
+- `/api/projects/{id}/sprints` — Sprint management (4 endpoints)
+- `/api/projects/{id}/roles` — Role/specialty management (5 endpoints)
+- `/api/items/{id}/comments` — Comments on items (2 endpoints)
+- `/api/projects/{id}/search` — Full-text search within project (1 endpoint)
+- `/api/search` — **Global search** across all projects (1 endpoint)
 
 Query parameters support filtering, pagination, and search.
 
@@ -325,7 +301,7 @@ Items can only be assigned to active or planning sprints (enforced in handlers).
 
 ### WebSocket Real-Time Updates
 
-- **Endpoint**: `GET /api/projects/{id}/board/live` (WebSocket upgrade)
+- **Endpoint**: `GET /api/projects/{id}/boards/live` (WebSocket upgrade)
 - **Purpose**: Real-time board state updates for live collaboration
 - **Implementation**:
   - Uses Tokio broadcast channel (100 message capacity)

@@ -2,6 +2,7 @@ use axum::extract::{Path, State};
 use axum::Json;
 use tracing::instrument;
 use uuid::Uuid;
+use validator::Validate;
 
 use flexpm_core::models::CreateRole;
 
@@ -14,6 +15,7 @@ pub async fn create_role(
     Path(project_id): Path<Uuid>,
     Json(input): Json<CreateRole>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    input.validate().map_err(|e| ApiError::BadRequest(e.to_string()))?;
     let role = state.repo.create_role(project_id, input).await?;
     Ok(Json(serde_json::to_value(role).unwrap()))
 }

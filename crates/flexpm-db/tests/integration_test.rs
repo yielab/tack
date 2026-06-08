@@ -1,29 +1,9 @@
+mod common;
+
+use common::{create_test_workspace, setup_test_db};
 use flexpm_core::models::*;
 use flexpm_core::vocabulary;
 use flexpm_core::workflow;
-use flexpm_db::{init_pool, migrations, Repository};
-
-/// Helper to create an in-memory SQLite database for testing.
-async fn setup_test_db() -> Repository {
-    let pool = init_pool("sqlite::memory:").await.unwrap();
-    migrations::run_all(&pool).await.unwrap();
-    Repository::new(pool)
-}
-
-/// Helper to create a default workspace for tests.
-async fn create_test_workspace(repo: &Repository) -> uuid::Uuid {
-    let id = uuid::Uuid::new_v4();
-    let vocab = serde_json::to_string(&vocabulary::default_vocabulary()).unwrap();
-    sqlx::query(
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'Test', ?)"
-    )
-    .bind(id.to_string())
-    .bind(&vocab)
-    .execute(repo.pool())
-    .await
-    .unwrap();
-    id
-}
 
 // ─── Project Tests ───────────────────────────────────────────
 
@@ -150,6 +130,7 @@ async fn test_create_and_list_items() {
             tags: Some(vec!["backend".into()]),
             due_date: None,
             sprint_id: None,
+            assignee: None,
         })
         .await
         .unwrap();
@@ -171,6 +152,7 @@ async fn test_create_and_list_items() {
             tags: None,
             due_date: None,
             sprint_id: None,
+            assignee: None,
         })
         .await
         .unwrap();
@@ -179,17 +161,7 @@ async fn test_create_and_list_items() {
 
     // List items
     let items = repo
-        .list_items(project.id, &ItemFilter {
-            status: None,
-            item_type: None,
-            priority: None,
-            sprint_id: None,
-            parent_id: None,
-            tag: None,
-            search: None,
-            page: None,
-            per_page: None,
-        })
+        .list_items(project.id, &ItemFilter::default())
         .await
         .unwrap();
 
@@ -223,6 +195,7 @@ async fn test_update_item_status() {
             tags: None,
             due_date: None,
             sprint_id: None,
+            assignee: None,
         })
         .await
         .unwrap();
@@ -242,6 +215,7 @@ async fn test_update_item_status() {
             due_date: None,
             sprint_id: None,
             sort_order: None,
+            assignee: None,
         })
         .await
         .unwrap()
@@ -271,7 +245,7 @@ async fn test_item_tree() {
             description: None,
             item_type: Some(ItemType::Epic),
             parent_id: None,
-            priority: None, estimate: None, estimate_unit: None, tags: None, due_date: None, sprint_id: None,
+            priority: None, estimate: None, estimate_unit: None, tags: None, due_date: None, sprint_id: None, assignee: None,
         })
         .await
         .unwrap();
@@ -281,7 +255,7 @@ async fn test_item_tree() {
         description: None,
         item_type: Some(ItemType::Task),
         parent_id: Some(epic.id),
-        priority: None, estimate: None, estimate_unit: None, tags: None, due_date: None, sprint_id: None,
+        priority: None, estimate: None, estimate_unit: None, tags: None, due_date: None, sprint_id: None, assignee: None,
     })
     .await
     .unwrap();
@@ -362,7 +336,7 @@ async fn test_roles_and_assignment() {
             description: None,
             item_type: None,
             parent_id: None,
-            priority: None, estimate: None, estimate_unit: None, tags: None, due_date: None, sprint_id: None,
+            priority: None, estimate: None, estimate_unit: None, tags: None, due_date: None, sprint_id: None, assignee: None,
         })
         .await
         .unwrap();
@@ -403,7 +377,7 @@ async fn test_comments() {
             title: "Commentable".into(),
             description: None,
             item_type: None, parent_id: None, priority: None, estimate: None,
-            estimate_unit: None, tags: None, due_date: None, sprint_id: None,
+            estimate_unit: None, tags: None, due_date: None, sprint_id: None, assignee: None,
         })
         .await
         .unwrap();
@@ -513,9 +487,8 @@ async fn test_create_and_get_template() {
         project_type: ProjectType::Software,
         vocabulary: None,
         workflow: None,
-        custom_fields: vec![],
-        default_boards: vec![],
-        is_builtin: false,
+        custom_fields: None,
+        default_boards: None,
     };
 
     let template = templates::create_template(repo.pool(), template_data).await.unwrap();
@@ -542,9 +515,8 @@ async fn test_list_templates_with_filter() {
         project_type: ProjectType::Software,
         vocabulary: None,
         workflow: None,
-        custom_fields: vec![],
-        default_boards: vec![],
-        is_builtin: false,
+        custom_fields: None,
+        default_boards: None,
     }).await.unwrap();
 
     templates::create_template(repo.pool(), CreateProjectTemplate {
@@ -553,9 +525,8 @@ async fn test_list_templates_with_filter() {
         project_type: ProjectType::Construction,
         vocabulary: None,
         workflow: None,
-        custom_fields: vec![],
-        default_boards: vec![],
-        is_builtin: false,
+        custom_fields: None,
+        default_boards: None,
     }).await.unwrap();
 
     // List all templates
@@ -581,9 +552,8 @@ async fn test_delete_template_not_builtin() {
         project_type: ProjectType::Personal,
         vocabulary: None,
         workflow: None,
-        custom_fields: vec![],
-        default_boards: vec![],
-        is_builtin: false,
+        custom_fields: None,
+        default_boards: None,
     }).await.unwrap();
 
     // Should be able to delete user template
@@ -619,7 +589,7 @@ async fn test_create_and_list_custom_fields() {
         name: "Customer".into(),
         field_type: CustomFieldType::Text,
         description: Some("Customer name".into()),
-        required: false,
+        required: Some(false),
         default_value: None,
         options: None,
         validation: None,
@@ -634,7 +604,7 @@ async fn test_create_and_list_custom_fields() {
         name: "Priority Level".into(),
         field_type: CustomFieldType::Select,
         description: None,
-        required: true,
+        required: Some(true),
         default_value: None,
         options: Some(vec!["Low".into(), "Medium".into(), "High".into()]),
         validation: None,
@@ -645,7 +615,7 @@ async fn test_create_and_list_custom_fields() {
     assert_eq!(field2.options.as_ref().unwrap().len(), 3);
 
     // List fields
-    let fields = custom_fields::list_fields(repo.pool(), project.id).await.unwrap();
+    let fields = custom_fields::list_fields_for_project(repo.pool(), project.id).await.unwrap();
     assert_eq!(fields.len(), 2);
 }
 
@@ -676,6 +646,7 @@ async fn test_custom_field_value_upsert() {
             tags: None,
             due_date: None,
             sprint_id: None,
+            assignee: None,
         })
         .await
         .unwrap();
@@ -687,7 +658,7 @@ async fn test_custom_field_value_upsert() {
         name: "Customer".into(),
         field_type: CustomFieldType::Text,
         description: None,
-        required: false,
+        required: Some(false),
         default_value: None,
         options: None,
         validation: None,
@@ -744,6 +715,7 @@ async fn test_custom_field_cascade_delete() {
             tags: None,
             due_date: None,
             sprint_id: None,
+            assignee: None,
         })
         .await
         .unwrap();
@@ -755,7 +727,7 @@ async fn test_custom_field_cascade_delete() {
         name: "Test Field".into(),
         field_type: CustomFieldType::Text,
         description: None,
-        required: false,
+        required: Some(false),
         default_value: None,
         options: None,
         validation: None,
@@ -803,7 +775,7 @@ async fn test_create_and_list_boards() {
         description: Some("Default status board".into()),
         grouping: Some(BoardGrouping::Status),
         filters: None,
-        is_default: true,
+        is_default: Some(true),
     }).await.unwrap();
 
     assert_eq!(board1.name, "Main Board");
@@ -815,7 +787,7 @@ async fn test_create_and_list_boards() {
         description: None,
         grouping: Some(BoardGrouping::Priority),
         filters: None,
-        is_default: false,
+        is_default: Some(false),
     }).await.unwrap();
 
     assert!(!board2.is_default);
@@ -841,7 +813,7 @@ async fn test_default_board_management() {
         .unwrap();
 
     use flexpm_db::repo::boards;
-    use flexpm_core::models::{CreateBoard, UpdateBoard, BoardGrouping};
+    use flexpm_core::models::{CreateBoard, BoardGrouping};
 
     // Create first board as default
     let board1 = boards::create_board(repo.pool(), project.id, CreateBoard {
@@ -849,7 +821,7 @@ async fn test_default_board_management() {
         description: None,
         grouping: Some(BoardGrouping::Status),
         filters: None,
-        is_default: true,
+        is_default: Some(true),
     }).await.unwrap();
 
     // Create second board and make it default
@@ -858,7 +830,7 @@ async fn test_default_board_management() {
         description: None,
         grouping: Some(BoardGrouping::Priority),
         filters: None,
-        is_default: true,
+        is_default: Some(true),
     }).await.unwrap();
 
     // Board 1 should no longer be default
@@ -870,7 +842,7 @@ async fn test_default_board_management() {
 
     // Get default board
     let default = boards::get_default_board(repo.pool(), project.id).await.unwrap();
-    assert_eq!(default.id, board2.id);
+    assert_eq!(default.unwrap().id, board2.id);
 }
 
 #[tokio::test]
@@ -905,7 +877,7 @@ async fn test_board_grouping_types() {
             description: None,
             grouping: Some(grouping),
             filters: None,
-            is_default: false,
+            is_default: Some(false),
         }).await.unwrap();
 
         assert_eq!(board.name, name);

@@ -1,7 +1,22 @@
 use flexpm_core::models::*;
-use sqlx::SqlitePool;
+use sqlx::{FromRow, SqlitePool};
 use tracing::instrument;
 use uuid::Uuid;
+
+#[derive(FromRow)]
+struct TemplateRow {
+    id: String,
+    name: String,
+    description: Option<String>,
+    project_type: String,
+    vocabulary: String,
+    workflow: String,
+    custom_fields: String,
+    default_boards: String,
+    is_builtin: i32,
+    created_at: String,
+    updated_at: String,
+}
 
 /// Create a new project template
 #[instrument(skip(pool))]
@@ -15,8 +30,12 @@ pub async fn create_template(
     let vocabulary = serde_json::to_string(&data.vocabulary.unwrap_or_default())
         .unwrap_or_else(|_| "{}".to_string());
 
-    let workflow = serde_json::to_string(&data.workflow.unwrap_or_default())
-        .unwrap_or_else(|_| "{}".to_string());
+    let workflow = if let Some(wf) = data.workflow {
+        serde_json::to_string(&wf).unwrap_or_else(|_| "{}".to_string())
+    } else {
+        serde_json::to_string(&flexpm_core::workflow::simple_workflow())
+            .unwrap_or_else(|_| "{}".to_string())
+    };
 
     let custom_fields = serde_json::to_string(&data.custom_fields.unwrap_or_default())
         .unwrap_or_else(|_| "[]".to_string());
@@ -62,12 +81,12 @@ pub async fn get_template(
     pool: &SqlitePool,
     id: Uuid,
 ) -> Result<ProjectTemplate, sqlx::Error> {
-    let row = sqlx::query!(
+    let row = sqlx::query_as::<_, TemplateRow>(
         "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at
          FROM project_templates
-         WHERE id = ?",
-        id.to_string()
+         WHERE id = ?"
     )
+    .bind(id.to_string())
     .fetch_one(pool)
     .await?;
 
@@ -116,17 +135,17 @@ pub async fn list_templates(
             ProjectType::Custom => "custom",
         };
 
-        sqlx::query!(
+        sqlx::query_as::<_, TemplateRow>(
             "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at
              FROM project_templates
              WHERE project_type = ?
-             ORDER BY is_builtin DESC, name ASC",
-            type_str
+             ORDER BY is_builtin DESC, name ASC"
         )
+        .bind(type_str)
         .fetch_all(pool)
         .await?
     } else {
-        sqlx::query!(
+        sqlx::query_as::<_, TemplateRow>(
             "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at
              FROM project_templates
              ORDER BY is_builtin DESC, name ASC"
@@ -172,12 +191,10 @@ pub async fn delete_template(
     pool: &SqlitePool,
     id: Uuid,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query!(
-        "DELETE FROM project_templates WHERE id = ? AND is_builtin = 0",
-        id.to_string()
-    )
-    .execute(pool)
-    .await?;
+    sqlx::query("DELETE FROM project_templates WHERE id = ? AND is_builtin = 0")
+        .bind(id.to_string())
+        .execute(pool)
+        .await?;
 
     Ok(())
 }

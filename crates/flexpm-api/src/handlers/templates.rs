@@ -108,7 +108,7 @@ pub async fn create_project_from_template(
         template: None, // Already applied
     };
 
-    let mut project = repo::projects::create_project(state.pool(), workspace_id, project_data)
+    let mut project = state.repo.create_project(workspace_id, project_data)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to create project from template");
@@ -128,10 +128,14 @@ pub async fn create_project_from_template(
         archived: None,
     };
 
-    repo::projects::update_project(state.pool(), project.id, update_data)
+    state.repo.update_project(project.id, update_data)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to update project with template config");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or_else(|| {
+            tracing::error!("Failed to find project after update");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
@@ -176,13 +180,17 @@ pub async fn create_project_from_template(
     }
 
     // Return the final project
-    repo::projects::get_project(state.pool(), project.id)
+    state.repo.get_project(project.id)
         .await
-        .map(Json)
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to fetch created project");
             StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or_else(|| {
+            tracing::error!("Failed to find project after creation");
+            StatusCode::NOT_FOUND
         })
+        .map(Json)
 }
 
 /// Helper: Get or create default workspace
@@ -190,7 +198,12 @@ async fn get_or_create_default_workspace(
     pool: &sqlx::SqlitePool,
 ) -> Result<Uuid, StatusCode> {
     // Try to get first workspace
-    let existing = sqlx::query!("SELECT id FROM workspaces LIMIT 1")
+    #[derive(sqlx::FromRow)]
+    struct WorkspaceId {
+        id: String,
+    }
+
+    let existing = sqlx::query_as::<_, WorkspaceId>("SELECT id FROM workspaces LIMIT 1")
         .fetch_optional(pool)
         .await
         .map_err(|e| {
@@ -205,16 +218,16 @@ async fn get_or_create_default_workspace(
         let id = Uuid::new_v4();
         let now = chrono::Utc::now();
 
-        sqlx::query!(
+        sqlx::query(
             "INSERT INTO workspaces (id, name, description, default_vocabulary, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?)",
-            id.to_string(),
-            "Default Workspace",
-            "Auto-created default workspace",
-            "{}",
-            now.to_rfc3339(),
-            now.to_rfc3339()
+             VALUES (?, ?, ?, ?, ?, ?)"
         )
+        .bind(id.to_string())
+        .bind("Default Workspace")
+        .bind("Auto-created default workspace")
+        .bind("{}")
+        .bind(now.to_rfc3339())
+        .bind(now.to_rfc3339())
         .execute(pool)
         .await
         .map_err(|e| {
