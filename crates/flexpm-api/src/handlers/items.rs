@@ -2,6 +2,7 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use tracing::instrument;
 use uuid::Uuid;
+use validator::Validate;
 
 use flexpm_core::models::{CreateItem, ItemFilter, UpdateItem};
 
@@ -15,6 +16,8 @@ pub async fn create_item(
     Path(project_id): Path<Uuid>,
     Json(input): Json<CreateItem>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    input.validate().map_err(|e| ApiError::BadRequest(e.to_string()))?;
+
     // Get project to find initial status from workflow
     let project = state
         .repo
@@ -80,6 +83,8 @@ pub async fn update_item(
     Path(id): Path<Uuid>,
     Json(input): Json<UpdateItem>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    input.validate().map_err(|e| ApiError::BadRequest(e.to_string()))?;
+
     // Get old item state for status change detection
     let old_item = state
         .repo
@@ -124,29 +129,18 @@ pub async fn update_item(
         new_status: item.status.clone(),
     });
 
-    // Auto-propagate parent status if this item has a parent and was completed
+    // Auto-propagate parent status when all siblings reach Done
     if let Some(parent_id) = item.parent_id {
         if item.status != old_status {
-            // Get the project's workflow to find completed status
-            let project = state
-                .repo
-                .get_project(item.project_id)
-                .await?
-                .ok_or_else(|| ApiError::NotFound("Project not found".into()))?;
-
-            // Check if the new status is a "done" category
-            if let Some(done_status) = project.workflow.statuses.iter()
-                .find(|s| s.category == flexpm_core::workflow::StatusCategory::Done)
-            {
-                if item.status == done_status.name {
-                    // Try to update parent - check if all siblings are complete
-                    let _ = state
-                        .repo
-                        .check_and_update_parent_status(parent_id, &done_status.name)
-                        .await;
-
-                    // If parent was updated, broadcast event for it too
-                    // (We ignore errors here as this is a "nice to have" feature)
+            if let Ok(Some(proj)) = state.repo.get_project(item.project_id).await {
+                if proj.workflow.is_done_status(&item.status) {
+                    if let Some(done_status) = proj.workflow.find_first_done_status() {
+                        if let Ok(all_done) = state.repo.siblings_all_done(parent_id, done_status).await {
+                            if flexpm_core::workflow::WorkflowConfig::should_complete_parent(all_done) {
+                                let _ = state.repo.check_and_update_parent_status(parent_id, done_status).await;
+                            }
+                        }
+                    }
                 }
             }
         }

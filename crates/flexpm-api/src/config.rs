@@ -17,6 +17,21 @@ pub struct AppConfig {
     pub log_file: Option<String>,
     #[serde(default = "default_storage_dir")]
     pub storage_dir: String,
+
+    /// Origins allowed by CORS. Comma-separated in env ($FLEXPM_ALLOWED_ORIGINS).
+    /// Defaults to localhost variants suitable for local-first use.
+    #[serde(default = "default_allowed_origins")]
+    pub allowed_origins: Vec<String>,
+
+    /// Global maximum body size for non-attachment requests (bytes).
+    /// Attachments use their own higher limit. Default: 2 MB.
+    #[serde(default = "default_max_body_size_bytes")]
+    pub max_body_size_bytes: usize,
+
+    /// Optional Bearer token. When set, all `/api/*` routes (except `/api/health`)
+    /// require `Authorization: Bearer <token>`. Leave unset for pure-local use.
+    #[serde(default)]
+    pub api_token: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -29,6 +44,9 @@ impl Default for AppConfig {
             log_json: false,
             log_file: default_log_file(),
             storage_dir: default_storage_dir(),
+            allowed_origins: default_allowed_origins(),
+            max_body_size_bytes: default_max_body_size_bytes(),
+            api_token: None,
         }
     }
 }
@@ -39,18 +57,25 @@ fn default_database_url() -> String { "sqlite:flexpm.db?mode=rwc".into() }
 fn default_log_level() -> String { "info".into() }
 fn default_log_file() -> Option<String> { None }
 fn default_storage_dir() -> String { "./storage".into() }
+fn default_max_body_size_bytes() -> usize { 2 * 1024 * 1024 } // 2 MB
+
+fn default_allowed_origins() -> Vec<String> {
+    vec![
+        "http://localhost:8080".into(),
+        "http://127.0.0.1:8080".into(),
+        "https://flexpm.test".into(),
+    ]
+}
 
 impl AppConfig {
     /// Load config from file, falling back to defaults.
     pub fn load() -> Self {
-        // Try flexpm.toml in current directory
         if let Ok(content) = std::fs::read_to_string("flexpm.toml") {
             if let Ok(config) = toml::from_str(&content) {
                 return config;
             }
         }
 
-        // Fall back to environment variables
         let mut config = Self::default();
         if let Ok(v) = std::env::var("FLEXPM_HOST") { config.host = v; }
         if let Ok(v) = std::env::var("FLEXPM_PORT") { config.port = v.parse().unwrap_or(3210); }
@@ -59,6 +84,16 @@ impl AppConfig {
         if let Ok(v) = std::env::var("FLEXPM_LOG_JSON") { config.log_json = v == "true" || v == "1"; }
         if let Ok(v) = std::env::var("FLEXPM_LOG_FILE") { config.log_file = Some(v); }
         if let Ok(v) = std::env::var("FLEXPM_STORAGE_DIR") { config.storage_dir = v; }
+        if let Ok(v) = std::env::var("FLEXPM_ALLOWED_ORIGINS") {
+            config.allowed_origins = v.split(',').map(|s| s.trim().to_string()).collect();
+        }
+        if let Ok(v) = std::env::var("FLEXPM_MAX_BODY_SIZE") {
+            config.max_body_size_bytes = v.parse().unwrap_or(default_max_body_size_bytes());
+        }
+        // Never log the token value
+        if let Ok(v) = std::env::var("FLEXPM_API_TOKEN") {
+            if !v.is_empty() { config.api_token = Some(v); }
+        }
         config
     }
 }

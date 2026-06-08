@@ -20,9 +20,10 @@ pub async fn create_field(
     Json(data): Json<CreateCustomField>,
 ) -> Result<Json<CustomFieldDefinition>, StatusCode> {
     // Verify project exists
-    repo::projects::get_project(state.pool(), project_id)
+    state.repo.get_project(project_id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
 
     repo::custom_fields::create_field(state.pool(), project_id, data)
         .await
@@ -104,9 +105,10 @@ pub async fn set_field_value(
     Json(data): Json<serde_json::Value>,
 ) -> Result<Json<CustomFieldValue>, StatusCode> {
     // Verify item exists
-    repo::items::get_item(state.pool(), item_id)
+    state.repo.get_item(item_id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
 
     // Verify field exists
     repo::custom_fields::get_field(state.pool(), field_id)

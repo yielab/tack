@@ -2,6 +2,7 @@ use axum::extract::{Path, State};
 use axum::Json;
 use tracing::instrument;
 use uuid::Uuid;
+use validator::Validate;
 
 use flexpm_core::models::{CreateProject, UpdateProject};
 
@@ -13,6 +14,7 @@ pub async fn create_project(
     State(state): State<AppState>,
     Json(input): Json<CreateProject>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    input.validate().map_err(|e| ApiError::BadRequest(e.to_string()))?;
     let project = state
         .repo
         .create_project(state.workspace_id, input)
@@ -47,6 +49,7 @@ pub async fn update_project(
     Path(id): Path<Uuid>,
     Json(input): Json<UpdateProject>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    input.validate().map_err(|e| ApiError::BadRequest(e.to_string()))?;
     let project = state
         .repo
         .update_project(id, input)

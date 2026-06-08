@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use validator::Validate;
 
 use crate::vocabulary::VocabularyMap;
 use crate::workflow::WorkflowConfig;
@@ -78,6 +79,7 @@ pub struct Item {
     pub tags: Vec<String>,
     pub sort_order: i32,
     pub sprint_id: Option<Uuid>,
+    pub assignee: Option<String>,
     pub due_date: Option<DateTime<Utc>>,
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
@@ -285,70 +287,92 @@ pub struct BoardColumn {
 
 // ─── DTOs for creation/updates ───────────────────────────────
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct CreateProject {
+    #[validate(length(min = 1, max = 200, message = "name must be 1–200 characters"))]
     pub name: String,
+    #[validate(length(max = 10_000, message = "description too long (max 10 000 chars)"))]
     pub description: Option<String>,
     pub project_type: ProjectType,
     pub template: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct UpdateProject {
+    #[validate(length(min = 1, max = 200, message = "name must be 1–200 characters"))]
     pub name: Option<String>,
+    #[validate(length(max = 10_000, message = "description too long (max 10 000 chars)"))]
     pub description: Option<String>,
     pub vocabulary: Option<VocabularyMap>,
     pub workflow: Option<WorkflowConfig>,
     pub archived: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct CreateItem {
+    #[validate(length(min = 1, max = 500, message = "title must be 1–500 characters"))]
     pub title: String,
+    #[validate(length(max = 50_000, message = "description too long (max 50 000 chars)"))]
     pub description: Option<String>,
     pub item_type: Option<ItemType>,
     pub parent_id: Option<Uuid>,
     pub priority: Option<Priority>,
+    #[validate(range(min = 0.0, message = "estimate must be non-negative"))]
     pub estimate: Option<f64>,
     pub estimate_unit: Option<EstimateUnit>,
+    #[validate(length(max = 20, message = "too many tags (max 20)"))]
     pub tags: Option<Vec<String>>,
     pub due_date: Option<DateTime<Utc>>,
     pub sprint_id: Option<Uuid>,
+    #[validate(length(max = 200, message = "assignee name too long (max 200 chars)"))]
+    pub assignee: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct UpdateItem {
+    #[validate(length(min = 1, max = 500, message = "title must be 1–500 characters"))]
     pub title: Option<String>,
+    #[validate(length(max = 50_000, message = "description too long (max 50 000 chars)"))]
     pub description: Option<String>,
     pub item_type: Option<ItemType>,
+    #[validate(length(min = 1, max = 100, message = "status must be 1–100 characters"))]
     pub status: Option<String>,
     pub priority: Option<Priority>,
+    #[validate(range(min = 0.0, message = "estimate must be non-negative"))]
     pub estimate: Option<f64>,
     pub estimate_unit: Option<EstimateUnit>,
+    #[validate(length(max = 20, message = "too many tags (max 20)"))]
     pub tags: Option<Vec<String>>,
     pub due_date: Option<DateTime<Utc>>,
     pub sprint_id: Option<Uuid>,
     pub sort_order: Option<i32>,
+    #[validate(length(max = 200, message = "assignee name too long (max 200 chars)"))]
+    pub assignee: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct CreateSprint {
+    #[validate(length(min = 1, max = 200, message = "name must be 1–200 characters"))]
     pub name: String,
+    #[validate(length(max = 2_000, message = "goal too long (max 2 000 chars)"))]
     pub goal: Option<String>,
     pub start_date: Option<DateTime<Utc>>,
     pub end_date: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct CreateRole {
+    #[validate(length(min = 1, max = 100, message = "name must be 1–100 characters"))]
     pub name: String,
     pub color: Option<String>,
     pub icon: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct CreateComment {
+    #[validate(length(min = 1, max = 10_000, message = "content must be 1–10 000 characters"))]
     pub content: String,
+    #[validate(length(max = 200, message = "author name too long (max 200 chars)"))]
     pub author: Option<String>,
 }
 
@@ -358,13 +382,14 @@ pub struct CreateDependency {
     pub dependency_type: DependencyType,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct ItemFilter {
     pub status: Option<String>,
     pub item_type: Option<ItemType>,
     pub priority: Option<Priority>,
     pub sprint_id: Option<Uuid>,
     pub parent_id: Option<Uuid>,
+    pub assignee: Option<String>,
     pub tag: Option<String>,
     pub search: Option<String>,
     pub page: Option<u32>,
@@ -397,9 +422,11 @@ pub struct BoardTemplate {
     pub grouping: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct CreateProjectTemplate {
+    #[validate(length(min = 1, max = 200, message = "name must be 1–200 characters"))]
     pub name: String,
+    #[validate(length(max = 10_000, message = "description too long (max 10 000 chars)"))]
     pub description: Option<String>,
     pub project_type: ProjectType,
     pub vocabulary: Option<VocabularyMap>,
@@ -449,23 +476,29 @@ pub struct CustomFieldValue {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct CreateCustomField {
+    #[validate(length(min = 1, max = 100, message = "name must be 1–100 characters"))]
     pub name: String,
     pub field_type: CustomFieldType,
+    #[validate(length(max = 1_000, message = "description too long (max 1 000 chars)"))]
     pub description: Option<String>,
     pub required: Option<bool>,
     pub default_value: Option<serde_json::Value>,
+    #[validate(length(max = 100, message = "too many options (max 100)"))]
     pub options: Option<Vec<String>>,
     pub validation: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct UpdateCustomField {
+    #[validate(length(min = 1, max = 100, message = "name must be 1–100 characters"))]
     pub name: Option<String>,
+    #[validate(length(max = 1_000, message = "description too long (max 1 000 chars)"))]
     pub description: Option<String>,
     pub required: Option<bool>,
     pub default_value: Option<serde_json::Value>,
+    #[validate(length(max = 100, message = "too many options (max 100)"))]
     pub options: Option<Vec<String>>,
     pub validation: Option<serde_json::Value>,
 }
