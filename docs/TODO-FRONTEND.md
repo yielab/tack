@@ -394,6 +394,17 @@ No raw `fetch` outside `shared/api/`. No absolute API hosts anywhere.
 
 ## T-509 · Item Detail · Files (attachments) tab · M
 
+> **Status: ✅ Done.** `tabs/FilesTab.tsx` — drag-drop + click-to-browse zone uploads via
+> `api.attachments.upload` (`multipart/form-data`, no JSON content-type, through
+> `requestForm`); files > 50 MB are rejected client-side with a readable toast before any
+> request. Lists filename, formatted size and MIME with a download anchor to
+> `GET /attachments/{id}` (`api.attachments.downloadUrl`); delete via
+> `DELETE /attachments/{id}`. `type-check` + `build` green (entry 13.69 KB gzipped); 85
+> Vitest tests (list metadata + download href; multipart upload shape; oversize guard
+> blocks upload). **Note:** the download anchor won't carry a bearer token if
+> `FLEXPM_API_TOKEN` is set — fine for the default no-auth setup; a token-aware blob
+> download (`requestBlob`) can replace it later if needed.
+
 - **Why:** upload/list/download/delete endpoints exist (50 MB limit), no UI.
 - **Files:** `features/item-detail/tabs/FilesTab.tsx`; relies on `requestForm`/`requestBlob`
   from `shared/api/client.ts` (T-501).
