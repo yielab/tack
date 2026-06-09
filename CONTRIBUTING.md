@@ -5,7 +5,7 @@
 ### Requirements
 
 | Tool | Version | Install |
-|------|---------|---------|
+| --- | --- | --- |
 | Rust | 1.75+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | Git | 2.x | System package manager |
 | curl | any | Pre-installed on most systems |
@@ -31,7 +31,7 @@ No external database, Docker, or services needed. SQLite is embedded.
 
 ## Project Structure
 
-```
+```text
 flexpm/
 ├── Cargo.toml                 # Workspace root (shared dependencies)
 ├── Cargo.lock                 # Pinned dependency versions
@@ -40,7 +40,7 @@ flexpm/
 ├── crates/
 │   ├── flexpm-core/           # Pure domain logic (no I/O, no DB)
 │   │   └── src/
-│   │       ├── lib.rs         # Module declarations
+│   │       ├── lib.rs
 │   │       ├── models.rs      # All data structures and DTOs
 │   │       ├── workflow.rs    # Workflow engine (transitions, WIP)
 │   │       ├── vocabulary.rs  # Term customization system
@@ -49,7 +49,7 @@ flexpm/
 │   ├── flexpm-db/             # Database layer
 │   │   ├── src/
 │   │   │   ├── lib.rs         # Pool initialization, WAL mode
-│   │   │   ├── migrations.rs  # Schema migrations (run on startup)
+│   │   │   ├── migrations.rs  # 16 schema migrations (auto-run on startup)
 │   │   │   ├── repo.rs        # Repository struct
 │   │   │   └── repo/          # One file per entity
 │   │   │       ├── projects.rs
@@ -57,33 +57,57 @@ flexpm/
 │   │   │       ├── sprints.rs
 │   │   │       ├── roles.rs
 │   │   │       ├── comments.rs
-│   │   │       └── dependencies.rs
+│   │   │       ├── dependencies.rs
+│   │   │       ├── attachments.rs
+│   │   │       ├── boards.rs
+│   │   │       ├── custom_fields.rs
+│   │   │       └── templates.rs
 │   │   └── tests/
-│   │       └── integration_test.rs  # DB integration tests
-│   ├── flexpm-api/            # HTTP server
+│   │       ├── integration_test.rs  # DB integration tests
+│   │       └── perf_test.rs         # 50k-item perf test (#[ignore])
+│   ├── flexpm-api/            # Axum HTTP server + WebSocket
 │   │   └── src/
-│   │       ├── main.rs        # Server entry point
-│   │       ├── lib.rs         # Module declarations
-│   │       ├── router.rs      # Route definitions & app state
-│   │       ├── config.rs      # TOML/env config loading
-│   │       ├── error.rs       # API error -> HTTP mapping
-│   │       ├── debug.rs       # Health & diagnostic endpoints
-│   │       └── handlers/      # One file per entity
-│   │           ├── projects.rs
-│   │           ├── items.rs
-│   │           ├── sprints.rs
-│   │           ├── roles.rs
+│   │       ├── main.rs        # Server entry point + staged restore
+│   │       ├── lib.rs
+│   │       ├── router.rs      # All routes, AppState, middleware wiring
+│   │       ├── config.rs      # TOML/env config, db_file_path()
+│   │       ├── error.rs       # ApiError → HTTP status mapping
+│   │       ├── debug.rs       # /api/health, /api/debug/*
+│   │       ├── middleware.rs  # Bearer token auth
+│   │       └── handlers/
+│   │           ├── attachments.rs
+│   │           ├── backup.rs       # GET /api/backup, POST /api/restore
+│   │           ├── boards_multi.rs
 │   │           ├── comments.rs
-│   │           └── dependencies.rs
-│   └── flexpm-cli/            # CLI tool
+│   │           ├── custom_fields.rs
+│   │           ├── dependencies.rs
+│   │           ├── export.rs       # JSON/CSV export + import
+│   │           ├── items.rs
+│   │           ├── projects.rs
+│   │           ├── roles.rs
+│   │           ├── spa.rs          # SPA fallback (--features embed-spa)
+│   │           ├── sprints.rs
+│   │           ├── templates.rs
+│   │           └── websocket.rs
+│   └── flexpm-cli/            # clap CLI (talks to API over HTTP)
 │       └── src/
-│           └── main.rs        # Command definitions
-└── TODO-ARCHITECTURE.md       # Full architecture roadmap
+│           ├── main.rs        # All commands
+│           ├── client.rs      # HTTP client wrapper (reqwest)
+│           ├── config.rs      # ~/.flexpmrc reader
+│           └── vocab.rs       # Vocabulary-aware output
+├── frontend/
+│   ├── src/
+│   │   ├── components/        # Reusable UI components
+│   │   ├── pages/             # Board, List, Dashboard, Sprints, …
+│   │   ├── lib/               # api.ts, vocab.ts, websocket, optimistic UI
+│   │   └── types/             # TypeScript types
+│   └── dist/                  # Built SPA (gitignored; embedded via embed-spa)
+└── docs/                      # Documentation
 ```
 
 ## Dependency Flow
 
-```
+```text
 flexpm-core  (pure logic, no I/O)
      ^
      |
@@ -91,11 +115,13 @@ flexpm-db    (depends on core, adds SQLite)
      ^
      |
 flexpm-api   (depends on core + db, adds HTTP)
-flexpm-cli   (depends on core + db, adds CLI)
+
+flexpm-cli   (depends on core only — talks to flexpm-api over HTTP, no DB)
 ```
 
 **Rule:** `flexpm-core` must never import `flexpm-db` or any I/O crate.
-Keep business logic testable without a database.
+Keep business logic testable without a database. `flexpm-cli` must never import
+`flexpm-db` — all data access goes through the HTTP API.
 
 ## Development Workflow
 
@@ -203,6 +229,7 @@ all migrations applied. Each test gets its own isolated database.
 ### Adding a New Entity (e.g., "TimeEntry")
 
 1. **Define the model** in `crates/flexpm-core/src/models.rs`:
+
    ```rust
    pub struct TimeEntry {
        pub id: Uuid,
@@ -220,11 +247,13 @@ all migrations applied. Each test gets its own isolated database.
    ```
 
 2. **Add a migration** in `crates/flexpm-db/src/migrations.rs`:
+
    ```rust
    const MIGRATION_011: [&str; 1] = [
        "CREATE TABLE IF NOT EXISTS time_entries ( ... )",
    ];
    ```
+
    Add it to the `migrations` vec in `run_all()`.
 
 3. **Add a repository module** at `crates/flexpm-db/src/repo/time_entries.rs`:
@@ -235,6 +264,7 @@ all migrations applied. Each test gets its own isolated database.
    - Add `pub mod time_entries;` to `crates/flexpm-api/src/handlers.rs`
 
 5. **Add routes** in `crates/flexpm-api/src/router.rs`:
+
    ```rust
    .route("/items/{item_id}/time", post(time_entries::create))
    .route("/items/{item_id}/time", get(time_entries::list))
@@ -273,7 +303,7 @@ Edit `crates/flexpm-core/src/vocabulary.rs`, add a new match arm in `vocabulary_
 The database is SQLite with WAL mode enabled for concurrent reads. Tables:
 
 | Table | Purpose |
-|-------|---------|
+| --- | --- |
 | `workspaces` | Top-level container (one per installation) |
 | `projects` | Projects with vocabulary + workflow JSON |
 | `sprints` | Sprints/iterations with status lifecycle |
@@ -283,8 +313,11 @@ The database is SQLite with WAL mode enabled for concurrent reads. Tables:
 | `item_roles` | Many-to-many junction between items and roles |
 | `comments` | Comments and activity log per item |
 | `attachments` | File metadata per item |
-| `board_views` | Saved board configurations |
-| `items_fts` | FTS5 full-text search index (auto-synced via triggers) |
+| `boards` | Multiple boards per project (grouping, filters) |
+| `project_templates` | Reusable project blueprints |
+| `custom_field_definitions` | User-defined field types per project |
+| `custom_field_values` | Field values per item |
+| `items_fts` | FTS5 virtual table — full-text search (auto-synced via triggers) |
 
 ### Resetting the Database
 
@@ -315,7 +348,7 @@ PRAGMA journal_mode;                       -- Should show "wal"
 - **`flexpm-api`** uses `ApiError` which maps all errors to HTTP status codes:
 
 | Domain Error | HTTP Status |
-|-------------|-------------|
+| --- | --- |
 | `ItemNotFound`, `ProjectNotFound` | 404 |
 | `InvalidTransition`, `WipLimitExceeded` | 400 |
 | `DependencyCycle` | 400 |

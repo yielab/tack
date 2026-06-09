@@ -7,6 +7,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.0] - 2026-06-08
+
+### Architectural correctness, CLI excellence, and release readiness
+
+Phases 2–4 of the engineering roadmap. Covers architectural cleanup,
+a fully-working CLI, vocabulary/workflow UI, performance improvements,
+and release-readiness tooling.
+
+### Breaking changes
+
+- `GET /api/projects/{id}/board` removed — replaced by `GET /api/boards/{id}/view`
+  (multi-board system, migration 014 back-fills a default board for every project)
+- `GET /api/projects/{id}/board/live` WebSocket moved to `GET /api/projects/{id}/boards/live`
+- `flexpm-cli` no longer opens SQLite directly; all commands go through the HTTP API
+- `/api/health` response shape changed: removed `"service"` field, added `"migrations_applied"`
+
+### Added
+
+#### Backup & restore (T-401)
+
+- `GET /api/backup` — WAL checkpoint + `VACUUM INTO` temp file, streamed as `application/octet-stream`
+- `POST /api/restore` — validates SQLite magic bytes, writes `<db>.restore` next to the live file; applied automatically on next server start (old DB saved as `.bak`)
+- `flexpm backup [path]` and `flexpm restore <path>` CLI commands
+- `get_bytes` / `post_bytes` helpers on `FlexpmClient`
+
+#### Observability (T-402)
+
+- `/api/health` now returns `{"status":"ok","version":"…","migrations_applied":N}`
+- `#[instrument(skip(state))]` added to all remaining un-instrumented handlers (`debug_info`, `db_stats`, `board_live`)
+
+#### Single-binary packaging (T-403)
+
+- `--features embed-spa` on `flexpm-api` embeds the pre-built SPA at compile time via `rust-embed`; `serve_spa` fallback handler serves exact-path assets or falls back to `index.html` for client-side routes
+- API routes at `/api/*` always take priority over the SPA fallback
+- Dedicated `embed-spa` CI job builds frontend, runs clippy + tests with feature, builds release binary, reports size (~5.2 MB)
+
+#### CLI excellence (T-301)
+
+- `sprint` subcommands: `create`, `start`, `review`, `close`, `list`
+- `--json` flag on every command for machine-readable output
+- `flexpm config [--url] [--token] [--show]` — reads/writes `~/.flexpmrc`
+- `flexpm completions <bash|zsh|fish|…>` via `clap_complete`
+- Vocabulary-aware output on `list` and `board` (translates terms per project vocab)
+
+#### Vocabulary + workflow UI (T-302)
+
+- `frontend/src/lib/vocab.ts` — central resolver (`resolveLabel`, `getItemTypeList`) for all 16 vocab keys with default fallbacks
+- Settings panel at `/projects/:id/settings` — live table editor for all vocabulary keys and workflow status columns (add/remove/rename, set category and WIP limit)
+- All UI labels route through the vocab resolver; no hardcoded "Task"/"Sprint" strings
+
+#### Assignee field (T-205)
+
+- `assignee: Option<String>` on `Item`, `CreateItem`, `UpdateItem`, `ItemFilter`
+- Migration 015 adds `assignee TEXT` column with an index
+- Board `Assignee` grouping now works (null → "Unassigned" lane)
+- Assignee input in `CreateItemModal`; filter column in `List` view
+
+#### Import (T-204)
+
+- `POST /api/projects/import` fully implemented with two-pass item creation (parent_ids wired after all items exist), sprint ID remapping, dependency remapping, and rollback on failure
+
+#### Performance (T-303)
+
+- Migration 016 adds `idx_items_sprint ON items(project_id, sprint_id)`
+- `#[ignore]` perf test seeds 50k items and asserts `list_items` p95 < 100 ms
+- Lazy route loading in frontend drops entry bundle from ~53 KB to 22 KB gzipped
+- CI gate: entry bundle (index + routing chunks) must stay under 30 KB gzipped
+
+### Changed
+
+- **Workflow validation moved to `flexpm-core`** (T-201): `validate_transition`,
+  `check_wip_limit`, `find_first_done_status`, `should_complete_parent` are now
+  pure functions in `flexpm-core::workflow`; handlers are thin transports
+- **Dual board system removed** (T-202): `board_views` table dropped (migration 014),
+  legacy `handlers/board.rs` removed, WebSocket endpoint consolidated under boards
+- **CLI rewritten** (T-203): `flexpm-cli` now uses `reqwest` blocking HTTP client;
+  `sqlx` and `flexpm-db` dependencies removed from CLI crate; `~/.flexpmrc` config
+- `cargo clippy --all-features` replaced with `cargo clippy --all-targets` in the
+  main CI job (embed-spa feature requires a pre-built frontend, tested separately)
+
+### Fixed
+
+- Pre-existing `collapsible_if` lint errors resolved via Rust let-chains across
+  `dependency.rs`, `workflow.rs`, `config.rs`, `export.rs`, `items.rs`
+- `redundant_closure` in `items.rs` (`.map_err(ApiError::Core)`)
+- `dead_code` warnings on test helpers in `flexpm-db/tests/common/mod.rs`
+- `empty_line_after_doc_comments` in `debug.rs`
+- `test_app_with_config` helper now overrides `database_url` to `sqlite::memory:`
+  so config and pool are consistent
+
+### Tests
+
+- Total: **92 passing** + 1 `#[ignore]` perf test (`cargo test --workspace`)
+- With `--features embed-spa`: **95 tests**
+- New tests: workflow unit tests (transitions, WIP, parent-complete), DB integration
+  (assignee filter, board management, import round-trip), API handler tests
+  (backup/restore, health shape, SPA serving), CLI tests (config, vocab, completions)
+
+---
+
 ## [1.2.0] - 2026-03-16
 
 ### 🎉 Enterprise Features Release

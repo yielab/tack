@@ -7,6 +7,7 @@ use axum::{
 };
 use futures::{SinkExt, stream::StreamExt};
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 use uuid::Uuid;
 
 use crate::{error::ApiError, router::AppState};
@@ -39,6 +40,7 @@ pub enum BoardEvent {
 }
 
 /// WebSocket handler for live board updates
+#[instrument(skip(ws, state))]
 pub async fn board_live(
     ws: WebSocketUpgrade,
     Path(project_id): Path<Uuid>,

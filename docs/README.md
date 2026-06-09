@@ -18,8 +18,8 @@
 
 ## Contributing
 
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — Code style, PR process, issue reporting
-- [CHANGELOG.md](../CHANGELOG.md) — Version history
+- [CONTRIBUTING.md](../CONTRIBUTING.md) — Code style, PR process, how to add features
+- [CHANGELOG.md](../CHANGELOG.md) — Version history (all phases)
 
 ## Archived
 

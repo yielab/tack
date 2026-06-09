@@ -8,6 +8,8 @@ pub mod export;
 pub mod items;
 pub mod projects;
 pub mod roles;
+#[cfg(feature = "embed-spa")]
+pub mod spa;
 pub mod sprints;
 pub mod templates;
 pub mod websocket;

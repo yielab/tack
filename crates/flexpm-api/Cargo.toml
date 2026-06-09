@@ -4,7 +4,14 @@ description = "HTTP API server for FlexPM"
 version.workspace = true
 edition.workspace = true
 
+[features]
+# Embed the pre-built SPA into the binary for single-binary distribution.
+# Requires `frontend/dist/` to exist at compile time (`npm run build`).
+embed-spa = ["dep:rust-embed"]
+
 [dependencies]
+# Optional: embed frontend/dist/ into the binary at compile time
+rust-embed = { version = "8", optional = true }
 flexpm-core = { path = "../flexpm-core" }
 flexpm-db = { path = "../flexpm-db" }
 axum = { workspace = true }
