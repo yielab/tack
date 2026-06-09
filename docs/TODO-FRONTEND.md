@@ -345,6 +345,13 @@ No raw `fetch` outside `shared/api/`. No absolute API hosts anywhere.
 
 ## T-507 · Item Detail · Activity (comments) tab · S
 
+> **Status: ✅ Done.** `features/item-detail/tabs/ActivityTab.tsx` lists comments
+> newest-last with relative timestamps (`GET /items/{id}/comments`), composer posts via
+> `api.comments.create` with an optimistic append (resource `mutate`) that rolls back and
+> restores the draft to the composer on failure (toast on error); empty state via
+> `EmptyState`. Wired into the drawer's Activity tab. 79 Vitest tests (renders fetched
+> comments; optimistic append; rollback-on-failure).
+
 - **Why:** comments exist server-side (`/items/{id}/comments`) with no UI.
 - **Files:** `features/item-detail/tabs/ActivityTab.tsx`.
 - **Steps:** list comments newest-last with relative timestamps; composer posts via
