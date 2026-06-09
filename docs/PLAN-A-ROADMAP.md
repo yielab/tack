@@ -107,7 +107,7 @@ Docs reduced to 6 canonical files in `docs/`. Secondary docs moved to `archived-
 
 ---
 
-### PHASE 2 — Architectural correctness ⬡ IN PROGRESS
+### PHASE 2 — Architectural correctness ✅ DONE
 
 #### ✅ T-201 · Move workflow/WIP validation into `flexpm-core` · L
 
@@ -208,7 +208,7 @@ Docs reduced to 6 canonical files in `docs/`. Secondary docs moved to `archived-
 
 ---
 
-### PHASE 4 — Release readiness
+### PHASE 4 — Release readiness ✅ DONE
 
 #### ✅ T-401 · Backup / restore & data safety · M
 
@@ -216,17 +216,57 @@ Docs reduced to 6 canonical files in `docs/`. Secondary docs moved to `archived-
 - **Acceptance:** ✅ Backup → wipe → restore reproduces the database. 91 tests pass (15 API, 22 DB, 39 core, 11 CLI). Clippy + fmt clean.
 - **Depends on:** T-204 ✅
 
-#### T-402 · Observability & ops hygiene · S
+#### ✅ T-402 · Observability & ops hygiene · S
 
-- **Steps:** Health endpoint reports version + migration count. Confirm tracing spans on all handlers.
-- **Acceptance:** `/api/health` returns `{"status":"ok","version":"...","migrations_applied":N}`.
-- **Tests:** API test on health response shape.
+- **Delivered:** `health()` now accepts `State<AppState>` and queries `SELECT COUNT(*) FROM _migrations`; returns `{"status":"ok","version":"...","migrations_applied":N}`. Added `#[instrument(skip(state))]` to `debug_info`, `db_stats`, and `board_live` (WebSocket handler). 1 new API test asserting version is string and migrations_applied > 0. 92 tests pass.
+- **Acceptance:** ✅ `/api/health` returns `{"status":"ok","version":"...","migrations_applied":N}`. All handlers instrumented.
+- **Tests:** API test `health_response_contains_version_and_migration_count`.
 
-#### T-403 · Single-binary packaging · M
+#### ✅ T-403 · Single-binary packaging · M
 
-- **Steps:** Embed built SPA into the API binary (`rust-embed` feature flag). Release build stays size-optimized.
-- **Acceptance:** `flexpm-api` alone serves both API + UI; binary still small (measure).
-- **Depends on:** T-202, T-303.
+- **Delivered:** `embed-spa` optional feature in `flexpm-api/Cargo.toml` using `rust-embed = "8"`. New `handlers/spa.rs`: `serve_spa` fallback handler (exact-path lookup → index.html SPA fallback, manual MIME table for js/css/svg/etc). Router wires `outer.fallback(spa::serve_spa)` behind `#[cfg(feature = "embed-spa")]`. API routes nested at `/api` always take priority. Separate `embed-spa` CI job: downloads frontend dist artifact, runs clippy + tests with feature, builds release binary, reports size. Binary with SPA embedded: **5.2 MB** (within the ~5 MB target). 3 new feature-gated tests (root→HTML, unknown-route→index.html, API still takes priority) → 19 API tests with feature, 16 without.
+- **Acceptance:** ✅ `cargo build -p flexpm-api --release --features embed-spa` produces a 5.2 MB binary serving both `/api/*` and the SPA. `cargo test -p flexpm-api --features embed-spa` green.
+- **Depends on:** T-202 ✅, T-303 ✅
+
+---
+
+### PHASE 5 — Frontend re-architecture (the primary surface) 🔲 TODO
+
+> The GUI is the product's **primary** surface; recent work drifted to CLI/backend and the
+> frontend decayed. Full, agent-pickable specs (Why / Files / Steps / Acceptance / Tests /
+> Depends, per §3.4 DoD) live in **[`docs/TODO-FRONTEND.md`](./TODO-FRONTEND.md)**. Summary below.
+
+**Problem (verified in code):** 6 files hardcode `http://localhost:3210` (breaks same-origin
+`embed-spa` serving from T-403); half the pages bypass the typed client with raw `fetch`;
+`lib/api.ts` covers only 6 of ~12 backend areas; `api.getBoard()` calls a route that does
+not exist and the board WebSocket uses the wrong `/board/live` path (real-time silently
+broken); **dependencies, attachments, comments, and roles have no UI at all.**
+
+**Goal:** every backend capability reachable through a logical workflow, behind one typed
+API layer, in a maintainable feature-oriented codebase. No Rust/WASM rewrite — keep SolidJS.
+
+| Task | Title | Effort | Depends |
+| --- | --- | --- | --- |
+| T-501 | Unified API client foundation + kill hardcoded hosts | M | — |
+| T-502 | Complete API client to full backend parity + fix drift | M | T-501 |
+| T-503 | Feature-oriented folder restructure (`app/ shared/ features/`) | M | T-501 |
+| T-504 | Design tokens + shared UI kit | M | T-503 |
+| T-505 | Project-context provider + reactive vocabulary | M | T-502, T-503 |
+| T-506 | Item Detail drawer shell + deep link (`?item=`) | M | T-502, T-504 |
+| T-507 | Item Detail · Activity (comments) tab | S | T-506 |
+| T-508 | Item Detail · Dependencies tab | M | T-506 |
+| T-509 | Item Detail · Files (attachments) tab | M | T-506 |
+| T-510 | Item Detail · Fields (custom values) + Roles assignment | M | T-506 |
+| T-511 | Project Settings consolidation + workflow/vocab/roles/data editors | L | T-502, T-503 |
+| T-512 | Global Settings · backup/restore + theme + system | M | T-502 |
+| T-513 | Real-time reconnection + store reconciliation | M | T-502, T-505 |
+| T-514 | New/upgraded views · Tree, Timeline deps, Dashboard metrics | L | T-502, T-505 |
+| T-515 | Frontend build → `embed-spa` pipeline wiring | S | T-501 |
+
+The CLI/voice ("Alexa-type") intake is **not** a separate frontend task: it calls the same
+REST API the GUI uses, and the board WebSocket makes voice/CLI-added items appear live in an
+open GUI. A complete API layer (T-501/T-502) makes GUI, CLI, and voice first-class citizens
+of one contract.
 
 ---
 
@@ -238,6 +278,8 @@ Phase 1: T-101 → T-102 → T-103 → T-104 → T-105          ✅ done
 Phase 2: T-201 → T-202 → T-205 → T-203 → T-204          ✅ done
 Phase 3: T-203 → T-301 ; T-201 → T-302 ; T-202+T-205 → T-303
 Phase 4: T-204 → T-401 ; T-402 (any time) ; T-202+T-303 → T-403
+Phase 5: T-501 → T-502 → T-503 → T-504 ; T-502+T-503 → T-505
+         T-506 → {T-507, T-508, T-509, T-510} ; T-511 ; T-512 ; T-513 ; T-514 ; T-515
 ```
 
 ## 6. Cross-cutting Definition of Done

@@ -2,20 +2,27 @@ use axum::Json;
 use axum::extract::State;
 use axum::response::IntoResponse;
 use serde_json::json;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::router::AppState;
 
-/// GET /api/health — Liveness check
-pub async fn health() -> impl IntoResponse {
+/// GET /api/health — Liveness + readiness check
+#[instrument(skip(state))]
+pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
+    let migrations_applied: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _migrations")
+        .fetch_one(state.repo.pool())
+        .await
+        .unwrap_or(0);
+
     Json(json!({
         "status": "ok",
-        "service": "flexpm",
         "version": env!("CARGO_PKG_VERSION"),
+        "migrations_applied": migrations_applied,
     }))
 }
 
 /// GET /api/debug/info — System info (only in debug builds)
+#[instrument(skip(state))]
 pub async fn debug_info(State(state): State<AppState>) -> impl IntoResponse {
     info!("Debug info requested");
 
@@ -37,6 +44,7 @@ pub async fn debug_info(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 /// GET /api/debug/db-stats — Database statistics
+#[instrument(skip(state))]
 pub async fn db_stats(State(state): State<AppState>) -> impl IntoResponse {
     let counts = get_table_counts(&state).await;
 

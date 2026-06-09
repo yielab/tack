@@ -1,7 +1,7 @@
 # FlexPM Project Status
 
 **Last updated:** 2026-06-08
-**Version:** 1.2.0
+**Version:** 2.0.0
 **Positioning:** Local-first, single-binary project management for solo devs and tiny crews.
 
 ---
@@ -46,8 +46,8 @@
 
 ## Test coverage (actual)
 
-- **Total test functions:** 91 (`cargo test --workspace`) + 1 `#[ignore]` perf test
-- **Breakdown:** flexpm-core 39 unit, flexpm-db 22 integration + 1 ignored perf test (in-memory SQLite), flexpm-api 15 handler tests (4 middleware + 11 integration + 3 backup/restore), flexpm-cli 11 (wiremock + unit)
+- **Total test functions:** 92 (`cargo test --workspace`) + 1 `#[ignore]` perf test; 95 with `--features embed-spa`
+- **Breakdown:** flexpm-core 39 unit, flexpm-db 22 integration + 1 ignored perf test (in-memory SQLite), flexpm-api 16 handler tests (19 with embed-spa), flexpm-cli 11 (wiremock + unit)
 - **CI:** GitHub Actions runs `cargo test --workspace` on every push ✅; entry bundle gate (< 30 KB gzipped) ✅
 - **Frontend tests:** none (Vitest + Playwright deferred to Phase 4)
 
@@ -55,22 +55,24 @@
 
 ## Known issues
 
-None currently. Phase 3 complete.
+None. All four phases of the engineering roadmap are complete.
 
 ---
 
-## Next actions
+## Completed phases
 
-See [PLAN-A-ROADMAP.md](PLAN-A-ROADMAP.md) for the full phased SOP.
+See [PLAN-A-ROADMAP.md](PLAN-A-ROADMAP.md) for full task specs.
 
-**Phase 3 complete:**
+**Phase 0 — Repo hygiene:** dead code removed, docs consolidated, status rewritten.
 
-1. **T-301** ✅ — CLI excellent: `--json` everywhere, shell completions, `config` command, vocabulary-aware output.
-2. **T-302** ✅ — Vocabulary + workflow UI: `vocab.ts` resolver, Settings panel, all labels routed through vocab map.
-3. **T-303** ✅ — Performance pass: migration 016 adds sprint index; `#[ignore]` perf test seeds 50k items; lazy route loading drops entry bundle to 22 KB gzipped; CI gate < 30 KB.
+**Phase 1 — CI & security baseline:** GitHub Actions pipeline, test fixtures, CORS/body-limit hardening, API token auth, input validation.
 
-**Phase 4 in progress:**
+**Phase 2 — Architecture:** workflow validation in `flexpm-core`, dual-board system removed, CLI rewritten to use HTTP API, import implemented, assignee field added.
+
+**Phase 3 — Product depth:** CLI with sprint commands / completions / vocab-aware output; vocabulary + workflow Settings UI; performance pass (sprint index, lazy routes, 22 KB entry bundle).
+
+**Phase 4 — Release readiness:**
 
 1. **T-401** ✅ — Backup / restore: `GET /api/backup` (VACUUM INTO), `POST /api/restore` (staged), `flexpm backup/restore` CLI commands, startup auto-apply.
-2. **T-402** — Observability: `/api/health` returns version + migration count
-3. **T-403** — Single-binary: embed SPA into API binary via `rust-embed`
+2. **T-402** ✅ — Observability: `/api/health` returns `{status, version, migrations_applied}`; all handlers instrumented with `#[instrument]`.
+3. **T-403** ✅ — Single-binary: `--features embed-spa` embeds the SPA; 5.2 MB release binary; dedicated CI job.

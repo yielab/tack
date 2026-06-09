@@ -23,6 +23,30 @@ async fn health_returns_ok() {
     assert_eq!(res.status(), StatusCode::OK);
 }
 
+#[tokio::test]
+async fn health_response_contains_version_and_migration_count() {
+    let (app, _) = common::test_app().await;
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["status"], "ok");
+    assert!(json["version"].is_string(), "version must be a string");
+    assert!(
+        json["migrations_applied"].as_i64().unwrap_or(0) > 0,
+        "migrations_applied must be positive"
+    );
+}
+
 // ─── API token (T-104) ───────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -404,4 +428,67 @@ async fn backup_roundtrip_with_file_db() {
 
     // Clean up
     let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+// ─── Embedded SPA (T-403) — only compiled with --features embed-spa ──────────
+
+#[cfg(feature = "embed-spa")]
+#[tokio::test]
+async fn spa_root_serves_html() {
+    let (app, _) = common::test_app().await;
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let ct = res.headers().get("content-type").unwrap().to_str().unwrap();
+    assert!(ct.contains("text/html"), "expected text/html, got {ct}");
+}
+
+#[cfg(feature = "embed-spa")]
+#[tokio::test]
+async fn spa_unknown_route_returns_index_html() {
+    let (app, _) = common::test_app().await;
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/projects/some-client-side-route")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let ct = res.headers().get("content-type").unwrap().to_str().unwrap();
+    assert!(
+        ct.contains("text/html"),
+        "SPA fallback must return index.html"
+    );
+}
+
+#[cfg(feature = "embed-spa")]
+#[tokio::test]
+async fn api_routes_take_priority_over_spa_fallback() {
+    let (app, _) = common::test_app().await;
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["status"], "ok");
 }

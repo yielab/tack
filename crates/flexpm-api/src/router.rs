@@ -15,6 +15,8 @@ use flexpm_db::Repository;
 
 use crate::config::AppConfig;
 use crate::debug;
+#[cfg(feature = "embed-spa")]
+use crate::handlers::spa;
 use crate::handlers::{
     attachments, backup, boards_multi, comments, custom_fields, dependencies, export, items,
     projects, roles, sprints, templates, websocket,
@@ -194,8 +196,12 @@ pub fn build_router(state: AppState) -> Router {
         // ─── Auth token gate (T-104) ──────────────────────────────────────
         .layer(middleware::from_fn_with_state(state.clone(), require_token));
 
-    Router::new()
-        .nest("/api", api)
+    let outer = Router::new().nest("/api", api);
+
+    #[cfg(feature = "embed-spa")]
+    let outer = outer.fallback(spa::serve_spa);
+
+    outer
         // ── Global body limit (attachments route overrides above) ────────
         .layer(DefaultBodyLimit::max(state.config.max_body_size_bytes))
         // ── Minimal security response headers ────────────────────────────

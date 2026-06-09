@@ -1,499 +1,364 @@
-# FlexPM - Flexible Project Management
+# FlexPM
 
-> **v1.2** · Local-first single-binary project management · Rust + SolidJS
+> Local-first, single-binary project management for solo developers and small teams.
+> Built with Rust (backend) + SolidJS (frontend).
 
-A lightweight, versatile project management tool for solo developers and small teams.
-Built with Rust (backend) and SolidJS (frontend). Supports Scrum, Kanban, phase-based workflows with fully customizable terminology.
+Supports any workflow — Scrum, Kanban, phase-based construction, personal tasks — through fully configurable vocabulary and status columns. No accounts, no cloud, no subscriptions.
 
-**New in v1.2:** Project Templates, Custom Fields (9 types), Multiple Boards per Project
+---
 
-Handles everything from software sprints to construction builds to homework tracking.
+## Quick Start (development)
 
-## Quick Start
-
-**Prerequisites:** [Rust 1.75+](https://rustup.rs/) · [Node.js 18+](https://nodejs.org/)
+**Prerequisites:** [Rust toolchain](https://rustup.rs/) · [Node.js 20+](https://nodejs.org/)
 
 ```bash
-git clone <repo-url> && cd flexpm
+git clone <repo-url>
+cd flexpm
 
-# Run the API server (http://127.0.0.1:3210)
+# Terminal 1 — API server (http://127.0.0.1:3210)
 cargo run --bin flexpm-api
 
-# In another terminal — frontend dev server (http://localhost:5173)
+# Terminal 2 — Frontend dev server (http://localhost:5173, proxies /api)
 cd frontend && npm install && npm run dev
 ```
 
-The server auto-creates `flexpm.db` and runs all migrations on first start.
+The server auto-creates `flexpm.db` and runs all 16 migrations on first start.
 
 ```bash
 # Verify
 curl http://localhost:3210/api/health
-# {"status":"ok","service":"flexpm","version":"0.1.0"}
+# {"status":"ok","version":"0.1.0","migrations_applied":16}
 ```
 
-## Usage Guide
+---
 
-### Creating a Project
+## Single-binary distribution
 
-Every project has a **type** that determines its default vocabulary and workflow.
-Available types: `software`, `web`, `mobile`, `construction`, `personal`, `homework`, `maintenance`, `custom`.
+Build one binary that serves both the API and the embedded SPA:
 
 ```bash
-# Create a software project (Scrum workflow)
-curl -X POST http://localhost:3210/api/projects \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "My App",
-    "description": "Mobile app project",
-    "project_type": "software"
-  }'
+# 1. Build the frontend
+cd frontend && npm ci && npm run build && cd ..
+
+# 2. Build the API with the embedded SPA feature
+cargo build --release --features embed-spa -p flexpm-api
+
+# Resulting binary: target/release/flexpm-api (~5 MB)
+# Serves API at /api/* and the SPA at all other paths.
+./target/release/flexpm-api
+# open http://127.0.0.1:3210
 ```
 
-**What happens automatically:**
-- Vocabulary is set to agile terms (Epic, Task, Sprint, etc.)
-- Workflow is set to Scrum (Backlog -> To Do -> In Progress -> In Review -> Done)
-- WIP limits are applied (5 for In Progress, 3 for In Review)
+Without `--features embed-spa` the binary is API-only; use the dev server or any static file host for the frontend.
+
+---
+
+## CLI
+
+The `flexpm` CLI talks to a running API server.
 
 ```bash
-# Create a construction project (Phase-based workflow)
-curl -X POST http://localhost:3210/api/projects \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Kitchen Renovation",
-    "project_type": "construction"
-  }'
+# Point at the server (default: http://127.0.0.1:3210)
+export FLEXPM_API_URL=http://127.0.0.1:3210
+
+# Projects
+flexpm init "Kitchen Reno" --type construction
+flexpm list --project <id>
+
+# Items
+flexpm add "Design login page" --project <id> --type task --priority high
+flexpm move <item-id> "In Progress"
+
+# Sprints
+flexpm sprint create --project <id> --name "Sprint 1"
+flexpm sprint start <sprint-id>
+flexpm sprint close <sprint-id>
+
+# Backup and restore
+flexpm backup                        # saves flexpm-backup.db in the current directory
+flexpm backup --path /safe/place.db  # custom path
+flexpm restore /safe/place.db        # stages the restore; restart the server to apply
+
+# Config
+flexpm config --url http://myserver:3210 --token mytoken
+flexpm config --show
+
+# Shell completions
+flexpm completions bash >> ~/.bashrc
+flexpm completions zsh  >> ~/.zshrc
 ```
 
-This auto-configures:
-- Vocabulary: Task -> "Work Order", Sprint -> "Phase", Epic -> "Building"
-- Workflow: Permit -> Procurement -> Build -> Inspect -> Handover
+All commands support `--json` for machine-readable output.
 
-### Adding Items (Tasks, Epics, etc.)
+---
+
+## API Overview
+
+Base URL: `http://127.0.0.1:3210/api`
+
+### Core resources
+
+| Endpoint | Description |
+| --- | --- |
+| `POST /projects` | Create project |
+| `GET /projects` | List all projects |
+| `PATCH /projects/{id}` | Update project (including vocabulary + workflow) |
+| `POST /projects/{id}/items` | Create item |
+| `GET /projects/{id}/items` | List items (with filters, pagination) |
+| `PATCH /items/{id}` | Update item (status change validated by workflow) |
+| `GET /projects/{id}/boards` | List boards |
+| `GET /boards/{id}/view` | Board view with items grouped by column |
+| `GET /projects/{id}/boards/live` | WebSocket — real-time board updates |
+
+### Operations
+
+| Endpoint | Description |
+| --- | --- |
+| `GET /projects/{id}/export?format=json\|csv` | Export project |
+| `POST /projects/import` | Import project (with ID remapping) |
+| `GET /api/backup` | Download a clean SQLite backup |
+| `POST /api/restore` | Stage a backup file for next-startup restore |
+| `GET /projects/{id}/search?q=term` | FTS5 full-text search |
+| `GET /search?q=term` | Global search across all projects |
+
+### Full curl workflow
 
 ```bash
-# Save the project ID from the create response
-PROJECT_ID="<uuid-from-response>"
+BASE=http://localhost:3210/api
 
-# Create an epic
-curl -X POST http://localhost:3210/api/projects/$PROJECT_ID/items \
+# Create a project
+PROJECT=$(curl -s -X POST $BASE/projects \
   -H "Content-Type: application/json" \
-  -d '{
-    "title": "User Authentication",
-    "description": "Implement full auth flow",
-    "item_type": "epic",
-    "priority": "high",
-    "tags": ["backend", "security"]
-  }'
+  -d '{"name":"My App","project_type":"software"}')
+PID=$(echo $PROJECT | jq -r '.id')
 
-# Create a task under that epic
-EPIC_ID="<uuid-from-response>"
-
-curl -X POST http://localhost:3210/api/projects/$PROJECT_ID/items \
+# Add an item
+ITEM=$(curl -s -X POST $BASE/projects/$PID/items \
   -H "Content-Type: application/json" \
-  -d '{
-    "title": "Design login page",
-    "item_type": "task",
-    "parent_id": "'$EPIC_ID'",
-    "priority": "medium",
-    "estimate": 5
-  }'
+  -d '{"title":"Login page","item_type":"task","priority":"high"}')
+IID=$(echo $ITEM | jq -r '.id')
+
+# Move it forward
+curl -s -X PATCH $BASE/items/$IID \
+  -H "Content-Type: application/json" \
+  -d '{"status":"In Progress"}'
+
+# Export
+curl -s "$BASE/projects/$PID/export?format=json" -o backup.json
 ```
 
-### Moving Items Through the Workflow
+---
 
-```bash
-ITEM_ID="<uuid>"
+## Configuration
 
-# Move from Backlog to In Progress
-curl -X PATCH http://localhost:3210/api/items/$ITEM_ID \
-  -H "Content-Type: application/json" \
-  -d '{"status": "In Progress"}'
+`flexpm.toml` in the working directory, or environment variables:
 
-# Move to Done
-curl -X PATCH http://localhost:3210/api/items/$ITEM_ID \
-  -H "Content-Type: application/json" \
-  -d '{"status": "Done"}'
+| Variable | Default | Description |
+| --- | --- | --- |
+| `FLEXPM_HOST` | `127.0.0.1` | Bind address |
+| `FLEXPM_PORT` | `3210` | Port |
+| `FLEXPM_DATABASE_URL` | `sqlite:flexpm.db?mode=rwc` | SQLite path |
+| `FLEXPM_LOG_LEVEL` | `info` | `trace` · `debug` · `info` · `warn` · `error` |
+| `FLEXPM_LOG_JSON` | `false` | Structured JSON logs |
+| `FLEXPM_LOG_FILE` | _(none)_ | Optional log file |
+| `FLEXPM_STORAGE_DIR` | `./storage` | Attachment storage |
+| `FLEXPM_API_TOKEN` | _(none)_ | Bearer token — required on all `/api/*` requests when set |
+| `FLEXPM_ALLOWED_ORIGINS` | `localhost:8080,127.0.0.1:8080,...` | CORS allow-list |
+| `FLEXPM_MAX_BODY_SIZE` | `2097152` | Global body limit (bytes); uploads always 50 MB |
+
+Example `flexpm.toml`:
+
+```toml
+host = "127.0.0.1"
+port = 3210
+database_url = "sqlite:flexpm.db?mode=rwc"
+log_level = "info"
+storage_dir = "./storage"
+# api_token = "change-me"
 ```
 
-The workflow engine validates transitions. For construction projects with strict transitions,
-trying to skip from "Permit" to "Handover" returns a `400 Bad Request`.
+---
 
-### Sprints (Scrum Mode)
+## Project types & default workflows
+
+| Type | Workflow | Vocabulary highlights |
+| --- | --- | --- |
+| `software` | Scrum (Backlog → In Progress → Done) | Epic, Feature, Task, Sprint |
+| `web` / `mobile` | Scrum | Same as software |
+| `construction` | Phase-based (Permit → Procurement → Build → Inspect → Handover) | Building, Work Order, Phase |
+| `personal` | Simple (To Do → Doing → Done) | Goal, Action, Step |
+| `homework` | Simple | Course, Assignment, Module, Week |
+| `maintenance` | Kanban | System, Ticket, Job |
+| `custom` | Simple | Default agile terms |
+
+All vocabulary and workflow columns are editable after creation — via the **Settings panel** in the UI (`/projects/:id/settings`) or via `PATCH /api/projects/{id}`.
+
+---
+
+## Customizing vocabulary
 
 ```bash
-# Create a sprint
-curl -X POST http://localhost:3210/api/projects/$PROJECT_ID/sprints \
+curl -X PATCH http://localhost:3210/api/projects/$PID \
   -H "Content-Type: application/json" \
-  -d '{
-    "name": "Sprint 1",
-    "goal": "Ship MVP login flow",
-    "start_date": "2026-03-16T00:00:00Z",
-    "end_date": "2026-03-30T00:00:00Z"
-  }'
-
-# Start the sprint
-SPRINT_ID="<uuid>"
-curl -X PATCH http://localhost:3210/api/sprints/$SPRINT_ID/status \
-  -H "Content-Type: application/json" \
-  -d '{"status": "active"}'
-
-# Assign an item to the sprint
-curl -X PATCH http://localhost:3210/api/items/$ITEM_ID \
-  -H "Content-Type: application/json" \
-  -d '{"sprint_id": "'$SPRINT_ID'"}'
+  -d '{"vocabulary":{"task":"Work Order","sprint":"Phase","epic":"Building"}}'
 ```
 
-### Roles & Specialties
+The UI Settings panel provides a live editor for all 16 vocabulary keys.
 
-Roles tag **what kind of work** an item needs, not who does it.
-Perfect for solo devs wearing multiple hats, or small teams with specialties.
+---
 
-```bash
-# Create roles for the project
-curl -X POST http://localhost:3210/api/projects/$PROJECT_ID/roles \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Frontend Dev", "color": "#3b82f6"}'
-
-curl -X POST http://localhost:3210/api/projects/$PROJECT_ID/roles \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Designer", "color": "#8b5cf6"}'
-
-# Assign a role to an item
-ROLE_ID="<uuid>"
-curl -X PUT http://localhost:3210/api/items/$ITEM_ID/roles/$ROLE_ID
-```
-
-### Dependencies
+## Customizing workflow
 
 ```bash
-# Item A blocks Item B
-curl -X POST http://localhost:3210/api/items/$ITEM_A_ID/dependencies \
-  -H "Content-Type: application/json" \
-  -d '{
-    "target_item_id": "'$ITEM_B_ID'",
-    "dependency_type": "blocks"
-  }'
-```
-
-The dependency engine validates the graph and rejects cycles.
-Dependency types: `blocks`, `is_blocked_by`, `relates_to`, `duplicates`.
-
-### Comments
-
-```bash
-curl -X POST http://localhost:3210/api/items/$ITEM_ID/comments \
-  -H "Content-Type: application/json" \
-  -d '{
-    "content": "Updated the design mockup, ready for review.",
-    "author": "Alice"
-  }'
-```
-
-### Searching
-
-```bash
-# Full-text search across item titles, descriptions, and tags
-curl "http://localhost:3210/api/projects/$PROJECT_ID/search?q=login"
-```
-
-### Listing & Filtering
-
-```bash
-# All items in a project
-curl "http://localhost:3210/api/projects/$PROJECT_ID/items"
-
-# Filter by status
-curl "http://localhost:3210/api/projects/$PROJECT_ID/items?status=In%20Progress"
-
-# Filter by type and priority
-curl "http://localhost:3210/api/projects/$PROJECT_ID/items?item_type=task&priority=high"
-
-# Hierarchical tree view
-curl "http://localhost:3210/api/projects/$PROJECT_ID/items/tree"
-
-# Paginated results
-curl "http://localhost:3210/api/projects/$PROJECT_ID/items?page=1&per_page=25"
-```
-
-### Customizing Vocabulary
-
-Rename any term to fit your domain:
-
-```bash
-curl -X PATCH http://localhost:3210/api/projects/$PROJECT_ID \
-  -H "Content-Type: application/json" \
-  -d '{
-    "vocabulary": {
-      "task": "Work Item",
-      "sprint": "Iteration",
-      "epic": "Initiative",
-      "backlog": "Idea Pool",
-      "story_points": "Complexity"
-    }
-  }'
-```
-
-### Customizing Workflow
-
-Add/remove/reorder status columns and set WIP limits:
-
-```bash
-curl -X PATCH http://localhost:3210/api/projects/$PROJECT_ID \
+curl -X PATCH http://localhost:3210/api/projects/$PID \
   -H "Content-Type: application/json" \
   -d '{
     "workflow": {
       "workflow_type": "custom",
       "statuses": [
-        {"name": "Ideas", "category": "todo", "wip_limit": null, "order": 0},
-        {"name": "Designing", "category": "in_progress", "wip_limit": 2, "order": 1},
-        {"name": "Building", "category": "in_progress", "wip_limit": 3, "order": 2},
-        {"name": "Testing", "category": "in_progress", "wip_limit": 2, "order": 3},
-        {"name": "Shipped", "category": "done", "wip_limit": null, "order": 4}
+        {"name":"Ideas",    "category":"todo",        "wip_limit":null, "order":0},
+        {"name":"Building", "category":"in_progress", "wip_limit":3,    "order":1},
+        {"name":"Shipped",  "category":"done",        "wip_limit":null, "order":2}
       ],
       "transitions": null
     }
   }'
 ```
 
-## Configuration
+---
 
-FlexPM can be configured via a `flexpm.toml` file in the working directory, or via environment variables.
-
-```toml
-# flexpm.toml (copy from config/flexpm.example.toml)
-host = "127.0.0.1"
-port = 3210
-database_url = "sqlite:flexpm.db?mode=rwc"
-log_level = "info"        # trace | debug | info | warn | error
-log_json = false          # true for structured JSON logs
-# log_file = "./logs/flexpm.log"
-storage_dir = "./storage"
-```
-
-Environment variable equivalents (override the file):
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `FLEXPM_HOST` | `127.0.0.1` | Server bind address |
-| `FLEXPM_PORT` | `3210` | Server port |
-| `FLEXPM_DATABASE_URL` | `sqlite:flexpm.db?mode=rwc` | SQLite database path |
-| `FLEXPM_LOG_LEVEL` | `info` | Log verbosity |
-| `FLEXPM_LOG_JSON` | `false` | JSON structured logging |
-| `FLEXPM_LOG_FILE` | _(none)_ | Optional log file path |
-| `FLEXPM_STORAGE_DIR` | `./storage` | Attachment storage directory |
-| `FLEXPM_API_TOKEN` | _(none)_ | Optional Bearer token — set to require `Authorization: Bearer <token>` on all API requests |
-| `FLEXPM_ALLOWED_ORIGINS` | `localhost:8080,127.0.0.1:8080` | Comma-separated CORS allow-list |
-| `FLEXPM_MAX_BODY_SIZE` | `2097152` | Global request body limit in bytes (default 2 MB; upload endpoint is always 50 MB) |
-
-## Project Types & Defaults
-
-| Type | Workflow | Example Vocabulary |
-|------|----------|--------------------|
-| `software` | Scrum (Backlog/To Do/In Progress/In Review/Done) | Epic, Feature, Task, Sprint |
-| `web` | Scrum | Same as software |
-| `mobile` | Scrum | Same as software |
-| `construction` | Phase-based (Permit/Procurement/Build/Inspect/Handover) | Building, Work Order, Phase, Inspection |
-| `personal` | Simple (To Do/Doing/Done) | Goal, Action, Step |
-| `homework` | Simple (To Do/Doing/Done) | Course, Assignment, Module, Week |
-| `maintenance` | Kanban (Queue/In Progress/Review/Done) | System, Ticket, Job, Schedule |
-| `custom` | Simple (To Do/Doing/Done) | Default agile terms |
-
-## Running Tests
+## Backup and restore
 
 ```bash
-# Run all tests (unit + integration)
-cargo test
+# Download a clean offline copy of the live database
+curl http://localhost:3210/api/backup -o backup.db
 
-# Run with output visible
-cargo test -- --nocapture
+# Stage a restore (the running server is not interrupted)
+curl -X POST http://localhost:3210/api/restore \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @backup.db
+# → {"status":"staged","message":"Restore staged. Stop the server and restart to apply."}
 
-# Run a specific test
-cargo test test_workflow_transition_validation
-
-# Run only core unit tests
-cargo test -p flexpm-core
-
-# Run only database integration tests
-cargo test -p flexpm-db
+# On next server start, the staged file is applied automatically.
+# The previous database is moved to flexpm.db.bak.
 ```
 
-## Debug Endpoints
+---
 
-When the server is running:
+## Debugging
 
 ```bash
-# Health check
+# Health + version + migration count
 curl http://localhost:3210/api/health
 
-# System info (version, build mode, database info)
+# System info, DB size, config
 curl http://localhost:3210/api/debug/info
 
-# Database statistics (row counts per table)
+# Row counts per table
 curl http://localhost:3210/api/debug/db-stats
-```
 
-## Logging & Debugging
-
-```bash
-# Run with debug logging
+# Verbose logging
 FLEXPM_LOG_LEVEL=debug cargo run --bin flexpm-api
 
-# Run with trace logging (very verbose, shows SQL)
+# Trace SQL queries
 RUST_LOG=flexpm_db=trace,flexpm_api=debug cargo run --bin flexpm-api
-
-# Run with JSON structured logging
-FLEXPM_LOG_JSON=true cargo run --bin flexpm-api
 ```
 
-Every API request is traced with method, URI, and timing. Every database
-operation logs at `debug` level with parameters and results.
+---
 
-## Frontend Web UI
-
-FlexPM includes a modern web frontend built with SolidJS.
+## Running tests
 
 ```bash
-cd frontend && npm install && npm run dev
-# → http://localhost:5173 (proxies /api to http://127.0.0.1:3210)
+# All tests (92 tests, 1 ignored perf test)
+cargo test --workspace
+
+# With embed-spa feature (95 tests, requires frontend/dist/ to exist)
+cargo test -p flexpm-api --features embed-spa
+
+# Single crate
+cargo test -p flexpm-core   # 39 unit tests
+cargo test -p flexpm-db     # 22 integration tests
+cargo test -p flexpm-api    # 16 handler tests
+cargo test -p flexpm-cli    # 11 CLI tests
+
+# Run the ignored 50k-item performance test
+cargo test -p flexpm-db list_items_p95 -- --ignored
 ```
 
-**Frontend Features:**
-- ✅ **Six View Modes** for comprehensive project management:
-  - **Board View** - Interactive Kanban with HTML5 drag-and-drop
-  - **List View** - Sortable table with filtering and bulk operations
-  - **Dashboard View** - Statistics, charts, and analytics
-  - **Sprint View** - Scrum workflow with sprint management
-  - **Calendar View** - Due date visualization on calendar
-  - **Timeline View** - Gantt-style date-based visualization
-- ✅ **Live board updates** via WebSocket
-- ✅ **Optimistic UI updates** (instant feedback, rollback on error)
-- ✅ **Keyboard shortcuts** (Ctrl+K command palette, Ctrl+/ search)
-- ✅ **Global search** with FTS5 full-text search
-- ✅ **Toast notifications** for all operations
-- ✅ **Skeleton loading screens** (no more "Loading...")
-- ✅ **Dark mode support**
-- ✅ **Project & Item Management** with create/edit modals
+Integration tests use in-memory SQLite — no external services needed.
 
-## New in v1.2
-
-### 1. **Project Templates**
-
-Create reusable project blueprints that include workflow, vocabulary, custom fields, and default boards. Reduces project setup time by 80%.
-
-```bash
-# List available templates
-curl http://localhost:3210/api/templates
-
-# Create project from template
-curl -X POST http://localhost:3210/api/projects/from-template/$TEMPLATE_ID \
-  -H "Content-Type: application/json" \
-  -d '{"name": "New Project", "description": "Based on template"}'
-```
-
-**Frontend:** Templates gallery at `/templates` with type-based filtering and "Use Template" workflow.
-
-### 2. **Custom Fields**
-
-Add user-defined metadata to items with 9 field types: Text, LongText, Number, Date, Boolean, Select, MultiSelect, URL, Email.
-
-```bash
-# Create a custom field
-curl -X POST http://localhost:3210/api/projects/$PROJECT_ID/custom-fields \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Customer",
-    "field_type": "text",
-    "description": "Customer name for this work item",
-    "required": false
-  }'
-
-# Set field value for an item
-curl -X PUT http://localhost:3210/api/items/$ITEM_ID/custom-fields/$FIELD_ID \
-  -H "Content-Type: application/json" \
-  -d '{"value": "Acme Corp"}'
-```
-
-**Frontend:** Custom Fields Manager at `/projects/:id/settings/fields` with visual field type selector.
-
-### 3. **Multiple Boards per Project**
-
-Create unlimited boards per project with different groupings and filters. Group by Status, Priority, ItemType, Sprint, Assignee, or CustomField.
-
-```bash
-# Create a board
-curl -X POST http://localhost:3210/api/projects/$PROJECT_ID/boards \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Priority Board",
-    "description": "Group items by priority",
-    "grouping": "priority",
-    "is_default": false
-  }'
-
-# Get board view with grouped items
-curl http://localhost:3210/api/boards/$BOARD_ID/view
-```
-
-**Frontend:** BoardSelector dropdown in Board view header + Boards Manager at `/projects/:id/settings/boards`.
-
-**v1.2 Statistics:**
-- **API Endpoints:** 34 → 54 (+20, +59%)
-- **Database Tables:** 10 → 13 (+3, +30%)
-- **Frontend Routes:** 10 → 15 (+5, +50%)
-- **Bundle Size:** 137.9 KB → 170.8 KB JS (+23%), 37.6 KB → 39.9 KB CSS (+6%)
-
-See [CHANGELOG.md](CHANGELOG.md) for complete version history.
-
-## Documentation
-
-### Essential Documents
-
-- **[Documentation Index](docs/README.md)** - Complete documentation directory
-- **[Project Status](docs/PROJECT-STATUS.md)** - Current implementation status and roadmap
-- **[Changelog](CHANGELOG.md)** - Version history and release notes
-
-### API & Development
-
-- **[API Reference](docs/API-REFERENCE.md)** - Complete API endpoint reference
-- **[Testing Guide](docs/TESTING.md)** - Unit, integration, and end-to-end testing
-- **[Engineering Roadmap](docs/PLAN-A-ROADMAP.md)** - Planned work with per-task specs
-
-### Deployment & Operations
-
-- **[Deployment Guide](docs/DEPLOYMENT-GUIDE.md)** - Production deployment instructions
-- **[Development Guide](CLAUDE.md)** - Dev environment and architecture notes
-- **[Contributing](CONTRIBUTING.md)** - Contribution guidelines
+---
 
 ## Architecture
 
-```
+```text
 crates/
-├── flexpm-core/     Core domain models & business logic (no I/O)
-│   ├── models.rs    Entities: Project, Item, Sprint, Role, Comment, etc.
-│   ├── workflow.rs  Workflow engine: transitions, WIP limits, presets
-│   ├── vocabulary.rs Customizable term mapping per project
-│   ├── dependency.rs DAG graph with cycle detection
-│   └── error.rs     Typed domain error hierarchy
-├── flexpm-db/       Database layer (SQLite via sqlx)
-│   ├── migrations.rs 13 migrations with FTS5 full-text search
-│   └── repo/        Repository pattern: CRUD for all entities
-├── flexpm-api/      HTTP server (Axum)
-│   ├── router.rs    59 REST routes
-│   ├── handlers/    Request handlers per entity
-│   ├── error.rs     API error -> HTTP status mapping
-│   ├── debug.rs     Health & diagnostics endpoints
-│   └── config.rs    TOML/env config loading
-└── flexpm-cli/      CLI tool (clap)
-    └── main.rs      Terminal commands (init, add, list, move, etc.)
+├── flexpm-core/     Pure domain logic — no I/O
+│   ├── models.rs    All entities and DTOs
+│   ├── workflow.rs  Transition validation, WIP limits, presets
+│   ├── vocabulary.rs Customizable term mapping
+│   ├── dependency.rs DAG with cycle detection
+│   └── error.rs     Typed domain errors
+├── flexpm-db/       SQLite persistence (sqlx, async)
+│   ├── migrations.rs 16 migrations, FTS5, WAL mode
+│   └── repo/        Repository pattern per entity
+├── flexpm-api/      Axum HTTP server + WebSocket
+│   ├── router.rs    All routes, middleware, AppState
+│   ├── handlers/    One module per entity
+│   ├── config.rs    TOML + env config
+│   └── debug.rs     Health and diagnostics
+└── flexpm-cli/      clap CLI — talks to the API over HTTP
 
 frontend/
 ├── src/
-│   ├── components/  Reusable UI components
-│   ├── pages/       Board, Projects, Settings views
-│   ├── lib/         API client and utilities
-│   └── types/       TypeScript type definitions
-└── Dockerfile       Production-ready nginx container
+│   ├── components/  UI components (modals, board, list, etc.)
+│   ├── pages/       Board, List, Dashboard, Sprints, Calendar,
+│   │                Timeline, Settings, Templates views
+│   ├── lib/         API client, WebSocket, optimistic UI, vocab resolver
+│   └── types/       TypeScript types
+└── dist/            Built SPA (embedded when using --features embed-spa)
 ```
+
+### Crate dependency rules
+
+```text
+flexpm-core  ← no deps on other crates (pure logic)
+     ↑
+flexpm-db    ← adds SQLite I/O
+     ↑
+flexpm-api   ← adds HTTP transport
+flexpm-cli   ← talks to flexpm-api over HTTP (no DB access)
+```
+
+---
+
+## Frontend features
+
+- **6 view modes:** Board (Kanban drag-and-drop), List, Dashboard, Sprints, Calendar, Timeline
+- **Settings panel** — live vocabulary and workflow editor per project
+- **Real-time updates** via WebSocket
+- **Optimistic UI** — instant feedback, rollback on error
+- **Global search** (Ctrl+/) powered by FTS5
+- **Command palette** (Ctrl+K)
+- **Project templates** — create and reuse project blueprints
+- **Custom fields** — 9 types: Text, LongText, Number, Date, Boolean, Select, MultiSelect, URL, Email
+- **Multiple boards per project** — 6 grouping modes: Status, Priority, Item Type, Sprint, Assignee, Custom Field
+- Dark mode, skeleton loading, toast notifications
+- Entry bundle: 22 KB gzipped (lazy-loaded routes)
+
+---
+
+## Documentation
+
+- [API Reference](docs/API-REFERENCE.md) — complete endpoint reference
+- [Testing Guide](docs/TESTING.md) — test pyramid, commands, coverage
+- [Deployment Guide](docs/DEPLOYMENT-GUIDE.md) — bare binary and reverse proxy setup
+- [Engineering Roadmap](docs/PLAN-A-ROADMAP.md) — all phases and tasks
+- [Project Status](docs/PROJECT-STATUS.md) — current state and known gaps
+- [CONTRIBUTING.md](CONTRIBUTING.md) — code style, PR process, how to add features
+- [CHANGELOG.md](CHANGELOG.md) — version history
+
+---
 
 ## License
 
