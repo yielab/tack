@@ -1,7 +1,7 @@
 import { createSignal, Show, For, createEffect, onCleanup, type Component } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
-import { api } from '../lib/api';
-import type { Item } from '../types/api';
+import { api } from '../api';
+import type { Item } from '../../types/api';
 
 export interface SearchBarProps {
   projectId?: string;
@@ -53,9 +53,9 @@ const SearchBar: Component<SearchBarProps> = (props) => {
       try {
         let items: Item[];
         if (props.projectId) {
-          items = await api.searchProject(props.projectId, q);
+          items = await api.search.inProject(props.projectId, q);
         } else {
-          items = await api.searchGlobal(q);
+          items = await api.search.global(q);
         }
         setResults(items);
         setIsOpen(items.length > 0);

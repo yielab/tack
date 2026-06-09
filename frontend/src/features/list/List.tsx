@@ -7,11 +7,11 @@ import {
   createSortable,
   closestCenter
 } from '@thisbeyond/solid-dnd';
-import { api } from '../lib/api';
-import { toast } from '../lib/toast';
-import { getItemTypeList, type ItemTypeConfig } from '../lib/vocab';
-import type { Item } from '../types/api';
-import CreateItemModal from '../components/CreateItemModal';
+import { api } from '../../shared/api';
+import { toast } from '../../shared/ui/toast';
+import { getItemTypeList, type ItemTypeConfig } from '../../shared/vocab/vocab';
+import type { Item } from '../../types/api';
+import CreateItemModal from '../../shared/ui/CreateItemModal';
 import { FiPlus, FiMenu, FiCheck, FiX, FiChevronRight, FiChevronDown, FiTrash2 } from 'solid-icons/fi';
 
 type ItemType = 'epic' | 'feature' | 'task' | 'subtask' | 'bug' | 'requirement';
@@ -28,8 +28,8 @@ export default function List() {
   const params = useParams();
   const projectId = params.id;
 
-  const [items, { refetch }] = createResource(() => projectId ? api.listItems(projectId) : Promise.resolve([]));
-  const [project] = createResource(() => projectId ? api.getProject(projectId) : Promise.resolve(null));
+  const [items, { refetch }] = createResource(() => projectId ? api.items.list(projectId) : Promise.resolve([]));
+  const [project] = createResource(() => projectId ? api.projects.get(projectId) : Promise.resolve(null));
   const types = createMemo(() => getItemTypeList(project()?.vocabulary));
 
   const [expandedItems, setExpandedItems] = createSignal<Set<string>>(new Set());
@@ -122,7 +122,7 @@ export default function List() {
     if (!creating || !projectId) return;
 
     try {
-      await api.createItem(projectId, {
+      await api.items.create(projectId, {
         title,
         item_type: newItemType(),
         priority: newItemPriority() as any,
@@ -144,7 +144,7 @@ export default function List() {
   const handleDelete = async (item: Item) => {
     if (!confirm(`Delete "${item.title}"?`)) return;
     try {
-      await api.deleteItem(item.id);
+      await api.items.remove(item.id);
       toast.success('Deleted');
       await refetch();
     } catch {
@@ -154,7 +154,7 @@ export default function List() {
 
   const handleMove = async (itemId: string, newParentId: string | null) => {
     try {
-      await api.updateItem(itemId, { parent_id: newParentId || undefined });
+      await api.items.update(itemId, { parent_id: newParentId || undefined });
       toast.success('Item moved');
       await refetch();
     } catch {

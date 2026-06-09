@@ -1,14 +1,14 @@
 import { createSignal, createMemo, For, Show, createResource } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
-import { api } from '../lib/api';
+import { api } from '../../shared/api';
 
 export default function Timeline() {
   const params = useParams();
   const navigate = useNavigate();
   const projectId = params.id!;
 
-  const [project] = createResource(() => api.getProject(projectId));
-  const [items] = createResource(() => api.listItems(projectId));
+  const [project] = createResource(() => api.projects.get(projectId));
+  const [items] = createResource(() => api.items.list(projectId));
 
   const [currentDate, setCurrentDate] = createSignal(new Date());
   const [viewMode, setViewMode] = createSignal<'week' | 'month' | 'quarter'>('month');
