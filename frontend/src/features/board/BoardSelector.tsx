@@ -48,7 +48,7 @@ export default function BoardSelector(props: BoardSelectorProps) {
 
   const handleManageBoards = () => {
     setIsOpen(false);
-    navigate(`/projects/${props.projectId}/settings/boards`);
+    navigate(`/projects/${props.projectId}/settings`);
   };
 
   return (
