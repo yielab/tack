@@ -1,6 +1,6 @@
 import { createSignal, createResource, For, Show } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
-import { api } from '../lib/api';
+import { api } from '../shared/api';
 import { toast } from '../lib/toast';
 import { resolveLabel } from '../lib/vocab';
 
@@ -30,12 +30,9 @@ export default function BoardsManager() {
   const [grouping, setGrouping] = createSignal<string>('status');
   const [isDefault, setIsDefault] = createSignal(false);
 
-  const [boards, { refetch }] = createResource(() =>
-    fetch(`http://localhost:3210/api/projects/${projectId}/boards`)
-      .then(res => res.json())
-  );
+  const [boards, { refetch }] = createResource(() => api.boards.list(projectId));
 
-  const [project] = createResource(() => api.getProject(projectId));
+  const [project] = createResource(() => api.projects.get(projectId));
 
   const openCreateModal = () => {
     setName('');
@@ -67,18 +64,10 @@ export default function BoardsManager() {
 
     try {
       if (editingBoard()) {
-        await fetch(`http://localhost:3210/api/boards/${editingBoard()!.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
+        await api.boards.update(editingBoard()!.id, body);
         toast.success('Board updated successfully');
       } else {
-        await fetch(`http://localhost:3210/api/projects/${projectId}/boards`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
+        await api.boards.create(projectId, body);
         toast.success('Board created successfully');
       }
 
@@ -93,9 +82,7 @@ export default function BoardsManager() {
     if (!confirm('Are you sure you want to delete this board?')) return;
 
     try {
-      await fetch(`http://localhost:3210/api/boards/${boardId}`, {
-        method: 'DELETE',
-      });
+      await api.boards.remove(boardId);
       toast.success('Board deleted successfully');
       refetch();
     } catch (error) {
@@ -105,11 +92,7 @@ export default function BoardsManager() {
 
   const handleSetDefault = async (boardId: string) => {
     try {
-      await fetch(`http://localhost:3210/api/boards/${boardId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_default: true }),
-      });
+      await api.boards.update(boardId, { is_default: true });
       toast.success('Default board updated');
       refetch();
     } catch (error) {

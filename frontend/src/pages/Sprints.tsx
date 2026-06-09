@@ -1,6 +1,6 @@
 import { createSignal, createResource, For, Show } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
-import { api } from '../lib/api';
+import { api } from '../shared/api';
 import { toast } from '../lib/toast';
 import type { Sprint, Item } from '../types/api';
 
@@ -9,11 +9,11 @@ export default function Sprints() {
   const navigate = useNavigate();
   const projectId = params.id!;
 
-  const [project] = createResource(() => api.getProject(projectId));
+  const [project] = createResource(() => api.projects.get(projectId));
   const [sprints, { refetch: refetchSprints }] = createResource(
-    () => fetch(`http://localhost:3210/api/projects/${projectId}/sprints`).then(r => r.json())
+    () => api.sprints.list(projectId)
   );
-  const [items] = createResource(() => api.listItems(projectId));
+  const [items] = createResource(() => api.items.list(projectId));
 
   const [showCreateModal, setShowCreateModal] = createSignal(false);
   const [editingSprint, setEditingSprint] = createSignal<Sprint | null>(null);
@@ -60,20 +60,10 @@ export default function Sprints() {
       };
 
       if (editingSprint()) {
-        // Update sprint
-        await fetch(`http://localhost:3210/api/sprints/${editingSprint()!.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
+        await api.sprints.update(editingSprint()!.id, body);
         toast.success('Sprint updated successfully');
       } else {
-        // Create sprint
-        await fetch(`http://localhost:3210/api/projects/${projectId}/sprints`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
+        await api.sprints.create(projectId, body);
         toast.success('Sprint created successfully');
       }
 
@@ -88,11 +78,7 @@ export default function Sprints() {
 
   const updateSprintStatus = async (sprintId: string, status: string) => {
     try {
-      await fetch(`http://localhost:3210/api/sprints/${sprintId}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-      });
+      await api.sprints.setStatus(sprintId, status);
       toast.success(`Sprint ${status}`);
       await refetchSprints();
     } catch (error) {

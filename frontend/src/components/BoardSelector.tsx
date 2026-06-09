@@ -1,5 +1,6 @@
 import { createSignal, createResource, For, Show } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
+import { api } from '../shared/api';
 
 interface Board {
   id: string;
@@ -23,10 +24,7 @@ export default function BoardSelector(props: BoardSelectorProps) {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = createSignal(false);
 
-  const [boards] = createResource(() =>
-    fetch(`http://localhost:3210/api/projects/${props.projectId}/boards`)
-      .then(res => res.json())
-  );
+  const [boards] = createResource(() => api.boards.list(props.projectId));
 
   const currentBoard = () => {
     const allBoards = boards();
