@@ -484,6 +484,19 @@ No raw `fetch` outside `shared/api/`. No absolute API hosts anywhere.
 
 ## T-512 · Global Settings · backup/restore + theme + system · M
 
+> **Status: ✅ Done.** `features/settings/GlobalSettings.tsx` at route `/settings` (was the
+> project Settings stub). **Appearance** — light/dark/system, persisted to `localStorage`
+> and applied via `shared/state/theme.ts` (toggles the `.dark`/`.light` class on `<html>`
+> that drives the T-504 tokens; `initTheme()` runs in `index.tsx` so the choice survives a
+> reload). **Data & Backup** — "Download backup" (`GET /backup` → blob → anchor download)
+> and "Restore from file" gated behind a `confirm()` that warns it replaces the DB.
+> **System** (collapsed) — `GET /health` (status/version/migrations) and `GET /debug/db-stats`
+> (table row counts) via a new `shared/api/system.ts` module. `type-check` + `build` green
+> (entry 9.94 KB gzipped; page is a lazy chunk); 92 Vitest tests (theme persist+apply;
+> backup hits `/backup`; restore posts only after confirm).
+> **Correction to spec:** `POST /restore` takes the **raw file bytes** (`octet-stream`),
+> not multipart — `api.data.restore(file)` already sends it correctly (noted under T-502).
+
 - **Why:** backup/restore endpoints (T-401) and the health/debug endpoints have no UI; the
   theme toggle isn't centralized.
 - **Files:** `features/settings/GlobalSettings.tsx`; route `/settings`.

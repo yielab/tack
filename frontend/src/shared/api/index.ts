@@ -16,6 +16,7 @@ import { dependencies } from './dependencies';
 import { attachments } from './attachments';
 import { roles } from './roles';
 import { data } from './data';
+import { system } from './system';
 
 export const api = {
   projects,
@@ -30,6 +31,7 @@ export const api = {
   attachments,
   roles,
   data,
+  system,
 };
 
 export { ApiError, tokenStore, request, requestBlob, requestForm, apiUrl } from './client';
