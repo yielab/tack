@@ -23,6 +23,9 @@ async fn main() -> anyhow::Result<()> {
         "Starting FlexPM server"
     );
 
+    // Apply any staged restore before opening the pool.
+    apply_staged_restore(&config);
+
     // Initialize database
     let pool = init_pool(&config.database_url).await?;
     migrations::run_all(&pool).await?;
@@ -60,15 +63,14 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn init_tracing(config: &AppConfig) {
-    use tracing_subscriber::{fmt, EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+    use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| {
-            EnvFilter::new(format!(
-                "flexpm_api={level},flexpm_db={level},flexpm_core={level},tower_http=debug",
-                level = config.log_level
-            ))
-        });
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new(format!(
+            "flexpm_api={level},flexpm_db={level},flexpm_core={level},tower_http=debug",
+            level = config.log_level
+        ))
+    });
 
     let fmt_layer = fmt::layer()
         .with_target(true)
@@ -90,11 +92,9 @@ fn init_tracing(config: &AppConfig) {
 }
 
 async fn ensure_default_workspace(pool: &sqlx::SqlitePool) -> anyhow::Result<Uuid> {
-    let existing: Option<String> = sqlx::query_scalar(
-        "SELECT id FROM workspaces LIMIT 1"
-    )
-    .fetch_optional(pool)
-    .await?;
+    let existing: Option<String> = sqlx::query_scalar("SELECT id FROM workspaces LIMIT 1")
+        .fetch_optional(pool)
+        .await?;
 
     if let Some(id_str) = existing {
         Ok(Uuid::parse_str(&id_str)?)
@@ -110,6 +110,28 @@ async fn ensure_default_workspace(pool: &sqlx::SqlitePool) -> anyhow::Result<Uui
         .await?;
         info!(%id, "Created default workspace");
         Ok(id)
+    }
+}
+
+/// If a `.restore` file exists next to the live DB, apply it before startup.
+/// Moves the current DB to `.bak` (overwriting any previous bak), then renames
+/// `.restore` into place.
+fn apply_staged_restore(config: &AppConfig) {
+    let Some(db_path) = config.db_file_path() else {
+        return;
+    };
+    let restore_str = format!("{}.restore", db_path.to_string_lossy());
+    let restore_path = std::path::Path::new(&restore_str);
+    if !restore_path.exists() {
+        return;
+    }
+    warn!(path = %restore_str, "Applying staged restore");
+    let bak_str = format!("{}.bak", db_path.to_string_lossy());
+    let _ = std::fs::rename(&db_path, &bak_str);
+    if let Err(e) = std::fs::rename(restore_path, &db_path) {
+        warn!("Failed to apply staged restore: {e}");
+    } else {
+        info!("Restore applied; previous DB backed up to {bak_str}");
     }
 }
 

@@ -62,11 +62,11 @@ impl DependencyGraph {
                 debug!("Cycle detected: {target} can reach {source}");
                 return true;
             }
-            if visited.insert(node) {
-                if let Some(neighbors) = self.edges.get(&node) {
-                    for (neighbor, _) in neighbors {
-                        stack.push_back(*neighbor);
-                    }
+            if visited.insert(node)
+                && let Some(neighbors) = self.edges.get(&node)
+            {
+                for (neighbor, _) in neighbors {
+                    stack.push_back(*neighbor);
                 }
             }
         }
@@ -84,10 +84,7 @@ impl DependencyGraph {
 
     /// Get all items that the given item directly blocks.
     pub fn blocked_by(&self, item_id: Uuid) -> Vec<(Uuid, DependencyType)> {
-        self.edges
-            .get(&item_id)
-            .cloned()
-            .unwrap_or_default()
+        self.edges.get(&item_id).cloned().unwrap_or_default()
     }
 
     /// Get all transitively blocked items (BFS from source).
@@ -110,11 +107,7 @@ impl DependencyGraph {
     }
 
     /// Validate that adding an edge won't create a cycle, returning an error if it would.
-    pub fn validate_new_edge(
-        &self,
-        source: Uuid,
-        target: Uuid,
-    ) -> Result<(), CoreError> {
+    pub fn validate_new_edge(&self, source: Uuid, target: Uuid) -> Result<(), CoreError> {
         if source == target {
             return Err(CoreError::DependencyCycle(source));
         }
@@ -187,8 +180,16 @@ mod tests {
     #[test]
     fn test_from_edges() {
         let edges = vec![
-            DependencyEdge { source: id(1), target: id(2), dep_type: DependencyType::Blocks },
-            DependencyEdge { source: id(2), target: id(3), dep_type: DependencyType::Blocks },
+            DependencyEdge {
+                source: id(1),
+                target: id(2),
+                dep_type: DependencyType::Blocks,
+            },
+            DependencyEdge {
+                source: id(2),
+                target: id(3),
+                dep_type: DependencyType::Blocks,
+            },
         ];
         let graph = DependencyGraph::from_edges(&edges);
         assert!(!graph.would_create_cycle(id(3), id(4)));

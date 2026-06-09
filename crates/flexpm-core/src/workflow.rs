@@ -67,9 +67,7 @@ impl WorkflowConfig {
 
         // If explicit transitions defined, enforce them
         if let Some(ref transitions) = self.transitions {
-            let allowed = transitions
-                .iter()
-                .any(|t| t.from == from && t.to == to);
+            let allowed = transitions.iter().any(|t| t.from == from && t.to == to);
             if !allowed {
                 debug!(from, to, "Transition not in allowed list");
                 return Err(CoreError::InvalidTransition {
@@ -84,22 +82,16 @@ impl WorkflowConfig {
 
     /// Check WIP limits for a given status column.
     pub fn check_wip_limit(&self, status: &str, current_count: usize) -> Result<(), CoreError> {
-        if let Some(status_def) = self.statuses.iter().find(|s| s.name == status) {
-            if let Some(limit) = status_def.wip_limit {
-                if current_count >= limit {
-                    warn!(
-                        status,
-                        limit,
-                        current_count,
-                        "WIP limit exceeded"
-                    );
-                    return Err(CoreError::WipLimitExceeded {
-                        column: status.to_string(),
-                        limit,
-                        current: current_count,
-                    });
-                }
-            }
+        if let Some(status_def) = self.statuses.iter().find(|s| s.name == status)
+            && let Some(limit) = status_def.wip_limit
+            && current_count >= limit
+        {
+            warn!(status, limit, current_count, "WIP limit exceeded");
+            return Err(CoreError::WipLimitExceeded {
+                column: status.to_string(),
+                limit,
+                current: current_count,
+            });
         }
         Ok(())
     }
@@ -159,11 +151,36 @@ pub fn scrum_workflow() -> WorkflowConfig {
     WorkflowConfig {
         workflow_type: WorkflowType::Scrum,
         statuses: vec![
-            StatusDef { name: "Backlog".into(), category: StatusCategory::Todo, wip_limit: None, order: 0 },
-            StatusDef { name: "To Do".into(), category: StatusCategory::Todo, wip_limit: None, order: 1 },
-            StatusDef { name: "In Progress".into(), category: StatusCategory::InProgress, wip_limit: Some(5), order: 2 },
-            StatusDef { name: "In Review".into(), category: StatusCategory::InProgress, wip_limit: Some(3), order: 3 },
-            StatusDef { name: "Done".into(), category: StatusCategory::Done, wip_limit: None, order: 4 },
+            StatusDef {
+                name: "Backlog".into(),
+                category: StatusCategory::Todo,
+                wip_limit: None,
+                order: 0,
+            },
+            StatusDef {
+                name: "To Do".into(),
+                category: StatusCategory::Todo,
+                wip_limit: None,
+                order: 1,
+            },
+            StatusDef {
+                name: "In Progress".into(),
+                category: StatusCategory::InProgress,
+                wip_limit: Some(5),
+                order: 2,
+            },
+            StatusDef {
+                name: "In Review".into(),
+                category: StatusCategory::InProgress,
+                wip_limit: Some(3),
+                order: 3,
+            },
+            StatusDef {
+                name: "Done".into(),
+                category: StatusCategory::Done,
+                wip_limit: None,
+                order: 4,
+            },
         ],
         transitions: None, // Allow all transitions by default
     }
@@ -173,10 +190,30 @@ pub fn kanban_workflow() -> WorkflowConfig {
     WorkflowConfig {
         workflow_type: WorkflowType::Kanban,
         statuses: vec![
-            StatusDef { name: "Queue".into(), category: StatusCategory::Todo, wip_limit: None, order: 0 },
-            StatusDef { name: "In Progress".into(), category: StatusCategory::InProgress, wip_limit: Some(3), order: 1 },
-            StatusDef { name: "Review".into(), category: StatusCategory::InProgress, wip_limit: Some(2), order: 2 },
-            StatusDef { name: "Done".into(), category: StatusCategory::Done, wip_limit: None, order: 3 },
+            StatusDef {
+                name: "Queue".into(),
+                category: StatusCategory::Todo,
+                wip_limit: None,
+                order: 0,
+            },
+            StatusDef {
+                name: "In Progress".into(),
+                category: StatusCategory::InProgress,
+                wip_limit: Some(3),
+                order: 1,
+            },
+            StatusDef {
+                name: "Review".into(),
+                category: StatusCategory::InProgress,
+                wip_limit: Some(2),
+                order: 2,
+            },
+            StatusDef {
+                name: "Done".into(),
+                category: StatusCategory::Done,
+                wip_limit: None,
+                order: 3,
+            },
         ],
         transitions: None,
     }
@@ -186,9 +223,24 @@ pub fn simple_workflow() -> WorkflowConfig {
     WorkflowConfig {
         workflow_type: WorkflowType::Simple,
         statuses: vec![
-            StatusDef { name: "To Do".into(), category: StatusCategory::Todo, wip_limit: None, order: 0 },
-            StatusDef { name: "Doing".into(), category: StatusCategory::InProgress, wip_limit: None, order: 1 },
-            StatusDef { name: "Done".into(), category: StatusCategory::Done, wip_limit: None, order: 2 },
+            StatusDef {
+                name: "To Do".into(),
+                category: StatusCategory::Todo,
+                wip_limit: None,
+                order: 0,
+            },
+            StatusDef {
+                name: "Doing".into(),
+                category: StatusCategory::InProgress,
+                wip_limit: None,
+                order: 1,
+            },
+            StatusDef {
+                name: "Done".into(),
+                category: StatusCategory::Done,
+                wip_limit: None,
+                order: 2,
+            },
         ],
         transitions: None,
     }
@@ -198,18 +250,58 @@ pub fn construction_workflow() -> WorkflowConfig {
     WorkflowConfig {
         workflow_type: WorkflowType::Construction,
         statuses: vec![
-            StatusDef { name: "Permit".into(), category: StatusCategory::Todo, wip_limit: None, order: 0 },
-            StatusDef { name: "Procurement".into(), category: StatusCategory::Todo, wip_limit: None, order: 1 },
-            StatusDef { name: "Build".into(), category: StatusCategory::InProgress, wip_limit: None, order: 2 },
-            StatusDef { name: "Inspect".into(), category: StatusCategory::InProgress, wip_limit: None, order: 3 },
-            StatusDef { name: "Handover".into(), category: StatusCategory::Done, wip_limit: None, order: 4 },
+            StatusDef {
+                name: "Permit".into(),
+                category: StatusCategory::Todo,
+                wip_limit: None,
+                order: 0,
+            },
+            StatusDef {
+                name: "Procurement".into(),
+                category: StatusCategory::Todo,
+                wip_limit: None,
+                order: 1,
+            },
+            StatusDef {
+                name: "Build".into(),
+                category: StatusCategory::InProgress,
+                wip_limit: None,
+                order: 2,
+            },
+            StatusDef {
+                name: "Inspect".into(),
+                category: StatusCategory::InProgress,
+                wip_limit: None,
+                order: 3,
+            },
+            StatusDef {
+                name: "Handover".into(),
+                category: StatusCategory::Done,
+                wip_limit: None,
+                order: 4,
+            },
         ],
         transitions: Some(vec![
-            Transition { from: "Permit".into(), to: "Procurement".into() },
-            Transition { from: "Procurement".into(), to: "Build".into() },
-            Transition { from: "Build".into(), to: "Inspect".into() },
-            Transition { from: "Inspect".into(), to: "Handover".into() },
-            Transition { from: "Inspect".into(), to: "Build".into() }, // rework
+            Transition {
+                from: "Permit".into(),
+                to: "Procurement".into(),
+            },
+            Transition {
+                from: "Procurement".into(),
+                to: "Build".into(),
+            },
+            Transition {
+                from: "Build".into(),
+                to: "Inspect".into(),
+            },
+            Transition {
+                from: "Inspect".into(),
+                to: "Handover".into(),
+            },
+            Transition {
+                from: "Inspect".into(),
+                to: "Build".into(),
+            }, // rework
         ]),
     }
 }
@@ -242,7 +334,11 @@ mod tests {
 
     #[test]
     fn initial_status_empty_workflow_returns_err() {
-        let wf = WorkflowConfig { workflow_type: WorkflowType::Custom, statuses: vec![], transitions: None };
+        let wf = WorkflowConfig {
+            workflow_type: WorkflowType::Custom,
+            statuses: vec![],
+            transitions: None,
+        };
         assert!(wf.initial_status().is_err());
     }
 
@@ -251,7 +347,10 @@ mod tests {
     #[test]
     fn status_names_scrum_ordered() {
         let names = scrum_workflow().status_names();
-        assert_eq!(names, vec!["Backlog", "To Do", "In Progress", "In Review", "Done"]);
+        assert_eq!(
+            names,
+            vec!["Backlog", "To Do", "In Progress", "In Review", "Done"]
+        );
     }
 
     // ── validate_transition (scrum — open, any → any if both exist) ──
@@ -362,16 +461,22 @@ mod tests {
 
     #[test]
     fn done_status_construction_is_handover() {
-        assert_eq!(construction_workflow().find_first_done_status(), Some("Handover"));
+        assert_eq!(
+            construction_workflow().find_first_done_status(),
+            Some("Handover")
+        );
     }
 
     #[test]
     fn done_status_none_when_no_done_category() {
         let wf = WorkflowConfig {
             workflow_type: WorkflowType::Custom,
-            statuses: vec![
-                StatusDef { name: "Open".into(), category: StatusCategory::Todo, wip_limit: None, order: 0 },
-            ],
+            statuses: vec![StatusDef {
+                name: "Open".into(),
+                category: StatusCategory::Todo,
+                wip_limit: None,
+                order: 0,
+            }],
             transitions: None,
         };
         assert_eq!(wf.find_first_done_status(), None);

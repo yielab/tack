@@ -1,17 +1,19 @@
+import { lazy } from 'solid-js';
 import { Router, Route } from '@solidjs/router';
 import Layout from './components/Layout';
-import Projects from './pages/Projects';
-import Board from './pages/Board';
-import List from './pages/List';
-import Dashboard from './pages/Dashboard';
-import Sprints from './pages/Sprints';
-import Calendar from './pages/Calendar';
-import Timeline from './pages/Timeline';
-import BoardsManager from './pages/BoardsManager';
-import CustomFieldsManager from './pages/CustomFieldsManager';
-import Templates from './pages/Templates';
-import TemplateCreator from './pages/TemplateCreator';
-import Settings from './pages/Settings';
+
+const Projects = lazy(() => import('./pages/Projects'));
+const Board = lazy(() => import('./pages/Board'));
+const List = lazy(() => import('./pages/List'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Sprints = lazy(() => import('./pages/Sprints'));
+const Calendar = lazy(() => import('./pages/Calendar'));
+const Timeline = lazy(() => import('./pages/Timeline'));
+const BoardsManager = lazy(() => import('./pages/BoardsManager'));
+const CustomFieldsManager = lazy(() => import('./pages/CustomFieldsManager'));
+const Templates = lazy(() => import('./pages/Templates'));
+const TemplateCreator = lazy(() => import('./pages/TemplateCreator'));
+const Settings = lazy(() => import('./pages/Settings'));
 
 function App() {
   return (
@@ -25,6 +27,7 @@ function App() {
       <Route path="/projects/:id/sprints" component={Sprints} />
       <Route path="/projects/:id/calendar" component={Calendar} />
       <Route path="/projects/:id/timeline" component={Timeline} />
+      <Route path="/projects/:id/settings" component={Settings} />
       <Route path="/projects/:id/settings/boards" component={BoardsManager} />
       <Route path="/projects/:id/settings/fields" component={CustomFieldsManager} />
       <Route path="/templates" component={Templates} />

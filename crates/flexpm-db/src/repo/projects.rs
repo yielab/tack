@@ -2,7 +2,7 @@ use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
-use flexpm_core::models::{Project, ProjectType, CreateProject, UpdateProject};
+use flexpm_core::models::{CreateProject, Project, ProjectType, UpdateProject};
 use flexpm_core::vocabulary::vocabulary_for_type;
 use flexpm_core::workflow::workflow_for_type;
 
@@ -172,9 +172,8 @@ impl ProjectRow {
             project_type: serde_json::from_str(&format!("\"{}\"", self.project_type))
                 .unwrap_or(ProjectType::Custom),
             vocabulary: serde_json::from_str(&self.vocabulary).unwrap_or_default(),
-            workflow: serde_json::from_str(&self.workflow).unwrap_or_else(|_| {
-                flexpm_core::workflow::simple_workflow()
-            }),
+            workflow: serde_json::from_str(&self.workflow)
+                .unwrap_or_else(|_| flexpm_core::workflow::simple_workflow()),
             created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
                 .map(|d| d.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now()),

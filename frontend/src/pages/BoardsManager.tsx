@@ -2,6 +2,7 @@ import { createSignal, createResource, For, Show } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
 import { api } from '../lib/api';
 import { toast } from '../lib/toast';
+import { resolveLabel } from '../lib/vocab';
 
 interface Board {
   id: string;
@@ -281,7 +282,7 @@ export default function BoardsManager() {
                     <option value="status">Status (Kanban)</option>
                     <option value="priority">Priority</option>
                     <option value="item_type">Item Type</option>
-                    <option value="sprint">Sprint</option>
+                    <option value="sprint">{resolveLabel(project()?.vocabulary, 'sprint')}</option>
                   </select>
                 </div>
 

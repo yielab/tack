@@ -1,5 +1,5 @@
-use axum::extract::{Path, State};
 use axum::Json;
+use axum::extract::{Path, State};
 use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
@@ -15,7 +15,9 @@ pub async fn create_comment(
     Path(item_id): Path<Uuid>,
     Json(input): Json<CreateComment>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    input.validate().map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    input
+        .validate()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     let comment = state.repo.create_comment(item_id, input).await?;
     Ok(Json(serde_json::to_value(comment).unwrap()))
 }

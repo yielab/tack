@@ -14,6 +14,7 @@ const Sidebar: Component = () => {
   // Determine current view
   const currentView = createMemo(() => {
     const path = location.pathname;
+    if (path.includes('/settings')) return 'settings';
     if (path.includes('/board')) return 'board';
     if (path.includes('/list')) return 'list';
     if (path.includes('/dashboard')) return 'dashboard';
@@ -154,6 +155,16 @@ const Sidebar: Component = () => {
                   >
                     <FiCalendar class="mr-3" size={18} />
                     Calendar
+                  </A>
+                  <A
+                    href={`/projects/${currentProjectId()}/settings`}
+                    activeClass="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 font-semibold"
+                    inactiveClass="text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+                    class="flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all"
+                    onClick={() => setIsOpen(false)}
+                  >
+                    <FiSettings class="mr-3" size={18} />
+                    Settings
                   </A>
                 </div>
               </div>

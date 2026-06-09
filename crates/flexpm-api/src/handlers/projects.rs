@@ -1,5 +1,5 @@
-use axum::extract::{Path, State};
 use axum::Json;
+use axum::extract::{Path, State};
 use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
@@ -14,18 +14,15 @@ pub async fn create_project(
     State(state): State<AppState>,
     Json(input): Json<CreateProject>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    input.validate().map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    let project = state
-        .repo
-        .create_project(state.workspace_id, input)
-        .await?;
+    input
+        .validate()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let project = state.repo.create_project(state.workspace_id, input).await?;
     Ok(Json(serde_json::to_value(project).unwrap()))
 }
 
 #[instrument(skip(state))]
-pub async fn list_projects(
-    State(state): State<AppState>,
-) -> ApiResult<Json<serde_json::Value>> {
+pub async fn list_projects(State(state): State<AppState>) -> ApiResult<Json<serde_json::Value>> {
     let projects = state.repo.list_projects(state.workspace_id).await?;
     Ok(Json(serde_json::to_value(projects).unwrap()))
 }
@@ -49,7 +46,9 @@ pub async fn update_project(
     Path(id): Path<Uuid>,
     Json(input): Json<UpdateProject>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    input.validate().map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    input
+        .validate()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     let project = state
         .repo
         .update_project(id, input)

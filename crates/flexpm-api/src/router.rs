@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use axum::extract::DefaultBodyLimit;
 use axum::handler::Handler;
-use axum::http::{header, HeaderValue, Method};
+use axum::http::{HeaderValue, Method, header};
 use axum::routing::{delete, get, patch, post, put};
-use axum::{middleware, Router};
+use axum::{Router, middleware};
 use tokio::sync::broadcast;
 use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
@@ -16,7 +16,7 @@ use flexpm_db::Repository;
 use crate::config::AppConfig;
 use crate::debug;
 use crate::handlers::{
-    attachments, boards_multi, comments, custom_fields, dependencies, export, items,
+    attachments, backup, boards_multi, comments, custom_fields, dependencies, export, items,
     projects, roles, sprints, templates, websocket,
 };
 use crate::middleware::require_token;
@@ -72,6 +72,12 @@ pub fn build_router(state: AppState) -> Router {
         .route("/health", get(debug::health))
         .route("/debug/info", get(debug::debug_info))
         .route("/debug/db-stats", get(debug::db_stats))
+        // ─── Backup / restore ────────────────────────────────────────────
+        .route("/backup", get(backup::get_backup))
+        .route(
+            "/restore",
+            post(backup::post_restore.layer(DefaultBodyLimit::max(ATTACH_LIMIT))),
+        )
         // ─── Projects ────────────────────────────────────────────────────
         .route("/projects", post(projects::create_project))
         .route("/projects", get(projects::list_projects))
@@ -84,14 +90,20 @@ pub fn build_router(state: AppState) -> Router {
         // ─── Items ───────────────────────────────────────────────────────
         .route("/projects/{project_id}/items", post(items::create_item))
         .route("/projects/{project_id}/items", get(items::list_items))
-        .route("/projects/{project_id}/items/tree", get(items::get_item_tree))
+        .route(
+            "/projects/{project_id}/items/tree",
+            get(items::get_item_tree),
+        )
         .route("/projects/{project_id}/search", get(items::search_items))
         .route("/search", get(items::search_items_global))
         .route("/items/{id}", get(items::get_item))
         .route("/items/{id}", patch(items::update_item))
         .route("/items/{id}", delete(items::delete_item))
         // ─── Sprints ─────────────────────────────────────────────────────
-        .route("/projects/{project_id}/sprints", post(sprints::create_sprint))
+        .route(
+            "/projects/{project_id}/sprints",
+            post(sprints::create_sprint),
+        )
         .route("/projects/{project_id}/sprints", get(sprints::list_sprints))
         .route("/sprints/{id}", get(sprints::get_sprint))
         .route("/sprints/{id}/status", patch(sprints::update_sprint_status))
@@ -100,14 +112,26 @@ pub fn build_router(state: AppState) -> Router {
         .route("/projects/{project_id}/roles", get(roles::list_roles))
         .route("/roles/{id}", delete(roles::delete_role))
         .route("/items/{item_id}/roles/{role_id}", put(roles::assign_role))
-        .route("/items/{item_id}/roles/{role_id}", delete(roles::remove_role))
+        .route(
+            "/items/{item_id}/roles/{role_id}",
+            delete(roles::remove_role),
+        )
         // ─── Comments ────────────────────────────────────────────────────
         .route("/items/{item_id}/comments", post(comments::create_comment))
         .route("/items/{item_id}/comments", get(comments::list_comments))
         // ─── Dependencies ────────────────────────────────────────────────
-        .route("/items/{item_id}/dependencies", post(dependencies::create_dependency))
-        .route("/items/{item_id}/dependencies", get(dependencies::list_dependencies))
-        .route("/items/{item_id}/dependencies/{dep_id}", delete(dependencies::delete_dependency))
+        .route(
+            "/items/{item_id}/dependencies",
+            post(dependencies::create_dependency),
+        )
+        .route(
+            "/items/{item_id}/dependencies",
+            get(dependencies::list_dependencies),
+        )
+        .route(
+            "/items/{item_id}/dependencies/{dep_id}",
+            delete(dependencies::delete_dependency),
+        )
         // ─── Attachments (upload has its own higher body limit) ──────────
         .route(
             "/items/{item_id}/attachments",
@@ -121,20 +145,47 @@ pub fn build_router(state: AppState) -> Router {
         .route("/templates", get(templates::list_templates))
         .route("/templates/{id}", get(templates::get_template))
         .route("/templates/{id}", delete(templates::delete_template))
-        .route("/projects/from-template/{id}", post(templates::create_project_from_template))
+        .route(
+            "/projects/from-template/{id}",
+            post(templates::create_project_from_template),
+        )
         // ─── Custom Fields ───────────────────────────────────────────────
-        .route("/projects/{project_id}/custom-fields", post(custom_fields::create_field))
-        .route("/projects/{project_id}/custom-fields", get(custom_fields::list_fields))
+        .route(
+            "/projects/{project_id}/custom-fields",
+            post(custom_fields::create_field),
+        )
+        .route(
+            "/projects/{project_id}/custom-fields",
+            get(custom_fields::list_fields),
+        )
         .route("/custom-fields/{id}", get(custom_fields::get_field))
         .route("/custom-fields/{id}", patch(custom_fields::update_field))
         .route("/custom-fields/{id}", delete(custom_fields::delete_field))
-        .route("/items/{item_id}/custom-fields/{field_id}", put(custom_fields::set_field_value))
-        .route("/items/{item_id}/custom-fields/{field_id}", get(custom_fields::get_field_value))
-        .route("/items/{item_id}/custom-fields/{field_id}", delete(custom_fields::delete_field_value))
-        .route("/items/{item_id}/custom-fields", get(custom_fields::get_all_field_values))
+        .route(
+            "/items/{item_id}/custom-fields/{field_id}",
+            put(custom_fields::set_field_value),
+        )
+        .route(
+            "/items/{item_id}/custom-fields/{field_id}",
+            get(custom_fields::get_field_value),
+        )
+        .route(
+            "/items/{item_id}/custom-fields/{field_id}",
+            delete(custom_fields::delete_field_value),
+        )
+        .route(
+            "/items/{item_id}/custom-fields",
+            get(custom_fields::get_all_field_values),
+        )
         // ─── Multiple Boards ─────────────────────────────────────────────
-        .route("/projects/{project_id}/boards", post(boards_multi::create_board))
-        .route("/projects/{project_id}/boards", get(boards_multi::list_boards))
+        .route(
+            "/projects/{project_id}/boards",
+            post(boards_multi::create_board),
+        )
+        .route(
+            "/projects/{project_id}/boards",
+            get(boards_multi::list_boards),
+        )
         .route("/projects/{id}/boards/live", get(websocket::board_live))
         .route("/boards/{id}", get(boards_multi::get_board))
         .route("/boards/{id}", patch(boards_multi::update_board))

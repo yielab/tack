@@ -58,7 +58,7 @@ impl<'a> AttachmentRepo<'a> {
     pub async fn get_attachment(&self, id: Uuid) -> Result<Option<Attachment>, sqlx::Error> {
         let row = sqlx::query(
             "SELECT id, item_id, filename, mime_type, storage_path, size_bytes, uploaded_at
-             FROM attachments WHERE id = ?"
+             FROM attachments WHERE id = ?",
         )
         .bind(id.to_string())
         .fetch_optional(self.pool)
@@ -80,7 +80,7 @@ impl<'a> AttachmentRepo<'a> {
     pub async fn list_attachments(&self, item_id: Uuid) -> Result<Vec<Attachment>, sqlx::Error> {
         let rows = sqlx::query(
             "SELECT id, item_id, filename, mime_type, storage_path, size_bytes, uploaded_at
-             FROM attachments WHERE item_id = ? ORDER BY uploaded_at DESC"
+             FROM attachments WHERE item_id = ? ORDER BY uploaded_at DESC",
         )
         .bind(item_id.to_string())
         .fetch_all(self.pool)

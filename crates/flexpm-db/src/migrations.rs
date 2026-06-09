@@ -12,7 +12,7 @@ pub async fn run_all(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL UNIQUE,
             applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )"
+        )",
     )
     .execute(pool)
     .await?;
@@ -34,26 +34,23 @@ pub async fn run_all(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         ("013_boards", &MIGRATION_013[..]),
         ("014_consolidate_boards", &MIGRATION_014[..]),
         ("015_item_assignee", &MIGRATION_015[..]),
+        ("016_perf_indexes", &MIGRATION_016[..]),
     ];
 
     for (name, statements) in migrations {
-        let already_applied: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM _migrations WHERE name = ?)"
-        )
-        .bind(name)
-        .fetch_one(pool)
-        .await?;
+        let already_applied: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM _migrations WHERE name = ?)")
+                .bind(name)
+                .fetch_one(pool)
+                .await?;
 
         if !already_applied {
             info!(migration = name, "Applying migration");
             for statement in statements {
-                sqlx::query(statement)
-                    .execute(pool)
-                    .await
-                    .map_err(|e| {
-                        tracing::error!(migration = name, statement, error = %e, "Migration failed");
-                        e
-                    })?;
+                sqlx::query(statement).execute(pool).await.map_err(|e| {
+                    tracing::error!(migration = name, statement, error = %e, "Migration failed");
+                    e
+                })?;
             }
             sqlx::query("INSERT INTO _migrations (name) VALUES (?)")
                 .bind(name)
@@ -69,16 +66,14 @@ pub async fn run_all(pool: &SqlitePool) -> Result<(), sqlx::Error> {
 
 // Each migration is an array of individual SQL statements.
 
-const MIGRATION_001: [&str; 1] = [
-    "CREATE TABLE IF NOT EXISTS workspaces (
+const MIGRATION_001: [&str; 1] = ["CREATE TABLE IF NOT EXISTS workspaces (
         id TEXT PRIMARY KEY NOT NULL,
         name TEXT NOT NULL,
         description TEXT,
         default_vocabulary TEXT NOT NULL DEFAULT '{}',
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )",
-];
+    )"];
 
 const MIGRATION_002: [&str; 3] = [
     "CREATE TABLE IF NOT EXISTS projects (
@@ -315,4 +310,9 @@ const MIGRATION_014: [&str; 2] = [
 const MIGRATION_015: [&str; 2] = [
     "ALTER TABLE items ADD COLUMN assignee TEXT",
     "CREATE INDEX IF NOT EXISTS idx_items_assignee ON items(project_id, assignee)",
+];
+
+const MIGRATION_016: [&str; 1] = [
+    // Sprint-grouping board view filters items by (project_id, sprint_id); no composite index existed.
+    "CREATE INDEX IF NOT EXISTS idx_items_sprint ON items(project_id, sprint_id)",
 ];

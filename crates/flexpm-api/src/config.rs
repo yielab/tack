@@ -51,13 +51,27 @@ impl Default for AppConfig {
     }
 }
 
-fn default_host() -> String { "127.0.0.1".into() }
-fn default_port() -> u16 { 3210 }
-fn default_database_url() -> String { "sqlite:flexpm.db?mode=rwc".into() }
-fn default_log_level() -> String { "info".into() }
-fn default_log_file() -> Option<String> { None }
-fn default_storage_dir() -> String { "./storage".into() }
-fn default_max_body_size_bytes() -> usize { 2 * 1024 * 1024 } // 2 MB
+fn default_host() -> String {
+    "127.0.0.1".into()
+}
+fn default_port() -> u16 {
+    3210
+}
+fn default_database_url() -> String {
+    "sqlite:flexpm.db?mode=rwc".into()
+}
+fn default_log_level() -> String {
+    "info".into()
+}
+fn default_log_file() -> Option<String> {
+    None
+}
+fn default_storage_dir() -> String {
+    "./storage".into()
+}
+fn default_max_body_size_bytes() -> usize {
+    2 * 1024 * 1024
+} // 2 MB
 
 fn default_allowed_origins() -> Vec<String> {
     vec![
@@ -68,22 +82,51 @@ fn default_allowed_origins() -> Vec<String> {
 }
 
 impl AppConfig {
+    /// Extract the filesystem path from the database URL.
+    /// Returns `None` for in-memory databases.
+    pub fn db_file_path(&self) -> Option<std::path::PathBuf> {
+        let url = &self.database_url;
+        if url.contains(":memory:") {
+            return None;
+        }
+        let rest = url.strip_prefix("sqlite:")?;
+        let rest = rest.split('?').next().unwrap_or(rest);
+        if rest.is_empty() {
+            return None;
+        }
+        Some(std::path::PathBuf::from(rest))
+    }
+
     /// Load config from file, falling back to defaults.
     pub fn load() -> Self {
-        if let Ok(content) = std::fs::read_to_string("flexpm.toml") {
-            if let Ok(config) = toml::from_str(&content) {
-                return config;
-            }
+        if let Ok(content) = std::fs::read_to_string("flexpm.toml")
+            && let Ok(config) = toml::from_str(&content)
+        {
+            return config;
         }
 
         let mut config = Self::default();
-        if let Ok(v) = std::env::var("FLEXPM_HOST") { config.host = v; }
-        if let Ok(v) = std::env::var("FLEXPM_PORT") { config.port = v.parse().unwrap_or(3210); }
-        if let Ok(v) = std::env::var("FLEXPM_DATABASE_URL") { config.database_url = v; }
-        if let Ok(v) = std::env::var("FLEXPM_LOG_LEVEL") { config.log_level = v; }
-        if let Ok(v) = std::env::var("FLEXPM_LOG_JSON") { config.log_json = v == "true" || v == "1"; }
-        if let Ok(v) = std::env::var("FLEXPM_LOG_FILE") { config.log_file = Some(v); }
-        if let Ok(v) = std::env::var("FLEXPM_STORAGE_DIR") { config.storage_dir = v; }
+        if let Ok(v) = std::env::var("FLEXPM_HOST") {
+            config.host = v;
+        }
+        if let Ok(v) = std::env::var("FLEXPM_PORT") {
+            config.port = v.parse().unwrap_or(3210);
+        }
+        if let Ok(v) = std::env::var("FLEXPM_DATABASE_URL") {
+            config.database_url = v;
+        }
+        if let Ok(v) = std::env::var("FLEXPM_LOG_LEVEL") {
+            config.log_level = v;
+        }
+        if let Ok(v) = std::env::var("FLEXPM_LOG_JSON") {
+            config.log_json = v == "true" || v == "1";
+        }
+        if let Ok(v) = std::env::var("FLEXPM_LOG_FILE") {
+            config.log_file = Some(v);
+        }
+        if let Ok(v) = std::env::var("FLEXPM_STORAGE_DIR") {
+            config.storage_dir = v;
+        }
         if let Ok(v) = std::env::var("FLEXPM_ALLOWED_ORIGINS") {
             config.allowed_origins = v.split(',').map(|s| s.trim().to_string()).collect();
         }
@@ -91,8 +134,10 @@ impl AppConfig {
             config.max_body_size_bytes = v.parse().unwrap_or(default_max_body_size_bytes());
         }
         // Never log the token value
-        if let Ok(v) = std::env::var("FLEXPM_API_TOKEN") {
-            if !v.is_empty() { config.api_token = Some(v); }
+        if let Ok(v) = std::env::var("FLEXPM_API_TOKEN")
+            && !v.is_empty()
+        {
+            config.api_token = Some(v);
         }
         config
     }

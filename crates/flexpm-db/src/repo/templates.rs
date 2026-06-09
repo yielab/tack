@@ -77,10 +77,7 @@ pub async fn create_template(
 
 /// Get a template by ID
 #[instrument(skip(pool))]
-pub async fn get_template(
-    pool: &SqlitePool,
-    id: Uuid,
-) -> Result<ProjectTemplate, sqlx::Error> {
+pub async fn get_template(pool: &SqlitePool, id: Uuid) -> Result<ProjectTemplate, sqlx::Error> {
     let row = sqlx::query_as::<_, TemplateRow>(
         "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at
          FROM project_templates
@@ -90,17 +87,17 @@ pub async fn get_template(
     .fetch_one(pool)
     .await?;
 
-    let vocabulary: serde_json::Value = serde_json::from_str(&row.vocabulary)
-        .unwrap_or(serde_json::json!({}));
+    let vocabulary: serde_json::Value =
+        serde_json::from_str(&row.vocabulary).unwrap_or(serde_json::json!({}));
 
-    let workflow: serde_json::Value = serde_json::from_str(&row.workflow)
-        .unwrap_or(serde_json::json!({}));
+    let workflow: serde_json::Value =
+        serde_json::from_str(&row.workflow).unwrap_or(serde_json::json!({}));
 
-    let custom_fields: Vec<CustomFieldDefinition> = serde_json::from_str(&row.custom_fields)
-        .unwrap_or_default();
+    let custom_fields: Vec<CustomFieldDefinition> =
+        serde_json::from_str(&row.custom_fields).unwrap_or_default();
 
-    let default_boards: Vec<BoardTemplate> = serde_json::from_str(&row.default_boards)
-        .unwrap_or_default();
+    let default_boards: Vec<BoardTemplate> =
+        serde_json::from_str(&row.default_boards).unwrap_or_default();
 
     Ok(ProjectTemplate {
         id: Uuid::parse_str(&row.id).unwrap(),
@@ -112,8 +109,12 @@ pub async fn get_template(
         custom_fields,
         default_boards,
         is_builtin: row.is_builtin != 0,
-        created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at).unwrap().into(),
-        updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at).unwrap().into(),
+        created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
+            .unwrap()
+            .into(),
+        updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
+            .unwrap()
+            .into(),
     })
 }
 
@@ -154,43 +155,48 @@ pub async fn list_templates(
         .await?
     };
 
-    let templates: Vec<ProjectTemplate> = rows.into_iter().map(|row| {
-        let vocabulary: serde_json::Value = serde_json::from_str(&row.vocabulary)
-            .unwrap_or(serde_json::json!({}));
+    let templates: Vec<ProjectTemplate> = rows
+        .into_iter()
+        .map(|row| {
+            let vocabulary: serde_json::Value =
+                serde_json::from_str(&row.vocabulary).unwrap_or(serde_json::json!({}));
 
-        let workflow: serde_json::Value = serde_json::from_str(&row.workflow)
-            .unwrap_or(serde_json::json!({}));
+            let workflow: serde_json::Value =
+                serde_json::from_str(&row.workflow).unwrap_or(serde_json::json!({}));
 
-        let custom_fields: Vec<CustomFieldDefinition> = serde_json::from_str(&row.custom_fields)
-            .unwrap_or_default();
+            let custom_fields: Vec<CustomFieldDefinition> =
+                serde_json::from_str(&row.custom_fields).unwrap_or_default();
 
-        let default_boards: Vec<BoardTemplate> = serde_json::from_str(&row.default_boards)
-            .unwrap_or_default();
+            let default_boards: Vec<BoardTemplate> =
+                serde_json::from_str(&row.default_boards).unwrap_or_default();
 
-        ProjectTemplate {
-            id: Uuid::parse_str(&row.id).unwrap(),
-            name: row.name,
-            description: row.description,
-            project_type: serde_json::from_value(serde_json::Value::String(row.project_type)).unwrap(),
-            vocabulary: serde_json::from_value(vocabulary).unwrap(),
-            workflow: serde_json::from_value(workflow).unwrap(),
-            custom_fields,
-            default_boards,
-            is_builtin: row.is_builtin != 0,
-            created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at).unwrap().into(),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at).unwrap().into(),
-        }
-    }).collect();
+            ProjectTemplate {
+                id: Uuid::parse_str(&row.id).unwrap(),
+                name: row.name,
+                description: row.description,
+                project_type: serde_json::from_value(serde_json::Value::String(row.project_type))
+                    .unwrap(),
+                vocabulary: serde_json::from_value(vocabulary).unwrap(),
+                workflow: serde_json::from_value(workflow).unwrap(),
+                custom_fields,
+                default_boards,
+                is_builtin: row.is_builtin != 0,
+                created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
+                    .unwrap()
+                    .into(),
+                updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
+                    .unwrap()
+                    .into(),
+            }
+        })
+        .collect();
 
     Ok(templates)
 }
 
 /// Delete a template (only non-builtin templates can be deleted)
 #[instrument(skip(pool))]
-pub async fn delete_template(
-    pool: &SqlitePool,
-    id: Uuid,
-) -> Result<(), sqlx::Error> {
+pub async fn delete_template(pool: &SqlitePool, id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM project_templates WHERE id = ? AND is_builtin = 0")
         .bind(id.to_string())
         .execute(pool)

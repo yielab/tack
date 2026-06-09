@@ -1,5 +1,5 @@
-use reqwest::blocking::{Client, Response};
 use reqwest::StatusCode;
+use reqwest::blocking::{Client, Response};
 use serde::Serialize;
 
 use crate::config::Config;
@@ -39,6 +39,31 @@ impl FlexpmClient {
         let resp = self
             .request(reqwest::Method::PATCH, path)
             .json(body)
+            .send()?;
+        extract(resp)
+    }
+
+    /// GET a binary response (e.g. a file download).
+    pub fn get_bytes(&self, path: &str) -> anyhow::Result<Vec<u8>> {
+        let resp = self
+            .request(reqwest::Method::GET, path)
+            .timeout(std::time::Duration::from_secs(120))
+            .send()?;
+        let status = resp.status();
+        if status.is_success() {
+            Ok(resp.bytes()?.to_vec())
+        } else {
+            let body: serde_json::Value = resp.json().unwrap_or_default();
+            anyhow::bail!("{}: {}", status, error_msg(&body))
+        }
+    }
+
+    /// POST raw bytes and return the JSON response.
+    pub fn post_bytes(&self, path: &str, data: Vec<u8>) -> anyhow::Result<serde_json::Value> {
+        let resp = self
+            .request(reqwest::Method::POST, path)
+            .header("Content-Type", "application/octet-stream")
+            .body(data)
             .send()?;
         extract(resp)
     }

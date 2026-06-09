@@ -1,12 +1,10 @@
+use axum::Json;
 use axum::extract::State;
 use axum::response::IntoResponse;
-use axum::Json;
 use serde_json::json;
 use tracing::info;
 
 use crate::router::AppState;
-
-/// Debug/health endpoints for monitoring and diagnostics.
 
 /// GET /api/health — Liveness check
 pub async fn health() -> impl IntoResponse {
@@ -48,14 +46,24 @@ pub async fn db_stats(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 async fn get_db_size(state: &AppState) -> i64 {
-    sqlx::query_scalar::<_, i64>("SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()")
-        .fetch_one(state.repo.pool())
-        .await
-        .unwrap_or(0)
+    sqlx::query_scalar::<_, i64>(
+        "SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()",
+    )
+    .fetch_one(state.repo.pool())
+    .await
+    .unwrap_or(0)
 }
 
 async fn get_table_counts(state: &AppState) -> serde_json::Value {
-    let tables = ["projects", "items", "sprints", "roles", "comments", "dependencies", "attachments"];
+    let tables = [
+        "projects",
+        "items",
+        "sprints",
+        "roles",
+        "comments",
+        "dependencies",
+        "attachments",
+    ];
     let mut counts = serde_json::Map::new();
 
     for table in tables {

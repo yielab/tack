@@ -15,7 +15,9 @@ where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
-    tokio::task::spawn_blocking(f).await.expect("blocking task panicked")
+    tokio::task::spawn_blocking(f)
+        .await
+        .expect("blocking task panicked")
 }
 
 // ── init (POST /api/projects) ─────────────────────────────────────────────────
@@ -37,9 +39,10 @@ async fn init_sends_post_projects() {
     let uri = server.uri();
     let resp = run_blocking(move || {
         let config = make_config(&uri);
-        FlexpmClient::new(&config)
-            .unwrap()
-            .post("/projects", &serde_json::json!({"name": "My App", "project_type": "software"}))
+        FlexpmClient::new(&config).unwrap().post(
+            "/projects",
+            &serde_json::json!({"name": "My App", "project_type": "software"}),
+        )
     })
     .await;
 
@@ -144,9 +147,10 @@ async fn error_response_is_returned_as_err() {
     let uri = server.uri();
     let result = run_blocking(move || {
         let config = make_config(&uri);
-        FlexpmClient::new(&config)
-            .unwrap()
-            .patch("/items/bad-id", &serde_json::json!({"status": "In Progress"}))
+        FlexpmClient::new(&config).unwrap().patch(
+            "/items/bad-id",
+            &serde_json::json!({"status": "In Progress"}),
+        )
     })
     .await;
 
@@ -200,9 +204,10 @@ async fn sprint_create_sends_post() {
     let path = format!("/projects/{project_id}/sprints");
     let resp = run_blocking(move || {
         let config = make_config(&uri);
-        FlexpmClient::new(&config)
-            .unwrap()
-            .post(&path, &serde_json::json!({"name": "Sprint 1", "goal": null}))
+        FlexpmClient::new(&config).unwrap().post(
+            &path,
+            &serde_json::json!({"name": "Sprint 1", "goal": null}),
+        )
     })
     .await;
 

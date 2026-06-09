@@ -1,5 +1,5 @@
-use axum::extract::{Path, State};
 use axum::Json;
+use axum::extract::{Path, State};
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -15,7 +15,9 @@ pub async fn create_sprint(
     Path(project_id): Path<Uuid>,
     Json(input): Json<CreateSprint>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    input.validate().map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    input
+        .validate()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     let sprint = state.repo.create_sprint(project_id, input).await?;
     Ok(Json(serde_json::to_value(sprint).unwrap()))
 }
@@ -48,10 +50,7 @@ pub async fn update_sprint_status(
     Path(id): Path<Uuid>,
     Json(input): Json<UpdateSprintStatus>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let updated = state
-        .repo
-        .update_sprint_status(id, input.status)
-        .await?;
+    let updated = state.repo.update_sprint_status(id, input.status).await?;
     if !updated {
         return Err(ApiError::NotFound(format!("Sprint {id} not found")));
     }

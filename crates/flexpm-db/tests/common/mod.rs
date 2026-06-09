@@ -2,7 +2,7 @@ use flexpm_core::{
     models::{CreateItem, CreateProject, ItemType, Priority, ProjectType},
     vocabulary,
 };
-use flexpm_db::{init_pool, migrations, Repository};
+use flexpm_db::{Repository, init_pool, migrations};
 use uuid::Uuid;
 
 /// Create an in-memory SQLite pool with all migrations applied.
@@ -28,6 +28,7 @@ pub async fn create_test_workspace(repo: &Repository) -> Uuid {
 }
 
 /// Create a software project in the given workspace; returns the Project.
+#[allow(dead_code)]
 pub async fn make_project(repo: &Repository, workspace_id: Uuid) -> flexpm_core::models::Project {
     repo.create_project(
         workspace_id,
@@ -43,6 +44,7 @@ pub async fn make_project(repo: &Repository, workspace_id: Uuid) -> flexpm_core:
 }
 
 /// Create a minimal task item in the project's initial workflow status.
+#[allow(dead_code)]
 pub async fn make_item(
     repo: &Repository,
     project: &flexpm_core::models::Project,
