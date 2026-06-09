@@ -212,7 +212,7 @@ No raw `fetch` outside `shared/api/`. No absolute API hosts anywhere.
 
 ## T-504 · Design tokens + shared UI kit · M
 
-> **Status: ✅ Core done (broad button/field sweep deferred — see below).**
+> **Status: ✅ Done (tokens + kit + app-wide button/field/modal sweep).**
 > `index.css` now holds one token block: `:root` = light, `.dark` = dark overrides
 > (toggled by T-512), plus a `prefers-color-scheme` fallback; added missing
 > semantic scales (success/warning/danger/info 50–700) and `--color-focus-ring`.
@@ -224,15 +224,19 @@ No raw `fetch` outside `shared/api/`. No absolute API hosts anywhere.
 > upgraded automatically. `CreateProjectModal` migrated to `Field`/`Select`/`Button` as
 > the reference adoption. `type-check` + `build` green (entry 9.48 KB gzipped); 71 Vitest
 > tests (render each kit component; Modal/Drawer ESC; Tabs `aria-selected`).
-> **Deferred:** the app-wide replacement of *every* raw `<button>`/`<input>` across the
-> remaining ~11 feature pages is intentionally incremental — it is broad and visual, and
-> wants per-screen review in a running app rather than a single blind sweep. Modal is
-> already app-wide; Button/Field have a working reference. Track the remaining page
-> migrations as they are touched by later tasks (e.g. T-506+ build new surfaces directly
-> on the kit). **Carry-forward:** legacy `shared/ui` components (`Sidebar`, `SearchBar`,
-> `CommandPalette`, `RichTextEditor`, `CreateItemModal`, `ToastContainer`,
-> `SkeletonScreen`) still use Tailwind color *utilities* (not hex, so the grep passes);
-> fold them onto tokens incrementally.
+> **App-wide sweep: done.** Every standard button/modal/form-field across the feature
+> pages now uses the kit: `Sprints`, `BoardsManager`, `CustomFieldsManager`,
+> `TemplateCreator`, `Templates`, `Settings`, `CreateProjectModal`, `CreateItemModal`
+> (forms → `Field`/`Select`/`FieldShell`, raw modals → kit `Modal`); `Projects`,
+> `Dashboard`, `Calendar`, `Timeline`, `Board`, `List` (action/nav buttons → `Button`,
+> status pills → `Badge`, empty states → `EmptyState`). Added a `success` Button variant
+> for semantic green actions. **Intentionally left as raw elements** (specialized patterns,
+> not standard Buttons/Fields, all token-based): toggle-chips (item type / priority /
+> estimate / timeline view-mode / template type-filter), icon-only row actions (add-child,
+> delete, expand, inline save/cancel), and the dropdown/search widgets (`BoardSelector`,
+> `SearchBar`, `Sidebar` chrome). **Carry-forward:** a few legacy `shared/ui` widgets
+> (`SearchBar`, `Sidebar`, `CommandPalette`, `RichTextEditor`) still use Tailwind color
+> *utilities* internally (not hex, so the grep passes); fold onto tokens incrementally.
 
 - **Why:** card/button/modal Tailwind clusters are duplicated ~30× across pages; a restyle is
   dozens of edits and the look is inconsistent. The `--color-*` CSS variables already exist —

@@ -1,6 +1,7 @@
 import { createResource, For, Show, createMemo } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
 import { api } from '../../shared/api';
+import { Button } from '../../shared/ui';
 
 export default function Dashboard() {
   const params = useParams();
@@ -105,39 +106,15 @@ export default function Dashboard() {
             </p>
           </div>
           <div class="flex gap-2">
-            <button
-              onClick={() => navigate(`/projects/${projectId}/board`)}
-              class="px-4 py-2 rounded-lg transition-colors"
-              style={{
-                background: 'var(--color-bg-elevated)',
-                border: '1px solid var(--color-border-light)',
-                color: 'var(--color-text-primary)'
-              }}
-            >
+            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/board`)}>
               Board View
-            </button>
-            <button
-              onClick={() => navigate(`/projects/${projectId}/list`)}
-              class="px-4 py-2 rounded-lg transition-colors"
-              style={{
-                background: 'var(--color-bg-elevated)',
-                border: '1px solid var(--color-border-light)',
-                color: 'var(--color-text-primary)'
-              }}
-            >
+            </Button>
+            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/list`)}>
               List View
-            </button>
-            <button
-              onClick={() => navigate('/projects')}
-              class="px-4 py-2 rounded-lg transition-colors"
-              style={{
-                background: 'var(--color-bg-elevated)',
-                border: '1px solid var(--color-border-light)',
-                color: 'var(--color-text-primary)'
-              }}
-            >
+            </Button>
+            <Button variant="secondary" onClick={() => navigate('/projects')}>
               Back to Projects
-            </button>
+            </Button>
           </div>
         </div>
 

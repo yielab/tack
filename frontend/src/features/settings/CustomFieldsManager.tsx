@@ -2,6 +2,7 @@ import { createSignal, createResource, For, Show } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
+import { Button, Field, FieldShell, Select, Modal, Badge, EmptyState } from '../../shared/ui';
 
 interface CustomField {
   id: string;
@@ -141,18 +142,10 @@ export default function CustomFieldsManager() {
             </p>
           </div>
           <div class="flex gap-2">
-            <button
-              onClick={openCreateModal}
-              class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-            >
-              + Add Field
-            </button>
-            <button
-              onClick={() => navigate(`/projects/${projectId}/board`)}
-              class="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
+            <Button onClick={openCreateModal}>+ Add Field</Button>
+            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/board`)}>
               Back to Project
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -191,13 +184,9 @@ export default function CustomFieldsManager() {
                             {field.name}
                           </h3>
                           <div class="flex items-center gap-2 mt-1">
-                            <span class="px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded">
-                              {typeInfo.label}
-                            </span>
+                            <Badge>{typeInfo.label}</Badge>
                             <Show when={field.required}>
-                              <span class="px-2 py-0.5 text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded">
-                                Required
-                              </span>
+                              <Badge tone="danger">Required</Badge>
                             </Show>
                           </div>
                         </div>
@@ -220,18 +209,12 @@ export default function CustomFieldsManager() {
                     </div>
 
                     <div class="flex items-center gap-2">
-                      <button
-                        onClick={() => openEditModal(field)}
-                        class="px-3 py-1.5 text-sm bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors"
-                      >
+                      <Button size="sm" variant="ghost" onClick={() => openEditModal(field)}>
                         Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(field.id)}
-                        class="px-3 py-1.5 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
-                      >
+                      </Button>
+                      <Button size="sm" variant="danger" onClick={() => handleDelete(field.id)}>
                         Delete
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -240,125 +223,107 @@ export default function CustomFieldsManager() {
           </For>
 
           <Show when={fields() && fields()!.length === 0}>
-            <div class="text-center py-12">
-              <div class="text-4xl mb-4">📋</div>
-              <p class="text-gray-500 dark:text-gray-400 mb-4">No custom fields yet</p>
-              <button
-                onClick={openCreateModal}
-                class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-              >
-                Add Your First Field
-              </button>
-            </div>
+            <EmptyState
+              icon="📋"
+              title="No custom fields yet"
+              action={<Button onClick={openCreateModal}>Add Your First Field</Button>}
+            />
           </Show>
         </div>
 
         {/* Create/Edit Modal */}
-        <Show when={showCreateModal()}>
-          <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div class="bg-white dark:bg-gray-800 rounded-lg max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
-              <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4">
-                {editingField() ? 'Edit Field' : 'Add Custom Field'}
-              </h2>
+        <Modal
+          isOpen={showCreateModal()}
+          onClose={() => setShowCreateModal(false)}
+          title={editingField() ? 'Edit Field' : 'Add Custom Field'}
+        >
+          <form onSubmit={handleSubmit} class="space-y-4">
+            <Field
+              label="Field Name"
+              required
+              value={name()}
+              onInput={(e) => setName(e.currentTarget.value)}
+              placeholder="e.g., Client Name"
+            />
 
-              <form onSubmit={handleSubmit} class="space-y-4">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Field Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={name()}
-                    onInput={(e) => setName(e.currentTarget.value)}
-                    required
-                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    placeholder="e.g., Client Name"
-                  />
-                </div>
+            <Select
+              label="Field Type"
+              required
+              value={fieldType()}
+              onChange={(e) => setFieldType(e.currentTarget.value)}
+            >
+              <For each={fieldTypes}>
+                {(type) => (
+                  <option value={type.value}>
+                    {type.icon} {type.label} - {type.description}
+                  </option>
+                )}
+              </For>
+            </Select>
 
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Field Type *
-                  </label>
-                  <select
-                    value={fieldType()}
-                    onChange={(e) => setFieldType(e.currentTarget.value)}
-                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    <For each={fieldTypes}>
-                      {(type) => (
-                        <option value={type.value}>
-                          {type.icon} {type.label} - {type.description}
-                        </option>
-                      )}
-                    </For>
-                  </select>
-                </div>
+            <FieldShell label="Description" for="field-description">
+              <textarea
+                id="field-description"
+                value={description()}
+                onInput={(e) => setDescription(e.currentTarget.value)}
+                rows={2}
+                placeholder="Optional description"
+                class="w-full resize-none rounded-lg border px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+                style={{
+                  'background-color': 'var(--color-bg-base)',
+                  color: 'var(--color-text-primary)',
+                  'border-color': 'var(--color-border-medium)',
+                  '--tw-ring-color': 'var(--color-focus-ring)',
+                }}
+              />
+            </FieldShell>
 
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Description
-                  </label>
-                  <textarea
-                    value={description()}
-                    onInput={(e) => setDescription(e.currentTarget.value)}
-                    rows={2}
-                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    placeholder="Optional description"
-                  />
-                </div>
+            <Show when={fieldType() === 'select' || fieldType() === 'multi_select'}>
+              <FieldShell
+                label="Options (one per line)"
+                required
+                for="field-options"
+                hint="Enter each option on a new line"
+              >
+                <textarea
+                  id="field-options"
+                  value={options()}
+                  onInput={(e) => setOptions(e.currentTarget.value)}
+                  rows={4}
+                  required
+                  placeholder="Option 1&#10;Option 2&#10;Option 3"
+                  class="w-full rounded-lg border px-3 py-2 font-mono text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+                  style={{
+                    'background-color': 'var(--color-bg-base)',
+                    color: 'var(--color-text-primary)',
+                    'border-color': 'var(--color-border-medium)',
+                    '--tw-ring-color': 'var(--color-focus-ring)',
+                  }}
+                />
+              </FieldShell>
+            </Show>
 
-                <Show when={fieldType() === 'select' || fieldType() === 'multi_select'}>
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Options (one per line) *
-                    </label>
-                    <textarea
-                      value={options()}
-                      onInput={(e) => setOptions(e.currentTarget.value)}
-                      rows={4}
-                      class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
-                      placeholder="Option 1&#10;Option 2&#10;Option 3"
-                      required
-                    />
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Enter each option on a new line
-                    </p>
-                  </div>
-                </Show>
+            <label class="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              <input
+                type="checkbox"
+                checked={required()}
+                onChange={(e) => setRequired(e.currentTarget.checked)}
+                class="h-4 w-4 rounded"
+              />
+              Required field (must be filled for all items)
+            </label>
 
-                <div class="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="required"
-                    checked={required()}
-                    onChange={(e) => setRequired(e.currentTarget.checked)}
-                    class="w-4 h-4 text-purple-600 rounded"
-                  />
-                  <label for="required" class="text-sm text-gray-700 dark:text-gray-300">
-                    Required field (must be filled for all items)
-                  </label>
-                </div>
-
-                <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <button
-                    type="button"
-                    onClick={() => setShowCreateModal(false)}
-                    class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-                  >
-                    {editingField() ? 'Update' : 'Create'} Field
-                  </button>
-                </div>
-              </form>
+            <div
+              class="flex justify-end gap-2 border-t pt-4"
+              style={{ 'border-color': 'var(--color-border-light)' }}
+            >
+              <Button type="button" variant="secondary" onClick={() => setShowCreateModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">{editingField() ? 'Update' : 'Create'} Field</Button>
             </div>
-          </div>
-        </Show>
+          </form>
+        </Modal>
       </div>
     </div>
   );

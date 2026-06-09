@@ -1,6 +1,7 @@
 import { createSignal, createMemo, For, Show, createResource } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
 import { api } from '../../shared/api';
+import { Button } from '../../shared/ui';
 import type { Item } from '../../types/api';
 
 export default function Calendar() {
@@ -111,94 +112,31 @@ export default function Calendar() {
             </p>
           </div>
           <div class="flex gap-2">
-            <button
-              onClick={() => navigate(`/projects/${projectId}/board`)}
-              class="px-4 py-2 rounded-lg transition-colors"
-              style={{
-                "background-color": 'var(--color-bg-elevated)',
-                border: '1px solid var(--color-border-light)',
-                color: 'var(--color-text-primary)'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-elevated)'}
-            >
+            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/board`)}>
               Board View
-            </button>
-            <button
-              onClick={() => navigate(`/projects/${projectId}/list`)}
-              class="px-4 py-2 rounded-lg transition-colors"
-              style={{
-                "background-color": 'var(--color-bg-elevated)',
-                border: '1px solid var(--color-border-light)',
-                color: 'var(--color-text-primary)'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-elevated)'}
-            >
+            </Button>
+            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/list`)}>
               List View
-            </button>
-            <button
-              onClick={() => navigate('/projects')}
-              class="px-4 py-2 rounded-lg transition-colors"
-              style={{
-                "background-color": 'var(--color-bg-elevated)',
-                border: '1px solid var(--color-border-light)',
-                color: 'var(--color-text-primary)'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-elevated)'}
-            >
+            </Button>
+            <Button variant="secondary" onClick={() => navigate('/projects')}>
               Back to Projects
-            </button>
+            </Button>
           </div>
         </div>
 
         {/* Calendar Controls */}
         <div class="rounded-lg p-4 mb-6" style={{ "background-color": 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
           <div class="flex items-center justify-between">
-            <button
-              onClick={previousMonth}
-              class="px-4 py-2 rounded-lg transition-colors"
-              style={{
-                "background-color": 'var(--color-bg-subtle)',
-                color: 'var(--color-text-primary)'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-border-light)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'}
-            >
-              ← Previous
-            </button>
+            <Button variant="secondary" onClick={previousMonth}>← Previous</Button>
 
             <div class="flex items-center gap-4">
               <h2 class="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
                 {monthName()}
               </h2>
-              <button
-                onClick={today}
-                class="px-4 py-2 rounded-lg transition-colors text-sm"
-                style={{
-                  "background-color": 'var(--color-primary-600)',
-                  color: 'var(--color-text-inverse)'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-primary-700)'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-primary-600)'}
-              >
-                Today
-              </button>
+              <Button size="sm" onClick={today}>Today</Button>
             </div>
 
-            <button
-              onClick={nextMonth}
-              class="px-4 py-2 rounded-lg transition-colors"
-              style={{
-                "background-color": 'var(--color-bg-subtle)',
-                color: 'var(--color-text-primary)'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-border-light)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'}
-            >
-              Next →
-            </button>
+            <Button variant="secondary" onClick={nextMonth}>Next →</Button>
           </div>
         </div>
 
