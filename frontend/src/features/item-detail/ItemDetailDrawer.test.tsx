@@ -1,0 +1,136 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render } from 'solid-js/web';
+import { MemoryRouter, Route, useSearchParams } from '@solidjs/router';
+import { ProjectContext, type ProjectContextValue } from '../../shared/state/projectContext';
+import type { Resource } from 'solid-js';
+import ItemDetailDrawer from './ItemDetailDrawer';
+
+const ITEM = {
+  id: 'item-1',
+  project_id: 'p1',
+  title: 'My item',
+  item_type: 'task',
+  status: 'todo',
+  priority: 'medium',
+  tags: [],
+  estimate_unit: 'story_points',
+  sort_order: 0,
+  created_at: '2025-01-01T00:00:00Z',
+  updated_at: '2025-01-01T00:00:00Z',
+};
+
+const projectValue: ProjectContextValue = {
+  projectId: () => 'p1',
+  project: (() => null) as unknown as Resource<null>,
+  workflow: () => ({
+    workflow_type: 'kanban',
+    statuses: [
+      { name: 'todo', category: 'todo', order: 0 },
+      { name: 'done', category: 'done', order: 1 },
+    ],
+  }),
+  vocabulary: () => ({}),
+  refetch: () => {},
+};
+
+let fetchMock: ReturnType<typeof vi.spyOn>;
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
+function jsonOf(url: string): unknown {
+  if (url.endsWith('/api/items/item-1')) return ITEM;
+  if (url.includes('/sprints')) return [];
+  return {};
+}
+
+beforeEach(() => {
+  fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
+    const url = String(input);
+    return Promise.resolve(
+      new Response(JSON.stringify(jsonOf(url)), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  document.body.innerHTML = '';
+});
+
+/** Host renders the drawer plus buttons to drive the ?item= param. */
+function Host() {
+  const [, setSearchParams] = useSearchParams();
+  return (
+    <>
+      <button data-testid="open" onClick={() => setSearchParams({ item: 'item-1' })}>
+        open
+      </button>
+      <ItemDetailDrawer />
+    </>
+  );
+}
+
+function mount() {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const dispose = render(
+    () => (
+      <ProjectContext.Provider value={projectValue}>
+        <MemoryRouter>
+          <Route path="/" component={Host} />
+        </MemoryRouter>
+      </ProjectContext.Provider>
+    ),
+    container,
+  );
+  return { container, dispose };
+}
+
+describe('ItemDetailDrawer', () => {
+  it('opens from ?item=, populates from GET /items/{id}, and ESC closes + clears the param', async () => {
+    const { container, dispose } = mount();
+
+    // Closed initially.
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+    container.querySelector<HTMLButtonElement>('[data-testid="open"]')!.click();
+    await flush();
+
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).toBeTruthy();
+    // Title input populated from the fetched item.
+    const title = document.querySelector<HTMLInputElement>('input[aria-label="Item title"]');
+    expect(title?.value).toBe('My item');
+    // It fetched the item by id.
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/api/items/item-1'))).toBe(true);
+
+    // ESC closes and clears the query param → drawer gone.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await flush();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+    dispose();
+  });
+
+  it('PATCHes /items/{id} when a header field changes', async () => {
+    const { container, dispose } = mount();
+    container.querySelector<HTMLButtonElement>('[data-testid="open"]')!.click();
+    await flush();
+
+    // The first <select> in the drawer is Status.
+    const statusSelect = document.querySelector<HTMLSelectElement>('[role="dialog"] select')!;
+    statusSelect.value = 'done';
+    statusSelect.dispatchEvent(new Event('change'));
+    await flush();
+
+    const patch = fetchMock.mock.calls.find(
+      (c) => (c[1] as RequestInit)?.method === 'PATCH' && String(c[0]).endsWith('/api/items/item-1'),
+    );
+    expect(patch).toBeTruthy();
+    expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({ status: 'done' });
+
+    dispose();
+  });
+});
