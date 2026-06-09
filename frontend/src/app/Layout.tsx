@@ -3,6 +3,7 @@ import Sidebar from '../shared/ui/Sidebar';
 import SearchBar from '../shared/ui/SearchBar';
 import ToastContainer from '../shared/ui/ToastContainer';
 import { ProjectProvider } from '../shared/state/projectContext';
+import ItemDetailDrawer from '../features/item-detail/ItemDetailDrawer';
 
 interface LayoutProps {
   children?: JSX.Element;
@@ -36,6 +37,9 @@ const Layout: Component<LayoutProps> = (props) => {
           {props.children}
         </div>
       </main>
+
+      {/* Item detail drawer — mounted once, opens via ?item= */}
+      <ItemDetailDrawer />
 
       {/* Toast Notifications */}
       <ToastContainer />

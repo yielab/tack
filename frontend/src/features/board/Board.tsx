@@ -1,5 +1,5 @@
-import { createResource, For, Show, createSignal, createEffect, type Component } from 'solid-js';
-import { useParams, useNavigate } from '@solidjs/router';
+import { createResource, For, Show, createSignal, createEffect, onMount, onCleanup, type Component } from 'solid-js';
+import { useParams, useNavigate, useSearchParams } from '@solidjs/router';
 import { api } from '../../shared/api';
 import type { BoardColumn, Item, BoardState } from '../../types/api';
 import CreateItemModal from '../../shared/ui/CreateItemModal';
@@ -11,6 +11,7 @@ import { withOptimisticUpdate } from '../../shared/state/optimistic';
 import { BoardSkeleton } from '../../shared/ui/SkeletonScreen';
 import { Button } from '../../shared/ui';
 import { useProject } from '../../shared/state/projectContext';
+import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 
 const ItemCard: Component<{
   item: Item;
@@ -204,6 +205,7 @@ const Board: Component = () => {
   const params = useParams();
   const projectId = () => params.id;
   const { vocabulary } = useProject();
+  const [, setSearchParams] = useSearchParams();
 
   const [board, { refetch }] = createResource(
     projectId,
@@ -427,12 +429,17 @@ const Board: Component = () => {
     setShowCreateModal(true);
   };
 
+  // Open the item detail drawer (deep-linkable via ?item=).
   const handleEditItem = (item: Item) => {
-    setModalMode('edit');
-    setEditingItem(item);
-    setSelectedColumn(null);
-    setShowCreateModal(true);
+    setSearchParams({ item: item.id });
   };
+
+  // Refresh the board when the drawer edits an item.
+  onMount(() => {
+    const onItemUpdated = () => void refetch();
+    window.addEventListener(ITEM_UPDATED_EVENT, onItemUpdated);
+    onCleanup(() => window.removeEventListener(ITEM_UPDATED_EVENT, onItemUpdated));
+  });
 
   return (
     <div>

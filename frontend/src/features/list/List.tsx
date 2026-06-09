@@ -1,5 +1,5 @@
-import { createSignal, createResource, For, Show, createMemo } from 'solid-js';
-import { useParams } from '@solidjs/router';
+import { createSignal, createResource, For, Show, createMemo, onMount, onCleanup } from 'solid-js';
+import { useParams, useSearchParams } from '@solidjs/router';
 import {
   DragDropProvider,
   DragDropSensors,
@@ -13,8 +13,8 @@ import { type ItemTypeConfig } from '../../shared/vocab/vocab';
 import { useProject } from '../../shared/state/projectContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import type { Item } from '../../types/api';
-import CreateItemModal from '../../shared/ui/CreateItemModal';
 import { Button } from '../../shared/ui';
+import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import { FiPlus, FiMenu, FiCheck, FiX, FiChevronRight, FiChevronDown, FiTrash2 } from 'solid-icons/fi';
 
 type ItemType = 'epic' | 'feature' | 'task' | 'subtask' | 'bug' | 'requirement';
@@ -36,10 +36,9 @@ export default function List() {
   const { types: vocabTypes } = useVocab();
   const types = createMemo(() => vocabTypes());
 
+  const [, setSearchParams] = useSearchParams();
   const [expandedItems, setExpandedItems] = createSignal<Set<string>>(new Set());
   const [creatingAt, setCreatingAt] = createSignal<{ parentId?: string } | null>(null);
-  const [editingItem, setEditingItem] = createSignal<Item | undefined>();
-  const [viewingItem, setViewingItem] = createSignal<Item | undefined>();
   const [newItemTitle, setNewItemTitle] = createSignal('');
   const [newItemType, setNewItemType] = createSignal<ItemType>('task');
   const [newItemPriority, setNewItemPriority] = createSignal('medium');
@@ -177,20 +176,17 @@ export default function List() {
     }
   };
 
+  // Open the item detail drawer (deep-linkable via ?item=).
   const handleViewItem = (item: Item) => {
-    setViewingItem(item);
+    setSearchParams({ item: item.id });
   };
 
-  const handleModalClose = () => {
-    setViewingItem(undefined);
-    setEditingItem(undefined);
-  };
-
-  const handleModalSuccess = async () => {
-    await refetch();
-    setViewingItem(undefined);
-    setEditingItem(undefined);
-  };
+  // Refresh the list when the drawer edits an item.
+  onMount(() => {
+    const onItemUpdated = () => void refetch();
+    window.addEventListener(ITEM_UPDATED_EVENT, onItemUpdated);
+    onCleanup(() => window.removeEventListener(ITEM_UPDATED_EVENT, onItemUpdated));
+  });
 
   return (
     <div class="h-full flex flex-col">
@@ -296,17 +292,6 @@ export default function List() {
         </Show>
       </div>
 
-      {/* Detail/Edit Modal */}
-      <Show when={viewingItem() || editingItem()}>
-        <CreateItemModal
-          isOpen={true}
-          onClose={handleModalClose}
-          onSuccess={handleModalSuccess}
-          projectId={projectId!}
-          mode={editingItem() ? 'edit' : 'edit'}
-          existingItem={editingItem() || viewingItem()}
-        />
-      </Show>
     </div>
   );
 }

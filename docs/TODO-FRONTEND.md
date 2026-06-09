@@ -299,6 +299,26 @@ No raw `fetch` outside `shared/api/`. No absolute API hosts anywhere.
 
 ## T-506 · Item Detail drawer shell + deep link · M
 
+> **Status: ✅ Done.** `features/item-detail/ItemDetailDrawer.tsx` (kit `Drawer` — full
+> sheet on mobile, ESC + focus return), opens whenever `?item=<id>` is present
+> (deep-linkable; open-on-load, close clears the param). `ItemHeader.tsx` gives inline
+> editing of title, status (workflow-aware via `useProject().workflow()`), priority,
+> estimate (+unit label), due date, sprint, and tags — each commit PATCHes `/items/{id}`
+> optimistically (resource `mutate` then reconcile/rollback on error). Tab bar
+> `Details · Activity · Dependencies · Files · Fields`: **Details** ships (description via
+> `RichTextEditor`, debounced PATCH); the rest are stubs (`tabs/stubs.tsx`) wired in
+> T-507–T-510. `type-check` + `build` green (entry 11.40 KB gzipped); 76 Vitest tests
+> (URL open/close + ESC clears the param; header edit fires the right PATCH).
+> **Architecture:** the drawer is mounted **once in `app/Layout`** (inside `ProjectProvider`)
+> rather than inside Board/List — this keeps the `features/* ↛ features/*` boundary intact
+> (the boundary test caught the first attempt). Board/List open it via `setSearchParams`
+> and refresh on a shared `ITEM_UPDATED_EVENT` (`shared/state/itemEvents.ts`) the drawer
+> dispatches after a successful edit; the old edit path via `CreateItemModal` is retired.
+> **Deviations:** the model has no `assignee` field and `estimate_unit` isn't in
+> `UpdateItem`, so assignee editing is omitted and the unit is shown read-only (label
+> only). Re-parenting is deferred to the tree view (T-514); the header notes when an item
+> has a parent.
+
 - **Why:** the single biggest UX unlock. There is no item detail surface today, which is why
   comments, dependencies, attachments, custom-field values, and roles are unreachable. Build
   the shell here; tabs are filled in by T-507–T-510.
