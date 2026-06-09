@@ -616,10 +616,12 @@ No raw `fetch` outside `shared/api/`. No absolute API hosts anywhere.
 > relative-`/api` reason it serves same-origin. The CI `embed-spa` job already consumes the
 > frontend job's `dist/` artifact and runs the feature-gated clippy/test/release build, and
 > the frontend job enforces the < 30 KB gzipped entry-bundle gate
-> (`.github/workflows/ci.yml`). **Not run locally:** `cargo` isn't installed in this
-> environment, so the release binary build/size was not executed here — it's exercised by
-> the existing CI job (the SPA handler `embed-spa` feature, and the `dist/` it embeds, were
-> already in place from T-403).
+> (`.github/workflows/ci.yml`). **Verified end-to-end locally:** `cargo build -p flexpm-api
+> --features embed-spa` compiles against the freshly-built `dist/`; the 19 feature-gated API
+> tests pass (incl. `spa_root_serves_html`, `spa_unknown_route_returns_index_html`); and the
+> running binary serves the SPA at `/` (embedded entry chunk matches the build), client
+> routes via SPA fallback (HTTP 200), `/assets/*`, and `/api/*` all same-origin. Also set
+> the document `<title>` to "FlexPM" (was the Vite default "frontend").
 
 - **Why:** T-403 added the backend `embed-spa` feature reading `frontend/dist/`; the
   frontend-side build/handoff and a one-command path should be documented and scripted.
