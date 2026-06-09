@@ -9,7 +9,8 @@ import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import ItemHeader from './ItemHeader';
 import DetailsTab from './tabs/DetailsTab';
 import ActivityTab from './tabs/ActivityTab';
-import { DependenciesTab, FilesTab, FieldsTab } from './tabs/stubs';
+import DependenciesTab from './tabs/DependenciesTab';
+import { FilesTab, FieldsTab } from './tabs/stubs';
 
 const TABS: TabItem[] = [
   { id: 'details', label: 'Details' },
@@ -81,7 +82,7 @@ const ItemDetailDrawer: Component = () => {
                 <ActivityTab itemId={it().id} />
               </Show>
               <Show when={activeTab() === 'dependencies'}>
-                <DependenciesTab />
+                <DependenciesTab item={it()} />
               </Show>
               <Show when={activeTab() === 'files'}>
                 <FilesTab />
