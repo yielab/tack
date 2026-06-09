@@ -10,6 +10,7 @@ import CommandPalette, { type Command } from '../../shared/ui/CommandPalette';
 import { withOptimisticUpdate } from '../../shared/state/optimistic';
 import { BoardSkeleton } from '../../shared/ui/SkeletonScreen';
 import { Button } from '../../shared/ui';
+import { useProject } from '../../shared/state/projectContext';
 
 const ItemCard: Component<{
   item: Item;
@@ -202,6 +203,7 @@ const Board: Component = () => {
   const navigate = useNavigate();
   const params = useParams();
   const projectId = () => params.id;
+  const { vocabulary } = useProject();
 
   const [board, { refetch }] = createResource(
     projectId,
@@ -553,6 +555,7 @@ const Board: Component = () => {
           }}
           onSuccess={() => refetch()}
           projectId={projectId()!}
+          vocabulary={vocabulary()}
           initialStatus={selectedColumn() || undefined}
           mode={modalMode()}
           existingItem={editingItem() || undefined}

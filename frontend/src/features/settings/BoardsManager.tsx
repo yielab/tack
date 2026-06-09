@@ -4,6 +4,7 @@ import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
 import { resolveLabel } from '../../shared/vocab/vocab';
 import { Button, Field, FieldShell, Select, Modal, Badge, EmptyState } from '../../shared/ui';
+import { useProject } from '../../shared/state/projectContext';
 
 interface Board {
   id: string;
@@ -33,7 +34,7 @@ export default function BoardsManager() {
 
   const [boards, { refetch }] = createResource(() => api.boards.list(projectId));
 
-  const [project] = createResource(() => api.projects.get(projectId));
+  const { project } = useProject();
 
   const openCreateModal = () => {
     setName('');

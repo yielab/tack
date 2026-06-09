@@ -3,6 +3,7 @@ import { useParams, useNavigate } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
 import { Button, Field, FieldShell, Select, Modal, Badge, EmptyState } from '../../shared/ui';
+import { useProject } from '../../shared/state/projectContext';
 
 interface CustomField {
   id: string;
@@ -37,7 +38,7 @@ export default function CustomFieldsManager() {
     api.customFields.list(projectId)
   );
 
-  const [project] = createResource(() => api.projects.get(projectId));
+  const { project } = useProject();
 
   const fieldTypes = [
     { value: 'text', label: 'Text', icon: '📝', description: 'Short text input' },
