@@ -485,6 +485,9 @@ const Board: Component = () => {
                 <Button size="sm" variant="secondary" onClick={() => navigate(`/projects/${projectId()}/timeline`)}>
                   Timeline
                 </Button>
+                <Button size="sm" variant="secondary" onClick={() => navigate(`/projects/${projectId()}/tree`)}>
+                  Tree
+                </Button>
               </div>
             </Show>
 
