@@ -367,6 +367,17 @@ No raw `fetch` outside `shared/api/`. No absolute API hosts anywhere.
 
 ## T-508 · Item Detail · Dependencies tab · M
 
+> **Status: ✅ Done.** `tabs/DependenciesTab.tsx` shows **Blocks** and **Blocked by**
+> lists derived from `GET /items/{id}/dependencies` (classified by `dependency_type` +
+> which side the item is on), resolving titles from the project item list. Add via a
+> direction + item picker (`POST` with `blocks`/`is_blocked_by`); the server's 400
+> cycle rejection is caught and shown inline (no crash, nothing added). Each linked item
+> is a button that opens its own drawer (`setSearchParams({item})`). Delete via
+> `DELETE /items/{id}/dependencies/{depId}`. `type-check` + `build` green (entry 12.96 KB
+> gzipped); 82 Vitest tests (both directions render; cycle message surfaces; delete
+> removes the row). **Note:** the picker is a `Select` of project items (not a live search
+> box) — adequate for the shell; a typeahead is a future nicety.
+
 - **Why:** dependency endpoints exist with cycle detection server-side, but no UI.
 - **Files:** `features/item-detail/tabs/DependenciesTab.tsx`.
 - **Steps:** show "blocks" and "blocked by" lists from `GET /items/{id}/dependencies`; add a
