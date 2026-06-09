@@ -1,9 +1,17 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens (T-504).
+ *
+ * Single source of theme values. `:root` holds the LIGHT theme; the `.dark`
+ * block (applied to <html> by the T-512 theme toggle) overrides only the
+ * tokens that change. System preference is honored pre-toggle via the
+ * prefers-color-scheme media query below. The shared UI kit (shared/ui/*)
+ * consumes ONLY these tokens — never raw hex/Tailwind color literals — so a
+ * single class flip restyles the whole kit.
+ */
 :root {
-  /* Professional Color Palette - Balanced & Darker */
-
-  /* Primary - Deep Purple (better balance) */
+  /* Primary — Deep Purple */
   --color-primary-50: #f5f3ff;
   --color-primary-100: #ede9fe;
   --color-primary-200: #ddd6fe;
@@ -14,17 +22,42 @@
   --color-primary-700: #6d28d9;
   --color-primary-800: #5b21b6;
 
-  /* Semantic Colors - Deeper tones */
-  --color-success: #059669;
-  --color-success-light: #d1fae5;
-  --color-warning: #d97706;
-  --color-warning-light: #fef3c7;
-  --color-danger: #dc2626;
-  --color-danger-light: #fee2e2;
-  --color-info: #2563eb;
-  --color-info-light: #dbeafe;
+  /* Semantic scales (50/100 surfaces · 500–700 solids) */
+  --color-success-50: #ecfdf5;
+  --color-success-100: #d1fae5;
+  --color-success-500: #10b981;
+  --color-success-600: #059669;
+  --color-success-700: #047857;
 
-  /* Backgrounds - Darker, more sophisticated */
+  --color-warning-50: #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+
+  --color-danger-50: #fef2f2;
+  --color-danger-100: #fee2e2;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
+
+  --color-info-50: #eff6ff;
+  --color-info-100: #dbeafe;
+  --color-info-500: #3b82f6;
+  --color-info-600: #2563eb;
+  --color-info-700: #1d4ed8;
+
+  /* Back-compat aliases */
+  --color-success: var(--color-success-600);
+  --color-success-light: var(--color-success-100);
+  --color-warning: var(--color-warning-600);
+  --color-warning-light: var(--color-warning-100);
+  --color-danger: var(--color-danger-600);
+  --color-danger-light: var(--color-danger-100);
+  --color-info: var(--color-info-600);
+  --color-info-light: var(--color-info-100);
+
+  /* Backgrounds */
   --color-bg-app: #f8f9fa;
   --color-bg-base: #ffffff;
   --color-bg-elevated: #ffffff;
@@ -32,21 +65,25 @@
   --color-bg-subtle: #e9ecef;
   --color-bg-hover: #e3e6e9;
   --color-bg-active: #f5f3ff;
+  --color-bg-overlay: rgb(0 0 0 / 0.5);
 
-  /* Borders - More defined */
+  /* Borders */
   --color-border-light: #dee2e6;
   --color-border-medium: #ced4da;
   --color-border-strong: #adb5bd;
   --color-border-dark: #6c757d;
 
-  /* Text - Better hierarchy */
+  /* Text */
   --color-text-primary: #212529;
   --color-text-secondary: #495057;
   --color-text-tertiary: #6c757d;
   --color-text-inverse: #ffffff;
   --color-text-muted: #adb5bd;
 
-  /* Shadows - More pronounced */
+  /* Focus ring (accessibility) */
+  --color-focus-ring: var(--color-primary-500);
+
+  /* Shadows */
   --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -1px rgb(0 0 0 / 0.06);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.05);
@@ -57,6 +94,73 @@
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
+}
+
+/* Dark theme overrides — only the tokens that differ from light. */
+.dark {
+  --color-primary-50: #2e1065;
+  --color-primary-100: #4c1d95;
+  --color-primary-200: #5b21b6;
+  --color-primary-300: #6d28d9;
+  --color-primary-400: #8b5cf6;
+  --color-primary-500: #a78bfa;
+  --color-primary-600: #8b5cf6;
+  --color-primary-700: #7c3aed;
+  --color-primary-800: #6d28d9;
+
+  --color-success-50: #052e23;
+  --color-success-100: #064e3b;
+  --color-warning-50: #3a2606;
+  --color-warning-100: #78350f;
+  --color-danger-50: #3a0a0a;
+  --color-danger-100: #7f1d1d;
+  --color-info-50: #0a1f44;
+  --color-info-100: #1e3a8a;
+
+  --color-bg-app: #0f1115;
+  --color-bg-base: #15181e;
+  --color-bg-elevated: #1c2027;
+  --color-bg-sidebar: #12151a;
+  --color-bg-subtle: #20242c;
+  --color-bg-hover: #272c35;
+  --color-bg-active: #2e1065;
+  --color-bg-overlay: rgb(0 0 0 / 0.6);
+
+  --color-border-light: #2a2f37;
+  --color-border-medium: #3a414b;
+  --color-border-strong: #4b535f;
+  --color-border-dark: #6c757d;
+
+  --color-text-primary: #e9ecef;
+  --color-text-secondary: #adb5bd;
+  --color-text-tertiary: #868e96;
+  --color-text-inverse: #15181e;
+  --color-text-muted: #6c757d;
+
+  --color-focus-ring: var(--color-primary-400);
+}
+
+/* Follow the OS preference until the user picks an explicit theme (T-512). */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not(.dark) {
+    --color-bg-app: #0f1115;
+    --color-bg-base: #15181e;
+    --color-bg-elevated: #1c2027;
+    --color-bg-sidebar: #12151a;
+    --color-bg-subtle: #20242c;
+    --color-bg-hover: #272c35;
+    --color-bg-active: #2e1065;
+    --color-bg-overlay: rgb(0 0 0 / 0.6);
+    --color-border-light: #2a2f37;
+    --color-border-medium: #3a414b;
+    --color-border-strong: #4b535f;
+    --color-text-primary: #e9ecef;
+    --color-text-secondary: #adb5bd;
+    --color-text-tertiary: #868e96;
+    --color-text-inverse: #15181e;
+    --color-text-muted: #6c757d;
+    --color-focus-ring: var(--color-primary-400);
+  }
 }
 
 body {

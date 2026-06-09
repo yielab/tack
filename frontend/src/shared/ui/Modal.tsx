@@ -1,5 +1,12 @@
-import { type Component, type JSX, Show } from 'solid-js';
+import {
+  type Component,
+  type JSX,
+  Show,
+  createEffect,
+  onCleanup,
+} from 'solid-js';
 import { Portal } from 'solid-js/web';
+import clsx from 'clsx';
 
 export interface ModalProps {
   isOpen: boolean;
@@ -9,55 +16,81 @@ export interface ModalProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
-const Modal: Component<ModalProps> = (props) => {
-  const sizeClasses = () => {
-    switch (props.size || 'md') {
-      case 'sm':
-        return 'max-w-md';
-      case 'md':
-        return 'max-w-lg';
-      case 'lg':
-        return 'max-w-2xl';
-      case 'xl':
-        return 'max-w-4xl';
-      default:
-        return 'max-w-lg';
-    }
-  };
+const SIZE: Record<NonNullable<ModalProps['size']>, string> = {
+  sm: 'max-w-md',
+  md: 'max-w-lg',
+  lg: 'max-w-2xl',
+  xl: 'max-w-4xl',
+};
 
-  const handleBackdropClick = (e: MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      props.onClose();
-    }
+const Modal: Component<ModalProps> = (props) => {
+  let dialog: HTMLDivElement | undefined;
+  let previouslyFocused: HTMLElement | null = null;
+
+  createEffect(() => {
+    if (!props.isOpen) return;
+    previouslyFocused = document.activeElement as HTMLElement | null;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        props.onClose();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    // Move focus into the dialog once mounted.
+    queueMicrotask(() => dialog?.focus());
+
+    onCleanup(() => {
+      document.removeEventListener('keydown', onKey);
+      previouslyFocused?.focus?.();
+    });
+  });
+
+  const handleBackdrop = (e: MouseEvent) => {
+    if (e.target === e.currentTarget) props.onClose();
   };
 
   return (
     <Show when={props.isOpen}>
       <Portal>
         <div
-          class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-          onClick={handleBackdropClick}
+          class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+          style={{ 'background-color': 'var(--color-bg-overlay)' }}
+          onClick={handleBackdrop}
         >
           <div
-            class={`bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full ${sizeClasses()} max-h-[90vh] flex flex-col`}
-            onClick={(e) => e.stopPropagation()}
+            ref={dialog}
+            role="dialog"
+            aria-modal="true"
+            aria-label={props.title}
+            tabindex={-1}
+            class={clsx(
+              'flex max-h-[90vh] w-full flex-col rounded-lg shadow-xl focus:outline-none',
+              SIZE[props.size ?? 'md']
+            )}
+            style={{ 'background-color': 'var(--color-bg-elevated)' }}
           >
-            {/* Header */}
-            <div class="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-              <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
+            <div
+              class="flex items-center justify-between border-b p-6"
+              style={{ 'border-color': 'var(--color-border-light)' }}
+            >
+              <h2
+                class="text-xl font-semibold"
+                style={{ color: 'var(--color-text-primary)' }}
+              >
                 {props.title}
               </h2>
               <button
                 onClick={props.onClose}
-                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                 aria-label="Close"
+                class="rounded p-1 transition-colors focus:outline-none focus-visible:ring-2"
+                style={{
+                  color: 'var(--color-text-tertiary)',
+                  '--tw-ring-color': 'var(--color-focus-ring)',
+                }}
               >
-                <svg
-                  class="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     stroke-linecap="round"
                     stroke-linejoin="round"
@@ -67,8 +100,6 @@ const Modal: Component<ModalProps> = (props) => {
                 </svg>
               </button>
             </div>
-
-            {/* Content */}
             <div class="flex-1 overflow-y-auto p-6">{props.children}</div>
           </div>
         </div>

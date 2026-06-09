@@ -212,6 +212,28 @@ No raw `fetch` outside `shared/api/`. No absolute API hosts anywhere.
 
 ## T-504 · Design tokens + shared UI kit · M
 
+> **Status: ✅ Core done (broad button/field sweep deferred — see below).**
+> `index.css` now holds one token block: `:root` = light, `.dark` = dark overrides
+> (toggled by T-512), plus a `prefers-color-scheme` fallback; added missing
+> semantic scales (success/warning/danger/info 50–700) and `--color-focus-ring`.
+> Built the kit in `shared/ui` — `Button`, `Badge`, `Skeleton`, `EmptyState`,
+> `Field` (+`FieldShell`), `Select`, `Modal`, `Drawer`, `Tabs`, `Menu` (+`MenuItem`)
+> — each token-only (no hardcoded colors), typed, with focus rings + ARIA; barrel at
+> `shared/ui/index.ts`. `grep '#[0-9a-fA-F]{6}' src/shared/ui` → clean. Modal was
+> rewritten in place (token-based + ESC + focus return), so its existing consumers are
+> upgraded automatically. `CreateProjectModal` migrated to `Field`/`Select`/`Button` as
+> the reference adoption. `type-check` + `build` green (entry 9.48 KB gzipped); 71 Vitest
+> tests (render each kit component; Modal/Drawer ESC; Tabs `aria-selected`).
+> **Deferred:** the app-wide replacement of *every* raw `<button>`/`<input>` across the
+> remaining ~11 feature pages is intentionally incremental — it is broad and visual, and
+> wants per-screen review in a running app rather than a single blind sweep. Modal is
+> already app-wide; Button/Field have a working reference. Track the remaining page
+> migrations as they are touched by later tasks (e.g. T-506+ build new surfaces directly
+> on the kit). **Carry-forward:** legacy `shared/ui` components (`Sidebar`, `SearchBar`,
+> `CommandPalette`, `RichTextEditor`, `CreateItemModal`, `ToastContainer`,
+> `SkeletonScreen`) still use Tailwind color *utilities* (not hex, so the grep passes);
+> fold them onto tokens incrementally.
+
 - **Why:** card/button/modal Tailwind clusters are duplicated ~30× across pages; a restyle is
   dozens of edits and the look is inconsistent. The `--color-*` CSS variables already exist —
   formalize them and build a kit on top.

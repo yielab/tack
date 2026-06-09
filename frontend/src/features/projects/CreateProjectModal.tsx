@@ -1,7 +1,18 @@
-import { type Component, createSignal } from 'solid-js';
-import Modal from '../../shared/ui/Modal';
+import { type Component, createSignal, Show } from 'solid-js';
+import { Modal, Button, Field, Select, FieldShell } from '../../shared/ui';
 import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
+
+const PROJECT_TYPE_OPTIONS = [
+  { value: 'software', label: 'Software (Scrum)' },
+  { value: 'web', label: 'Web Development (Scrum)' },
+  { value: 'mobile', label: 'Mobile App (Scrum)' },
+  { value: 'construction', label: 'Construction (Phase-based)' },
+  { value: 'personal', label: 'Personal (Simple)' },
+  { value: 'homework', label: 'Homework (Simple)' },
+  { value: 'maintenance', label: 'Maintenance (Kanban)' },
+  { value: 'custom', label: 'Custom' },
+];
 
 export interface CreateProjectModalProps {
   isOpen: boolean;
@@ -63,123 +74,73 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
   return (
     <Modal isOpen={props.isOpen} onClose={handleClose} title="Create New Project">
       <form onSubmit={handleSubmit} class="space-y-4">
-        {/* Error message */}
-        {error() && (
-          <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 text-red-700 dark:text-red-300 text-sm">
+        <Show when={error()}>
+          <div
+            class="rounded-lg border p-3 text-sm"
+            style={{
+              'background-color': 'var(--color-danger-50)',
+              'border-color': 'var(--color-danger-100)',
+              color: 'var(--color-danger-700)',
+            }}
+          >
             {error()}
           </div>
-        )}
+        </Show>
 
-        {/* Name */}
-        <div>
-          <label
-            for="project-name"
-            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-          >
-            Project Name <span class="text-red-500">*</span>
-          </label>
-          <input
-            id="project-name"
-            type="text"
-            value={name()}
-            onInput={(e) => setName(e.currentTarget.value)}
-            placeholder="My Awesome Project"
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            required
-            disabled={loading()}
-          />
-        </div>
+        <Field
+          label="Project Name"
+          required
+          value={name()}
+          onInput={(e) => setName(e.currentTarget.value)}
+          placeholder="My Awesome Project"
+          disabled={loading()}
+        />
 
-        {/* Description */}
-        <div>
-          <label
-            for="project-description"
-            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-          >
-            Description
-          </label>
+        <FieldShell label="Description" for="project-description">
           <textarea
             id="project-description"
             value={description()}
             onInput={(e) => setDescription(e.currentTarget.value)}
             placeholder="A brief description of your project..."
             rows={3}
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
             disabled={loading()}
+            class="w-full resize-none rounded-lg border px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50"
+            style={{
+              'background-color': 'var(--color-bg-base)',
+              color: 'var(--color-text-primary)',
+              'border-color': 'var(--color-border-medium)',
+              '--tw-ring-color': 'var(--color-focus-ring)',
+            }}
           />
-        </div>
+        </FieldShell>
 
-        {/* Project Type */}
-        <div>
-          <label
-            for="project-type"
-            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-          >
-            Project Type
-          </label>
-          <select
-            id="project-type"
-            value={projectType()}
-            onChange={(e) => setProjectType(e.currentTarget.value)}
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            disabled={loading()}
-          >
-            <option value="software">Software (Scrum)</option>
-            <option value="web">Web Development (Scrum)</option>
-            <option value="mobile">Mobile App (Scrum)</option>
-            <option value="construction">Construction (Phase-based)</option>
-            <option value="personal">Personal (Simple)</option>
-            <option value="homework">Homework (Simple)</option>
-            <option value="maintenance">Maintenance (Kanban)</option>
-            <option value="custom">Custom</option>
-          </select>
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Determines default workflow and terminology
-          </p>
-        </div>
+        <Select
+          label="Project Type"
+          value={projectType()}
+          onChange={(e) => setProjectType(e.currentTarget.value)}
+          disabled={loading()}
+          options={PROJECT_TYPE_OPTIONS}
+          hint="Determines default workflow and terminology"
+        />
 
-        {/* Actions */}
         <div class="flex gap-3 pt-4">
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            class="flex-1"
             onClick={handleClose}
             disabled={loading()}
-            class="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
+            class="flex-1"
+            loading={loading()}
             disabled={loading() || !name().trim()}
-            class="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            {loading() ? (
-              <>
-                <svg
-                  class="animate-spin h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    class="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    stroke-width="4"
-                  />
-                  <path
-                    class="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
-                Creating...
-              </>
-            ) : (
-              'Create Project'
-            )}
-          </button>
+            {loading() ? 'Creating...' : 'Create Project'}
+          </Button>
         </div>
       </form>
     </Modal>
