@@ -1,14 +1,14 @@
 import { createResource, For, Show, createMemo } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
-import { api } from '../lib/api';
+import { api } from '../../shared/api';
 
 export default function Dashboard() {
   const params = useParams();
   const navigate = useNavigate();
   const projectId = params.id!;
 
-  const [project] = createResource(() => api.getProject(projectId));
-  const [items] = createResource(() => api.listItems(projectId));
+  const [project] = createResource(() => api.projects.get(projectId));
+  const [items] = createResource(() => api.items.list(projectId));
 
   // Computed statistics
   const stats = createMemo(() => {

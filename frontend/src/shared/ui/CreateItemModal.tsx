@@ -1,10 +1,10 @@
 import { type Component, createSignal, Show, createEffect, For, createResource, createMemo } from 'solid-js';
 import Modal from './Modal';
 import RichTextEditor from './RichTextEditor';
-import { api } from '../lib/api';
-import type { CreateItem, Item } from '../types/api';
-import { toast } from '../lib/toast';
-import { getItemTypeMap } from '../lib/vocab';
+import { api } from '../api';
+import type { CreateItem, Item } from '../../types/api';
+import { toast } from './toast';
+import { getItemTypeMap } from '../vocab/vocab';
 import { FiPlus, FiX, FiTrash2 } from 'solid-icons/fi';
 
 export interface CreateItemModalProps {
@@ -58,7 +58,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
     () => (mode() === 'edit' && props.existingItem ? props.existingItem.id : null),
     async (parentId) => {
       if (!parentId || !props.projectId) return [];
-      const items = await api.listItems(props.projectId);
+      const items = await api.items.list(props.projectId);
       return items.filter(item => item.parent_id === parentId);
     }
   );
@@ -114,7 +114,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
     if (!title || !props.existingItem) return;
 
     try {
-      await api.createItem(props.projectId, {
+      await api.items.create(props.projectId, {
         title,
         item_type: 'subtask',
         priority: 'medium',
@@ -132,7 +132,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
     if (!confirm('Delete this child item?')) return;
 
     try {
-      await api.deleteItem(itemId);
+      await api.items.remove(itemId);
       toast.success('Child item deleted');
       await refetchChildren();
     } catch (err) {
@@ -153,7 +153,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
     try {
       if (mode() === 'edit' && props.existingItem) {
         // Update existing item
-        await api.updateItem(props.existingItem.id, {
+        await api.items.update(props.existingItem.id, {
           title: title().trim(),
           description: description().trim() || undefined,
           priority: priority(),
@@ -173,12 +173,12 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
           parent_id: props.parentId,
         };
 
-        const createdItem = await api.createItem(props.projectId, itemData);
+        const createdItem = await api.items.create(props.projectId, itemData);
 
         // Create subtasks if any
         if (subtasks().length > 0) {
           for (const subtask of subtasks()) {
-            await api.createItem(props.projectId, {
+            await api.items.create(props.projectId, {
               title: subtask.title,
               item_type: 'subtask',
               priority: 'medium',

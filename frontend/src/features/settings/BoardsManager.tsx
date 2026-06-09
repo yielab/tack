@@ -1,8 +1,8 @@
 import { createSignal, createResource, For, Show } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
-import { api } from '../shared/api';
-import { toast } from '../lib/toast';
-import { resolveLabel } from '../lib/vocab';
+import { api } from '../../shared/api';
+import { toast } from '../../shared/ui/toast';
+import { resolveLabel } from '../../shared/vocab/vocab';
 
 interface Board {
   id: string;

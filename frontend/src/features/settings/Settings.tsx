@@ -1,9 +1,9 @@
 import { createSignal, createResource, createEffect, For, Show, type Component } from 'solid-js';
 import { useParams } from '@solidjs/router';
-import { api } from '../lib/api';
-import { toast } from '../lib/toast';
-import { VOCAB_KEYS, resolveLabel, getItemTypeList } from '../lib/vocab';
-import type { WorkflowStatus } from '../types/api';
+import { api } from '../../shared/api';
+import { toast } from '../../shared/ui/toast';
+import { VOCAB_KEYS, resolveLabel, getItemTypeList } from '../../shared/vocab/vocab';
+import type { WorkflowStatus } from '../../types/api';
 import { FiPlus, FiTrash2, FiSave } from 'solid-icons/fi';
 
 // ── Workflow status row (local editing state) ─────────────────────────────────
@@ -32,7 +32,7 @@ const Settings: Component = () => {
 
   const [project, { refetch }] = createResource(
     () => projectId(),
-    (id) => api.getProject(id),
+    (id) => api.projects.get(id),
   );
 
   const [vocabEdits, setVocabEdits] = createSignal<Record<string, string>>({});
@@ -101,7 +101,7 @@ const Settings: Component = () => {
 
     setSaving(true);
     try {
-      await api.updateProject(id, {
+      await api.projects.update(id, {
         vocabulary: vocab,
         workflow: {
           workflow_type: project()!.workflow.workflow_type,

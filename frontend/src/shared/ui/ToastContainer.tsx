@@ -1,6 +1,6 @@
 import { For, Show, type Component } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { useToasts, removeToast, type Toast } from '../lib/toast';
+import { useToasts, removeToast, type Toast } from './toast';
 
 const ToastItem: Component<{ toast: Toast }> = (props) => {
   const getIcon = () => {

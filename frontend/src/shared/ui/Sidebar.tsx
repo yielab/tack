@@ -1,7 +1,7 @@
 import { A, useParams, useLocation } from '@solidjs/router';
 import { FiHome, FiGrid, FiList, FiSettings, FiMenu, FiX, FiBarChart2, FiCalendar, FiGitBranch } from 'solid-icons/fi';
 import { createSignal, Show, For, createResource, type Component, createMemo } from 'solid-js';
-import { api } from '../lib/api';
+import { api } from '../api';
 
 const Sidebar: Component = () => {
   const params = useParams();
@@ -9,7 +9,7 @@ const Sidebar: Component = () => {
   const currentProjectId = () => params.id;
 
   const [isOpen, setIsOpen] = createSignal(false);
-  const [projects] = createResource(() => api.listProjects());
+  const [projects] = createResource(() => api.projects.list());
 
   // Determine current view
   const currentView = createMemo(() => {

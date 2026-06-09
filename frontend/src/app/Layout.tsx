@@ -1,7 +1,7 @@
 import { type Component, type JSX } from 'solid-js';
-import Sidebar from './Sidebar';
-import SearchBar from './SearchBar';
-import ToastContainer from './ToastContainer';
+import Sidebar from '../shared/ui/Sidebar';
+import SearchBar from '../shared/ui/SearchBar';
+import ToastContainer from '../shared/ui/ToastContainer';
 
 interface LayoutProps {
   children?: JSX.Element;

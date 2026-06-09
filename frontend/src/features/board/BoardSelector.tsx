@@ -1,6 +1,6 @@
 import { createSignal, createResource, For, Show } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
-import { api } from '../shared/api';
+import { api } from '../../shared/api';
 
 interface Board {
   id: string;

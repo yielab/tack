@@ -1,7 +1,7 @@
 import { createSignal, createResource, For, Show } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
-import { api } from '../shared/api';
-import { toast } from '../lib/toast';
+import { api } from '../../shared/api';
+import { toast } from '../../shared/ui/toast';
 
 interface CustomField {
   id: string;

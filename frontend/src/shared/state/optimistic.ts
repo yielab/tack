@@ -6,7 +6,7 @@
  */
 
 import { createSignal, type Signal } from 'solid-js';
-import { toast } from './toast';
+import { toast } from '../ui/toast';
 
 export interface OptimisticUpdate<T> {
   id: string;
@@ -52,7 +52,7 @@ const DEFAULT_OPTIONS: Required<OptimisticOptions> = {
  *
  * @example
  * await withOptimisticUpdate(
- *   () => api.updateItem(id, { status: 'done' }),
+ *   () => api.items.update(id, { status: 'done' }),
  *   () => setItems(prev => prev.map(i => i.id === id ? {...i, status: 'done'} : i)),
  *   () => refetch(),
  *   { successMessage: 'Item updated' }

@@ -166,6 +166,27 @@ No raw `fetch` outside `shared/api/`. No absolute API hosts anywhere.
 
 ## T-503 · Feature-oriented folder restructure · M
 
+> **Status: ✅ Done.** New tree: `app/` (`App.tsx` router-only, `routes.tsx`, `Layout.tsx`),
+> `shared/` (`api`, `realtime`, `types`, `state/optimistic`, `vocab/vocab`,
+> `keyboard/keyboard`, `ui/*` incl. `toast`, `Modal`, `SkeletonScreen`, `ToastContainer`,
+> `CommandPalette`, `SearchBar`, `Sidebar`, `RichTextEditor`, `CreateItemModal`), and
+> `features/*` (projects, board, list, dashboard, sprints, calendar, timeline, templates,
+> settings). All pages moved into their feature; feature-specific components
+> (`CreateProjectModal`→projects, `BoardSelector`→board) co-located; components shared by
+> ≥2 features moved to `shared/ui`. The `lib/api.ts` shim is **deleted** — all callers now
+> use nested `api.*` (the legacy `getBoard` composition became `api.boards.projectBoardState`).
+> `App.tsx` is the route table only. `type-check` + `build` green (entry 9.48 KB gzipped);
+> 62 Vitest tests pass.
+> **Boundary rule:** enforced by `src/architecture.test.ts` — a zero-dependency filesystem
+> scan that fails if any `features/*` file imports another `features/*` (chosen over
+> dependency-cruiser / eslint-plugin-boundaries to avoid a new dev dependency; runs in CI
+> via `npm test`).
+> **Deviations:** (1) `src/types/api.ts` kept as the type leaf (`shared/types` re-exports it)
+> rather than physically relocated — avoids churn, single logical source preserved.
+> (2) `lib/websocket.ts` moved to `shared/realtime/websocket.ts` (still legacy; replaced by
+> `boardSocket.ts` in T-513). (3) No `app/providers.tsx` yet — there are no app-wide
+> providers until T-505's `ProjectProvider`; the file is added then.
+
 - **Why:** flat `pages/ + components/ + lib/` gives no isolation; cross-imports tangle and
   every page re-implements patterns. Restructure once, mechanically, with no behavior change.
 - **Files:** all of `frontend/src/**` (moves + import-path fixes); `App.tsx`.

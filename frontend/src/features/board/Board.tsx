@@ -1,14 +1,14 @@
 import { createResource, For, Show, createSignal, createEffect, type Component } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
-import { api } from '../lib/api';
-import type { BoardColumn, Item, BoardState } from '../types/api';
-import CreateItemModal from '../components/CreateItemModal';
-import BoardSelector from '../components/BoardSelector';
-import { useWebSocket, type BoardEvent } from '../lib/websocket';
-import { useKeyboard, keyboardManager, type ShortcutContext } from '../lib/keyboard';
-import CommandPalette, { type Command } from '../components/CommandPalette';
-import { withOptimisticUpdate } from '../lib/optimistic';
-import { BoardSkeleton } from '../components/SkeletonScreen';
+import { api } from '../../shared/api';
+import type { BoardColumn, Item, BoardState } from '../../types/api';
+import CreateItemModal from '../../shared/ui/CreateItemModal';
+import BoardSelector from './BoardSelector';
+import { useWebSocket, type BoardEvent } from '../../shared/realtime/websocket';
+import { useKeyboard, keyboardManager, type ShortcutContext } from '../../shared/keyboard/keyboard';
+import CommandPalette, { type Command } from '../../shared/ui/CommandPalette';
+import { withOptimisticUpdate } from '../../shared/state/optimistic';
+import { BoardSkeleton } from '../../shared/ui/SkeletonScreen';
 
 const ItemCard: Component<{
   item: Item;
@@ -204,7 +204,7 @@ const Board: Component = () => {
 
   const [board, { refetch }] = createResource(
     projectId,
-    (id) => (id ? api.getBoard(id) : Promise.resolve(null))
+    (id) => (id ? api.boards.projectBoardState(id) : Promise.resolve(null))
   );
 
   const [showCreateModal, setShowCreateModal] = createSignal(false);
@@ -398,7 +398,7 @@ const Board: Component = () => {
     };
 
     await withOptimisticUpdate(
-      () => api.updateItem(itemId, { status: newStatus }),
+      () => api.items.update(itemId, { status: newStatus }),
       () => setOptimisticBoardState(optimisticBoard),
       async () => {
         setOptimisticBoardState(null);
