@@ -1,6 +1,7 @@
 import { createSignal, createMemo, For, Show, createResource } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
 import { api } from '../../shared/api';
+import { Button } from '../../shared/ui';
 
 export default function Timeline() {
   const params = useParams();
@@ -181,30 +182,18 @@ export default function Timeline() {
             </p>
           </div>
           <div class="flex gap-2">
-            <button
-              onClick={() => navigate(`/projects/${projectId}/board`)}
-              class="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
+            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/board`)}>
               Board View
-            </button>
-            <button
-              onClick={() => navigate(`/projects/${projectId}/list`)}
-              class="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
+            </Button>
+            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/list`)}>
               List View
-            </button>
-            <button
-              onClick={() => navigate(`/projects/${projectId}/dashboard`)}
-              class="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
+            </Button>
+            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/dashboard`)}>
               Dashboard
-            </button>
-            <button
-              onClick={() => navigate('/projects')}
-              class="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
+            </Button>
+            <Button variant="secondary" onClick={() => navigate('/projects')}>
               Back to Projects
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -212,24 +201,9 @@ export default function Timeline() {
         <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-4">
-              <button
-                onClick={previousPeriod}
-                class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-              >
-                ← Previous
-              </button>
-              <button
-                onClick={today}
-                class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-              >
-                Today
-              </button>
-              <button
-                onClick={nextPeriod}
-                class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-              >
-                Next →
-              </button>
+              <Button variant="secondary" onClick={previousPeriod}>← Previous</Button>
+              <Button onClick={today}>Today</Button>
+              <Button variant="secondary" onClick={nextPeriod}>Next →</Button>
             </div>
 
             <div class="flex items-center gap-2">

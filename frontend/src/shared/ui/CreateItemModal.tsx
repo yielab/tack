@@ -1,6 +1,8 @@
 import { type Component, createSignal, Show, createEffect, For, createResource, createMemo } from 'solid-js';
 import Modal from './Modal';
 import RichTextEditor from './RichTextEditor';
+import Button from './Button';
+import Field from './Field';
 import { api } from '../api';
 import type { CreateItem, Item } from '../../types/api';
 import { toast } from './toast';
@@ -217,33 +219,28 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
       <form onSubmit={handleSubmit} class="space-y-5">
         {/* Error message */}
         <Show when={error()}>
-          <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+          <div
+            class="rounded-lg border p-3 text-sm"
+            style={{
+              'background-color': 'var(--color-danger-50)',
+              'border-color': 'var(--color-danger-100)',
+              color: 'var(--color-danger-700)',
+            }}
+          >
             {error()}
           </div>
         </Show>
 
         {/* Title */}
-        <div>
-          <label for="item-title" class="block text-sm font-semibold mb-2" style={{ color: "var(--color-text-primary)" }}>
-            Title <span class="text-red-500">*</span>
-          </label>
-          <input
-            id="item-title"
-            type="text"
-            value={title()}
-            onInput={(e) => setTitle(e.currentTarget.value)}
-            placeholder="What needs to be done?"
-            class="w-full px-4 py-2.5 border rounded-lg text-base focus:ring-2 focus:ring-violet-500 focus:border-violet-500 transition-all"
-            style={{
-              "background-color": "var(--color-bg-base)",
-              "border-color": "var(--color-border-medium)",
-              color: "var(--color-text-primary)"
-            }}
-            required
-            disabled={loading()}
-            autofocus
-          />
-        </div>
+        <Field
+          label="Title"
+          required
+          value={title()}
+          onInput={(e) => setTitle(e.currentTarget.value)}
+          placeholder="What needs to be done?"
+          disabled={loading()}
+          autofocus
+        />
 
         {/* Type & Priority Combined Row */}
         <div class="grid grid-cols-2 gap-4">
@@ -434,15 +431,15 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                 class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 disabled={loading()}
               />
-              <button
+              <Button
                 type="button"
+                variant="secondary"
                 onClick={mode() === 'edit' ? handleCreateChild : addSubtask}
-                class="px-4 py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-lg hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors flex items-center gap-2"
                 disabled={loading()}
               >
                 <FiPlus size={18} />
                 Add
-              </button>
+              </Button>
             </div>
           </div>
         </Show>
@@ -494,64 +491,33 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
               }}
               disabled={loading()}
             />
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={addTag}
-              class="px-3 py-2 bg-violet-100 text-violet-700 rounded-lg hover:bg-violet-200 transition-colors flex items-center gap-1.5 text-sm font-medium"
               disabled={loading()}
             >
               <FiPlus size={16} />
               Add
-            </button>
+            </Button>
           </div>
         </div>
 
         {/* Actions */}
         <div class="flex gap-3 pt-4" style={{ "border-top": "1px solid var(--color-border-light)" }}>
-          <button
-            type="button"
-            onClick={handleClose}
-            disabled={loading()}
-            class="flex-1 px-5 py-2.5 border rounded-lg font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{
-              "border-color": "var(--color-border-medium)",
-              color: "var(--color-text-secondary)"
-            }}
-          >
+          <Button type="button" variant="secondary" class="flex-1" onClick={handleClose} disabled={loading()}>
             Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={loading() || !title().trim()}
-            class="flex-1 px-5 py-2.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-semibold shadow-sm"
-          >
-            {loading() ? (
-              <>
-                <svg
-                  class="animate-spin h-5 w-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    class="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    stroke-width="4"
-                  />
-                  <path
-                    class="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
-                {mode() === 'edit' ? 'Updating...' : 'Creating...'}
-              </>
-            ) : (
-              mode() === 'edit' ? 'Update Item' : 'Create Item'
-            )}
-          </button>
+          </Button>
+          <Button type="submit" class="flex-1" loading={loading()} disabled={loading() || !title().trim()}>
+            {loading()
+              ? mode() === 'edit'
+                ? 'Updating...'
+                : 'Creating...'
+              : mode() === 'edit'
+                ? 'Update Item'
+                : 'Create Item'}
+          </Button>
         </div>
       </form>
     </Modal>

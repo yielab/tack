@@ -1,7 +1,12 @@
 import { splitProps, type Component, type JSX } from 'solid-js';
 import clsx from 'clsx';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+export type ButtonVariant =
+  | 'primary'
+  | 'secondary'
+  | 'ghost'
+  | 'danger'
+  | 'success';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 export interface ButtonProps
@@ -33,6 +38,11 @@ function variantStyle(variant: ButtonVariant): JSX.CSSProperties {
     case 'danger':
       return {
         'background-color': 'var(--color-danger-600)',
+        color: 'var(--color-text-inverse)',
+      };
+    case 'success':
+      return {
+        'background-color': 'var(--color-success-600)',
         color: 'var(--color-text-inverse)',
       };
     case 'primary':

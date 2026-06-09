@@ -9,6 +9,7 @@ import { useKeyboard, keyboardManager, type ShortcutContext } from '../../shared
 import CommandPalette, { type Command } from '../../shared/ui/CommandPalette';
 import { withOptimisticUpdate } from '../../shared/state/optimistic';
 import { BoardSkeleton } from '../../shared/ui/SkeletonScreen';
+import { Button } from '../../shared/ui';
 
 const ItemCard: Component<{
   item: Item;
@@ -451,91 +452,21 @@ const Board: Component = () => {
             {/* View Navigation Buttons */}
             <Show when={projectId()}>
               <div class="flex items-center gap-2">
-                <button
-                  onClick={() => navigate(`/projects/${projectId()}/dashboard`)}
-                  class="px-3 py-2 text-sm border rounded-lg transition-colors"
-                  style={{
-                    "background-color": "var(--color-bg-elevated)",
-                    color: "var(--color-text-secondary)",
-                    "border-color": "var(--color-border-medium)",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "var(--color-bg-subtle)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "var(--color-bg-elevated)";
-                  }}
-                >
+                <Button size="sm" variant="secondary" onClick={() => navigate(`/projects/${projectId()}/dashboard`)}>
                   Dashboard
-                </button>
-                <button
-                  onClick={() => navigate(`/projects/${projectId()}/list`)}
-                  class="px-3 py-2 text-sm border rounded-lg transition-colors"
-                  style={{
-                    "background-color": "var(--color-bg-elevated)",
-                    color: "var(--color-text-secondary)",
-                    "border-color": "var(--color-border-medium)",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "var(--color-bg-subtle)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "var(--color-bg-elevated)";
-                  }}
-                >
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => navigate(`/projects/${projectId()}/list`)}>
                   List
-                </button>
-                <button
-                  onClick={() => navigate(`/projects/${projectId()}/sprints`)}
-                  class="px-3 py-2 text-sm border rounded-lg transition-colors"
-                  style={{
-                    "background-color": "var(--color-bg-elevated)",
-                    color: "var(--color-text-secondary)",
-                    "border-color": "var(--color-border-medium)",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "var(--color-bg-subtle)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "var(--color-bg-elevated)";
-                  }}
-                >
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => navigate(`/projects/${projectId()}/sprints`)}>
                   Sprints
-                </button>
-                <button
-                  onClick={() => navigate(`/projects/${projectId()}/calendar`)}
-                  class="px-3 py-2 text-sm border rounded-lg transition-colors"
-                  style={{
-                    "background-color": "var(--color-bg-elevated)",
-                    color: "var(--color-text-secondary)",
-                    "border-color": "var(--color-border-medium)",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "var(--color-bg-subtle)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "var(--color-bg-elevated)";
-                  }}
-                >
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => navigate(`/projects/${projectId()}/calendar`)}>
                   Calendar
-                </button>
-                <button
-                  onClick={() => navigate(`/projects/${projectId()}/timeline`)}
-                  class="px-3 py-2 text-sm border rounded-lg transition-colors"
-                  style={{
-                    "background-color": "var(--color-bg-elevated)",
-                    color: "var(--color-text-secondary)",
-                    "border-color": "var(--color-border-medium)",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "var(--color-bg-subtle)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "var(--color-bg-elevated)";
-                  }}
-                >
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => navigate(`/projects/${projectId()}/timeline`)}>
                   Timeline
-                </button>
+                </Button>
               </div>
             </Show>
 

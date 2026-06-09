@@ -2,6 +2,7 @@ import { createSignal } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
 import { toast } from '../../shared/ui/toast';
 import { api } from '../../shared/api';
+import { Button, Field, FieldShell, Select } from '../../shared/ui';
 
 export default function TemplateCreator() {
   const navigate = useNavigate();
@@ -68,49 +69,43 @@ export default function TemplateCreator() {
               </h3>
 
               <div class="space-y-4">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Template Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={name()}
-                    onInput={(e) => setName(e.currentTarget.value)}
-                    required
-                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    placeholder="e.g., Web Development Project"
-                  />
-                </div>
+                <Field
+                  label="Template Name"
+                  required
+                  value={name()}
+                  onInput={(e) => setName(e.currentTarget.value)}
+                  placeholder="e.g., Web Development Project"
+                />
 
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Description
-                  </label>
+                <FieldShell label="Description" for="template-description">
                   <textarea
+                    id="template-description"
                     value={description()}
                     onInput={(e) => setDescription(e.currentTarget.value)}
                     rows={3}
-                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="Describe what this template is for..."
+                    class="w-full resize-none rounded-lg border px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+                    style={{
+                      'background-color': 'var(--color-bg-base)',
+                      color: 'var(--color-text-primary)',
+                      'border-color': 'var(--color-border-medium)',
+                      '--tw-ring-color': 'var(--color-focus-ring)',
+                    }}
                   />
-                </div>
+                </FieldShell>
 
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Project Type *
-                  </label>
-                  <select
-                    value={projectType()}
-                    onChange={(e) => setProjectType(e.currentTarget.value)}
-                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    {projectTypes.map(type => (
-                      <option value={type.value}>
-                        {type.icon} {type.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <Select
+                  label="Project Type"
+                  required
+                  value={projectType()}
+                  onChange={(e) => setProjectType(e.currentTarget.value)}
+                >
+                  {projectTypes.map((type) => (
+                    <option value={type.value}>
+                      {type.icon} {type.label}
+                    </option>
+                  ))}
+                </Select>
               </div>
             </div>
 
@@ -134,20 +129,14 @@ export default function TemplateCreator() {
             </div>
 
             {/* Actions */}
-            <div class="flex justify-end gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <button
-                type="button"
-                onClick={() => navigate('/templates')}
-                class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-              >
+            <div
+              class="flex justify-end gap-2 border-t pt-4"
+              style={{ 'border-color': 'var(--color-border-light)' }}
+            >
+              <Button type="button" variant="secondary" onClick={() => navigate('/templates')}>
                 Cancel
-              </button>
-              <button
-                type="submit"
-                class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-              >
-                Create Template
-              </button>
+              </Button>
+              <Button type="submit">Create Template</Button>
             </div>
           </form>
         </div>
