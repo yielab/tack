@@ -570,6 +570,24 @@ No raw `fetch` outside `shared/api/`. No absolute API hosts anywhere.
 
 ## T-514 · New & upgraded views · Tree, Timeline deps, Dashboard metrics · L
 
+> **Status: ✅ Done.** **Tree** — new `features/tree/TreeView.tsx` at `/projects/:id/tree`
+> (linked from the Board nav) builds a nested hierarchy from the flat, ordered
+> `GET /projects/{id}/items/tree` payload via a pure `buildTree()`; expand/collapse with
+> per-row depth, vocab-aware type emoji, and a row click that opens the item drawer
+> (`?item=`). **Timeline** — a dependency overlay fetches each item's deps and highlights
+> **blocked** items (red ring + ⛔ + tooltip). **Dashboard** — metrics already came from the
+> real items resource; extracted the aggregation into a pure, injected-clock
+> `computeDashboardStats()` (status/WIP per column, completion %, priority/type
+> distribution, estimates) and added **throughput** (completed in 7 / 30 days by
+> `completed_at`). `type-check` + `build` green (entry 9.86 KB gzipped; Tree a lazy 1.5 KB
+> chunk); 101 Vitest tests (`buildTree` nesting/orphans/order; `computeDashboardStats`
+> aggregations on a fixture set incl. throughput + empty project).
+> **Deviation:** Timeline shows dependency state as **blocked-item highlighting**, not full
+> SVG arrows drawn between bars — the arrow geometry against the existing Gantt bars is
+> sizeable and was deferred; the "highlight blocked items" half of the acceptance is met and
+> blockers are surfaced in the item drawer's Dependencies tab (T-508). The per-item deps
+> fetch is N requests (no project-level deps endpoint); a batch endpoint would optimize it.
+
 - **Why:** the hierarchy endpoint, dependency data, and real item data are unused by views.
 - **Files:** new `features/tree/TreeView.tsx`; `features/timeline/Timeline.tsx`;
   `features/dashboard/Dashboard.tsx`; route `/projects/:id/tree`.

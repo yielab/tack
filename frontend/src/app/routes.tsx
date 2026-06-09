@@ -8,6 +8,7 @@ const Dashboard = lazy(() => import('../features/dashboard/Dashboard'));
 const Sprints = lazy(() => import('../features/sprints/Sprints'));
 const Calendar = lazy(() => import('../features/calendar/Calendar'));
 const Timeline = lazy(() => import('../features/timeline/Timeline'));
+const TreeView = lazy(() => import('../features/tree/TreeView'));
 const Templates = lazy(() => import('../features/templates/Templates'));
 const TemplateCreator = lazy(() => import('../features/templates/TemplateCreator'));
 const ProjectSettings = lazy(() => import('../features/settings/ProjectSettings'));
@@ -23,6 +24,7 @@ export const routes: RouteDefinition[] = [
   { path: '/projects/:id/sprints', component: Sprints },
   { path: '/projects/:id/calendar', component: Calendar },
   { path: '/projects/:id/timeline', component: Timeline },
+  { path: '/projects/:id/tree', component: TreeView },
   { path: '/projects/:id/settings', component: ProjectSettings },
   { path: '/templates', component: Templates },
   { path: '/templates/new', component: TemplateCreator },

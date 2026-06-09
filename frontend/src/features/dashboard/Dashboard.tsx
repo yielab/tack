@@ -3,6 +3,7 @@ import { useParams, useNavigate } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { Button } from '../../shared/ui';
 import { useProject } from '../../shared/state/projectContext';
+import { computeDashboardStats } from './computeStats';
 
 export default function Dashboard() {
   const params = useParams();
@@ -12,67 +13,10 @@ export default function Dashboard() {
   const { project } = useProject();
   const [items] = createResource(() => api.items.list(projectId));
 
-  // Computed statistics
-  const stats = createMemo(() => {
-    const allItems = items() || [];
-    const proj = project();
-
-    const statuses = proj?.workflow?.statuses || [];
-    const totalItems = allItems.length;
-
-    // Status distribution
-    const byStatus = statuses.map(status => ({
-      name: status.name,
-      count: allItems.filter(item => item.status === status.name).length,
-      category: status.category,
-    }));
-
-    // Priority distribution
-    const byPriority = {
-      critical: allItems.filter(i => i.priority === 'critical').length,
-      high: allItems.filter(i => i.priority === 'high').length,
-      medium: allItems.filter(i => i.priority === 'medium').length,
-      low: allItems.filter(i => i.priority === 'low').length,
-    };
-
-    // Type distribution
-    const typeSet = new Set(allItems.map(i => typeof i.item_type === 'string' ? i.item_type : i.item_type.custom));
-    const byType = Array.from(typeSet).map(type => ({
-      name: type,
-      count: allItems.filter(i => {
-        const itemType = typeof i.item_type === 'string' ? i.item_type : i.item_type.custom;
-        return itemType === type;
-      }).length,
-    }));
-
-    // Completion rate
-    const doneItems = byStatus.filter(s => s.category === 'done').reduce((sum, s) => sum + s.count, 0);
-    const completionRate = totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0;
-
-    // Items with estimates
-    const withEstimates = allItems.filter(i => i.estimate && i.estimate > 0);
-    const totalEstimate = withEstimates.reduce((sum, i) => sum + (i.estimate || 0), 0);
-    const completedEstimate = withEstimates
-      .filter(i => byStatus.find(s => s.name === i.status)?.category === 'done')
-      .reduce((sum, i) => sum + (i.estimate || 0), 0);
-
-    // Recent activity (last 7 days)
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    const recentItems = allItems.filter(i => new Date(i.created_at) > sevenDaysAgo);
-
-    return {
-      totalItems,
-      byStatus,
-      byPriority,
-      byType,
-      completionRate,
-      totalEstimate,
-      completedEstimate,
-      recentItems: recentItems.length,
-      doneItems,
-    };
-  });
+  // Computed statistics (pure aggregation in computeStats.ts).
+  const stats = createMemo(() =>
+    computeDashboardStats(items() || [], project()?.workflow?.statuses || [], new Date()),
+  );
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -166,13 +110,16 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Recent Activity */}
+          {/* Throughput */}
           <div class="rounded-lg p-6" style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
             <div class="flex items-center justify-between">
               <div>
-                <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Added (7 days)</p>
+                <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Completed (7 / 30 days)</p>
                 <p class="text-3xl font-bold mt-2" style={{ color: 'var(--color-text-primary)' }}>
-                  {stats().recentItems}
+                  {stats().throughput7} <span class="text-lg" style={{ color: 'var(--color-text-tertiary)' }}>/ {stats().throughput30}</span>
+                </p>
+                <p class="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
+                  +{stats().recentItems} added in 7 days
                 </p>
               </div>
               <div class="w-12 h-12 rounded-lg flex items-center justify-center" style={{ background: 'rgba(251, 146, 60, 0.1)' }}>

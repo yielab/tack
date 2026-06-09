@@ -12,6 +12,26 @@ export default function Timeline() {
   const { project } = useProject();
   const [items] = createResource(() => api.items.list(projectId));
 
+  // Dependency overlay (T-514): the set of items that are blocked by another
+  // item. Each item's deps are fetched and an item is "blocked" when something
+  // blocks it (target of a `blocks`, or source of an `is_blocked_by`).
+  const [blockedIds] = createResource(items, async (its) => {
+    const blocked = new Set<string>();
+    await Promise.all(
+      (its ?? []).map(async (it) => {
+        const deps = await api.dependencies.list(it.id).catch(() => []);
+        for (const d of deps) {
+          const blockedHere =
+            (d.target_item_id === it.id && d.dependency_type === 'blocks') ||
+            (d.source_item_id === it.id && d.dependency_type === 'is_blocked_by');
+          if (blockedHere) blocked.add(it.id);
+        }
+      }),
+    );
+    return blocked;
+  });
+  const isBlocked = (id: string) => blockedIds()?.has(id) ?? false;
+
   const [currentDate, setCurrentDate] = createSignal(new Date());
   const [viewMode, setViewMode] = createSignal<'week' | 'month' | 'quarter'>('month');
 
@@ -283,13 +303,17 @@ export default function Timeline() {
                   {/* Item bar */}
                   <div
                     class={`absolute top-1 bottom-1 rounded-lg cursor-pointer transition-all hover:brightness-110 ${getPriorityColor(item.priority)} ${getStatusOpacity(item.status)}`}
+                    classList={{ 'ring-2 ring-offset-1 ring-red-500': isBlocked(item.id) }}
                     style={{
                       left: `${item.leftPercent}%`,
                       width: `${Math.max(1, item.widthPercent)}%`
                     }}
-                    title={`${item.title}\n${item.startDate.toLocaleDateString()} - ${item.endDate.toLocaleDateString()}\nStatus: ${item.status}\nPriority: ${item.priority}`}
+                    title={`${item.title}\n${item.startDate.toLocaleDateString()} - ${item.endDate.toLocaleDateString()}\nStatus: ${item.status}\nPriority: ${item.priority}${isBlocked(item.id) ? '\n⛔ Blocked by a dependency' : ''}`}
                   >
-                    <div class="px-2 py-1 h-full flex items-center">
+                    <div class="px-2 py-1 h-full flex items-center gap-1">
+                      <Show when={isBlocked(item.id)}>
+                        <span class="text-xs" aria-label="blocked">⛔</span>
+                      </Show>
                       <span class="text-white text-xs font-medium truncate">
                         {item.title}
                       </span>
