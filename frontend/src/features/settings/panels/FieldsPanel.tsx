@@ -1,9 +1,8 @@
 import { createSignal, createResource, For, Show } from 'solid-js';
-import { useParams, useNavigate } from '@solidjs/router';
-import { api } from '../../shared/api';
-import { toast } from '../../shared/ui/toast';
-import { Button, Field, FieldShell, Select, Modal, Badge, EmptyState } from '../../shared/ui';
-import { useProject } from '../../shared/state/projectContext';
+import { useParams } from '@solidjs/router';
+import { api } from '../../../shared/api';
+import { toast } from '../../../shared/ui/toast';
+import { Button, Field, FieldShell, Select, Modal, Badge, EmptyState } from '../../../shared/ui';
 
 interface CustomField {
   id: string;
@@ -19,9 +18,8 @@ interface CustomField {
   updated_at: string;
 }
 
-export default function CustomFieldsManager() {
+export default function FieldsPanel() {
   const params = useParams();
-  const navigate = useNavigate();
   const projectId = params.id!;
 
   const [showCreateModal, setShowCreateModal] = createSignal(false);
@@ -37,8 +35,6 @@ export default function CustomFieldsManager() {
   const [fields, { refetch }] = createResource(() =>
     api.customFields.list(projectId)
   );
-
-  const { project } = useProject();
 
   const fieldTypes = [
     { value: 'text', label: 'Text', icon: '📝', description: 'Short text input' },
@@ -130,35 +126,10 @@ export default function CustomFieldsManager() {
   };
 
   return (
-    <div class="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
-      <div class="max-w-4xl mx-auto">
-        {/* Header */}
-        <div class="mb-6 flex items-center justify-between">
-          <div>
-            <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
-              Custom Fields
-            </h1>
-            <p class="text-gray-600 dark:text-gray-400 mt-1">
-              {project()?.name || 'Loading...'}
-            </p>
-          </div>
-          <div class="flex gap-2">
-            <Button onClick={openCreateModal}>+ Add Field</Button>
-            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/board`)}>
-              Back to Project
-            </Button>
-          </div>
-        </div>
-
-        {/* Info Box */}
-        <div class="mb-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-          <h3 class="text-sm font-semibold text-blue-900 dark:text-blue-200 mb-2">
-            💡 About Custom Fields
-          </h3>
-          <p class="text-sm text-blue-800 dark:text-blue-300">
-            Custom fields let you add project-specific metadata to items. For example, add a "Client Name" field for agency projects,
-            or "Contractor" field for construction projects. Fields can be text, numbers, dates, checkboxes, and more.
-          </p>
+    <div>
+      <div>
+        <div class="mb-4 flex items-center justify-end">
+          <Button onClick={openCreateModal}>+ Add Field</Button>
         </div>
 
         {/* Fields List */}
