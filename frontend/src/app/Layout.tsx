@@ -2,6 +2,7 @@ import { type Component, type JSX } from 'solid-js';
 import Sidebar from '../shared/ui/Sidebar';
 import SearchBar from '../shared/ui/SearchBar';
 import ToastContainer from '../shared/ui/ToastContainer';
+import { ProjectProvider } from '../shared/state/projectContext';
 
 interface LayoutProps {
   children?: JSX.Element;
@@ -9,6 +10,7 @@ interface LayoutProps {
 
 const Layout: Component<LayoutProps> = (props) => {
   return (
+    <ProjectProvider>
     <div class="flex h-screen" style={{ "background-color": "var(--color-bg-app)" }}>
       <Sidebar />
       <main class="flex-1 overflow-auto pt-14 lg:pt-0">
@@ -38,6 +40,7 @@ const Layout: Component<LayoutProps> = (props) => {
       {/* Toast Notifications */}
       <ToastContainer />
     </div>
+    </ProjectProvider>
   );
 };
 

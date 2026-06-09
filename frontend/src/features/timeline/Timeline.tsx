@@ -2,13 +2,14 @@ import { createSignal, createMemo, For, Show, createResource } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { Button } from '../../shared/ui';
+import { useProject } from '../../shared/state/projectContext';
 
 export default function Timeline() {
   const params = useParams();
   const navigate = useNavigate();
   const projectId = params.id!;
 
-  const [project] = createResource(() => api.projects.get(projectId));
+  const { project } = useProject();
   const [items] = createResource(() => api.items.list(projectId));
 
   const [currentDate, setCurrentDate] = createSignal(new Date());
