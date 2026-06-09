@@ -422,6 +422,21 @@ No raw `fetch` outside `shared/api/`. No absolute API hosts anywhere.
 
 ## T-510 · Item Detail · Fields (custom values) + Roles assignment · M
 
+> **Status: ✅ Done.** `tabs/FieldsTab.tsx` loads the project's field definitions
+> (`GET /projects/{id}/custom-fields`) and the item's values
+> (`GET /items/{id}/custom-fields`), rendering an input per definition by type
+> (text/url/email, long_text, number, date, boolean, select); editing PUTs
+> `/items/{id}/custom-fields/{fieldId}` (empty clears via DELETE). Roles section lists
+> `GET /projects/{id}/roles` with assign/unassign via PUT/DELETE
+> `/items/{id}/roles/{roleId}`. `type-check` + `build` green; 88 Vitest tests (one input
+> per definition; PUT on edit; role assign→PUT then unassign→DELETE).
+> **Deviation:** the backend has **no GET for an item's assigned roles**, so assignment
+> state is tracked locally for the session (it does not survive a reload). Persisting
+> requires a new `GET /items/{id}/roles` endpoint — noted as a backend gap.
+> **Bundle:** with all five tabs done the drawer is now **lazy-loaded** (gated on `?item=`
+> in `Layout`), so the entry bundle returned to 9.73 KB gzipped and the drawer is a
+> separate 5.63 KB on-demand chunk.
+
 - **Why:** custom-field *definitions* have a manager page but values can't be edited per
   item; role assignment to items has no UI at all.
 - **Files:** `features/item-detail/tabs/FieldsTab.tsx`.
