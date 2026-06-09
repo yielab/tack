@@ -3,6 +3,8 @@ import { useParams, useNavigate } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
 import { Button, Field, FieldShell, Badge, Modal } from '../../shared/ui';
+import { useProject } from '../../shared/state/projectContext';
+import { useVocab } from '../../shared/vocab/useVocab';
 import type { Sprint, Item } from '../../types/api';
 
 export default function Sprints() {
@@ -10,7 +12,8 @@ export default function Sprints() {
   const navigate = useNavigate();
   const projectId = params.id!;
 
-  const [project] = createResource(() => api.projects.get(projectId));
+  const { project } = useProject();
+  const { t } = useVocab();
   const [sprints, { refetch: refetchSprints }] = createResource(
     () => api.sprints.list(projectId)
   );
@@ -120,14 +123,14 @@ export default function Sprints() {
         <div class="mb-6 flex items-center justify-between">
           <div>
             <h1 class="text-3xl font-bold" style={{ color: "var(--color-text-primary)" }}>
-              {project()?.name || 'Loading...'} - Sprints
+              {project()?.name || 'Loading...'} - {t('sprint')}s
             </h1>
             <p class="mt-1" style={{ color: "var(--color-text-secondary)" }}>
-              Manage sprints and iterations
+              Manage {t('sprint').toLowerCase()}s and iterations
             </p>
           </div>
           <div class="flex gap-2">
-            <Button onClick={openCreateModal}>Create Sprint</Button>
+            <Button onClick={openCreateModal}>Create {t('sprint')}</Button>
             <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/board`)}>
               Board View
             </Button>
@@ -259,8 +262,8 @@ export default function Sprints() {
 
           <Show when={!sprints() || sprints()!.length === 0}>
             <div class="text-center py-12" style={{ color: "var(--color-text-tertiary)" }}>
-              <p class="text-lg mb-4">No sprints yet</p>
-              <Button size="lg" onClick={openCreateModal}>Create Your First Sprint</Button>
+              <p class="text-lg mb-4">No {t('sprint').toLowerCase()}s yet</p>
+              <Button size="lg" onClick={openCreateModal}>Create Your First {t('sprint')}</Button>
             </div>
           </Show>
         </div>
@@ -301,12 +304,12 @@ export default function Sprints() {
       <Modal
         isOpen={showCreateModal()}
         onClose={() => setShowCreateModal(false)}
-        title={editingSprint() ? 'Edit Sprint' : 'Create Sprint'}
+        title={editingSprint() ? `Edit ${t('sprint')}` : `Create ${t('sprint')}`}
         size="sm"
       >
         <form onSubmit={handleSubmit} class="space-y-4">
           <Field
-            label="Sprint Name"
+            label={`${t('sprint')} Name`}
             required
             value={name()}
             onInput={(e) => setName(e.currentTarget.value)}
@@ -314,7 +317,7 @@ export default function Sprints() {
             disabled={loading()}
           />
 
-          <FieldShell label="Sprint Goal" for="sprint-goal">
+          <FieldShell label={`${t('sprint')} Goal`} for="sprint-goal">
             <textarea
               id="sprint-goal"
               value={goal()}

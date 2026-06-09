@@ -9,7 +9,9 @@ import {
 } from '@thisbeyond/solid-dnd';
 import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
-import { getItemTypeList, type ItemTypeConfig } from '../../shared/vocab/vocab';
+import { type ItemTypeConfig } from '../../shared/vocab/vocab';
+import { useProject } from '../../shared/state/projectContext';
+import { useVocab } from '../../shared/vocab/useVocab';
 import type { Item } from '../../types/api';
 import CreateItemModal from '../../shared/ui/CreateItemModal';
 import { Button } from '../../shared/ui';
@@ -30,8 +32,9 @@ export default function List() {
   const projectId = params.id;
 
   const [items, { refetch }] = createResource(() => projectId ? api.items.list(projectId) : Promise.resolve([]));
-  const [project] = createResource(() => projectId ? api.projects.get(projectId) : Promise.resolve(null));
-  const types = createMemo(() => getItemTypeList(project()?.vocabulary));
+  const { project } = useProject();
+  const { types: vocabTypes } = useVocab();
+  const types = createMemo(() => vocabTypes());
 
   const [expandedItems, setExpandedItems] = createSignal<Set<string>>(new Set());
   const [creatingAt, setCreatingAt] = createSignal<{ parentId?: string } | null>(null);

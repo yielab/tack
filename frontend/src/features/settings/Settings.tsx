@@ -1,8 +1,8 @@
-import { createSignal, createResource, createEffect, For, Show, type Component } from 'solid-js';
-import { useParams } from '@solidjs/router';
+import { createSignal, createEffect, For, Show, type Component } from 'solid-js';
 import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
 import { VOCAB_KEYS, resolveLabel, getItemTypeList } from '../../shared/vocab/vocab';
+import { useProject } from '../../shared/state/projectContext';
 import { Button } from '../../shared/ui';
 import type { WorkflowStatus } from '../../types/api';
 import { FiPlus, FiTrash2, FiSave } from 'solid-icons/fi';
@@ -28,13 +28,7 @@ function toStatusRow(s: WorkflowStatus, idx: number): StatusRow {
 // ── Settings page ─────────────────────────────────────────────────────────────
 
 const Settings: Component = () => {
-  const params = useParams();
-  const projectId = () => params.id;
-
-  const [project, { refetch }] = createResource(
-    () => projectId(),
-    (id) => api.projects.get(id),
-  );
+  const { projectId, project, refetch } = useProject();
 
   const [vocabEdits, setVocabEdits] = createSignal<Record<string, string>>({});
   const [statusRows, setStatusRows] = createSignal<StatusRow[]>([]);

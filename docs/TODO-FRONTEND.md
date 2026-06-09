@@ -260,6 +260,24 @@ No raw `fetch` outside `shared/api/`. No absolute API hosts anywhere.
 
 ## T-505 · Project-context provider + reactive vocabulary · M
 
+> **Status: ✅ Done.** `shared/state/projectContext.tsx` — `ProjectProvider` mounted at
+> the app root (`Layout`), keyed by the route `:id`, fetches the active project once and
+> exposes `projectId()`, `project`, `workflow()`, `vocabulary()`, `refetch()` via
+> `useProject()`. `shared/vocab/useVocab.ts` — `useVocab()` returns `t(key)` (all 16 keys,
+> default fallback), `types()`, `typeMap()`, all reactive to `vocabulary()`. Per-page
+> project fetches removed in favour of the context across **Board, List, Sprints, Settings,
+> Calendar, Dashboard, Timeline, BoardsManager, CustomFieldsManager** → one project fetch
+> per view. Domain nouns routed through `t()` (Sprints headings/buttons/labels; List item
+> types via `useVocab().types()`; Board's create modal now receives the reactive
+> `vocabulary()`). Settings `handleSave` calls the context `refetch()`, so a vocabulary
+> edit updates every label app-wide with no reload. `type-check` + `build` green (entry
+> 9.67 KB gzipped); 74 Vitest tests (incl. `useVocab` custom+fallback and reactive update
+> through the context).
+> **Notes:** `ProjectProvider` reads `useParams()` from the Router root — reactive to the
+> active route, `undefined` off project routes (no fetch). `CreateItemModal` keeps its
+> `vocabulary` prop (Board now passes the reactive value; List's edit modal still defaults)
+> — folding it onto `useVocab()` directly is a small future cleanup.
+
 - **Why:** pages each refetch the project; vocabulary (`task`→`Work Order`) is not applied
   reactively. One context should hold the active project, its workflow, and its vocabulary.
 - **Files:** new `shared/state/projectContext.tsx`, `shared/vocab/useVocab.ts`; consumers in
