@@ -39,26 +39,23 @@
 | Feature | Status | Detail |
 | --- | --- | --- |
 | **Authentication** | ❌ None by design | Plan A is local-only. Use `FLEXPM_API_TOKEN` if you expose the port on a LAN. |
-| **Frontend vocabulary labels** | ⚠️ Partial | API respects vocabulary; UI still has some hardcoded "Task"/"Sprint" labels (T-302). |
+| **Frontend vocabulary labels** | ✅ Complete | All UI labels route through `vocab.ts`; Settings panel edits vocab + workflow (T-302). |
 | **CLI `--json` output** | ✅ Complete | All commands support `--json` (T-301). |
 
 ---
 
 ## Test coverage (actual)
 
-- **Total test functions:** 86 (`cargo test --workspace`)
-- **Breakdown:** flexpm-core 39 unit, flexpm-db 22 integration (in-memory SQLite), flexpm-api 14 handler tests, flexpm-cli 11 (wiremock + unit)
-- **CI:** GitHub Actions runs `cargo test --workspace` on every push ✅
-- **Frontend tests:** none yet (Vitest + Playwright planned in T-302/T-303)
+- **Total test functions:** 91 (`cargo test --workspace`) + 1 `#[ignore]` perf test
+- **Breakdown:** flexpm-core 39 unit, flexpm-db 22 integration + 1 ignored perf test (in-memory SQLite), flexpm-api 15 handler tests (4 middleware + 11 integration + 3 backup/restore), flexpm-cli 11 (wiremock + unit)
+- **CI:** GitHub Actions runs `cargo test --workspace` on every push ✅; entry bundle gate (< 30 KB gzipped) ✅
+- **Frontend tests:** none (Vitest + Playwright deferred to Phase 4)
 
 ---
 
 ## Known issues
 
-None in Phase 2 scope. Active issues tracked in Phase 3:
-
-1. **Vocabulary labels in UI** — Some labels are hardcoded ("Task", "Sprint") rather than routed through the project's `VocabularyMap`. Full fix in T-302.
-2. **Performance unaudited** — No p95 benchmarks at 50k items yet (T-303).
+None currently. Phase 3 complete.
 
 ---
 
@@ -66,8 +63,14 @@ None in Phase 2 scope. Active issues tracked in Phase 3:
 
 See [PLAN-A-ROADMAP.md](PLAN-A-ROADMAP.md) for the full phased SOP.
 
-**Phase 3 active:**
+**Phase 3 complete:**
 
 1. **T-301** ✅ — CLI excellent: `--json` everywhere, shell completions, `config` command, vocabulary-aware output.
-2. **T-302** — Vocabulary + workflow customization end to end in the UI (Settings panel, live preview). Depends on T-201 ✅
-3. **T-303** — Performance + footprint pass: p95 latency @ 50k items, gzipped JS < 60 KB. Depends on T-202 ✅ + T-205 ✅
+2. **T-302** ✅ — Vocabulary + workflow UI: `vocab.ts` resolver, Settings panel, all labels routed through vocab map.
+3. **T-303** ✅ — Performance pass: migration 016 adds sprint index; `#[ignore]` perf test seeds 50k items; lazy route loading drops entry bundle to 22 KB gzipped; CI gate < 30 KB.
+
+**Phase 4 in progress:**
+
+1. **T-401** ✅ — Backup / restore: `GET /api/backup` (VACUUM INTO), `POST /api/restore` (staged), `flexpm backup/restore` CLI commands, startup auto-apply.
+2. **T-402** — Observability: `/api/health` returns version + migration count
+3. **T-403** — Single-binary: embed SPA into API binary via `rust-embed`

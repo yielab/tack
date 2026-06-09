@@ -129,15 +129,12 @@ pub fn vocabulary_for_type(project_type: &ProjectType) -> VocabularyMap {
 /// Resolve a vocabulary key to its display label for a given project vocabulary.
 /// Falls back to the default vocabulary if the key is not overridden.
 pub fn resolve(vocab: &VocabularyMap, key: &str) -> String {
-    vocab
-        .get(key)
-        .cloned()
-        .unwrap_or_else(|| {
-            default_vocabulary()
-                .get(key)
-                .cloned()
-                .unwrap_or_else(|| key.to_string())
-        })
+    vocab.get(key).cloned().unwrap_or_else(|| {
+        default_vocabulary()
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| key.to_string())
+    })
 }
 
 /// Validate that all keys in a vocabulary map are recognized.
@@ -171,18 +168,14 @@ mod tests {
 
     #[test]
     fn test_resolve_falls_back_to_default() {
-        let custom: VocabularyMap = HashMap::from([
-            ("task".into(), "Work Order".into()),
-        ]);
+        let custom: VocabularyMap = HashMap::from([("task".into(), "Work Order".into())]);
         assert_eq!(resolve(&custom, "task"), "Work Order");
         assert_eq!(resolve(&custom, "epic"), "Epic"); // fallback
     }
 
     #[test]
     fn test_validate_rejects_unknown_keys() {
-        let bad: VocabularyMap = HashMap::from([
-            ("nonsense_key".into(), "Whatever".into()),
-        ]);
+        let bad: VocabularyMap = HashMap::from([("nonsense_key".into(), "Whatever".into())]);
         assert!(validate(&bad).is_err());
     }
 }

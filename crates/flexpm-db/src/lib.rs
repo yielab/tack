@@ -1,5 +1,5 @@
-pub mod repo;
 pub mod migrations;
+pub mod repo;
 
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use tracing::info;
@@ -21,9 +21,7 @@ pub async fn init_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
         .await?;
 
     // Enable foreign keys
-    sqlx::query("PRAGMA foreign_keys=ON")
-        .execute(&pool)
-        .await?;
+    sqlx::query("PRAGMA foreign_keys=ON").execute(&pool).await?;
 
     info!("Database pool initialized with WAL mode");
     Ok(pool)

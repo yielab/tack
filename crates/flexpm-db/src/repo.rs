@@ -45,10 +45,7 @@ impl Repository {
         boards::get_board(self.pool(), id).await
     }
 
-    pub async fn get_default_board(
-        &self,
-        project_id: Uuid,
-    ) -> Result<Option<Board>, sqlx::Error> {
+    pub async fn get_default_board(&self, project_id: Uuid) -> Result<Option<Board>, sqlx::Error> {
         boards::get_default_board(self.pool(), project_id).await
     }
 
@@ -56,11 +53,7 @@ impl Repository {
         boards::list_boards(self.pool(), project_id).await
     }
 
-    pub async fn update_board(
-        &self,
-        id: Uuid,
-        data: UpdateBoard,
-    ) -> Result<Board, sqlx::Error> {
+    pub async fn update_board(&self, id: Uuid, data: UpdateBoard) -> Result<Board, sqlx::Error> {
         boards::update_board(self.pool(), id, data).await
     }
 

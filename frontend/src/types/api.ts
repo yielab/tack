@@ -22,14 +22,24 @@ export type ProjectType =
   | 'custom';
 
 export interface WorkflowConfig {
+  workflow_type: string;
   statuses: WorkflowStatus[];
-  transitions?: Record<string, string[]>;
+  transitions?: Array<{ from: string; to: string }>;
 }
 
 export interface WorkflowStatus {
   name: string;
-  category: 'backlog' | 'in_progress' | 'done';
+  category: 'todo' | 'in_progress' | 'done';
   wip_limit?: number;
+  order: number;
+}
+
+export interface UpdateProject {
+  name?: string;
+  description?: string;
+  vocabulary?: Record<string, string>;
+  workflow?: WorkflowConfig;
+  archived?: boolean;
 }
 
 export interface Item {

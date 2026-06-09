@@ -1,9 +1,10 @@
-import { type Component, createSignal, Show, createEffect, For, createResource } from 'solid-js';
+import { type Component, createSignal, Show, createEffect, For, createResource, createMemo } from 'solid-js';
 import Modal from './Modal';
 import RichTextEditor from './RichTextEditor';
 import { api } from '../lib/api';
 import type { CreateItem, Item } from '../types/api';
 import { toast } from '../lib/toast';
+import { getItemTypeMap } from '../lib/vocab';
 import { FiPlus, FiX, FiTrash2 } from 'solid-icons/fi';
 
 export interface CreateItemModalProps {
@@ -11,6 +12,7 @@ export interface CreateItemModalProps {
   onClose: () => void;
   onSuccess: () => void;
   projectId: string;
+  vocabulary?: Record<string, string>;
   initialStatus?: string;
   mode?: 'create' | 'edit';
   existingItem?: Item;
@@ -25,14 +27,6 @@ interface SubtaskItem {
   title: string;
 }
 
-const itemTypeConfig: Record<ItemType, { label: string; color: string; emoji: string }> = {
-  epic: { label: 'Epic', color: 'purple', emoji: '🎯' },
-  feature: { label: 'Feature', color: 'blue', emoji: '✨' },
-  task: { label: 'Task', color: 'green', emoji: '📝' },
-  subtask: { label: 'Subtask', color: 'gray', emoji: '📌' },
-  bug: { label: 'Bug', color: 'red', emoji: '🐛' },
-  requirement: { label: 'Requirement', color: 'yellow', emoji: '📋' },
-};
 
 const priorityConfig: Record<Priority, { label: string; color: string; emoji: string }> = {
   critical: { label: 'Critical', color: 'red', emoji: '🔥' },
@@ -46,6 +40,7 @@ const estimateOptions = [0, 0.5, 1, 2, 3, 5, 8, 13, 21];
 
 const CreateItemModal: Component<CreateItemModalProps> = (props) => {
   const mode = () => props.mode || 'create';
+  const itemTypeConfig = createMemo(() => getItemTypeMap(props.vocabulary));
   const [title, setTitle] = createSignal('');
   const [description, setDescription] = createSignal('');
   const [itemType, setItemType] = createSignal<ItemType>('task');
@@ -259,7 +254,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                 Type
               </label>
               <div class="flex flex-wrap gap-1.5">
-                <For each={Object.entries(itemTypeConfig)}>
+                <For each={Object.entries(itemTypeConfig())}>
                   {([type, config]) => (
                     <button
                       type="button"
@@ -400,7 +395,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                   {(child) => (
                     <div class="flex items-center gap-2 bg-gray-50 dark:bg-gray-800 px-3 py-2 rounded-lg">
                       <span class="text-sm text-gray-500 dark:text-gray-400">
-                        {typeof child.item_type === 'string' ? itemTypeConfig[child.item_type as ItemType]?.emoji : '📌'}
+                        {typeof child.item_type === 'string' ? itemTypeConfig()[child.item_type as ItemType]?.emoji : '📌'}
                       </span>
                       <span class="flex-1 text-gray-900 dark:text-white">{child.title}</span>
                       <span class="text-xs px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">

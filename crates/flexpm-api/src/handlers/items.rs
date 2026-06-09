@@ -1,5 +1,5 @@
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
@@ -7,8 +7,8 @@ use validator::Validate;
 use flexpm_core::models::{CreateItem, ItemFilter, UpdateItem};
 
 use crate::error::{ApiError, ApiResult};
-use crate::router::AppState;
 use crate::handlers::websocket::{self, BoardEvent};
+use crate::router::AppState;
 
 #[instrument(skip(state))]
 pub async fn create_item(
@@ -16,7 +16,9 @@ pub async fn create_item(
     Path(project_id): Path<Uuid>,
     Json(input): Json<CreateItem>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    input.validate().map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    input
+        .validate()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
     // Get project to find initial status from workflow
     let project = state
@@ -25,10 +27,7 @@ pub async fn create_item(
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Project {project_id} not found")))?;
 
-    let initial_status = project
-        .workflow
-        .initial_status()
-        .map_err(|e| ApiError::Core(e))?;
+    let initial_status = project.workflow.initial_status().map_err(ApiError::Core)?;
 
     let item = state
         .repo
@@ -36,11 +35,14 @@ pub async fn create_item(
         .await?;
 
     // Broadcast WebSocket event
-    websocket::broadcast_event(&state, BoardEvent::ItemCreated {
-        project_id,
-        item_id: item.id,
-        status: item.status.clone(),
-    });
+    websocket::broadcast_event(
+        &state,
+        BoardEvent::ItemCreated {
+            project_id,
+            item_id: item.id,
+            status: item.status.clone(),
+        },
+    );
 
     Ok(Json(serde_json::to_value(item).unwrap()))
 }
@@ -83,7 +85,9 @@ pub async fn update_item(
     Path(id): Path<Uuid>,
     Json(input): Json<UpdateItem>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    input.validate().map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    input
+        .validate()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
     // Get old item state for status change detection
     let old_item = state
@@ -122,28 +126,29 @@ pub async fn update_item(
         .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
 
     // Broadcast WebSocket event
-    websocket::broadcast_event(&state, BoardEvent::ItemUpdated {
-        project_id: item.project_id,
-        item_id: item.id,
-        old_status: Some(old_status.clone()),
-        new_status: item.status.clone(),
-    });
+    websocket::broadcast_event(
+        &state,
+        BoardEvent::ItemUpdated {
+            project_id: item.project_id,
+            item_id: item.id,
+            old_status: Some(old_status.clone()),
+            new_status: item.status.clone(),
+        },
+    );
 
     // Auto-propagate parent status when all siblings reach Done
-    if let Some(parent_id) = item.parent_id {
-        if item.status != old_status {
-            if let Ok(Some(proj)) = state.repo.get_project(item.project_id).await {
-                if proj.workflow.is_done_status(&item.status) {
-                    if let Some(done_status) = proj.workflow.find_first_done_status() {
-                        if let Ok(all_done) = state.repo.siblings_all_done(parent_id, done_status).await {
-                            if flexpm_core::workflow::WorkflowConfig::should_complete_parent(all_done) {
-                                let _ = state.repo.check_and_update_parent_status(parent_id, done_status).await;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    if let Some(parent_id) = item.parent_id
+        && item.status != old_status
+        && let Ok(Some(proj)) = state.repo.get_project(item.project_id).await
+        && proj.workflow.is_done_status(&item.status)
+        && let Some(done_status) = proj.workflow.find_first_done_status()
+        && let Ok(all_done) = state.repo.siblings_all_done(parent_id, done_status).await
+        && flexpm_core::workflow::WorkflowConfig::should_complete_parent(all_done)
+    {
+        let _ = state
+            .repo
+            .check_and_update_parent_status(parent_id, done_status)
+            .await;
     }
 
     Ok(Json(serde_json::to_value(item).unwrap()))
@@ -167,10 +172,13 @@ pub async fn delete_item(
     }
 
     // Broadcast WebSocket event
-    websocket::broadcast_event(&state, BoardEvent::ItemDeleted {
-        project_id: item.project_id,
-        item_id: id,
-    });
+    websocket::broadcast_event(
+        &state,
+        BoardEvent::ItemDeleted {
+            project_id: item.project_id,
+            item_id: id,
+        },
+    );
 
     Ok(Json(serde_json::json!({"deleted": true})))
 }
@@ -190,10 +198,7 @@ pub async fn search_items(
     Path(project_id): Path<Uuid>,
     Query(params): Query<SearchParams>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let items = state
-        .repo
-        .search_items(project_id, &params.q)
-        .await?;
+    let items = state.repo.search_items(project_id, &params.q).await?;
     Ok(Json(serde_json::to_value(items).unwrap()))
 }
 

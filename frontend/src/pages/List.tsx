@@ -9,21 +9,13 @@ import {
 } from '@thisbeyond/solid-dnd';
 import { api } from '../lib/api';
 import { toast } from '../lib/toast';
+import { getItemTypeList, type ItemTypeConfig } from '../lib/vocab';
 import type { Item } from '../types/api';
 import CreateItemModal from '../components/CreateItemModal';
 import { FiPlus, FiMenu, FiCheck, FiX, FiChevronRight, FiChevronDown, FiTrash2 } from 'solid-icons/fi';
 
 type ItemType = 'epic' | 'feature' | 'task' | 'subtask' | 'bug' | 'requirement';
 type ItemWithChildren = Item & { children: ItemWithChildren[]; level: number };
-
-const TYPES: { value: ItemType; emoji: string; label: string; color: string }[] = [
-  { value: 'epic', emoji: '🎯', label: 'Epic', color: 'purple' },
-  { value: 'feature', emoji: '✨', label: 'Feature', color: 'blue' },
-  { value: 'task', emoji: '📝', label: 'Task', color: 'green' },
-  { value: 'subtask', emoji: '📌', label: 'Subtask', color: 'gray' },
-  { value: 'bug', emoji: '🐛', label: 'Bug', color: 'red' },
-  { value: 'requirement', emoji: '📋', label: 'Req', color: 'yellow' },
-];
 
 const PRIORITIES = [
   { value: 'critical', emoji: '🔥', label: 'Critical' },
@@ -38,6 +30,7 @@ export default function List() {
 
   const [items, { refetch }] = createResource(() => projectId ? api.listItems(projectId) : Promise.resolve([]));
   const [project] = createResource(() => projectId ? api.getProject(projectId) : Promise.resolve(null));
+  const types = createMemo(() => getItemTypeList(project()?.vocabulary));
 
   const [expandedItems, setExpandedItems] = createSignal<Set<string>>(new Set());
   const [creatingAt, setCreatingAt] = createSignal<{ parentId?: string } | null>(null);
@@ -255,6 +248,7 @@ export default function List() {
                         <>
                           <ItemRow
                             item={item}
+                            types={types()}
                             onToggleExpand={() => toggleExpand(item.id)}
                             onAddChild={() => startCreating(item.id)}
                             onDelete={() => handleDelete(item)}
@@ -266,6 +260,7 @@ export default function List() {
                           <Show when={creatingAt()?.parentId === item.id && expandedItems().has(item.id)}>
                             <CreateForm
                               level={item.level + 1}
+                              types={types()}
                               title={newItemTitle()}
                               type={newItemType()}
                               priority={newItemPriority()}
@@ -284,6 +279,7 @@ export default function List() {
                     <Show when={creatingAt() && !creatingAt()?.parentId}>
                       <CreateForm
                         level={0}
+                        types={types()}
                         title={newItemTitle()}
                         type={newItemType()}
                         priority={newItemPriority()}
@@ -320,6 +316,7 @@ export default function List() {
 // Modern Sortable Item Row
 function ItemRow(props: {
   item: ItemWithChildren;
+  types: ItemTypeConfig[];
   onToggleExpand: () => void;
   onAddChild: () => void;
   onDelete: () => void;
@@ -329,7 +326,7 @@ function ItemRow(props: {
   const sortable = createSortable(props.item.id);
   const [showActions, setShowActions] = createSignal(false);
   const itemType = (typeof props.item.item_type === 'string' ? props.item.item_type : 'task') as ItemType;
-  const typeConfig = TYPES.find(t => t.value === itemType) || TYPES[2];
+  const typeConfig = () => props.types.find(t => t.value === itemType) ?? props.types[2] ?? { emoji: '📝', label: itemType };
   const priorityConfig = PRIORITIES.find(p => p.value === props.item.priority) || PRIORITIES[2];
   const hasChildren = props.item.children.length > 0;
 
@@ -383,9 +380,9 @@ function ItemRow(props: {
         <div
           class="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-lg"
           style={{ "background-color": "var(--color-primary-50)" }}
-          title={typeConfig.label}
+          title={typeConfig().label}
         >
-          {typeConfig.emoji}
+          {typeConfig().emoji}
         </div>
 
         {/* Title - Clickable */}
@@ -498,6 +495,7 @@ function ItemRow(props: {
 // Modern Inline Create Form
 function CreateForm(props: {
   level: number;
+  types: ItemTypeConfig[];
   title: string;
   type: ItemType;
   priority: string;
@@ -536,7 +534,7 @@ function CreateForm(props: {
             "outline-color": "var(--color-primary-500)"
           }}
         >
-          <For each={TYPES}>
+          <For each={props.types}>
             {(t) => <option value={t.value}>{t.emoji} {t.label}</option>}
           </For>
         </select>

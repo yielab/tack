@@ -19,7 +19,7 @@ impl Repository {
 
         sqlx::query(
             "INSERT INTO roles (id, project_id, name, color, icon, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)"
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(project_id.to_string())
@@ -46,7 +46,7 @@ impl Repository {
     pub async fn list_roles(&self, project_id: Uuid) -> Result<Vec<Role>, sqlx::Error> {
         let rows = sqlx::query_as::<_, RoleRow>(
             "SELECT id, project_id, name, color, icon, created_at
-             FROM roles WHERE project_id = ? ORDER BY name"
+             FROM roles WHERE project_id = ? ORDER BY name",
         )
         .bind(project_id.to_string())
         .fetch_all(self.pool())
@@ -61,13 +61,11 @@ impl Repository {
         item_id: Uuid,
         role_id: Uuid,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query(
-            "INSERT OR IGNORE INTO item_roles (item_id, role_id) VALUES (?, ?)"
-        )
-        .bind(item_id.to_string())
-        .bind(role_id.to_string())
-        .execute(self.pool())
-        .await?;
+        sqlx::query("INSERT OR IGNORE INTO item_roles (item_id, role_id) VALUES (?, ?)")
+            .bind(item_id.to_string())
+            .bind(role_id.to_string())
+            .execute(self.pool())
+            .await?;
         Ok(())
     }
 
@@ -92,7 +90,7 @@ impl Repository {
              FROM roles r
              JOIN item_roles ir ON r.id = ir.role_id
              WHERE ir.item_id = ?
-             ORDER BY r.name"
+             ORDER BY r.name",
         )
         .bind(item_id.to_string())
         .fetch_all(self.pool())

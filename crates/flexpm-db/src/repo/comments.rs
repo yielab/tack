@@ -47,7 +47,7 @@ impl Repository {
     pub async fn list_comments(&self, item_id: Uuid) -> Result<Vec<Comment>, sqlx::Error> {
         let rows = sqlx::query_as::<_, CommentRow>(
             "SELECT id, item_id, author, content, comment_type, created_at, updated_at
-             FROM comments WHERE item_id = ? ORDER BY created_at ASC"
+             FROM comments WHERE item_id = ? ORDER BY created_at ASC",
         )
         .bind(item_id.to_string())
         .fetch_all(self.pool())

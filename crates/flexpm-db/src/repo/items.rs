@@ -2,9 +2,7 @@ use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
-use flexpm_core::models::{
-    CreateItem, Item, ItemFilter, ItemType, Priority, UpdateItem,
-};
+use flexpm_core::models::{CreateItem, Item, ItemFilter, ItemType, Priority, UpdateItem};
 
 use super::Repository;
 
@@ -30,7 +28,7 @@ impl Repository {
 
         // Get next sort order
         let max_sort: Option<i32> = sqlx::query_scalar(
-            "SELECT MAX(sort_order) FROM items WHERE project_id = ? AND status = ?"
+            "SELECT MAX(sort_order) FROM items WHERE project_id = ? AND status = ?",
         )
         .bind(project_id.to_string())
         .bind(initial_status)
@@ -254,13 +252,12 @@ impl Repository {
         project_id: Uuid,
         status: &str,
     ) -> Result<i64, sqlx::Error> {
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ?"
-        )
-        .bind(project_id.to_string())
-        .bind(status)
-        .fetch_one(self.pool())
-        .await?;
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ?")
+                .bind(project_id.to_string())
+                .bind(status)
+                .fetch_one(self.pool())
+                .await?;
         Ok(count)
     }
 
@@ -310,10 +307,7 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn get_item_tree(
-        &self,
-        project_id: Uuid,
-    ) -> Result<Vec<Item>, sqlx::Error> {
+    pub async fn get_item_tree(&self, project_id: Uuid) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
             "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, started_at, completed_at, created_at, updated_at
              FROM items WHERE project_id = ? ORDER BY parent_id NULLS FIRST, sort_order ASC"
@@ -333,24 +327,21 @@ impl Repository {
         parent_id: Uuid,
         done_status: &str,
     ) -> Result<bool, sqlx::Error> {
-        let total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM items WHERE parent_id = ?"
-        )
-        .bind(parent_id.to_string())
-        .fetch_one(self.pool())
-        .await?;
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE parent_id = ?")
+            .bind(parent_id.to_string())
+            .fetch_one(self.pool())
+            .await?;
 
         if total == 0 {
             return Ok(false);
         }
 
-        let not_done: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM items WHERE parent_id = ? AND status != ?"
-        )
-        .bind(parent_id.to_string())
-        .bind(done_status)
-        .fetch_one(self.pool())
-        .await?;
+        let not_done: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE parent_id = ? AND status != ?")
+                .bind(parent_id.to_string())
+                .bind(done_status)
+                .fetch_one(self.pool())
+                .await?;
 
         Ok(not_done == 0)
     }
@@ -376,18 +367,22 @@ impl Repository {
         }
 
         // Check if all children are completed
-        let all_completed = children.iter().all(|child| child.status == completed_status);
+        let all_completed = children
+            .iter()
+            .all(|child| child.status == completed_status);
 
         if all_completed {
             // Update parent status to completed
             let now = Utc::now().to_rfc3339();
-            sqlx::query("UPDATE items SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?")
-                .bind(completed_status)
-                .bind(&now)
-                .bind(&now)
-                .bind(parent_id.to_string())
-                .execute(self.pool())
-                .await?;
+            sqlx::query(
+                "UPDATE items SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?",
+            )
+            .bind(completed_status)
+            .bind(&now)
+            .bind(&now)
+            .bind(parent_id.to_string())
+            .execute(self.pool())
+            .await?;
 
             debug!(parent_id = %parent_id, "Parent item auto-completed");
             return Ok(true);
@@ -439,9 +434,21 @@ impl ItemRow {
             sort_order: self.sort_order,
             sprint_id: self.sprint_id.and_then(|s| Uuid::parse_str(&s).ok()),
             assignee: self.assignee,
-            due_date: self.due_date.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&Utc))),
-            started_at: self.started_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&Utc))),
-            completed_at: self.completed_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&Utc))),
+            due_date: self.due_date.and_then(|s| {
+                chrono::DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|d| d.with_timezone(&Utc))
+            }),
+            started_at: self.started_at.and_then(|s| {
+                chrono::DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|d| d.with_timezone(&Utc))
+            }),
+            completed_at: self.completed_at.and_then(|s| {
+                chrono::DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|d| d.with_timezone(&Utc))
+            }),
             created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
                 .map(|d| d.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now()),

@@ -80,14 +80,12 @@ impl Repository {
         status: SprintStatus,
     ) -> Result<bool, sqlx::Error> {
         let now = Utc::now().to_rfc3339();
-        let result = sqlx::query(
-            "UPDATE sprints SET status = ?, updated_at = ? WHERE id = ?"
-        )
-        .bind(status.to_string())
-        .bind(&now)
-        .bind(id.to_string())
-        .execute(self.pool())
-        .await?;
+        let result = sqlx::query("UPDATE sprints SET status = ?, updated_at = ? WHERE id = ?")
+            .bind(status.to_string())
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(self.pool())
+            .await?;
 
         Ok(result.rows_affected() > 0)
     }
@@ -113,8 +111,16 @@ impl SprintRow {
             project_id: Uuid::parse_str(&self.project_id).unwrap(),
             name: self.name,
             goal: self.goal,
-            start_date: self.start_date.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&Utc))),
-            end_date: self.end_date.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&Utc))),
+            start_date: self.start_date.and_then(|s| {
+                chrono::DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|d| d.with_timezone(&Utc))
+            }),
+            end_date: self.end_date.and_then(|s| {
+                chrono::DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|d| d.with_timezone(&Utc))
+            }),
             status: parse_sprint_status(&self.status),
             created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
                 .map(|d| d.with_timezone(&Utc))

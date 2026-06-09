@@ -9,7 +9,11 @@ use flexpm_cli::vocab;
 // ─── CLI structure ────────────────────────────────────────────────────────────
 
 #[derive(Parser)]
-#[command(name = "flexpm", version, about = "FlexPM — Flexible Project Management CLI")]
+#[command(
+    name = "flexpm",
+    version,
+    about = "FlexPM — Flexible Project Management CLI"
+)]
 struct Cli {
     /// FlexPM API base URL
     #[arg(long, env = "FLEXPM_API_URL")]
@@ -150,6 +154,21 @@ enum Commands {
         /// Target shell (bash, zsh, fish, powershell, elvish)
         shell: Shell,
     },
+
+    /// Download a backup of the FlexPM database
+    Backup {
+        /// Where to save the backup (default: flexpm-backup.db)
+        path: Option<std::path::PathBuf>,
+    },
+
+    /// Stage a backup file for restore on next server restart
+    Restore {
+        /// Path to the backup file produced by `flexpm backup`
+        path: std::path::PathBuf,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -211,7 +230,13 @@ fn main() -> anyhow::Result<()> {
     // Config and Completions don't need a live client.
     match &cli.command {
         Commands::Config { url, token, show } => {
-            return cmd_config(url.as_deref(), token.as_deref(), *show, &cli.api_url, &cli.token);
+            return cmd_config(
+                url.as_deref(),
+                token.as_deref(),
+                *show,
+                &cli.api_url,
+                &cli.token,
+            );
         }
         Commands::Completions { shell } => {
             let mut cmd = Cli::command();
@@ -264,6 +289,10 @@ fn main() -> anyhow::Result<()> {
             project,
             json,
         } => cmd_search(&client, query, project, json),
+
+        Commands::Backup { path } => cmd_backup(&client, path),
+
+        Commands::Restore { path, json } => cmd_restore(&client, path, json),
 
         Commands::Sprint { action } => match action {
             SprintAction::Create {
@@ -394,7 +423,12 @@ fn cmd_add(
     // Translate item_type through the project's vocabulary.
     let v = vocab::fetch(client, &project);
     let type_label = vocab::term(&v, &item_type);
-    println!("Created {}: {} ({})", type_label, title, &id[..8.min(id.len())]);
+    println!(
+        "Created {}: {} ({})",
+        type_label,
+        title,
+        &id[..8.min(id.len())]
+    );
     println!("  priority: {priority}");
     println!("  id:       {id}");
     Ok(())
@@ -489,7 +523,10 @@ fn cmd_board(client: &FlexpmClient, project: String, as_json: bool) -> anyhow::R
     let board_name = view["name"].as_str().unwrap_or("Board");
     println!("── {board_name} ────────────────────────────");
 
-    let cols = view["columns"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
+    let cols = view["columns"]
+        .as_array()
+        .map(|a| a.as_slice())
+        .unwrap_or(&[]);
     for col in cols {
         let name = col["name"].as_str().unwrap_or("?");
         let items = col["items"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
@@ -574,7 +611,11 @@ fn cmd_sprint_create(
     // Translate "sprint" via project vocabulary.
     let v = vocab::fetch(client, &project);
     let sprint_label = vocab::term(&v, "sprint");
-    println!("Created {sprint_label}: {} ({})", name, &id[..8.min(id.len())]);
+    println!(
+        "Created {sprint_label}: {} ({})",
+        name,
+        &id[..8.min(id.len())]
+    );
     println!("  id:     {id}");
     println!("  status: planning");
     Ok(())
@@ -596,11 +637,7 @@ fn cmd_sprint_status(
     Ok(())
 }
 
-fn cmd_sprint_list(
-    client: &FlexpmClient,
-    project: String,
-    as_json: bool,
-) -> anyhow::Result<()> {
+fn cmd_sprint_list(client: &FlexpmClient, project: String, as_json: bool) -> anyhow::Result<()> {
     let resp = client.get(&format!("/projects/{project}/sprints"))?;
     if as_json {
         println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -672,6 +709,32 @@ fn short_id(id: Option<&str>) -> &str {
 
 fn short_date(dt: Option<&str>) -> &str {
     dt.map(|s| &s[..10.min(s.len())]).unwrap_or("-")
+}
+
+fn cmd_backup(client: &FlexpmClient, path: Option<std::path::PathBuf>) -> anyhow::Result<()> {
+    let bytes = client.get_bytes("/backup")?;
+    let out = path.unwrap_or_else(|| std::path::PathBuf::from("flexpm-backup.db"));
+    std::fs::write(&out, &bytes)
+        .map_err(|e| anyhow::anyhow!("Cannot write {}: {e}", out.display()))?;
+    println!("Backup saved: {} ({} bytes)", out.display(), bytes.len());
+    Ok(())
+}
+
+fn cmd_restore(
+    client: &FlexpmClient,
+    path: std::path::PathBuf,
+    as_json: bool,
+) -> anyhow::Result<()> {
+    let data =
+        std::fs::read(&path).map_err(|e| anyhow::anyhow!("Cannot read {}: {e}", path.display()))?;
+    let resp = client.post_bytes("/restore", data)?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+    let msg = resp["message"].as_str().unwrap_or("Restore staged.");
+    println!("{msg}");
+    Ok(())
 }
 
 /// Minimal percent-encoding for query parameter values (spaces → %20, etc.)

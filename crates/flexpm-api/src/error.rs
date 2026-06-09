@@ -38,31 +38,42 @@ impl IntoResponse for ApiError {
             ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             ApiError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
             ApiError::Core(err) => match err {
-                CoreError::ItemNotFound(_) | CoreError::ProjectNotFound(_) |
-                CoreError::SprintNotFound(_) | CoreError::RoleNotFound(_) => {
-                    (StatusCode::NOT_FOUND, err.to_string())
-                }
-                CoreError::InvalidTransition { .. } | CoreError::WipLimitExceeded { .. } |
-                CoreError::DependencyCycle(_) | CoreError::DuplicateDependency { .. } |
-                CoreError::InvalidVocabularyKey(_) | CoreError::EmptyWorkflow |
-                CoreError::HasChildren(_, _) | CoreError::Validation(_) => {
-                    (StatusCode::BAD_REQUEST, err.to_string())
-                }
+                CoreError::ItemNotFound(_)
+                | CoreError::ProjectNotFound(_)
+                | CoreError::SprintNotFound(_)
+                | CoreError::RoleNotFound(_) => (StatusCode::NOT_FOUND, err.to_string()),
+                CoreError::InvalidTransition { .. }
+                | CoreError::WipLimitExceeded { .. }
+                | CoreError::DependencyCycle(_)
+                | CoreError::DuplicateDependency { .. }
+                | CoreError::InvalidVocabularyKey(_)
+                | CoreError::EmptyWorkflow
+                | CoreError::HasChildren(_, _)
+                | CoreError::Validation(_) => (StatusCode::BAD_REQUEST, err.to_string()),
             },
             ApiError::Dependency(err) => match err {
                 DependencyError::Core(_) => (StatusCode::BAD_REQUEST, err.to_string()),
                 DependencyError::Db(_) => {
                     error!(error = %err, "Database error in dependency operation");
-                    (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".into())
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Internal server error".into(),
+                    )
                 }
             },
             ApiError::Database(err) => {
                 error!(error = %err, "Database error");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".into())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".into(),
+                )
             }
             ApiError::Internal(err) => {
                 error!(error = %err, "Internal error");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".into())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".into(),
+                )
             }
         };
 

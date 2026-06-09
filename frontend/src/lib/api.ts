@@ -1,6 +1,7 @@
 import type {
   Project,
   CreateProject,
+  UpdateProject,
   Item,
   CreateItem,
   UpdateItem,
@@ -49,6 +50,13 @@ class ApiClient {
   async createProject(data: CreateProject): Promise<{ id: string }> {
     return this.request(`/projects`, {
       method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateProject(id: string, data: UpdateProject): Promise<Project> {
+    return this.request<Project>(`/projects/${id}`, {
+      method: 'PATCH',
       body: JSON.stringify(data),
     });
   }

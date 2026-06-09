@@ -1,11 +1,11 @@
 use axum::{
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         Path, State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::Response,
 };
-use futures::{stream::StreamExt, SinkExt};
+use futures::{SinkExt, stream::StreamExt};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -29,19 +29,11 @@ pub enum BoardEvent {
         new_status: String,
     },
     /// Item was deleted
-    ItemDeleted {
-        project_id: Uuid,
-        item_id: Uuid,
-    },
+    ItemDeleted { project_id: Uuid, item_id: Uuid },
     /// Board configuration changed (columns, WIP limits)
-    BoardConfigUpdated {
-        project_id: Uuid,
-    },
+    BoardConfigUpdated { project_id: Uuid },
     /// Sprint changed
-    SprintUpdated {
-        project_id: Uuid,
-        sprint_id: Uuid,
-    },
+    SprintUpdated { project_id: Uuid, sprint_id: Uuid },
     /// Keepalive ping
     Ping,
 }
@@ -53,9 +45,11 @@ pub async fn board_live(
     State(state): State<AppState>,
 ) -> Result<Response, ApiError> {
     // Verify project exists
-    state.repo.get_project(project_id).await?.ok_or_else(|| {
-        ApiError::NotFound(format!("Project {} not found", project_id))
-    })?;
+    state
+        .repo
+        .get_project(project_id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("Project {} not found", project_id)))?;
 
     Ok(ws.on_upgrade(move |socket| handle_socket(socket, project_id, state)))
 }
@@ -121,11 +115,19 @@ async fn handle_socket(socket: WebSocket, project_id: Uuid, state: AppState) {
 /// Check if event is relevant for this project
 fn event_matches_project(event: &BoardEvent, project_id: Uuid) -> bool {
     match event {
-        BoardEvent::ItemCreated { project_id: pid, .. } => *pid == project_id,
-        BoardEvent::ItemUpdated { project_id: pid, .. } => *pid == project_id,
-        BoardEvent::ItemDeleted { project_id: pid, .. } => *pid == project_id,
+        BoardEvent::ItemCreated {
+            project_id: pid, ..
+        } => *pid == project_id,
+        BoardEvent::ItemUpdated {
+            project_id: pid, ..
+        } => *pid == project_id,
+        BoardEvent::ItemDeleted {
+            project_id: pid, ..
+        } => *pid == project_id,
         BoardEvent::BoardConfigUpdated { project_id: pid } => *pid == project_id,
-        BoardEvent::SprintUpdated { project_id: pid, .. } => *pid == project_id,
+        BoardEvent::SprintUpdated {
+            project_id: pid, ..
+        } => *pid == project_id,
         BoardEvent::Ping => true,
     }
 }

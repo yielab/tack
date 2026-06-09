@@ -463,7 +463,7 @@ pub enum CustomFieldType {
     MultiSelect, // Multiple select from options
     Url,
     Email,
-    LongText,    // Textarea
+    LongText, // Textarea
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -527,11 +527,11 @@ pub struct Board {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum BoardGrouping {
-    Status,      // Group by status (default Kanban)
-    Priority,    // Group by priority
-    ItemType,    // Group by item type
-    Sprint,      // Group by sprint
-    Assignee,    // Group by assignee (if we add that)
+    Status,            // Group by status (default Kanban)
+    Priority,          // Group by priority
+    ItemType,          // Group by item type
+    Sprint,            // Group by sprint
+    Assignee,          // Group by assignee (if we add that)
     CustomField(Uuid), // Group by custom field
 }
 
