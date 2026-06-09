@@ -12,6 +12,7 @@ import { toast } from '../../shared/ui/toast';
 import { getItemTypeList, type ItemTypeConfig } from '../../shared/vocab/vocab';
 import type { Item } from '../../types/api';
 import CreateItemModal from '../../shared/ui/CreateItemModal';
+import { Button } from '../../shared/ui';
 import { FiPlus, FiMenu, FiCheck, FiX, FiChevronRight, FiChevronDown, FiTrash2 } from 'solid-icons/fi';
 
 type ItemType = 'epic' | 'feature' | 'task' | 'subtask' | 'bug' | 'requirement';
@@ -203,13 +204,10 @@ export default function List() {
               </p>
             </div>
 
-            <button
-              onClick={() => startCreating()}
-              class="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-all flex items-center gap-2 shadow-sm hover:shadow-md font-medium"
-            >
+            <Button onClick={() => startCreating()}>
               <FiPlus size={18} />
               New Item
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -233,12 +231,9 @@ export default function List() {
                     <div class="text-center">
                       <div class="text-5xl mb-4">✨</div>
                       <p class="text-[var(--color-text-secondary)] text-lg mb-4">No items yet</p>
-                      <button
-                        onClick={() => startCreating()}
-                        class="px-4 py-2 text-violet-600 hover:text-violet-700 font-medium"
-                      >
+                      <Button variant="ghost" onClick={() => startCreating()}>
                         Create your first item
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 }>

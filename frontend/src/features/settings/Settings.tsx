@@ -3,6 +3,7 @@ import { useParams } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
 import { VOCAB_KEYS, resolveLabel, getItemTypeList } from '../../shared/vocab/vocab';
+import { Button } from '../../shared/ui';
 import type { WorkflowStatus } from '../../types/api';
 import { FiPlus, FiTrash2, FiSave } from 'solid-icons/fi';
 
@@ -131,14 +132,10 @@ const Settings: Component = () => {
             <p class="text-sm text-[var(--color-text-secondary)] mt-1">{project()!.name}</p>
           </Show>
         </div>
-        <button
-          onClick={handleSave}
-          disabled={saving() || !dirty()}
-          class="flex items-center gap-2 px-5 py-2.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-medium"
-        >
+        <Button onClick={handleSave} disabled={saving() || !dirty()}>
           <FiSave size={16} />
           {saving() ? 'Saving…' : 'Save'}
-        </button>
+        </Button>
       </div>
 
       <Show when={!projectId()}>

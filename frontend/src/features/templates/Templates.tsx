@@ -2,6 +2,7 @@ import { createSignal, createResource, For, Show } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
 import { toast } from '../../shared/ui/toast';
 import { api } from '../../shared/api';
+import { Button, Field, FieldShell, Modal, Badge, EmptyState } from '../../shared/ui';
 import type { ProjectTemplate } from '../../shared/types';
 
 export default function Templates() {
@@ -85,18 +86,10 @@ export default function Templates() {
               </p>
             </div>
             <div class="flex gap-2">
-              <button
-                onClick={() => navigate('/templates/new')}
-                class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-              >
-                + Create Template
-              </button>
-              <button
-                onClick={() => navigate('/projects')}
-                class="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-              >
+              <Button onClick={() => navigate('/templates/new')}>+ Create Template</Button>
+              <Button variant="secondary" onClick={() => navigate('/projects')}>
                 Back to Projects
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -158,9 +151,7 @@ export default function Templates() {
                       </div>
                     </div>
                     <Show when={template.is_builtin}>
-                      <span class="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded">
-                        Built-in
-                      </span>
+                      <Badge tone="info">Built-in</Badge>
                     </Show>
                   </div>
 
@@ -173,20 +164,17 @@ export default function Templates() {
 
                   {/* Actions */}
                   <div class="flex gap-2 mt-4">
-                    <button
-                      onClick={() => handleUseTemplate(template)}
-                      class="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
-                    >
+                    <Button class="flex-1" onClick={() => handleUseTemplate(template)}>
                       Use Template
-                    </button>
+                    </Button>
                     <Show when={!template.is_builtin}>
-                      <button
+                      <Button
+                        variant="danger"
                         onClick={() => handleDeleteTemplate(template.id)}
-                        class="px-3 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
                         title="Delete template"
                       >
                         🗑️
-                      </button>
+                      </Button>
                     </Show>
                   </div>
                 </div>
@@ -196,86 +184,80 @@ export default function Templates() {
         </div>
 
         <Show when={templates() && templates()!.length === 0}>
-          <div class="text-center py-12">
-            <div class="text-4xl mb-4">📋</div>
-            <p class="text-gray-500 dark:text-gray-400 mb-4">
-              {selectedType() ? 'No templates found for this type' : 'No templates yet'}
-            </p>
-            <button
-              onClick={() => navigate('/templates/new')}
-              class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-            >
-              Create Your First Template
-            </button>
-          </div>
+          <EmptyState
+            icon="📋"
+            title={selectedType() ? 'No templates found for this type' : 'No templates yet'}
+            action={
+              <Button onClick={() => navigate('/templates/new')}>
+                Create Your First Template
+              </Button>
+            }
+          />
         </Show>
 
         {/* Create Project from Template Modal */}
-        <Show when={showCreateProjectModal()}>
-          <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div class="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full p-6">
-              <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4">
-                Create Project from Template
-              </h2>
-
-              <div class="mb-4 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                <div class="text-sm text-gray-600 dark:text-gray-400">Using template:</div>
-                <div class="font-semibold text-gray-900 dark:text-white">
-                  {selectedTemplate()?.name}
-                </div>
-              </div>
-
-              <form onSubmit={handleCreateFromTemplate} class="space-y-4">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Project Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={projectName()}
-                    onInput={(e) => setProjectName(e.currentTarget.value)}
-                    required
-                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    placeholder="My New Project"
-                  />
-                </div>
-
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Description
-                  </label>
-                  <textarea
-                    value={projectDescription()}
-                    onInput={(e) => setProjectDescription(e.currentTarget.value)}
-                    rows={3}
-                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    placeholder="Optional description"
-                  />
-                </div>
-
-                <div class="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-sm text-blue-800 dark:text-blue-200">
-                  This will create a new project with the template's workflow, vocabulary, custom fields, and boards.
-                </div>
-
-                <div class="flex justify-end gap-2 mt-6">
-                  <button
-                    type="button"
-                    onClick={() => setShowCreateProjectModal(false)}
-                    class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-                  >
-                    Create Project
-                  </button>
-                </div>
-              </form>
+        <Modal
+          isOpen={showCreateProjectModal()}
+          onClose={() => setShowCreateProjectModal(false)}
+          title="Create Project from Template"
+          size="sm"
+        >
+          <div
+            class="mb-4 rounded-lg p-3"
+            style={{ 'background-color': 'var(--color-bg-active)' }}
+          >
+            <div class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              Using template:
+            </div>
+            <div class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+              {selectedTemplate()?.name}
             </div>
           </div>
-        </Show>
+
+          <form onSubmit={handleCreateFromTemplate} class="space-y-4">
+            <Field
+              label="Project Name"
+              required
+              value={projectName()}
+              onInput={(e) => setProjectName(e.currentTarget.value)}
+              placeholder="My New Project"
+            />
+
+            <FieldShell label="Description" for="from-template-description">
+              <textarea
+                id="from-template-description"
+                value={projectDescription()}
+                onInput={(e) => setProjectDescription(e.currentTarget.value)}
+                rows={3}
+                placeholder="Optional description"
+                class="w-full resize-none rounded-lg border px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+                style={{
+                  'background-color': 'var(--color-bg-base)',
+                  color: 'var(--color-text-primary)',
+                  'border-color': 'var(--color-border-medium)',
+                  '--tw-ring-color': 'var(--color-focus-ring)',
+                }}
+              />
+            </FieldShell>
+
+            <div
+              class="rounded-lg p-3 text-sm"
+              style={{
+                'background-color': 'var(--color-info-50)',
+                color: 'var(--color-info-700)',
+              }}
+            >
+              This will create a new project with the template's workflow, vocabulary, custom fields, and boards.
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="secondary" onClick={() => setShowCreateProjectModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">Create Project</Button>
+            </div>
+          </form>
+        </Modal>
       </div>
     </div>
   );

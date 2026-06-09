@@ -3,6 +3,7 @@ import { useParams, useNavigate } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
 import { resolveLabel } from '../../shared/vocab/vocab';
+import { Button, Field, FieldShell, Select, Modal, Badge, EmptyState } from '../../shared/ui';
 
 interface Board {
   id: string;
@@ -114,18 +115,10 @@ export default function BoardsManager() {
             </p>
           </div>
           <div class="flex gap-2">
-            <button
-              onClick={openCreateModal}
-              class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-            >
-              + Create Board
-            </button>
-            <button
-              onClick={() => navigate(`/projects/${projectId}/board`)}
-              class="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
+            <Button onClick={openCreateModal}>+ Create Board</Button>
+            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/board`)}>
               Back to Project
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -149,9 +142,7 @@ export default function BoardsManager() {
                         {board.name}
                       </h3>
                       <Show when={board.is_default}>
-                        <span class="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded">
-                          Default
-                        </span>
+                        <Badge tone="info">Default</Badge>
                       </Show>
                     </div>
                     <Show when={board.description}>
@@ -173,31 +164,19 @@ export default function BoardsManager() {
 
                   <div class="flex items-center gap-2">
                     <Show when={!board.is_default}>
-                      <button
-                        onClick={() => handleSetDefault(board.id)}
-                        class="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                      >
+                      <Button size="sm" variant="secondary" onClick={() => handleSetDefault(board.id)}>
                         Set as Default
-                      </button>
+                      </Button>
                     </Show>
-                    <button
-                      onClick={() => openEditModal(board)}
-                      class="px-3 py-1.5 text-sm bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors"
-                    >
+                    <Button size="sm" variant="ghost" onClick={() => openEditModal(board)}>
                       Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(board.id)}
-                      class="px-3 py-1.5 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
-                    >
+                    </Button>
+                    <Button size="sm" variant="danger" onClick={() => handleDelete(board.id)}>
                       Delete
-                    </button>
-                    <button
-                      onClick={() => navigate(`/projects/${projectId}/board/${board.id}`)}
-                      class="px-3 py-1.5 text-sm bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
-                    >
+                    </Button>
+                    <Button size="sm" onClick={() => navigate(`/projects/${projectId}/board/${board.id}`)}>
                       View
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -205,102 +184,75 @@ export default function BoardsManager() {
           </For>
 
           <Show when={boards() && boards()!.length === 0}>
-            <div class="text-center py-12">
-              <p class="text-gray-500 dark:text-gray-400 mb-4">No boards yet</p>
-              <button
-                onClick={openCreateModal}
-                class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-              >
-                Create Your First Board
-              </button>
-            </div>
+            <EmptyState
+              title="No boards yet"
+              action={<Button onClick={openCreateModal}>Create Your First Board</Button>}
+            />
           </Show>
         </div>
 
         {/* Create/Edit Modal */}
-        <Show when={showCreateModal()}>
-          <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div class="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full p-6">
-              <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4">
-                {editingBoard() ? 'Edit Board' : 'Create Board'}
-              </h2>
+        <Modal
+          isOpen={showCreateModal()}
+          onClose={() => setShowCreateModal(false)}
+          title={editingBoard() ? 'Edit Board' : 'Create Board'}
+          size="sm"
+        >
+          <form onSubmit={handleSubmit} class="space-y-4">
+            <Field
+              label="Board Name"
+              required
+              value={name()}
+              onInput={(e) => setName(e.currentTarget.value)}
+              placeholder="Main Board"
+            />
 
-              <form onSubmit={handleSubmit} class="space-y-4">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Board Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={name()}
-                    onInput={(e) => setName(e.currentTarget.value)}
-                    required
-                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    placeholder="Main Board"
-                  />
-                </div>
+            <FieldShell label="Description" for="board-description">
+              <textarea
+                id="board-description"
+                value={description()}
+                onInput={(e) => setDescription(e.currentTarget.value)}
+                rows={3}
+                placeholder="Optional description"
+                class="w-full resize-none rounded-lg border px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+                style={{
+                  'background-color': 'var(--color-bg-base)',
+                  color: 'var(--color-text-primary)',
+                  'border-color': 'var(--color-border-medium)',
+                  '--tw-ring-color': 'var(--color-focus-ring)',
+                }}
+              />
+            </FieldShell>
 
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Description
-                  </label>
-                  <textarea
-                    value={description()}
-                    onInput={(e) => setDescription(e.currentTarget.value)}
-                    rows={3}
-                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    placeholder="Optional description"
-                  />
-                </div>
+            <Select
+              label="Group By"
+              value={grouping()}
+              onChange={(e) => setGrouping(e.currentTarget.value)}
+            >
+              <option value="status">Status (Kanban)</option>
+              <option value="priority">Priority</option>
+              <option value="item_type">Item Type</option>
+              <option value="sprint">{resolveLabel(project()?.vocabulary, 'sprint')}</option>
+            </Select>
 
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Group By
-                  </label>
-                  <select
-                    value={grouping()}
-                    onChange={(e) => setGrouping(e.currentTarget.value)}
-                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    <option value="status">Status (Kanban)</option>
-                    <option value="priority">Priority</option>
-                    <option value="item_type">Item Type</option>
-                    <option value="sprint">{resolveLabel(project()?.vocabulary, 'sprint')}</option>
-                  </select>
-                </div>
+            <label class="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              <input
+                type="checkbox"
+                checked={isDefault()}
+                onChange={(e) => setIsDefault(e.currentTarget.checked)}
+                class="h-4 w-4 rounded"
+              />
+              Set as default board
+            </label>
 
-                <div class="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="is_default"
-                    checked={isDefault()}
-                    onChange={(e) => setIsDefault(e.currentTarget.checked)}
-                    class="w-4 h-4 text-purple-600 rounded"
-                  />
-                  <label for="is_default" class="text-sm text-gray-700 dark:text-gray-300">
-                    Set as default board
-                  </label>
-                </div>
-
-                <div class="flex justify-end gap-2 mt-6">
-                  <button
-                    type="button"
-                    onClick={() => setShowCreateModal(false)}
-                    class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-                  >
-                    {editingBoard() ? 'Update' : 'Create'} Board
-                  </button>
-                </div>
-              </form>
+            <div class="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="secondary" onClick={() => setShowCreateModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">{editingBoard() ? 'Update' : 'Create'} Board</Button>
             </div>
-          </div>
-        </Show>
+          </form>
+        </Modal>
       </div>
     </div>
   );

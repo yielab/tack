@@ -2,6 +2,7 @@ import { createSignal, createResource, For, Show } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
+import { Button, Field, FieldShell, Badge, Modal } from '../../shared/ui';
 import type { Sprint, Item } from '../../types/api';
 
 export default function Sprints() {
@@ -94,13 +95,12 @@ export default function Sprints() {
     return (items() || []).filter(item => !item.sprint_id);
   };
 
-  const getStatusBadgeStyle = (status: string) => {
+  const statusTone = (status: string) => {
     switch (status) {
-      case 'planning': return { 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' };
-      case 'active': return { 'background-color': 'var(--color-success-100)', color: 'var(--color-success-700)' };
-      case 'review': return { 'background-color': 'var(--color-primary-100)', color: 'var(--color-primary-700)' };
-      case 'closed': return { 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' };
-      default: return { 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' };
+      case 'planning': return 'warning' as const;
+      case 'active': return 'success' as const;
+      case 'review': return 'primary' as const;
+      default: return 'neutral' as const;
     }
   };
 
@@ -127,27 +127,13 @@ export default function Sprints() {
             </p>
           </div>
           <div class="flex gap-2">
-            <button
-              onClick={openCreateModal}
-              class="px-4 py-2 rounded-lg transition-colors"
-              style={{ "background-color": "var(--color-primary-600)", color: "var(--color-text-inverse)" }}
-            >
-              Create Sprint
-            </button>
-            <button
-              onClick={() => navigate(`/projects/${projectId}/board`)}
-              class="px-4 py-2 border rounded-lg transition-colors"
-              style={{ "background-color": "var(--color-bg-base)", "border-color": "var(--color-border-light)" }}
-            >
+            <Button onClick={openCreateModal}>Create Sprint</Button>
+            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/board`)}>
               Board View
-            </button>
-            <button
-              onClick={() => navigate('/projects')}
-              class="px-4 py-2 border rounded-lg transition-colors"
-              style={{ "background-color": "var(--color-bg-base)", "border-color": "var(--color-border-light)" }}
-            >
+            </Button>
+            <Button variant="secondary" onClick={() => navigate('/projects')}>
               Back to Projects
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -171,9 +157,7 @@ export default function Sprints() {
                         <h2 class="text-xl font-bold" style={{ color: "var(--color-text-primary)" }}>
                           {sprint.name}
                         </h2>
-                        <span class="px-3 py-1 text-sm font-medium rounded-full" style={getStatusBadgeStyle(sprint.status)}>
-                          {sprint.status}
-                        </span>
+                        <Badge tone={statusTone(sprint.status)}>{sprint.status}</Badge>
                       </div>
                       <Show when={sprint.goal}>
                         <p class="mb-2" style={{ color: "var(--color-text-secondary)" }}>
@@ -187,39 +171,23 @@ export default function Sprints() {
                       </div>
                     </div>
                     <div class="flex gap-2">
-                      <button
-                        onClick={() => openEditModal(sprint)}
-                        class="px-3 py-1 text-sm rounded"
-                        style={{ "background-color": "var(--color-bg-subtle)", color: "var(--color-text-secondary)" }}
-                      >
+                      <Button size="sm" variant="secondary" onClick={() => openEditModal(sprint)}>
                         Edit
-                      </button>
+                      </Button>
                       <Show when={sprint.status === 'planning'}>
-                        <button
-                          onClick={() => updateSprintStatus(sprint.id, 'active')}
-                          class="px-3 py-1 text-sm rounded"
-                          style={{ "background-color": "var(--color-success-600)", color: "var(--color-text-inverse)" }}
-                        >
+                        <Button size="sm" variant="success" onClick={() => updateSprintStatus(sprint.id, 'active')}>
                           Start Sprint
-                        </button>
+                        </Button>
                       </Show>
                       <Show when={sprint.status === 'active'}>
-                        <button
-                          onClick={() => updateSprintStatus(sprint.id, 'review')}
-                          class="px-3 py-1 text-sm rounded"
-                          style={{ "background-color": "var(--color-primary-600)", color: "var(--color-text-inverse)" }}
-                        >
+                        <Button size="sm" onClick={() => updateSprintStatus(sprint.id, 'review')}>
                           Complete
-                        </button>
+                        </Button>
                       </Show>
                       <Show when={sprint.status === 'review'}>
-                        <button
-                          onClick={() => updateSprintStatus(sprint.id, 'closed')}
-                          class="px-3 py-1 text-sm rounded"
-                          style={{ "background-color": "var(--color-bg-subtle)", color: "var(--color-text-inverse)" }}
-                        >
+                        <Button size="sm" variant="secondary" onClick={() => updateSprintStatus(sprint.id, 'closed')}>
                           Close Sprint
-                        </button>
+                        </Button>
                       </Show>
                     </div>
                   </div>
@@ -292,13 +260,7 @@ export default function Sprints() {
           <Show when={!sprints() || sprints()!.length === 0}>
             <div class="text-center py-12" style={{ color: "var(--color-text-tertiary)" }}>
               <p class="text-lg mb-4">No sprints yet</p>
-              <button
-                onClick={openCreateModal}
-                class="px-6 py-3 rounded-lg transition-colors"
-                style={{ "background-color": "var(--color-primary-600)", color: "var(--color-text-inverse)" }}
-              >
-                Create Your First Sprint
-              </button>
+              <Button size="lg" onClick={openCreateModal}>Create Your First Sprint</Button>
             </div>
           </Show>
         </div>
@@ -336,97 +298,72 @@ export default function Sprints() {
       </div>
 
       {/* Create/Edit Sprint Modal */}
-      <Show when={showCreateModal()}>
-        <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div class="rounded-lg p-6 w-full max-w-md" style={{ "background-color": "var(--color-bg-base)" }}>
-            <h2 class="text-2xl font-bold mb-4" style={{ color: "var(--color-text-primary)" }}>
-              {editingSprint() ? 'Edit Sprint' : 'Create Sprint'}
-            </h2>
-            <form onSubmit={handleSubmit} class="space-y-4">
-              <div>
-                <label class="block text-sm font-medium mb-1" style={{ color: "var(--color-text-primary)" }}>
-                  Sprint Name <span class="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={name()}
-                  onInput={(e) => setName(e.currentTarget.value)}
-                  placeholder="Sprint 1"
-                  class="w-full px-3 py-2 border rounded-lg"
-                  style={{ "background-color": "var(--color-bg-base)", "border-color": "var(--color-border-light)", color: "var(--color-text-primary)" }}
-                  required
-                  disabled={loading()}
-                />
-              </div>
+      <Modal
+        isOpen={showCreateModal()}
+        onClose={() => setShowCreateModal(false)}
+        title={editingSprint() ? 'Edit Sprint' : 'Create Sprint'}
+        size="sm"
+      >
+        <form onSubmit={handleSubmit} class="space-y-4">
+          <Field
+            label="Sprint Name"
+            required
+            value={name()}
+            onInput={(e) => setName(e.currentTarget.value)}
+            placeholder="Sprint 1"
+            disabled={loading()}
+          />
 
-              <div>
-                <label class="block text-sm font-medium mb-1" style={{ color: "var(--color-text-primary)" }}>
-                  Sprint Goal
-                </label>
-                <textarea
-                  value={goal()}
-                  onInput={(e) => setGoal(e.currentTarget.value)}
-                  placeholder="What will be accomplished in this sprint?"
-                  rows={3}
-                  class="w-full px-3 py-2 border rounded-lg resize-none"
-                  style={{ "background-color": "var(--color-bg-base)", "border-color": "var(--color-border-light)", color: "var(--color-text-primary)" }}
-                  disabled={loading()}
-                />
-              </div>
+          <FieldShell label="Sprint Goal" for="sprint-goal">
+            <textarea
+              id="sprint-goal"
+              value={goal()}
+              onInput={(e) => setGoal(e.currentTarget.value)}
+              placeholder="What will be accomplished in this sprint?"
+              rows={3}
+              disabled={loading()}
+              class="w-full resize-none rounded-lg border px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50"
+              style={{
+                'background-color': 'var(--color-bg-base)',
+                color: 'var(--color-text-primary)',
+                'border-color': 'var(--color-border-medium)',
+                '--tw-ring-color': 'var(--color-focus-ring)',
+              }}
+            />
+          </FieldShell>
 
-              <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <label class="block text-sm font-medium mb-1" style={{ color: "var(--color-text-primary)" }}>
-                    Start Date
-                  </label>
-                  <input
-                    type="date"
-                    value={startDate()}
-                    onInput={(e) => setStartDate(e.currentTarget.value)}
-                    class="w-full px-3 py-2 border rounded-lg"
-                    style={{ "background-color": "var(--color-bg-base)", "border-color": "var(--color-border-light)", color: "var(--color-text-primary)" }}
-                    disabled={loading()}
-                  />
-                </div>
-
-                <div>
-                  <label class="block text-sm font-medium mb-1" style={{ color: "var(--color-text-primary)" }}>
-                    End Date
-                  </label>
-                  <input
-                    type="date"
-                    value={endDate()}
-                    onInput={(e) => setEndDate(e.currentTarget.value)}
-                    class="w-full px-3 py-2 border rounded-lg"
-                    style={{ "background-color": "var(--color-bg-base)", "border-color": "var(--color-border-light)", color: "var(--color-text-primary)" }}
-                    disabled={loading()}
-                  />
-                </div>
-              </div>
-
-              <div class="flex gap-3 pt-4">
-                <button
-                  type="submit"
-                  disabled={loading()}
-                  class="flex-1 px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  style={{ "background-color": "var(--color-primary-600)", color: "var(--color-text-inverse)" }}
-                >
-                  {loading() ? 'Saving...' : editingSprint() ? 'Update Sprint' : 'Create Sprint'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  disabled={loading()}
-                  class="px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  style={{ "background-color": "var(--color-bg-subtle)", color: "var(--color-text-secondary)" }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
+          <div class="grid grid-cols-2 gap-4">
+            <Field
+              label="Start Date"
+              type="date"
+              value={startDate()}
+              onInput={(e) => setStartDate(e.currentTarget.value)}
+              disabled={loading()}
+            />
+            <Field
+              label="End Date"
+              type="date"
+              value={endDate()}
+              onInput={(e) => setEndDate(e.currentTarget.value)}
+              disabled={loading()}
+            />
           </div>
-        </div>
-      </Show>
+
+          <div class="flex gap-3 pt-4">
+            <Button type="submit" class="flex-1" loading={loading()} disabled={loading()}>
+              {loading() ? 'Saving...' : editingSprint() ? 'Update Sprint' : 'Create Sprint'}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setShowCreateModal(false)}
+              disabled={loading()}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

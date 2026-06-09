@@ -4,6 +4,7 @@ import { FiPlus, FiFolder } from 'solid-icons/fi';
 import { api } from '../../shared/api';
 import CreateProjectModal from './CreateProjectModal';
 import { ProjectsGridSkeleton } from '../../shared/ui/SkeletonScreen';
+import { Button } from '../../shared/ui';
 
 const Projects: Component = () => {
   const [projects, { refetch }] = createResource(() => api.projects.list());
@@ -22,13 +23,10 @@ const Projects: Component = () => {
             Select a project to get started
           </p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2 transition-colors"
-        >
+        <Button onClick={() => setShowCreateModal(true)}>
           <FiPlus />
           New Project
-        </button>
+        </Button>
       </div>
 
       <CreateProjectModal
