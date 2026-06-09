@@ -8,13 +8,9 @@ const Dashboard = lazy(() => import('../features/dashboard/Dashboard'));
 const Sprints = lazy(() => import('../features/sprints/Sprints'));
 const Calendar = lazy(() => import('../features/calendar/Calendar'));
 const Timeline = lazy(() => import('../features/timeline/Timeline'));
-const BoardsManager = lazy(() => import('../features/settings/BoardsManager'));
-const CustomFieldsManager = lazy(
-  () => import('../features/settings/CustomFieldsManager')
-);
 const Templates = lazy(() => import('../features/templates/Templates'));
 const TemplateCreator = lazy(() => import('../features/templates/TemplateCreator'));
-const Settings = lazy(() => import('../features/settings/Settings'));
+const ProjectSettings = lazy(() => import('../features/settings/ProjectSettings'));
 const GlobalSettings = lazy(() => import('../features/settings/GlobalSettings'));
 
 export const routes: RouteDefinition[] = [
@@ -27,9 +23,7 @@ export const routes: RouteDefinition[] = [
   { path: '/projects/:id/sprints', component: Sprints },
   { path: '/projects/:id/calendar', component: Calendar },
   { path: '/projects/:id/timeline', component: Timeline },
-  { path: '/projects/:id/settings', component: Settings },
-  { path: '/projects/:id/settings/boards', component: BoardsManager },
-  { path: '/projects/:id/settings/fields', component: CustomFieldsManager },
+  { path: '/projects/:id/settings', component: ProjectSettings },
   { path: '/templates', component: Templates },
   { path: '/templates/new', component: TemplateCreator },
   { path: '/board', component: Board },

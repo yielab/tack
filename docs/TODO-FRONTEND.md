@@ -456,6 +456,23 @@ No raw `fetch` outside `shared/api/`. No absolute API hosts anywhere.
 
 ## T-511 · Project Settings consolidation + workflow/vocab/roles/data editors · L
 
+> **Status: ✅ Done.** One tabbed `features/settings/ProjectSettings.tsx` at
+> `/projects/:id/settings` with seven panels under `panels/`: **General** (name/description
+> edit + archive/restore + read-only type, `PATCH /projects/{id}`), **Workflow**
+> (status-column editor → `workflow` save), **Vocabulary** (16-key editor + live preview →
+> `vocabulary` save), **Boards** (multi-board CRUD, migrated from BoardsManager),
+> **Fields** (custom-field definition CRUD, migrated from CustomFieldsManager), **Roles**
+> (role CRUD via `/projects/{id}/roles` + `DELETE /roles/{id}`), **Data** (JSON/CSV export
+> download + JSON import → new project). The standalone `BoardsManager`,
+> `CustomFieldsManager` and the old combined `Settings` pages are **deleted**, and the
+> `/settings/boards` + `/settings/fields` routes are **gone** (BoardSelector's "Manage
+> boards" now points at `/settings`). No raw `fetch` in these views. `type-check` + `build`
+> green (entry 9.82 KB gzipped; the settings surface is a lazy 6.6 KB chunk); 96 Vitest
+> tests (General save PATCHes; Roles add POSTs; Data export downloads + import POSTs).
+> **Deviations:** Workflow and Vocabulary are **separate tabs with independent saves** (each
+> PATCHes only its slice) rather than one shared save — cleaner per-tab UX. `project_type`
+> isn't in `UpdateProject`, so the General tab shows type **read-only**.
+
 - **Why:** settings are scattered (`BoardsManager`, `CustomFieldsManager` as standalone
   pages) and key editors (workflow, vocabulary, roles, data) are missing or weak. Fold them
   into one tabbed Project Settings surface.

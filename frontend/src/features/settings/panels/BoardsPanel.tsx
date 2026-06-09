@@ -1,10 +1,10 @@
 import { createSignal, createResource, For, Show } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
-import { api } from '../../shared/api';
-import { toast } from '../../shared/ui/toast';
-import { resolveLabel } from '../../shared/vocab/vocab';
-import { Button, Field, FieldShell, Select, Modal, Badge, EmptyState } from '../../shared/ui';
-import { useProject } from '../../shared/state/projectContext';
+import { api } from '../../../shared/api';
+import { toast } from '../../../shared/ui/toast';
+import { resolveLabel } from '../../../shared/vocab/vocab';
+import { Button, Field, FieldShell, Select, Modal, Badge, EmptyState } from '../../../shared/ui';
+import { useProject } from '../../../shared/state/projectContext';
 
 interface Board {
   id: string;
@@ -18,7 +18,7 @@ interface Board {
   updated_at: string;
 }
 
-export default function BoardsManager() {
+export default function BoardsPanel() {
   const params = useParams();
   const navigate = useNavigate();
   const projectId = params.id!;
@@ -103,24 +103,10 @@ export default function BoardsManager() {
   };
 
   return (
-    <div class="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
-      <div class="max-w-4xl mx-auto">
-        {/* Header */}
-        <div class="mb-6 flex items-center justify-between">
-          <div>
-            <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
-              Boards Manager
-            </h1>
-            <p class="text-gray-600 dark:text-gray-400 mt-1">
-              {project()?.name || 'Loading...'}
-            </p>
-          </div>
-          <div class="flex gap-2">
-            <Button onClick={openCreateModal}>+ Create Board</Button>
-            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/board`)}>
-              Back to Project
-            </Button>
-          </div>
+    <div>
+      <div>
+        <div class="mb-4 flex items-center justify-end">
+          <Button onClick={openCreateModal}>+ Create Board</Button>
         </div>
 
         {/* Boards List */}
