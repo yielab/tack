@@ -1,5 +1,11 @@
 import { request } from './client';
-import type { Board, CreateBoard, UpdateBoard, BoardViewResponse } from '../types';
+import type {
+  Board,
+  CreateBoard,
+  UpdateBoard,
+  BoardViewResponse,
+  BoardState,
+} from '../types';
 
 export const boards = {
   /** All boards configured for a project. */
@@ -27,4 +33,25 @@ export const boards = {
 
   remove: (boardId: string) =>
     request<void>(`/boards/${boardId}`, { method: 'DELETE' }),
+
+  /**
+   * Convenience: resolve a project's default board (or first) and return its
+   * view mapped onto the legacy `BoardState` shape (`columns[].status`). Used by
+   * the Board page until the item store lands in T-513. Composes existing routes
+   * only — no new endpoint.
+   */
+  projectBoardState: async (projectId: string): Promise<BoardState> => {
+    const list = await boards.list(projectId);
+    const def = list.find((b) => b.is_default) ?? list[0];
+    if (!def) return { columns: [] };
+    const view = await boards.view(def.id);
+    return {
+      columns: view.columns.map((c) => ({
+        status: c.name,
+        items: c.items,
+        wip_limit: c.wip_limit,
+        wip_exceeded: c.wip_exceeded,
+      })),
+    };
+  },
 };

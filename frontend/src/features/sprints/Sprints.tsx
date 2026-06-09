@@ -1,8 +1,8 @@
 import { createSignal, createResource, For, Show } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
-import { api } from '../shared/api';
-import { toast } from '../lib/toast';
-import type { Sprint, Item } from '../types/api';
+import { api } from '../../shared/api';
+import { toast } from '../../shared/ui/toast';
+import type { Sprint, Item } from '../../types/api';
 
 export default function Sprints() {
   const params = useParams();

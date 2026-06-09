@@ -1,7 +1,7 @@
 import { type Component, createSignal } from 'solid-js';
-import Modal from './Modal';
-import { api } from '../lib/api';
-import { toast } from '../lib/toast';
+import Modal from '../../shared/ui/Modal';
+import { api } from '../../shared/api';
+import { toast } from '../../shared/ui/toast';
 
 export interface CreateProjectModalProps {
   isOpen: boolean;
@@ -27,7 +27,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
 
     setLoading(true);
     try {
-      await api.createProject({
+      await api.projects.create({
         name: name().trim(),
         description: description().trim() || undefined,
         template: projectType(),

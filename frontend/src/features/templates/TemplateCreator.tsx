@@ -1,7 +1,7 @@
 import { createSignal } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
-import { toast } from '../lib/toast';
-import { api } from '../shared/api';
+import { toast } from '../../shared/ui/toast';
+import { api } from '../../shared/api';
 
 export default function TemplateCreator() {
   const navigate = useNavigate();

@@ -1,12 +1,12 @@
 import { createResource, For, Show, createSignal, type Component } from 'solid-js';
 import { A } from '@solidjs/router';
 import { FiPlus, FiFolder } from 'solid-icons/fi';
-import { api } from '../lib/api';
-import CreateProjectModal from '../components/CreateProjectModal';
-import { ProjectsGridSkeleton } from '../components/SkeletonScreen';
+import { api } from '../../shared/api';
+import CreateProjectModal from './CreateProjectModal';
+import { ProjectsGridSkeleton } from '../../shared/ui/SkeletonScreen';
 
 const Projects: Component = () => {
-  const [projects, { refetch }] = createResource(() => api.listProjects());
+  const [projects, { refetch }] = createResource(() => api.projects.list());
   const [showCreateModal, setShowCreateModal] = createSignal(false);
 
   const handleProjectCreated = () => {
