@@ -11,7 +11,7 @@ import DetailsTab from './tabs/DetailsTab';
 import ActivityTab from './tabs/ActivityTab';
 import DependenciesTab from './tabs/DependenciesTab';
 import FilesTab from './tabs/FilesTab';
-import { FieldsTab } from './tabs/stubs';
+import FieldsTab from './tabs/FieldsTab';
 
 const TABS: TabItem[] = [
   { id: 'details', label: 'Details' },
@@ -89,7 +89,7 @@ const ItemDetailDrawer: Component = () => {
                 <FilesTab itemId={it().id} />
               </Show>
               <Show when={activeTab() === 'fields'}>
-                <FieldsTab />
+                <FieldsTab item={it()} />
               </Show>
             </Tabs>
           </div>

@@ -1,15 +1,19 @@
-import { type Component, type JSX } from 'solid-js';
+import { type Component, type JSX, lazy, Show } from 'solid-js';
+import { useSearchParams } from '@solidjs/router';
 import Sidebar from '../shared/ui/Sidebar';
 import SearchBar from '../shared/ui/SearchBar';
 import ToastContainer from '../shared/ui/ToastContainer';
 import { ProjectProvider } from '../shared/state/projectContext';
-import ItemDetailDrawer from '../features/item-detail/ItemDetailDrawer';
+
+// Lazy so the drawer + its tabs stay out of the entry bundle until first opened.
+const ItemDetailDrawer = lazy(() => import('../features/item-detail/ItemDetailDrawer'));
 
 interface LayoutProps {
   children?: JSX.Element;
 }
 
 const Layout: Component<LayoutProps> = (props) => {
+  const [searchParams] = useSearchParams();
   return (
     <ProjectProvider>
     <div class="flex h-screen" style={{ "background-color": "var(--color-bg-app)" }}>
@@ -38,8 +42,10 @@ const Layout: Component<LayoutProps> = (props) => {
         </div>
       </main>
 
-      {/* Item detail drawer — mounted once, opens via ?item= */}
-      <ItemDetailDrawer />
+      {/* Item detail drawer — lazily mounted only while ?item= is present */}
+      <Show when={searchParams.item}>
+        <ItemDetailDrawer />
+      </Show>
 
       {/* Toast Notifications */}
       <ToastContainer />
