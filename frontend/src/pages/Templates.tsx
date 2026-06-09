@@ -1,16 +1,8 @@
 import { createSignal, createResource, For, Show } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
 import { toast } from '../lib/toast';
-
-interface ProjectTemplate {
-  id: string;
-  name: string;
-  description: string | null;
-  project_type: string;
-  is_builtin: boolean;
-  created_at: string;
-  updated_at: string;
-}
+import { api } from '../shared/api';
+import type { ProjectTemplate } from '../shared/types';
 
 export default function Templates() {
   const navigate = useNavigate();
@@ -20,13 +12,9 @@ export default function Templates() {
   const [projectName, setProjectName] = createSignal('');
   const [projectDescription, setProjectDescription] = createSignal('');
 
-  const [templates, { refetch }] = createResource(() => {
-    const typeFilter = selectedType();
-    const url = typeFilter
-      ? `http://localhost:3210/api/templates?project_type=${typeFilter}`
-      : 'http://localhost:3210/api/templates';
-    return fetch(url).then(res => res.json());
-  });
+  const [templates, { refetch }] = createResource(() =>
+    api.templates.list(selectedType() ?? undefined)
+  );
 
   const projectTypes = [
     { value: 'software', label: 'Software Development', icon: '💻', color: 'blue' },
@@ -56,18 +44,11 @@ export default function Templates() {
     if (!template) return;
 
     try {
-      const response = await fetch(`http://localhost:3210/api/projects/from-template/${template.id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: projectName().trim(),
-          description: projectDescription().trim() || null,
-        }),
+      const project = await api.templates.createProject(template.id, {
+        name: projectName().trim(),
+        description: projectDescription().trim() || null,
       });
 
-      if (!response.ok) throw new Error('Failed to create project');
-
-      const project = await response.json();
       toast.success(`Project "${projectName()}" created from template!`);
       setShowCreateProjectModal(false);
       navigate(`/projects/${project.id}/board`);
@@ -81,9 +62,7 @@ export default function Templates() {
     if (!confirm('Are you sure you want to delete this template?')) return;
 
     try {
-      await fetch(`http://localhost:3210/api/templates/${templateId}`, {
-        method: 'DELETE',
-      });
+      await api.templates.remove(templateId);
       toast.success('Template deleted');
       refetch();
     } catch (error) {
