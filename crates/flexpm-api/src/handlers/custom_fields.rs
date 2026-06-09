@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
-    Json,
 };
 use flexpm_core::models::*;
 use flexpm_db::repo;
@@ -20,7 +20,9 @@ pub async fn create_field(
     Json(data): Json<CreateCustomField>,
 ) -> Result<Json<CustomFieldDefinition>, StatusCode> {
     // Verify project exists
-    state.repo.get_project(project_id)
+    state
+        .repo
+        .get_project(project_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
@@ -105,7 +107,9 @@ pub async fn set_field_value(
     Json(data): Json<serde_json::Value>,
 ) -> Result<Json<CustomFieldValue>, StatusCode> {
     // Verify item exists
-    state.repo.get_item(item_id)
+    state
+        .repo
+        .get_item(item_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;

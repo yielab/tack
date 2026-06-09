@@ -47,7 +47,12 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
         return false;
     }
     // std::hint::black_box prevents the compiler from optimising away the fold.
-    std::hint::black_box(a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0)
+    std::hint::black_box(
+        a.iter()
+            .zip(b.iter())
+            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+            == 0,
+    )
 }
 
 #[cfg(test)]

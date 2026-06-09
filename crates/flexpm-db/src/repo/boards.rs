@@ -1,5 +1,5 @@
 use flexpm_core::models::*;
-use sqlx::{SqlitePool, FromRow};
+use sqlx::{FromRow, SqlitePool};
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -39,18 +39,16 @@ pub async fn create_board(
 
     // If this is marked as default, unset other defaults first
     if data.is_default.unwrap_or(false) {
-        sqlx::query(
-            "UPDATE boards SET is_default = 0 WHERE project_id = ?"
-        )
-        .bind(project_id.to_string())
-        .execute(pool)
-        .await?;
+        sqlx::query("UPDATE boards SET is_default = 0 WHERE project_id = ?")
+            .bind(project_id.to_string())
+            .execute(pool)
+            .await?;
     }
 
     sqlx::query(
         "INSERT INTO boards
          (id, project_id, name, description, filters, grouping, is_default, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id.to_string())
     .bind(project_id.to_string())
@@ -69,10 +67,7 @@ pub async fn create_board(
 
 /// Get a board by ID
 #[instrument(skip(pool))]
-pub async fn get_board(
-    pool: &SqlitePool,
-    id: Uuid,
-) -> Result<Board, sqlx::Error> {
+pub async fn get_board(pool: &SqlitePool, id: Uuid) -> Result<Board, sqlx::Error> {
     let row = sqlx::query_as::<_, BoardRow>(
         "SELECT id, project_id, name, description, filters, grouping, is_default, created_at, updated_at
          FROM boards
@@ -82,7 +77,10 @@ pub async fn get_board(
     .fetch_one(pool)
     .await?;
 
-    let filters = row.filters.as_ref().and_then(|f| serde_json::from_str(f).ok());
+    let filters = row
+        .filters
+        .as_ref()
+        .and_then(|f| serde_json::from_str(f).ok());
     let grouping = row.grouping.as_ref().and_then(|g| parse_grouping(g));
 
     Ok(Board {
@@ -93,8 +91,12 @@ pub async fn get_board(
         filters,
         grouping,
         is_default: row.is_default != 0,
-        created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at).unwrap().into(),
-        updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at).unwrap().into(),
+        created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
+            .unwrap()
+            .into(),
+        updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
+            .unwrap()
+            .into(),
     })
 }
 
@@ -115,7 +117,10 @@ pub async fn get_default_board(
     .await?;
 
     if let Some(row) = row {
-        let filters = row.filters.as_ref().and_then(|f| serde_json::from_str(f).ok());
+        let filters = row
+            .filters
+            .as_ref()
+            .and_then(|f| serde_json::from_str(f).ok());
         let grouping = row.grouping.as_ref().and_then(|g| parse_grouping(g));
 
         Ok(Some(Board {
@@ -126,8 +131,12 @@ pub async fn get_default_board(
             filters,
             grouping,
             is_default: row.is_default != 0,
-            created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at).unwrap().into(),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at).unwrap().into(),
+            created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
+                .unwrap()
+                .into(),
+            updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
+                .unwrap()
+                .into(),
         }))
     } else {
         Ok(None)
@@ -136,10 +145,7 @@ pub async fn get_default_board(
 
 /// List all boards for a project
 #[instrument(skip(pool))]
-pub async fn list_boards(
-    pool: &SqlitePool,
-    project_id: Uuid,
-) -> Result<Vec<Board>, sqlx::Error> {
+pub async fn list_boards(pool: &SqlitePool, project_id: Uuid) -> Result<Vec<Board>, sqlx::Error> {
     let rows = sqlx::query_as::<_, BoardRow>(
         "SELECT id, project_id, name, description, filters, grouping, is_default, created_at, updated_at
          FROM boards
@@ -150,22 +156,32 @@ pub async fn list_boards(
     .fetch_all(pool)
     .await?;
 
-    let boards = rows.into_iter().map(|row| {
-        let filters = row.filters.as_ref().and_then(|f| serde_json::from_str(f).ok());
-        let grouping = row.grouping.as_ref().and_then(|g| parse_grouping(g));
+    let boards = rows
+        .into_iter()
+        .map(|row| {
+            let filters = row
+                .filters
+                .as_ref()
+                .and_then(|f| serde_json::from_str(f).ok());
+            let grouping = row.grouping.as_ref().and_then(|g| parse_grouping(g));
 
-        Board {
-            id: Uuid::parse_str(&row.id).unwrap(),
-            project_id: Uuid::parse_str(&row.project_id).unwrap(),
-            name: row.name,
-            description: row.description,
-            filters,
-            grouping,
-            is_default: row.is_default != 0,
-            created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at).unwrap().into(),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at).unwrap().into(),
-        }
-    }).collect();
+            Board {
+                id: Uuid::parse_str(&row.id).unwrap(),
+                project_id: Uuid::parse_str(&row.project_id).unwrap(),
+                name: row.name,
+                description: row.description,
+                filters,
+                grouping,
+                is_default: row.is_default != 0,
+                created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
+                    .unwrap()
+                    .into(),
+                updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
+                    .unwrap()
+                    .into(),
+            }
+        })
+        .collect();
 
     Ok(boards)
 }
@@ -182,13 +198,11 @@ pub async fn update_board(
     // If setting as default, unset other defaults for this project first
     if data.is_default == Some(true) {
         let board = get_board(pool, id).await?;
-        sqlx::query(
-            "UPDATE boards SET is_default = 0 WHERE project_id = ? AND id != ?"
-        )
-        .bind(board.project_id.to_string())
-        .bind(id.to_string())
-        .execute(pool)
-        .await?;
+        sqlx::query("UPDATE boards SET is_default = 0 WHERE project_id = ? AND id != ?")
+            .bind(board.project_id.to_string())
+            .bind(id.to_string())
+            .execute(pool)
+            .await?;
     }
 
     if let Some(name) = &data.name {
@@ -196,7 +210,8 @@ pub async fn update_board(
             .bind(name)
             .bind(now.to_rfc3339())
             .bind(id.to_string())
-            .execute(pool).await?;
+            .execute(pool)
+            .await?;
     }
 
     if let Some(description) = &data.description {
@@ -204,7 +219,8 @@ pub async fn update_board(
             .bind(description)
             .bind(now.to_rfc3339())
             .bind(id.to_string())
-            .execute(pool).await?;
+            .execute(pool)
+            .await?;
     }
 
     if let Some(filters) = &data.filters {
@@ -213,7 +229,8 @@ pub async fn update_board(
             .bind(filters_str)
             .bind(now.to_rfc3339())
             .bind(id.to_string())
-            .execute(pool).await?;
+            .execute(pool)
+            .await?;
     }
 
     if let Some(grouping) = &data.grouping {
@@ -229,7 +246,8 @@ pub async fn update_board(
             .bind(grouping_str)
             .bind(now.to_rfc3339())
             .bind(id.to_string())
-            .execute(pool).await?;
+            .execute(pool)
+            .await?;
     }
 
     if let Some(is_default) = data.is_default {
@@ -237,7 +255,8 @@ pub async fn update_board(
             .bind(is_default as i32)
             .bind(now.to_rfc3339())
             .bind(id.to_string())
-            .execute(pool).await?;
+            .execute(pool)
+            .await?;
     }
 
     get_board(pool, id).await
@@ -245,10 +264,7 @@ pub async fn update_board(
 
 /// Delete a board
 #[instrument(skip(pool))]
-pub async fn delete_board(
-    pool: &SqlitePool,
-    id: Uuid,
-) -> Result<(), sqlx::Error> {
+pub async fn delete_board(pool: &SqlitePool, id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM boards WHERE id = ?")
         .bind(id.to_string())
         .execute(pool)

@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
-    Json,
 };
 use flexpm_core::models::*;
 use flexpm_core::workflow::WorkflowConfig;
@@ -20,7 +20,9 @@ pub async fn create_board(
     Json(data): Json<CreateBoard>,
 ) -> Result<Json<Board>, StatusCode> {
     // Verify project exists
-    state.repo.get_project(project_id)
+    state
+        .repo
+        .get_project(project_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
@@ -124,7 +126,9 @@ pub async fn get_board_view(
         })?;
 
     // Get the project to access workflow
-    let project = state.repo.get_project(board.project_id)
+    let project = state
+        .repo
+        .get_project(board.project_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, project_id = %board.project_id, "Failed to fetch project");
@@ -136,7 +140,9 @@ pub async fn get_board_view(
         })?;
 
     // Get all items for the project
-    let items = state.repo.list_items(board.project_id, &Default::default())
+    let items = state
+        .repo
+        .list_items(board.project_id, &Default::default())
         .await
         .map_err(|e| {
             tracing::error!(error = %e, project_id = %board.project_id, "Failed to fetch items");
@@ -167,9 +173,7 @@ pub async fn get_board_view(
             // Group by sprint
             group_by_sprint(&state, board.project_id, items).await?
         }
-        Some(BoardGrouping::Assignee) => {
-            group_by_assignee(items)
-        }
+        Some(BoardGrouping::Assignee) => group_by_assignee(items),
         Some(BoardGrouping::CustomField(field_id)) => {
             // Group by custom field
             group_by_custom_field(&state, *field_id, items).await?
@@ -257,10 +261,14 @@ fn group_by_item_type(items: Vec<Item>) -> Vec<BoardColumnWithItems> {
 
 /// Helper: Group items by assignee (free-text field; None → "Unassigned")
 fn group_by_assignee(items: Vec<Item>) -> Vec<BoardColumnWithItems> {
-    let mut groups: std::collections::BTreeMap<String, Vec<Item>> = std::collections::BTreeMap::new();
+    let mut groups: std::collections::BTreeMap<String, Vec<Item>> =
+        std::collections::BTreeMap::new();
 
     for item in items {
-        let lane = item.assignee.clone().unwrap_or_else(|| "Unassigned".to_string());
+        let lane = item
+            .assignee
+            .clone()
+            .unwrap_or_else(|| "Unassigned".to_string());
         groups.entry(lane).or_default().push(item);
     }
 
@@ -281,12 +289,10 @@ async fn group_by_sprint(
     project_id: Uuid,
     items: Vec<Item>,
 ) -> Result<Vec<BoardColumnWithItems>, StatusCode> {
-    let sprints = state.repo.list_sprints(project_id)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to fetch sprints");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let sprints = state.repo.list_sprints(project_id).await.map_err(|e| {
+        tracing::error!(error = %e, "Failed to fetch sprints");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let mut columns = Vec::new();
 
@@ -330,15 +336,14 @@ async fn group_by_custom_field(
     items: Vec<Item>,
 ) -> Result<Vec<BoardColumnWithItems>, StatusCode> {
     // Get the field definition
-    let _field = state.repo.get_field(field_id)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, field_id = %field_id, "Custom field not found");
-            StatusCode::NOT_FOUND
-        })?;
+    let _field = state.repo.get_field(field_id).await.map_err(|e| {
+        tracing::error!(error = %e, field_id = %field_id, "Custom field not found");
+        StatusCode::NOT_FOUND
+    })?;
 
     // Get all values for this field across all items
-    let mut value_groups: std::collections::HashMap<String, Vec<Item>> = std::collections::HashMap::new();
+    let mut value_groups: std::collections::HashMap<String, Vec<Item>> =
+        std::collections::HashMap::new();
 
     for item in items {
         if let Ok(field_value) = state.repo.get_field_value(item.id, field_id).await {
@@ -346,7 +351,10 @@ async fn group_by_custom_field(
             value_groups.entry(value_str).or_default().push(item);
         } else {
             // Items without this field value go to "Unset"
-            value_groups.entry("Unset".to_string()).or_default().push(item);
+            value_groups
+                .entry("Unset".to_string())
+                .or_default()
+                .push(item);
         }
     }
 

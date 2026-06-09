@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use serde::Deserialize;
 use tracing::{info, instrument};
 use uuid::Uuid;
@@ -40,7 +40,10 @@ pub async fn export_project(
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Project {project_id} not found")))?;
 
-    let items = state.repo.list_items(project_id, &Default::default()).await?;
+    let items = state
+        .repo
+        .list_items(project_id, &Default::default())
+        .await?;
     let sprints = state.repo.list_sprints(project_id).await?;
     let dependencies = state.repo.list_dependencies_for_project(project_id).await?;
 
@@ -247,18 +250,16 @@ async fn run_import(
 
     // ── Items pass 2: wire up parent_ids ────────────────────────────────────
     for item in &data.items {
-        if let Some(old_parent) = item.parent_id {
-            if let (Some(&new_id), Some(&new_parent)) = (
-                item_id_map.get(&item.id),
-                item_id_map.get(&old_parent),
-            ) {
-                sqlx::query("UPDATE items SET parent_id = ? WHERE id = ?")
-                    .bind(new_parent.to_string())
-                    .bind(new_id.to_string())
-                    .execute(state.repo.pool())
-                    .await
-                    .map_err(|e| anyhow::anyhow!(e))?;
-            }
+        if let Some(old_parent) = item.parent_id
+            && let (Some(&new_id), Some(&new_parent)) =
+                (item_id_map.get(&item.id), item_id_map.get(&old_parent))
+        {
+            sqlx::query("UPDATE items SET parent_id = ? WHERE id = ?")
+                .bind(new_parent.to_string())
+                .bind(new_id.to_string())
+                .execute(state.repo.pool())
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
         }
     }
 
@@ -268,21 +269,19 @@ async fn run_import(
         if let (Some(&new_src), Some(&new_tgt)) = (
             item_id_map.get(&dep.source_item_id),
             item_id_map.get(&dep.target_item_id),
-        ) {
-            if state
-                .repo
-                .create_dependency(
-                    new_src,
-                    CreateDependency {
-                        target_item_id: new_tgt,
-                        dependency_type: dep.dependency_type.clone(),
-                    },
-                )
-                .await
-                .is_ok()
-            {
-                deps_imported += 1;
-            }
+        ) && state
+            .repo
+            .create_dependency(
+                new_src,
+                CreateDependency {
+                    target_item_id: new_tgt,
+                    dependency_type: dep.dependency_type.clone(),
+                },
+            )
+            .await
+            .is_ok()
+        {
+            deps_imported += 1;
         }
     }
 

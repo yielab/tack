@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::StatusCode,
-    Json,
 };
 use flexpm_core::models::*;
 use flexpm_db::repo;
@@ -108,7 +108,9 @@ pub async fn create_project_from_template(
         template: None, // Already applied
     };
 
-    let mut project = state.repo.create_project(workspace_id, project_data)
+    let mut project = state
+        .repo
+        .create_project(workspace_id, project_data)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to create project from template");
@@ -128,7 +130,9 @@ pub async fn create_project_from_template(
         archived: None,
     };
 
-    state.repo.update_project(project.id, update_data)
+    state
+        .repo
+        .update_project(project.id, update_data)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to update project with template config");
@@ -166,7 +170,10 @@ pub async fn create_project_from_template(
             name: board_template.name.clone(),
             description: board_template.description.clone(),
             filters: board_template.filters.clone(),
-            grouping: board_template.grouping.as_ref().and_then(|g| parse_grouping_from_string(g)),
+            grouping: board_template
+                .grouping
+                .as_ref()
+                .and_then(|g| parse_grouping_from_string(g)),
             is_default: Some(idx == 0), // First board is default
         };
 
@@ -180,7 +187,9 @@ pub async fn create_project_from_template(
     }
 
     // Return the final project
-    state.repo.get_project(project.id)
+    state
+        .repo
+        .get_project(project.id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to fetch created project");
@@ -194,9 +203,7 @@ pub async fn create_project_from_template(
 }
 
 /// Helper: Get or create default workspace
-async fn get_or_create_default_workspace(
-    pool: &sqlx::SqlitePool,
-) -> Result<Uuid, StatusCode> {
+async fn get_or_create_default_workspace(pool: &sqlx::SqlitePool) -> Result<Uuid, StatusCode> {
     // Try to get first workspace
     #[derive(sqlx::FromRow)]
     struct WorkspaceId {

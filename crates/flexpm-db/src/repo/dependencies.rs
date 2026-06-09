@@ -2,9 +2,9 @@ use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
+use flexpm_core::CoreError;
 use flexpm_core::dependency::{DependencyEdge, DependencyGraph};
 use flexpm_core::models::{CreateDependency, Dependency, DependencyType};
-use flexpm_core::CoreError;
 
 use super::Repository;
 
@@ -16,12 +16,15 @@ impl Repository {
         input: CreateDependency,
     ) -> Result<Dependency, DependencyError> {
         // Load existing dependency graph for cycle detection
-        let edges = self.load_dependency_edges(source_item_id).await
+        let edges = self
+            .load_dependency_edges(source_item_id)
+            .await
             .map_err(DependencyError::Db)?;
         let graph = DependencyGraph::from_edges(&edges);
 
         // Validate no cycle
-        graph.validate_new_edge(source_item_id, input.target_item_id)
+        graph
+            .validate_new_edge(source_item_id, input.target_item_id)
             .map_err(DependencyError::Core)?;
 
         let id = Uuid::new_v4();
@@ -67,7 +70,7 @@ impl Repository {
             "SELECT id, source_item_id, target_item_id, dependency_type, created_at
              FROM dependencies
              WHERE source_item_id = ? OR target_item_id = ?
-             ORDER BY created_at"
+             ORDER BY created_at",
         )
         .bind(item_id.to_string())
         .bind(item_id.to_string())
@@ -96,7 +99,7 @@ impl Repository {
              FROM dependencies d
              JOIN items i ON d.source_item_id = i.id
              WHERE i.project_id = ?
-             ORDER BY d.created_at"
+             ORDER BY d.created_at",
         )
         .bind(project_id.to_string())
         .fetch_all(self.pool())
@@ -115,7 +118,7 @@ impl Repository {
              FROM dependencies d
              JOIN items s ON d.source_item_id = s.id
              JOIN items t ON d.target_item_id = t.id
-             WHERE s.project_id = (SELECT project_id FROM items WHERE id = ?)"
+             WHERE s.project_id = (SELECT project_id FROM items WHERE id = ?)",
         )
         .bind(item_id.to_string())
         .fetch_all(self.pool())

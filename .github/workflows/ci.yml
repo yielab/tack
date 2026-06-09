@@ -45,3 +45,16 @@ jobs:
         run: npm run type-check
       - name: Build
         run: npm run build
+      - name: Bundle size gate (entry bundle < 30 KB gzipped)
+        # Routes are now lazy-loaded; only the entry (solid-js runtime) and
+        # router chunks are always downloaded.  Check those stay under 30 KB.
+        run: |
+          TOTAL=0
+          for f in dist/assets/index-*.js dist/assets/routing-*.js; do
+            [ -f "$f" ] && TOTAL=$((TOTAL + $(gzip -c "$f" | wc -c)))
+          done
+          echo "Entry bundle gzipped: $TOTAL bytes (limit 30720 = 30 KB)"
+          if [ "$TOTAL" -gt 30720 ]; then
+            echo "ERROR: entry bundle exceeds 30 KB gzip limit"
+            exit 1
+          fi
