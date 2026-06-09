@@ -15,6 +15,7 @@ const CustomFieldsManager = lazy(
 const Templates = lazy(() => import('../features/templates/Templates'));
 const TemplateCreator = lazy(() => import('../features/templates/TemplateCreator'));
 const Settings = lazy(() => import('../features/settings/Settings'));
+const GlobalSettings = lazy(() => import('../features/settings/GlobalSettings'));
 
 export const routes: RouteDefinition[] = [
   { path: '/', component: Projects },
@@ -33,5 +34,5 @@ export const routes: RouteDefinition[] = [
   { path: '/templates/new', component: TemplateCreator },
   { path: '/board', component: Board },
   { path: '/list', component: List },
-  { path: '/settings', component: Settings },
+  { path: '/settings', component: GlobalSettings },
 ];
