@@ -574,6 +574,18 @@ No raw `fetch` outside `shared/api/`. No absolute API hosts anywhere.
 
 ## T-515 · Frontend build → `embed-spa` pipeline wiring · S
 
+> **Status: ✅ Done.** Added a one-command `make build-spa` target: `npm --prefix frontend
+> ci` → `npm --prefix frontend run build` → `cargo build -p flexpm-api --release --features
+> embed-spa`, printing the single-binary path. Documented the single-binary path in
+> `docs/DEPLOYMENT-GUIDE.md` ("Option 3: Single binary (embedded SPA)") including the
+> relative-`/api` reason it serves same-origin. The CI `embed-spa` job already consumes the
+> frontend job's `dist/` artifact and runs the feature-gated clippy/test/release build, and
+> the frontend job enforces the < 30 KB gzipped entry-bundle gate
+> (`.github/workflows/ci.yml`). **Not run locally:** `cargo` isn't installed in this
+> environment, so the release binary build/size was not executed here — it's exercised by
+> the existing CI job (the SPA handler `embed-spa` feature, and the `dist/` it embeds, were
+> already in place from T-403).
+
 - **Why:** T-403 added the backend `embed-spa` feature reading `frontend/dist/`; the
   frontend-side build/handoff and a one-command path should be documented and scripted.
 - **Files:** `Makefile` (or `package.json` script), `docs/DEPLOYMENT-GUIDE.md`, CI job.
