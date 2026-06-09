@@ -40,7 +40,10 @@ export function createWebSocketManager(projectId: string, baseUrl?: string): Web
     const base = baseUrl || window.location.origin;
     const protocol = base.startsWith('https') ? 'wss' : 'ws';
     const host = base.replace(/^https?:\/\//, '');
-    return `${protocol}://${host}/api/projects/${projectId}/board/live`;
+    // NOTE: route is `/boards/live` (plural). Event-payload parsing in this
+    // legacy manager is still PascalCase/`event_type`-shaped and is replaced by
+    // shared/realtime/boardSocket.ts during T-513.
+    return `${protocol}://${host}/api/projects/${projectId}/boards/live`;
   };
 
   const connect = () => {

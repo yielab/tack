@@ -1,6 +1,6 @@
 import { createSignal, createResource, For, Show } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
-import { api } from '../lib/api';
+import { api } from '../shared/api';
 import { toast } from '../lib/toast';
 
 interface CustomField {
@@ -33,11 +33,10 @@ export default function CustomFieldsManager() {
   const [options, setOptions] = createSignal('');
 
   const [fields, { refetch }] = createResource(() =>
-    fetch(`http://localhost:3210/api/projects/${projectId}/custom-fields`)
-      .then(res => res.json())
+    api.customFields.list(projectId)
   );
 
-  const [project] = createResource(() => api.getProject(projectId));
+  const [project] = createResource(() => api.projects.get(projectId));
 
   const fieldTypes = [
     { value: 'text', label: 'Text', icon: '📝', description: 'Short text input' },
@@ -98,18 +97,10 @@ export default function CustomFieldsManager() {
 
     try {
       if (editingField()) {
-        await fetch(`http://localhost:3210/api/custom-fields/${editingField()!.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
+        await api.customFields.update(editingField()!.id, body);
         toast.success('Field updated successfully');
       } else {
-        await fetch(`http://localhost:3210/api/projects/${projectId}/custom-fields`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
+        await api.customFields.create(projectId, body);
         toast.success('Field created successfully');
       }
 
@@ -124,9 +115,7 @@ export default function CustomFieldsManager() {
     if (!confirm('Are you sure? This will delete all values for this field.')) return;
 
     try {
-      await fetch(`http://localhost:3210/api/custom-fields/${fieldId}`, {
-        method: 'DELETE',
-      });
+      await api.customFields.remove(fieldId);
       toast.success('Field deleted');
       refetch();
     } catch (error) {

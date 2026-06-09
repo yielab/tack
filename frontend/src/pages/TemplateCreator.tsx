@@ -1,6 +1,7 @@
 import { createSignal } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
 import { toast } from '../lib/toast';
+import { api } from '../shared/api';
 
 export default function TemplateCreator() {
   const navigate = useNavigate();
@@ -24,25 +25,18 @@ export default function TemplateCreator() {
     e.preventDefault();
 
     try {
-      const response = await fetch('http://localhost:3210/api/templates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name().trim(),
-          description: description().trim() || null,
-          project_type: projectType(),
-          // For now, use defaults. In a full implementation, we'd have
-          // forms for customizing vocabulary, workflow, custom_fields, etc.
-          vocabulary: null,
-          workflow: null,
-          custom_fields: null,
-          default_boards: null,
-        }),
+      // For now, use defaults. In a full implementation, we'd have forms for
+      // customizing vocabulary, workflow, custom_fields, etc.
+      await api.templates.create({
+        name: name().trim(),
+        description: description().trim() || null,
+        project_type: projectType(),
+        vocabulary: null,
+        workflow: null,
+        custom_fields: null,
+        default_boards: null,
       });
 
-      if (!response.ok) throw new Error('Failed to create template');
-
-      await response.json();
       toast.success(`Template "${name()}" created!`);
       navigate('/templates');
     } catch (error) {
