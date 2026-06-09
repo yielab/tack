@@ -1,4 +1,4 @@
-.PHONY: build run test check lint fmt clean dev reset-db help
+.PHONY: build build-spa run test check lint fmt clean dev reset-db help
 
 # ─── Default ──────────────────────────────────────
 help: ## Show this help
@@ -10,6 +10,14 @@ build: ## Build all crates (debug)
 
 release: ## Build all crates (release, optimized)
 	cargo build --release
+
+build-spa: ## Build the SPA and embed it into a single release binary (serves /api + UI same-origin)
+	npm --prefix frontend ci
+	npm --prefix frontend run build
+	cargo build -p flexpm-api --release --features embed-spa
+	@echo ""
+	@echo "✓ Single binary: target/release/flexpm-api"
+	@echo "  Serves the API at /api/* and the SPA same-origin from one process."
 
 # ─── Running ─────────────────────────────────────
 run: ## Start the API server

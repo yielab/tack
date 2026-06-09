@@ -173,6 +173,32 @@ npm ci
 npm run build
 ```
 
+### Option 3: Single binary (embedded SPA)
+
+For the simplest deployment, embed the built SPA into the API binary so one
+process serves both the API (`/api/*`) and the UI (same-origin — no CORS, no
+separate static host). From a clean checkout, one command does everything:
+
+```bash
+make build-spa
+# → builds frontend/dist, then:
+#   cargo build -p flexpm-api --release --features embed-spa
+# Produces: target/release/flexpm-api  (~5 MB)
+```
+
+Run it anywhere — it needs only the SQLite database path:
+
+```bash
+FLEXPM_DATABASE_URL="sqlite:/var/lib/flexpm/flexpm.db?mode=rwc" \
+  ./target/release/flexpm-api
+# Open http://<host>:3210/  → the SPA loads and talks to /api same-origin.
+```
+
+The frontend client defaults to a **relative** `/api` base
+(`.env.production` → `VITE_API_URL=/api`), which is what makes same-origin work.
+CI builds the SPA once and the `embed-spa` job consumes that `dist/` to compile
+and test the feature-gated binary (`.github/workflows/ci.yml`).
+
 **2. Install as systemd service:**
 
 ```bash
