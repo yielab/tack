@@ -4,7 +4,7 @@ import { api } from '../../shared/api';
 import type { BoardColumn, Item, BoardState } from '../../types/api';
 import CreateItemModal from '../../shared/ui/CreateItemModal';
 import BoardSelector from './BoardSelector';
-import { useWebSocket, type BoardEvent } from '../../shared/realtime/websocket';
+import { createBoardSocket, type BoardSocket, type SocketStatus } from '../../shared/realtime/boardSocket';
 import { useKeyboard, keyboardManager, type ShortcutContext } from '../../shared/keyboard/keyboard';
 import CommandPalette, { type Command } from '../../shared/ui/CommandPalette';
 import { withOptimisticUpdate } from '../../shared/state/optimistic';
@@ -223,28 +223,37 @@ const Board: Component = () => {
   // Get the current board state (optimistic or real)
   const currentBoard = (): BoardState | null | undefined => optimisticBoardState() || board();
 
-  // WebSocket connection for real-time updates
-  const wsManager = useWebSocket(projectId());
+  // Real-time board updates via the reconnecting socket (T-513). The socket
+  // filters to this project and parses the backend's snake_case events; any
+  // board-relevant event refreshes the board so other clients' edits appear
+  // without a manual reload.
+  const [sock, setSock] = createSignal<BoardSocket>();
+  const socketStatus = (): SocketStatus => sock()?.status() ?? 'closed';
 
-  // Handle WebSocket events
   createEffect(() => {
-    if (!wsManager) return;
-
-    const cleanup = wsManager.onEvent((event: BoardEvent) => {
-      console.log('[Board] Received WebSocket event:', event.event_type);
-
-      // Auto-refresh board on any item change
-      if (
-        event.event_type === 'ItemCreated' ||
-        event.event_type === 'ItemUpdated' ||
-        event.event_type === 'ItemDeleted' ||
-        event.event_type === 'BoardConfigUpdated'
-      ) {
-        refetch();
-      }
+    const pid = projectId();
+    if (!pid) {
+      setSock(undefined);
+      return;
+    }
+    const s = createBoardSocket(pid);
+    const off = s.onEvent(() => void refetch());
+    setSock(s);
+    onCleanup(() => {
+      off();
+      s.close();
     });
+  });
 
-    return cleanup;
+  // Resync when the connection comes back after dropping.
+  let wasReconnecting = false;
+  createEffect(() => {
+    const st = socketStatus();
+    if (st === 'reconnecting') wasReconnecting = true;
+    else if (st === 'open' && wasReconnecting) {
+      wasReconnecting = false;
+      void refetch();
+    }
   });
 
   // Keyboard shortcuts
@@ -501,22 +510,21 @@ const Board: Component = () => {
             </button>
 
             {/* Connection Status Indicator */}
-            <Show when={wsManager}>
+            <Show when={sock()}>
               <div class="flex items-center gap-2 text-sm">
                 <div
                   class="w-2 h-2 rounded-full"
                   classList={{
-                    'bg-green-500 animate-pulse': wsManager!.status() === 'connected',
-                    'bg-yellow-500': wsManager!.status() === 'connecting',
-                    'bg-gray-400': wsManager!.status() === 'disconnected',
-                    'bg-red-500': wsManager!.status() === 'error',
+                    'bg-green-500 animate-pulse': socketStatus() === 'open',
+                    'bg-yellow-500': socketStatus() === 'connecting' || socketStatus() === 'reconnecting',
+                    'bg-gray-400': socketStatus() === 'closed',
                   }}
                 />
                 <span style={{ color: "var(--color-text-secondary)" }}>
-                  {wsManager!.status() === 'connected' && 'Live'}
-                  {wsManager!.status() === 'connecting' && 'Connecting...'}
-                  {wsManager!.status() === 'disconnected' && 'Offline'}
-                  {wsManager!.status() === 'error' && 'Connection Error'}
+                  {socketStatus() === 'open' && 'Live'}
+                  {socketStatus() === 'connecting' && 'Connecting…'}
+                  {socketStatus() === 'reconnecting' && 'Reconnecting…'}
+                  {socketStatus() === 'closed' && 'Offline'}
                 </span>
               </div>
             </Show>

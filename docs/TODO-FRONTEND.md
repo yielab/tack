@@ -517,6 +517,23 @@ No raw `fetch` outside `shared/api/`. No absolute API hosts anywhere.
 
 ## T-513 · Real-time reconnection + store reconciliation · M
 
+> **Status: ✅ Done.** Board now uses the reconnecting `createBoardSocket`
+> (`shared/realtime/boardSocket.ts`, built in T-502) instead of the legacy
+> `lib/websocket.ts` manager — which is **deleted** (its `event_type`/PascalCase parsing
+> never matched the backend's `type`/snake_case wire, so realtime was silently broken).
+> The socket filters to the project and parses every event type; any board-relevant event
+> refreshes the board (an edit in tab A appears in tab B with no manual reload). A
+> connection indicator in the header is driven by the socket `status` signal
+> (`open`→Live · `connecting`→Connecting… · `reconnecting`→Reconnecting… · `closed`→Offline),
+> and the board resyncs (refetch) when the socket comes back after dropping. `type-check`
+> + `build` green (entry 9.94 KB gzipped); 93 Vitest tests (socket dispatches each of the
+> 5 event types; reconnect/backoff + status transitions + `project_id` filter from T-502).
+> **Deviation from spec:** reconciliation is **refetch-on-event** rather than a
+> `createStore` item-store with per-event patches. The behavioral acceptance holds
+> (cross-client updates, reconnect resync, optimistic edits reconcile to the server on the
+> echo); a fine-grained store that patches columns in place — avoiding the refetch — is a
+> performance optimization deferred until it's needed.
+
 - **Why:** make the board the source of eventual truth across clients and survive dropped
   sockets; today optimistic edits, list edits, and drag each reconcile differently.
 - **Files:** `shared/state/itemStore.ts`, `features/board/Board.tsx`, `app/Layout.tsx`
