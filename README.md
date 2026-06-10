@@ -70,74 +70,47 @@ FlexPM is also a deliberate exploration of stacks. Rust (Axum, sqlx), modular cr
 
 The honest answer is split between technical fit and deliberate learning.
 
-**Technical fit:** A local-first tool that ships as a single binary with no runtime dependencies and a SQLite file as its only data store is a genuinely good fit for Rust. The binary is ~5 MB statically linked, starts in milliseconds, and uses negligible memory at rest. The ownership model catches data races at compile time — relevant for the async WebSocket broadcast layer. `sqlx` validates SQL queries at compile time against the actual schema, so a renamed column is a build error, not a runtime crash.
+**Technical fit:** A local-first tool that ships as a single binary with no runtime dependencies and a SQLite file as its only data store is a genuinely good fit for Rust. The binary is ~5 MB statically linked, starts in milliseconds, and uses negligible memory at rest.
 
-**Learning purpose:** My day-to-day work runs on more standard stacks (Node.js, Python, Go). I picked Rust specifically because it forces explicit thinking about things those languages abstract away — memory layout, async runtimes, error propagation without exceptions. FlexPM was scoped large enough to encounter those problems in real form: async handlers, a multi-crate workspace with strict layering, compile-time SQL, a broadcast channel for WebSockets. A todo-list tutorial would not have surfaced any of that.
-
-The tradeoff is real: compile times are slow, the learning curve is steep, and some things that are trivial in Go take three times as long to write correctly in Rust. For a production team under deadline, that calculus is different. For a project whose secondary goal is to understand the language deeply, it is the point.
+**Learning purpose:** My day-to-day work runs on more standard stacks. I picked Rust specifically because it forces explicit thinking about things those languages abstract away — memory layout, async runtimes, error propagation without exceptions. FlexPM was scoped large enough to encounter those problems in real form: async handlers, a multi-crate workspace with strict layering, compile-time SQL, a broadcast channel for WebSockets. A todo-list tutorial would not have surfaced any of that.
 
 ---
 
-## Quick Start (development)
+## Getting Started
+
+### Run it (single binary)
 
 **Prerequisites:** [Rust toolchain](https://rustup.rs/) · [Node.js 20+](https://nodejs.org/)
-
-Two processes run side by side: the Rust API and the Vite frontend dev server. Start the API first, then the frontend.
 
 ```bash
 git clone https://github.com/santiagoyie/flexpm.git
 cd flexpm
-
-# Terminal 1 — API server (http://127.0.0.1:3210)
-cargo run --bin flexpm-api
-
-# Terminal 2 — Frontend dev server (proxies /api → 127.0.0.1:3210)
-cd frontend && npm install && npm run dev
-```
-
-**Open the URL Vite prints on startup:**
-
-```text
-➜  Local:   http://localhost:5173/
-```
-
-> If port 5173 is taken, Vite uses the next free port and prints it. The dev server
-> hot-reloads and proxies all `/api` calls to the API server — keep Terminal 1 running.
-
-The API server auto-creates `flexpm.db` and runs all 16 migrations on first start.
-
-```bash
-# Verify the API is up
-curl http://localhost:3210/api/health
-# {"status":"ok","version":"0.1.0","migrations_applied":16}
-```
-
-The fresh database is empty — open the UI and create a project (or press **Ctrl+K**) to get started.
-
-### Single-binary mode (API + SPA in one process)
-
-`cargo run --bin flexpm-api` serves the API only. To also serve the SPA from the same binary (e.g. behind Caddy), use the `embed-spa` feature — see [Single-binary distribution](#single-binary-distribution) below.
-
----
-
-## Single-binary distribution
-
-Build one binary that serves both the API and the embedded SPA:
-
-```bash
-# 1. Build the frontend
-cd frontend && npm ci && npm run build && cd ..
-
-# 2. Build the API with the embedded SPA feature
-cargo build --release --features embed-spa -p flexpm-api
-
-# Resulting binary: target/release/flexpm-api (~5 MB)
-# Serves API at /api/* and the SPA at all other paths.
+make build-spa          # builds frontend then compiles a ~5 MB release binary
 ./target/release/flexpm-api
-# open http://127.0.0.1:3210
 ```
 
-Without `--features embed-spa` the binary is API-only; use the dev server or any static file host for the frontend.
+Open **`http://127.0.0.1:3210`** — the binary serves the API and the full UI from a single process. No separate frontend server, no config needed. The database (`flexpm.db`) and storage directory are created automatically on first start.
+
+### Develop it
+
+```bash
+make dev                # starts API + frontend dev server, Ctrl-C stops both
+```
+
+The API runs at `http://127.0.0.1:3210`. Vite starts at `http://localhost:5173` and proxies all `/api` requests to the API — open the Vite URL. Both hot-reload on save: Rust rebuilds on code changes (requires [`cargo-watch`](https://crates.io/crates/cargo-watch) if you want auto-restart), frontend reloads instantly.
+
+First run installs frontend dependencies automatically.
+
+### Other useful commands
+
+```bash
+make test               # run all 92 tests
+make lint               # clippy
+make fmt                # rustfmt + prettier
+make debug              # API only, verbose logging
+make reset-db           # wipe the database and start fresh
+make help               # full command list
+```
 
 ---
 

@@ -20,10 +20,19 @@ build-spa: ## Build the SPA and embed it into a single release binary (serves /a
 	@echo "  Serves the API at /api/* and the SPA same-origin from one process."
 
 # ─── Running ─────────────────────────────────────
-run: ## Start the API server
-	cargo run --bin flexpm-api
+dev: frontend/node_modules ## Start API + frontend dev server — Ctrl-C stops both
+	@trap 'kill 0' SIGINT; \
+	cargo run --bin flexpm-api & \
+	npm --prefix frontend run dev & \
+	wait
 
-dev: ## Start the API server with debug logging
+frontend/node_modules:
+	npm --prefix frontend install
+
+run: ## Run the release binary (build-spa first)
+	./target/release/flexpm-api
+
+debug: ## Start API with verbose logging (no frontend)
 	RUST_LOG=flexpm_api=debug,flexpm_db=debug,tower_http=debug cargo run --bin flexpm-api
 
 cli: ## Run the CLI (use ARGS="..." to pass arguments)
