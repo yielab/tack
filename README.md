@@ -66,6 +66,16 @@ Existing PM tools either lock you into one workflow (Jira), require accounts and
 
 FlexPM is also a deliberate exploration of stacks. Rust (Axum, sqlx), modular crate architecture with strict layering (no I/O in the domain crate), and SolidJS are all areas I wanted to work with in a project of meaningful scope.
 
+### Why Rust?
+
+The honest answer is split between technical fit and deliberate learning.
+
+**Technical fit:** A local-first tool that ships as a single binary with no runtime dependencies and a SQLite file as its only data store is a genuinely good fit for Rust. The binary is ~5 MB statically linked, starts in milliseconds, and uses negligible memory at rest. The ownership model catches data races at compile time — relevant for the async WebSocket broadcast layer. `sqlx` validates SQL queries at compile time against the actual schema, so a renamed column is a build error, not a runtime crash.
+
+**Learning purpose:** My day-to-day work runs on more standard stacks (Node.js, Python, Go). I picked Rust specifically because it forces explicit thinking about things those languages abstract away — memory layout, async runtimes, error propagation without exceptions. FlexPM was scoped large enough to encounter those problems in real form: async handlers, a multi-crate workspace with strict layering, compile-time SQL, a broadcast channel for WebSockets. A todo-list tutorial would not have surfaced any of that.
+
+The tradeoff is real: compile times are slow, the learning curve is steep, and some things that are trivial in Go take three times as long to write correctly in Rust. For a production team under deadline, that calculus is different. For a project whose secondary goal is to understand the language deeply, it is the point.
+
 ---
 
 ## Quick Start (development)
