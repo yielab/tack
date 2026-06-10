@@ -49,7 +49,8 @@ impl IntoResponse for ApiError {
                 | CoreError::InvalidVocabularyKey(_)
                 | CoreError::EmptyWorkflow
                 | CoreError::HasChildren(_, _)
-                | CoreError::Validation(_) => (StatusCode::BAD_REQUEST, err.to_string()),
+                | CoreError::Validation(_)
+                | CoreError::InvalidWorkflow(_) => (StatusCode::BAD_REQUEST, err.to_string()),
             },
             ApiError::Dependency(err) => match err {
                 DependencyError::Core(_) => (StatusCode::BAD_REQUEST, err.to_string()),

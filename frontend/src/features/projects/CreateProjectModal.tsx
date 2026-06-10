@@ -1,7 +1,8 @@
 import { type Component, createSignal, Show } from 'solid-js';
 import { Modal, Button, Field, Select, FieldShell } from '../../shared/ui';
 import { api } from '../../shared/api';
-import type { CreateProject } from '../../shared/types';
+// 1. Added ProjectType to the imports
+import type { ProjectType } from '../../shared/types'; 
 import { toast } from '../../shared/ui/toast';
 
 const PROJECT_TYPE_OPTIONS = [
@@ -24,7 +25,8 @@ export interface CreateProjectModalProps {
 const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
   const [name, setName] = createSignal('');
   const [description, setDescription] = createSignal('');
-  const [projectType, setProjectType] = createSignal('software');
+  // 2. Strongly typed the signal
+  const [projectType, setProjectType] = createSignal<ProjectType>('software'); 
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal('');
 
@@ -42,7 +44,8 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
       await api.projects.create({
         name: name().trim(),
         description: description().trim() || undefined,
-        project_type: projectType() as CreateProject['project_type'],
+        // Since projectType is strictly typed now, no need for the "as CreateProject['project_type']" cast here!
+        project_type: projectType(), 
       });
 
       // Reset form
@@ -118,7 +121,8 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
         <Select
           label="Project Type"
           value={projectType()}
-          onChange={(e) => setProjectType(e.currentTarget.value)}
+          // 3. Cast the generic string from the HTML event to ProjectType
+          onChange={(e) => setProjectType(e.currentTarget.value as ProjectType)} 
           disabled={loading()}
           options={PROJECT_TYPE_OPTIONS}
           hint="Determines default workflow and terminology"

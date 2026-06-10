@@ -51,24 +51,6 @@ describe('api.items', () => {
   });
 });
 
-describe('api.boards (BoardsManager / BoardSelector)', () => {
-  it('list → GET /api/projects/{id}/boards', async () => {
-    await api.boards.list('p1');
-    expect(lastCall()).toMatchObject({ url: '/api/projects/p1/boards', method: 'GET' });
-  });
-  it('create → POST /api/projects/{id}/boards', async () => {
-    await api.boards.create('p1', { name: 'Main' });
-    expect(lastCall()).toMatchObject({ url: '/api/projects/p1/boards', method: 'POST' });
-  });
-  it('update → PATCH /api/boards/{id}', async () => {
-    await api.boards.update('b1', { is_default: true });
-    expect(lastCall()).toMatchObject({ url: '/api/boards/b1', method: 'PATCH' });
-  });
-  it('remove → DELETE /api/boards/{id}', async () => {
-    await api.boards.remove('b1');
-    expect(lastCall()).toMatchObject({ url: '/api/boards/b1', method: 'DELETE' });
-  });
-});
 
 describe('api.sprints (Sprints)', () => {
   it('list → GET /api/projects/{id}/sprints', async () => {
@@ -151,12 +133,6 @@ describe('api.search', () => {
 
 // ─── T-502 parity additions ──────────────────────────────────────────────
 
-describe('api.boards.view (drift fix)', () => {
-  it('view → GET /api/boards/{id}/view', async () => {
-    await api.boards.view('b1');
-    expect(lastCall()).toMatchObject({ url: '/api/boards/b1/view', method: 'GET' });
-  });
-});
 
 describe('api.comments', () => {
   it('list → GET /api/items/{id}/comments', async () => {

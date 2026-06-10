@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use flexpm_api::config::AppConfig;
 use flexpm_api::router::{AppState, build_router};
-use flexpm_db::{Repository, init_pool, migrations};
+use flexpm_db::{Repository, init_pool, migrations, repo};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -29,6 +29,7 @@ async fn main() -> anyhow::Result<()> {
     // Initialize database
     let pool = init_pool(&config.database_url).await?;
     migrations::run_all(&pool).await?;
+    repo::templates::seed_builtin_templates(&pool).await?;
 
     // Ensure a default workspace exists
     let workspace_id = ensure_default_workspace(&pool).await?;

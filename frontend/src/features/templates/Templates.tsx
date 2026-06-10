@@ -5,6 +5,24 @@ import { api } from '../../shared/api';
 import { Button, Field, FieldShell, Modal, Badge, EmptyState } from '../../shared/ui';
 import type { ProjectTemplate } from '../../shared/types';
 
+function templateSummaryChips(t: ProjectTemplate) {
+  const chips: { label: string; tone?: 'info' | 'success' | 'warning' }[] = [];
+
+  const statusCount = t.workflow?.statuses?.length ?? 0;
+  if (statusCount > 0) chips.push({ label: `${statusCount} statuses` });
+
+  const vocabCount = t.vocabulary ? Object.keys(t.vocabulary).length : 0;
+  if (vocabCount > 0) chips.push({ label: `${vocabCount} vocab overrides` });
+
+  const fieldCount = t.custom_fields?.length ?? 0;
+  if (fieldCount > 0) chips.push({ label: `${fieldCount} custom fields`, tone: 'success' });
+
+  const boardCount = t.default_boards?.length ?? 0;
+  if (boardCount > 0) chips.push({ label: `${boardCount} board${boardCount > 1 ? 's' : ''}` });
+
+  return chips;
+}
+
 export default function Templates() {
   const navigate = useNavigate();
   const [selectedType, setSelectedType] = createSignal<string | null>(null);
@@ -157,10 +175,22 @@ export default function Templates() {
 
                   {/* Description */}
                   <Show when={template.description}>
-                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
                       {template.description}
                     </p>
                   </Show>
+
+                  {/* Content summary chips */}
+                  {(() => {
+                    const chips = templateSummaryChips(template);
+                    return chips.length > 0 ? (
+                      <div class="flex flex-wrap gap-1.5 mb-3">
+                        <For each={chips}>
+                          {(chip) => <Badge tone={chip.tone}>{chip.label}</Badge>}
+                        </For>
+                      </div>
+                    ) : null;
+                  })()}
 
                   {/* Actions */}
                   <div class="flex gap-2 mt-4">

@@ -22,6 +22,31 @@ pub async fn create_template(
     State(state): State<AppState>,
     Json(data): Json<CreateProjectTemplate>,
 ) -> Result<Json<ProjectTemplate>, StatusCode> {
+    // Validate workflow shape if provided
+    if let Some(ref wf) = data.workflow {
+        wf.validate().map_err(|e| {
+            tracing::warn!(error = %e, "Template workflow validation failed");
+            StatusCode::UNPROCESSABLE_ENTITY
+        })?;
+    }
+
+    // Validate custom field options: Select/MultiSelect require at least one option
+    if let Some(ref fields) = data.custom_fields {
+        for f in fields {
+            if matches!(f.field_type, CustomFieldType::Select | CustomFieldType::MultiSelect) {
+                let has_options = f
+                    .options
+                    .as_ref()
+                    .map(|o| !o.is_empty())
+                    .unwrap_or(false);
+                if !has_options {
+                    tracing::warn!(field_name = %f.name, "Select field missing options");
+                    return Err(StatusCode::UNPROCESSABLE_ENTITY);
+                }
+            }
+        }
+    }
+
     repo::templates::create_template(state.pool(), data)
         .await
         .map(Json)
@@ -200,6 +225,114 @@ pub async fn create_project_from_template(
             StatusCode::NOT_FOUND
         })
         .map(Json)
+}
+
+// ─── Save project as template ────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct SaveAsTemplateRequest {
+    pub name: String,
+    pub description: Option<String>,
+}
+
+/// POST /api/projects/:id/save-as-template — Snapshot a project's configuration as a reusable template
+#[instrument(skip(state))]
+pub async fn save_project_as_template(
+    State(state): State<AppState>,
+    Path(project_id): Path<Uuid>,
+    Json(data): Json<SaveAsTemplateRequest>,
+) -> Result<Json<ProjectTemplate>, StatusCode> {
+    let project = state
+        .repo
+        .get_project(project_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, project_id = %project_id, "Failed to get project");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    // Snapshot custom field definitions (strip per-project ids so they become template-level)
+    let field_defs = repo::custom_fields::list_fields_for_project(state.pool(), project_id)
+        .await
+        .unwrap_or_default();
+
+    let now = chrono::Utc::now();
+    let custom_fields: Vec<CustomFieldDefinition> = field_defs
+        .into_iter()
+        .map(|f| CustomFieldDefinition {
+            id: Uuid::new_v4(),
+            project_id: None,
+            name: f.name,
+            field_type: f.field_type,
+            description: f.description,
+            required: f.required,
+            default_value: f.default_value,
+            options: f.options,
+            validation: f.validation,
+            created_at: now,
+            updated_at: now,
+        })
+        .collect();
+
+    // Snapshot boards — columns are derived from workflow statuses
+    let boards = repo::boards::list_boards(state.pool(), project_id)
+        .await
+        .unwrap_or_default();
+
+    let status_names: Vec<String> = project
+        .workflow
+        .statuses
+        .iter()
+        .map(|s| s.name.clone())
+        .collect();
+
+    let default_boards: Vec<BoardTemplate> = boards
+        .into_iter()
+        .map(|b| BoardTemplate {
+            name: b.name,
+            description: b.description,
+            columns: status_names
+                .iter()
+                .map(|s| BoardColumn {
+                    status: s.clone(),
+                    wip_limit: None,
+                    collapsed: false,
+                })
+                .collect(),
+            filters: b.filters,
+            grouping: b.grouping.map(grouping_to_string),
+        })
+        .collect();
+
+    let template_data = CreateProjectTemplate {
+        name: data.name,
+        description: data.description,
+        project_type: project.project_type,
+        vocabulary: Some(project.vocabulary),
+        workflow: Some(project.workflow),
+        custom_fields: if custom_fields.is_empty() { None } else { Some(custom_fields) },
+        default_boards: if default_boards.is_empty() { None } else { Some(default_boards) },
+    };
+
+    repo::templates::create_template(state.pool(), template_data)
+        .await
+        .map(Json)
+        .map_err(|e| {
+            tracing::error!(error = %e, project_id = %project_id, "Failed to save project as template");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
+}
+
+fn grouping_to_string(g: BoardGrouping) -> String {
+    match g {
+        BoardGrouping::Status => "status".to_string(),
+        BoardGrouping::Priority => "priority".to_string(),
+        BoardGrouping::ItemType => "item_type".to_string(),
+        BoardGrouping::Sprint => "sprint".to_string(),
+        BoardGrouping::Assignee => "assignee".to_string(),
+        BoardGrouping::CustomField(id) => format!("custom_field:{id}"),
+    }
 }
 
 /// Helper: Get or create default workspace

@@ -1,16 +1,17 @@
-import { createResource, For, Show, createSignal, createEffect, onMount, onCleanup, type Component } from 'solid-js';
+import { createMemo, For, Show, createSignal, createEffect, onMount, onCleanup, type Component } from 'solid-js';
 import { useParams, useSearchParams } from '@solidjs/router';
 import { api } from '../../shared/api';
+import { deriveBoard } from '../../shared/api/boards';
 import type { BoardColumn, Item, BoardState } from '../../types/api';
 import CreateItemModal from '../../shared/ui/CreateItemModal';
-import BoardSelector from './BoardSelector';
 import { createBoardSocket, type BoardSocket, type SocketStatus } from '../../shared/realtime/boardSocket';
 import { useKeyboard, keyboardManager, type ShortcutContext } from '../../shared/keyboard/keyboard';
 import { withOptimisticUpdate } from '../../shared/state/optimistic';
 import { BoardSkeleton } from '../../shared/ui/SkeletonScreen';
 import { useProject } from '../../shared/state/projectContext';
+import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
-import EmptyProjectGuide from '../onboarding/EmptyProjectGuide';
+import EmptyProjectGuide from '../../shared/ui/EmptyProjectGuide';
 
 const ItemCard: Component<{
   item: Item;
@@ -202,13 +203,17 @@ const BoardColumn: Component<{
 const Board: Component = () => {
   const params = useParams();
   const projectId = () => params.id;
-  const { vocabulary } = useProject();
+  const { vocabulary, project } = useProject();
+  const { items, loading, refetch } = useProjectItems();
   const [, setSearchParams] = useSearchParams();
 
-  const [board, { refetch }] = createResource(
-    projectId,
-    (id) => (id ? api.boards.projectBoardState(id) : Promise.resolve(null))
-  );
+  // Derive board columns from shared items + project workflow (no extra API call)
+  const boardStateFromServer = createMemo((): BoardState | null => {
+    const proj = project();
+    const its = items();
+    if (!proj || !its) return null;
+    return deriveBoard(proj, its);
+  });
 
   const [showCreateModal, setShowCreateModal] = createSignal(false);
   const [selectedColumn, setSelectedColumn] = createSignal<string | null>(null);
@@ -218,7 +223,7 @@ const Board: Component = () => {
   const [optimisticBoardState, setOptimisticBoardState] = createSignal<BoardState | null>(null);
 
   // Get the current board state (optimistic or real)
-  const currentBoard = (): BoardState | null | undefined => optimisticBoardState() || board();
+  const currentBoard = (): BoardState | null | undefined => optimisticBoardState() || boardStateFromServer();
 
   // Real-time board updates via the reconnecting socket (T-513). The socket
   // filters to this project and parses the backend's snake_case events; any
@@ -283,7 +288,7 @@ const Board: Component = () => {
   });
 
   const handleItemDrop = async (itemId: string, newStatus: string) => {
-    const realBoard = board();
+    const realBoard = boardStateFromServer();
     if (!realBoard) return;
 
     // Find the item being moved
@@ -345,14 +350,8 @@ const Board: Component = () => {
 
   return (
     <div>
-      <div class="mb-4 flex items-center justify-between">
-        {/* Board selector */}
-        <Show when={projectId()}>
-          <BoardSelector projectId={projectId()!} />
-        </Show>
-
-        {/* Live connection status */}
-        <Show when={sock()}>
+      <Show when={sock()}>
+        <div class="mb-4 flex items-center justify-end">
           <div class="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
             <div
               class="w-1.5 h-1.5 rounded-full"
@@ -366,11 +365,11 @@ const Board: Component = () => {
             {(socketStatus() === 'connecting' || socketStatus() === 'reconnecting') && 'Connecting…'}
             {socketStatus() === 'closed' && 'Offline'}
           </div>
-        </Show>
-      </div>
+        </div>
+      </Show>
 
       <Show
-        when={!board.loading}
+        when={!loading()}
         fallback={<BoardSkeleton />}
       >
         <Show when={projectId()}>

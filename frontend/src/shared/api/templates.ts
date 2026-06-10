@@ -30,4 +30,11 @@ export const templates = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  /** Snapshot a project's configuration (vocab, workflow, fields, boards) into a new template. */
+  saveProjectAsTemplate: (projectId: string, data: { name: string; description?: string | null }) =>
+    request<ProjectTemplate>(`/projects/${projectId}/save-as-template`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };

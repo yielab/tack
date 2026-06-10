@@ -132,6 +132,6 @@ export interface UpdateItem {
   estimate?: number;
   tags?: string[];
   parent_id?: string;
-  sprint_id?: string;
-  due_date?: string;
+  sprint_id?: string | null;
+  due_date?: string | null;
 }

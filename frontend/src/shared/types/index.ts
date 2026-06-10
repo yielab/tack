@@ -2,7 +2,8 @@
 // completes parity). Re-exports the legacy `types/api.ts` shapes and adds the
 // DTOs that previously lived inline in page components.
 
-export type {
+// 1. Import the legacy types so they can be referenced inside this file
+import type {
   Project,
   ProjectType,
   WorkflowConfig,
@@ -21,33 +22,25 @@ export type {
   BoardColumn,
 } from '../../types/api';
 
-// ─── Boards (multi-board) ──────────────────────────────────────────────────
-
-export interface Board {
-  id: string;
-  project_id: string;
-  name: string;
-  description: string | null;
-  filters: unknown;
-  grouping: string | null;
-  is_default: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreateBoard {
-  name: string;
-  description?: string | null;
-  grouping?: string | null;
-  is_default?: boolean;
-}
-
-export interface UpdateBoard {
-  name?: string;
-  description?: string | null;
-  grouping?: string | null;
-  is_default?: boolean;
-}
+// 2. Re-export them to maintain the single source of truth for the frontend
+export type {
+  Project,
+  ProjectType,
+  WorkflowConfig,
+  WorkflowStatus,
+  UpdateProject,
+  CreateProject,
+  Item,
+  ItemType,
+  Priority,
+  EstimateUnit,
+  CreateItem,
+  UpdateItem,
+  Sprint,
+  SprintStatus,
+  BoardState,
+  BoardColumn,
+};
 
 // ─── Custom fields (definitions) ───────────────────────────────────────────
 
@@ -66,7 +59,7 @@ export interface CustomField {
   id: string;
   project_id: string;
   name: string;
-  field_type: string;
+  field_type: CustomFieldType; // Fixed: strict union instead of string
   description: string | null;
   required: boolean;
   default_value: unknown;
@@ -78,27 +71,52 @@ export interface CustomField {
 
 export interface CreateCustomField {
   name: string;
-  field_type: string;
+  field_type: CustomFieldType; // Fixed: strict union instead of string
   description?: string | null;
   required?: boolean;
-  options?: string[];
+  options?: string[] | null; // Fixed: added null
 }
 
 export interface UpdateCustomField {
   name?: string;
-  field_type?: string;
+  field_type?: CustomFieldType; // Fixed: strict union instead of string
   description?: string | null;
   required?: boolean;
-  options?: string[];
+  options?: string[] | null; // Fixed: added null
 }
 
 // ─── Project templates ─────────────────────────────────────────────────────
+
+export interface TemplateCustomField {
+  name: string;
+  field_type: CustomFieldType; // Fixed: strict union instead of string
+  description?: string | null;
+  required?: boolean;
+  options?: string[] | null;
+}
+
+export interface TemplateBoardColumn {
+  status: string;
+  wip_limit?: number | null;
+  collapsed?: boolean;
+}
+
+export interface TemplateBoardConfig {
+  name: string;
+  description?: string | null;
+  columns: TemplateBoardColumn[];
+  is_default?: boolean;
+}
 
 export interface ProjectTemplate {
   id: string;
   name: string;
   description: string | null;
-  project_type: string;
+  project_type: ProjectType; // Fixed: explicit type parity
+  vocabulary: Record<string, string> | null;
+  workflow: WorkflowConfig | null;
+  custom_fields: TemplateCustomField[] | null;
+  default_boards: TemplateBoardConfig[] | null;
   is_builtin: boolean;
   created_at: string;
   updated_at: string;
@@ -107,11 +125,11 @@ export interface ProjectTemplate {
 export interface CreateTemplate {
   name: string;
   description?: string | null;
-  project_type: string;
-  vocabulary?: unknown;
-  workflow?: unknown;
-  custom_fields?: unknown;
-  default_boards?: unknown;
+  project_type: ProjectType; // Fixed: explicit type parity
+  vocabulary?: Record<string, string> | null;
+  workflow?: WorkflowConfig | null;
+  custom_fields?: TemplateCustomField[] | null;
+  default_boards?: TemplateBoardConfig[] | null;
 }
 
 export interface CreateProjectFromTemplate {
@@ -173,7 +191,7 @@ export interface Role {
 export interface CreateRole {
   name: string;
   color?: string;
-  icon?: string;
+  icon?: string | null; // Fixed: added null
 }
 
 // ─── Attachments ───────────────────────────────────────────────────────────
@@ -197,22 +215,6 @@ export interface CustomFieldValue {
   value: unknown;
   created_at: string;
   updated_at: string;
-}
-
-// ─── Board view (GET /boards/{id}/view) ────────────────────────────────────
-
-/** A column as returned by the backend board-view endpoint. Note the field is
- * `name`; the frontend `BoardColumn` calls the same concept `status`. */
-export interface BoardViewColumn {
-  name: string;
-  items: import('../../types/api').Item[];
-  wip_limit?: number;
-  wip_exceeded: boolean;
-}
-
-export interface BoardViewResponse {
-  board: Board;
-  columns: BoardViewColumn[];
 }
 
 // ─── Realtime board events (WebSocket) ─────────────────────────────────────
