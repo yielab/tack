@@ -5,16 +5,14 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 # ─── Building & Running ───────────────────────────
-build: ## Build the full app — frontend + release binary with embedded UI
+build: ## Compile — frontend + release binary with embedded UI (~30s first time)
 	npm --prefix frontend ci
 	npm --prefix frontend run build
 	cargo build -p flexpm-api --release --features embed-spa
 	@echo ""
-	@echo "  Binary: target/release/flexpm-api"
-	@echo "  Run:    ./target/release/flexpm-api"
-	@echo "  Open:   http://127.0.0.1:3210"
+	@echo "  Ready. Start with: make run"
 
-run: build ## Build and start the full app (API + UI, single process)
+run: ## Start the pre-built binary (run make build first)
 	./target/release/flexpm-api
 
 dev: frontend/node_modules ## Development mode: API + Vite hot-reload (Ctrl-C stops both)

@@ -85,10 +85,11 @@ The honest answer is split between technical fit and deliberate learning.
 ```bash
 git clone https://github.com/santiagoyie/flexpm.git
 cd flexpm
-make run
+make build   # compile: builds frontend then embeds it into the release binary (~30s)
+make run     # start: launches the pre-built binary, nothing is recompiled
 ```
 
-`make run` builds the frontend, compiles it into the binary, and starts the server. Open **`http://127.0.0.1:3210`** — one process serves everything. The database and storage directory are created automatically on first start.
+Open **`http://127.0.0.1:3210`** — one process serves everything. The database and storage directory are created automatically on first start. Re-run `make build` only when code changes; `make run` just starts what was already compiled.
 
 ### Develop it
 
