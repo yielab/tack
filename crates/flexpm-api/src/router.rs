@@ -89,6 +89,7 @@ pub fn build_router(state: AppState) -> Router {
         // ─── Export/Import ───────────────────────────────────────────────
         .route("/projects/{id}/export", get(export::export_project))
         .route("/projects/import", post(export::import_project))
+        .route("/projects/{id}/import-csv", post(export::import_csv))
         // ─── Items ───────────────────────────────────────────────────────
         .route("/projects/{project_id}/items", post(items::create_item))
         .route("/projects/{project_id}/items", get(items::list_items))
@@ -150,6 +151,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/projects/from-template/{id}",
             post(templates::create_project_from_template),
+        )
+        .route(
+            "/projects/{id}/save-as-template",
+            post(templates::save_project_as_template),
         )
         // ─── Custom Fields ───────────────────────────────────────────────
         .route(

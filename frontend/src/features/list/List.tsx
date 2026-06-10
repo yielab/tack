@@ -1,4 +1,4 @@
-import { createSignal, createResource, For, Show, createMemo, onMount, onCleanup } from 'solid-js';
+import { createSignal, For, Show, createMemo, onMount, onCleanup } from 'solid-js';
 import { useParams, useSearchParams } from '@solidjs/router';
 import {
   DragDropProvider,
@@ -11,11 +11,12 @@ import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
 import { type ItemTypeConfig } from '../../shared/vocab/vocab';
 import { useProject } from '../../shared/state/projectContext';
+import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import type { Item } from '../../types/api';
 import { Button } from '../../shared/ui';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
-import { FiPlus, FiMenu, FiCheck, FiX, FiChevronRight, FiChevronDown, FiTrash2 } from 'solid-icons/fi';
+import { FiPlus, FiMenu, FiCheck, FiX, FiChevronRight, FiChevronDown, FiTrash2, FiMaximize2, FiMinimize2 } from 'solid-icons/fi';
 
 type ItemType = 'epic' | 'feature' | 'task' | 'subtask' | 'bug' | 'requirement';
 type ItemWithChildren = Item & { children: ItemWithChildren[]; level: number };
@@ -31,7 +32,7 @@ export default function List() {
   const params = useParams();
   const projectId = params.id;
 
-  const [items, { refetch }] = createResource(() => projectId ? api.items.list(projectId) : Promise.resolve([]));
+  const { items, refetch } = useProjectItems();
   const { project } = useProject();
   const { types: vocabTypes } = useVocab();
   const types = createMemo(() => vocabTypes());
@@ -92,6 +93,23 @@ export default function List() {
     flatten(organizedItems());
     return result;
   });
+
+  const allExpandableIds = createMemo(() => {
+    const ids: string[] = [];
+    const collect = (items: ItemWithChildren[]) => {
+      for (const item of items) {
+        if (item.children.length > 0) {
+          ids.push(item.id);
+          collect(item.children);
+        }
+      }
+    };
+    collect(organizedItems());
+    return ids;
+  });
+
+  const expandAll = () => setExpandedItems(new Set(allExpandableIds()));
+  const collapseAll = () => setExpandedItems(new Set<string>());
 
   const toggleExpand = (itemId: string) => {
     setExpandedItems(prev => {
@@ -203,10 +221,36 @@ export default function List() {
               </p>
             </div>
 
-            <Button onClick={() => startCreating()}>
-              <FiPlus size={18} />
-              New Item
-            </Button>
+            <div class="flex items-center gap-2">
+              <Show when={allExpandableIds().length > 0}>
+                <button
+                  onClick={expandAll}
+                  class="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors"
+                  style={{ color: 'var(--color-text-secondary)', 'background-color': 'var(--color-bg-subtle)' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-primary-600)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
+                  title="Expand all"
+                >
+                  <FiMaximize2 size={14} />
+                  Expand all
+                </button>
+                <button
+                  onClick={collapseAll}
+                  class="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors"
+                  style={{ color: 'var(--color-text-secondary)', 'background-color': 'var(--color-bg-subtle)' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-primary-600)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
+                  title="Collapse all"
+                >
+                  <FiMinimize2 size={14} />
+                  Collapse all
+                </button>
+              </Show>
+              <Button onClick={() => startCreating()}>
+                <FiPlus size={18} />
+                New Item
+              </Button>
+            </div>
           </div>
         </div>
       </div>

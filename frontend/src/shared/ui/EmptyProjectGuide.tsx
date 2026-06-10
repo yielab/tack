@@ -89,11 +89,11 @@ const EmptyProjectGuide: Component<Props> = (props) => {
             description="Group items into time-boxed iterations to track progress."
             action={
               <A
-                href={`/projects/${pid()}/sprints`}
+                href={`/projects/${pid()}/sprint`}
                 class="inline-flex items-center gap-1 text-sm font-medium"
                 style={{ color: 'var(--color-text-tertiary)' }}
               >
-                Go to Sprints →
+                Go to Sprint →
               </A>
             }
           />

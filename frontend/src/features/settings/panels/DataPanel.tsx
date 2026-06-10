@@ -16,12 +16,13 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-/** Export this project (JSON/CSV) and import a project from a JSON snapshot. */
+/** Export this project (JSON/CSV) and import items or a full snapshot. */
 const DataPanel: Component = () => {
   const { projectId, project } = useProject();
   const navigate = useNavigate();
   const [busy, setBusy] = createSignal(false);
-  let importInput: HTMLInputElement | undefined;
+  let importJsonInput: HTMLInputElement | undefined;
+  let importCsvInput: HTMLInputElement | undefined;
 
   const exportAs = async (format: 'json' | 'csv') => {
     const id = projectId();
@@ -38,7 +39,7 @@ const DataPanel: Component = () => {
     }
   };
 
-  const importFrom = async (file: File) => {
+  const importFromJson = async (file: File) => {
     setBusy(true);
     try {
       const snapshot = JSON.parse(await file.text());
@@ -47,6 +48,21 @@ const DataPanel: Component = () => {
       navigate(`/projects/${created.id}/board`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Import failed (invalid file?)');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const importFromCsv = async (file: File) => {
+    const id = projectId();
+    if (!id) return;
+    setBusy(true);
+    try {
+      const text = await file.text();
+      const result = await api.data.importCsv(id, text);
+      toast.success(`Imported ${result.created} item${result.created !== 1 ? 's' : ''}${result.skipped > 0 ? ` (${result.skipped} skipped)` : ''}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'CSV import failed');
     } finally {
       setBusy(false);
     }
@@ -72,23 +88,49 @@ const DataPanel: Component = () => {
         <h3 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
           Import
         </h3>
-        <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-          Creates a new project from a previously exported JSON snapshot.
-        </p>
-        <Button onClick={() => importInput?.click()} disabled={busy()}>
-          Import from JSON…
-        </Button>
-        <input
-          ref={importInput}
-          type="file"
-          accept="application/json,.json"
-          class="hidden"
-          onChange={(e) => {
-            const f = e.currentTarget.files?.[0];
-            e.currentTarget.value = '';
-            if (f) void importFrom(f);
-          }}
-        />
+
+        <div class="space-y-3">
+          <div>
+            <p class="text-sm mb-2" style={{ color: 'var(--color-text-secondary)' }}>
+              Restore a full project from a previously exported JSON snapshot (creates a new project).
+            </p>
+            <Button onClick={() => importJsonInput?.click()} disabled={busy()}>
+              Import from JSON…
+            </Button>
+            <input
+              ref={importJsonInput}
+              type="file"
+              accept="application/json,.json"
+              class="hidden"
+              onChange={(e) => {
+                const f = e.currentTarget.files?.[0];
+                e.currentTarget.value = '';
+                if (f) void importFromJson(f);
+              }}
+            />
+          </div>
+
+          <div>
+            <p class="text-sm mb-2" style={{ color: 'var(--color-text-secondary)' }}>
+              Add items to this project from a CSV file. Required column: <code>title</code>.
+              Optional: <code>description</code>, <code>type</code>, <code>status</code>, <code>priority</code>, <code>assignee</code>, <code>estimate</code>.
+            </p>
+            <Button variant="secondary" onClick={() => importCsvInput?.click()} disabled={busy()}>
+              Import items from CSV…
+            </Button>
+            <input
+              ref={importCsvInput}
+              type="file"
+              accept="text/csv,.csv"
+              class="hidden"
+              onChange={(e) => {
+                const f = e.currentTarget.files?.[0];
+                e.currentTarget.value = '';
+                if (f) void importFromCsv(f);
+              }}
+            />
+          </div>
+        </div>
       </section>
     </div>
   );

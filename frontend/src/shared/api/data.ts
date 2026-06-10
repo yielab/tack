@@ -18,6 +18,14 @@ export const data = {
       body: JSON.stringify(snapshot),
     }),
 
+  /** Import items from a CSV file into an existing project. */
+  importCsv: (projectId: string, csvText: string) =>
+    request<{ created: number; skipped: number }>(`/projects/${projectId}/import-csv`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/csv' },
+      body: csvText,
+    }),
+
   /** Download a full SQLite database backup. */
   backup: () => requestBlob('/backup'),
 
