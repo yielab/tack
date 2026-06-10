@@ -1,363 +1,504 @@
-import { createSignal, createResource, For, Show } from 'solid-js';
-import { useParams } from '@solidjs/router';
+import { createSignal, createResource, createMemo, For, Show } from 'solid-js';
+import { useParams, useSearchParams } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
 import { Button, Field, FieldShell, Badge, Modal } from '../../shared/ui';
 import { useProject } from '../../shared/state/projectContext';
+import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import type { Sprint, Item } from '../../types/api';
+
+// ── Types ──────────────────────────────────────────────────────────────────
+
+type DropZone = 'backlog' | string; // 'backlog' or sprintId
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low', 'none'];
+
+function sortByPriority(items: Item[]) {
+  return [...items].sort(
+    (a, b) =>
+      PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority),
+  );
+}
+
+const STATUS_TONE = {
+  planning: 'warning',
+  active: 'success',
+  review: 'primary',
+  closed: 'neutral',
+} as const;
+
+const PRIORITY_DOT: Record<string, string> = {
+  critical: '#ef4444',
+  high: '#f97316',
+  medium: '#eab308',
+  low: '#22c55e',
+};
+
+function formatDate(d?: string) {
+  if (!d) return null;
+  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// ── Component ──────────────────────────────────────────────────────────────
 
 export default function Sprints() {
   const params = useParams();
   const projectId = params.id!;
+  const [, setSearchParams] = useSearchParams();
 
   const { project } = useProject();
   const { t } = useVocab();
-  const [sprints, { refetch: refetchSprints }] = createResource(
-    () => api.sprints.list(projectId)
+
+  const [sprints, { refetch: refetchSprints }] = createResource(() =>
+    api.sprints.list(projectId),
   );
-  const [items] = createResource(() => api.items.list(projectId));
+  const { items, refetch: refetchItems } = useProjectItems();
 
-  const [showCreateModal, setShowCreateModal] = createSignal(false);
+  // Sprint form
+  const [showModal, setShowModal] = createSignal(false);
   const [editingSprint, setEditingSprint] = createSignal<Sprint | null>(null);
-  const [loading, setLoading] = createSignal(false);
+  const [formName, setFormName] = createSignal('');
+  const [formGoal, setFormGoal] = createSignal('');
+  const [formStart, setFormStart] = createSignal('');
+  const [formEnd, setFormEnd] = createSignal('');
+  const [saving, setSaving] = createSignal(false);
 
-  // Form state
-  const [name, setName] = createSignal('');
-  const [goal, setGoal] = createSignal('');
-  const [startDate, setStartDate] = createSignal('');
-  const [endDate, setEndDate] = createSignal('');
+  // Drag state
+  const [dragOverZone, setDragOverZone] = createSignal<DropZone | null>(null);
 
-  const openCreateModal = () => {
-    setName('');
-    setGoal('');
-    setStartDate('');
-    setEndDate('');
-    setEditingSprint(null);
-    setShowCreateModal(true);
+  // ── Sprint helpers ─────────────────────────────────────────────────────
+
+  const activeSprints = createMemo(() =>
+    (sprints() ?? []).filter(s => s.status !== 'closed'),
+  );
+
+  const backlogItems = createMemo(() =>
+    sortByPriority((items() ?? []).filter(i => !i.sprint_id)),
+  );
+
+  const itemsForSprint = (sprintId: string) =>
+    sortByPriority((items() ?? []).filter(i => i.sprint_id === sprintId));
+
+  const sprintStats = (sprintId: string) => {
+    const its = itemsForSprint(sprintId);
+    const total = its.length;
+    const done = its.filter(i => {
+      const s = project()?.workflow?.statuses?.find(ws => ws.name === i.status);
+      return s?.category === 'done';
+    }).length;
+    const totalPts = its.reduce((n, i) => n + (i.estimate ?? 0), 0);
+    const donePts  = its
+      .filter(i => {
+        const s = project()?.workflow?.statuses?.find(ws => ws.name === i.status);
+        return s?.category === 'done';
+      })
+      .reduce((n, i) => n + (i.estimate ?? 0), 0);
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    return { total, done, totalPts, donePts, pct };
   };
 
-  const openEditModal = (sprint: Sprint) => {
-    setName(sprint.name);
-    setGoal(sprint.goal || '');
-    setStartDate(sprint.start_date ? sprint.start_date.split('T')[0] : '');
-    setEndDate(sprint.end_date ? sprint.end_date.split('T')[0] : '');
-    setEditingSprint(sprint);
-    setShowCreateModal(true);
+  // ── Sprint CRUD ────────────────────────────────────────────────────────
+
+  const openCreate = () => {
+    setEditingSprint(null);
+    setFormName('');
+    setFormGoal('');
+    setFormStart('');
+    setFormEnd('');
+    setShowModal(true);
+  };
+
+  const openEdit = (s: Sprint) => {
+    setEditingSprint(s);
+    setFormName(s.name);
+    setFormGoal(s.goal ?? '');
+    setFormStart(s.start_date ? s.start_date.split('T')[0] : '');
+    setFormEnd(s.end_date ? s.end_date.split('T')[0] : '');
+    setShowModal(true);
   };
 
   const handleSubmit = async (e: Event) => {
     e.preventDefault();
-    if (!name().trim()) {
-      toast.error('Sprint name is required');
-      return;
-    }
-
-    setLoading(true);
+    if (!formName().trim()) { toast.error('Name required'); return; }
+    setSaving(true);
     try {
       const body = {
-        name: name().trim(),
-        goal: goal().trim() || undefined,
-        start_date: startDate() || undefined,
-        end_date: endDate() || undefined,
+        name: formName().trim(),
+        goal: formGoal().trim() || undefined,
+        start_date: formStart() || undefined,
+        end_date: formEnd() || undefined,
       };
-
       if (editingSprint()) {
         await api.sprints.update(editingSprint()!.id, body);
-        toast.success('Sprint updated successfully');
+        toast.success('Sprint updated');
       } else {
         await api.sprints.create(projectId, body);
-        toast.success('Sprint created successfully');
+        toast.success('Sprint created');
       }
-
-      setShowCreateModal(false);
+      setShowModal(false);
       await refetchSprints();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to save sprint');
+    } catch {
+      toast.error('Failed to save sprint');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  const updateSprintStatus = async (sprintId: string, status: string) => {
+  const updateStatus = async (sprintId: string, status: string) => {
     try {
       await api.sprints.setStatus(sprintId, status);
       toast.success(`Sprint ${status}`);
       await refetchSprints();
-    } catch (error) {
-      toast.error('Failed to update sprint status');
+    } catch {
+      toast.error('Failed to update sprint');
     }
   };
 
-  const getSprintItems = (sprintId: string): Item[] => {
-    return (items() || []).filter(item => item.sprint_id === sprintId);
+  // ── Drag-and-drop ──────────────────────────────────────────────────────
+
+  const handleDragStart = (e: DragEvent, item: Item) => {
+    e.dataTransfer!.effectAllowed = 'move';
+    e.dataTransfer!.setData('text/plain', item.id);
   };
 
-  const getBacklogItems = (): Item[] => {
-    return (items() || []).filter(item => !item.sprint_id);
+  const handleDragOver = (e: DragEvent, zone: DropZone) => {
+    e.preventDefault();
+    e.dataTransfer!.dropEffect = 'move';
+    setDragOverZone(zone);
   };
 
-  const statusTone = (status: string) => {
-    switch (status) {
-      case 'planning': return 'warning' as const;
-      case 'active': return 'success' as const;
-      case 'review': return 'primary' as const;
-      default: return 'neutral' as const;
+  const handleDrop = async (e: DragEvent, zone: DropZone) => {
+    e.preventDefault();
+    setDragOverZone(null);
+    const itemId = e.dataTransfer!.getData('text/plain');
+    if (!itemId) return;
+
+    const sprintId = zone === 'backlog' ? null : zone;
+
+    // Validate: only planning/active sprints accept items
+    if (sprintId !== null) {
+      const sprint = (sprints() ?? []).find(s => s.id === sprintId);
+      if (sprint && sprint.status !== 'planning' && sprint.status !== 'active') {
+        toast.error(`Cannot add items to a ${sprint.status} sprint`);
+        return;
+      }
+    }
+
+    try {
+      await api.items.update(itemId, { sprint_id: sprintId });
+      await refetchItems();
+    } catch {
+      toast.error('Failed to move item');
     }
   };
 
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return 'Not set';
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  };
+  const clearDragOver = () => setDragOverZone(null);
+
+  // ── Render ─────────────────────────────────────────────────────────────
 
   return (
-    <div class="min-h-screen p-6" style={{ "background-color": "var(--color-bg-subtle)" }}>
-      <div class="max-w-7xl mx-auto">
-        {/* Header */}
-        <div class="mb-6 flex items-center justify-between">
-          <div>
-            <h1 class="text-3xl font-bold" style={{ color: "var(--color-text-primary)" }}>
-              {project()?.name || 'Loading...'} - {t('sprint')}s
-            </h1>
-            <p class="mt-1" style={{ color: "var(--color-text-secondary)" }}>
-              Manage {t('sprint').toLowerCase()}s and iterations
-            </p>
+    <div class="flex flex-col overflow-hidden" style={{ height: 'calc(100vh - 9rem)' }}>
+      {/* Header */}
+      <div
+        class="shrink-0 px-6 py-4 border-b flex items-center justify-between"
+        style={{ 'border-color': 'var(--color-border-light)', 'background-color': 'var(--color-bg-base)' }}
+      >
+        <div>
+          <h1 class="text-xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
+            Sprint Planning
+          </h1>
+          <p class="text-xs mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>
+            Drag items from the backlog into a sprint, or between sprints.
+          </p>
+        </div>
+        <Button size="sm" onClick={openCreate}>+ New {t('sprint')}</Button>
+      </div>
+
+      {/* Two-pane board */}
+      <div class="flex-1 flex overflow-hidden">
+        {/* ── Left: Backlog ─────────────────────────────────────────── */}
+        <div
+          class="w-72 shrink-0 flex flex-col border-r overflow-hidden transition-colors"
+          style={{
+            'border-color': 'var(--color-border-light)',
+            'background-color': dragOverZone() === 'backlog'
+              ? 'var(--color-primary-50)'
+              : 'var(--color-bg-subtle)',
+            outline: dragOverZone() === 'backlog'
+              ? '2px solid var(--color-primary-400)'
+              : 'none',
+            'outline-offset': '-2px',
+          }}
+          onDragOver={(e) => handleDragOver(e, 'backlog')}
+          onDragLeave={clearDragOver}
+          onDrop={(e) => handleDrop(e, 'backlog')}
+        >
+          <div class="px-4 py-3 border-b" style={{ 'border-color': 'var(--color-border-light)' }}>
+            <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+              Backlog
+            </span>
+            <span
+              class="ml-2 text-xs px-1.5 py-0.5 rounded-full"
+              style={{ 'background-color': 'var(--color-bg-base)', color: 'var(--color-text-secondary)' }}
+            >
+              {backlogItems().length}
+            </span>
           </div>
-          <Button onClick={openCreateModal}>Create {t('sprint')}</Button>
+
+          <div class="flex-1 overflow-y-auto p-3 space-y-2">
+            <Show
+              when={backlogItems().length > 0}
+              fallback={
+                <div class="flex items-center justify-center h-32 text-center">
+                  <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    All items are assigned to sprints.
+                  </p>
+                </div>
+              }
+            >
+              <For each={backlogItems()}>
+                {(item) => <ItemCard item={item} onDragStart={handleDragStart} onOpen={setSearchParams} />}
+              </For>
+            </Show>
+          </div>
         </div>
 
-        {/* Sprints List */}
-        <div class="space-y-4">
-          <For each={sprints()}>
-            {(sprint: Sprint) => {
-              const sprintItems = getSprintItems(sprint.id);
-              const completedItems = sprintItems.filter(item => {
-                const status = project()?.workflow?.statuses.find(s => s.name === item.status);
-                return status?.category === 'done';
-              });
-              const totalPoints = sprintItems.reduce((sum, item) => sum + (item.estimate || 0), 0);
-              const completedPoints = completedItems.reduce((sum, item) => sum + (item.estimate || 0), 0);
-
-              return (
-                <div class="rounded-lg border p-6" style={{ "background-color": "var(--color-bg-base)", "border-color": "var(--color-border-light)" }}>
-                  <div class="flex items-start justify-between mb-4">
-                    <div class="flex-1">
-                      <div class="flex items-center gap-3 mb-2">
-                        <h2 class="text-xl font-bold" style={{ color: "var(--color-text-primary)" }}>
-                          {sprint.name}
-                        </h2>
-                        <Badge tone={statusTone(sprint.status)}>{sprint.status}</Badge>
-                      </div>
-                      <Show when={sprint.goal}>
-                        <p class="mb-2" style={{ color: "var(--color-text-secondary)" }}>
-                          Goal: {sprint.goal}
-                        </p>
-                      </Show>
-                      <div class="flex items-center gap-4 text-sm" style={{ color: "var(--color-text-secondary)" }}>
-                        <span>Start: {formatDate(sprint.start_date)}</span>
-                        <span>•</span>
-                        <span>End: {formatDate(sprint.end_date)}</span>
-                      </div>
-                    </div>
-                    <div class="flex gap-2">
-                      <Button size="sm" variant="secondary" onClick={() => openEditModal(sprint)}>
-                        Edit
-                      </Button>
-                      <Show when={sprint.status === 'planning'}>
-                        <Button size="sm" variant="success" onClick={() => updateSprintStatus(sprint.id, 'active')}>
-                          Start Sprint
-                        </Button>
-                      </Show>
-                      <Show when={sprint.status === 'active'}>
-                        <Button size="sm" onClick={() => updateSprintStatus(sprint.id, 'review')}>
-                          Complete
-                        </Button>
-                      </Show>
-                      <Show when={sprint.status === 'review'}>
-                        <Button size="sm" variant="secondary" onClick={() => updateSprintStatus(sprint.id, 'closed')}>
-                          Close Sprint
-                        </Button>
-                      </Show>
-                    </div>
-                  </div>
-
-                  {/* Sprint Progress */}
-                  <div class="grid grid-cols-3 gap-4 mb-4">
-                    <div>
-                      <p class="text-sm" style={{ color: "var(--color-text-secondary)" }}>Items</p>
-                      <p class="text-2xl font-bold" style={{ color: "var(--color-text-primary)" }}>
-                        {completedItems.length} / {sprintItems.length}
-                      </p>
-                    </div>
-                    <div>
-                      <p class="text-sm" style={{ color: "var(--color-text-secondary)" }}>Story Points</p>
-                      <p class="text-2xl font-bold" style={{ color: "var(--color-text-primary)" }}>
-                        {completedPoints} / {totalPoints}
-                      </p>
-                    </div>
-                    <div>
-                      <p class="text-sm" style={{ color: "var(--color-text-secondary)" }}>Progress</p>
-                      <p class="text-2xl font-bold" style={{ color: "var(--color-text-primary)" }}>
-                        {sprintItems.length > 0 ? Math.round((completedItems.length / sprintItems.length) * 100) : 0}%
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Progress Bar */}
-                  <div class="w-full rounded-full h-2 mb-4" style={{ "background-color": "var(--color-bg-subtle)" }}>
-                    <div
-                      class="h-2 rounded-full"
-                      style={{
-                        "background-color": "var(--color-success-500)",
-                        width: `${sprintItems.length > 0 ? (completedItems.length / sprintItems.length) * 100 : 0}%`,
-                      }}
-                    />
-                  </div>
-
-                  {/* Sprint Items */}
-                  <Show when={sprintItems.length > 0}>
-                    <div class="border-t pt-4" style={{ "border-color": "var(--color-border-light)" }}>
-                      <h3 class="text-sm font-medium mb-2" style={{ color: "var(--color-text-primary)" }}>
-                        Items ({sprintItems.length})
-                      </h3>
-                      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                        <For each={sprintItems.slice(0, 6)}>
-                          {(item) => (
-                            <div class="text-sm p-2 rounded border" style={{ "background-color": "var(--color-bg-subtle)", "border-color": "var(--color-border-light)" }}>
-                              <div class="font-medium truncate" style={{ color: "var(--color-text-primary)" }}>
-                                {item.title}
-                              </div>
-                              <div class="text-xs" style={{ color: "var(--color-text-secondary)" }}>
-                                {item.status} • {item.estimate || 0} pts
-                              </div>
-                            </div>
-                          )}
-                        </For>
-                      </div>
-                      <Show when={sprintItems.length > 6}>
-                        <p class="text-sm mt-2" style={{ color: "var(--color-text-tertiary)" }}>
-                          +{sprintItems.length - 6} more items
-                        </p>
-                      </Show>
-                    </div>
-                  </Show>
+        {/* ── Right: Sprint lanes ───────────────────────────────────── */}
+        <div class="flex-1 flex overflow-x-auto overflow-y-hidden">
+          <Show
+            when={(activeSprints()?.length ?? 0) > 0}
+            fallback={
+              <div class="flex-1 flex items-center justify-center">
+                <div class="text-center">
+                  <p class="text-3xl mb-4">🏃</p>
+                  <p class="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
+                    No active sprints yet
+                  </p>
+                  <Button onClick={openCreate}>Create your first {t('sprint')}</Button>
                 </div>
-              );
-            }}
-          </For>
+              </div>
+            }
+          >
+            <div class="flex gap-4 p-4 h-full">
+              <For each={activeSprints()}>
+                {(sprint) => {
+                  const stats = sprintStats(sprint.id);
+                  const isOver = () => dragOverZone() === sprint.id;
+                  const canAccept = sprint.status === 'planning' || sprint.status === 'active';
 
-          <Show when={!sprints() || sprints()!.length === 0}>
-            <div class="text-center py-12" style={{ color: "var(--color-text-tertiary)" }}>
-              <p class="text-lg mb-4">No {t('sprint').toLowerCase()}s yet</p>
-              <Button size="lg" onClick={openCreateModal}>Create Your First {t('sprint')}</Button>
+                  return (
+                    <div
+                      class="w-72 shrink-0 flex flex-col rounded-xl transition-colors overflow-hidden"
+                      style={{
+                        'background-color': isOver() && canAccept
+                          ? 'var(--color-primary-50)'
+                          : 'var(--color-bg-elevated)',
+                        border: isOver() && canAccept
+                          ? '2px solid var(--color-primary-400)'
+                          : '1px solid var(--color-border-light)',
+                      }}
+                      onDragOver={canAccept ? (e) => handleDragOver(e, sprint.id) : undefined}
+                      onDragLeave={canAccept ? clearDragOver : undefined}
+                      onDrop={canAccept ? (e) => handleDrop(e, sprint.id) : undefined}
+                    >
+                      {/* Sprint header */}
+                      <div class="px-4 pt-4 pb-3 border-b" style={{ 'border-color': 'var(--color-border-light)' }}>
+                        <div class="flex items-start justify-between mb-1">
+                          <span class="font-semibold text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>
+                            {sprint.name}
+                          </span>
+                          <Badge tone={STATUS_TONE[sprint.status as keyof typeof STATUS_TONE] ?? 'neutral'}>
+                            {sprint.status}
+                          </Badge>
+                        </div>
+
+                        <Show when={sprint.start_date || sprint.end_date}>
+                          <p class="text-xs mb-2" style={{ color: 'var(--color-text-tertiary)' }}>
+                            {formatDate(sprint.start_date) ?? '?'} → {formatDate(sprint.end_date) ?? '?'}
+                          </p>
+                        </Show>
+
+                        {/* Capacity row */}
+                        <div class="flex items-center justify-between text-xs mb-1.5">
+                          <span style={{ color: 'var(--color-text-secondary)' }}>
+                            {stats.done}/{stats.total} items · {stats.donePts}/{stats.totalPts} pts
+                          </span>
+                          <span style={{ color: 'var(--color-text-secondary)' }}>{stats.pct}%</span>
+                        </div>
+                        <div class="h-1.5 rounded-full overflow-hidden" style={{ 'background-color': 'var(--color-bg-subtle)' }}>
+                          <div
+                            class="h-full rounded-full transition-all"
+                            style={{
+                              width: `${stats.pct}%`,
+                              'background-color': stats.pct === 100
+                                ? 'var(--color-success-500)'
+                                : 'var(--color-primary-500)',
+                            }}
+                          />
+                        </div>
+
+                        {/* Sprint actions */}
+                        <div class="flex gap-1 mt-2">
+                          <button
+                            class="text-xs px-2 py-1 rounded"
+                            style={{ 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
+                            onClick={() => openEdit(sprint)}
+                          >
+                            Edit
+                          </button>
+                          <Show when={sprint.status === 'planning'}>
+                            <button
+                              class="text-xs px-2 py-1 rounded"
+                              style={{ 'background-color': 'var(--color-success-light)', color: 'var(--color-success)' }}
+                              onClick={() => updateStatus(sprint.id, 'active')}
+                            >
+                              Start
+                            </button>
+                          </Show>
+                          <Show when={sprint.status === 'active'}>
+                            <button
+                              class="text-xs px-2 py-1 rounded"
+                              style={{ 'background-color': 'var(--color-primary-100)', color: 'var(--color-primary-700)' }}
+                              onClick={() => updateStatus(sprint.id, 'review')}
+                            >
+                              Complete
+                            </button>
+                          </Show>
+                          <Show when={sprint.status === 'review'}>
+                            <button
+                              class="text-xs px-2 py-1 rounded"
+                              style={{ 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
+                              onClick={() => updateStatus(sprint.id, 'closed')}
+                            >
+                              Close
+                            </button>
+                          </Show>
+                        </div>
+                      </div>
+
+                      {/* Items */}
+                      <div class="flex-1 overflow-y-auto p-3 space-y-2">
+                        <Show
+                          when={itemsForSprint(sprint.id).length > 0}
+                          fallback={
+                            <div
+                              class="flex items-center justify-center h-20 rounded-lg border-2 border-dashed text-xs"
+                              style={{
+                                'border-color': 'var(--color-border-medium)',
+                                color: 'var(--color-text-tertiary)',
+                              }}
+                            >
+                              {canAccept ? 'Drop items here' : 'Sprint is closed'}
+                            </div>
+                          }
+                        >
+                          <For each={itemsForSprint(sprint.id)}>
+                            {(item) => <ItemCard item={item} onDragStart={handleDragStart} onOpen={setSearchParams} />}
+                          </For>
+                        </Show>
+                      </div>
+                    </div>
+                  );
+                }}
+              </For>
             </div>
           </Show>
         </div>
-
-        {/* Backlog */}
-        <Show when={getBacklogItems().length > 0}>
-          <div class="mt-6 rounded-lg border p-6" style={{ "background-color": "var(--color-bg-base)", "border-color": "var(--color-border-light)" }}>
-            <h2 class="text-xl font-bold mb-4" style={{ color: "var(--color-text-primary)" }}>
-              Backlog ({getBacklogItems().length} items)
-            </h2>
-            <p class="text-sm mb-4" style={{ color: "var(--color-text-secondary)" }}>
-              Items not assigned to any sprint
-            </p>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-              <For each={getBacklogItems().slice(0, 9)}>
-                {(item) => (
-                  <div class="text-sm p-2 rounded border" style={{ "background-color": "var(--color-bg-subtle)", "border-color": "var(--color-border-light)" }}>
-                    <div class="font-medium truncate" style={{ color: "var(--color-text-primary)" }}>
-                      {item.title}
-                    </div>
-                    <div class="text-xs" style={{ color: "var(--color-text-secondary)" }}>
-                      {item.status} • {item.estimate || 0} pts
-                    </div>
-                  </div>
-                )}
-              </For>
-            </div>
-            <Show when={getBacklogItems().length > 9}>
-              <p class="text-sm mt-2" style={{ color: "var(--color-text-tertiary)" }}>
-                +{getBacklogItems().length - 9} more items in backlog
-              </p>
-            </Show>
-          </div>
-        </Show>
       </div>
 
-      {/* Create/Edit Sprint Modal */}
+      {/* Sprint modal */}
       <Modal
-        isOpen={showCreateModal()}
-        onClose={() => setShowCreateModal(false)}
-        title={editingSprint() ? `Edit ${t('sprint')}` : `Create ${t('sprint')}`}
+        isOpen={showModal()}
+        onClose={() => setShowModal(false)}
+        title={editingSprint() ? `Edit ${t('sprint')}` : `New ${t('sprint')}`}
         size="sm"
       >
         <form onSubmit={handleSubmit} class="space-y-4">
           <Field
-            label={`${t('sprint')} Name`}
+            label="Name"
             required
-            value={name()}
-            onInput={(e) => setName(e.currentTarget.value)}
+            value={formName()}
+            onInput={(e) => setFormName(e.currentTarget.value)}
             placeholder="Sprint 1"
-            disabled={loading()}
+            disabled={saving()}
           />
-
-          <FieldShell label={`${t('sprint')} Goal`} for="sprint-goal">
+          <FieldShell label="Goal" for="sprint-goal">
             <textarea
               id="sprint-goal"
-              value={goal()}
-              onInput={(e) => setGoal(e.currentTarget.value)}
-              placeholder="What will be accomplished in this sprint?"
-              rows={3}
-              disabled={loading()}
-              class="w-full resize-none rounded-lg border px-3 py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50"
+              value={formGoal()}
+              onInput={(e) => setFormGoal(e.currentTarget.value)}
+              placeholder="What will be accomplished?"
+              rows={2}
+              disabled={saving()}
+              class="w-full resize-none rounded-lg border px-3 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 disabled:opacity-50"
               style={{
                 'background-color': 'var(--color-bg-base)',
                 color: 'var(--color-text-primary)',
                 'border-color': 'var(--color-border-medium)',
-                '--tw-ring-color': 'var(--color-focus-ring)',
               }}
             />
           </FieldShell>
-
-          <div class="grid grid-cols-2 gap-4">
-            <Field
-              label="Start Date"
-              type="date"
-              value={startDate()}
-              onInput={(e) => setStartDate(e.currentTarget.value)}
-              disabled={loading()}
-            />
-            <Field
-              label="End Date"
-              type="date"
-              value={endDate()}
-              onInput={(e) => setEndDate(e.currentTarget.value)}
-              disabled={loading()}
-            />
+          <div class="grid grid-cols-2 gap-3">
+            <Field label="Start" type="date" value={formStart()} onInput={(e) => setFormStart(e.currentTarget.value)} disabled={saving()} />
+            <Field label="End"   type="date" value={formEnd()}   onInput={(e) => setFormEnd(e.currentTarget.value)}   disabled={saving()} />
           </div>
-
-          <div class="flex gap-3 pt-4">
-            <Button type="submit" class="flex-1" loading={loading()} disabled={loading()}>
-              {loading() ? 'Saving...' : editingSprint() ? 'Update Sprint' : 'Create Sprint'}
+          <div class="flex gap-2 pt-2">
+            <Button type="submit" class="flex-1" loading={saving()} disabled={saving()}>
+              {editingSprint() ? 'Update' : 'Create'}
             </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setShowCreateModal(false)}
-              disabled={loading()}
-            >
+            <Button type="button" variant="secondary" onClick={() => setShowModal(false)} disabled={saving()}>
               Cancel
             </Button>
           </div>
         </form>
       </Modal>
+    </div>
+  );
+}
+
+// ── Item card (shared by backlog + sprint lanes) ───────────────────────────
+
+function ItemCard(props: {
+  item: Item;
+  onDragStart: (e: DragEvent, item: Item) => void;
+  onOpen: (params: Record<string, string>) => void;
+}) {
+  return (
+    <div
+      draggable={true}
+      onDragStart={(e) => props.onDragStart(e, props.item)}
+      onClick={() => props.onOpen({ item: props.item.id })}
+      class="rounded-lg px-3 py-2 cursor-grab active:cursor-grabbing hover:opacity-90 transition-opacity select-none"
+      style={{
+        'background-color': 'var(--color-bg-base)',
+        border: '1px solid var(--color-border-light)',
+      }}
+    >
+      <div class="flex items-start gap-2">
+        <div
+          class="mt-1 w-2 h-2 rounded-full shrink-0"
+          style={{ 'background-color': PRIORITY_DOT[props.item.priority] ?? '#9ca3af' }}
+          title={props.item.priority}
+        />
+        <div class="flex-1 min-w-0">
+          <p class="text-xs font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
+            {props.item.title}
+          </p>
+          <div class="flex items-center gap-2 mt-0.5">
+            <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+              {props.item.status}
+            </span>
+            <Show when={props.item.estimate}>
+              <span class="text-xs" style={{ color: 'var(--color-primary-600)' }}>
+                {props.item.estimate} pts
+              </span>
+            </Show>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

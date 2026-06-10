@@ -19,8 +19,8 @@ interface LayoutProps {
 }
 
 const VIEW_LABELS: Record<string, string> = {
-  board: 'Board', list: 'List', tree: 'Tree', calendar: 'Calendar', timeline: 'Timeline',
-  overview: 'Overview', sprints: 'Sprints', settings: 'Settings',
+  board: 'Board', list: 'List', calendar: 'Calendar', timeline: 'Timeline', sprint: 'Sprint',
+  overview: 'Overview', settings: 'Settings',
 };
 
 /** Inner layout — needs router context, so lives inside ProjectProvider. */
@@ -84,11 +84,10 @@ const LayoutInner: Component<LayoutProps> = (props) => {
         { id: 'new-item',     label: 'New Item',          icon: '➕', shortcut: 'N', action: () => setShowNewItem(true) },
         { id: 'go-board',     label: 'Work → Board',      icon: '⬛', action: () => navigate(`/projects/${pid}/board`) },
         { id: 'go-list',      label: 'Work → List',       icon: '☰',  action: () => navigate(`/projects/${pid}/list`) },
-        { id: 'go-tree',      label: 'Work → Tree',       icon: '🌲', action: () => navigate(`/projects/${pid}/tree`) },
         { id: 'go-calendar',  label: 'Work → Calendar',   icon: '📅', action: () => navigate(`/projects/${pid}/calendar`) },
         { id: 'go-timeline',  label: 'Work → Timeline',   icon: '📊', action: () => navigate(`/projects/${pid}/timeline`) },
+        { id: 'go-sprint',    label: 'Work → Sprint',     icon: '🏃', action: () => navigate(`/projects/${pid}/sprint`) },
         { id: 'go-overview',  label: 'Overview',          icon: '📈', action: () => navigate(`/projects/${pid}/overview`) },
-        { id: 'go-sprints',   label: 'Sprints',           icon: '🏃', action: () => navigate(`/projects/${pid}/sprints`) },
         { id: 'go-settings',  label: 'Project Settings',  icon: '⚙️', action: () => navigate(`/projects/${pid}/settings`) },
       );
       void lens; // used via getLastLens in sidebar

@@ -78,6 +78,27 @@ impl FlexpmClient {
         anyhow::bail!("{}: {}", status, error_msg(&body))
     }
 
+    pub fn delete_json(&self, path: &str) -> anyhow::Result<serde_json::Value> {
+        let resp = self.request(reqwest::Method::DELETE, path).send()?;
+        extract(resp)
+    }
+
+    pub fn put_empty(&self, path: &str) -> anyhow::Result<serde_json::Value> {
+        let resp = self
+            .request(reqwest::Method::PUT, path)
+            .header("Content-Length", "0")
+            .send()?;
+        extract(resp)
+    }
+
+    pub fn put_json<T: Serialize>(&self, path: &str, body: &T) -> anyhow::Result<serde_json::Value> {
+        let resp = self
+            .request(reqwest::Method::PUT, path)
+            .json(body)
+            .send()?;
+        extract(resp)
+    }
+
     fn request(&self, method: reqwest::Method, path: &str) -> reqwest::blocking::RequestBuilder {
         let url = format!("{}/api{}", self.base_url, path);
         let mut req = self.client.request(method, url);

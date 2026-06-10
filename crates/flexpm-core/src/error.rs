@@ -42,4 +42,7 @@ pub enum CoreError {
 
     #[error("Validation error: {0}")]
     Validation(String),
+
+    #[error("Invalid workflow: {0}")]
+    InvalidWorkflow(String),
 }

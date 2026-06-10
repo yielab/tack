@@ -120,9 +120,9 @@ const Sidebar: Component = () => {
             </A>
 
             <NavLink
-              href={`/projects/${currentProjectId()}/sprints`}
+              href={`/projects/${currentProjectId()}/sprint`}
               icon={FiGitBranch}
-              label="Sprints"
+              label="Sprint"
               onClick={close}
             />
             <NavLink

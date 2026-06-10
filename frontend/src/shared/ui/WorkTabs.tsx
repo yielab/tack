@@ -5,9 +5,9 @@ import { setLastLens, type Lens } from '../state/lastView';
 const TABS: { lens: Lens; label: string; icon: string }[] = [
   { lens: 'board',    label: 'Board',    icon: '⬛' },
   { lens: 'list',     label: 'List',     icon: '☰'  },
-  { lens: 'tree',     label: 'Tree',     icon: '🌲' },
   { lens: 'calendar', label: 'Calendar', icon: '📅' },
   { lens: 'timeline', label: 'Timeline', icon: '📊' },
+  { lens: 'sprint',   label: 'Sprint',   icon: '🏃' },
 ];
 
 export default function WorkTabs() {
@@ -18,9 +18,9 @@ export default function WorkTabs() {
   const activeLens = (): Lens => {
     const p = location.pathname;
     if (p.includes('/list'))     return 'list';
-    if (p.includes('/tree'))     return 'tree';
     if (p.includes('/calendar')) return 'calendar';
     if (p.includes('/timeline')) return 'timeline';
+    if (p.includes('/sprint'))   return 'sprint';
     return 'board';
   };
 

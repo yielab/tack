@@ -5,10 +5,6 @@ export const items = {
   list: (projectId: string) =>
     request<Item[]>(`/projects/${projectId}/items`),
 
-  /** Hierarchical (tree) view of a project's items. */
-  tree: (projectId: string) =>
-    request<Item[]>(`/projects/${projectId}/items/tree`),
-
   get: (id: string) => request<Item>(`/items/${id}`),
 
   create: (projectId: string, data: CreateItem) =>

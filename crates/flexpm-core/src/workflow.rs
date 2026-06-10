@@ -133,6 +133,56 @@ impl WorkflowConfig {
     pub fn should_complete_parent(all_siblings_done: bool) -> bool {
         all_siblings_done
     }
+
+    /// Validate workflow shape: must have at least one status in each category.
+    pub fn validate(&self) -> Result<(), CoreError> {
+        if self.statuses.is_empty() {
+            return Err(CoreError::InvalidWorkflow(
+                "workflow must have at least one status".to_string(),
+            ));
+        }
+        let has_todo = self
+            .statuses
+            .iter()
+            .any(|s| s.category == StatusCategory::Todo);
+        let has_in_progress = self
+            .statuses
+            .iter()
+            .any(|s| s.category == StatusCategory::InProgress);
+        let has_done = self
+            .statuses
+            .iter()
+            .any(|s| s.category == StatusCategory::Done);
+
+        if !has_todo {
+            return Err(CoreError::InvalidWorkflow(
+                "workflow must include at least one 'todo' status".to_string(),
+            ));
+        }
+        if !has_in_progress {
+            return Err(CoreError::InvalidWorkflow(
+                "workflow must include at least one 'in_progress' status".to_string(),
+            ));
+        }
+        if !has_done {
+            return Err(CoreError::InvalidWorkflow(
+                "workflow must include at least one 'done' status".to_string(),
+            ));
+        }
+
+        // Duplicate status names are not allowed
+        let mut seen = std::collections::HashSet::new();
+        for s in &self.statuses {
+            if !seen.insert(s.name.as_str()) {
+                return Err(CoreError::InvalidWorkflow(format!(
+                    "duplicate status name '{}'",
+                    s.name
+                )));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 // ─── Preset Workflows ───────────────────────────────────────
