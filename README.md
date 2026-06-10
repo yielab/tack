@@ -1,9 +1,21 @@
 # FlexPM
 
+[![CI](https://github.com/santiagoyie/flexpm/actions/workflows/ci.yml/badge.svg)](https://github.com/santiagoyie/flexpm/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
+
 > Local-first, single-binary project management for solo developers and small teams.
 > Built with Rust (backend) + SolidJS (frontend).
 
-Supports any workflow — Scrum, Kanban, phase-based construction, personal tasks — through fully configurable vocabulary and status columns. No accounts, no cloud, no subscriptions.
+Supports any workflow — Scrum, Kanban, phase-based construction, personal tasks — through fully configurable vocabulary and status columns. The same binary handles software sprints, construction phases, and personal task lists with equal depth. No accounts, no cloud, no subscriptions.
+
+---
+
+## Why
+
+Existing PM tools either lock you into one workflow (Jira), require accounts and cloud infrastructure (Linear, Asana, ClickUp), or hit a customization ceiling that does not extend to non-software use cases (Trello). I wanted something I could run locally as a single binary, fully customizable per project — the same tool for software sprints, a kitchen renovation, or thesis chapters.
+
+FlexPM is also a deliberate exploration of stacks outside my paid client work, which has mostly been PHP/Symfony/Drupal for US agencies. Rust (Axum, sqlx), modular crate architecture with strict layering (no I/O in the domain crate), and SolidJS are all areas I wanted to work with in a project of meaningful scope.
 
 ---
 
@@ -11,24 +23,47 @@ Supports any workflow — Scrum, Kanban, phase-based construction, personal task
 
 **Prerequisites:** [Rust toolchain](https://rustup.rs/) · [Node.js 20+](https://nodejs.org/)
 
+Two processes run side by side: the Rust API and the Vite frontend dev server. Start the API first, then the frontend.
+
 ```bash
-git clone <repo-url>
+git clone https://github.com/santiagoyie/flexpm.git
 cd flexpm
 
 # Terminal 1 — API server (http://127.0.0.1:3210)
 cargo run --bin flexpm-api
 
-# Terminal 2 — Frontend dev server (http://localhost:5173, proxies /api)
+# Terminal 2 — Frontend dev server (proxies /api → 127.0.0.1:3210)
 cd frontend && npm install && npm run dev
 ```
 
-The server auto-creates `flexpm.db` and runs all 16 migrations on first start.
+**To check the UI, open the frontend dev server URL** — Vite prints it on startup:
+
+```text
+➜  Local:   http://localhost:5173/
+```
+
+> If port 5173 is taken, Vite automatically uses the next free port (5174, …) and prints
+> that URL instead. Always open the URL Vite actually prints. The dev server gives you
+> hot-reload and proxies all `/api` calls to the API server, so you must keep Terminal 1 running.
+
+The API server auto-creates `flexpm.db` and runs all 16 migrations on first start.
 
 ```bash
-# Verify
+# Verify the API is up
 curl http://localhost:3210/api/health
 # {"status":"ok","version":"0.1.0","migrations_applied":16}
 ```
+
+The fresh database is empty — open the UI and create a project (or press **Ctrl+K** for the
+command palette) to populate the Board, List, and Dashboard views.
+
+### Viewing the UI on `http://127.0.0.1:3210` (or a reverse-proxy domain)
+
+`cargo run --bin flexpm-api` serves the **API only** — opening `http://127.0.0.1:3210` in a
+browser will not show the UI. To serve the SPA from the API binary itself (e.g. behind a
+reverse proxy such as Caddy), build with the `embed-spa` feature — see
+[Single-binary distribution](#single-binary-distribution) below. For day-to-day development,
+use the Vite dev server URL above.
 
 ---
 
@@ -278,7 +313,7 @@ cargo test -p flexpm-api --features embed-spa
 # Single crate
 cargo test -p flexpm-core   # 39 unit tests
 cargo test -p flexpm-db     # 22 integration tests
-cargo test -p flexpm-api    # 16 handler tests
+cargo test -p flexpm-api    # 20 tests (4 unit + 16 handler)
 cargo test -p flexpm-cli    # 11 CLI tests
 
 # Run the ignored 50k-item performance test
@@ -334,7 +369,7 @@ flexpm-cli   ← talks to flexpm-api over HTTP (no DB access)
 
 ## Frontend features
 
-- **6 view modes:** Board (Kanban drag-and-drop), List, Dashboard, Sprints, Calendar, Timeline
+- **7 view modes:** Board (Kanban drag-and-drop), List, Tree (hierarchy), Calendar, Timeline, Dashboard, Sprints
 - **Settings panel** — live vocabulary and workflow editor per project
 - **Real-time updates** via WebSocket
 - **Optimistic UI** — instant feedback, rollback on error
@@ -353,7 +388,6 @@ flexpm-cli   ← talks to flexpm-api over HTTP (no DB access)
 - [API Reference](docs/API-REFERENCE.md) — complete endpoint reference
 - [Testing Guide](docs/TESTING.md) — test pyramid, commands, coverage
 - [Deployment Guide](docs/DEPLOYMENT-GUIDE.md) — bare binary and reverse proxy setup
-- [Engineering Roadmap](docs/PLAN-A-ROADMAP.md) — all phases and tasks
 - [Project Status](docs/PROJECT-STATUS.md) — current state and known gaps
 - [CONTRIBUTING.md](CONTRIBUTING.md) — code style, PR process, how to add features
 - [CHANGELOG.md](CHANGELOG.md) — version history
@@ -363,3 +397,6 @@ flexpm-cli   ← talks to flexpm-api over HTTP (no DB access)
 ## License
 
 MIT
+
+---
+_Personal R&D project — actively developed. Built as a learning exercise in stacks outside my day-to-day paid work._

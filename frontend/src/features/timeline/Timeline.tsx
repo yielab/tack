@@ -1,14 +1,14 @@
 import { createSignal, createMemo, For, Show, createResource } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
 import { api } from '../../shared/api';
-import { Button } from '../../shared/ui';
+import { Button, EmptyState } from '../../shared/ui';
 import { useProject } from '../../shared/state/projectContext';
 
 export default function Timeline() {
   const params = useParams();
-  const navigate = useNavigate();
   const projectId = params.id!;
 
+  const navigate = useNavigate();
   const { project } = useProject();
   const [items] = createResource(() => api.items.list(projectId));
 
@@ -191,34 +191,29 @@ export default function Timeline() {
 
   return (
     <div class="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
-      <div class="max-w-[1600px] mx-auto">
+      <div class="max-w-400 mx-auto">
         {/* Header */}
-        <div class="mb-6 flex items-center justify-between">
-          <div>
-            <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
-              {project()?.name || 'Loading...'} - Timeline
-            </h1>
-            <p class="text-gray-600 dark:text-gray-400 mt-1">
-              Gantt-style timeline view
-            </p>
-          </div>
-          <div class="flex gap-2">
-            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/board`)}>
-              Board View
-            </Button>
-            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/list`)}>
-              List View
-            </Button>
-            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/dashboard`)}>
-              Dashboard
-            </Button>
-            <Button variant="secondary" onClick={() => navigate('/projects')}>
-              Back to Projects
-            </Button>
-          </div>
+        <div class="mb-6">
+          <h1 class="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>Timeline</h1>
+          <p class="mt-1" style={{ color: 'var(--color-text-secondary)' }}>Gantt-style timeline view</p>
         </div>
 
+        {/* No items → point to Board */}
+        <Show when={!items.loading && (items() ?? []).length === 0}>
+          <EmptyState
+            icon="📊"
+            title="No items to display on the timeline"
+            description="Add items in Board or List — they'll appear here once created."
+            action={
+              <Button onClick={() => navigate(`/projects/${projectId}/board`)}>
+                Go to Board
+              </Button>
+            }
+          />
+        </Show>
+
         {/* Controls */}
+        <Show when={(items() ?? []).length > 0}>
         <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-4">
@@ -290,7 +285,7 @@ export default function Timeline() {
           </div>
 
           {/* Timeline Items */}
-          <div class="p-4 space-y-2 min-h-[400px]">
+          <div class="p-4 space-y-2 min-h-100">
             <Show when={timelineItems().length === 0}>
               <div class="text-center py-12 text-gray-500 dark:text-gray-400">
                 No items to display in timeline
@@ -375,6 +370,7 @@ export default function Timeline() {
             </p>
           </div>
         </div>
+        </Show>{/* end: items > 0 */}
       </div>
     </div>
   );
