@@ -65,6 +65,20 @@ jobs:
           path: frontend/dist/
           retention-days: 1
 
+  docs:
+    name: Docs (mdBook build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install mdBook
+        run: cargo install mdbook --locked --version 0.4.40
+      - name: Build docs
+        run: mdbook build docs/book
+      - name: Check for broken links
+        run: mdbook build docs/book 2>&1 | grep -i "error\|broken" && exit 1 || true
+
   embed-spa:
     name: Embed SPA (single-binary packaging)
     runs-on: ubuntu-latest
