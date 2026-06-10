@@ -104,7 +104,10 @@ export interface BoardColumn {
 export interface CreateProject {
   name: string;
   description?: string;
-  template: string;
+  /** Selects the default workflow and vocabulary. Required by the API. */
+  project_type: ProjectType;
+  /** Optional named template to seed from. */
+  template?: string;
 }
 
 export interface CreateItem {

@@ -1,15 +1,15 @@
 import { createSignal, createMemo, For, Show, createResource } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
 import { api } from '../../shared/api';
-import { Button } from '../../shared/ui';
+import { Button, EmptyState } from '../../shared/ui';
 import { useProject } from '../../shared/state/projectContext';
 import type { Item } from '../../types/api';
 
 export default function Calendar() {
   const params = useParams();
-  const navigate = useNavigate();
   const projectId = params.id!;
 
+  const navigate = useNavigate();
   const { project } = useProject();
   const [items] = createResource(() => api.items.list(projectId));
 
@@ -103,27 +103,26 @@ export default function Calendar() {
     <div class="min-h-screen p-6" style={{ "background-color": 'var(--color-bg-base)' }}>
       <div class="max-w-7xl mx-auto">
         {/* Header */}
-        <div class="mb-6 flex items-center justify-between">
-          <div>
-            <h1 class="text-3xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
-              {project()?.name || 'Loading...'} - Calendar
-            </h1>
-            <p class="mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-              Items by due date
-            </p>
-          </div>
-          <div class="flex gap-2">
-            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/board`)}>
-              Board View
-            </Button>
-            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/list`)}>
-              List View
-            </Button>
-            <Button variant="secondary" onClick={() => navigate('/projects')}>
-              Back to Projects
-            </Button>
-          </div>
+        <div class="mb-6">
+          <h1 class="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>Calendar</h1>
+          <p class="mt-1" style={{ color: 'var(--color-text-secondary)' }}>Items by due date</p>
         </div>
+
+        {/* No items at all → point to Board */}
+        <Show when={!items.loading && (items() ?? []).length === 0}>
+          <EmptyState
+            icon="📅"
+            title="No items to show on the calendar"
+            description="Add items with due dates in Board or List — they'll appear here automatically."
+            action={
+              <Button onClick={() => navigate(`/projects/${projectId}/board`)}>
+                Go to Board
+              </Button>
+            }
+          />
+        </Show>
+
+        <Show when={(items() ?? []).length > 0}>
 
         {/* Calendar Controls */}
         <div class="rounded-lg p-4 mb-6" style={{ "background-color": 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
@@ -250,6 +249,7 @@ export default function Calendar() {
             </p>
           </div>
         </Show>
+        </Show>{/* end: items > 0 */}
       </div>
     </div>
   );
