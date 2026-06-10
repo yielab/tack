@@ -7,15 +7,64 @@
 > Local-first, single-binary project management for solo developers and small teams.
 > Built with Rust (backend) + SolidJS (frontend).
 
-Supports any workflow — Scrum, Kanban, phase-based construction, personal tasks — through fully configurable vocabulary and status columns. The same binary handles software sprints, construction phases, and personal task lists with equal depth. No accounts, no cloud, no subscriptions.
+Supports any workflow — Scrum, Kanban, phase-based construction, personal tasks — through fully configurable vocabulary and status columns. No accounts, no cloud, no subscriptions. One binary, one SQLite file.
+
+---
+
+## Features
+
+### Views
+
+| View | Description |
+| --- | --- |
+| **Board** | Kanban-style drag-and-drop with WIP limits per column |
+| **List** | Sortable table with inline editing and bulk operations |
+| **Tree** | Parent/child item hierarchy |
+| **Calendar** | Items by due date |
+| **Timeline** | Gantt-style dependency overlay |
+| **Dashboard** | Throughput charts and sprint progress |
+| **Sprints** | Sprint lifecycle (Planning → Active → Review → Closed) |
+
+### Workflow engine
+
+- **7 project types** with pre-built workflows: `software`, `web`, `mobile`, `construction`, `personal`, `homework`, `maintenance`
+- **Custom workflows** — define any columns, categories (todo / in-progress / done), WIP limits, and explicit transition rules
+- **Per-project vocabulary** — rename 16 terms to match your domain: Task → Work Order, Sprint → Phase, Epic → Building
+- **Dependency graph** — DAG with cycle detection; blocks / relates-to / depends-on
+- **Auto-complete** — parent item closes automatically when all children reach done
+
+### Data
+
+- **Custom fields** — 9 types: Text, LongText, Number, Date, Boolean, Select, MultiSelect, URL, Email
+- **File attachments** — up to 50 MB per file, stored locally
+- **Full-text search** — SQLite FTS5, per-project and global (Ctrl+/)
+- **Export** — JSON (full snapshot) and CSV per project
+- **Import** — JSON round-trip with ID remapping
+- **Backup / restore** — hot backup via `VACUUM INTO`; staged restore on next startup
+- **Project templates** — save and reuse project blueprints
+
+### Interface
+
+- **Command palette** (Ctrl+K) available on every page
+- **Real-time updates** via WebSocket — open the same board in two tabs
+- **Optimistic UI** — changes apply instantly, roll back on error
+- **Dark mode**, skeleton loading screens, toast notifications
+- **22 KB entry bundle** (lazy-loaded routes)
+
+### API & CLI
+
+- **34 REST endpoints** — full CRUD for all entities
+- **CLI** (`flexpm`) with `--json` output and shell completions (bash/zsh/fish)
+- **Optional Bearer token** auth (`FLEXPM_API_TOKEN`)
+- Single binary with embedded SPA (`--features embed-spa`, ~5 MB)
 
 ---
 
 ## Why
 
-Existing PM tools either lock you into one workflow (Jira), require accounts and cloud infrastructure (Linear, Asana, ClickUp), or hit a customization ceiling that does not extend to non-software use cases (Trello). I wanted something I could run locally as a single binary, fully customizable per project — the same tool for software sprints, a kitchen renovation, or thesis chapters.
+Existing PM tools either lock you into one workflow (Jira), require accounts and cloud infrastructure (Linear, Asana, ClickUp), or hit a customization ceiling that does not extend to non-software domains (Trello). I wanted something I could run locally as a single binary, fully customizable per project — the same tool for software sprints, a kitchen renovation, or thesis chapters.
 
-FlexPM is also a deliberate exploration of stacks outside my paid client work, which has mostly been PHP/Symfony/Drupal for US agencies. Rust (Axum, sqlx), modular crate architecture with strict layering (no I/O in the domain crate), and SolidJS are all areas I wanted to work with in a project of meaningful scope.
+FlexPM is also a deliberate exploration of stacks. Rust (Axum, sqlx), modular crate architecture with strict layering (no I/O in the domain crate), and SolidJS are all areas I wanted to work with in a project of meaningful scope.
 
 ---
 
@@ -36,15 +85,14 @@ cargo run --bin flexpm-api
 cd frontend && npm install && npm run dev
 ```
 
-**To check the UI, open the frontend dev server URL** — Vite prints it on startup:
+**Open the URL Vite prints on startup:**
 
 ```text
 ➜  Local:   http://localhost:5173/
 ```
 
-> If port 5173 is taken, Vite automatically uses the next free port (5174, …) and prints
-> that URL instead. Always open the URL Vite actually prints. The dev server gives you
-> hot-reload and proxies all `/api` calls to the API server, so you must keep Terminal 1 running.
+> If port 5173 is taken, Vite uses the next free port and prints it. The dev server
+> hot-reloads and proxies all `/api` calls to the API server — keep Terminal 1 running.
 
 The API server auto-creates `flexpm.db` and runs all 16 migrations on first start.
 
@@ -54,16 +102,11 @@ curl http://localhost:3210/api/health
 # {"status":"ok","version":"0.1.0","migrations_applied":16}
 ```
 
-The fresh database is empty — open the UI and create a project (or press **Ctrl+K** for the
-command palette) to populate the Board, List, and Dashboard views.
+The fresh database is empty — open the UI and create a project (or press **Ctrl+K**) to get started.
 
-### Viewing the UI on `http://127.0.0.1:3210` (or a reverse-proxy domain)
+### Single-binary mode (API + SPA in one process)
 
-`cargo run --bin flexpm-api` serves the **API only** — opening `http://127.0.0.1:3210` in a
-browser will not show the UI. To serve the SPA from the API binary itself (e.g. behind a
-reverse proxy such as Caddy), build with the `embed-spa` feature — see
-[Single-binary distribution](#single-binary-distribution) below. For day-to-day development,
-use the Vite dev server URL above.
+`cargo run --bin flexpm-api` serves the API only. To also serve the SPA from the same binary (e.g. behind Caddy), use the `embed-spa` feature — see [Single-binary distribution](#single-binary-distribution) below.
 
 ---
 
@@ -156,6 +199,8 @@ Base URL: `http://127.0.0.1:3210/api`
 | `GET /projects/{id}/search?q=term` | FTS5 full-text search |
 | `GET /search?q=term` | Global search across all projects |
 
+See [API Reference](docs/API-REFERENCE.md) for the full endpoint list.
+
 ### Full curl workflow
 
 ```bash
@@ -226,7 +271,7 @@ storage_dir = "./storage"
 | `maintenance` | Kanban | System, Ticket, Job |
 | `custom` | Simple | Default agile terms |
 
-All vocabulary and workflow columns are editable after creation — via the **Settings panel** in the UI (`/projects/:id/settings`) or via `PATCH /api/projects/{id}`.
+All vocabulary and workflow columns are editable after creation — via the **Settings panel** in the UI or via `PATCH /api/projects/{id}`.
 
 ---
 
@@ -276,27 +321,6 @@ curl -X POST http://localhost:3210/api/restore \
 
 # On next server start, the staged file is applied automatically.
 # The previous database is moved to flexpm.db.bak.
-```
-
----
-
-## Debugging
-
-```bash
-# Health + version + migration count
-curl http://localhost:3210/api/health
-
-# System info, DB size, config
-curl http://localhost:3210/api/debug/info
-
-# Row counts per table
-curl http://localhost:3210/api/debug/db-stats
-
-# Verbose logging
-FLEXPM_LOG_LEVEL=debug cargo run --bin flexpm-api
-
-# Trace SQL queries
-RUST_LOG=flexpm_db=trace,flexpm_api=debug cargo run --bin flexpm-api
 ```
 
 ---
@@ -367,22 +391,6 @@ flexpm-cli   ← talks to flexpm-api over HTTP (no DB access)
 
 ---
 
-## Frontend features
-
-- **7 view modes:** Board (Kanban drag-and-drop), List, Tree (hierarchy), Calendar, Timeline, Dashboard, Sprints
-- **Settings panel** — live vocabulary and workflow editor per project
-- **Real-time updates** via WebSocket
-- **Optimistic UI** — instant feedback, rollback on error
-- **Global search** (Ctrl+/) powered by FTS5
-- **Command palette** (Ctrl+K)
-- **Project templates** — create and reuse project blueprints
-- **Custom fields** — 9 types: Text, LongText, Number, Date, Boolean, Select, MultiSelect, URL, Email
-- **Multiple boards per project** — 6 grouping modes: Status, Priority, Item Type, Sprint, Assignee, Custom Field
-- Dark mode, skeleton loading, toast notifications
-- Entry bundle: 22 KB gzipped (lazy-loaded routes)
-
----
-
 ## Documentation
 
 - [API Reference](docs/API-REFERENCE.md) — complete endpoint reference
@@ -399,4 +407,5 @@ flexpm-cli   ← talks to flexpm-api over HTTP (no DB access)
 MIT
 
 ---
+
 _Personal R&D project — actively developed. Built as a learning exercise in stacks outside my day-to-day paid work._
