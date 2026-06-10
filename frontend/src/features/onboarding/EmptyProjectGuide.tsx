@@ -1,4 +1,4 @@
-import { type Component } from 'solid-js';
+import { type Component, type JSX } from 'solid-js';
 import { A, useParams } from '@solidjs/router';
 import { Button } from '../../shared/ui';
 
@@ -6,7 +6,7 @@ interface Props {
   onAddItem: () => void;
 }
 
-const Step: Component<{ n: number; title: string; description: string; action: unknown }> = (
+const Step: Component<{ n: number; title: string; description: string; action: JSX.Element }> = (
   props,
 ) => (
   <div class="flex gap-4">
@@ -26,7 +26,7 @@ const Step: Component<{ n: number; title: string; description: string; action: u
       <p class="text-sm mb-3" style={{ color: 'var(--color-text-secondary)' }}>
         {props.description}
       </p>
-      {props.action as unknown}
+      {props.action}
     </div>
   </div>
 );
@@ -69,14 +69,14 @@ const EmptyProjectGuide: Component<Props> = (props) => {
           <Step
             n={2}
             title="Make it yours"
-            description="Rename "Task", "Sprint", and "Epic" to match your domain — software, construction, research, anything."
+            description={'Rename "Task", "Sprint", and "Epic" to match your domain — software, construction, research, anything.'}
             action={
               <A
                 href={`/projects/${pid()}/settings`}
                 class="inline-flex items-center gap-1 text-sm font-medium"
                 style={{ color: 'var(--color-primary-600)' }}
               >
-                Open Vocabulary settings →
+                Open Vocabulary settings &rarr;
               </A>
             }
           />
