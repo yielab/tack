@@ -393,12 +393,25 @@ flexpm-cli   ← talks to flexpm-api over HTTP (no DB access)
 
 ## Documentation
 
-- [API Reference](docs/API-REFERENCE.md) — complete endpoint reference
-- [Testing Guide](docs/TESTING.md) — test pyramid, commands, coverage
-- [Deployment Guide](docs/DEPLOYMENT-GUIDE.md) — bare binary and reverse proxy setup
-- [Project Status](docs/PROJECT-STATUS.md) — current state and known gaps
-- [CONTRIBUTING.md](CONTRIBUTING.md) — code style, PR process, how to add features
-- [CHANGELOG.md](CHANGELOG.md) — version history
+The full documentation is in [`docs/book/`](docs/book/) — build it with
+[mdBook](https://rust-lang.github.io/mdBook/):
+
+```sh
+cargo install mdbook
+mdbook serve docs/book   # opens http://localhost:3000
+```
+
+Sections: **User Guide** · **Developer Guide** (with Learning Path for Rust/SolidJS newcomers) · **API Reference** · **Roadmap**.
+
+Quick links to the source:
+
+- [User Guide](docs/book/src/user-guide/quick-start.md)
+- [Architecture Overview](docs/book/src/developer/README.md)
+- [Learning Path](docs/book/src/developer/learning/README.md)
+- [API Reference](docs/book/src/developer/api-reference.md)
+- [Roadmap](docs/book/src/roadmap.md)
+- [Deployment](docs/book/src/developer/deployment.md)
+- [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
