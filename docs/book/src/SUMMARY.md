@@ -1,0 +1,41 @@
+# Summary
+
+[Introduction](introduction.md)
+
+---
+
+# User Guide
+
+- [Quick Start](user-guide/quick-start.md)
+- [Views](user-guide/views.md)
+- [Workflows & Statuses](user-guide/workflows.md)
+- [Vocabulary](user-guide/vocabulary.md)
+- [CLI](user-guide/cli.md)
+- [Configuration](user-guide/configuration.md)
+- [Backup & Restore](user-guide/backup-restore.md)
+
+---
+
+# Developer Guide
+
+- [Architecture Overview](developer/README.md)
+- [Crate Tour](developer/crate-tour.md)
+- [Adding Features](developer/adding-features.md)
+- [API Reference](developer/api-reference.md)
+- [Testing](developer/testing.md)
+- [Deployment](developer/deployment.md)
+
+## Learning Path
+
+- [Overview](developer/learning/README.md)
+- [Rust for Backend Developers](developer/learning/rust-primer.md)
+- [Async/Await in Rust](developer/learning/async-in-rust.md)
+- [Axum — HTTP Without Magic](developer/learning/axum-primer.md)
+- [The Data Layer (sqlx)](developer/learning/data-layer.md)
+- [SolidJS for Frontend Developers](developer/learning/solidjs-primer.md)
+
+---
+
+# Roadmap
+
+- [Roadmap](roadmap.md)

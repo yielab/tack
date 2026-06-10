@@ -1,0 +1,18 @@
+[book]
+title = "FlexPM Documentation"
+authors = ["Santiago Yie"]
+description = "User guide, developer guide, learning path, and roadmap for FlexPM"
+src = "src"
+language = "en"
+
+[rust]
+edition = "2021"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+git-repository-url = "https://github.com/santiagoyie/FlexPM"
+edit-url-template = "https://github.com/santiagoyie/FlexPM/edit/develop/docs/book/src/{path}"
+no-section-label = false
