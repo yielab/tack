@@ -42,6 +42,7 @@ beforeEach(() => {
     if (url.includes('/export')) return Promise.resolve(new Response(new Blob(['x']), { status: 200 }));
     if (url.endsWith('/api/projects/p1/roles')) return Promise.resolve(new Response('[]', { status: 200 }));
     if (url.endsWith('/api/projects/import')) return Promise.resolve(new Response(JSON.stringify({ id: 'new' }), { status: 200 }));
+    if (url.endsWith('/api/projects/p1/import-csv')) return Promise.resolve(new Response(JSON.stringify({ created: 3, skipped: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     return Promise.resolve(new Response(JSON.stringify({ id: 'p1' }), { status: 200 }));
   });
 });
@@ -112,5 +113,29 @@ describe('Settings panels', () => {
         (c) => (c[1] as RequestInit)?.method === 'POST' && String(c[0]).endsWith('/api/projects/import'),
       ),
     ).toBe(true);
+  });
+
+  it('DataPanel CSV import POSTs to /projects/{id}/import-csv', async () => {
+    const { container, dispose } = mount(() => <DataPanel />);
+    await flush();
+
+    // The CSV file input is the second input[type="file"] (JSON import is the first).
+    const inputs = container.querySelectorAll<HTMLInputElement>('input[type="file"]');
+    const csvInput = inputs[1];
+    const csvText = 'title\nFoo\nBar\nBaz';
+    const file = new File([csvText], 'items.csv', { type: 'text/csv' });
+    Object.defineProperty(csvInput, 'files', { value: [file], configurable: true });
+    csvInput.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    await flush(); // second flush for file.text() async resolution
+
+    expect(
+      fetchMock.mock.calls.some(
+        (c) =>
+          (c[1] as RequestInit)?.method === 'POST' &&
+          String(c[0]).endsWith('/api/projects/p1/import-csv'),
+      ),
+    ).toBe(true);
+    dispose();
   });
 });
