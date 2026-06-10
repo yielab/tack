@@ -1,5 +1,5 @@
 import { createSignal, createResource, For, Show } from 'solid-js';
-import { useParams, useNavigate } from '@solidjs/router';
+import { useParams } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
 import { Button, Field, FieldShell, Badge, Modal } from '../../shared/ui';
@@ -9,7 +9,6 @@ import type { Sprint, Item } from '../../types/api';
 
 export default function Sprints() {
   const params = useParams();
-  const navigate = useNavigate();
   const projectId = params.id!;
 
   const { project } = useProject();
@@ -129,15 +128,7 @@ export default function Sprints() {
               Manage {t('sprint').toLowerCase()}s and iterations
             </p>
           </div>
-          <div class="flex gap-2">
-            <Button onClick={openCreateModal}>Create {t('sprint')}</Button>
-            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/board`)}>
-              Board View
-            </Button>
-            <Button variant="secondary" onClick={() => navigate('/projects')}>
-              Back to Projects
-            </Button>
-          </div>
+          <Button onClick={openCreateModal}>Create {t('sprint')}</Button>
         </div>
 
         {/* Sprints List */}

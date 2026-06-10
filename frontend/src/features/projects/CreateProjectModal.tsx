@@ -1,6 +1,7 @@
 import { type Component, createSignal, Show } from 'solid-js';
 import { Modal, Button, Field, Select, FieldShell } from '../../shared/ui';
 import { api } from '../../shared/api';
+import type { CreateProject } from '../../shared/types';
 import { toast } from '../../shared/ui/toast';
 
 const PROJECT_TYPE_OPTIONS = [
@@ -41,7 +42,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
       await api.projects.create({
         name: name().trim(),
         description: description().trim() || undefined,
-        template: projectType(),
+        project_type: projectType() as CreateProject['project_type'],
       });
 
       // Reset form

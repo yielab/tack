@@ -112,7 +112,7 @@ const SearchBar: Component<SearchBarProps> = (props) => {
 
   const handleSelectItem = (item: Item) => {
     // Navigate to board view with the item's project
-    navigate(`/board?project=${item.project_id}`);
+    navigate(`/projects/${item.project_id}/board`);
     setQuery('');
     setResults([]);
     setIsOpen(false);

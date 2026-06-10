@@ -14,7 +14,7 @@
 ### First-Time Setup
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/santiagoyie/flexpm.git
 cd flexpm
 
 # Build the workspace (downloads dependencies on first run)
@@ -142,7 +142,7 @@ cargo test -- --nocapture      # Show println! output during tests
 
 # ─── Running ─────────────────────────────────────
 cargo run --bin flexpm-api     # Start the API server
-cargo run --bin flexpm-cli -- --help   # CLI help
+cargo run --bin flexpm -- --help       # CLI help
 
 # ─── Code Quality ────────────────────────────────
 cargo clippy --workspace       # Lint all crates

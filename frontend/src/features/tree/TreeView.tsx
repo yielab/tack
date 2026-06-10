@@ -63,11 +63,11 @@ const TreeRow: Component<{
 /** Hierarchical tree of a project's items (T-514). Click opens the detail drawer. */
 const TreeView: Component = () => {
   const params = useParams();
-  const navigate = useNavigate();
   const [, setSearchParams] = useSearchParams();
   const projectId = params.id!;
   const { typeMap } = useVocab();
 
+  const navigate = useNavigate();
   const [items] = createResource(() => api.items.tree(projectId));
   const roots = createMemo(() => buildTree(items() ?? []));
 
@@ -96,15 +96,23 @@ const TreeView: Component = () => {
         <div class="flex gap-2">
           <Button size="sm" variant="secondary" onClick={expandAll}>Expand all</Button>
           <Button size="sm" variant="secondary" onClick={collapseAll}>Collapse all</Button>
-          <Button size="sm" variant="secondary" onClick={() => navigate(`/projects/${projectId}/board`)}>
-            Board
-          </Button>
         </div>
       </div>
 
       <Show
         when={roots().length > 0}
-        fallback={<EmptyState title="No items yet" />}
+        fallback={
+          <EmptyState
+            icon="🌲"
+            title="Nothing to show in tree view yet"
+            description="Add items in Board or List, then come back here to see the hierarchy."
+            action={
+              <Button onClick={() => navigate(`/projects/${projectId}/board`)}>
+                Go to Board
+              </Button>
+            }
+          />
+        }
       >
         <div class="rounded-lg border p-2" style={{ 'border-color': 'var(--color-border-light)', 'background-color': 'var(--color-bg-base)' }}>
           <For each={roots()}>

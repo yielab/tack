@@ -1,17 +1,17 @@
 import { createResource, For, Show, createSignal, createEffect, onMount, onCleanup, type Component } from 'solid-js';
-import { useParams, useNavigate, useSearchParams } from '@solidjs/router';
+import { useParams, useSearchParams } from '@solidjs/router';
 import { api } from '../../shared/api';
 import type { BoardColumn, Item, BoardState } from '../../types/api';
 import CreateItemModal from '../../shared/ui/CreateItemModal';
 import BoardSelector from './BoardSelector';
 import { createBoardSocket, type BoardSocket, type SocketStatus } from '../../shared/realtime/boardSocket';
 import { useKeyboard, keyboardManager, type ShortcutContext } from '../../shared/keyboard/keyboard';
-import CommandPalette, { type Command } from '../../shared/ui/CommandPalette';
 import { withOptimisticUpdate } from '../../shared/state/optimistic';
 import { BoardSkeleton } from '../../shared/ui/SkeletonScreen';
 import { Button } from '../../shared/ui';
 import { useProject } from '../../shared/state/projectContext';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
+import EmptyProjectGuide from '../onboarding/EmptyProjectGuide';
 
 const ItemCard: Component<{
   item: Item;
@@ -131,9 +131,9 @@ const BoardColumn: Component<{
   };
 
   return (
-    <div class="flex-shrink-0 w-80">
+    <div class="shrink-0 w-80">
       <div
-        class="rounded-lg p-4 min-h-[500px]"
+        class="rounded-lg p-4 min-h-125"
         style={{ "background-color": "var(--color-bg-subtle)" }}
         classList={{
           'ring-2 ring-purple-500 ring-inset': isDragOver(),
@@ -201,7 +201,6 @@ const BoardColumn: Component<{
 };
 
 const Board: Component = () => {
-  const navigate = useNavigate();
   const params = useParams();
   const projectId = () => params.id;
   const { vocabulary } = useProject();
@@ -214,7 +213,6 @@ const Board: Component = () => {
 
   const [showCreateModal, setShowCreateModal] = createSignal(false);
   const [selectedColumn, setSelectedColumn] = createSignal<string | null>(null);
-  const [showCommandPalette, setShowCommandPalette] = createSignal(false);
   const [activeContext, setActiveContext] = createSignal<ShortcutContext>('board');
   const [editingItem, setEditingItem] = createSignal<Item | null>(null);
   const [modalMode, setModalMode] = createSignal<'create' | 'edit'>('create');
@@ -259,135 +257,31 @@ const Board: Component = () => {
   // Keyboard shortcuts
   useKeyboard(activeContext);
 
-  // Register board-specific shortcuts
+  // Update keyboard context when modal opens/closes
   createEffect(() => {
-    // Update context when modal opens/closes
-    setActiveContext(showCreateModal() || showCommandPalette() ? 'modal' : 'board');
+    setActiveContext(showCreateModal() ? 'modal' : 'board');
+  });
 
-    // Register shortcuts
-    keyboardManager.register('global', {
-      key: 'k',
-      ctrl: true,
-      description: 'Open command palette',
-      action: () => setShowCommandPalette(true),
-    });
-
+  createEffect(() => {
     keyboardManager.register('board', {
       key: 'n',
       description: 'Create new item',
       action: () => {
-        // Default to first column if available
         const firstColumn = currentBoard()?.columns[0];
-        if (firstColumn) {
-          handleAddItem(firstColumn.status);
-        }
+        if (firstColumn) handleAddItem(firstColumn.status);
       },
     });
-
     keyboardManager.register('board', {
       key: 'r',
       description: 'Refresh board',
       action: () => refetch(),
     });
-
     keyboardManager.register('modal', {
       key: 'Escape',
       description: 'Close modal',
-      action: () => {
-        setShowCreateModal(false);
-        setShowCommandPalette(false);
-      },
+      action: () => setShowCreateModal(false),
     });
   });
-
-  // Command palette commands
-  const commands = (): Command[] => {
-    const cmds: Command[] = [
-      {
-        id: 'new-item',
-        label: 'Create New Item',
-        description: 'Add a new item to the board',
-        icon: '➕',
-        shortcut: 'N',
-        action: () => {
-          const firstColumn = currentBoard()?.columns[0];
-          if (firstColumn) {
-            handleAddItem(firstColumn.status);
-          }
-        },
-      },
-      {
-        id: 'refresh',
-        label: 'Refresh Board',
-        description: 'Reload board data',
-        icon: '🔄',
-        shortcut: 'R',
-        action: () => refetch(),
-      },
-      {
-        id: 'go-dashboard',
-        label: 'Switch to Dashboard',
-        description: 'View project statistics and analytics',
-        icon: '📊',
-        action: () => projectId() && navigate(`/projects/${projectId()}/dashboard`),
-      },
-      {
-        id: 'go-list',
-        label: 'Switch to List View',
-        description: 'View items in table format',
-        icon: '📋',
-        action: () => projectId() && navigate(`/projects/${projectId()}/list`),
-      },
-      {
-        id: 'go-sprints',
-        label: 'Switch to Sprints',
-        description: 'Manage sprints and backlog',
-        icon: '🏃',
-        action: () => projectId() && navigate(`/projects/${projectId()}/sprints`),
-      },
-      {
-        id: 'go-calendar',
-        label: 'Switch to Calendar',
-        description: 'View items on calendar',
-        icon: '📅',
-        action: () => projectId() && navigate(`/projects/${projectId()}/calendar`),
-      },
-      {
-        id: 'go-timeline',
-        label: 'Switch to Timeline',
-        description: 'View Gantt-style timeline',
-        icon: '📈',
-        action: () => projectId() && navigate(`/projects/${projectId()}/timeline`),
-      },
-      {
-        id: 'go-projects',
-        label: 'Go to Projects',
-        description: 'Navigate to projects list',
-        icon: '📁',
-        action: () => navigate('/projects'),
-      },
-      {
-        id: 'go-home',
-        label: 'Go to Home',
-        description: 'Navigate to home page',
-        icon: '🏠',
-        action: () => navigate('/'),
-      },
-    ];
-
-    // Add "Create in Column" commands for each column
-    currentBoard()?.columns.forEach((column) => {
-      cmds.push({
-        id: `add-${column.status}`,
-        label: `Add Item to ${column.status}`,
-        description: `Create a new item in the ${column.status} column`,
-        icon: '📝',
-        action: () => handleAddItem(column.status),
-      });
-    });
-
-    return cmds;
-  };
 
   const handleItemDrop = async (itemId: string, newStatus: string) => {
     const realBoard = board();
@@ -452,87 +346,28 @@ const Board: Component = () => {
 
   return (
     <div>
-      <div class="mb-8">
-        <div class="flex items-center justify-between">
-          <div>
-            <h1 class="text-3xl font-bold" style={{ color: "var(--color-text-primary)" }}>Board</h1>
-            <p class="mt-2" style={{ color: "var(--color-text-secondary)" }}>
-              Drag items between columns to change their status
-            </p>
+      <div class="mb-4 flex items-center justify-between">
+        {/* Board selector */}
+        <Show when={projectId()}>
+          <BoardSelector projectId={projectId()!} />
+        </Show>
+
+        {/* Live connection status */}
+        <Show when={sock()}>
+          <div class="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            <div
+              class="w-1.5 h-1.5 rounded-full"
+              classList={{
+                'bg-green-500': socketStatus() === 'open',
+                'bg-yellow-500': socketStatus() === 'connecting' || socketStatus() === 'reconnecting',
+                'bg-gray-400': socketStatus() === 'closed',
+              }}
+            />
+            {socketStatus() === 'open' && 'Live'}
+            {(socketStatus() === 'connecting' || socketStatus() === 'reconnecting') && 'Connecting…'}
+            {socketStatus() === 'closed' && 'Offline'}
           </div>
-
-          <div class="flex items-center gap-4">
-            {/* Board Selector */}
-            <Show when={projectId()}>
-              <BoardSelector projectId={projectId()!} />
-            </Show>
-
-            {/* View Navigation Buttons */}
-            <Show when={projectId()}>
-              <div class="flex items-center gap-2">
-                <Button size="sm" variant="secondary" onClick={() => navigate(`/projects/${projectId()}/dashboard`)}>
-                  Dashboard
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => navigate(`/projects/${projectId()}/list`)}>
-                  List
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => navigate(`/projects/${projectId()}/sprints`)}>
-                  Sprints
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => navigate(`/projects/${projectId()}/calendar`)}>
-                  Calendar
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => navigate(`/projects/${projectId()}/timeline`)}>
-                  Timeline
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => navigate(`/projects/${projectId()}/tree`)}>
-                  Tree
-                </Button>
-              </div>
-            </Show>
-
-            {/* Keyboard Shortcut Hint */}
-            <button
-              onClick={() => setShowCommandPalette(true)}
-              class="px-3 py-1.5 text-sm border rounded-md transition-colors"
-              style={{
-                color: "var(--color-text-secondary)",
-                "border-color": "var(--color-border-medium)",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = "var(--color-text-primary)";
-                e.currentTarget.style.borderColor = "var(--color-primary-500)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = "var(--color-text-secondary)";
-                e.currentTarget.style.borderColor = "var(--color-border-medium)";
-              }}
-            >
-              <span class="font-mono">Ctrl+K</span>
-              <span class="ml-2">Commands</span>
-            </button>
-
-            {/* Connection Status Indicator */}
-            <Show when={sock()}>
-              <div class="flex items-center gap-2 text-sm">
-                <div
-                  class="w-2 h-2 rounded-full"
-                  classList={{
-                    'bg-green-500 animate-pulse': socketStatus() === 'open',
-                    'bg-yellow-500': socketStatus() === 'connecting' || socketStatus() === 'reconnecting',
-                    'bg-gray-400': socketStatus() === 'closed',
-                  }}
-                />
-                <span style={{ color: "var(--color-text-secondary)" }}>
-                  {socketStatus() === 'open' && 'Live'}
-                  {socketStatus() === 'connecting' && 'Connecting…'}
-                  {socketStatus() === 'reconnecting' && 'Reconnecting…'}
-                  {socketStatus() === 'closed' && 'Offline'}
-                </span>
-              </div>
-            </Show>
-          </div>
-        </div>
+        </Show>
       </div>
 
       <Show
@@ -540,6 +375,11 @@ const Board: Component = () => {
         fallback={<BoardSkeleton />}
       >
         <Show when={projectId()}>
+          {/* Guide shown when project exists but has no items yet */}
+          <Show when={(currentBoard()?.columns ?? []).every(col => col.items.length === 0) && (currentBoard()?.columns ?? []).length > 0}>
+            <EmptyProjectGuide onAddItem={() => handleAddItem(currentBoard()!.columns[0].status)} />
+          </Show>
+
           <div class="flex gap-4 overflow-x-auto pb-4">
             <For each={currentBoard()?.columns || []}>
               {(column) => (
@@ -580,12 +420,6 @@ const Board: Component = () => {
         />
       </Show>
 
-      {/* Command Palette */}
-      <CommandPalette
-        isOpen={showCommandPalette()}
-        onClose={() => setShowCommandPalette(false)}
-        commands={commands()}
-      />
     </div>
   );
 };

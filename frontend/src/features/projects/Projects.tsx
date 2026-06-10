@@ -1,6 +1,6 @@
 import { createResource, For, Show, createSignal, type Component } from 'solid-js';
 import { A } from '@solidjs/router';
-import { FiPlus, FiFolder } from 'solid-icons/fi';
+import { FiPlus } from 'solid-icons/fi';
 import { api } from '../../shared/api';
 import CreateProjectModal from './CreateProjectModal';
 import { ProjectsGridSkeleton } from '../../shared/ui/SkeletonScreen';
@@ -42,14 +42,31 @@ const Projects: Component = () => {
         <Show
           when={projects() && projects()!.length > 0}
           fallback={
-            <div class="text-center py-12">
-              <FiFolder size={48} class="mx-auto text-gray-400 mb-4" />
-              <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                No projects yet
-              </h3>
-              <p class="text-gray-600 dark:text-gray-400">
-                Get started by creating your first project
+            <div class="flex flex-col items-center justify-center py-20 px-4 text-center">
+              <div class="text-6xl mb-6" aria-hidden="true">📋</div>
+              <h2 class="text-2xl font-bold mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                Track any kind of work — your terms, your workflow
+              </h2>
+              <p class="max-w-md mb-8" style={{ color: 'var(--color-text-secondary)' }}>
+                FlexPM adapts to software teams, construction projects, personal tasks, and more.
+                Create your first project to get started.
               </p>
+              <div class="flex flex-col sm:flex-row gap-3">
+                <Button size="lg" onClick={() => setShowCreateModal(true)}>
+                  Create your first project
+                </Button>
+                <A
+                  href="/templates"
+                  class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border transition-colors"
+                  style={{
+                    color: 'var(--color-text-secondary)',
+                    'border-color': 'var(--color-border-medium)',
+                    'background-color': 'var(--color-bg-base)',
+                  }}
+                >
+                  Browse templates
+                </A>
+              </div>
             </div>
           }
         >
@@ -57,7 +74,7 @@ const Projects: Component = () => {
             <For each={projects()}>
               {(project) => (
                 <A
-                  href={`/board?project=${project.id}`}
+                  href={`/projects/${project.id}/board`}
                   class="block p-6 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-purple-500 dark:hover:border-purple-500 transition-colors"
                 >
                   <div class="flex items-start justify-between mb-4">

@@ -1,14 +1,14 @@
 import { createResource, For, Show, createMemo } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
 import { api } from '../../shared/api';
-import { Button } from '../../shared/ui';
 import { useProject } from '../../shared/state/projectContext';
 import { computeDashboardStats } from './computeStats';
+import { Button, EmptyState } from '../../shared/ui';
 
 export default function Dashboard() {
   const params = useParams();
-  const navigate = useNavigate();
   const projectId = params.id!;
+  const navigate = useNavigate();
 
   const { project } = useProject();
   const [items] = createResource(() => api.items.list(projectId));
@@ -41,29 +41,31 @@ export default function Dashboard() {
     <div class="min-h-screen p-6" style={{ background: 'var(--color-bg-base)' }}>
       <div class="max-w-7xl mx-auto">
         {/* Header */}
-        <div class="mb-6 flex items-center justify-between">
-          <div>
-            <h1 class="text-3xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
-              {project()?.name || 'Loading...'} - Dashboard
-            </h1>
-            <p class="mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-              Project overview and statistics
-            </p>
-          </div>
-          <div class="flex gap-2">
-            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/board`)}>
-              Board View
-            </Button>
-            <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/list`)}>
-              List View
-            </Button>
-            <Button variant="secondary" onClick={() => navigate('/projects')}>
-              Back to Projects
-            </Button>
-          </div>
+        <div class="mb-6">
+          <h1 class="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
+            Overview
+          </h1>
+          <p class="mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+            Project statistics and progress
+          </p>
         </div>
 
+        {/* No items yet */}
+        <Show when={!items.loading && (items() ?? []).length === 0}>
+          <EmptyState
+            icon="📈"
+            title="No data to show yet"
+            description="Statistics appear here once you add items to your project. Start in Board or List."
+            action={
+              <Button onClick={() => navigate(`/projects/${projectId}/board`)}>
+                Go to Board
+              </Button>
+            }
+          />
+        </Show>
+
         {/* Stats Grid */}
+        <Show when={(items() ?? []).length > 0}>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
           {/* Total Items */}
           <div class="rounded-lg p-6" style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
@@ -266,6 +268,7 @@ export default function Dashboard() {
             </div>
           </Show>
         </div>
+        </Show>{/* end: items > 0 */}
       </div>
     </div>
   );
