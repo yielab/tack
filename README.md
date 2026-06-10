@@ -85,31 +85,28 @@ The honest answer is split between technical fit and deliberate learning.
 ```bash
 git clone https://github.com/santiagoyie/flexpm.git
 cd flexpm
-make build-spa          # builds frontend then compiles a ~5 MB release binary
-./target/release/flexpm-api
+make run
 ```
 
-Open **`http://127.0.0.1:3210`** — the binary serves the API and the full UI from a single process. No separate frontend server, no config needed. The database (`flexpm.db`) and storage directory are created automatically on first start.
+`make run` builds the frontend, compiles it into the binary, and starts the server. Open **`http://127.0.0.1:3210`** — one process serves everything. The database and storage directory are created automatically on first start.
 
 ### Develop it
 
 ```bash
-make dev                # starts API + frontend dev server, Ctrl-C stops both
+make dev
 ```
 
-The API runs at `http://127.0.0.1:3210`. Vite starts at `http://localhost:5173` and proxies all `/api` requests to the API — open the Vite URL. Both hot-reload on save: Rust rebuilds on code changes (requires [`cargo-watch`](https://crates.io/crates/cargo-watch) if you want auto-restart), frontend reloads instantly.
-
-First run installs frontend dependencies automatically.
+Starts the API and the Vite dev server together. Ctrl-C stops both. Open **`http://localhost:5173`** — Vite proxies all `/api` requests to the API and hot-reloads the frontend on every save. Frontend dependencies are installed automatically on first run.
 
 ### Other useful commands
 
 ```bash
-make test               # run all 92 tests
-make lint               # clippy
-make fmt                # rustfmt + prettier
-make debug              # API only, verbose logging
-make reset-db           # wipe the database and start fresh
-make help               # full command list
+make test       # run all 92 tests
+make lint       # clippy
+make fmt        # rustfmt
+make debug      # API only with verbose logging
+make reset-db   # wipe the database and start fresh
+make help       # full command list
 ```
 
 ---

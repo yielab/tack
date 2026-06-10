@@ -1,26 +1,23 @@
-.PHONY: build build-spa run test check lint fmt clean dev reset-db help
+.PHONY: build run dev debug cli test test-verbose test-core test-db check lint fmt fmt-check reset-db inspect-db api-health api-stats api-projects clean clean-all help
 
 # ─── Default ──────────────────────────────────────
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-# ─── Building ────────────────────────────────────
-build: ## Build all crates (debug)
-	cargo build
-
-release: ## Build all crates (release, optimized)
-	cargo build --release
-
-build-spa: ## Build the SPA and embed it into a single release binary (serves /api + UI same-origin)
+# ─── Building & Running ───────────────────────────
+build: ## Build the full app — frontend + release binary with embedded UI
 	npm --prefix frontend ci
 	npm --prefix frontend run build
 	cargo build -p flexpm-api --release --features embed-spa
 	@echo ""
-	@echo "✓ Single binary: target/release/flexpm-api"
-	@echo "  Serves the API at /api/* and the SPA same-origin from one process."
+	@echo "  Binary: target/release/flexpm-api"
+	@echo "  Run:    ./target/release/flexpm-api"
+	@echo "  Open:   http://127.0.0.1:3210"
 
-# ─── Running ─────────────────────────────────────
-dev: frontend/node_modules ## Start API + frontend dev server — Ctrl-C stops both
+run: build ## Build and start the full app (API + UI, single process)
+	./target/release/flexpm-api
+
+dev: frontend/node_modules ## Development mode: API + Vite hot-reload (Ctrl-C stops both)
 	@trap 'kill 0' SIGINT; \
 	cargo run --bin flexpm-api & \
 	npm --prefix frontend run dev & \
@@ -29,10 +26,7 @@ dev: frontend/node_modules ## Start API + frontend dev server — Ctrl-C stops b
 frontend/node_modules:
 	npm --prefix frontend install
 
-run: ## Run the release binary (build-spa first)
-	./target/release/flexpm-api
-
-debug: ## Start API with verbose logging (no frontend)
+debug: ## Start API only with verbose logging
 	RUST_LOG=flexpm_api=debug,flexpm_db=debug,tower_http=debug cargo run --bin flexpm-api
 
 cli: ## Run the CLI (use ARGS="..." to pass arguments)
@@ -40,10 +34,10 @@ cli: ## Run the CLI (use ARGS="..." to pass arguments)
 
 # ─── Testing ─────────────────────────────────────
 test: ## Run all tests
-	cargo test
+	cargo test --workspace
 
 test-verbose: ## Run all tests with output
-	cargo test -- --nocapture
+	cargo test --workspace -- --nocapture
 
 test-core: ## Run only core unit tests
 	cargo test -p flexpm-core
@@ -58,21 +52,21 @@ check: ## Type-check without building
 lint: ## Run clippy linter
 	cargo clippy --workspace -- -D warnings
 
-fmt: ## Format all code
+fmt: ## Format all Rust code
 	cargo fmt --all
 
-fmt-check: ## Check formatting (for CI)
+fmt-check: ## Check formatting (used in CI)
 	cargo fmt --all -- --check
 
 # ─── Database ────────────────────────────────────
-reset-db: ## Delete the database (re-created on next run)
+reset-db: ## Delete the database (auto-recreated on next run)
 	rm -f flexpm.db flexpm.db-shm flexpm.db-wal
-	@echo "Database deleted. Run 'make run' to re-create."
+	@echo "Database deleted. Run 'make run' or 'make dev' to recreate."
 
-inspect-db: ## Open the database in SQLite CLI
+inspect-db: ## Open the live database in SQLite CLI
 	sqlite3 flexpm.db
 
-# ─── Quick API Tests ─────────────────────────────
+# ─── Quick API Checks ────────────────────────────
 api-health: ## Check server health
 	@curl -s http://localhost:3210/api/health | python3 -m json.tool 2>/dev/null || curl -s http://localhost:3210/api/health
 
