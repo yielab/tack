@@ -275,4 +275,12 @@ describe('api.data (export/import/backup/restore)', () => {
     expect(c).toMatchObject({ url: '/api/restore', method: 'POST' });
     expect(c.body).toBe(blob);
   });
+  it('importCsv → POST /projects/{id}/import-csv with text/csv body', async () => {
+    await api.data.importCsv('p1', 'title\nFoo');
+    const [url, init] = fetchMock.mock.calls.at(-1)!;
+    expect(String(url)).toBe('/api/projects/p1/import-csv');
+    expect(init?.method).toBe('POST');
+    expect(init?.body).toBe('title\nFoo');
+    expect((init?.headers as Headers).get('Content-Type')).toBe('text/csv');
+  });
 });
