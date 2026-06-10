@@ -8,7 +8,6 @@ import { createBoardSocket, type BoardSocket, type SocketStatus } from '../../sh
 import { useKeyboard, keyboardManager, type ShortcutContext } from '../../shared/keyboard/keyboard';
 import { withOptimisticUpdate } from '../../shared/state/optimistic';
 import { BoardSkeleton } from '../../shared/ui/SkeletonScreen';
-import { Button } from '../../shared/ui';
 import { useProject } from '../../shared/state/projectContext';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import EmptyProjectGuide from '../onboarding/EmptyProjectGuide';
