@@ -1,7 +1,7 @@
 # FlexPM
 
 [![CI](https://github.com/santiagoyie/FlexPM/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/santiagoyie/FlexPM/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/github/license/santiagoyie/FlexPM)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 
 > Local-first, single-binary project management for solo developers and small teams.
