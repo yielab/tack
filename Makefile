@@ -1,4 +1,4 @@
-.PHONY: build run dev debug cli test test-verbose test-core test-db check lint fmt fmt-check reset-db inspect-db api-health api-stats api-projects clean clean-all help
+.PHONY: build run dev debug cli tunnel test test-verbose test-core test-db check lint fmt fmt-check reset-db inspect-db api-health api-stats api-projects clean clean-all help
 
 # ─── Default ──────────────────────────────────────
 help: ## Show this help
@@ -12,14 +12,31 @@ build: ## Compile — frontend + release binary with embedded UI (~30s first tim
 	@echo ""
 	@echo "  Ready. Start with: make run"
 
-run: ## Start the pre-built binary (run make build first)
-	./target/release/flexpm-api
+# Starts the Cloudflare tunnel in the background when cloudflared.yml exists
+# (public HTTPS for the Alexa endpoint). No-op on machines without it.
+define START_TUNNEL
+	if command -v cloudflared >/dev/null 2>&1 && [ -f cloudflared.yml ]; then \
+		cloudflared tunnel --config cloudflared.yml run & \
+	else \
+		echo "  (no cloudflared.yml — starting without public tunnel)"; \
+	fi
+endef
 
-dev: frontend/node_modules ## Development mode: API + Vite hot-reload (Ctrl-C stops both)
+run: ## Start the pre-built binary + Cloudflare tunnel (Ctrl-C stops both)
+	@trap 'kill 0' SIGINT SIGTERM; \
+	$(START_TUNNEL); \
+	./target/release/flexpm-api & \
+	wait
+
+dev: frontend/node_modules ## Development mode: API + Vite hot-reload + tunnel (Ctrl-C stops all)
 	@trap 'kill 0' SIGINT; \
+	$(START_TUNNEL); \
 	cargo run --bin flexpm-api & \
 	npm --prefix frontend run dev & \
 	wait
+
+tunnel: ## Start only the Cloudflare tunnel (api.yielab.com → localhost:3210)
+	cloudflared tunnel --config cloudflared.yml run
 
 frontend/node_modules:
 	npm --prefix frontend install

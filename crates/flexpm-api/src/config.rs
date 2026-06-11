@@ -32,6 +32,12 @@ pub struct AppConfig {
     /// require `Authorization: Bearer <token>`. Leave unset for pure-local use.
     #[serde(default)]
     pub api_token: Option<String>,
+
+    /// Optional Amazon Alexa skill ID (e.g. `amzn1.ask.skill.…`). When set,
+    /// `POST /api/alexa` accepts requests from that skill (verified against the
+    /// application ID in each request). Unset disables the endpoint entirely.
+    #[serde(default)]
+    pub alexa_skill_id: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -47,6 +53,7 @@ impl Default for AppConfig {
             allowed_origins: default_allowed_origins(),
             max_body_size_bytes: default_max_body_size_bytes(),
             api_token: None,
+            alexa_skill_id: None,
         }
     }
 }
@@ -138,6 +145,11 @@ impl AppConfig {
             && !v.is_empty()
         {
             config.api_token = Some(v);
+        }
+        if let Ok(v) = std::env::var("FLEXPM_ALEXA_SKILL_ID")
+            && !v.is_empty()
+        {
+            config.alexa_skill_id = Some(v);
         }
         config
     }

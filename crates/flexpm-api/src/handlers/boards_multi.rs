@@ -139,21 +139,22 @@ pub async fn get_board_view(
             StatusCode::NOT_FOUND
         })?;
 
-    // Get all items for the project
+    // Parse board-level filters; board view always fetches all matching items (no pagination)
+    let filter = board
+        .filters
+        .as_ref()
+        .and_then(|f| serde_json::from_value::<ItemFilter>(f.clone()).ok())
+        .unwrap_or_default();
+    let filter = ItemFilter { per_page: Some(500), page: None, ..filter };
+
     let items = state
         .repo
-        .list_items(board.project_id, &Default::default())
+        .list_items(board.project_id, &filter)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, project_id = %board.project_id, "Failed to fetch items");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-
-    // Apply board filters if present
-    if let Some(_filters) = &board.filters {
-        // TODO: Apply filters to items
-        // For now, we show all items
-    }
 
     // Group items based on board grouping
     let columns = match &board.grouping {

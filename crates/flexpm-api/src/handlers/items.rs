@@ -4,7 +4,7 @@ use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
 
-use flexpm_core::models::{CreateItem, ItemFilter, UpdateItem};
+use flexpm_core::models::{CreateItem, Item, ItemFilter, UpdateItem};
 
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::websocket::{self, BoardEvent};
@@ -137,6 +137,14 @@ pub async fn update_item(
     );
 
     // Auto-propagate parent status when all siblings reach Done
+    propagate_parent_completion(&state, &item, &old_status).await;
+
+    Ok(Json(serde_json::to_value(item).unwrap()))
+}
+
+/// Best-effort: when `item` just moved into a Done-category status, mark its
+/// parent as done if every sibling is now complete. Errors are ignored.
+pub(crate) async fn propagate_parent_completion(state: &AppState, item: &Item, old_status: &str) {
     if let Some(parent_id) = item.parent_id
         && item.status != old_status
         && let Ok(Some(proj)) = state.repo.get_project(item.project_id).await
@@ -150,8 +158,6 @@ pub async fn update_item(
             .check_and_update_parent_status(parent_id, done_status)
             .await;
     }
-
-    Ok(Json(serde_json::to_value(item).unwrap()))
 }
 
 #[instrument(skip(state))]

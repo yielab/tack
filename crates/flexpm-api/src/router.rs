@@ -18,8 +18,8 @@ use crate::debug;
 #[cfg(feature = "embed-spa")]
 use crate::handlers::spa;
 use crate::handlers::{
-    attachments, backup, boards_multi, comments, custom_fields, dependencies, export, items,
-    projects, roles, sprints, templates, websocket,
+    alexa, attachments, backup, boards_multi, comments, custom_fields, dependencies, export,
+    items, projects, roles, sprints, templates, websocket,
 };
 use crate::middleware::require_token;
 
@@ -198,6 +198,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/boards/{id}", patch(boards_multi::update_board))
         .route("/boards/{id}", delete(boards_multi::delete_board))
         .route("/boards/{id}/view", get(boards_multi::get_board_view))
+        // ─── Alexa voice integration (skill-ID auth, exempt from token) ──
+        .route("/alexa", post(alexa::handle_request))
         // ─── Auth token gate (T-104) ──────────────────────────────────────
         .layer(middleware::from_fn_with_state(state.clone(), require_token));
 

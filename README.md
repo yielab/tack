@@ -58,6 +58,13 @@ Supports any workflow — Scrum, Kanban, phase-based construction, personal task
 - **Optional Bearer token** auth (`FLEXPM_API_TOKEN`)
 - Single binary with embedded SPA (`--features embed-spa`, ~5 MB)
 
+### Voice (Amazon Alexa)
+
+- **Alexa skill webhook** (`POST /api/alexa`) — add tasks, list open work, and complete items by voice
+- **Bilingual** — understands and answers in English and Spanish, following the request locale
+- **Same rules as the UI** — workflow transitions, WIP limits, auto-parent-completion, and per-project vocabulary all apply; boards update live via WebSocket
+- **Off by default** — enable by setting `FLEXPM_ALEXA_SKILL_ID`; see [docs/ALEXA.md](docs/ALEXA.md) for skill setup
+
 ---
 
 ## Why

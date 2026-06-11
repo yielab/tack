@@ -25,3 +25,9 @@ flexpm.toml
 # OS
 .DS_Store
 Thumbs.db
+
+# Local tunnel config (machine-specific)
+cloudflared.yml
+
+# Stray root npm installs (frontend deps live in frontend/)
+/node_modules/

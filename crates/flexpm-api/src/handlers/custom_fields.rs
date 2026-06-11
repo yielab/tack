@@ -114,12 +114,15 @@ pub async fn set_field_value(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    // Verify field exists
-    repo::custom_fields::get_field(state.pool(), field_id)
+    // Verify field exists and validate value against its type
+    let field = repo::custom_fields::get_field(state.pool(), field_id)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
 
-    // TODO: Validate value against field type and validation rules
+    if let Err(msg) = field.validate_value(&data) {
+        tracing::warn!(field_id = %field_id, error = %msg, "Custom field value validation failed");
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    }
 
     repo::custom_fields::set_field_value(state.pool(), item_id, field_id, data)
         .await

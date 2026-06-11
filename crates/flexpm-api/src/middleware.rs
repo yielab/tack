@@ -21,6 +21,12 @@ pub async fn require_token(
         return Ok(next.run(req).await);
     }
 
+    // Alexa cannot attach Authorization headers; /api/alexa authenticates
+    // itself by verifying the configured skill ID inside the handler.
+    if req.uri().path().ends_with("/alexa") {
+        return Ok(next.run(req).await);
+    }
+
     let Some(ref expected) = state.config.api_token else {
         // No token configured: pure-local mode, allow everything.
         return Ok(next.run(req).await);
@@ -42,7 +48,7 @@ pub async fn require_token(
 
 /// Byte-wise constant-time equality. Processes all bytes without early exit
 /// so the comparison time does not reveal how many bytes matched.
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }

@@ -16,6 +16,9 @@ pub enum ApiError {
     BadRequest(String),
 
     #[error("{0}")]
+    Forbidden(String),
+
+    #[error("{0}")]
     Conflict(String),
 
     #[error("Internal error: {0}")]
@@ -36,6 +39,7 @@ impl IntoResponse for ApiError {
         let (status, message) = match &self {
             ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
             ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
+            ApiError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             ApiError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
             ApiError::Core(err) => match err {
                 CoreError::ItemNotFound(_)
