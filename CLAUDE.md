@@ -18,11 +18,11 @@ FlexPM is a lightweight, versatile project management tool built in Rust (backen
 
 **Core Philosophy:** Universal work tracking with domain-specific vocabulary. The same underlying system adapts to different project types through configurable workflows and terminology.
 
-**Current Status:** Phase 2 (Architectural correctness) in progress
+**Current Status:** Phase 8 complete
 
-- Backend: complete (REST endpoints + WebSocket, 15 migrations)
-- Frontend: complete (Board view, List view, optimistic UI, real-time updates)
-- CLI: stub only — commands compile but return "not implemented" (T-203 pending)
+- Backend: complete (REST endpoints + WebSocket, 16 migrations, custom field value validation, Alexa voice integration)
+- Frontend: complete (Board, List, Timeline, Sprints, Settings views; 106 Vitest unit tests)
+- CLI: complete (init, add, list, move, board, search, sprint, template, role, comment, field, backup, restore)
 
 ## Development Commands
 
@@ -90,6 +90,7 @@ The API server loads configuration from `flexpm.toml` (if present) or environmen
 | `FLEXPM_API_TOKEN` | _(none)_ | Optional Bearer token — requires `Authorization: Bearer <token>` on all API requests |
 | `FLEXPM_ALLOWED_ORIGINS` | `localhost:8080,127.0.0.1:8080` | Comma-separated CORS allow-list |
 | `FLEXPM_MAX_BODY_SIZE` | `2097152` | Global request body limit in bytes (default 2 MB; upload endpoint is always 50 MB) |
+| `FLEXPM_ALEXA_SKILL_ID` | _(none)_ | Amazon Alexa skill ID — enables `POST /api/alexa` (see `docs/ALEXA.md`); endpoint returns 404 when unset |
 
 ### Debugging
 
@@ -223,6 +224,7 @@ All routes follow RESTful conventions:
 - `/api/items/{id}/comments` — Comments on items (2 endpoints)
 - `/api/projects/{id}/search` — Full-text search within project (1 endpoint)
 - `/api/search` — **Global search** across all projects (1 endpoint)
+- `/api/alexa` — **Alexa skill webhook** (1 endpoint; disabled unless `FLEXPM_ALEXA_SKILL_ID` is set; authenticates via skill-ID + timestamp checks and is exempt from the Bearer-token gate)
 
 Query parameters support filtering, pagination, and search.
 

@@ -1,3 +1,4 @@
+pub mod alexa;
 pub mod attachments;
 pub mod backup;
 pub mod boards_multi;

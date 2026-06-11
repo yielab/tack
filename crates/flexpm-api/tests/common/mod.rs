@@ -45,6 +45,7 @@ pub async fn test_app_with_config(config: AppConfig) -> (Router, Uuid) {
 /// Build a test app backed by a file-based SQLite database.
 /// The caller supplies the full SQLite URL (e.g. `"sqlite:/tmp/test.db?mode=rwc"`).
 /// Used for tests that require file-level operations (backup/restore).
+#[allow(dead_code)] // not every test binary exercises file-backed databases
 pub async fn test_app_with_file_db(db_url: &str) -> (Router, Uuid) {
     let pool = init_pool(db_url).await.expect("file-based pool");
     migrations::run_all(&pool).await.expect("migrations");
