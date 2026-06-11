@@ -25,7 +25,8 @@
 13. **[NEW v1.2]** [Custom Fields](#custom-fields)
 14. **[NEW v1.2]** [Multiple Boards](#multiple-boards)
 15. [WebSocket Events](#websocket-events)
-16. [Error Responses](#error-responses)
+16. [Alexa Voice Integration](#alexa-voice-integration)
+17. [Error Responses](#error-responses)
 
 ---
 
@@ -1078,6 +1079,52 @@ ws.onmessage = (event) => {
   }
 };
 ```
+
+---
+
+## Alexa Voice Integration
+
+### Receive Alexa Skill Request
+
+```http
+POST /api/alexa
+```
+
+Receives requests from an Amazon Alexa custom skill and maps voice intents onto
+the regular item/workflow logic. See [ALEXA.md](ALEXA.md) for skill setup and
+the interaction model.
+
+**Enabling:** disabled by default. Set `FLEXPM_ALEXA_SKILL_ID` (or
+`alexa_skill_id` in `flexpm.toml`) to your skill's ID (`amzn1.ask.skill.…`).
+
+**Authentication:** this route is exempt from the Bearer-token gate (Alexa
+cannot send custom headers). Instead, every request's embedded
+`applicationId` is verified against the configured skill ID (constant-time
+comparison), and timestamps older than ±150 seconds are rejected.
+
+**Supported intents:**
+
+| Intent | Slots | Action |
+| ------ | ----- | ------ |
+| `AddTaskIntent` | `title` (required), `project` (optional) | Creates an item at the workflow's initial status |
+| `ListTasksIntent` | `project` (optional) | Speaks the count and first few open items |
+| `CompleteTaskIntent` | `title` (required), `project` (optional) | Moves the matching open item to the first Done status (validates transitions and WIP limits) |
+
+When no `project` slot is given, the most recently updated project is used and
+its name is always spoken back.
+
+Responses are localised from the request's `locale` field: `es-*` locales get
+Spanish speech, everything else English.
+
+**Responses:** user-level problems (unknown project, missing slot, invalid
+transition) return `200 OK` with spoken text, as the Alexa protocol requires.
+HTTP errors are reserved for verification failures:
+
+| Status | Meaning |
+| ------ | ------- |
+| `404` | Integration not enabled (`alexa_skill_id` unset) |
+| `403` | Application ID missing or does not match the configured skill ID |
+| `400` | Request timestamp missing or outside the ±150 s tolerance |
 
 ---
 

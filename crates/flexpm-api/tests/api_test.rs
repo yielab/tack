@@ -473,6 +473,303 @@ async fn spa_unknown_route_returns_index_html() {
     );
 }
 
+// ─── Custom field value validation (handler integration) ─────────────────────
+
+/// Helper: create a project and return its id string.
+async fn make_project(app: &axum::Router) -> String {
+    use axum::body::to_bytes;
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/projects")
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"name":"P","project_type":"software"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(res.into_body(), 65536).await.unwrap();
+    let p: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    p["id"].as_str().unwrap().to_owned()
+}
+
+/// Helper: create a custom field and return its id string.
+async fn make_custom_field(
+    app: &axum::Router,
+    project_id: &str,
+    body: &str,
+) -> String {
+    use axum::body::to_bytes;
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/projects/{project_id}/custom-fields"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(body.to_owned()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(res.into_body(), 65536).await.unwrap();
+    let f: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    f["id"].as_str().unwrap().to_owned()
+}
+
+/// Helper: create a default item and return its id string.
+async fn make_item(app: &axum::Router, project_id: &str) -> String {
+    use axum::body::to_bytes;
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/projects/{project_id}/items"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"title":"Item","item_type":"task"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(res.into_body(), 65536).await.unwrap();
+    let i: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    i["id"].as_str().unwrap().to_owned()
+}
+
+#[tokio::test]
+async fn set_custom_field_value_correct_type_returns_ok() {
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+    let fid = make_custom_field(
+        &app,
+        &pid,
+        r#"{"name":"Score","field_type":"number"}"#,
+    )
+    .await;
+    let iid = make_item(&app, &pid).await;
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri(format!("/api/items/{iid}/custom-fields/{fid}"))
+                .header("Content-Type", "application/json")
+                .body(Body::from("42"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn set_custom_field_value_wrong_type_returns_422() {
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+    let fid = make_custom_field(
+        &app,
+        &pid,
+        r#"{"name":"Score","field_type":"number"}"#,
+    )
+    .await;
+    let iid = make_item(&app, &pid).await;
+
+    // Send a string value to a Number field — must be rejected
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri(format!("/api/items/{iid}/custom-fields/{fid}"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#""not a number""#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn set_custom_field_select_invalid_option_returns_422() {
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+    let fid = make_custom_field(
+        &app,
+        &pid,
+        r#"{"name":"Priority","field_type":"select","options":["Low","High"]}"#,
+    )
+    .await;
+    let iid = make_item(&app, &pid).await;
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri(format!("/api/items/{iid}/custom-fields/{fid}"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#""Critical""#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn set_custom_field_value_passes_pattern_validation() {
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+    let fid = make_custom_field(
+        &app,
+        &pid,
+        r#"{"name":"Code","field_type":"text","validation":{"pattern":"^[A-Z]{3}$"}}"#,
+    )
+    .await;
+    let iid = make_item(&app, &pid).await;
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri(format!("/api/items/{iid}/custom-fields/{fid}"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#""ABC""#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn set_custom_field_value_fails_pattern_validation() {
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+    let fid = make_custom_field(
+        &app,
+        &pid,
+        r#"{"name":"Code","field_type":"text","validation":{"pattern":"^[A-Z]{3}$"}}"#,
+    )
+    .await;
+    let iid = make_item(&app, &pid).await;
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri(format!("/api/items/{iid}/custom-fields/{fid}"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#""lowercase""#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn set_custom_field_number_out_of_range_returns_422() {
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+    let fid = make_custom_field(
+        &app,
+        &pid,
+        r#"{"name":"Score","field_type":"number","validation":{"min":0,"max":100}}"#,
+    )
+    .await;
+    let iid = make_item(&app, &pid).await;
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri(format!("/api/items/{iid}/custom-fields/{fid}"))
+                .header("Content-Type", "application/json")
+                .body(Body::from("150"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+// ─── Board filter integration ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn board_view_filter_by_item_type_returns_only_matching_items() {
+    use axum::body::to_bytes;
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+
+    // Create a task and a bug
+    for (title, item_type) in [("Task A", "task"), ("Bug B", "bug")] {
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(format!("/api/projects/{pid}/items"))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"title":"{title}","item_type":"{item_type}"}}"#
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+    }
+
+    // Create a board that filters to only "task" items
+    let board_res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/projects/{pid}/boards"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    r#"{"name":"Tasks Only","filters":{"item_type":"task"}}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(board_res.into_body(), 65536).await.unwrap();
+    let board: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let board_id = board["id"].as_str().unwrap();
+
+    // Fetch the board view
+    let view_res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/boards/{board_id}/view"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(view_res.status(), StatusCode::OK);
+    let bytes = to_bytes(view_res.into_body(), 65536).await.unwrap();
+    let view: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+    // All items across all columns must be of type "task"
+    let all_items: Vec<&serde_json::Value> = view["columns"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|col| col["items"].as_array().unwrap())
+        .collect();
+    assert!(!all_items.is_empty(), "board should have at least one item");
+    assert!(
+        all_items.iter().all(|i| i["item_type"] == "task"),
+        "all items must be of type 'task', got: {:?}",
+        all_items.iter().map(|i| &i["item_type"]).collect::<Vec<_>>()
+    );
+}
+
 #[cfg(feature = "embed-spa")]
 #[tokio::test]
 async fn api_routes_take_priority_over_spa_fallback() {

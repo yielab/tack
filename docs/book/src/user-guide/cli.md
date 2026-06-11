@@ -71,6 +71,93 @@ Only one sprint can be Active per project at a time.
 
 ---
 
+## Templates
+
+```sh
+# List available templates (built-in + user-created)
+flexpm template list
+flexpm template list --type construction   # filter by project type
+
+# Show a template's full details
+flexpm template show <template-id>
+
+# Create a new project from a template
+flexpm template create-from <template-id> "My New Project"
+flexpm template create-from <template-id> "My New Project" --description "Optional description"
+```
+
+---
+
+## Roles
+
+Roles represent specialties or disciplines (Designer, Engineer, Reviewer, …) that can be
+assigned to items for tracking who is responsible.
+
+```sh
+# List roles in a project
+flexpm role list --project <project-id>
+
+# Create a role
+flexpm role create "Designer" --project <project-id>
+flexpm role create "Engineer" --project <project-id> --color "#4A90D9"
+
+# Assign / unassign a role on an item
+flexpm role assign  <item-id> <role-id>
+flexpm role unassign <item-id> <role-id>
+
+# Delete a role (removes all its item assignments)
+flexpm role delete <role-id>
+```
+
+---
+
+## Comments
+
+```sh
+# List comments on an item
+flexpm comment list <item-id>
+
+# Add a comment
+flexpm comment add <item-id> "Looks good to merge"
+flexpm comment add <item-id> "Blocked on client sign-off" --author "Alice"
+```
+
+---
+
+## Custom Fields
+
+Custom fields extend items with project-specific metadata.
+
+```sh
+# List field definitions for a project
+flexpm field list --project <project-id>
+
+# Create a field definition
+flexpm field create "Client Name"   --project <project-id> --type text
+flexpm field create "Story Points"  --project <project-id> --type number --required
+flexpm field create "Phase"         --project <project-id> --type select \
+    --options "Design,Development,QA,Done"
+
+# Types: text · long_text · number · date · boolean · select · multi_select · url · email
+
+# List all custom field values set on an item
+flexpm field values <item-id>
+
+# Set a value (parsed as JSON if valid, otherwise treated as a string)
+flexpm field set <item-id> <field-id> "Acme Corp"
+flexpm field set <item-id> <field-id> 8          # number
+flexpm field set <item-id> <field-id> true        # boolean
+flexpm field set <item-id> <field-id> '"Design"'  # string that looks like JSON — quote it
+
+# Remove a value
+flexpm field unset <item-id> <field-id>
+
+# Delete a field definition (also removes all item values for that field)
+flexpm field delete <field-id>
+```
+
+---
+
 ## Backup and Restore
 
 ```sh

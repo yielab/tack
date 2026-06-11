@@ -12,6 +12,7 @@ uuid = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 validator = { workspace = true }
+regex = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
