@@ -1,7 +1,7 @@
 # Roadmap
 
 **Current version:** 2.0.0  
-**Status:** All nine engineering phases complete. The product is feature-complete for the
+**Status:** All ten engineering phases complete. The product is feature-complete for the
 solo-dev / small-team use case. Future work is additive.
 
 ---
@@ -73,6 +73,20 @@ Dead code removed. Docs consolidated. Status and architecture accurately documen
 - Board view applies per-board item filters on fetch (replaces TODO no-op)
 - 13 new Alexa handler tests covering verification, all intents, and edge cases
 
+### Phase 9 — Full Integration Test Coverage
+
+- API integration tests expanded from 16 → 36 (sprints, roles, comments, dependencies, search, JSON/CSV export, item update/delete)
+- Frontend utility tests: vocab resolution, lens persistence, keyboard manager, optimistic-update rollback — total 144 Vitest tests across 21 files
+- Vitest config cleaned up for vite 8 + OXC pipeline (removed stale esbuild shim)
+
+### Phase 10 — Webhook Notifications
+
+- `FLEXPM_WEBHOOK_URL` — when set, POSTs JSON events for every item create/update/delete, sprint status transition, and items due within the next hour
+- `FLEXPM_WEBHOOK_SECRET` — optional HMAC-SHA256 signing; adds `X-FlexPM-Signature: sha256=<hex>` so receivers can verify authenticity
+- Background task fires `item.due_soon` once per hour for incomplete items whose `due_date` falls in the next 60 minutes
+- Delivery is fire-and-forget (tokio::spawn); errors are logged but never fail the originating request
+- All event payloads include `event`, `timestamp`, and `project_id` fields
+
 ---
 
 ## Planned
@@ -101,7 +115,7 @@ No current plans. The SPA is responsive on mobile browsers; no native app and no
 
 | Area | Gap |
 |---|---|
-| Frontend tests | 106 Vitest unit tests; Playwright E2E deferred |
+| Frontend tests | 144 Vitest unit tests; Playwright E2E deferred |
 | Custom field validation | `validation` rules enforced (pattern, min/max, min/max_length, max_items); full JSON Schema not supported |
 | Auth | No multi-user auth (by design for v1) |
 

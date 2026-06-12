@@ -1,10 +1,13 @@
 use std::net::SocketAddr;
+use std::time::Duration;
 
+use chrono::Utc;
 use tracing::{info, warn};
 use uuid::Uuid;
 
 use flexpm_api::config::AppConfig;
 use flexpm_api::router::{AppState, build_router};
+use flexpm_api::webhook::WebhookClient;
 use flexpm_db::{Repository, init_pool, migrations, repo};
 
 #[tokio::main]
@@ -40,12 +43,31 @@ async fn main() -> anyhow::Result<()> {
     // Create broadcast channel for WebSocket updates (capacity: 100 messages)
     let (broadcast_tx, _) = tokio::sync::broadcast::channel(100);
 
+    let webhook = config.webhook_url.clone().map(|url| {
+        info!(url=%url, "Webhook delivery enabled");
+        WebhookClient::new(url, config.webhook_secret.clone())
+    });
+
     let state = AppState {
         repo,
         config: config.clone(),
         workspace_id,
         broadcast_tx,
+        webhook,
     };
+
+    // Spawn background task: fire "item.due_soon" webhook for items due within the next hour
+    if state.webhook.is_some() {
+        let bg_state = state.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(3600));
+            interval.tick().await; // skip the first immediate tick
+            loop {
+                interval.tick().await;
+                check_due_soon(&bg_state).await;
+            }
+        });
+    }
 
     // Build router
     let app = build_router(state);
@@ -141,4 +163,33 @@ async fn shutdown_signal() {
         .await
         .expect("Failed to install CTRL+C handler");
     warn!("Shutdown signal received");
+}
+
+/// Query for items due within the next hour and fire `item.due_soon` webhooks.
+async fn check_due_soon(state: &AppState) {
+    let Some(wh) = &state.webhook else { return };
+
+    let now = Utc::now();
+    let window_end = now + chrono::Duration::hours(1);
+
+    match state
+        .repo
+        .list_items_due_soon(now, window_end)
+        .await
+    {
+        Ok(items) => {
+            for item in items {
+                let payload = serde_json::json!({
+                    "event": "item.due_soon",
+                    "timestamp": now.to_rfc3339(),
+                    "project_id": item.project_id,
+                    "item": item,
+                });
+                wh.fire("item.due_soon", payload);
+            }
+        }
+        Err(e) => {
+            tracing::warn!(error=%e, "Failed to query due-soon items for webhook");
+        }
+    }
 }
