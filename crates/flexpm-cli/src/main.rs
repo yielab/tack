@@ -522,13 +522,17 @@ fn main() -> anyhow::Result<()> {
 
         Commands::Backups { json } => cmd_list_remote_backups(&client, json),
 
-        Commands::Restore { path, remote, key, json } => {
+        Commands::Restore {
+            path,
+            remote,
+            key,
+            json,
+        } => {
             if remote {
                 cmd_restore_remote(&client, key, json)
             } else {
-                let p = path.ok_or_else(|| {
-                    anyhow::anyhow!("'path' is required when not using --remote")
-                })?;
+                let p = path
+                    .ok_or_else(|| anyhow::anyhow!("'path' is required when not using --remote"))?;
                 cmd_restore(&client, p, json)
             }
         }
@@ -1435,7 +1439,10 @@ fn cmd_list_remote_backups(client: &FlexpmClient, as_json: bool) -> anyhow::Resu
         println!("No remote backups found.");
         return Ok(());
     }
-    println!("{:<32} {:>12} {:>8} {}", "Created", "Size (bytes)", "Items", "Key");
+    println!(
+        "{:<32} {:>12} {:>8} {}",
+        "Created", "Size (bytes)", "Items", "Key"
+    );
     println!("{}", "-".repeat(90));
     for b in backups {
         let raw_date = b["created_at"].as_str().unwrap_or("-");

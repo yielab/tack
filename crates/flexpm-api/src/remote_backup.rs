@@ -45,7 +45,9 @@ pub enum BackupError {
     Json(#[from] serde_json::Error),
     #[error("zstd error: {0}")]
     Zstd(String),
-    #[error("restore rejected: snapshot migration_version ({snapshot}) is ahead of the running binary ({local}); upgrade FlexPM before restoring")]
+    #[error(
+        "restore rejected: snapshot migration_version ({snapshot}) is ahead of the running binary ({local}); upgrade FlexPM before restoring"
+    )]
     SchemaTooNew { snapshot: u32, local: u32 },
     #[error("bundle is corrupt or unrecognised format")]
     CorruptBundle,
@@ -174,9 +176,7 @@ pub async fn create_bundle(
     pool: &SqlitePool,
     cfg: &AppConfig,
 ) -> Result<(Vec<u8>, BackupManifest), BackupError> {
-    let db_path = cfg
-        .db_file_path()
-        .ok_or(BackupError::InMemoryDb)?;
+    let db_path = cfg.db_file_path().ok_or(BackupError::InMemoryDb)?;
 
     let db_bytes = snapshot_db(pool, &db_path).await?;
     let db_sha256 = hex::encode(Sha256::digest(&db_bytes));
@@ -187,7 +187,15 @@ pub async fn create_bundle(
     let created_at = Utc::now().to_rfc3339();
 
     // Build tar in memory, then compress.
-    let tar_bytes = build_tar(&db_bytes, &cfg.storage_dir, &created_at, mig_version, items, &install, &db_sha256)?;
+    let tar_bytes = build_tar(
+        &db_bytes,
+        &cfg.storage_dir,
+        &created_at,
+        mig_version,
+        items,
+        &install,
+        &db_sha256,
+    )?;
 
     let compressed = zstd::encode_all(Cursor::new(&tar_bytes), 3)
         .map_err(|e| BackupError::Zstd(e.to_string()))?;
@@ -404,11 +412,10 @@ pub async fn stage_restore(
     let restore_storage_path = PathBuf::from(&restore_storage);
 
     // All sync work (decompression + tar parsing) before any await points.
-    let (db_bytes, attachments) = tokio::task::spawn_blocking(move || {
-        parse_bundle(&bundle_bytes, &restore_storage_path)
-    })
-    .await
-    .map_err(|e| BackupError::Io(std::io::Error::other(e.to_string())))??;
+    let (db_bytes, attachments) =
+        tokio::task::spawn_blocking(move || parse_bundle(&bundle_bytes, &restore_storage_path))
+            .await
+            .map_err(|e| BackupError::Io(std::io::Error::other(e.to_string())))??;
 
     // Async I/O: write the staged files.
     tokio::fs::write(&restore_db_path, &db_bytes).await?;
@@ -523,8 +530,14 @@ mod tests {
             .map(|e| e.unwrap().path().unwrap().to_string_lossy().to_string())
             .collect();
 
-        assert!(paths.contains(&"database.db".to_string()), "missing database.db in tar");
-        assert!(paths.contains(&"manifest.json".to_string()), "missing manifest.json in tar");
+        assert!(
+            paths.contains(&"database.db".to_string()),
+            "missing database.db in tar"
+        );
+        assert!(
+            paths.contains(&"manifest.json".to_string()),
+            "missing manifest.json in tar"
+        );
     }
 
     // ── upload → list → download ──────────────────────────────────────────────
@@ -614,7 +627,13 @@ mod tests {
         .await;
 
         assert!(
-            matches!(result, Err(BackupError::SchemaTooNew { snapshot: 20, local: 16 })),
+            matches!(
+                result,
+                Err(BackupError::SchemaTooNew {
+                    snapshot: 20,
+                    local: 16
+                })
+            ),
             "expected SchemaTooNew error, got: {result:?}"
         );
     }
