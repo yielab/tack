@@ -327,7 +327,11 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
         .execute(pool)
         .await?;
 
-        tracing::info!(template_name = spec.name, project_type = type_str, "Seeded built-in template");
+        tracing::info!(
+            template_name = spec.name,
+            project_type = type_str,
+            "Seeded built-in template"
+        );
     }
 
     Ok(())

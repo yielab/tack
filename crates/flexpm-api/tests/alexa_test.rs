@@ -59,14 +59,18 @@ async fn post_alexa(app: &Router, body: &Value) -> (StatusCode, Value) {
         .await
         .unwrap();
     let status = res.status();
-    let bytes = axum::body::to_bytes(res.into_body(), 64 * 1024).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 64 * 1024)
+        .await
+        .unwrap();
     let json = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     (status, json)
 }
 
 /// Speech text from a standard Alexa response.
 fn spoken(body: &Value) -> &str {
-    body["response"]["outputSpeech"]["text"].as_str().unwrap_or("")
+    body["response"]["outputSpeech"]["text"]
+        .as_str()
+        .unwrap_or("")
 }
 
 async fn create_project(app: &Router, name: &str) -> Value {
@@ -85,7 +89,9 @@ async fn create_project(app: &Router, name: &str) -> Value {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 64 * 1024).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 64 * 1024)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
@@ -102,7 +108,9 @@ async fn list_project_items(app: &Router, project_id: &str) -> Vec<Value> {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(res.into_body(), 64 * 1024).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), 64 * 1024)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
@@ -111,7 +119,11 @@ async fn list_project_items(app: &Router, project_id: &str) -> Vec<Value> {
 #[tokio::test]
 async fn alexa_disabled_returns_404() {
     let (app, _) = common::test_app().await; // no skill ID configured
-    let body = envelope(SKILL_ID, chrono::Utc::now(), json!({ "type": "LaunchRequest" }));
+    let body = envelope(
+        SKILL_ID,
+        chrono::Utc::now(),
+        json!({ "type": "LaunchRequest" }),
+    );
     let (status, _) = post_alexa(&app, &body).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
@@ -146,7 +158,11 @@ async fn alexa_bypasses_bearer_token_gate() {
         ..alexa_config()
     };
     let (app, _) = common::test_app_with_config(config).await;
-    let body = envelope(SKILL_ID, chrono::Utc::now(), json!({ "type": "LaunchRequest" }));
+    let body = envelope(
+        SKILL_ID,
+        chrono::Utc::now(),
+        json!({ "type": "LaunchRequest" }),
+    );
     let (status, _) = post_alexa(&app, &body).await;
     assert_eq!(status, StatusCode::OK);
 }
@@ -156,7 +172,11 @@ async fn alexa_bypasses_bearer_token_gate() {
 #[tokio::test]
 async fn launch_request_speaks_welcome_and_keeps_session_open() {
     let (app, _) = common::test_app_with_config(alexa_config()).await;
-    let body = envelope(SKILL_ID, chrono::Utc::now(), json!({ "type": "LaunchRequest" }));
+    let body = envelope(
+        SKILL_ID,
+        chrono::Utc::now(),
+        json!({ "type": "LaunchRequest" }),
+    );
     let (status, res) = post_alexa(&app, &body).await;
     assert_eq!(status, StatusCode::OK);
     assert!(spoken(&res).contains("Welcome"));
@@ -205,7 +225,11 @@ async fn add_task_without_title_prompts_for_one() {
     let (app, _) = common::test_app_with_config(alexa_config()).await;
     create_project(&app, "Voice Project").await;
 
-    let body = envelope(SKILL_ID, chrono::Utc::now(), intent("AddTaskIntent", json!({})));
+    let body = envelope(
+        SKILL_ID,
+        chrono::Utc::now(),
+        intent("AddTaskIntent", json!({})),
+    );
     let (status, res) = post_alexa(&app, &body).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(res["response"]["shouldEndSession"], json!(false));
@@ -239,7 +263,11 @@ async fn list_tasks_counts_open_items() {
         assert_eq!(status, StatusCode::OK);
     }
 
-    let body = envelope(SKILL_ID, chrono::Utc::now(), intent("ListTasksIntent", json!({})));
+    let body = envelope(
+        SKILL_ID,
+        chrono::Utc::now(),
+        intent("ListTasksIntent", json!({})),
+    );
     let (status, res) = post_alexa(&app, &body).await;
     assert_eq!(status, StatusCode::OK);
     assert!(spoken(&res).contains("2 open"));
@@ -292,7 +320,11 @@ async fn complete_unknown_task_speaks_not_found() {
 async fn spanish_locale_gets_spanish_welcome() {
     let (app, _) = common::test_app_with_config(alexa_config()).await;
     let body = with_locale(
-        envelope(SKILL_ID, chrono::Utc::now(), json!({ "type": "LaunchRequest" })),
+        envelope(
+            SKILL_ID,
+            chrono::Utc::now(),
+            json!({ "type": "LaunchRequest" }),
+        ),
         "es-MX",
     );
     let (status, res) = post_alexa(&app, &body).await;
@@ -349,7 +381,11 @@ async fn spanish_locale_complete_task_responds_in_spanish() {
 async fn english_locale_still_responds_in_english() {
     let (app, _) = common::test_app_with_config(alexa_config()).await;
     let body = with_locale(
-        envelope(SKILL_ID, chrono::Utc::now(), json!({ "type": "LaunchRequest" })),
+        envelope(
+            SKILL_ID,
+            chrono::Utc::now(),
+            json!({ "type": "LaunchRequest" }),
+        ),
         "en-US",
     );
     let (status, res) = post_alexa(&app, &body).await;

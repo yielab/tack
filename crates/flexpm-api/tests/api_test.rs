@@ -496,11 +496,7 @@ async fn make_project(app: &axum::Router) -> String {
 }
 
 /// Helper: create a custom field and return its id string.
-async fn make_custom_field(
-    app: &axum::Router,
-    project_id: &str,
-    body: &str,
-) -> String {
+async fn make_custom_field(app: &axum::Router, project_id: &str, body: &str) -> String {
     use axum::body::to_bytes;
     let res = app
         .clone()
@@ -543,12 +539,7 @@ async fn make_item(app: &axum::Router, project_id: &str) -> String {
 async fn set_custom_field_value_correct_type_returns_ok() {
     let (app, _) = common::test_app().await;
     let pid = make_project(&app).await;
-    let fid = make_custom_field(
-        &app,
-        &pid,
-        r#"{"name":"Score","field_type":"number"}"#,
-    )
-    .await;
+    let fid = make_custom_field(&app, &pid, r#"{"name":"Score","field_type":"number"}"#).await;
     let iid = make_item(&app, &pid).await;
 
     let res = app
@@ -569,12 +560,7 @@ async fn set_custom_field_value_correct_type_returns_ok() {
 async fn set_custom_field_value_wrong_type_returns_422() {
     let (app, _) = common::test_app().await;
     let pid = make_project(&app).await;
-    let fid = make_custom_field(
-        &app,
-        &pid,
-        r#"{"name":"Score","field_type":"number"}"#,
-    )
-    .await;
+    let fid = make_custom_field(&app, &pid, r#"{"name":"Score","field_type":"number"}"#).await;
     let iid = make_item(&app, &pid).await;
 
     // Send a string value to a Number field — must be rejected
@@ -766,7 +752,10 @@ async fn board_view_filter_by_item_type_returns_only_matching_items() {
     assert!(
         all_items.iter().all(|i| i["item_type"] == "task"),
         "all items must be of type 'task', got: {:?}",
-        all_items.iter().map(|i| &i["item_type"]).collect::<Vec<_>>()
+        all_items
+            .iter()
+            .map(|i| &i["item_type"])
+            .collect::<Vec<_>>()
     );
 }
 
@@ -788,4 +777,490 @@ async fn api_routes_take_priority_over_spa_fallback() {
     let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["status"], "ok");
+}
+
+// ─── Item update and delete ───────────────────────────────────────────────────
+
+#[tokio::test]
+async fn update_item_title_persists() {
+    use axum::body::to_bytes;
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+    let iid = make_item(&app, &pid).await;
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/items/{iid}"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"title":"Updated Title"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let get = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/items/{iid}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(get.into_body(), 65536).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body["item"]["title"], "Updated Title");
+}
+
+#[tokio::test]
+async fn update_item_status_moves_to_in_progress() {
+    use axum::body::to_bytes;
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+    let iid = make_item(&app, &pid).await;
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/items/{iid}"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"status":"In Progress"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let get = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/items/{iid}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(get.into_body(), 65536).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body["item"]["status"], "In Progress");
+}
+
+#[tokio::test]
+async fn delete_item_returns_404_on_subsequent_get() {
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+    let iid = make_item(&app, &pid).await;
+
+    let del = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::DELETE)
+                .uri(format!("/api/items/{iid}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(del.status(), StatusCode::OK);
+
+    let get = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/items/{iid}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(get.status(), StatusCode::NOT_FOUND);
+}
+
+// ─── Sprint lifecycle ─────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn create_sprint_appears_in_list() {
+    use axum::body::to_bytes;
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/projects/{pid}/sprints"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"name":"Sprint 1"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let list = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/projects/{pid}/sprints"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(list.into_body(), 65536).await.unwrap();
+    let sprints: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(sprints.as_array().unwrap().len(), 1);
+    assert_eq!(sprints[0]["name"], "Sprint 1");
+    assert_eq!(sprints[0]["status"], "planning");
+}
+
+#[tokio::test]
+async fn sprint_status_transitions_to_active() {
+    use axum::body::to_bytes;
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/projects/{pid}/sprints"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"name":"Sprint A"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(res.into_body(), 65536).await.unwrap();
+    let sprint: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let sid = sprint["id"].as_str().unwrap().to_owned();
+
+    let patch = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/sprints/{sid}/status"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"status":"active"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(patch.status(), StatusCode::OK);
+
+    let get = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/sprints/{sid}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(get.into_body(), 65536).await.unwrap();
+    let s: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(s["status"], "active");
+}
+
+// ─── Role CRUD ────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn create_and_list_roles() {
+    use axum::body::to_bytes;
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/projects/{pid}/roles"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r##"{"name":"Backend Dev","color":"#3B82F6"}"##))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let list = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/projects/{pid}/roles"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(list.into_body(), 65536).await.unwrap();
+    let roles: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(roles.as_array().unwrap().len(), 1);
+    assert_eq!(roles[0]["name"], "Backend Dev");
+}
+
+// ─── Comment CRUD ─────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn create_and_list_comments() {
+    use axum::body::to_bytes;
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+    let iid = make_item(&app, &pid).await;
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/items/{iid}/comments"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    r#"{"content":"Great progress!","author":"alice"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let list = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/items/{iid}/comments"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(list.into_body(), 65536).await.unwrap();
+    let comments: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(comments.as_array().unwrap().len(), 1);
+    assert_eq!(comments[0]["content"], "Great progress!");
+    assert_eq!(comments[0]["author"], "alice");
+}
+
+// ─── Dependencies ─────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn add_dependency_blocks_relationship() {
+    use axum::body::to_bytes;
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+    let item_a = make_item(&app, &pid).await;
+    let item_b = make_item(&app, &pid).await;
+
+    let body = format!(r#"{{"target_item_id":"{item_b}","dependency_type":"blocks"}}"#);
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/items/{item_a}/dependencies"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let list = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/items/{item_a}/dependencies"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(list.into_body(), 65536).await.unwrap();
+    let deps: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(deps.as_array().unwrap().len(), 1);
+    assert_eq!(deps[0]["dependency_type"], "blocks");
+}
+
+#[tokio::test]
+async fn self_dependency_rejected() {
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+    let iid = make_item(&app, &pid).await;
+
+    let body = format!(r#"{{"target_item_id":"{iid}","dependency_type":"blocks"}}"#);
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/items/{iid}/dependencies"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+// ─── Search ───────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn project_search_finds_matching_item() {
+    use axum::body::to_bytes;
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+
+    // Create an item with a distinctive title
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/projects/{pid}/items"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    r#"{"title":"xyzzy unique search token","item_type":"task"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/projects/{pid}/search?q=xyzzy"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), 65536).await.unwrap();
+    let results: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let arr = results.as_array().unwrap();
+    assert!(!arr.is_empty(), "search should return at least one result");
+    assert!(
+        arr[0]["title"].as_str().unwrap().contains("xyzzy"),
+        "first result should contain the search token"
+    );
+}
+
+#[tokio::test]
+async fn global_search_finds_item_across_projects() {
+    use axum::body::to_bytes;
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/projects/{pid}/items"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    r#"{"title":"qwerty global search token","item_type":"task"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/search?q=qwerty")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), 65536).await.unwrap();
+    let results: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let arr = results.as_array().unwrap();
+    assert!(
+        !arr.is_empty(),
+        "global search should return at least one result"
+    );
+}
+
+// ─── Export ───────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn export_json_contains_project_and_items() {
+    use axum::body::to_bytes;
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+    make_item(&app, &pid).await;
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/projects/{pid}/export?format=json"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), 131072).await.unwrap();
+    let export: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(
+        export["project"].is_object(),
+        "export must contain a project object"
+    );
+    assert!(
+        export["items"].is_array(),
+        "export must contain an items array"
+    );
+    assert_eq!(export["items"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn export_csv_starts_with_header_row() {
+    use axum::body::to_bytes;
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+    make_item(&app, &pid).await;
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/projects/{pid}/export?format=csv"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), 131072).await.unwrap();
+    let csv = std::str::from_utf8(&bytes).unwrap();
+    let first_line = csv.lines().next().unwrap_or("");
+    assert!(
+        first_line.contains("id") && first_line.contains("title"),
+        "CSV header must contain id and title columns, got: {first_line}"
+    );
+    assert!(
+        csv.lines().count() >= 2,
+        "CSV must have header + at least one data row"
+    );
 }
