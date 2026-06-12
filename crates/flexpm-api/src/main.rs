@@ -6,6 +6,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use flexpm_api::config::AppConfig;
+use flexpm_api::remote_backup;
 use flexpm_api::router::{AppState, build_router};
 use flexpm_api::webhook::WebhookClient;
 use flexpm_db::{Repository, init_pool, migrations, repo};
@@ -55,6 +56,23 @@ async fn main() -> anyhow::Result<()> {
         broadcast_tx,
         webhook,
     };
+
+    // Spawn background task: automatic remote backup on configured interval
+    if let Some(interval_secs) = config.backup_interval_secs {
+        if config.remote_backup_enabled() {
+            let bg_state = state.clone();
+            tokio::spawn(async move {
+                let mut interval =
+                    tokio::time::interval(Duration::from_secs(interval_secs));
+                interval.tick().await; // skip the first immediate tick
+                loop {
+                    interval.tick().await;
+                    run_scheduled_backup(&bg_state).await;
+                }
+            });
+            info!(interval_secs, "Remote backup scheduler enabled");
+        }
+    }
 
     // Spawn background task: fire "item.due_soon" webhook for items due within the next hour
     if state.webhook.is_some() {
@@ -152,8 +170,13 @@ async fn ensure_default_workspace(pool: &sqlx::SqlitePool) -> anyhow::Result<Uui
 }
 
 /// If a `.restore` file exists next to the live DB, apply it before startup.
-/// Moves the current DB to `.bak` (overwriting any previous bak), then renames
-/// `.restore` into place.
+///
+/// When the restore originated from a remote bundle, an attachments staging dir
+/// (`<storage_dir>.restore/`) may also exist. Both are swapped atomically:
+/// - current DB   → `<db>.bak`
+/// - `.restore`   → live DB path
+/// - current attachments dir → `<storage_dir>.bak/`
+/// - `.restore/`  → live storage dir
 fn apply_staged_restore(config: &AppConfig) {
     let Some(db_path) = config.db_file_path() else {
         return;
@@ -164,12 +187,30 @@ fn apply_staged_restore(config: &AppConfig) {
         return;
     }
     warn!(path = %restore_str, "Applying staged restore");
+
+    // Swap database
     let bak_str = format!("{}.bak", db_path.to_string_lossy());
     let _ = std::fs::rename(&db_path, &bak_str);
     if let Err(e) = std::fs::rename(restore_path, &db_path) {
-        warn!("Failed to apply staged restore: {e}");
-    } else {
-        info!("Restore applied; previous DB backed up to {bak_str}");
+        warn!("Failed to apply staged DB restore: {e}");
+        return;
+    }
+    info!("DB restore applied; previous DB backed up to {bak_str}");
+
+    // Swap attachments dir if a staging dir exists
+    let storage_restore = format!("{}.restore", config.storage_dir);
+    let storage_restore_path = std::path::Path::new(&storage_restore);
+    if storage_restore_path.exists() {
+        let storage_bak = format!("{}.bak", config.storage_dir);
+        let _ = std::fs::rename(&config.storage_dir, &storage_bak);
+        if let Err(e) = std::fs::rename(storage_restore_path, &config.storage_dir) {
+            warn!("Failed to apply staged attachments restore: {e}");
+        } else {
+            info!(
+                "Attachments restore applied; previous dir backed up to {}",
+                storage_bak
+            );
+        }
     }
 }
 
@@ -178,6 +219,37 @@ async fn shutdown_signal() {
         .await
         .expect("Failed to install CTRL+C handler");
     warn!("Shutdown signal received");
+}
+
+/// Run a scheduled remote backup: create bundle, upload, prune old backups.
+async fn run_scheduled_backup(state: &AppState) {
+    match remote_backup::store_from_config(&state.config) {
+        Ok(store) => {
+            match remote_backup::create_bundle(state.pool(), &state.config).await {
+                Ok((bundle, manifest)) => {
+                    if let Err(e) =
+                        remote_backup::upload(store.as_ref(), &manifest, bundle).await
+                    {
+                        warn!(error = %e, "Scheduled backup upload failed");
+                        return;
+                    }
+                    if let Err(e) = remote_backup::prune(
+                        store.as_ref(),
+                        &state.config.backup_prefix,
+                        state.config.backup_retention,
+                    )
+                    .await
+                    {
+                        warn!(error = %e, "Scheduled backup prune failed");
+                    } else {
+                        info!(key = %manifest.object_key, "Scheduled backup complete");
+                    }
+                }
+                Err(e) => warn!(error = %e, "Scheduled backup bundle creation failed"),
+            }
+        }
+        Err(e) => warn!(error = %e, "Scheduled backup store init failed"),
+    }
 }
 
 /// Query for items due within the next hour and fire `item.due_soon` webhooks.

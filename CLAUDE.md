@@ -93,6 +93,14 @@ The API server loads configuration from `flexpm.toml` (if present) or environmen
 | `FLEXPM_ALEXA_SKILL_ID` | _(none)_ | Amazon Alexa skill ID — enables `POST /api/alexa` (see `docs/ALEXA.md`); endpoint returns 404 when unset |
 | `FLEXPM_WEBHOOK_URL` | _(none)_ | Outbound webhook URL — when set, POSTs JSON events on item create/update/delete, sprint status changes, and due-soon alerts |
 | `FLEXPM_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 signing secret; adds `X-FlexPM-Signature: sha256=<hex>` to each delivery |
+| `FLEXPM_BACKUP_ENDPOINT` | _(none)_ | S3-compatible endpoint URL (e.g. `https://<acct>.r2.cloudflarestorage.com`); omit for AWS S3 |
+| `FLEXPM_BACKUP_BUCKET` | _(none)_ | Bucket name — **required** to enable remote backup |
+| `FLEXPM_BACKUP_REGION` | `auto` | AWS/S3 region; Cloudflare R2 uses `auto` |
+| `FLEXPM_BACKUP_ACCESS_KEY` | _(none)_ | S3 access key ID — required to enable remote backup |
+| `FLEXPM_BACKUP_SECRET_KEY` | _(none)_ | S3 secret access key — required; never logged |
+| `FLEXPM_BACKUP_PREFIX` | `flexpm` | Object key prefix inside the bucket |
+| `FLEXPM_BACKUP_INTERVAL_SECS` | _(none)_ | Auto-backup interval in seconds; omit for manual-only |
+| `FLEXPM_BACKUP_RETENTION` | `10` | Number of remote backups to keep after each upload |
 
 ### Debugging
 

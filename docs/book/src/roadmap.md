@@ -1,7 +1,7 @@
 # Roadmap
 
 **Current version:** 2.0.0  
-**Status:** All twelve engineering phases complete. The product is feature-complete for the
+**Status:** All thirteen engineering phases complete. The product is feature-complete for the
 solo-dev / small-team use case. Future work is additive.
 
 ---
@@ -105,9 +105,164 @@ Dead code removed. Docs consolidated. Status and architecture accurately documen
 - Response includes `created` and `skipped` counts
 - 6 unit tests covering filter generation, cursor inclusion, project-vs-team precedence, priority mapping, and cursor injection sanitisation
 
+### Phase 13 — Remote Cloud Backup (S3-Compatible)
+
+**Goal:** Let a user back up their entire FlexPM instance to any S3-compatible object
+store (Cloudflare R2 / Backblaze B2 free tiers, AWS S3, or a self-hosted MinIO) and
+restore it on a different machine — so the same data is reusable across local
+installations. This is **snapshot replication**, not a live shared database: semantics
+are "one active writer at a time, last upload wins." It reuses the existing
+`VACUUM INTO` backup flow ([backup.rs](../../../crates/flexpm-api/src/handlers/backup.rs))
+and the existing staged-restore-on-startup mechanism
+([main.rs](../../../crates/flexpm-api/src/main.rs)).
+
+**Design decisions (locked):**
+
+- Provider-agnostic via the [`object_store`](https://docs.rs/object_store) crate — a
+  free provider and a custom server are the same thing (an endpoint + access keys),
+  so there is exactly one code path. No per-provider SDKs.
+- The backup bundle **includes uploaded attachments**, not just the database, because
+  attachments live on disk in `FLEXPM_STORAGE_DIR` (not in SQLite) and would otherwise
+  be lost on cross-machine restore.
+- Keep it simple: no incremental/delta backups, no encryption in v1 (documented as a
+  follow-up), no multi-writer conflict resolution.
+
+#### Task 1 — Dependencies
+
+Add to the workspace `Cargo.toml` `[workspace.dependencies]` and wire into
+`crates/flexpm-api/Cargo.toml`:
+
+- `object_store = { version = "0.11", features = ["aws"] }` — the `aws` feature speaks
+  the S3 API and supports custom endpoints (R2/B2/MinIO).
+- `tar = "0.4"` and `zstd = "0.13"` — to bundle DB + attachments into one compressed archive.
+- `bytes` is already transitively available via axum; add it explicitly if needed.
+
+#### Task 2 — Bundle format
+
+A single artifact `flexpm-backup-<UTC-RFC3339>.tar.zst` containing:
+
+- `database.db` — the `VACUUM INTO` snapshot (reuse the existing helper in
+  `handlers/backup.rs`; factor the snapshot-to-bytes logic into a reusable function).
+- `attachments/…` — a recursive copy of `FLEXPM_STORAGE_DIR` (skip if the dir is empty
+  or unset).
+- `manifest.json` — `{ "format_version": 1, "created_at": <rfc3339>, "migration_version": <u32>, "db_sha256": <hex>, "install_id": <uuid>, "item_count": <u64> }`.
+  `migration_version` = the count of applied rows in the `_migrations` table.
+  `install_id` = a UUID persisted once in a new `app_meta` row (or a sidecar file next
+  to the DB); generate on first run if absent.
+
+#### Task 3 — New module `crates/flexpm-api/src/remote_backup.rs`
+
+Pure-ish module, unit-testable. Public surface:
+
+```rust
+pub struct RemoteBackupConfig { /* from AppConfig, Task 4 */ }
+pub fn store_from_config(cfg: &AppConfig) -> Result<Arc<dyn ObjectStore>, BackupError>;
+pub async fn create_bundle(pool: &SqlitePool, storage_dir: &str) -> Result<Vec<u8>, BackupError>;
+pub async fn upload(store: &dyn ObjectStore, prefix: &str, bytes: Vec<u8>) -> Result<BackupManifest, BackupError>;
+pub async fn list(store: &dyn ObjectStore, prefix: &str) -> Result<Vec<BackupManifest>, BackupError>;
+pub async fn download(store: &dyn ObjectStore, key: &str) -> Result<Vec<u8>, BackupError>;
+pub async fn prune(store: &dyn ObjectStore, prefix: &str, keep: usize) -> Result<usize, BackupError>;
+```
+
+- Build the `AmazonS3` store with `AmazonS3Builder` — set `endpoint`, `region`, bucket,
+  access key, secret key from config; call `.with_allow_http(true)` only when the
+  endpoint is plain `http://` (local MinIO).
+- `list` reads each object's key + the small `manifest.json` it stores **alongside** the
+  archive (`<archive>.manifest.json`) so listing never downloads the full bundle.
+- Define a `BackupError` (`thiserror`) mapped to HTTP 5xx, plus a 400 for "remote backup
+  not configured."
+
+#### Task 4 — Config ([config.rs](../../../crates/flexpm-api/src/config.rs))
+
+Add fields to `AppConfig`, loaded from `flexpm.toml` and `FLEXPM_BACKUP_*` env vars
+(same precedence pattern as existing config):
+
+| Env var | TOML key | Type | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `FLEXPM_BACKUP_ENDPOINT` | `backup.endpoint` | `Option<String>` | none | e.g. `https://<acct>.r2.cloudflarestorage.com` |
+| `FLEXPM_BACKUP_BUCKET` | `backup.bucket` | `Option<String>` | none | required to enable |
+| `FLEXPM_BACKUP_REGION` | `backup.region` | `String` | `auto` | R2 uses `auto` |
+| `FLEXPM_BACKUP_ACCESS_KEY` | `backup.access_key` | `Option<String>` | none | |
+| `FLEXPM_BACKUP_SECRET_KEY` | `backup.secret_key` | `Option<String>` | none | never log |
+| `FLEXPM_BACKUP_PREFIX` | `backup.prefix` | `String` | `flexpm` | object key prefix |
+| `FLEXPM_BACKUP_INTERVAL_SECS` | `backup.interval_secs` | `Option<u64>` | none | omit = manual only |
+| `FLEXPM_BACKUP_RETENTION` | `backup.retention` | `usize` | `10` | keep newest N |
+
+Add a helper `AppConfig::remote_backup_enabled() -> bool` (true when bucket + access
+key + secret key are all set). Document every key in `CLAUDE.md` and the deployment guide.
+
+#### Task 5 — Endpoints ([router.rs](../../../crates/flexpm-api/src/router.rs) + `handlers/backup.rs`)
+
+All gated behind `remote_backup_enabled()` (return `409 Conflict` with a clear message
+when disabled). All subject to the existing Bearer-token middleware.
+
+- `POST /api/backup/remote` → `create_bundle` + `upload` + `prune`; returns the new
+  `BackupManifest` as JSON.
+- `GET  /api/backup/remote` → `list`; returns `[BackupManifest]` newest-first.
+- `POST /api/backup/remote/restore` → body `{ "key": "<optional; defaults to latest>" }`;
+  download, **validate `migration_version` ≤ the running binary's migration count**
+  (reject newer snapshots with `409` to prevent corruption), then stage (Task 6).
+  Returns `{ "staged": true, "restart_required": true }`.
+
+#### Task 6 — Atomic staged restore (extend [main.rs](../../../crates/flexpm-api/src/main.rs))
+
+The current code stages a `.restore` DB file applied on next startup. Extend it so the
+**DB and attachments swap together**:
+
+- On restore request: unpack the bundle to `<db>.restore` (database) and
+  `<storage_dir>.restore/` (attachments).
+- Extend `apply_staged_restore()` (startup) to, when `.restore` artifacts exist:
+  move current DB → `<db>.bak`, current storage dir → `<storage_dir>.bak`, then promote
+  the `.restore` artifacts atomically. Log every move at `warn` for auditability.
+- Because migrations auto-run forward on startup, restoring an **older** snapshot is
+  safe; the Task 5 version guard blocks the unsafe **newer** direction.
+
+#### Task 7 — Scheduler (in `main.rs`, mirror the webhook due-soon loop)
+
+When `interval_secs` is set, `tokio::spawn` a loop that sleeps the interval, calls the
+backup path, prunes to `retention`, and logs success/failure (never panics the server).
+Model it on the existing hourly `item.due_soon` background task.
+
+#### Task 8 — CLI ([flexpm-cli/src/main.rs](../../../crates/flexpm-cli/src/main.rs))
+
+Thin wrappers over the new endpoints (CLI talks HTTP, never the DB directly):
+
+- `flexpm backup --remote` → `POST /api/backup/remote`, print manifest.
+- `flexpm backups` → `GET /api/backup/remote`, print a table (date, size, item count, key).
+- `flexpm restore --remote [--key <key>]` → `POST /api/backup/remote/restore`; print the
+  "restart the server to apply" notice. Support `--json` like every other command.
+
+#### Task 9 — Tests
+
+- `remote_backup.rs` unit tests: bundle round-trips (create → unpack → identical DB bytes +
+  attachment tree), manifest serialization, prune keeps newest N, version-guard logic.
+- Handler tests: `409` when disabled; restore rejects a manifest whose `migration_version`
+  exceeds the local count. Use a mock/in-memory `ObjectStore` (object_store ships an
+  in-memory backend) so no network is required.
+- CLI test: arg parsing for the new `--remote`/`--key` flags.
+
+#### Acceptance criteria
+
+- With env vars pointing at any S3-compatible bucket, `flexpm backup --remote` uploads a
+  `.tar.zst` bundle + sidecar manifest; `flexpm backups` lists it.
+- On a second, empty install pointed at the same bucket, `flexpm restore --remote`
+  followed by a server restart reproduces the **items, sprints, and attachments** of the
+  source install.
+- Restoring a snapshot created by a newer schema is rejected, not silently applied.
+- `cargo test --workspace` and `cargo clippy` pass; no secrets are logged.
+
+#### Out of scope (explicit follow-ups, do not implement here)
+
+- Client-side encryption of bundles (`age`/AES) before upload.
+- Incremental/delta backups and deduplication.
+- Live multi-writer sync (would require Turso/libSQL — a separate, larger effort).
+
 ---
 
 ## Planned
+
+No phases are currently planned. The product is feature-complete for the solo-dev /
+small-team use case.
 
 ### Future / Optional
 
