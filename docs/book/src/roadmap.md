@@ -1,7 +1,7 @@
 # Roadmap
 
 **Current version:** 2.0.0  
-**Status:** All ten engineering phases complete. The product is feature-complete for the
+**Status:** All eleven engineering phases complete. The product is feature-complete for the
 solo-dev / small-team use case. Future work is additive.
 
 ---
@@ -87,6 +87,15 @@ Dead code removed. Docs consolidated. Status and architecture accurately documen
 - Delivery is fire-and-forget (tokio::spawn); errors are logged but never fail the originating request
 - All event payloads include `event`, `timestamp`, and `project_id` fields
 
+### Phase 11 — GitHub Issues Import
+
+- `POST /api/projects/{id}/import-github` — fetches issues from any public (or token-accessible private) GitHub repository and creates FlexPM items
+- Request body: `repo` (owner/repo or full URL), `token` (optional PAT), `import_closed` (default false), `label_filter` (optional label allow-list)
+- Pull requests are silently skipped; closed issues map to the first Done-category status
+- Pagination handled automatically (100 issues/request until the last page)
+- Response includes `created`, `skipped`, and `rate_limit_remaining` counts
+- 7 unit tests for URL parsing covering all input forms
+
 ---
 
 ## Planned
@@ -103,7 +112,7 @@ or JWT), per-user access control, and an audit log.
 - Recurring items
 
 #### Import Formats
-- GitHub Issues import
+- ~~GitHub Issues import~~ — shipped in Phase 11
 - Linear export import
 
 #### Mobile / Offline
