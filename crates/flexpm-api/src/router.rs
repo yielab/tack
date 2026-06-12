@@ -18,8 +18,8 @@ use crate::debug;
 #[cfg(feature = "embed-spa")]
 use crate::handlers::spa;
 use crate::handlers::{
-    alexa, attachments, backup, boards_multi, comments, custom_fields, dependencies, export, items,
-    projects, roles, sprints, templates, websocket,
+    alexa, attachments, backup, boards_multi, comments, custom_fields, dependencies, export,
+    import_github, items, projects, roles, sprints, templates, websocket,
 };
 use crate::middleware::require_token;
 use crate::webhook::WebhookClient;
@@ -93,6 +93,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/projects/{id}/export", get(export::export_project))
         .route("/projects/import", post(export::import_project))
         .route("/projects/{id}/import-csv", post(export::import_csv))
+        .route(
+            "/projects/{id}/import-github",
+            post(import_github::import_github),
+        )
         // ─── Items ───────────────────────────────────────────────────────
         .route("/projects/{project_id}/items", post(items::create_item))
         .route("/projects/{project_id}/items", get(items::list_items))

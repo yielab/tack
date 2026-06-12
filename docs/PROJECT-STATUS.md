@@ -33,6 +33,7 @@
 | API token auth | ✅ Done | Optional Bearer token via `FLEXPM_API_TOKEN` |
 | Alexa voice integration | ✅ Working | `POST /api/alexa`; AddTask / ListTasks / CompleteTask intents; skill-ID + timestamp auth; vocabulary-aware responses; exempt from Bearer-token gate |
 | Webhook notifications | ✅ Working | `FLEXPM_WEBHOOK_URL` — item.created/updated/deleted, sprint.started/completed, item.due_soon; optional HMAC-SHA256 signing via `FLEXPM_WEBHOOK_SECRET` |
+| GitHub Issues import | ✅ Working | `POST /api/projects/{id}/import-github`; accepts owner/repo or full URL, optional PAT, label filter, closed-issue toggle |
 | Input validation | ✅ Done | `validator` on all `Create*/Update*` DTOs |
 | Workflow correctness | ✅ Done | Parent-auto-complete + WIP decisions live in `flexpm-core` |
 | Single binary | ✅ Done | `--features embed-spa` embeds SPA; ~5 MB release binary |
@@ -50,8 +51,8 @@
 
 ## Test coverage (actual)
 
-- **Total test functions:** 157 (`cargo test --workspace`) + 1 `#[ignore]` perf test
-- **Breakdown:** flexpm-core 67 unit (incl. 28 custom-field validation), flexpm-db 22 integration + 1 ignored perf test (in-memory SQLite), flexpm-api 57 handler tests (4 unit + 17 Alexa + 36 integration), flexpm-cli 11
+- **Total test functions:** 164 (`cargo test --workspace`) + 1 `#[ignore]` perf test
+- **Breakdown:** flexpm-core 67 unit (incl. 28 custom-field validation), flexpm-db 22 integration + 1 ignored perf test (in-memory SQLite), flexpm-api 64 handler tests (11 unit incl. 7 GitHub URL-parsing + 17 Alexa + 36 integration), flexpm-cli 11
 - **CI:** GitHub Actions runs `cargo test --workspace` on every push ✅; entry bundle gate (< 30 KB gzipped) ✅
 - **Frontend tests:** 144 Vitest unit tests across 21 test files; Playwright E2E deferred
 
@@ -59,7 +60,7 @@
 
 ## Known issues
 
-None. All ten phases of the engineering roadmap are complete.
+None. All eleven phases of the engineering roadmap are complete.
 
 ---
 
@@ -86,3 +87,5 @@ None. All ten phases of the engineering roadmap are complete.
 **Phase 9 — Full integration test coverage:** API integration tests expanded from 16 to 36 (added sprints, roles, comments, dependencies, search, JSON/CSV export, item update/delete). Frontend utility tests added: vocab resolution, lens persistence, keyboard manager, optimistic-update rollback — total 144 Vitest tests across 21 files. Vitest config cleaned up for vite 8 + OXC pipeline.
 
 **Phase 10 — Webhook notifications:** Outbound webhook delivery via `FLEXPM_WEBHOOK_URL`. Fires `item.created`, `item.updated`, `item.deleted`, `sprint.started`, `sprint.completed`, and `item.due_soon` (background hourly check). Optional HMAC-SHA256 payload signing via `FLEXPM_WEBHOOK_SECRET` (`X-FlexPM-Signature` header). Delivery is fire-and-forget — errors are logged, never surfaced to callers.
+
+**Phase 11 — GitHub Issues import:** `POST /api/projects/{id}/import-github` fetches issues from any public or token-accessible GitHub repository. Accepts `owner/repo`, full GitHub URLs, optional PAT, label filter, and a closed-issue toggle. Pull requests are skipped automatically. Closed issues land in the first Done-category status; open issues land in the first workflow status. Handles pagination. 7 unit tests for URL parsing.
