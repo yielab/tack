@@ -397,7 +397,7 @@ pub async fn import_csv(
             })
             .unwrap_or_else(|| default_status.clone());
 
-        let item_type: Option<ItemType> = get(type_col).and_then(|s| parse_item_type(s));
+        let item_type: Option<ItemType> = get(type_col).and_then(parse_item_type);
 
         let priority: Option<Priority> =
             get(prio_col).and_then(|s| match s.to_lowercase().as_str() {

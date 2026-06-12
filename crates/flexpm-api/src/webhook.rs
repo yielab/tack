@@ -19,14 +19,21 @@ impl WebhookClient {
             .timeout(std::time::Duration::from_secs(10))
             .build()
             .unwrap_or_default();
-        Self { url, secret, client }
+        Self {
+            url,
+            secret,
+            client,
+        }
     }
 
     fn sign(&self, body: &[u8]) -> Option<String> {
         let secret = self.secret.as_deref()?;
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).ok()?;
         mac.update(body);
-        Some(format!("sha256={}", hex::encode(mac.finalize().into_bytes())))
+        Some(format!(
+            "sha256={}",
+            hex::encode(mac.finalize().into_bytes())
+        ))
     }
 
     /// Spawn a background task that POSTs `payload` to the configured URL.
