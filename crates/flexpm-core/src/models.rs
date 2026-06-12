@@ -780,7 +780,7 @@ mod tests {
     fn validate_number_accepts_int_and_float() {
         let f = make_field(CustomFieldType::Number, None);
         assert!(f.validate_value(&json!(42)).is_ok());
-        assert!(f.validate_value(&json!(3.14)).is_ok());
+        assert!(f.validate_value(&json!(2.75)).is_ok());
     }
 
     #[test]
