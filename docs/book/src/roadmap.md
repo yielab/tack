@@ -1,7 +1,7 @@
 # Roadmap
 
 **Current version:** 2.0.0  
-**Status:** All eleven engineering phases complete. The product is feature-complete for the
+**Status:** All twelve engineering phases complete. The product is feature-complete for the
 solo-dev / small-team use case. Future work is additive.
 
 ---
@@ -96,6 +96,15 @@ Dead code removed. Docs consolidated. Status and architecture accurately documen
 - Response includes `created`, `skipped`, and `rate_limit_remaining` counts
 - 7 unit tests for URL parsing covering all input forms
 
+### Phase 12 — Linear Import
+
+- `POST /api/projects/{id}/import-linear` — fetches issues from Linear's GraphQL API and creates FlexPM items
+- Request body: `api_key` (Linear personal API key), `team_id` (optional slug or ID), `project_id` (optional; overrides `team_id`), `import_completed` (default false), `label_filter` (optional label allow-list)
+- Priority mapping: Urgent→Critical, High→High, Medium→Medium, Low→Low; No priority→unset
+- Cursor-based pagination (50 issues per request)
+- Response includes `created` and `skipped` counts
+- 6 unit tests covering filter generation, cursor inclusion, project-vs-team precedence, priority mapping, and cursor injection sanitisation
+
 ---
 
 ## Planned
@@ -113,7 +122,7 @@ or JWT), per-user access control, and an audit log.
 
 #### Import Formats
 - ~~GitHub Issues import~~ — shipped in Phase 11
-- Linear export import
+- ~~Linear export import~~ — shipped in Phase 12
 
 #### Mobile / Offline
 No current plans. The SPA is responsive on mobile browsers; no native app and no offline-first sync.

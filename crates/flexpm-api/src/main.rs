@@ -77,6 +77,21 @@ async fn main() -> anyhow::Result<()> {
     info!(%addr, "Server listening");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
+
+    // Plain-stdout banner for end users running the distributed binary —
+    // visible regardless of log level/format.
+    let display_host = if config.host == "0.0.0.0" {
+        "localhost"
+    } else {
+        &config.host
+    };
+    println!(
+        "\n  FlexPM v{} is running.\n  Open http://{}:{} in your browser.\n  Press Ctrl+C to stop.\n",
+        env!("CARGO_PKG_VERSION"),
+        display_host,
+        config.port
+    );
+
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
