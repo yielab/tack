@@ -50,6 +50,40 @@ pub struct AppConfig {
     /// the receiver can verify authenticity.
     #[serde(default)]
     pub webhook_secret: Option<String>,
+
+    // ── Remote backup (S3-compatible object storage) ──────────────────────────
+    /// S3-compatible endpoint URL. Omit for AWS S3; set for R2/B2/MinIO.
+    /// Example: `https://<account>.r2.cloudflarestorage.com`
+    #[serde(default)]
+    pub backup_endpoint: Option<String>,
+
+    /// Bucket name. Required to enable remote backup.
+    #[serde(default)]
+    pub backup_bucket: Option<String>,
+
+    /// AWS/S3 region. Cloudflare R2 uses `auto`; AWS requires the real region.
+    #[serde(default = "default_backup_region")]
+    pub backup_region: String,
+
+    /// S3 access key ID. Required to enable remote backup.
+    #[serde(default)]
+    pub backup_access_key: Option<String>,
+
+    /// S3 secret access key. Required to enable remote backup. Never logged.
+    #[serde(default)]
+    pub backup_secret_key: Option<String>,
+
+    /// Object key prefix inside the bucket. Default: `flexpm`.
+    #[serde(default = "default_backup_prefix")]
+    pub backup_prefix: String,
+
+    /// Automatic backup interval in seconds. Omit (None) for manual-only backups.
+    #[serde(default)]
+    pub backup_interval_secs: Option<u64>,
+
+    /// How many remote backups to retain after each upload. Default: 10.
+    #[serde(default = "default_backup_retention")]
+    pub backup_retention: usize,
 }
 
 impl Default for AppConfig {
@@ -68,6 +102,14 @@ impl Default for AppConfig {
             alexa_skill_id: None,
             webhook_url: None,
             webhook_secret: None,
+            backup_endpoint: None,
+            backup_bucket: None,
+            backup_region: default_backup_region(),
+            backup_access_key: None,
+            backup_secret_key: None,
+            backup_prefix: default_backup_prefix(),
+            backup_interval_secs: None,
+            backup_retention: default_backup_retention(),
         }
     }
 }
@@ -94,6 +136,16 @@ fn default_max_body_size_bytes() -> usize {
     2 * 1024 * 1024
 } // 2 MB
 
+fn default_backup_region() -> String {
+    "auto".into()
+}
+fn default_backup_prefix() -> String {
+    "flexpm".into()
+}
+fn default_backup_retention() -> usize {
+    10
+}
+
 fn default_allowed_origins() -> Vec<String> {
     vec![
         "http://localhost:8080".into(),
@@ -103,6 +155,13 @@ fn default_allowed_origins() -> Vec<String> {
 }
 
 impl AppConfig {
+    /// Returns true when all three required remote-backup fields are set.
+    pub fn remote_backup_enabled(&self) -> bool {
+        self.backup_bucket.is_some()
+            && self.backup_access_key.is_some()
+            && self.backup_secret_key.is_some()
+    }
+
     /// Extract the filesystem path from the database URL.
     /// Returns `None` for in-memory databases.
     pub fn db_file_path(&self) -> Option<std::path::PathBuf> {
@@ -174,6 +233,43 @@ impl AppConfig {
             && !v.is_empty()
         {
             config.webhook_secret = Some(v);
+        }
+        if let Ok(v) = std::env::var("FLEXPM_BACKUP_ENDPOINT")
+            && !v.is_empty()
+        {
+            config.backup_endpoint = Some(v);
+        }
+        if let Ok(v) = std::env::var("FLEXPM_BACKUP_BUCKET")
+            && !v.is_empty()
+        {
+            config.backup_bucket = Some(v);
+        }
+        if let Ok(v) = std::env::var("FLEXPM_BACKUP_REGION")
+            && !v.is_empty()
+        {
+            config.backup_region = v;
+        }
+        if let Ok(v) = std::env::var("FLEXPM_BACKUP_ACCESS_KEY")
+            && !v.is_empty()
+        {
+            config.backup_access_key = Some(v);
+        }
+        // Never log the secret key value
+        if let Ok(v) = std::env::var("FLEXPM_BACKUP_SECRET_KEY")
+            && !v.is_empty()
+        {
+            config.backup_secret_key = Some(v);
+        }
+        if let Ok(v) = std::env::var("FLEXPM_BACKUP_PREFIX")
+            && !v.is_empty()
+        {
+            config.backup_prefix = v;
+        }
+        if let Ok(v) = std::env::var("FLEXPM_BACKUP_INTERVAL_SECS") {
+            config.backup_interval_secs = v.parse().ok();
+        }
+        if let Ok(v) = std::env::var("FLEXPM_BACKUP_RETENTION") {
+            config.backup_retention = v.parse().unwrap_or(default_backup_retention());
         }
         config
     }

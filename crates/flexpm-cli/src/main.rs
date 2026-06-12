@@ -155,16 +155,35 @@ enum Commands {
         shell: Shell,
     },
 
-    /// Download a backup of the FlexPM database
+    /// Download a local backup or trigger a remote cloud backup
     Backup {
-        /// Where to save the backup (default: flexpm-backup.db)
+        /// Where to save the local backup (default: flexpm-backup.db). Ignored with --remote.
         path: Option<std::path::PathBuf>,
+        /// Upload a new backup to the configured S3-compatible cloud store instead of downloading locally
+        #[arg(long)]
+        remote: bool,
+        /// Output raw JSON (only applies to --remote)
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// List remote cloud backups
+    Backups {
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
     },
 
     /// Stage a backup file for restore on next server restart
     Restore {
-        /// Path to the backup file produced by `flexpm backup`
-        path: std::path::PathBuf,
+        /// Path to the backup file produced by `flexpm backup` (omit with --remote)
+        path: Option<std::path::PathBuf>,
+        /// Restore from remote cloud storage instead of a local file
+        #[arg(long)]
+        remote: bool,
+        /// Specific remote backup key to restore (defaults to latest when using --remote)
+        #[arg(long)]
+        key: Option<String>,
         /// Output raw JSON
         #[arg(long)]
         json: bool,
@@ -493,9 +512,26 @@ fn main() -> anyhow::Result<()> {
             json,
         } => cmd_search(&client, query, project, json),
 
-        Commands::Backup { path } => cmd_backup(&client, path),
+        Commands::Backup { path, remote, json } => {
+            if remote {
+                cmd_backup_remote(&client, json)
+            } else {
+                cmd_backup(&client, path)
+            }
+        }
 
-        Commands::Restore { path, json } => cmd_restore(&client, path, json),
+        Commands::Backups { json } => cmd_list_remote_backups(&client, json),
+
+        Commands::Restore { path, remote, key, json } => {
+            if remote {
+                cmd_restore_remote(&client, key, json)
+            } else {
+                let p = path.ok_or_else(|| {
+                    anyhow::anyhow!("'path' is required when not using --remote")
+                })?;
+                cmd_restore(&client, p, json)
+            }
+        }
 
         Commands::Template { action } => match action {
             TemplateAction::List { project_type, json } => {
@@ -1362,6 +1398,66 @@ fn cmd_restore(
     let data =
         std::fs::read(&path).map_err(|e| anyhow::anyhow!("Cannot read {}: {e}", path.display()))?;
     let resp = client.post_bytes("/restore", data)?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+    let msg = resp["message"].as_str().unwrap_or("Restore staged.");
+    println!("{msg}");
+    Ok(())
+}
+
+fn cmd_backup_remote(client: &FlexpmClient, as_json: bool) -> anyhow::Result<()> {
+    let resp = client.post("/backup/remote", &json!({}))?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+    let key = resp["object_key"].as_str().unwrap_or("?");
+    let bytes = resp["bundle_size_bytes"].as_u64().unwrap_or(0);
+    let created = resp["created_at"].as_str().unwrap_or("-");
+    println!("Remote backup uploaded:");
+    println!("  Key:     {key}");
+    println!("  Size:    {} bytes", bytes);
+    println!("  Created: {created}");
+    Ok(())
+}
+
+fn cmd_list_remote_backups(client: &FlexpmClient, as_json: bool) -> anyhow::Result<()> {
+    let resp = client.get("/backup/remote")?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+    let empty = vec![];
+    let backups = resp.as_array().unwrap_or(&empty);
+    if backups.is_empty() {
+        println!("No remote backups found.");
+        return Ok(());
+    }
+    println!("{:<32} {:>12} {:>8} {}", "Created", "Size (bytes)", "Items", "Key");
+    println!("{}", "-".repeat(90));
+    for b in backups {
+        let raw_date = b["created_at"].as_str().unwrap_or("-");
+        let created = &raw_date[..19.min(raw_date.len())];
+        let size = b["bundle_size_bytes"].as_u64().unwrap_or(0);
+        let items = b["item_count"].as_u64().unwrap_or(0);
+        let key = b["object_key"].as_str().unwrap_or("-");
+        println!("{:<32} {:>12} {:>8} {}", created, size, items, key);
+    }
+    Ok(())
+}
+
+fn cmd_restore_remote(
+    client: &FlexpmClient,
+    key: Option<String>,
+    as_json: bool,
+) -> anyhow::Result<()> {
+    let body = match key {
+        Some(k) => json!({ "key": k }),
+        None => json!({}),
+    };
+    let resp = client.post("/backup/remote/restore", &body)?;
     if as_json {
         println!("{}", serde_json::to_string_pretty(&resp)?);
         return Ok(());

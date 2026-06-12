@@ -83,6 +83,10 @@ pub fn build_router(state: AppState) -> Router {
             "/restore",
             post(backup::post_restore.layer(DefaultBodyLimit::max(ATTACH_LIMIT))),
         )
+        // ─── Remote cloud backup ──────────────────────────────────────────
+        .route("/backup/remote", post(backup::post_remote_backup))
+        .route("/backup/remote", get(backup::get_remote_backups))
+        .route("/backup/remote/restore", post(backup::post_remote_restore))
         // ─── Projects ────────────────────────────────────────────────────
         .route("/projects", post(projects::create_project))
         .route("/projects", get(projects::list_projects))

@@ -50,6 +50,11 @@ regex = { version = "1", features = ["std"] }
 # HTTP client (webhook delivery)
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
+# Remote backup — S3-compatible object storage + compression
+object_store = { version = "0.11", features = ["aws"] }
+tar = "0.4"
+zstd = "0.13"
+
 # Cryptography (HMAC-SHA256 webhook signatures)
 hmac = "0.12"
 sha2 = "0.10"
