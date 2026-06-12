@@ -997,19 +997,19 @@ fn cmd_template_show(client: &FlexpmClient, id: String, as_json: bool) -> anyhow
     }
 
     // Custom fields
-    if let Some(fields) = resp["custom_fields"].as_array() {
-        if !fields.is_empty() {
-            let field_names: Vec<&str> = fields.iter().filter_map(|f| f["name"].as_str()).collect();
-            println!("  fields:      {}", field_names.join(", "));
-        }
+    if let Some(fields) = resp["custom_fields"].as_array()
+        && !fields.is_empty()
+    {
+        let field_names: Vec<&str> = fields.iter().filter_map(|f| f["name"].as_str()).collect();
+        println!("  fields:      {}", field_names.join(", "));
     }
 
     // Boards
-    if let Some(boards) = resp["default_boards"].as_array() {
-        if !boards.is_empty() {
-            let board_names: Vec<&str> = boards.iter().filter_map(|b| b["name"].as_str()).collect();
-            println!("  boards:      {}", board_names.join(", "));
-        }
+    if let Some(boards) = resp["default_boards"].as_array()
+        && !boards.is_empty()
+    {
+        let board_names: Vec<&str> = boards.iter().filter_map(|b| b["name"].as_str()).collect();
+        println!("  boards:      {}", board_names.join(", "));
     }
 
     println!("  id:          {id}");
