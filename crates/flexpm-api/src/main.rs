@@ -62,8 +62,7 @@ async fn main() -> anyhow::Result<()> {
         if config.remote_backup_enabled() {
             let bg_state = state.clone();
             tokio::spawn(async move {
-                let mut interval =
-                    tokio::time::interval(Duration::from_secs(interval_secs));
+                let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
                 interval.tick().await; // skip the first immediate tick
                 loop {
                     interval.tick().await;
@@ -224,30 +223,26 @@ async fn shutdown_signal() {
 /// Run a scheduled remote backup: create bundle, upload, prune old backups.
 async fn run_scheduled_backup(state: &AppState) {
     match remote_backup::store_from_config(&state.config) {
-        Ok(store) => {
-            match remote_backup::create_bundle(state.pool(), &state.config).await {
-                Ok((bundle, manifest)) => {
-                    if let Err(e) =
-                        remote_backup::upload(store.as_ref(), &manifest, bundle).await
-                    {
-                        warn!(error = %e, "Scheduled backup upload failed");
-                        return;
-                    }
-                    if let Err(e) = remote_backup::prune(
-                        store.as_ref(),
-                        &state.config.backup_prefix,
-                        state.config.backup_retention,
-                    )
-                    .await
-                    {
-                        warn!(error = %e, "Scheduled backup prune failed");
-                    } else {
-                        info!(key = %manifest.object_key, "Scheduled backup complete");
-                    }
+        Ok(store) => match remote_backup::create_bundle(state.pool(), &state.config).await {
+            Ok((bundle, manifest)) => {
+                if let Err(e) = remote_backup::upload(store.as_ref(), &manifest, bundle).await {
+                    warn!(error = %e, "Scheduled backup upload failed");
+                    return;
                 }
-                Err(e) => warn!(error = %e, "Scheduled backup bundle creation failed"),
+                if let Err(e) = remote_backup::prune(
+                    store.as_ref(),
+                    &state.config.backup_prefix,
+                    state.config.backup_retention,
+                )
+                .await
+                {
+                    warn!(error = %e, "Scheduled backup prune failed");
+                } else {
+                    info!(key = %manifest.object_key, "Scheduled backup complete");
+                }
             }
-        }
+            Err(e) => warn!(error = %e, "Scheduled backup bundle creation failed"),
+        },
         Err(e) => warn!(error = %e, "Scheduled backup store init failed"),
     }
 }

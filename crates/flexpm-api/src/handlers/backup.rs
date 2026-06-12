@@ -115,7 +115,9 @@ pub async fn post_restore(
 fn remote_not_configured() -> (StatusCode, Json<serde_json::Value>) {
     (
         StatusCode::CONFLICT,
-        Json(json!({"error": "remote backup is not configured — set FLEXPM_BACKUP_BUCKET, FLEXPM_BACKUP_ACCESS_KEY, FLEXPM_BACKUP_SECRET_KEY"})),
+        Json(
+            json!({"error": "remote backup is not configured — set FLEXPM_BACKUP_BUCKET, FLEXPM_BACKUP_ACCESS_KEY, FLEXPM_BACKUP_SECRET_KEY"}),
+        ),
     )
 }
 
@@ -139,10 +141,9 @@ pub async fn post_remote_backup(
     }
 
     let store = remote_backup::store_from_config(&state.config).map_err(backup_err)?;
-    let (bundle, manifest) =
-        remote_backup::create_bundle(state.pool(), &state.config)
-            .await
-            .map_err(backup_err)?;
+    let (bundle, manifest) = remote_backup::create_bundle(state.pool(), &state.config)
+        .await
+        .map_err(backup_err)?;
 
     remote_backup::upload(store.as_ref(), &manifest, bundle)
         .await
@@ -206,10 +207,9 @@ pub async fn post_remote_restore(
     let key = if let Some(k) = req_key.clone() {
         k
     } else {
-        let manifests =
-            remote_backup::list(store.as_ref(), &state.config.backup_prefix)
-                .await
-                .map_err(backup_err)?;
+        let manifests = remote_backup::list(store.as_ref(), &state.config.backup_prefix)
+            .await
+            .map_err(backup_err)?;
         manifests
             .into_iter()
             .next()
@@ -235,11 +235,10 @@ pub async fn post_remote_restore(
         serde_json::from_slice(&sidecar_bytes).map_err(|e| backup_err(e.into()))?;
 
     // Get the current local migration version.
-    let local_version: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM _migrations")
-            .fetch_one(state.pool())
-            .await
-            .map_err(|e| backup_err(e.into()))?;
+    let local_version: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _migrations")
+        .fetch_one(state.pool())
+        .await
+        .map_err(|e| backup_err(e.into()))?;
 
     let db_path = state.config.db_file_path().ok_or((
         StatusCode::BAD_REQUEST,
