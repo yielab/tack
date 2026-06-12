@@ -253,7 +253,13 @@ fn msg_nothing_open(lang: Lang, project: &str) -> String {
     }
 }
 
-fn msg_open_summary(lang: Lang, count: usize, term: &str, project: &str, titles: &[&str]) -> String {
+fn msg_open_summary(
+    lang: Lang,
+    count: usize,
+    term: &str,
+    project: &str,
+    titles: &[&str],
+) -> String {
     let plural = if count == 1 { "" } else { "s" };
     match lang {
         Lang::En => {
@@ -270,7 +276,11 @@ fn msg_open_summary(lang: Lang, count: usize, term: &str, project: &str, titles:
             } else {
                 format!("Son: {}.", titles.join(", "))
             };
-            let pendiente = if count == 1 { "pendiente" } else { "pendientes" };
+            let pendiente = if count == 1 {
+                "pendiente"
+            } else {
+                "pendientes"
+            };
             format!("Tienes {count} {term}{plural} {pendiente} en {project}. {listing}")
         }
     }
@@ -350,7 +360,9 @@ pub async fn handle_request(
     Json(payload): Json<AlexaRequest>,
 ) -> ApiResult<Json<Value>> {
     let Some(ref expected_skill_id) = state.config.alexa_skill_id else {
-        return Err(ApiError::NotFound("Alexa integration is not enabled".into()));
+        return Err(ApiError::NotFound(
+            "Alexa integration is not enabled".into(),
+        ));
     };
 
     let app_id = payload
@@ -366,7 +378,9 @@ pub async fn handle_request(
         .timestamp
         .ok_or_else(|| ApiError::BadRequest("Missing request timestamp".into()))?;
     if (Utc::now() - timestamp).num_seconds().abs() > TIMESTAMP_TOLERANCE_SECS {
-        return Err(ApiError::BadRequest("Request timestamp out of tolerance".into()));
+        return Err(ApiError::BadRequest(
+            "Request timestamp out of tolerance".into(),
+        ));
     }
 
     let lang = payload.lang();
@@ -430,7 +444,12 @@ async fn add_task(state: &AppState, req: &AlexaRequest, lang: Lang) -> ApiResult
     );
 
     Ok(speech(
-        &msg_added(lang, &vocab_term(&project, "task"), &item.title, &project.name),
+        &msg_added(
+            lang,
+            &vocab_term(&project, "task"),
+            &item.title,
+            &project.name,
+        ),
         true,
     ))
 }
@@ -500,7 +519,10 @@ async fn complete_task(state: &AppState, req: &AlexaRequest, lang: Lang) -> ApiR
         .find(|i| i.title.to_lowercase() == wanted)
         .or_else(|| open().find(|i| i.title.to_lowercase().contains(&wanted)));
     let Some(target) = target else {
-        return Ok(speech(&msg_open_item_not_found(lang, title, &project.name), true));
+        return Ok(speech(
+            &msg_open_item_not_found(lang, title, &project.name),
+            true,
+        ));
     };
 
     // Same guards as the REST update handler: transition validity + WIP limit.
@@ -518,7 +540,11 @@ async fn complete_task(state: &AppState, req: &AlexaRequest, lang: Lang) -> ApiR
         .repo
         .count_items_by_status(project.id, done_status)
         .await? as usize;
-    if project.workflow.check_wip_limit(done_status, count).is_err() {
+    if project
+        .workflow
+        .check_wip_limit(done_status, count)
+        .is_err()
+    {
         return Ok(speech(&msg_wip_limit(lang, done_status), true));
     }
 
@@ -582,7 +608,11 @@ async fn resolve_project(
         let found = projects
             .iter()
             .find(|p| p.name.to_lowercase() == lower)
-            .or_else(|| projects.iter().find(|p| p.name.to_lowercase().contains(&lower)));
+            .or_else(|| {
+                projects
+                    .iter()
+                    .find(|p| p.name.to_lowercase().contains(&lower))
+            });
         return Ok(match found {
             Some(p) => Ok(p.clone()),
             None => Err(msg_project_not_found(lang, wanted)),

@@ -33,12 +33,11 @@ pub async fn create_template(
     // Validate custom field options: Select/MultiSelect require at least one option
     if let Some(ref fields) = data.custom_fields {
         for f in fields {
-            if matches!(f.field_type, CustomFieldType::Select | CustomFieldType::MultiSelect) {
-                let has_options = f
-                    .options
-                    .as_ref()
-                    .map(|o| !o.is_empty())
-                    .unwrap_or(false);
+            if matches!(
+                f.field_type,
+                CustomFieldType::Select | CustomFieldType::MultiSelect
+            ) {
+                let has_options = f.options.as_ref().map(|o| !o.is_empty()).unwrap_or(false);
                 if !has_options {
                     tracing::warn!(field_name = %f.name, "Select field missing options");
                     return Err(StatusCode::UNPROCESSABLE_ENTITY);
@@ -311,8 +310,16 @@ pub async fn save_project_as_template(
         project_type: project.project_type,
         vocabulary: Some(project.vocabulary),
         workflow: Some(project.workflow),
-        custom_fields: if custom_fields.is_empty() { None } else { Some(custom_fields) },
-        default_boards: if default_boards.is_empty() { None } else { Some(default_boards) },
+        custom_fields: if custom_fields.is_empty() {
+            None
+        } else {
+            Some(custom_fields)
+        },
+        default_boards: if default_boards.is_empty() {
+            None
+        } else {
+            Some(default_boards)
+        },
     };
 
     repo::templates::create_template(state.pool(), template_data)
