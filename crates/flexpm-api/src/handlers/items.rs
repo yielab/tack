@@ -1,5 +1,6 @@
 use axum::Json;
 use axum::extract::{Path, Query, State};
+use chrono::Utc;
 use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
@@ -43,6 +44,18 @@ pub async fn create_item(
             status: item.status.clone(),
         },
     );
+
+    if let Some(wh) = &state.webhook {
+        wh.fire(
+            "item.created",
+            serde_json::json!({
+                "event": "item.created",
+                "timestamp": Utc::now().to_rfc3339(),
+                "project_id": project_id,
+                "item": &item,
+            }),
+        );
+    }
 
     Ok(Json(serde_json::to_value(item).unwrap()))
 }
@@ -136,6 +149,18 @@ pub async fn update_item(
         },
     );
 
+    if let Some(wh) = &state.webhook {
+        wh.fire(
+            "item.updated",
+            serde_json::json!({
+                "event": "item.updated",
+                "timestamp": Utc::now().to_rfc3339(),
+                "project_id": item.project_id,
+                "item": &item,
+            }),
+        );
+    }
+
     // Auto-propagate parent status when all siblings reach Done
     propagate_parent_completion(&state, &item, &old_status).await;
 
@@ -185,6 +210,18 @@ pub async fn delete_item(
             item_id: id,
         },
     );
+
+    if let Some(wh) = &state.webhook {
+        wh.fire(
+            "item.deleted",
+            serde_json::json!({
+                "event": "item.deleted",
+                "timestamp": Utc::now().to_rfc3339(),
+                "project_id": item.project_id,
+                "item_id": id,
+            }),
+        );
+    }
 
     Ok(Json(serde_json::json!({"deleted": true})))
 }

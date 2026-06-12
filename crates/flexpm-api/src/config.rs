@@ -38,6 +38,18 @@ pub struct AppConfig {
     /// application ID in each request). Unset disables the endpoint entirely.
     #[serde(default)]
     pub alexa_skill_id: Option<String>,
+
+    /// Optional outbound webhook URL. When set, FlexPM POSTs a JSON payload to
+    /// this URL on every item create/update/delete, sprint status change, and
+    /// when items become due within the next hour (background check every 60 min).
+    #[serde(default)]
+    pub webhook_url: Option<String>,
+
+    /// Optional HMAC-SHA256 signing secret for webhook deliveries. When set,
+    /// each request includes an `X-FlexPM-Signature: sha256=<hex>` header so
+    /// the receiver can verify authenticity.
+    #[serde(default)]
+    pub webhook_secret: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -54,6 +66,8 @@ impl Default for AppConfig {
             max_body_size_bytes: default_max_body_size_bytes(),
             api_token: None,
             alexa_skill_id: None,
+            webhook_url: None,
+            webhook_secret: None,
         }
     }
 }
@@ -150,6 +164,16 @@ impl AppConfig {
             && !v.is_empty()
         {
             config.alexa_skill_id = Some(v);
+        }
+        if let Ok(v) = std::env::var("FLEXPM_WEBHOOK_URL")
+            && !v.is_empty()
+        {
+            config.webhook_url = Some(v);
+        }
+        if let Ok(v) = std::env::var("FLEXPM_WEBHOOK_SECRET")
+            && !v.is_empty()
+        {
+            config.webhook_secret = Some(v);
         }
         config
     }

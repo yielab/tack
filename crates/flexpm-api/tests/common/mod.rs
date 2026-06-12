@@ -37,6 +37,7 @@ pub async fn test_app_with_config(config: AppConfig) -> (Router, Uuid) {
         config,
         workspace_id,
         broadcast_tx: tx,
+        webhook: None,
     };
 
     (build_router(state), workspace_id)
@@ -70,6 +71,7 @@ pub async fn test_app_with_file_db(db_url: &str) -> (Router, Uuid) {
         config,
         workspace_id,
         broadcast_tx: tx,
+        webhook: None,
     };
 
     (build_router(state), workspace_id)

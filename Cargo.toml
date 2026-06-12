@@ -47,6 +47,14 @@ toml = "0.8"
 futures = "0.3"
 regex = { version = "1", features = ["std"] }
 
+# HTTP client (webhook delivery)
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Cryptography (HMAC-SHA256 webhook signatures)
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
 # Testing
 assert_matches = "1.5"
 

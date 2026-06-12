@@ -32,6 +32,7 @@
 | Security headers | ✅ Done | `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options` |
 | API token auth | ✅ Done | Optional Bearer token via `FLEXPM_API_TOKEN` |
 | Alexa voice integration | ✅ Working | `POST /api/alexa`; AddTask / ListTasks / CompleteTask intents; skill-ID + timestamp auth; vocabulary-aware responses; exempt from Bearer-token gate |
+| Webhook notifications | ✅ Working | `FLEXPM_WEBHOOK_URL` — item.created/updated/deleted, sprint.started/completed, item.due_soon; optional HMAC-SHA256 signing via `FLEXPM_WEBHOOK_SECRET` |
 | Input validation | ✅ Done | `validator` on all `Create*/Update*` DTOs |
 | Workflow correctness | ✅ Done | Parent-auto-complete + WIP decisions live in `flexpm-core` |
 | Single binary | ✅ Done | `--features embed-spa` embeds SPA; ~5 MB release binary |
@@ -49,16 +50,16 @@
 
 ## Test coverage (actual)
 
-- **Total test functions:** 133 (`cargo test --workspace`) + 1 `#[ignore]` perf test
-- **Breakdown:** flexpm-core 67 unit (incl. 28 custom-field validation), flexpm-db 22 integration + 1 ignored perf test (in-memory SQLite), flexpm-api 33 handler tests (4 unit + 13 Alexa + 16 integration), flexpm-cli 11
+- **Total test functions:** 157 (`cargo test --workspace`) + 1 `#[ignore]` perf test
+- **Breakdown:** flexpm-core 67 unit (incl. 28 custom-field validation), flexpm-db 22 integration + 1 ignored perf test (in-memory SQLite), flexpm-api 57 handler tests (4 unit + 17 Alexa + 36 integration), flexpm-cli 11
 - **CI:** GitHub Actions runs `cargo test --workspace` on every push ✅; entry bundle gate (< 30 KB gzipped) ✅
-- **Frontend tests:** 106 Vitest unit tests (Phase 6); Playwright E2E deferred
+- **Frontend tests:** 144 Vitest unit tests across 21 test files; Playwright E2E deferred
 
 ---
 
 ## Known issues
 
-None. All eight phases of the engineering roadmap are complete.
+None. All ten phases of the engineering roadmap are complete.
 
 ---
 
@@ -81,3 +82,7 @@ None. All eight phases of the engineering roadmap are complete.
 **Phase 7 — Template management depth:** Template creator authoring UI (vocabulary, workflow, custom fields, boards — "Coming Soon" removed); save-project-as-template endpoint + dialog; built-in templates seeded per project type; gallery enriched with per-card metadata; CLI template commands; template payload validation.
 
 **Phase 8 — Custom field validation + Alexa voice integration:** `CustomFieldDefinition::validate_value()` moved into `flexpm-core` (type, options, pattern/min/max rules); `set_field_value` handler returns 422 on invalid value; `POST /api/alexa` Alexa custom-skill endpoint (AddTask, ListTasks, CompleteTask intents) with skill-ID + timestamp replay protection, vocabulary-aware spoken responses, full workflow guard enforcement (transitions, WIP limits, parent auto-completion), and WebSocket event broadcast; board view applies per-board item filters on fetch.
+
+**Phase 9 — Full integration test coverage:** API integration tests expanded from 16 to 36 (added sprints, roles, comments, dependencies, search, JSON/CSV export, item update/delete). Frontend utility tests added: vocab resolution, lens persistence, keyboard manager, optimistic-update rollback — total 144 Vitest tests across 21 files. Vitest config cleaned up for vite 8 + OXC pipeline.
+
+**Phase 10 — Webhook notifications:** Outbound webhook delivery via `FLEXPM_WEBHOOK_URL`. Fires `item.created`, `item.updated`, `item.deleted`, `sprint.started`, `sprint.completed`, and `item.due_soon` (background hourly check). Optional HMAC-SHA256 payload signing via `FLEXPM_WEBHOOK_SECRET` (`X-FlexPM-Signature` header). Delivery is fire-and-forget — errors are logged, never surfaced to callers.

@@ -152,6 +152,29 @@ impl Repository {
         Ok(rows.into_iter().map(|r| r.into_item()).collect())
     }
 
+    /// Return all incomplete items whose `due_date` falls in `[from, to)`.
+    /// Used by the background webhook task to fire `item.due_soon` events.
+    pub async fn list_items_due_soon(
+        &self,
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<Item>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, ItemRow>(
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, started_at, completed_at, created_at, updated_at
+             FROM items
+             WHERE due_date IS NOT NULL
+               AND due_date >= ?
+               AND due_date < ?
+               AND completed_at IS NULL
+             ORDER BY due_date ASC",
+        )
+        .bind(from.to_rfc3339())
+        .bind(to.to_rfc3339())
+        .fetch_all(self.pool())
+        .await?;
+        Ok(rows.into_iter().map(|r| r.into_item()).collect())
+    }
+
     #[instrument(skip(self))]
     pub async fn update_item(
         &self,

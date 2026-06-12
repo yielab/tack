@@ -22,6 +22,7 @@ use crate::handlers::{
     projects, roles, sprints, templates, websocket,
 };
 use crate::middleware::require_token;
+use crate::webhook::WebhookClient;
 
 /// Shared application state passed to all handlers.
 #[derive(Clone)]
@@ -31,6 +32,8 @@ pub struct AppState {
     pub workspace_id: Uuid,
     /// Broadcast channel for real-time WebSocket updates
     pub broadcast_tx: broadcast::Sender<websocket::BoardEvent>,
+    /// Optional outbound webhook client (None when FLEXPM_WEBHOOK_URL is unset)
+    pub webhook: Option<WebhookClient>,
 }
 
 impl AppState {

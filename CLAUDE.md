@@ -91,6 +91,8 @@ The API server loads configuration from `flexpm.toml` (if present) or environmen
 | `FLEXPM_ALLOWED_ORIGINS` | `localhost:8080,127.0.0.1:8080` | Comma-separated CORS allow-list |
 | `FLEXPM_MAX_BODY_SIZE` | `2097152` | Global request body limit in bytes (default 2 MB; upload endpoint is always 50 MB) |
 | `FLEXPM_ALEXA_SKILL_ID` | _(none)_ | Amazon Alexa skill ID — enables `POST /api/alexa` (see `docs/ALEXA.md`); endpoint returns 404 when unset |
+| `FLEXPM_WEBHOOK_URL` | _(none)_ | Outbound webhook URL — when set, POSTs JSON events on item create/update/delete, sprint status changes, and due-soon alerts |
+| `FLEXPM_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 signing secret; adds `X-FlexPM-Signature: sha256=<hex>` to each delivery |
 
 ### Debugging
 
