@@ -59,7 +59,10 @@ pub async fn update_sprint_status(
         .ok_or_else(|| ApiError::NotFound(format!("Sprint {id} not found")))?;
 
     let new_status = input.status;
-    let updated = state.repo.update_sprint_status(id, new_status.clone()).await?;
+    let updated = state
+        .repo
+        .update_sprint_status(id, new_status.clone())
+        .await?;
     if !updated {
         return Err(ApiError::NotFound(format!("Sprint {id} not found")));
     }

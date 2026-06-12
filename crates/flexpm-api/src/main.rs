@@ -172,11 +172,7 @@ async fn check_due_soon(state: &AppState) {
     let now = Utc::now();
     let window_end = now + chrono::Duration::hours(1);
 
-    match state
-        .repo
-        .list_items_due_soon(now, window_end)
-        .await
-    {
+    match state.repo.list_items_due_soon(now, window_end).await {
         Ok(items) => {
             for item in items {
                 let payload = serde_json::json!({
