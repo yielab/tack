@@ -34,6 +34,7 @@
 | Alexa voice integration | ✅ Working | `POST /api/alexa`; AddTask / ListTasks / CompleteTask intents; skill-ID + timestamp auth; vocabulary-aware responses; exempt from Bearer-token gate |
 | Webhook notifications | ✅ Working | `FLEXPM_WEBHOOK_URL` — item.created/updated/deleted, sprint.started/completed, item.due_soon; optional HMAC-SHA256 signing via `FLEXPM_WEBHOOK_SECRET` |
 | GitHub Issues import | ✅ Working | `POST /api/projects/{id}/import-github`; accepts owner/repo or full URL, optional PAT, label filter, closed-issue toggle |
+| Linear import | ✅ Working | `POST /api/projects/{id}/import-linear`; accepts API key, optional team/project filter, label filter, completed-issue toggle; priority mapping; cursor pagination |
 | Input validation | ✅ Done | `validator` on all `Create*/Update*` DTOs |
 | Workflow correctness | ✅ Done | Parent-auto-complete + WIP decisions live in `flexpm-core` |
 | Single binary | ✅ Done | `--features embed-spa` embeds SPA; ~5 MB release binary |
@@ -51,8 +52,8 @@
 
 ## Test coverage (actual)
 
-- **Total test functions:** 164 (`cargo test --workspace`) + 1 `#[ignore]` perf test
-- **Breakdown:** flexpm-core 67 unit (incl. 28 custom-field validation), flexpm-db 22 integration + 1 ignored perf test (in-memory SQLite), flexpm-api 64 handler tests (11 unit incl. 7 GitHub URL-parsing + 17 Alexa + 36 integration), flexpm-cli 11
+- **Total test functions:** 170 (`cargo test --workspace`) + 1 `#[ignore]` perf test
+- **Breakdown:** flexpm-core 67 unit (incl. 28 custom-field validation), flexpm-db 22 integration + 1 ignored perf test (in-memory SQLite), flexpm-api 70 handler tests (17 unit incl. 7 GitHub URL-parsing + 6 Linear query-building + 17 Alexa + 36 integration), flexpm-cli 11
 - **CI:** GitHub Actions runs `cargo test --workspace` on every push ✅; entry bundle gate (< 30 KB gzipped) ✅
 - **Frontend tests:** 144 Vitest unit tests across 21 test files; Playwright E2E deferred
 
@@ -60,7 +61,7 @@
 
 ## Known issues
 
-None. All eleven phases of the engineering roadmap are complete.
+None. All twelve phases of the engineering roadmap are complete.
 
 ---
 
@@ -89,3 +90,5 @@ None. All eleven phases of the engineering roadmap are complete.
 **Phase 10 — Webhook notifications:** Outbound webhook delivery via `FLEXPM_WEBHOOK_URL`. Fires `item.created`, `item.updated`, `item.deleted`, `sprint.started`, `sprint.completed`, and `item.due_soon` (background hourly check). Optional HMAC-SHA256 payload signing via `FLEXPM_WEBHOOK_SECRET` (`X-FlexPM-Signature` header). Delivery is fire-and-forget — errors are logged, never surfaced to callers.
 
 **Phase 11 — GitHub Issues import:** `POST /api/projects/{id}/import-github` fetches issues from any public or token-accessible GitHub repository. Accepts `owner/repo`, full GitHub URLs, optional PAT, label filter, and a closed-issue toggle. Pull requests are skipped automatically. Closed issues land in the first Done-category status; open issues land in the first workflow status. Handles pagination. 7 unit tests for URL parsing.
+
+**Phase 12 — Linear import:** `POST /api/projects/{id}/import-linear` fetches issues from Linear's GraphQL API. Accepts an API key, optional `team_id` (slug or ID) or `project_id` filter, label filter, and a completed-issue toggle. Priority is mapped (Urgent→Critical, High→High, Medium→Medium, Low→Low). Cursor-based pagination (50 issues/page). 6 unit tests covering filter generation, cursor injection sanitisation, and priority mapping.

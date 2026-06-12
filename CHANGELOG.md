@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.3.0] - 2026-06-12
+## [0.1.0-beta.1] - 2026-06-12
+
+**First public release (beta).** Everything below this point — including the
+version numbers 1.x and 2.x — was internal development that was never
+published. Public versioning starts here at 0.1.0-beta.1 and will reach
+1.0.0 when the app is considered stable.
+
+### Phase 12 — Linear import
+
+- `POST /api/projects/{id}/import-linear` — fetches issues from Linear's GraphQL API
+- Accepts a Linear API key, optional team (slug or ID) or project filter, label filter, completed-issue toggle
+- Priority mapping: Urgent→Critical, High→High, Medium→Medium, Low→Low
+- Cursor-based pagination (50 issues per page)
+- 6 unit tests for filter generation, cursor sanitisation, and priority mapping
 
 ### Phase 11 — GitHub Issues import
 
@@ -32,9 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Frontend utility tests: 144 Vitest unit tests across 21 files — API client contracts, `deriveBoard`, context providers, vocab resolution, settings panels, keyboard manager, optimistic rollback
 - Pre-push hook added: `.githooks/pre-push` runs `cargo fmt --all --check` + `cargo clippy --workspace -- -D warnings` before every push; activate with `git config core.hooksPath .githooks`
 
+### Release engineering
+
+- Tag-triggered GitHub release workflow (`.github/workflows/release.yml`): pushing `vX.Y.Z` builds the embedded-SPA server + CLI for Linux (musl, static), macOS (Intel + Apple Silicon), and Windows, and attaches the archives to a GitHub Release with generated notes
+- Each archive ships `flexpm-api` (server with embedded UI), `flexpm` (CLI), LICENSE, README, and a QUICKSTART.txt for non-developers
+- Startup banner now prints the URL to open (`http://localhost:3210`) on plain stdout, independent of log configuration
+- Workspace, frontend, and tag versions unified at 0.1.0-beta.1 for the first public beta
+
 ### Tests
 
-- **Rust total:** 164 passing + 1 `#[ignore]` perf test (`cargo test --workspace`)
+- **Rust total:** 170 passing + 1 `#[ignore]` perf test (`cargo test --workspace`)
 - **Frontend:** 144 Vitest unit tests (21 files)
 
 ---

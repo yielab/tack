@@ -227,6 +227,8 @@ All routes follow RESTful conventions:
 - `/api/projects/{id}/search` — Full-text search within project (1 endpoint)
 - `/api/search` — **Global search** across all projects (1 endpoint)
 - `/api/alexa` — **Alexa skill webhook** (1 endpoint; disabled unless `FLEXPM_ALEXA_SKILL_ID` is set; authenticates via skill-ID + timestamp checks and is exempt from the Bearer-token gate)
+- `/api/projects/{id}/import-github` — GitHub Issues import (1 endpoint; `owner/repo` or full URL, optional PAT, label filter, PR-skipping, cursor pagination)
+- `/api/projects/{id}/import-linear` — Linear import (1 endpoint; Linear API key, optional team/project filter, label filter, priority mapping, cursor pagination)
 
 Query parameters support filtering, pagination, and search.
 
