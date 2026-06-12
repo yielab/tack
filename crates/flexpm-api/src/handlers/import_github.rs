@@ -113,7 +113,9 @@ pub async fn import_github(
              ?state={gh_state}&per_page=100&page={page}"
         );
 
-        let mut req = client.get(&url).header("Accept", "application/vnd.github+json");
+        let mut req = client
+            .get(&url)
+            .header("Accept", "application/vnd.github+json");
         if let Some(ref tok) = input.token {
             req = req.header("Authorization", format!("Bearer {tok}"));
         }
@@ -140,24 +142,23 @@ pub async fn import_github(
             403 => {
                 return Err(ApiError::BadRequest(
                     "GitHub API access forbidden. The token may lack 'repo' scope.".into(),
-                ))
+                ));
             }
             404 => {
                 return Err(ApiError::NotFound(format!(
                     "GitHub repository '{owner}/{repo_name}' not found (or not accessible)."
-                )))
+                )));
             }
             status => {
                 return Err(ApiError::Internal(anyhow::anyhow!(
                     "GitHub API returned unexpected status {status}"
-                )))
+                )));
             }
         }
 
-        let issues: Vec<GhIssue> = resp
-            .json()
-            .await
-            .map_err(|e| ApiError::Internal(anyhow::anyhow!("Failed to parse GitHub response: {e}")))?;
+        let issues: Vec<GhIssue> = resp.json().await.map_err(|e| {
+            ApiError::Internal(anyhow::anyhow!("Failed to parse GitHub response: {e}"))
+        })?;
 
         if issues.is_empty() {
             break;
@@ -172,10 +173,12 @@ pub async fn import_github(
 
             // Label filter: skip if the issue has none of the requested labels
             if !input.label_filter.is_empty() {
-                let has_match = issue
-                    .labels
-                    .iter()
-                    .any(|l| input.label_filter.iter().any(|f| f.eq_ignore_ascii_case(&l.name)));
+                let has_match = issue.labels.iter().any(|l| {
+                    input
+                        .label_filter
+                        .iter()
+                        .any(|f| f.eq_ignore_ascii_case(&l.name))
+                });
                 if !has_match {
                     skipped += 1;
                     continue;
