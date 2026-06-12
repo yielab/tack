@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.0] - 2026-06-12
+
+### Phase 11 — GitHub Issues import
+
+- `POST /api/projects/{id}/import-github` — fetches issues from any public or token-accessible GitHub repository
+- Accepts `owner/repo`, full GitHub URL, optional PAT, label filter, closed-issue toggle
+- Pull requests are skipped automatically; closed issues land in first Done status; open issues in first workflow status
+- Handles pagination (100 issues per page)
+- 7 unit tests for URL/input parsing
+
+### Phase 10 — Outbound webhook notifications
+
+- `FLEXPM_WEBHOOK_URL` — POST events to any HTTP endpoint on item and sprint changes
+- Events: `item.created`, `item.updated`, `item.deleted`, `sprint.started`, `sprint.completed`, `item.due_soon` (hourly background check)
+- Optional HMAC-SHA256 payload signing via `FLEXPM_WEBHOOK_SECRET` (`X-FlexPM-Signature: sha256=<hex>`)
+- Delivery is fire-and-forget — errors are logged, never surfaced to API callers
+- `WebhookClient` in `crates/flexpm-api/src/webhook.rs`
+
+### Phase 9 — Full integration test coverage
+
+- API handler tests expanded from 16 to 36: added sprints, roles, comments, dependencies, search, JSON/CSV export, item update/delete, board filter-by-type
+- Alexa endpoint test suite: 17 tests covering all intents, locale detection, auth rejection, WIP-limit enforcement
+- Frontend utility tests: 144 Vitest unit tests across 21 files — API client contracts, `deriveBoard`, context providers, vocab resolution, settings panels, keyboard manager, optimistic rollback
+- Pre-push hook added: `.githooks/pre-push` runs `cargo fmt --all --check` + `cargo clippy --workspace -- -D warnings` before every push; activate with `git config core.hooksPath .githooks`
+
+### Tests
+
+- **Rust total:** 164 passing + 1 `#[ignore]` perf test (`cargo test --workspace`)
+- **Frontend:** 144 Vitest unit tests (21 files)
+
+---
+
 ## [2.0.0] - 2026-06-08
 
 ### Architectural correctness, CLI excellence, and release readiness
@@ -97,7 +129,7 @@ and release-readiness tooling.
 - `test_app_with_config` helper now overrides `database_url` to `sqlite::memory:`
   so config and pool are consistent
 
-### Tests
+### Test results
 
 - Total: **92 passing** + 1 `#[ignore]` perf test (`cargo test --workspace`)
 - With `--features embed-spa`: **95 tests**
@@ -116,6 +148,7 @@ Three major enterprise-level features that bring FlexPM to feature parity with J
 ### ✨ Added - Project Templates
 
 #### Backend (5 new endpoints)
+
 - **POST /api/templates** - Create custom template
 - **GET /api/templates** - List templates (with optional project_type filter)
 - **GET /api/templates/:id** - Get template details
@@ -123,6 +156,7 @@ Three major enterprise-level features that bring FlexPM to feature parity with J
 - **POST /api/projects/from-template/:id** - Create project from template
 
 #### Frontend
+
 - **Templates Gallery** (`/templates`) - Browse and use templates
   - Type-based filtering (8 project types)
   - Built-in vs user-created templates
@@ -134,6 +168,7 @@ Three major enterprise-level features that bring FlexPM to feature parity with J
   - Future: workflow, vocabulary, custom fields configuration
 
 #### Features
+
 - Templates include workflow, vocabulary, custom fields, and default boards
 - Smart project creation: auto-copies all template configuration
 - Built-in template protection
@@ -142,6 +177,7 @@ Three major enterprise-level features that bring FlexPM to feature parity with J
 ### ✨ Added - Custom Fields
 
 #### Backend (9 new endpoints)
+
 - **POST /api/projects/:id/custom-fields** - Create custom field
 - **GET /api/projects/:id/custom-fields** - List project fields
 - **GET /api/custom-fields/:id** - Get field definition
@@ -153,6 +189,7 @@ Three major enterprise-level features that bring FlexPM to feature parity with J
 - **DELETE /api/items/:id/custom-fields/:field_id** - Delete field value
 
 #### Frontend
+
 - **Custom Fields Manager** (`/projects/:id/settings/fields`)
   - Create/edit/delete custom fields
   - 9 field types: Text, LongText, Number, Date, Boolean, Select, MultiSelect, URL, Email
@@ -162,6 +199,7 @@ Three major enterprise-level features that bring FlexPM to feature parity with J
   - Field descriptions
 
 #### Features
+
 - 9 field types with appropriate validation
 - Upsert logic for field values (create or update)
 - Unique constraint: one value per field per item
@@ -172,6 +210,7 @@ Three major enterprise-level features that bring FlexPM to feature parity with J
 ### ✨ Added - Multiple Boards per Project
 
 #### Backend (6 new endpoints)
+
 - **POST /api/projects/:id/boards** - Create board
 - **GET /api/projects/:id/boards** - List project boards
 - **GET /api/boards/:id** - Get board details
@@ -180,6 +219,7 @@ Three major enterprise-level features that bring FlexPM to feature parity with J
 - **GET /api/boards/:id/view** - Get board state with grouped items
 
 #### Frontend
+
 - **BoardSelector Component** - Dropdown in Board view header
   - Switch between boards instantly
   - Shows default board indicator
@@ -191,6 +231,7 @@ Three major enterprise-level features that bring FlexPM to feature parity with J
   - Board descriptions
 
 #### Features
+
 - Unlimited boards per project
 - 6 grouping options:
   - Status (standard Kanban with WIP limits)
@@ -206,16 +247,19 @@ Three major enterprise-level features that bring FlexPM to feature parity with J
 ### 🗄️ Database
 
 #### Migration 011: Project Templates
+
 - Table: `project_templates`
 - Stores: workflow, vocabulary, custom_fields, default_boards as JSON
 - Index on `project_type` for filtering
 
 #### Migration 012: Custom Fields
+
 - Tables: `custom_field_definitions`, `custom_field_values`
 - Unique constraint on (item_id, field_id)
 - Cascade delete for referential integrity
 
 #### Migration 013: Boards
+
 - Table: `boards`
 - Supports filters (JSON), grouping, default flag
 - Indexes on project_id and (project_id, is_default)

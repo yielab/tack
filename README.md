@@ -19,11 +19,10 @@ Supports any workflow — Scrum, Kanban, phase-based construction, personal task
 | --- | --- |
 | **Board** | Kanban-style drag-and-drop with WIP limits per column |
 | **List** | Sortable table with inline editing and bulk operations |
-| **Tree** | Parent/child item hierarchy |
-| **Calendar** | Items by due date |
-| **Timeline** | Gantt-style dependency overlay |
+| **Calendar** | Items by due date — drag to reschedule |
+| **Timeline** | Gantt-style dependency overlay — drag to reschedule |
 | **Dashboard** | Throughput charts and sprint progress |
-| **Sprints** | Sprint lifecycle (Planning → Active → Review → Closed) |
+| **Sprints** | Two-pane sprint planning (Backlog ↔ Sprint), capacity and burndown |
 
 ### Workflow engine
 
@@ -35,13 +34,14 @@ Supports any workflow — Scrum, Kanban, phase-based construction, personal task
 
 ### Data
 
-- **Custom fields** — 9 types: Text, LongText, Number, Date, Boolean, Select, MultiSelect, URL, Email
+- **Custom fields** — 9 types: Text, LongText, Number, Date, Boolean, Select, MultiSelect, URL, Email; with pattern/min/max validation rules
 - **File attachments** — up to 50 MB per file, stored locally
 - **Full-text search** — SQLite FTS5, per-project and global (Ctrl+/)
 - **Export** — JSON (full snapshot) and CSV per project
-- **Import** — JSON round-trip with ID remapping
+- **Import** — JSON round-trip with ID remapping; CSV into existing project
+- **GitHub Issues import** — fetch issues from any public or private repo; supports label filter, PAT, and closed-issue toggle
 - **Backup / restore** — hot backup via `VACUUM INTO`; staged restore on next startup
-- **Project templates** — save and reuse project blueprints
+- **Project templates** — built-in templates per project type; save any project as a template
 
 ### Interface
 
@@ -53,9 +53,10 @@ Supports any workflow — Scrum, Kanban, phase-based construction, personal task
 
 ### API & CLI
 
-- **34 REST endpoints** — full CRUD for all entities
+- **63 REST endpoints** — full CRUD for all entities plus debug and diagnostic routes
 - **CLI** (`flexpm`) with `--json` output and shell completions (bash/zsh/fish)
 - **Optional Bearer token** auth (`FLEXPM_API_TOKEN`)
+- **Outbound webhooks** — POST events to any URL on item changes, sprint starts, and due-soon alerts; HMAC-SHA256 signing available
 - Single binary with embedded SPA (`--features embed-spa`, ~5 MB)
 
 ### Voice (Amazon Alexa)
@@ -90,8 +91,8 @@ The honest answer is split between technical fit and deliberate learning.
 **Prerequisites:** [Rust toolchain](https://rustup.rs/) · [Node.js 20+](https://nodejs.org/)
 
 ```bash
-git clone https://github.com/santiagoyie/flexpm.git
-cd flexpm
+git clone https://github.com/santiagoyie/FlexPM.git
+cd FlexPM
 make build   # compile: builds frontend then embeds it into the release binary (~30s)
 make run     # start: launches the pre-built binary, nothing is recompiled
 ```
@@ -109,9 +110,9 @@ Starts the API and the Vite dev server together. Ctrl-C stops both. Open **`http
 ### Other useful commands
 
 ```bash
-make test       # run all 92 tests
-make lint       # clippy
-make fmt        # rustfmt
+make test       # run all 164 Rust tests
+make lint       # clippy --workspace -- -D warnings
+make fmt        # rustfmt --all
 make debug      # API only with verbose logging
 make reset-db   # wipe the database and start fresh
 make help       # full command list
@@ -129,16 +130,28 @@ export FLEXPM_API_URL=http://127.0.0.1:3210
 
 # Projects
 flexpm init "Kitchen Reno" --type construction
-flexpm list --project <id>
+flexpm projects
 
 # Items
 flexpm add "Design login page" --project <id> --type task --priority high
+flexpm list --project <id>
 flexpm move <item-id> "In Progress"
 
 # Sprints
 flexpm sprint create --project <id> --name "Sprint 1"
 flexpm sprint start <sprint-id>
 flexpm sprint close <sprint-id>
+
+# Templates
+flexpm template list
+flexpm template show <template-id>
+flexpm template create-from <template-id> "My New Project"
+
+# Roles, comments, custom fields
+flexpm role create --project <id> --name "Designer"
+flexpm comment create <item-id> --content "Looks good"
+flexpm field create --project <id> --name "Story Points" --type number
+flexpm field set <item-id> <field-id> 5
 
 # Backup and restore
 flexpm backup                        # saves flexpm-backup.db in the current directory
@@ -182,10 +195,13 @@ Base URL: `http://127.0.0.1:3210/api`
 | --- | --- |
 | `GET /projects/{id}/export?format=json\|csv` | Export project |
 | `POST /projects/import` | Import project (with ID remapping) |
-| `GET /api/backup` | Download a clean SQLite backup |
-| `POST /api/restore` | Stage a backup file for next-startup restore |
+| `POST /projects/{id}/import-csv` | Import items from CSV into existing project |
+| `POST /projects/{id}/import-github` | Import issues from a GitHub repository |
+| `GET /backup` | Download a clean SQLite backup |
+| `POST /restore` | Stage a backup file for next-startup restore |
 | `GET /projects/{id}/search?q=term` | FTS5 full-text search |
 | `GET /search?q=term` | Global search across all projects |
+| `POST /alexa` | Alexa skill webhook (requires `FLEXPM_ALEXA_SKILL_ID`) |
 
 See [API Reference](docs/API-REFERENCE.md) for the full endpoint list.
 
@@ -213,6 +229,11 @@ curl -s -X PATCH $BASE/items/$IID \
 
 # Export
 curl -s "$BASE/projects/$PID/export?format=json" -o backup.json
+
+# Import GitHub issues
+curl -s -X POST $BASE/projects/$PID/import-github \
+  -H "Content-Type: application/json" \
+  -d '{"repo":"owner/my-repo","token":"ghp_...","label_filter":["bug"]}'
 ```
 
 ---
@@ -231,8 +252,11 @@ curl -s "$BASE/projects/$PID/export?format=json" -o backup.json
 | `FLEXPM_LOG_FILE` | _(none)_ | Optional log file |
 | `FLEXPM_STORAGE_DIR` | `./storage` | Attachment storage |
 | `FLEXPM_API_TOKEN` | _(none)_ | Bearer token — required on all `/api/*` requests when set |
-| `FLEXPM_ALLOWED_ORIGINS` | `localhost:8080,127.0.0.1:8080,...` | CORS allow-list |
-| `FLEXPM_MAX_BODY_SIZE` | `2097152` | Global body limit (bytes); uploads always 50 MB |
+| `FLEXPM_ALLOWED_ORIGINS` | `localhost:5173,127.0.0.1:5173,...` | CORS allow-list |
+| `FLEXPM_MAX_BODY_SIZE` | `2097152` | Global body limit (bytes); upload routes always 50 MB |
+| `FLEXPM_ALEXA_SKILL_ID` | _(none)_ | Enables `POST /api/alexa`; endpoint returns 404 when unset |
+| `FLEXPM_WEBHOOK_URL` | _(none)_ | Outbound webhook destination; off when unset |
+| `FLEXPM_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 signing key for webhook payloads |
 
 Example `flexpm.toml`:
 
@@ -243,6 +267,9 @@ database_url = "sqlite:flexpm.db?mode=rwc"
 log_level = "info"
 storage_dir = "./storage"
 # api_token = "change-me"
+# webhook_url = "https://hooks.example.com/flexpm"
+# webhook_secret = "change-me"
+# alexa_skill_id = "amzn1.ask.skill.xxxxxxxx"
 ```
 
 ---
@@ -295,6 +322,23 @@ curl -X PATCH http://localhost:3210/api/projects/$PID \
 
 ---
 
+## Webhooks
+
+Set `FLEXPM_WEBHOOK_URL` to receive POST events on every significant state change:
+
+| Event | Trigger |
+| --- | --- |
+| `item.created` | New item added |
+| `item.updated` | Item status, title, priority, or assignee changed |
+| `item.deleted` | Item removed |
+| `sprint.started` | Sprint moved to Active |
+| `sprint.completed` | Sprint moved to Closed |
+| `item.due_soon` | Item due within the next hour (checked hourly) |
+
+Payloads are signed when `FLEXPM_WEBHOOK_SECRET` is set — verify with the `X-FlexPM-Signature: sha256=<hex>` header. Delivery is fire-and-forget; errors are logged and never surfaced to API callers.
+
+---
+
 ## Backup and restore
 
 ```bash
@@ -316,20 +360,23 @@ curl -X POST http://localhost:3210/api/restore \
 ## Running tests
 
 ```bash
-# All tests (92 tests, 1 ignored perf test)
+# All Rust tests (164 tests, 1 ignored perf test)
 cargo test --workspace
 
-# With embed-spa feature (95 tests, requires frontend/dist/ to exist)
+# With embed-spa feature (requires frontend/dist/ to exist)
 cargo test -p flexpm-api --features embed-spa
 
 # Single crate
-cargo test -p flexpm-core   # 39 unit tests
+cargo test -p flexpm-core   # 67 unit tests
 cargo test -p flexpm-db     # 22 integration tests
-cargo test -p flexpm-api    # 20 tests (4 unit + 16 handler)
+cargo test -p flexpm-api    # 64 tests (11 unit + 17 Alexa + 36 handler)
 cargo test -p flexpm-cli    # 11 CLI tests
 
 # Run the ignored 50k-item performance test
 cargo test -p flexpm-db list_items_p95 -- --ignored
+
+# Frontend tests (144 Vitest unit tests)
+cd frontend && npm test
 ```
 
 Integration tests use in-memory SQLite — no external services needed.
@@ -341,7 +388,7 @@ Integration tests use in-memory SQLite — no external services needed.
 ```text
 crates/
 ├── flexpm-core/     Pure domain logic — no I/O
-│   ├── models.rs    All entities and DTOs
+│   ├── models.rs    All entities, DTOs, and custom field validation
 │   ├── workflow.rs  Transition validation, WIP limits, presets
 │   ├── vocabulary.rs Customizable term mapping
 │   ├── dependency.rs DAG with cycle detection
@@ -352,7 +399,24 @@ crates/
 ├── flexpm-api/      Axum HTTP server + WebSocket
 │   ├── router.rs    All routes, middleware, AppState
 │   ├── handlers/    One module per entity
+│   │   ├── alexa.rs         Voice skill endpoint
+│   │   ├── attachments.rs
+│   │   ├── backup.rs        Backup / restore
+│   │   ├── boards_multi.rs  Multiple boards per project
+│   │   ├── comments.rs
+│   │   ├── custom_fields.rs
+│   │   ├── dependencies.rs
+│   │   ├── export.rs        JSON/CSV export + import
+│   │   ├── import_github.rs GitHub Issues import
+│   │   ├── items.rs
+│   │   ├── projects.rs
+│   │   ├── roles.rs
+│   │   ├── spa.rs           SPA fallback (--features embed-spa)
+│   │   ├── sprints.rs
+│   │   ├── templates.rs
+│   │   └── websocket.rs
 │   ├── config.rs    TOML + env config
+│   ├── webhook.rs   Outbound webhook delivery
 │   └── debug.rs     Health and diagnostics
 └── flexpm-cli/      clap CLI — talks to the API over HTTP
 
@@ -375,6 +439,43 @@ flexpm-db    ← adds SQLite I/O
      ↑
 flexpm-api   ← adds HTTP transport
 flexpm-cli   ← talks to flexpm-api over HTTP (no DB access)
+```
+
+---
+
+## Developer Setup
+
+### Requirements
+
+| Tool | Version | Install |
+| --- | --- | --- |
+| Rust | 1.75+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| Node.js | 20+ | [nodejs.org](https://nodejs.org/) |
+| Git | 2.x | system package manager |
+
+### First clone
+
+```bash
+git clone https://github.com/santiagoyie/FlexPM.git
+cd FlexPM
+
+# Activate the pre-push hook (runs fmt + clippy before every push)
+git config core.hooksPath .githooks
+
+# Verify everything builds and tests pass
+cargo build
+cargo test --workspace
+```
+
+The `.githooks/pre-push` script runs `cargo fmt --all --check` and `cargo clippy --workspace -- -D warnings` before each push. This is what the CI checks — running it locally means CI never sees a formatting or lint failure.
+
+### Code quality commands
+
+```bash
+cargo fmt --all                    # auto-format
+cargo fmt --all --check            # check only (same as CI)
+cargo clippy --workspace -- -D warnings  # lint (same as CI)
+cargo check --workspace            # fast type-check
 ```
 
 ---
