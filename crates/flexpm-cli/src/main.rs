@@ -1439,7 +1439,10 @@ fn cmd_list_remote_backups(client: &FlexpmClient, as_json: bool) -> anyhow::Resu
         println!("No remote backups found.");
         return Ok(());
     }
-    println!("{:<32} {:>12} {:>8} Key", "Created", "Size (bytes)", "Items");
+    println!(
+        "{:<32} {:>12} {:>8} Key",
+        "Created", "Size (bytes)", "Items"
+    );
     println!("{}", "-".repeat(90));
     for b in backups {
         let raw_date = b["created_at"].as_str().unwrap_or("-");
