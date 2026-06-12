@@ -61,7 +61,7 @@
 
 ## Known issues
 
-None. All twelve phases of the engineering roadmap are complete.
+None. All thirteen phases of the engineering roadmap are complete.
 
 ---
 
@@ -92,3 +92,5 @@ None. All twelve phases of the engineering roadmap are complete.
 **Phase 11 — GitHub Issues import:** `POST /api/projects/{id}/import-github` fetches issues from any public or token-accessible GitHub repository. Accepts `owner/repo`, full GitHub URLs, optional PAT, label filter, and a closed-issue toggle. Pull requests are skipped automatically. Closed issues land in the first Done-category status; open issues land in the first workflow status. Handles pagination. 7 unit tests for URL parsing.
 
 **Phase 12 — Linear import:** `POST /api/projects/{id}/import-linear` fetches issues from Linear's GraphQL API. Accepts an API key, optional `team_id` (slug or ID) or `project_id` filter, label filter, and a completed-issue toggle. Priority is mapped (Urgent→Critical, High→High, Medium→Medium, Low→Low). Cursor-based pagination (50 issues/page). 6 unit tests covering filter generation, cursor injection sanitisation, and priority mapping.
+
+**Phase 13 — Remote Cloud Backup (S3-Compatible):** `POST /api/backup/remote` and `GET /api/backup/remote` for triggering and listing cloud backups; `POST /api/backup/remote/restore` to stage a restore for the next server restart. Bundles the SQLite database snapshot + `FLEXPM_STORAGE_DIR` attachment tree into a `flexpm-backup-<ts>.tar.zst` archive and uploads it to any S3-compatible store (Cloudflare R2, Backblaze B2, AWS S3, self-hosted MinIO). Sidecar `.manifest.json` enables fast listing without downloading full bundles. Schema-version guard rejects restores from newer binaries. Atomic staged restore swaps DB + attachments dir together at startup, preserving `<path>.bak` copies. Optional `FLEXPM_BACKUP_INTERVAL_SECS` background scheduler. CLI commands: `flexpm backup --remote`, `flexpm backups`, `flexpm restore --remote [--key …]`. Provider-agnostic via the `object_store` crate. 6 unit tests using in-memory mock store.

@@ -26,7 +26,8 @@
 14. **[NEW v1.2]** [Multiple Boards](#multiple-boards)
 15. [WebSocket Events](#websocket-events)
 16. [Alexa Voice Integration](#alexa-voice-integration)
-17. [Error Responses](#error-responses)
+17. [Remote Cloud Backup](#remote-cloud-backup)
+18. [Error Responses](#error-responses)
 
 ---
 
@@ -1125,6 +1126,78 @@ HTTP errors are reserved for verification failures:
 | `404` | Integration not enabled (`alexa_skill_id` unset) |
 | `403` | Application ID missing or does not match the configured skill ID |
 | `400` | Request timestamp missing or outside the ±150 s tolerance |
+
+---
+
+## Remote Cloud Backup
+
+Requires `FLEXPM_BACKUP_BUCKET`, `FLEXPM_BACKUP_ACCESS_KEY`, and `FLEXPM_BACKUP_SECRET_KEY`
+to be set (see [configuration](../CLAUDE.md)). All three endpoints return `409 Conflict`
+when remote backup is not configured.
+
+### Trigger Remote Backup
+
+```http
+POST /api/backup/remote
+```
+
+Creates a `.tar.zst` bundle of the SQLite database + attachments directory and uploads
+it to the configured S3-compatible bucket. Prunes old backups to keep only
+`FLEXPM_BACKUP_RETENTION` (default 10) copies.
+
+**Response `200`:**
+```json
+{
+  "format_version": 1,
+  "created_at": "2026-06-12T15:04:05+00:00",
+  "migration_version": 16,
+  "db_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "install_id": "a1b2c3d4-...",
+  "item_count": 42,
+  "object_key": "flexpm/flexpm-backup-2026-06-12T15-04-05+00-00Z.tar.zst",
+  "bundle_size_bytes": 1048576
+}
+```
+
+### List Remote Backups
+
+```http
+GET /api/backup/remote
+```
+
+Returns all backups in the bucket, newest first, by reading lightweight sidecar
+manifests (no full bundle download needed).
+
+**Response `200`:** array of manifest objects (same shape as above).
+
+### Stage Remote Restore
+
+```http
+POST /api/backup/remote/restore
+Content-Type: application/json
+
+{ "key": "flexpm/flexpm-backup-2026-06-12T15-04-05+00-00Z.tar.zst" }
+```
+
+Downloads the bundle and stages it for the next server restart. Omit `key` (or send
+an empty body) to restore the latest backup automatically.
+
+**Rejection:** returns `409 Conflict` when the snapshot's `migration_version` is
+higher than the running binary's — upgrade FlexPM before restoring.
+
+**Response `200`:**
+```json
+{
+  "staged": true,
+  "restart_required": true,
+  "object_key": "flexpm/flexpm-backup-2026-06-12T15-04-05+00-00Z.tar.zst",
+  "message": "Restore staged. Restart the server to apply."
+}
+```
+
+After the server restarts, both the database and the attachments directory are
+swapped atomically. The previous DB and attachments are preserved as `<path>.bak`
+for manual recovery.
 
 ---
 
