@@ -7,6 +7,7 @@ pub mod custom_fields;
 pub mod dependencies;
 pub mod export;
 pub mod import_github;
+pub mod import_linear;
 pub mod items;
 pub mod projects;
 pub mod roles;

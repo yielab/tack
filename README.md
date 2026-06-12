@@ -40,6 +40,7 @@ Supports any workflow — Scrum, Kanban, phase-based construction, personal task
 - **Export** — JSON (full snapshot) and CSV per project
 - **Import** — JSON round-trip with ID remapping; CSV into existing project
 - **GitHub Issues import** — fetch issues from any public or private repo; supports label filter, PAT, and closed-issue toggle
+- **Linear import** — fetch issues via Linear's GraphQL API; team/project filter, label filter, priority mapping
 - **Backup / restore** — hot backup via `VACUUM INTO`; staged restore on next startup
 - **Project templates** — built-in templates per project type; save any project as a template
 
@@ -53,7 +54,7 @@ Supports any workflow — Scrum, Kanban, phase-based construction, personal task
 
 ### API & CLI
 
-- **63 REST endpoints** — full CRUD for all entities plus debug and diagnostic routes
+- **64 REST endpoints** — full CRUD for all entities plus debug and diagnostic routes
 - **CLI** (`flexpm`) with `--json` output and shell completions (bash/zsh/fish)
 - **Optional Bearer token** auth (`FLEXPM_API_TOKEN`)
 - **Outbound webhooks** — POST events to any URL on item changes, sprint starts, and due-soon alerts; HMAC-SHA256 signing available
@@ -86,7 +87,35 @@ The honest answer is split between technical fit and deliberate learning.
 
 ## Getting Started
 
-### Run it (single binary)
+### Download (no install, no toolchain)
+
+Grab the archive for your system from the [**releases page**](https://github.com/santiagoyie/FlexPM/releases), extract it, and run the server — everything (UI, API, database engine) is inside one file.
+
+> FlexPM is currently in **beta** — these builds are published for testing. If something breaks, please [open an issue](https://github.com/santiagoyie/FlexPM/issues).
+
+| System | File |
+| --- | --- |
+| Linux (x86_64) | `flexpm-vX.Y.Z-linux-x86_64.tar.gz` |
+| macOS (Apple Silicon) | `flexpm-vX.Y.Z-macos-aarch64.tar.gz` |
+| macOS (Intel) | `flexpm-vX.Y.Z-macos-x86_64.tar.gz` |
+| Windows (x86_64) | `flexpm-vX.Y.Z-windows-x86_64.zip` |
+
+**Linux / macOS:**
+
+```bash
+tar xzf flexpm-*.tar.gz && cd flexpm-*/
+./flexpm-api
+```
+
+**Windows:** extract the zip and double-click `flexpm-api.exe`.
+
+Then open **`http://localhost:3210`** in your browser. Your data lives in `flexpm.db` (plus a `storage/` folder for attachments) next to the binary — back up those files and you've backed up everything.
+
+> **First-run warnings:** the binaries are not code-signed yet. On macOS, right-click `flexpm-api` → **Open** the first time (or run `xattr -d com.apple.quarantine flexpm-api`). On Windows, click **More info → Run anyway** if SmartScreen appears.
+
+Each archive also includes `flexpm`, the optional [CLI client](#cli).
+
+### Build it yourself (single binary)
 
 **Prerequisites:** [Rust toolchain](https://rustup.rs/) · [Node.js 20+](https://nodejs.org/)
 
@@ -110,7 +139,7 @@ Starts the API and the Vite dev server together. Ctrl-C stops both. Open **`http
 ### Other useful commands
 
 ```bash
-make test       # run all 164 Rust tests
+make test       # run all 170 Rust tests
 make lint       # clippy --workspace -- -D warnings
 make fmt        # rustfmt --all
 make debug      # API only with verbose logging
@@ -197,6 +226,7 @@ Base URL: `http://127.0.0.1:3210/api`
 | `POST /projects/import` | Import project (with ID remapping) |
 | `POST /projects/{id}/import-csv` | Import items from CSV into existing project |
 | `POST /projects/{id}/import-github` | Import issues from a GitHub repository |
+| `POST /projects/{id}/import-linear` | Import issues from Linear |
 | `GET /backup` | Download a clean SQLite backup |
 | `POST /restore` | Stage a backup file for next-startup restore |
 | `GET /projects/{id}/search?q=term` | FTS5 full-text search |
@@ -360,7 +390,7 @@ curl -X POST http://localhost:3210/api/restore \
 ## Running tests
 
 ```bash
-# All Rust tests (164 tests, 1 ignored perf test)
+# All Rust tests (170 tests, 1 ignored perf test)
 cargo test --workspace
 
 # With embed-spa feature (requires frontend/dist/ to exist)
@@ -369,7 +399,7 @@ cargo test -p flexpm-api --features embed-spa
 # Single crate
 cargo test -p flexpm-core   # 67 unit tests
 cargo test -p flexpm-db     # 22 integration tests
-cargo test -p flexpm-api    # 64 tests (11 unit + 17 Alexa + 36 handler)
+cargo test -p flexpm-api    # 70 tests (17 unit + 17 Alexa + 36 handler)
 cargo test -p flexpm-cli    # 11 CLI tests
 
 # Run the ignored 50k-item performance test
