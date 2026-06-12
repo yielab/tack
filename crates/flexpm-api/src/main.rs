@@ -58,19 +58,19 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Spawn background task: automatic remote backup on configured interval
-    if let Some(interval_secs) = config.backup_interval_secs {
-        if config.remote_backup_enabled() {
-            let bg_state = state.clone();
-            tokio::spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
-                interval.tick().await; // skip the first immediate tick
-                loop {
-                    interval.tick().await;
-                    run_scheduled_backup(&bg_state).await;
-                }
-            });
-            info!(interval_secs, "Remote backup scheduler enabled");
-        }
+    if let Some(interval_secs) = config.backup_interval_secs
+        && config.remote_backup_enabled()
+    {
+        let bg_state = state.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
+            interval.tick().await; // skip the first immediate tick
+            loop {
+                interval.tick().await;
+                run_scheduled_backup(&bg_state).await;
+            }
+        });
+        info!(interval_secs, "Remote backup scheduler enabled");
     }
 
     // Spawn background task: fire "item.due_soon" webhook for items due within the next hour
