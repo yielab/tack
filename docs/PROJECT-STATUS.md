@@ -1,6 +1,6 @@
 # FlexPM Project Status
 
-**Last updated:** 2026-06-10
+**Last updated:** 2026-06-11
 **Version:** 2.0.0
 **Positioning:** Local-first, single-binary project management for solo devs and tiny crews.
 
@@ -43,7 +43,7 @@
 | Feature | Status | Detail |
 | --- | --- | --- |
 | **Authentication** | ❌ None by design | Local-only. Use `FLEXPM_API_TOKEN` if you expose the port on a LAN. |
-| **Frontend tests** | ⏸ Deferred | Vitest + Playwright deferred to Phase 6. Type-checker and Rust handler tests cover the critical paths. |
+| **Playwright E2E tests** | ⏸ Deferred | Phase 6 delivered 106 Vitest unit tests; Playwright end-to-end tests remain deferred. Golden-path coverage provided by Rust handler tests. |
 
 ---
 
@@ -52,7 +52,7 @@
 - **Total test functions:** 133 (`cargo test --workspace`) + 1 `#[ignore]` perf test
 - **Breakdown:** flexpm-core 67 unit (incl. 28 custom-field validation), flexpm-db 22 integration + 1 ignored perf test (in-memory SQLite), flexpm-api 33 handler tests (4 unit + 13 Alexa + 16 integration), flexpm-cli 11
 - **CI:** GitHub Actions runs `cargo test --workspace` on every push ✅; entry bundle gate (< 30 KB gzipped) ✅
-- **Frontend tests:** none (Vitest + Playwright deferred to Phase 6)
+- **Frontend tests:** 106 Vitest unit tests (Phase 6); Playwright E2E deferred
 
 ---
 
@@ -75,6 +75,8 @@ None. All eight phases of the engineering roadmap are complete.
 **Phase 4 — Release readiness:** backup/restore CLI + API; `/api/health` observability; `--features embed-spa` single-binary build.
 
 **Phase 5 — Frontend view consolidation:** "Group By" removed; Board derives columns from workflow; Tree deleted (Hierarchy toggle added to List); Calendar and Timeline made interactive (drag to reschedule); Sprint rebuilt as two-pane planning surface and promoted to a work tab; all views share one `ProjectItemsContext`.
+
+**Phase 6 — Frontend tests:** 106 Vitest unit tests across 17 test files; covers API client contracts, `deriveBoard` pure function, context providers, settings panels, CSV import UI; Playwright E2E deferred.
 
 **Phase 7 — Template management depth:** Template creator authoring UI (vocabulary, workflow, custom fields, boards — "Coming Soon" removed); save-project-as-template endpoint + dialog; built-in templates seeded per project type; gallery enriched with per-card metadata; CLI template commands; template payload validation.
 

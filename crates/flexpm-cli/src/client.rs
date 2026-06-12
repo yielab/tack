@@ -91,11 +91,12 @@ impl FlexpmClient {
         extract(resp)
     }
 
-    pub fn put_json<T: Serialize>(&self, path: &str, body: &T) -> anyhow::Result<serde_json::Value> {
-        let resp = self
-            .request(reqwest::Method::PUT, path)
-            .json(body)
-            .send()?;
+    pub fn put_json<T: Serialize>(
+        &self,
+        path: &str,
+        body: &T,
+    ) -> anyhow::Result<serde_json::Value> {
+        let resp = self.request(reqwest::Method::PUT, path).json(body).send()?;
         extract(resp)
     }
 

@@ -198,7 +198,7 @@ docs/                Documentation
 
 ### Database Schema Highlights
 
-- **15 migrations** tracked in `_migrations` table
+- **16 migrations** tracked in `_migrations` table
 - **FTS5 virtual table** (`items_fts`) for full-text search across titles, descriptions, tags
 - **Triggers** maintain FTS index on INSERT/UPDATE/DELETE
 - **Foreign keys** enforce referential integrity (e.g., items → projects, items → sprints)

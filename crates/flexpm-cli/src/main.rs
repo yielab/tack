@@ -981,10 +981,7 @@ fn cmd_template_show(client: &FlexpmClient, id: String, as_json: bool) -> anyhow
 
     // Workflow statuses
     if let Some(statuses) = resp["workflow"]["statuses"].as_array() {
-        let names: Vec<&str> = statuses
-            .iter()
-            .filter_map(|s| s["name"].as_str())
-            .collect();
+        let names: Vec<&str> = statuses.iter().filter_map(|s| s["name"].as_str()).collect();
         println!("  statuses:    {}", names.join(" → "));
     }
 
@@ -1002,10 +999,7 @@ fn cmd_template_show(client: &FlexpmClient, id: String, as_json: bool) -> anyhow
     // Custom fields
     if let Some(fields) = resp["custom_fields"].as_array() {
         if !fields.is_empty() {
-            let field_names: Vec<&str> = fields
-                .iter()
-                .filter_map(|f| f["name"].as_str())
-                .collect();
+            let field_names: Vec<&str> = fields.iter().filter_map(|f| f["name"].as_str()).collect();
             println!("  fields:      {}", field_names.join(", "));
         }
     }
@@ -1013,10 +1007,7 @@ fn cmd_template_show(client: &FlexpmClient, id: String, as_json: bool) -> anyhow
     // Boards
     if let Some(boards) = resp["default_boards"].as_array() {
         if !boards.is_empty() {
-            let board_names: Vec<&str> = boards
-                .iter()
-                .filter_map(|b| b["name"].as_str())
-                .collect();
+            let board_names: Vec<&str> = boards.iter().filter_map(|b| b["name"].as_str()).collect();
             println!("  boards:      {}", board_names.join(", "));
         }
     }
@@ -1236,7 +1227,12 @@ fn cmd_field_create(
         return Ok(());
     }
     let id = resp["id"].as_str().unwrap_or("?");
-    println!("Created field: {} ({}) [{}]", name, field_type, &id[..8.min(id.len())]);
+    println!(
+        "Created field: {} ({}) [{}]",
+        name,
+        field_type,
+        &id[..8.min(id.len())]
+    );
     println!("  id: {id}");
     Ok(())
 }
@@ -1275,8 +1271,8 @@ fn cmd_field_set(
     as_json: bool,
 ) -> anyhow::Result<()> {
     // Parse as JSON if possible; fall back to a JSON string.
-    let json_value: serde_json::Value = serde_json::from_str(&value)
-        .unwrap_or_else(|_| serde_json::Value::String(value.clone()));
+    let json_value: serde_json::Value =
+        serde_json::from_str(&value).unwrap_or_else(|_| serde_json::Value::String(value.clone()));
     let resp = client.put_json(&format!("/items/{item}/custom-fields/{field}"), &json_value)?;
     if as_json {
         println!("{}", serde_json::to_string_pretty(&resp)?);

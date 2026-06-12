@@ -1,7 +1,7 @@
 # Roadmap
 
 **Current version:** 2.0.0  
-**Status:** All eight engineering phases complete. The product is feature-complete for the
+**Status:** All nine engineering phases complete. The product is feature-complete for the
 solo-dev / small-team use case. Future work is additive.
 
 ---

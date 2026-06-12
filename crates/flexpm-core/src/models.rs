@@ -556,13 +556,13 @@ impl CustomFieldDefinition {
             },
             CustomFieldType::Select => match value.as_str() {
                 Some(s) => {
-                    if let Some(opts) = &self.options {
-                        if !opts.iter().any(|o| o == s) {
-                            return Err(format!(
-                                "field '{}': '{}' is not a valid option",
-                                self.name, s
-                            ));
-                        }
+                    if let Some(opts) = &self.options
+                        && !opts.iter().any(|o| o == s)
+                    {
+                        return Err(format!(
+                            "field '{}': '{}' is not a valid option",
+                            self.name, s
+                        ));
                     }
                 }
                 None => return Err(format!("field '{}' expects a string value", self.name)),
@@ -572,13 +572,13 @@ impl CustomFieldDefinition {
                     for v in arr {
                         match v.as_str() {
                             Some(s) => {
-                                if let Some(opts) = &self.options {
-                                    if !opts.iter().any(|o| o == s) {
-                                        return Err(format!(
-                                            "field '{}': '{}' is not a valid option",
-                                            self.name, s
-                                        ));
-                                    }
+                                if let Some(opts) = &self.options
+                                    && !opts.iter().any(|o| o == s)
+                                {
+                                    return Err(format!(
+                                        "field '{}': '{}' is not a valid option",
+                                        self.name, s
+                                    ));
                                 }
                             }
                             None => {
@@ -591,10 +591,7 @@ impl CustomFieldDefinition {
                     }
                 }
                 None => {
-                    return Err(format!(
-                        "field '{}' expects an array of strings",
-                        self.name
-                    ));
+                    return Err(format!("field '{}' expects an array of strings", self.name));
                 }
             },
         }
@@ -622,23 +619,23 @@ impl CustomFieldDefinition {
         rules: &serde_json::Value,
     ) -> Result<(), String> {
         // pattern — regex for string values
-        if let Some(pattern) = rules.get("pattern").and_then(|v| v.as_str()) {
-            if let Some(s) = value.as_str() {
-                match Regex::new(pattern) {
-                    Ok(re) => {
-                        if !re.is_match(s) {
-                            return Err(format!(
-                                "field '{}': value does not match required pattern",
-                                self.name
-                            ));
-                        }
-                    }
-                    Err(_) => {
+        if let Some(pattern) = rules.get("pattern").and_then(|v| v.as_str())
+            && let Some(s) = value.as_str()
+        {
+            match Regex::new(pattern) {
+                Ok(re) => {
+                    if !re.is_match(s) {
                         return Err(format!(
-                            "field '{}': invalid regex pattern in field definition",
+                            "field '{}': value does not match required pattern",
                             self.name
                         ));
                     }
+                }
+                Err(_) => {
+                    return Err(format!(
+                        "field '{}': invalid regex pattern in field definition",
+                        self.name
+                    ));
                 }
             }
         }
@@ -646,54 +643,53 @@ impl CustomFieldDefinition {
         // min_length / max_length — for string values
         if let Some(s) = value.as_str() {
             let len = s.chars().count() as u64;
-            if let Some(min) = rules.get("min_length").and_then(|v| v.as_u64()) {
-                if len < min {
-                    return Err(format!(
-                        "field '{}': value is too short (min {} characters)",
-                        self.name, min
-                    ));
-                }
+            if let Some(min) = rules.get("min_length").and_then(|v| v.as_u64())
+                && len < min
+            {
+                return Err(format!(
+                    "field '{}': value is too short (min {} characters)",
+                    self.name, min
+                ));
             }
-            if let Some(max) = rules.get("max_length").and_then(|v| v.as_u64()) {
-                if len > max {
-                    return Err(format!(
-                        "field '{}': value is too long (max {} characters)",
-                        self.name, max
-                    ));
-                }
+            if let Some(max) = rules.get("max_length").and_then(|v| v.as_u64())
+                && len > max
+            {
+                return Err(format!(
+                    "field '{}': value is too long (max {} characters)",
+                    self.name, max
+                ));
             }
         }
 
         // min / max — for numeric values
         if let Some(n) = value.as_f64() {
-            if let Some(min) = rules.get("min").and_then(|v| v.as_f64()) {
-                if n < min {
-                    return Err(format!(
-                        "field '{}': value {} is below minimum {}",
-                        self.name, n, min
-                    ));
-                }
+            if let Some(min) = rules.get("min").and_then(|v| v.as_f64())
+                && n < min
+            {
+                return Err(format!(
+                    "field '{}': value {} is below minimum {}",
+                    self.name, n, min
+                ));
             }
-            if let Some(max) = rules.get("max").and_then(|v| v.as_f64()) {
-                if n > max {
-                    return Err(format!(
-                        "field '{}': value {} exceeds maximum {}",
-                        self.name, n, max
-                    ));
-                }
+            if let Some(max) = rules.get("max").and_then(|v| v.as_f64())
+                && n > max
+            {
+                return Err(format!(
+                    "field '{}': value {} exceeds maximum {}",
+                    self.name, n, max
+                ));
             }
         }
 
         // max_items — for array values (MultiSelect)
-        if let Some(arr) = value.as_array() {
-            if let Some(max_items) = rules.get("max_items").and_then(|v| v.as_u64()) {
-                if arr.len() as u64 > max_items {
-                    return Err(format!(
-                        "field '{}': too many selections (max {})",
-                        self.name, max_items
-                    ));
-                }
-            }
+        if let Some(arr) = value.as_array()
+            && let Some(max_items) = rules.get("max_items").and_then(|v| v.as_u64())
+            && arr.len() as u64 > max_items
+        {
+            return Err(format!(
+                "field '{}': too many selections (max {})",
+                self.name, max_items
+            ));
         }
 
         Ok(())
@@ -749,7 +745,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn make_field(field_type: CustomFieldType, options: Option<Vec<String>>) -> CustomFieldDefinition {
+    fn make_field(
+        field_type: CustomFieldType,
+        options: Option<Vec<String>>,
+    ) -> CustomFieldDefinition {
         CustomFieldDefinition {
             id: Uuid::new_v4(),
             project_id: None,
@@ -836,13 +835,19 @@ mod tests {
 
     #[test]
     fn validate_select_accepts_valid_option() {
-        let f = make_field(CustomFieldType::Select, Some(vec!["Red".into(), "Blue".into()]));
+        let f = make_field(
+            CustomFieldType::Select,
+            Some(vec!["Red".into(), "Blue".into()]),
+        );
         assert!(f.validate_value(&json!("Red")).is_ok());
     }
 
     #[test]
     fn validate_select_rejects_unlisted_option() {
-        let f = make_field(CustomFieldType::Select, Some(vec!["Red".into(), "Blue".into()]));
+        let f = make_field(
+            CustomFieldType::Select,
+            Some(vec!["Red".into(), "Blue".into()]),
+        );
         assert!(f.validate_value(&json!("Green")).is_err());
     }
 
@@ -857,7 +862,10 @@ mod tests {
 
     #[test]
     fn validate_multiselect_rejects_unlisted_element() {
-        let f = make_field(CustomFieldType::MultiSelect, Some(vec!["A".into(), "B".into()]));
+        let f = make_field(
+            CustomFieldType::MultiSelect,
+            Some(vec!["A".into(), "B".into()]),
+        );
         assert!(f.validate_value(&json!(["A", "Z"])).is_err());
     }
 

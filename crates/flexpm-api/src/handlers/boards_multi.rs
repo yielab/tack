@@ -145,7 +145,11 @@ pub async fn get_board_view(
         .as_ref()
         .and_then(|f| serde_json::from_value::<ItemFilter>(f.clone()).ok())
         .unwrap_or_default();
-    let filter = ItemFilter { per_page: Some(500), page: None, ..filter };
+    let filter = ItemFilter {
+        per_page: Some(500),
+        page: None,
+        ..filter
+    };
 
     let items = state
         .repo

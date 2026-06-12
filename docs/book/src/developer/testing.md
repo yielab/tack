@@ -1,6 +1,6 @@
 # Testing
 
-FlexPM's test suite is structured as a pyramid: fast pure-function tests at the base, integration tests in the middle, handler tests and CLI tests at the top. All 92 tests run with a single command and require no external services.
+FlexPM's test suite is structured as a pyramid: fast pure-function tests at the base, integration tests in the middle, handler tests and CLI tests at the top. All 133 tests run with a single command and require no external services.
 
 ---
 
@@ -8,11 +8,11 @@ FlexPM's test suite is structured as a pyramid: fast pure-function tests at the 
 
 | Crate | Count | Kind | Speed |
 |---|---|---|---|
-| `flexpm-core` | 39 | Unit — pure functions, zero I/O | Very fast |
+| `flexpm-core` | 67 | Unit — pure functions, zero I/O | Very fast |
 | `flexpm-db` | 22 + 1 ignored | Integration — in-memory SQLite | Fast |
-| `flexpm-api` | 19 | Handler — in-memory SQLite + Axum | Fast |
+| `flexpm-api` | 33 | Handler — in-memory SQLite + Axum | Fast |
 | `flexpm-cli` | 11 | Contract — `wiremock` mock server | Fast |
-| **Total** | **92** | | |
+| **Total** | **133** | | |
 
 ---
 
@@ -281,7 +281,7 @@ Because `FlexpmClient` uses `reqwest::blocking`, tests wrap the call in `tokio::
 
 GitHub Actions runs the following on every push to `develop`:
 
-1. **`cargo test --workspace`** — all 92 tests (excluding the ignored perf test).
+1. **`cargo test --workspace`** — all 133 tests (excluding the ignored perf test).
 2. **embed-spa job** — builds the frontend with `npm run build`, then runs `cargo test -p flexpm-api --features embed-spa` to verify the SPA embedding and the additional handler tests that require a built frontend.
 
 The performance test (`list_items_p95`) is not run in CI. Run it locally when profiling query performance.

@@ -344,12 +344,12 @@ pub async fn import_csv(
     let title_col = col("title")
         .ok_or_else(|| ApiError::BadRequest("CSV must have a 'title' column".into()))?;
 
-    let desc_col    = col("description");
-    let type_col    = col("type").or_else(|| col("item_type"));
-    let status_col  = col("status");
-    let prio_col    = col("priority");
-    let assign_col  = col("assignee");
-    let est_col     = col("estimate");
+    let desc_col = col("description");
+    let type_col = col("type").or_else(|| col("item_type"));
+    let status_col = col("status");
+    let prio_col = col("priority");
+    let assign_col = col("assignee");
+    let est_col = col("estimate");
 
     let mut created = 0usize;
     let mut skipped = 0usize;
@@ -360,21 +360,34 @@ pub async fn import_csv(
         }
         let fields = split_csv_row(line);
         let get = |idx: Option<usize>| -> Option<&str> {
-            idx.and_then(|i| fields.get(i)).map(|s| s.trim()).filter(|s| !s.is_empty())
+            idx.and_then(|i| fields.get(i))
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
         };
 
         let title = match get(Some(title_col)) {
             Some(t) => t.to_string(),
-            None => { skipped += 1; continue; }
+            None => {
+                skipped += 1;
+                continue;
+            }
         };
 
         let status = status_col
             .and_then(|i| get(Some(i)))
             .map(|s| {
                 // Accept any status string; validate against workflow, fall back to default.
-                if project.workflow.statuses.iter().any(|ws| ws.name.eq_ignore_ascii_case(s)) {
+                if project
+                    .workflow
+                    .statuses
+                    .iter()
+                    .any(|ws| ws.name.eq_ignore_ascii_case(s))
+                {
                     // Find the correctly-cased name.
-                    project.workflow.statuses.iter()
+                    project
+                        .workflow
+                        .statuses
+                        .iter()
                         .find(|ws| ws.name.eq_ignore_ascii_case(s))
                         .map(|ws| ws.name.clone())
                         .unwrap_or_else(|| default_status.clone())
@@ -386,14 +399,15 @@ pub async fn import_csv(
 
         let item_type: Option<ItemType> = get(type_col).and_then(|s| parse_item_type(s));
 
-        let priority: Option<Priority> = get(prio_col).and_then(|s| match s.to_lowercase().as_str() {
-            "critical" => Some(Priority::Critical),
-            "high"     => Some(Priority::High),
-            "medium"   => Some(Priority::Medium),
-            "low"      => Some(Priority::Low),
-            "none"     => Some(Priority::None),
-            _          => None,
-        });
+        let priority: Option<Priority> =
+            get(prio_col).and_then(|s| match s.to_lowercase().as_str() {
+                "critical" => Some(Priority::Critical),
+                "high" => Some(Priority::High),
+                "medium" => Some(Priority::Medium),
+                "low" => Some(Priority::Low),
+                "none" => Some(Priority::None),
+                _ => None,
+            });
 
         let estimate: Option<f64> = get(est_col).and_then(|s| s.parse().ok());
 
@@ -421,7 +435,9 @@ pub async fn import_csv(
     }
 
     info!(project_id = %project_id, created, skipped, "CSV import complete");
-    Ok(Json(serde_json::json!({ "created": created, "skipped": skipped })))
+    Ok(Json(
+        serde_json::json!({ "created": created, "skipped": skipped }),
+    ))
 }
 
 /// Split a single CSV row respecting double-quoted fields (RFC 4180 subset).
@@ -455,11 +471,11 @@ fn split_csv_row(line: &str) -> Vec<String> {
 
 fn parse_item_type(s: &str) -> Option<ItemType> {
     match s.to_lowercase().as_str() {
-        "epic"        => Some(ItemType::Epic),
-        "feature"     => Some(ItemType::Feature),
-        "task"        => Some(ItemType::Task),
-        "subtask"     => Some(ItemType::Subtask),
-        "bug"         => Some(ItemType::Bug),
+        "epic" => Some(ItemType::Epic),
+        "feature" => Some(ItemType::Feature),
+        "task" => Some(ItemType::Task),
+        "subtask" => Some(ItemType::Subtask),
+        "bug" => Some(ItemType::Bug),
         "requirement" => Some(ItemType::Requirement),
         other if !other.is_empty() => Some(ItemType::Custom(other.to_string())),
         _ => None,

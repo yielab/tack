@@ -18,8 +18,8 @@ use crate::debug;
 #[cfg(feature = "embed-spa")]
 use crate::handlers::spa;
 use crate::handlers::{
-    alexa, attachments, backup, boards_multi, comments, custom_fields, dependencies, export,
-    items, projects, roles, sprints, templates, websocket,
+    alexa, attachments, backup, boards_multi, comments, custom_fields, dependencies, export, items,
+    projects, roles, sprints, templates, websocket,
 };
 use crate::middleware::require_token;
 
