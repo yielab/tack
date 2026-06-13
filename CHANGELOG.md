@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.0-beta.2] - 2026-06-13
+
+Quality, accessibility, and test-infrastructure release. No user-facing feature
+changes; focus is on launch readiness.
+
+### Added
+
+- **End-to-end test suite** (`frontend/e2e/`, Playwright): cross-browser
+  (Chromium/Firefox/WebKit) smoke tests across every view, user-journey tests,
+  WCAG 2.0/2.1 A & AA accessibility scans (axe-core), and API wire-contract
+  checks. The harness starts an isolated API (dedicated port + throwaway
+  `e2e.db`) and the SPA itself — run with `make e2e`.
+- **Dependency vulnerability scanning** — `cargo audit` (`.cargo/audit.toml` for
+  justified exceptions) + `npm audit`, wired into CI and `make audit`. Weekly
+  Dependabot updates for cargo, npm, and GitHub Actions.
+- **Load/performance baseline** — k6 script in `tests/load/` (`make load`).
+- New CI jobs: `security` and `e2e`. New Makefile targets: `e2e`, `e2e-install`,
+  `e2e-ui`, `audit`, `load`.
+
+### Fixed
+
+- Accessibility: darkened `--color-text-tertiary` and `--color-warning-700`
+  tokens to meet WCAG AA 4.5:1 contrast; added an `aria-label` to the sidebar
+  project selector. Light-theme a11y scans now pass with no suppressions.
+- Unknown routes now render a proper 404 page instead of a blank screen.
+- API client unwraps the `GET /api/items/{id}` `{ item, roles, dependencies }`
+  envelope, fixing an "undefined" title in the item-detail drawer.
+
+### Changed
+
+- Upgraded `object_store` 0.11 → 0.13.2 (uses the new `ObjectStoreExt` API in
+  the remote-backup module). No behavior change.
+
 ## [0.1.0-beta.1] - 2026-06-12
 
 **First public release (beta).** Everything below this point — including the
