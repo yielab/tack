@@ -18,25 +18,25 @@
   "dependencies": {
     "@kobalte/core": "^0.13.7",
     "@solid-primitives/keyboard": "^1.2.8",
-    "@solidjs/router": "^0.15.4",
+    "@solidjs/router": "^0.16.1",
     "@thisbeyond/solid-dnd": "^0.7.5",
     "clsx": "^2.1.1",
     "solid-icons": "^1.2.0",
-    "solid-js": "^1.9.11"
+    "solid-js": "^1.9.13"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/forms": "^0.5.11",
-    "@tailwindcss/postcss": "^4.2.1",
+    "@tailwindcss/postcss": "^4.3.1",
     "@types/node": "^24.12.0",
-    "autoprefixer": "^10.4.27",
+    "autoprefixer": "^10.5.0",
     "jsdom": "^29.1.1",
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.1",
     "typescript": "~5.9.3",
     "vite": "^8.0.0",
-    "vite-plugin-solid": "^2.11.10",
+    "vite-plugin-solid": "^2.11.12",
     "vitest": "^4.1.8"
   }
 }
