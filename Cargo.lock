@@ -672,7 +672,7 @@ dependencies = [
 
 [[package]]
 name = "flexpm-api"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -706,7 +706,7 @@ dependencies = [
 
 [[package]]
 name = "flexpm-cli"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -721,7 +721,7 @@ dependencies = [
 
 [[package]]
 name = "flexpm-core"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "assert_matches",
  "chrono",
@@ -736,7 +736,7 @@ dependencies = [
 
 [[package]]
 name = "flexpm-db"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "assert_matches",
  "chrono",
