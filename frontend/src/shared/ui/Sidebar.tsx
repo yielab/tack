@@ -58,7 +58,7 @@ const Sidebar: Component = () => {
       {/* Logo */}
       <div class="hidden lg:flex items-center px-5 py-4 border-b" style={{ 'border-color': 'var(--color-border-light)' }}>
         <A href="/projects" class="flex items-center gap-2" onClick={close}>
-          <div class="w-7 h-7 bg-linear-to-br from-violet-500 to-purple-600 rounded-lg flex items-center justify-center">
+          <div class="w-7 h-7 bg-linear-to-br from-brand-500 to-brand-700 rounded-lg flex items-center justify-center">
             <span class="text-white font-bold text-sm">F</span>
           </div>
           <span class="text-lg font-bold" style={{ color: 'var(--color-text-primary)' }}>FlexPM</span>
@@ -82,6 +82,7 @@ const Sidebar: Component = () => {
             {/* Instant project switcher — no page reload */}
             <div class="px-1 pb-1">
               <select
+                aria-label="Switch project"
                 value={currentProjectId()}
                 onChange={(e) => handleProjectSwitch(e.currentTarget.value)}
                 class="w-full px-3 py-2 text-sm font-semibold rounded-lg border cursor-pointer transition-all focus:outline-none focus-visible:ring-2"

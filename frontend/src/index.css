@@ -33,7 +33,9 @@
   --color-warning-100: #fef3c7;
   --color-warning-500: #f59e0b;
   --color-warning-600: #d97706;
-  --color-warning-700: #b45309;
+  /* warning-700 darkened to #92400e so warning text on warning-100 backgrounds
+     (badges) meets WCAG AA 4.5:1 — #b45309 only reached 4.51 borderline. */
+  --color-warning-700: #92400e;
 
   --color-danger-50: #fef2f2;
   --color-danger-100: #fee2e2;
@@ -76,7 +78,9 @@
   /* Text */
   --color-text-primary: #212529;
   --color-text-secondary: #495057;
-  --color-text-tertiary: #6c757d;
+  /* tertiary darkened from #6c757d so muted text meets WCAG AA 4.5:1 on the
+     light subtle/sidebar backgrounds (#e9ecef/#f1f3f5). */
+  --color-text-tertiary: #5c636a;
   --color-text-inverse: #ffffff;
   --color-text-muted: #adb5bd;
 
@@ -94,6 +98,85 @@
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
+}
+
+/*
+ * Tailwind utility bridge (T-514 / Phase 14).
+ *
+ * Tailwind v4 only generates color utilities for names in its `--color-*`
+ * namespace. The tokens above live in plain `:root`, so until now `bg-surface`,
+ * `text-content`, `bg-brand` etc. did NOT exist — which is why feature code
+ * reached for raw literals like `bg-purple-600` / `dark:bg-gray-800`.
+ *
+ * `@theme inline` registers semantic + brand names as real utilities while
+ * INLINING `var(--…)` references to the runtime tokens above. Because the
+ * reference is inlined (not re-declared in :root), the `.dark` class flip and
+ * the prefers-color-scheme fallback keep working untouched — one source of
+ * truth, now reachable from Tailwind. These are ADDITIVE: every existing
+ * `var(--color-*)` keeps resolving exactly as before.
+ *
+ * Migration map (see docs/DESIGN-ROADMAP.md, Phase 15):
+ *   bg-white / dark:bg-gray-800   → bg-surface / bg-elevated
+ *   text-gray-900 / dark:text-white → text-content
+ *   text-gray-500                 → text-content-muted / -subtle
+ *   border-gray-200               → border-line
+ *   bg-purple-600 / text-purple-* → bg-brand / text-brand-*
+ */
+@theme inline {
+  /* Brand ramp (mirrors the primary scale) */
+  --color-brand-50: var(--color-primary-50);
+  --color-brand-100: var(--color-primary-100);
+  --color-brand-200: var(--color-primary-200);
+  --color-brand-300: var(--color-primary-300);
+  --color-brand-400: var(--color-primary-400);
+  --color-brand-500: var(--color-primary-500);
+  --color-brand-600: var(--color-primary-600);
+  --color-brand-700: var(--color-primary-700);
+  --color-brand-800: var(--color-primary-800);
+  --color-brand: var(--color-primary-600);
+
+  /* Semantic ramps (expose existing scales as utilities) */
+  --color-success-50: var(--color-success-50);
+  --color-success-100: var(--color-success-100);
+  --color-success-500: var(--color-success-500);
+  --color-success-600: var(--color-success-600);
+  --color-success-700: var(--color-success-700);
+  --color-warning-50: var(--color-warning-50);
+  --color-warning-100: var(--color-warning-100);
+  --color-warning-500: var(--color-warning-500);
+  --color-warning-600: var(--color-warning-600);
+  --color-warning-700: var(--color-warning-700);
+  --color-danger-50: var(--color-danger-50);
+  --color-danger-100: var(--color-danger-100);
+  --color-danger-500: var(--color-danger-500);
+  --color-danger-600: var(--color-danger-600);
+  --color-danger-700: var(--color-danger-700);
+  --color-info-50: var(--color-info-50);
+  --color-info-100: var(--color-info-100);
+  --color-info-500: var(--color-info-500);
+  --color-info-600: var(--color-info-600);
+  --color-info-700: var(--color-info-700);
+
+  /* Surfaces */
+  --color-app: var(--color-bg-app);
+  --color-surface: var(--color-bg-base);
+  --color-elevated: var(--color-bg-elevated);
+  --color-sidebar: var(--color-bg-sidebar);
+  --color-sunken: var(--color-bg-subtle);
+  --color-hover: var(--color-bg-hover);
+  --color-active: var(--color-bg-active);
+
+  /* Content (text) */
+  --color-content: var(--color-text-primary);
+  --color-content-muted: var(--color-text-secondary);
+  --color-content-subtle: var(--color-text-tertiary);
+  --color-content-inverse: var(--color-text-inverse);
+  --color-content-faint: var(--color-text-muted);
+
+  /* Lines (borders) */
+  --color-line: var(--color-border-light);
+  --color-line-medium: var(--color-border-medium);
+  --color-line-strong: var(--color-border-strong);
 }
 
 /* Dark theme overrides — only the tokens that differ from light. */

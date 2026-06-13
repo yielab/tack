@@ -4,7 +4,7 @@ import { api } from '../../shared/api';
 import { Button, EmptyState } from '../../shared/ui';
 import { toast } from '../../shared/ui/toast';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
-import type { Item } from '../../types/api';
+import type { Item } from '../../shared/types';
 
 export default function Calendar() {
   const params = useParams();

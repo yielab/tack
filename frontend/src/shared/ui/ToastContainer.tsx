@@ -56,14 +56,14 @@ const ToastItem: Component<{ toast: Toast }> = (props) => {
   const getColorClasses = () => {
     switch (props.toast.type) {
       case 'success':
-        return 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-200';
+        return 'bg-success-50 border-success-100 text-success-700';
       case 'error':
-        return 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-200';
+        return 'bg-danger-50 border-danger-100 text-danger-700';
       case 'warning':
-        return 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-200';
+        return 'bg-warning-50 border-warning-100 text-warning-700';
       case 'info':
       default:
-        return 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200';
+        return 'bg-info-50 border-info-100 text-info-700';
     }
   };
 

@@ -1,46 +1,150 @@
-// Single source of frontend DTOs mirroring the backend (T-501 seed; T-502
-// completes parity). Re-exports the legacy `types/api.ts` shapes and adds the
-// DTOs that previously lived inline in page components.
+// Single source of frontend DTOs mirroring the backend.
 
-// 1. Import the legacy types so they can be referenced inside this file
-import type {
-  Project,
-  ProjectType,
-  WorkflowConfig,
-  WorkflowStatus,
-  UpdateProject,
-  CreateProject,
-  Item,
-  ItemType,
-  Priority,
-  EstimateUnit,
-  CreateItem,
-  UpdateItem,
-  Sprint,
-  SprintStatus,
-  BoardState,
-  BoardColumn,
-} from '../../types/api';
+// ─── Projects ──────────────────────────────────────────────────────────────
 
-// 2. Re-export them to maintain the single source of truth for the frontend
-export type {
-  Project,
-  ProjectType,
-  WorkflowConfig,
-  WorkflowStatus,
-  UpdateProject,
-  CreateProject,
-  Item,
-  ItemType,
-  Priority,
-  EstimateUnit,
-  CreateItem,
-  UpdateItem,
-  Sprint,
-  SprintStatus,
-  BoardState,
-  BoardColumn,
-};
+export interface Project {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description?: string;
+  project_type: ProjectType;
+  vocabulary: Record<string, string>;
+  workflow: WorkflowConfig;
+  created_at: string;
+  updated_at: string;
+  archived: boolean;
+}
+
+export type ProjectType =
+  | 'software'
+  | 'web'
+  | 'mobile'
+  | 'construction'
+  | 'personal'
+  | 'homework'
+  | 'maintenance'
+  | 'custom';
+
+export interface WorkflowConfig {
+  workflow_type: string;
+  statuses: WorkflowStatus[];
+  transitions?: Array<{ from: string; to: string }>;
+}
+
+export interface WorkflowStatus {
+  name: string;
+  category: 'todo' | 'in_progress' | 'done';
+  wip_limit?: number;
+  order: number;
+}
+
+export interface UpdateProject {
+  name?: string;
+  description?: string;
+  vocabulary?: Record<string, string>;
+  workflow?: WorkflowConfig;
+  archived?: boolean;
+}
+
+export interface CreateProject {
+  name: string;
+  description?: string;
+  /** Selects the default workflow and vocabulary. Required by the API. */
+  project_type: ProjectType;
+  /** Optional named template to seed from. */
+  template?: string;
+}
+
+// ─── Items ─────────────────────────────────────────────────────────────────
+
+export interface Item {
+  id: string;
+  project_id: string;
+  parent_id?: string;
+  title: string;
+  description?: string;
+  item_type: ItemType;
+  status: string;
+  priority: Priority;
+  estimate?: number;
+  estimate_unit: EstimateUnit;
+  tags: string[];
+  sort_order: number;
+  sprint_id?: string;
+  due_date?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ItemType =
+  | 'epic'
+  | 'feature'
+  | 'task'
+  | 'subtask'
+  | 'bug'
+  | 'requirement'
+  | { custom: string };
+
+export type Priority = 'critical' | 'high' | 'medium' | 'low' | 'none';
+
+export type EstimateUnit = 'story_points' | 'hours' | 'days' | 'custom';
+
+export interface CreateItem {
+  title: string;
+  description?: string;
+  item_type: ItemType;
+  status?: string;
+  priority?: Priority;
+  estimate?: number;
+  estimate_unit?: EstimateUnit;
+  tags?: string[];
+  parent_id?: string;
+  sprint_id?: string;
+  due_date?: string;
+}
+
+export interface UpdateItem {
+  title?: string;
+  description?: string;
+  status?: string;
+  priority?: Priority;
+  estimate?: number;
+  tags?: string[];
+  parent_id?: string;
+  sprint_id?: string | null;
+  due_date?: string | null;
+}
+
+// ─── Sprints ───────────────────────────────────────────────────────────────
+
+export interface Sprint {
+  id: string;
+  project_id: string;
+  name: string;
+  goal?: string;
+  start_date?: string;
+  end_date?: string;
+  status: SprintStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SprintStatus = 'planning' | 'active' | 'review' | 'closed';
+
+// ─── Board ─────────────────────────────────────────────────────────────────
+
+export interface BoardState {
+  columns: BoardColumn[];
+}
+
+export interface BoardColumn {
+  status: string;
+  items: Item[];
+  wip_limit?: number;
+  wip_exceeded: boolean;
+}
 
 // ─── Custom fields (definitions) ───────────────────────────────────────────
 

@@ -11,7 +11,7 @@ import { Button, EmptyState } from '../../shared/ui';
 import { toast } from '../../shared/ui/toast';
 import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
-import type { Item } from '../../types/api';
+import type { Item } from '../../shared/types';
 
 // ── Drag state ─────────────────────────────────────────────────────────────
 
