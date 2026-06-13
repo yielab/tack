@@ -16,6 +16,8 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use object_store::ObjectStore;
+// object_store 0.13 moved the put/get/delete convenience methods to this extension trait.
+use object_store::ObjectStoreExt;
 use object_store::aws::AmazonS3Builder;
 use object_store::path::Path as OsPath;
 use serde::{Deserialize, Serialize};
