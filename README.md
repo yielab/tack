@@ -139,12 +139,16 @@ Starts the API and the Vite dev server together. Ctrl-C stops both. Open **`http
 ### Other useful commands
 
 ```bash
-make test       # run all 170 Rust tests
-make lint       # clippy --workspace -- -D warnings
-make fmt        # rustfmt --all
-make debug      # API only with verbose logging
-make reset-db   # wipe the database and start fresh
-make help       # full command list
+make test         # run all 170 Rust tests
+make e2e          # cross-browser end-to-end tests (Playwright; auto-starts servers)
+make e2e-install  # one-time: download the Playwright browser engines
+make audit        # scan Rust + npm dependencies for known CVEs
+make load         # k6 performance baseline (needs a running API + k6)
+make lint         # clippy --workspace -- -D warnings
+make fmt          # rustfmt --all
+make debug        # API only with verbose logging
+make reset-db     # wipe the database and start fresh
+make help         # full command list
 ```
 
 ---
@@ -410,6 +414,22 @@ cd frontend && npm test
 ```
 
 Integration tests use in-memory SQLite — no external services needed.
+
+### End-to-end, accessibility & security
+
+Browser-level tests drive the real app (API + SPA) across Chromium, Firefox and
+WebKit. Playwright starts both servers itself against a throwaway database, so a
+single command runs everything:
+
+```bash
+make e2e-install   # one-time: download the browser engines
+make e2e           # smoke + user journeys + WCAG a11y scan + API contract
+make audit         # cargo audit + npm audit (CVE scan)
+```
+
+These also run in CI (`security` and `e2e` jobs). See
+[docs/TESTING.md](docs/TESTING.md) for the full layout, the k6 load test, and
+the policy for tracking justified advisory/a11y exceptions.
 
 ---
 

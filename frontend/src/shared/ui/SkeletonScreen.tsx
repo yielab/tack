@@ -12,13 +12,13 @@ export const BoardSkeleton: Component = () => {
       <For each={columns}>
         {(_col, index) => (
           <div class="flex-shrink-0 w-80">
-            <div class="bg-gray-100 dark:bg-gray-800 rounded-lg p-4 min-h-[500px] animate-pulse">
+            <div class="bg-sunken rounded-lg p-4 min-h-[500px] animate-pulse">
               {/* Column header */}
               <div class="flex items-center justify-between mb-4">
-                <div class="h-6 bg-gray-300 dark:bg-gray-700 rounded w-24"></div>
+                <div class="h-6 bg-sunken rounded w-24"></div>
                 <div class="flex items-center gap-2">
-                  <div class="h-5 bg-gray-300 dark:bg-gray-700 rounded w-8"></div>
-                  <div class="h-6 bg-gray-300 dark:bg-gray-700 rounded w-10"></div>
+                  <div class="h-5 bg-sunken rounded w-8"></div>
+                  <div class="h-6 bg-sunken rounded w-10"></div>
                 </div>
               </div>
 
@@ -26,16 +26,16 @@ export const BoardSkeleton: Component = () => {
               <div class="space-y-3">
                 <For each={Array(cardsPerColumn[index()])}>
                   {() => (
-                    <div class="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                    <div class="bg-surface rounded-lg p-4 shadow-sm border border-line">
                       {/* Card title */}
-                      <div class="h-5 bg-gray-300 dark:bg-gray-700 rounded w-3/4 mb-2"></div>
+                      <div class="h-5 bg-sunken rounded w-3/4 mb-2"></div>
                       {/* Card description */}
-                      <div class="h-4 bg-gray-200 dark:bg-gray-600 rounded w-full mb-1"></div>
-                      <div class="h-4 bg-gray-200 dark:bg-gray-600 rounded w-5/6 mb-3"></div>
+                      <div class="h-4 bg-sunken rounded w-full mb-1"></div>
+                      <div class="h-4 bg-sunken rounded w-5/6 mb-3"></div>
                       {/* Card badges */}
                       <div class="flex items-center gap-2">
-                        <div class="h-6 bg-gray-300 dark:bg-gray-700 rounded w-16"></div>
-                        <div class="h-6 bg-gray-300 dark:bg-gray-700 rounded w-12"></div>
+                        <div class="h-6 bg-sunken rounded w-16"></div>
+                        <div class="h-6 bg-sunken rounded w-12"></div>
                       </div>
                     </div>
                   )}
@@ -43,7 +43,7 @@ export const BoardSkeleton: Component = () => {
               </div>
 
               {/* Add button skeleton */}
-              <div class="mt-3 h-8 bg-gray-200 dark:bg-gray-700 rounded w-full"></div>
+              <div class="mt-3 h-8 bg-sunken rounded w-full"></div>
             </div>
           </div>
         )}
@@ -62,29 +62,29 @@ export const ProjectsGridSkeleton: Component = () => {
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       <For each={projects}>
         {() => (
-          <div class="bg-white dark:bg-gray-900 rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700 animate-pulse">
+          <div class="bg-surface rounded-lg p-6 shadow-sm border border-line animate-pulse">
             {/* Project icon & title */}
             <div class="flex items-start gap-3 mb-4">
-              <div class="w-10 h-10 bg-purple-300 dark:bg-purple-700 rounded-lg flex-shrink-0"></div>
+              <div class="w-10 h-10 bg-brand-300 rounded-lg flex-shrink-0"></div>
               <div class="flex-1">
-                <div class="h-6 bg-gray-300 dark:bg-gray-700 rounded w-3/4 mb-2"></div>
-                <div class="h-4 bg-gray-200 dark:bg-gray-600 rounded w-1/2"></div>
+                <div class="h-6 bg-sunken rounded w-3/4 mb-2"></div>
+                <div class="h-4 bg-sunken rounded w-1/2"></div>
               </div>
             </div>
 
             {/* Description */}
             <div class="mb-4">
-              <div class="h-4 bg-gray-200 dark:bg-gray-600 rounded w-full mb-2"></div>
-              <div class="h-4 bg-gray-200 dark:bg-gray-600 rounded w-5/6"></div>
+              <div class="h-4 bg-sunken rounded w-full mb-2"></div>
+              <div class="h-4 bg-sunken rounded w-5/6"></div>
             </div>
 
             {/* Stats */}
-            <div class="flex items-center gap-4 text-sm text-gray-500">
+            <div class="flex items-center gap-4 text-sm text-content-subtle">
               <div class="flex items-center gap-1">
-                <div class="h-4 bg-gray-300 dark:bg-gray-700 rounded w-16"></div>
+                <div class="h-4 bg-sunken rounded w-16"></div>
               </div>
               <div class="flex items-center gap-1">
-                <div class="h-4 bg-gray-300 dark:bg-gray-700 rounded w-16"></div>
+                <div class="h-4 bg-sunken rounded w-16"></div>
               </div>
             </div>
           </div>
@@ -104,15 +104,15 @@ export const ListSkeleton: Component<{ rows?: number }> = (props) => {
     <div class="space-y-3">
       <For each={Array(rows)}>
         {() => (
-          <div class="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-sm border border-gray-200 dark:border-gray-700 animate-pulse">
+          <div class="bg-surface rounded-lg p-4 shadow-sm border border-line animate-pulse">
             <div class="flex items-center justify-between">
               <div class="flex-1">
-                <div class="h-5 bg-gray-300 dark:bg-gray-700 rounded w-1/2 mb-2"></div>
-                <div class="h-4 bg-gray-200 dark:bg-gray-600 rounded w-3/4"></div>
+                <div class="h-5 bg-sunken rounded w-1/2 mb-2"></div>
+                <div class="h-4 bg-sunken rounded w-3/4"></div>
               </div>
               <div class="flex gap-2">
-                <div class="h-8 w-20 bg-gray-300 dark:bg-gray-700 rounded"></div>
-                <div class="h-8 w-20 bg-gray-300 dark:bg-gray-700 rounded"></div>
+                <div class="h-8 w-20 bg-sunken rounded"></div>
+                <div class="h-8 w-20 bg-sunken rounded"></div>
               </div>
             </div>
           </div>
@@ -128,7 +128,7 @@ export const ListSkeleton: Component<{ rows?: number }> = (props) => {
 export const TextSkeleton: Component<{ width?: string; height?: string }> = (props) => {
   return (
     <div
-      class="bg-gray-300 dark:bg-gray-700 rounded animate-pulse"
+      class="bg-sunken rounded animate-pulse"
       style={{
         width: props.width || '100%',
         height: props.height || '1rem',

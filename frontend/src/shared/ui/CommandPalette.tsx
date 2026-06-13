@@ -95,13 +95,13 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
           class="fixed inset-0 z-50 flex items-start justify-center pt-[20vh] px-4 bg-black/50 backdrop-blur-sm"
           onClick={handleBackdropClick}
         >
-          <div class="bg-white dark:bg-gray-900 rounded-lg shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-200 dark:border-gray-700">
+          <div class="bg-surface rounded-lg shadow-2xl w-full max-w-2xl overflow-hidden border border-line">
             {/* Search Input */}
-            <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+            <div class="p-4 border-b border-line">
               <input
                 ref={inputRef}
                 type="text"
-                class="w-full px-4 py-3 text-lg bg-transparent border-none outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                class="w-full px-4 py-3 text-lg bg-transparent border-none outline-none text-content placeholder-content-faint"
                 placeholder="Search commands..."
                 value={search()}
                 onInput={(e) => setSearch(e.currentTarget.value)}
@@ -114,7 +114,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
               <Show
                 when={filteredCommands().length > 0}
                 fallback={
-                  <div class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                  <div class="px-4 py-8 text-center text-content-subtle">
                     No commands found
                   </div>
                 }
@@ -122,30 +122,30 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                 <For each={filteredCommands()}>
                   {(cmd, index) => (
                     <button
-                      class="w-full px-4 py-3 flex items-center justify-between text-left transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+                      class="w-full px-4 py-3 flex items-center justify-between text-left transition-colors hover:bg-sunken"
                       classList={{
-                        'bg-purple-50 dark:bg-purple-900/20': index() === selectedIndex(),
+                        'bg-brand-50': index() === selectedIndex(),
                       }}
                       onClick={() => handleCommandClick(cmd)}
                       onMouseEnter={() => setSelectedIndex(index())}
                     >
                       <div class="flex items-center gap-3 flex-1">
                         {cmd.icon && (
-                          <span class="text-gray-500 dark:text-gray-400">{cmd.icon}</span>
+                          <span class="text-content-subtle">{cmd.icon}</span>
                         )}
                         <div class="flex-1">
-                          <div class="font-medium text-gray-900 dark:text-white">
+                          <div class="font-medium text-content">
                             {cmd.label}
                           </div>
                           {cmd.description && (
-                            <div class="text-sm text-gray-500 dark:text-gray-400">
+                            <div class="text-sm text-content-subtle">
                               {cmd.description}
                             </div>
                           )}
                         </div>
                       </div>
                       {cmd.shortcut && (
-                        <div class="text-xs text-gray-400 dark:text-gray-500 font-mono">
+                        <div class="text-xs text-content-faint font-mono">
                           {cmd.shortcut}
                         </div>
                       )}
@@ -156,8 +156,8 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
             </div>
 
             {/* Footer */}
-            <div class="px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-              <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+            <div class="px-4 py-2 border-t border-line bg-sunken">
+              <div class="flex items-center justify-between text-xs text-content-subtle">
                 <span>Use ↑ ↓ to navigate</span>
                 <span>↵ to select · Esc to close</span>
               </div>

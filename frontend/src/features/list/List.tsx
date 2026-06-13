@@ -13,7 +13,7 @@ import { type ItemTypeConfig } from '../../shared/vocab/vocab';
 import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
-import type { Item } from '../../types/api';
+import type { Item } from '../../shared/types';
 import { Button } from '../../shared/ui';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import { FiPlus, FiMenu, FiCheck, FiX, FiChevronRight, FiChevronDown, FiTrash2, FiMaximize2, FiMinimize2 } from 'solid-icons/fi';
@@ -387,7 +387,7 @@ function ItemRow(props: {
       <div class="flex items-center gap-3 px-4 py-3" style={indentStyle()}>
         {/* Drag Handle */}
         <div {...sortable.dragActivators} class="cursor-grab active:cursor-grabbing flex-shrink-0">
-          <FiMenu size={16} class="text-[var(--color-text-tertiary)] hover:text-violet-600 transition-colors" />
+          <FiMenu size={16} class="text-[var(--color-text-tertiary)] hover:text-brand transition-colors" />
         </div>
 
         {/* Expand/Collapse */}
@@ -418,7 +418,7 @@ function ItemRow(props: {
           class="flex-1 min-w-0 text-left group/title"
         >
           <div class="flex items-center gap-2">
-            <span class="text-base font-medium text-[var(--color-text-primary)] group-hover/title:text-violet-600 transition-colors truncate">
+            <span class="text-base font-medium text-[var(--color-text-primary)] group-hover/title:text-brand transition-colors truncate">
               {props.item.title}
             </span>
             <Show when={hasChildren}>

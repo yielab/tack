@@ -39,13 +39,13 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
   };
 
   return (
-    <div class="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden bg-white dark:bg-gray-800">
+    <div class="border border-line-medium rounded-lg overflow-hidden bg-elevated">
       {/* Toolbar */}
-      <div class="flex items-center gap-1 p-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+      <div class="flex items-center gap-1 p-2 border-b border-line bg-app">
         <button
           type="button"
           onClick={() => execCommand('bold')}
-          class="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
+          class="p-2 rounded hover:bg-sunken text-content-muted transition-colors"
           title="Bold (Ctrl+B)"
           disabled={props.disabled}
         >
@@ -54,17 +54,17 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
         <button
           type="button"
           onClick={() => execCommand('italic')}
-          class="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
+          class="p-2 rounded hover:bg-sunken text-content-muted transition-colors"
           title="Italic (Ctrl+I)"
           disabled={props.disabled}
         >
           <FiItalic size={16} />
         </button>
-        <div class="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+        <div class="w-px h-6 bg-sunken mx-1" />
         <button
           type="button"
           onClick={() => execCommand('insertUnorderedList')}
-          class="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
+          class="p-2 rounded hover:bg-sunken text-content-muted transition-colors"
           title="Bullet List"
           disabled={props.disabled}
         >
@@ -73,16 +73,16 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
         <button
           type="button"
           onClick={() => execCommand('insertOrderedList')}
-          class="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
+          class="p-2 rounded hover:bg-sunken text-content-muted transition-colors"
           title="Numbered List"
           disabled={props.disabled}
         >
           <FiCode size={16} />
         </button>
-        <div class="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+        <div class="w-px h-6 bg-sunken mx-1" />
         <select
           onChange={(e) => execCommand('formatBlock', e.currentTarget.value)}
-          class="text-sm px-2 py-1 rounded border-0 bg-transparent text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-purple-500"
+          class="text-sm px-2 py-1 rounded border-0 bg-transparent text-content-muted focus:ring-2 focus:ring-brand-500"
           disabled={props.disabled}
         >
           <option value="p">Normal</option>
@@ -102,10 +102,10 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
         onPaste={handlePaste}
         class={`
           min-h-[120px] max-h-[300px] overflow-y-auto px-3 py-2
-          text-gray-900 dark:text-white
+          text-content
           focus:outline-none
           prose prose-sm dark:prose-invert max-w-none
-          ${isFocused() ? 'ring-2 ring-purple-500 ring-inset' : ''}
+          ${isFocused() ? 'ring-2 ring-brand-500 ring-inset' : ''}
           ${props.disabled ? 'opacity-50 cursor-not-allowed' : ''}
         `}
         data-placeholder={props.placeholder}

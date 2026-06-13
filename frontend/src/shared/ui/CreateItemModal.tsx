@@ -4,7 +4,7 @@ import RichTextEditor from './RichTextEditor';
 import Button from './Button';
 import Field from './Field';
 import { api } from '../api';
-import type { CreateItem, Item } from '../../types/api';
+import type { CreateItem, Item } from '../types';
 import { toast } from './toast';
 import { getItemTypeMap } from '../vocab/vocab';
 import { FiPlus, FiX, FiTrash2 } from 'solid-icons/fi';
@@ -260,8 +260,8 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                         px-2.5 py-1.5 rounded-md text-xs font-medium transition-all
                         ${
                           itemType() === type
-                            ? 'bg-violet-100 text-violet-700 ring-2 ring-violet-500'
-                            : 'hover:bg-gray-100'
+                            ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-500'
+                            : 'hover:bg-sunken'
                         }
                       `}
                       style={{
@@ -294,8 +294,8 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                       px-2.5 py-1.5 rounded-md text-xs font-medium transition-all
                       ${
                         priority() === prio
-                          ? 'bg-violet-100 text-violet-700 ring-2 ring-violet-500'
-                          : 'hover:bg-gray-100'
+                          ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-500'
+                          : 'hover:bg-sunken'
                       }
                     `}
                     style={{
@@ -341,8 +341,8 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                     w-9 h-9 rounded-md text-sm font-semibold transition-all
                     ${
                       estimate() === value
-                        ? 'bg-violet-100 text-violet-700 ring-2 ring-violet-500'
-                        : 'hover:bg-gray-100'
+                        ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-500'
+                        : 'hover:bg-sunken'
                     }
                   `}
                   style={{
@@ -361,7 +361,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
         {/* Subtasks/Child Items */}
         <Show when={(mode() === 'create' && itemType() !== 'subtask') || mode() === 'edit'}>
           <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label class="block text-sm font-medium text-content-muted mb-2">
               {mode() === 'edit' ? 'Child Items' : 'Subtasks'}
             </label>
 
@@ -370,12 +370,12 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
               <div class="space-y-2 mb-3">
                 <For each={subtasks()}>
                   {(subtask) => (
-                    <div class="flex items-center gap-2 bg-gray-50 dark:bg-gray-800 px-3 py-2 rounded-lg">
-                      <span class="flex-1 text-gray-900 dark:text-white">{subtask.title}</span>
+                    <div class="flex items-center gap-2 bg-sunken px-3 py-2 rounded-lg">
+                      <span class="flex-1 text-content">{subtask.title}</span>
                       <button
                         type="button"
                         onClick={() => removeSubtask(subtask.id)}
-                        class="text-gray-400 hover:text-red-500 transition-colors"
+                        class="text-content-subtle hover:text-danger-500 transition-colors"
                       >
                         <FiX size={18} />
                       </button>
@@ -390,18 +390,18 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
               <div class="space-y-2 mb-3">
                 <For each={childItems()}>
                   {(child) => (
-                    <div class="flex items-center gap-2 bg-gray-50 dark:bg-gray-800 px-3 py-2 rounded-lg">
-                      <span class="text-sm text-gray-500 dark:text-gray-400">
+                    <div class="flex items-center gap-2 bg-sunken px-3 py-2 rounded-lg">
+                      <span class="text-sm text-content-subtle">
                         {typeof child.item_type === 'string' ? itemTypeConfig()[child.item_type as ItemType]?.emoji : '📌'}
                       </span>
-                      <span class="flex-1 text-gray-900 dark:text-white">{child.title}</span>
-                      <span class="text-xs px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                      <span class="flex-1 text-content">{child.title}</span>
+                      <span class="text-xs px-2 py-0.5 rounded bg-info-100 text-info-700">
                         {child.status}
                       </span>
                       <button
                         type="button"
                         onClick={() => handleDeleteChild(child.id)}
-                        class="text-gray-400 hover:text-red-500 transition-colors"
+                        class="text-content-subtle hover:text-danger-500 transition-colors"
                       >
                         <FiTrash2 size={16} />
                       </button>
@@ -428,7 +428,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                   }
                 }}
                 placeholder={mode() === 'edit' ? 'Add a child item...' : 'Add a subtask...'}
-                class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                class="flex-1 px-3 py-2 border border-line-medium rounded-lg bg-elevated text-content placeholder-content-faint focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                 disabled={loading()}
               />
               <Button
@@ -455,12 +455,12 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
             <div class="flex flex-wrap gap-1.5 mb-2">
               <For each={tags()}>
                 {(tag) => (
-                  <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-violet-100 text-violet-700 rounded-md text-xs font-medium">
+                  <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-brand-100 text-brand-700 rounded-md text-xs font-medium">
                     {tag}
                     <button
                       type="button"
                       onClick={() => removeTag(tag)}
-                      class="hover:text-red-500 transition-colors"
+                      class="hover:text-danger-500 transition-colors"
                     >
                       <FiX size={12} />
                     </button>
@@ -483,7 +483,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                 }
               }}
               placeholder="Add tags (frontend, api...)"
-              class="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500 transition-all"
+              class="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all"
               style={{
                 "background-color": "var(--color-bg-base)",
                 "border-color": "var(--color-border-medium)",

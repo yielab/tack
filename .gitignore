@@ -31,3 +31,15 @@ cloudflared.yml
 
 # Stray root npm installs (frontend deps live in frontend/)
 /node_modules/
+
+# E2E (Playwright) artifacts
+/frontend/test-results/
+/frontend/playwright-report/
+/frontend/blob-report/
+/frontend/playwright/.cache/
+/frontend/.last-run.json
+# E2E runtime data — API webServer runs from frontend/ (see playwright.config.ts)
+/frontend/storage-e2e/
+/frontend/e2e.db
+/frontend/e2e.db-shm
+/frontend/e2e.db-wal

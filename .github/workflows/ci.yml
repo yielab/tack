@@ -43,6 +43,8 @@ jobs:
         run: npm ci
       - name: Type check
         run: npm run type-check
+      - name: Design token gate (no new raw color literals)
+        run: npm run lint:tokens
       - name: Build
         run: npm run build
       - name: Bundle size gate (entry bundle < 30 KB gzipped)
@@ -105,3 +107,58 @@ jobs:
           SIZE=$(stat -c%s target/release/flexpm-api)
           MB=$(echo "scale=1; $SIZE / 1048576" | bc)
           echo "flexpm-api binary: $SIZE bytes (${MB} MB)"
+
+  security:
+    name: Security (dependency audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit (prebuilt)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: Rust dependency audit (honors .cargo/audit.toml)
+        run: cargo audit
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: npm dependency audit (fail on high+)
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+  e2e:
+    name: E2E (Playwright, cross-browser)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Pre-build API (warms the cache the Playwright webServer reuses)
+        run: cargo build -p flexpm-api
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps
+      - name: Run E2E tests
+        working-directory: frontend
+        run: npm run test:e2e
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7

@@ -1,7 +1,7 @@
 import { createContext, createResource, useContext, type ParentComponent, type Accessor } from 'solid-js';
 import { useParams } from '@solidjs/router';
 import { api } from '../api';
-import type { Item } from '../../types/api';
+import type { Item } from '../types';
 
 interface ProjectItemsContextValue {
   items: Accessor<Item[] | undefined>;

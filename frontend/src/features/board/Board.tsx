@@ -2,7 +2,7 @@ import { createMemo, For, Show, createSignal, createEffect, onMount, onCleanup, 
 import { useParams, useSearchParams } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { deriveBoard } from '../../shared/api/boards';
-import type { BoardColumn, Item, BoardState } from '../../types/api';
+import type { BoardColumn, Item, BoardState } from '../../shared/types';
 import CreateItemModal from '../../shared/ui/CreateItemModal';
 import { createBoardSocket, type BoardSocket, type SocketStatus } from '../../shared/realtime/boardSocket';
 import { useKeyboard, keyboardManager, type ShortcutContext } from '../../shared/keyboard/keyboard';
@@ -83,7 +83,7 @@ const ItemCard: Component<{
               props.item.priority === 'critical' || props.item.priority === 'high'
                 ? "var(--color-danger)"
                 : props.item.priority === 'medium'
-                ? "var(--color-warning)"
+                ? "var(--color-warning-700)"
                 : "var(--color-text-secondary)",
           }}
         >
@@ -136,7 +136,7 @@ const BoardColumn: Component<{
         class="rounded-lg p-4 min-h-125"
         style={{ "background-color": "var(--color-bg-subtle)" }}
         classList={{
-          'ring-2 ring-purple-500 ring-inset': isDragOver(),
+          'ring-2 ring-brand-500 ring-inset': isDragOver(),
         }}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -356,9 +356,9 @@ const Board: Component = () => {
             <div
               class="w-1.5 h-1.5 rounded-full"
               classList={{
-                'bg-green-500': socketStatus() === 'open',
-                'bg-yellow-500': socketStatus() === 'connecting' || socketStatus() === 'reconnecting',
-                'bg-gray-400': socketStatus() === 'closed',
+                'bg-success-500': socketStatus() === 'open',
+                'bg-warning-500': socketStatus() === 'connecting' || socketStatus() === 'reconnecting',
+                'bg-content-subtle': socketStatus() === 'closed',
               }}
             />
             {socketStatus() === 'open' && 'Live'}

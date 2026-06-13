@@ -1,4 +1,4 @@
-.PHONY: build run dev debug cli tunnel test test-verbose test-core test-db check lint fmt fmt-check reset-db inspect-db api-health api-stats api-projects clean clean-all help
+.PHONY: build run dev debug cli tunnel test test-verbose test-core test-db e2e e2e-install e2e-ui audit load check lint fmt fmt-check reset-db inspect-db api-health api-stats api-projects clean clean-all help
 
 # ─── Default ──────────────────────────────────────
 help: ## Show this help
@@ -59,6 +59,26 @@ test-core: ## Run only core unit tests
 
 test-db: ## Run only database integration tests
 	cargo test -p flexpm-db
+
+# ─── End-to-End (browser) ────────────────────────
+e2e-install: frontend/node_modules ## Install Playwright browsers (one-time)
+	npm --prefix frontend exec playwright install --with-deps
+
+e2e: frontend/node_modules ## Run E2E tests (starts API + Vite automatically, all browsers)
+	npm --prefix frontend run test:e2e
+
+e2e-ui: frontend/node_modules ## Run E2E tests in the interactive Playwright UI
+	npm --prefix frontend run test:e2e:ui
+
+# ─── Security & Performance ──────────────────────
+audit: ## Scan Rust + npm dependencies for known CVEs
+	@command -v cargo-audit >/dev/null 2>&1 || { echo "Installing cargo-audit..."; cargo install cargo-audit --locked; }
+	cargo audit
+	npm --prefix frontend audit --audit-level=high
+
+load: ## Run the k6 load test (requires a running API on :3210 and k6 installed)
+	@command -v k6 >/dev/null 2>&1 || { echo "k6 not installed — see tests/load/README.md"; exit 1; }
+	k6 run tests/load/smoke.js
 
 # ─── Code Quality ────────────────────────────────
 check: ## Type-check without building
