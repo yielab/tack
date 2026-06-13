@@ -21,7 +21,7 @@ FlexPM is a lightweight, versatile project management tool built in Rust (backen
 **Current Status:** Phase 8 complete
 
 - Backend: complete (REST endpoints + WebSocket, 16 migrations, custom field value validation, Alexa voice integration)
-- Frontend: complete (Board, List, Timeline, Sprints, Settings views; 106 Vitest unit tests)
+- Frontend: complete (Board, List, Timeline, Sprints, Settings views; 144 Vitest unit tests + Playwright E2E)
 - CLI: complete (init, add, list, move, board, search, sprint, template, role, comment, field, backup, restore)
 
 ## Development Commands
@@ -58,9 +58,19 @@ cargo test test_workflow_transition_validation
 cargo test -p flexpm-core
 cargo test -p flexpm-db
 cargo test -p flexpm-api
+
+# End-to-end (Playwright: cross-browser smoke + journeys + a11y + API contract)
+make e2e-install   # one-time: download browser engines
+make e2e
+
+# Dependency CVE scan (cargo audit + npm audit) and k6 load baseline
+make audit
+make load
 ```
 
-Integration tests use in-memory SQLite — no external services needed.
+Integration tests use in-memory SQLite — no external services needed. The E2E
+suite (`frontend/e2e/`, `frontend/playwright.config.ts`) starts an isolated API
+(dedicated port + throwaway `e2e.db`) and the SPA itself — see `docs/TESTING.md`.
 
 ### Frontend Development
 
@@ -337,8 +347,16 @@ Items can only be assigned to active or planning sprints (enforced in handlers).
 - **Unit tests** in `flexpm-core` for business logic (workflow, dependencies, vocabulary)
 - **Integration tests** in `flexpm-db` for repository operations (require SQLite)
 - **Handler tests** in `flexpm-api` use in-memory databases
+- **Frontend unit tests** in `frontend/src/**/*.test.tsx` (Vitest + jsdom)
+- **End-to-end tests** in `frontend/e2e/` (Playwright): cross-browser smoke, user
+  journeys, axe accessibility scans, and API wire-contract checks. Test setup
+  talks to the API directly; the browser exercises the SPA via the proxy.
+- **Security**: `cargo audit` + `npm audit` in CI; justified advisory exceptions
+  in `.cargo/audit.toml`. **Performance**: k6 baseline in `tests/load/`.
 
-Use `assert_matches!` macro for enum matching in tests.
+Use `assert_matches!` macro for enum matching in tests. When changing an API
+response shape, update both the Rust handler and the matching mock in the
+frontend unit/E2E tests (e.g. the `GET /items/{id}` detail envelope).
 
 ## Common Patterns When Adding Features
 

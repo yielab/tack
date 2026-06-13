@@ -1,0 +1,17 @@
+# cargo-audit configuration (read by `cargo audit`, i.e. `make audit`).
+#
+# Advisories listed here are KNOWN and JUSTIFIED exceptions — the gate still
+# fails on any NEW advisory. Each entry must carry a reason. Re-review on every
+# dependency bump; remove an id the moment a fix becomes available.
+#
+# This file is the single source of truth: both `make audit` and the CI
+# `security` job run `cargo audit`, which reads it.
+
+[advisories]
+ignore = [
+  # rsa 0.9.x — "Marvin Attack" RSA timing side-channel. No fixed upgrade is
+  # available upstream. Pulled in transitively; FlexPM performs no RSA
+  # decryption (SQLite-only DB; S3 backup uses HMAC request signing, not RSA),
+  # so the vulnerable code path is not exercised.
+  "RUSTSEC-2023-0071",
+]

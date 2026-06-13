@@ -6,7 +6,7 @@ import { Button, Field, FieldShell, Badge, Modal } from '../../shared/ui';
 import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
-import type { Sprint, Item } from '../../types/api';
+import type { Sprint, Item } from '../../shared/types';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 

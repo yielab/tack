@@ -18,8 +18,8 @@ const Projects: Component = () => {
     <div>
       <div class="flex items-center justify-between mb-8">
         <div>
-          <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Projects</h1>
-          <p class="mt-2 text-gray-600 dark:text-gray-400">
+          <h1 class="text-3xl font-bold text-content">Projects</h1>
+          <p class="mt-2 text-content-muted">
             Select a project to get started
           </p>
         </div>
@@ -75,23 +75,23 @@ const Projects: Component = () => {
               {(project) => (
                 <A
                   href={`/projects/${project.id}/board`}
-                  class="block p-6 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-purple-500 dark:hover:border-purple-500 transition-colors"
+                  class="block p-6 bg-elevated rounded-lg border border-line hover:border-brand-500 transition-colors"
                 >
                   <div class="flex items-start justify-between mb-4">
-                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                    <h3 class="text-lg font-semibold text-content">
                       {project.name}
                     </h3>
-                    <span class="px-2 py-1 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded">
+                    <span class="px-2 py-1 text-xs font-medium bg-brand-100 text-brand-700 rounded">
                       {project.project_type}
                     </span>
                   </div>
                   <Show when={project.description}>
-                    <p class="text-gray-600 dark:text-gray-400 text-sm line-clamp-2">
+                    <p class="text-content-muted text-sm line-clamp-2">
                       {project.description}
                     </p>
                   </Show>
-                  <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <p class="text-xs text-gray-500 dark:text-gray-500">
+                  <div class="mt-4 pt-4 border-t border-line">
+                    <p class="text-xs text-content-subtle">
                       Created {new Date(project.created_at).toLocaleDateString()}
                     </p>
                   </div>

@@ -135,24 +135,24 @@ export default function FieldsPanel() {
         {/* Fields List */}
         <div class="space-y-4">
           <Show when={fields.loading}>
-            <div class="text-center py-12 text-gray-500">Loading fields...</div>
+            <div class="text-center py-12 text-content-subtle">Loading fields...</div>
           </Show>
 
           <Show when={fields.error}>
-            <div class="text-center py-12 text-red-500">Failed to load fields</div>
+            <div class="text-center py-12 text-danger-500">Failed to load fields</div>
           </Show>
 
           <For each={fields()}>
             {(field: CustomField) => {
               const typeInfo = getFieldTypeInfo(field.field_type);
               return (
-                <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+                <div class="bg-elevated rounded-lg border border-line p-6">
                   <div class="flex items-start justify-between">
                     <div class="flex-1">
                       <div class="flex items-center gap-3 mb-2">
                         <span class="text-2xl">{typeInfo.icon}</span>
                         <div>
-                          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                          <h3 class="text-lg font-semibold text-content">
                             {field.name}
                           </h3>
                           <div class="flex items-center gap-2 mt-1">
@@ -165,15 +165,15 @@ export default function FieldsPanel() {
                       </div>
 
                       <Show when={field.description}>
-                        <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                        <p class="text-sm text-content-muted mb-2">
                           {field.description}
                         </p>
                       </Show>
 
                       <Show when={field.options && field.options.length > 0}>
                         <div class="mt-2">
-                          <span class="text-xs text-gray-500 dark:text-gray-400">Options: </span>
-                          <span class="text-sm text-gray-700 dark:text-gray-300">
+                          <span class="text-xs text-content-subtle">Options: </span>
+                          <span class="text-sm text-content-muted">
                             {field.options!.join(', ')}
                           </span>
                         </div>

@@ -90,16 +90,16 @@ export default function Templates() {
   };
 
   return (
-    <div class="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
+    <div class="min-h-screen bg-app p-6">
       <div class="max-w-7xl mx-auto">
         {/* Header */}
         <div class="mb-8">
           <div class="flex items-center justify-between mb-4">
             <div>
-              <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
+              <h1 class="text-3xl font-bold text-content">
                 Project Templates
               </h1>
-              <p class="text-gray-600 dark:text-gray-400 mt-1">
+              <p class="text-content-muted mt-1">
                 Start your project with a pre-configured template
               </p>
             </div>
@@ -117,8 +117,8 @@ export default function Templates() {
               onClick={() => setSelectedType(null)}
               class="px-3 py-1.5 text-sm rounded-lg transition-colors"
               classList={{
-                'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300': selectedType() === null,
-                'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300': selectedType() !== null,
+                'bg-brand-100 text-brand-700': selectedType() === null,
+                'bg-sunken text-content-muted': selectedType() !== null,
               }}
             >
               All Templates
@@ -129,8 +129,8 @@ export default function Templates() {
                   onClick={() => setSelectedType(type.value)}
                   class="px-3 py-1.5 text-sm rounded-lg transition-colors"
                   classList={{
-                    'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300': selectedType() === type.value,
-                    'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300': selectedType() !== type.value,
+                    'bg-brand-100 text-brand-700': selectedType() === type.value,
+                    'bg-sunken text-content-muted': selectedType() !== type.value,
                   }}
                 >
                   {type.icon} {type.label}
@@ -142,11 +142,11 @@ export default function Templates() {
 
         {/* Templates Grid */}
         <Show when={templates.loading}>
-          <div class="text-center py-12 text-gray-500">Loading templates...</div>
+          <div class="text-center py-12 text-content-subtle">Loading templates...</div>
         </Show>
 
         <Show when={templates.error}>
-          <div class="text-center py-12 text-red-500">Failed to load templates</div>
+          <div class="text-center py-12 text-danger-500">Failed to load templates</div>
         </Show>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -154,13 +154,13 @@ export default function Templates() {
             {(template: ProjectTemplate) => {
               const typeInfo = getTypeInfo(template.project_type);
               return (
-                <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow">
+                <div class="bg-elevated rounded-lg border border-line p-6 hover:shadow-lg transition-shadow">
                   {/* Header */}
                   <div class="flex items-start justify-between mb-4">
                     <div class="flex items-center gap-3">
                       <div class="text-3xl">{typeInfo.icon}</div>
                       <div>
-                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                        <h3 class="text-lg font-semibold text-content">
                           {template.name}
                         </h3>
                         <span class={`text-xs px-2 py-0.5 rounded bg-${typeInfo.color}-100 dark:bg-${typeInfo.color}-900/30 text-${typeInfo.color}-700 dark:text-${typeInfo.color}-300`}>
@@ -175,7 +175,7 @@ export default function Templates() {
 
                   {/* Description */}
                   <Show when={template.description}>
-                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                    <p class="text-sm text-content-muted mb-3">
                       {template.description}
                     </p>
                   </Show>

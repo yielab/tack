@@ -1,6 +1,7 @@
 import { lazy } from 'solid-js';
-import { Navigate, useParams } from '@solidjs/router';
+import { useLocation } from '@solidjs/router';
 import type { RouteDefinition } from '@solidjs/router';
+import { Button } from '../shared/ui';
 import WorkLayout from './WorkLayout';
 
 const Projects      = lazy(() => import('../features/projects/Projects'));
@@ -15,11 +16,6 @@ const TemplateCreator = lazy(() => import('../features/templates/TemplateCreator
 const ProjectSettings = lazy(() => import('../features/settings/ProjectSettings'));
 const GlobalSettings  = lazy(() => import('../features/settings/GlobalSettings'));
 
-const SprintRedirect = () => {
-  const params = useParams();
-  return <Navigate href={`/projects/${params.id}/sprint`} />;
-};
-
 export const routes: RouteDefinition[] = [
   { path: '/',         component: Projects },
   { path: '/projects', component: Projects },
@@ -30,9 +26,6 @@ export const routes: RouteDefinition[] = [
   // Project destinations
   { path: '/projects/:id/overview',  component: Dashboard },
   { path: '/projects/:id/settings',  component: ProjectSettings },
-
-  // Old /sprints → redirect to /sprint tab
-  { path: '/projects/:id/sprints', component: SprintRedirect },
 
   // Work surface — all 5 lenses wrapped in WorkLayout
   {
@@ -47,7 +40,22 @@ export const routes: RouteDefinition[] = [
     ],
   },
 
-  // Legacy bare routes → home (no more dead ends)
-  { path: '/board',  component: () => <Navigate href="/" /> },
-  { path: '/list',   component: () => <Navigate href="/" /> },
+  // Catch-all 404
+  { path: '*', component: NotFound },
 ];
+
+function NotFound() {
+  const location = useLocation();
+  return (
+    <div class="flex flex-col items-center justify-center py-24 text-center">
+      <div class="mb-4 text-7xl" aria-hidden="true">🔍</div>
+      <h1 class="text-2xl font-bold mb-2" style={{ color: 'var(--color-text-primary)' }}>
+        Page not found
+      </h1>
+      <p class="text-sm mb-6 max-w-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        <code class="font-mono">{location.pathname}</code> doesn't exist.
+      </p>
+      <Button onClick={() => history.back()}>Go back</Button>
+    </div>
+  );
+}

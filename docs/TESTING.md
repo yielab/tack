@@ -300,3 +300,87 @@ file smoke-backup.db   # should say "SQLite 3.x database"
 # Cleanup
 curl -s -X DELETE $BASE/projects/$PID
 ```
+
+---
+
+## End-to-end, accessibility & API-contract tests (Playwright)
+
+Browser-level tests that drive the **real** app — the `flexpm-api` server plus
+the Vite-served SPA — in Chromium, Firefox and WebKit. Playwright owns both
+server lifecycles, so a single command is all that's needed; the API runs
+against a throwaway `e2e.db` so your working database is never touched.
+
+```bash
+make e2e-install     # one-time: download the browser engines
+make e2e             # run the whole suite (chromium + firefox + webkit)
+make e2e-ui          # interactive runner for debugging
+```
+
+Layout (`frontend/e2e/`):
+
+| File | Covers |
+| --- | --- |
+| `smoke.spec.ts` | Every primary surface renders without a blank screen or page error — **all 3 browsers** |
+| `journey.spec.ts` | A created item flows to the board and opens with the correct title (regression guard for the two QA bugs) |
+| `a11y.spec.ts` | WCAG 2.0/2.1 A & AA scans via axe-core (chromium) — new violations fail CI |
+| `api.spec.ts` | Wire-contract checks: health shape, hardening headers, response envelopes, 404s |
+| `helpers.ts` | Single source of truth for API response shapes (`getOrCreateProject`, etc.) |
+
+Config: `frontend/playwright.config.ts`. Cross-browser coverage is the `projects`
+list; engine-independent specs (`a11y`, `api`) self-skip to chromium only.
+
+**Triaging existing a11y debt:** add the axe rule id to `KNOWN_ISSUES` in
+`a11y.spec.ts` with a tracking note instead of deleting the assertion, so the
+gate keeps blocking *new* regressions.
+
+---
+
+## Dependency vulnerability scanning
+
+```bash
+make audit           # cargo audit (Rust) + npm audit --audit-level=high (frontend)
+```
+
+Runs in CI as the **security** job (`cargo-audit` via the RustSec advisory DB +
+`npm audit`). [Dependabot](../.github/dependabot.yml) opens weekly grouped
+update PRs for cargo, npm and GitHub Actions.
+
+Known, justified Rust advisory exceptions live in
+[`.cargo/audit.toml`](../.cargo/audit.toml) with a documented reason each — the
+gate still fails on any **new** advisory. Re-review that list on every dep bump.
+
+> **Known a11y debt:** `color-contrast` (palette-wide, needs a design-token
+> contrast pass) and `select-name` (board project selector lacks an `aria-label`)
+> are recorded in `e2e/a11y.spec.ts` `KNOWN_ISSUES`. They keep the suite green
+> while still blocking *new* a11y regressions — fix and remove them when able.
+
+---
+
+## Load / performance testing (k6)
+
+HTTP-level load test establishing the performance baseline. Not part of default
+CI (needs a running server, time-consuming) — run on demand.
+
+```bash
+# terminal 1: a server with a throwaway DB
+FLEXPM_DATABASE_URL='sqlite:load.db?mode=rwc' cargo run -p flexpm-api --release
+# terminal 2:
+make load
+```
+
+Ramps to 50 VUs on the read hot path + a write path, asserting p95 latency and
+error-rate thresholds. The write p95 threshold is where SQLite's single-writer
+model shows up first. See [`tests/load/README.md`](../tests/load/README.md).
+
+---
+
+## CI gates (`.github/workflows/ci.yml`)
+
+| Job | Gate |
+| --- | --- |
+| `rust` | fmt + clippy + `cargo test --workspace` |
+| `frontend` | type-check + token lint + build + bundle-size budget |
+| `docs` | mdBook build + broken-link check |
+| `embed-spa` | single-binary packaging + release build |
+| `security` | cargo audit + npm audit (high+) |
+| `e2e` | Playwright across chromium/firefox/webkit + a11y + API contract |
