@@ -56,7 +56,7 @@ tar = "0.4"
 zstd = "0.13"
 
 # Cryptography (HMAC-SHA256 webhook signatures)
-hmac = "0.12"
+hmac = "0.13"
 sha2 = "0.10"
 hex = "0.4"
 
