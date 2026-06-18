@@ -22,6 +22,17 @@ test.use({
 
 test.setTimeout(120_000);
 
+// Guard: skip immediately if ffmpeg is not available (e.g. CI without ffmpeg).
+// This file is excluded from the default testIgnore list in playwright.config.ts
+// and should only run via `make gif`.
+test.beforeEach(async ({}, testInfo) => {
+  try {
+    execSync('ffmpeg -version', { stdio: 'pipe' });
+  } catch {
+    testInfo.skip(true, 'ffmpeg not found — run `make gif` locally');
+  }
+});
+
 // Smooth pointer drag — works with solid-dnd (pointer events, not native HTML5 drag)
 async function drag(
   page: import('@playwright/test').Page,
