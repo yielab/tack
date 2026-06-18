@@ -4,7 +4,7 @@
 
 export type Theme = 'light' | 'dark' | 'system';
 
-const KEY = 'flexpm_theme';
+const KEY = 'tack_theme';
 
 export function getStoredTheme(): Theme {
   try {

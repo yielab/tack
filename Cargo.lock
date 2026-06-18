@@ -671,86 +671,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "flexpm-api"
-version = "0.1.0-beta.2"
-dependencies = [
- "anyhow",
- "assert_matches",
- "axum",
- "chrono",
- "flexpm-core",
- "flexpm-db",
- "futures",
- "hex",
- "hmac",
- "object_store",
- "reqwest",
- "rust-embed",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "tar",
- "thiserror",
- "tokio",
- "toml",
- "tower",
- "tower-http",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "uuid",
- "validator",
- "zstd",
-]
-
-[[package]]
-name = "flexpm-cli"
-version = "0.1.0-beta.2"
-dependencies = [
- "anyhow",
- "clap",
- "clap_complete",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "toml",
- "wiremock",
-]
-
-[[package]]
-name = "flexpm-core"
-version = "0.1.0-beta.2"
-dependencies = [
- "assert_matches",
- "chrono",
- "regex",
- "serde",
- "serde_json",
- "thiserror",
- "tracing",
- "uuid",
- "validator",
-]
-
-[[package]]
-name = "flexpm-db"
-version = "0.1.0-beta.2"
-dependencies = [
- "assert_matches",
- "chrono",
- "flexpm-core",
- "serde",
- "serde_json",
- "sqlx",
- "thiserror",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "flume"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2696,6 +2616,86 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "tack-api"
+version = "0.1.0-beta.2"
+dependencies = [
+ "anyhow",
+ "assert_matches",
+ "axum",
+ "chrono",
+ "futures",
+ "hex",
+ "hmac",
+ "object_store",
+ "reqwest",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "tack-core",
+ "tack-db",
+ "tar",
+ "thiserror",
+ "tokio",
+ "toml",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "uuid",
+ "validator",
+ "zstd",
+]
+
+[[package]]
+name = "tack-cli"
+version = "0.1.0-beta.2"
+dependencies = [
+ "anyhow",
+ "clap",
+ "clap_complete",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
+ "wiremock",
+]
+
+[[package]]
+name = "tack-core"
+version = "0.1.0-beta.2"
+dependencies = [
+ "assert_matches",
+ "chrono",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+ "uuid",
+ "validator",
+]
+
+[[package]]
+name = "tack-db"
+version = "0.1.0-beta.2"
+dependencies = [
+ "assert_matches",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tack-core",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

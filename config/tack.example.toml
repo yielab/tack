@@ -1,0 +1,22 @@
+# Tack Configuration
+# Copy this file to tack.toml and adjust as needed.
+
+# Server settings
+host = "127.0.0.1"
+port = 3210
+
+# Database (SQLite)
+database_url = "sqlite:tack.db?mode=rwc"
+
+# Logging
+# Levels: trace, debug, info, warn, error
+log_level = "info"
+
+# Set to true for JSON structured logging (useful for log aggregation)
+log_json = false
+
+# Optional: log to file in addition to stdout
+# log_file = "./logs/tack.log"
+
+# File storage directory for attachments
+storage_dir = "./storage"

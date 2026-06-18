@@ -1,4 +1,4 @@
 # Managed by global /home/ox/Sites/Caddyfile — do NOT add a global {} block here
-flexpm.test {
+tack.test {
     reverse_proxy localhost:3210
 }

@@ -20,11 +20,11 @@ The API server and Vite dev server run as separate processes. Start the API firs
 
 ```sh
 git clone https://github.com/santiagoyie/FlexPM.git
-cd FlexPM
-cargo run --bin flexpm-api
+cd Tack
+cargo run --bin tack-api
 ```
 
-On first start, the server creates `flexpm.db` and runs all 16 database migrations automatically. Binds to `http://127.0.0.1:3210`.
+On first start, the server creates `tack.db` and runs all 16 database migrations automatically. Binds to `http://127.0.0.1:3210`.
 
 **Terminal 2 — frontend dev server:**
 
@@ -55,17 +55,17 @@ curl http://localhost:3210/api/health
 
 ## Single-binary mode
 
-One process that serves both the API and the SPA — useful for deployments and for sharing FlexPM on a LAN.
+One process that serves both the API and the SPA — useful for deployments and for sharing Tack on a LAN.
 
 ```sh
 # 1. Build the frontend
 cd frontend && npm run build && cd ..
 
 # 2. Build the API with embedded SPA
-cargo build --release --features embed-spa -p flexpm-api
+cargo build --release --features embed-spa -p tack-api
 
 # 3. Run the single binary
-./target/release/flexpm-api
+./target/release/tack-api
 # open http://127.0.0.1:3210
 ```
 
@@ -75,9 +75,9 @@ Without `--features embed-spa` the binary serves only the API; use the Vite dev 
 
 | Variable | Default | Description |
 |---|---|---|
-| `FLEXPM_PORT` | `3210` | Listen port |
-| `FLEXPM_DATABASE_URL` | `sqlite:flexpm.db?mode=rwc` | SQLite file path |
-| `FLEXPM_LOG_LEVEL` | `info` | `trace` · `debug` · `info` · `warn` · `error` |
-| `FLEXPM_API_TOKEN` | _(none)_ | When set, all API calls need `Authorization: Bearer <token>` |
+| `TACK_PORT` | `3210` | Listen port |
+| `TACK_DATABASE_URL` | `sqlite:tack.db?mode=rwc` | SQLite file path |
+| `TACK_LOG_LEVEL` | `info` | `trace` · `debug` · `info` · `warn` · `error` |
+| `TACK_API_TOKEN` | _(none)_ | When set, all API calls need `Authorization: Bearer <token>` |
 
-See [Configuration](configuration.md) for the full reference and `flexpm.toml` format.
+See [Configuration](configuration.md) for the full reference and `tack.toml` format.

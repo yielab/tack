@@ -1,4 +1,4 @@
-const KEY = 'flexpm_last_lens';
+const KEY = 'tack_last_lens';
 const LENSES = ['board', 'list', 'calendar', 'timeline', 'sprint'] as const;
 export type Lens = typeof LENSES[number];
 

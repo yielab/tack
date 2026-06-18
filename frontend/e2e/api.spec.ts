@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { API_ORIGIN as ORIGIN } from './helpers';
 
-// API contract smoke tests. These hit the flexpm-api server directly (bypassing
+// API contract smoke tests. These hit the tack-api server directly (bypassing
 // the Vite proxy) so they assert the real wire contract documented in
 // docs/API-REFERENCE.md. They're browser-independent — run on chromium only.
 

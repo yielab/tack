@@ -5,6 +5,6 @@ import type { Item } from '../types';
  * item. Host views (board, list) listen for it to refresh, keeping the drawer
  * decoupled from any specific feature (no `features/* → features/*` import).
  */
-export const ITEM_UPDATED_EVENT = 'flexpm:item-updated';
+export const ITEM_UPDATED_EVENT = 'tack:item-updated';
 
 export type ItemUpdatedEvent = CustomEvent<Item>;

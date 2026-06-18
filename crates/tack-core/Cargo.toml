@@ -1,0 +1,18 @@
+[package]
+name = "tack-core"
+description = "Core domain models and business logic for Tack"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+validator = { workspace = true }
+regex = { workspace = true }
+
+[dev-dependencies]
+assert_matches = { workspace = true }

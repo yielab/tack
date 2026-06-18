@@ -1,8 +1,8 @@
-# FlexPM — Design System & Brand Roadmap
+# Tack — Design System & Brand Roadmap
 
 _Status: proposal · Author: design audit · Date: 2026-06-13_
 
-This document audits FlexPM's current UI/UX and styling, benchmarks it against
+This document audits Tack's current UI/UX and styling, benchmarks it against
 2025–2026 best practices, defines a proper brand, and lays out a phased roadmap
 to get there. It follows the project's existing "Phase N" convention.
 
@@ -10,7 +10,7 @@ to get there. It follows the project's existing "Phase N" convention.
 
 ## 1. Audit — Where We Are Today
 
-FlexPM already has a **better-than-average foundation**: a single-source token
+Tack already has a **better-than-average foundation**: a single-source token
 file ([frontend/src/index.css](../frontend/src/index.css)) with light/dark
 themes, semantic color scales (success/warning/danger/info), shadow + radius
 scales, and a real component kit under
@@ -84,11 +84,11 @@ plumbing first, then the brand, then the polish.**
 This is the missing decision layer. Proposed direction — **refine, don't
 replace** (the bolt mark and purple already have equity):
 
-- **Name & idea:** _FlexPM_ — "work tracking that bends to your words." The
+- **Name & idea:** _Tack_ — "work tracking that bends to your words." The
   brand personality: **precise, calm, fast, adaptable.** Not playful, not
   enterprise-grey. Think Linear's restraint with a warmer, more human edge.
 - **Logo system:** promote the **favicon bolt/arrow mark** to the primary logo.
-  Define: app icon (mark only), horizontal lockup (mark + "FlexPM" wordmark),
+  Define: app icon (mark only), horizontal lockup (mark + "Tack" wordmark),
   and monochrome variant. Retire the placeholder "F" box.
 - **Brand color:** standardize on **one** brand purple across favicon, tokens,
   and lockup (recommend `#7C3AED` / OKLCH equivalent as `brand`, with the bolt's
@@ -170,7 +170,7 @@ one developer.
 5. _Exit:_ consistent type rhythm; zero functional emoji; fonts load with no CLS.
 
 ### Phase 17 — Brand System _(differentiation; ~2–3 days)_
-**Goal:** make FlexPM look like _something_ (**P5, P9**).
+**Goal:** make Tack look like _something_ (**P5, P9**).
 1. Write [docs/BRAND.md](BRAND.md): name story, personality, voice, color
    rationale, logo usage, do/don't.
 2. Logo system: promote the bolt mark; build mark / horizontal lockup /

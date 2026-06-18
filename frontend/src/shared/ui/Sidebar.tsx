@@ -59,9 +59,9 @@ const Sidebar: Component = () => {
       <div class="hidden lg:flex items-center px-5 py-4 border-b" style={{ 'border-color': 'var(--color-border-light)' }}>
         <A href="/projects" class="flex items-center gap-2" onClick={close}>
           <div class="w-7 h-7 bg-linear-to-br from-brand-500 to-brand-700 rounded-lg flex items-center justify-center">
-            <span class="text-white font-bold text-sm">F</span>
+            <span class="text-white font-bold text-sm">T</span>
           </div>
-          <span class="text-lg font-bold" style={{ color: 'var(--color-text-primary)' }}>FlexPM</span>
+          <span class="text-lg font-bold" style={{ color: 'var(--color-text-primary)' }}>Tack</span>
         </A>
       </div>
 
@@ -159,7 +159,7 @@ const Sidebar: Component = () => {
       </nav>
 
       <div class="px-4 py-3 border-t" style={{ 'border-color': 'var(--color-border-light)' }}>
-        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>FlexPM v1.0</p>
+        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>Tack v1.0</p>
       </div>
     </div>
   );
@@ -171,7 +171,7 @@ const Sidebar: Component = () => {
         class="lg:hidden fixed top-0 left-0 right-0 z-20 border-b shadow-sm flex items-center justify-between px-4 py-3"
         style={{ background: 'var(--color-bg-elevated)', 'border-color': 'var(--color-border-light)' }}
       >
-        <span class="text-xl font-bold" style={{ color: 'var(--color-text-primary)' }}>FlexPM</span>
+        <span class="text-xl font-bold" style={{ color: 'var(--color-text-primary)' }}>Tack</span>
         <button onClick={() => setIsOpen(!isOpen())} class="p-2 rounded-lg transition-colors" style={{ color: 'var(--color-text-secondary)' }}>
           <Show when={isOpen()} fallback={<FiMenu size={22} />}><FiX size={22} /></Show>
         </button>

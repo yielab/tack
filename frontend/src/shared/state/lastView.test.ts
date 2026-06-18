@@ -39,7 +39,7 @@ describe('getLastLens', () => {
   });
 
   it('returns "board" when the stored value is not a valid lens', () => {
-    localStorage.setItem('flexpm_last_lens', 'invalid_lens');
+    localStorage.setItem('tack_last_lens', 'invalid_lens');
     expect(getLastLens()).toBe('board');
   });
 });

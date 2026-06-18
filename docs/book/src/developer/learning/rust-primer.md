@@ -1,6 +1,6 @@
 # Rust for Backend Developers
 
-This chapter covers the Rust concepts you will encounter repeatedly in FlexPM's codebase. It assumes you already know at least one backend language well. We are not starting from zero — we are translating.
+This chapter covers the Rust concepts you will encounter repeatedly in Tack's codebase. It assumes you already know at least one backend language well. We are not starting from zero — we are translating.
 
 ---
 
@@ -40,9 +40,9 @@ print_title(&item_title);  // borrow — print_title sees it, does not own it
 println!("{}", item_title); // still valid — we only lent it
 ```
 
-The `&` means "reference" (borrow). The function sees the value but does not take ownership. You will see `&str`, `&Pool`, `&AppState` constantly in FlexPM's handler code.
+The `&` means "reference" (borrow). The function sees the value but does not take ownership. You will see `&str`, `&Pool`, `&AppState` constantly in Tack's handler code.
 
-**Why this matters practically:** The compiler catches data races at compile time. If two async tasks could write to the same data simultaneously without synchronization, Rust will refuse to compile. This is why FlexPM's WebSocket broadcast channel (`broadcast::Sender<BoardEvent>`) uses a typed channel rather than shared mutable state — Rust's rules guide you toward the correct concurrency pattern.
+**Why this matters practically:** The compiler catches data races at compile time. If two async tasks could write to the same data simultaneously without synchronization, Rust will refuse to compile. This is why Tack's WebSocket broadcast channel (`broadcast::Sender<BoardEvent>`) uses a typed channel rather than shared mutable state — Rust's rules guide you toward the correct concurrency pattern.
 
 ---
 
@@ -51,7 +51,7 @@ The `&` means "reference" (borrow). The function sees the value but does not tak
 Rust does not have classes. It has structs (data) and `impl` blocks (behavior). The combination is equivalent to a class without inheritance.
 
 ```rust
-// From crates/flexpm-core/src/models.rs
+// From crates/tack-core/src/models.rs
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Item {
@@ -106,7 +106,7 @@ impl Item {
 }
 ```
 
-There is no inheritance. If two types share behavior, they share a *trait* (covered below). This forces composition over inheritance, which tends to produce simpler code for a codebase like FlexPM.
+There is no inheritance. If two types share behavior, they share a *trait* (covered below). This forces composition over inheritance, which tends to produce simpler code for a codebase like Tack.
 
 ---
 
@@ -163,7 +163,7 @@ match item.priority {
 }
 ```
 
-You will see `match` throughout FlexPM's error handling and workflow code.
+You will see `match` throughout Tack's error handling and workflow code.
 
 **The `?` operator — short-circuit error propagation:**
 
@@ -177,7 +177,7 @@ pub async fn get_item(&self, id: Uuid) -> Result<Option<Item>, sqlx::Error> {
 }
 ```
 
-The `?` means: "if this is `Err(e)`, return `Err(e)` immediately from the current function; if it is `Ok(value)`, unwrap it and continue." It is like a one-line `try/catch` that re-throws. Every handler in FlexPM uses this pattern — you will read it everywhere.
+The `?` means: "if this is `Err(e)`, return `Err(e)` immediately from the current function; if it is `Ok(value)`, unwrap it and continue." It is like a one-line `try/catch` that re-throws. Every handler in Tack uses this pattern — you will read it everywhere.
 
 ---
 
@@ -190,7 +190,7 @@ Traits define shared behavior. The closest analogies:
 - **Python**: abstract base classes or protocols
 - **TypeScript**: interfaces (structural typing)
 
-The most important traits in FlexPM are auto-derived via `#[derive]`:
+The most important traits in Tack are auto-derived via `#[derive]`:
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -206,7 +206,7 @@ pub struct Project { ... }
 | `PartialEq` | `==` comparison | Java `.equals()`, Python `__eq__` |
 | `Default` | A sensible zero value | Java default field values |
 
-The `Display` trait controls how a type formats itself as a string (like Python's `__str__`). FlexPM uses this for enums so they serialize correctly:
+The `Display` trait controls how a type formats itself as a string (like Python's `__str__`). Tack uses this for enums so they serialize correctly:
 
 ```rust
 impl std::fmt::Display for ProjectType {
@@ -230,40 +230,40 @@ You implement `IntoResponse` from Axum on your error type to teach Axum how to t
 Rust's module system works differently from Node's `require` / Python's `import`. The key rules:
 
 ```rust
-mod items;          // includes crates/flexpm-db/src/repo/items.rs as a submodule
+mod items;          // includes crates/tack-db/src/repo/items.rs as a submodule
 pub use items::*;   // re-export everything public from items
 ```
 
 `pub` controls visibility — only `pub` items are accessible outside the module. Everything else is private by default (stricter than Python, similar to `private` in Java).
 
 ```rust
-use flexpm_core::models::{Item, Project, ItemType};
+use tack_core::models::{Item, Project, ItemType};
 use chrono::Utc;
 use uuid::Uuid;
 ```
 
 `use` is like Python's `from x import y` or TypeScript's `import { y } from 'x'`. It brings names into scope without needing to write the full path every time.
 
-**Crates** are the compilation unit — analogous to npm packages, Python packages, or Maven artifacts. FlexPM has four crates:
+**Crates** are the compilation unit — analogous to npm packages, Python packages, or Maven artifacts. Tack has four crates:
 
 ```
 crates/
-├── flexpm-core/   # pure business logic, zero I/O
-├── flexpm-db/     # database access layer
-├── flexpm-api/    # HTTP server
-└── flexpm-cli/    # command-line tool
+├── tack-core/   # pure business logic, zero I/O
+├── tack-db/     # database access layer
+├── tack-api/    # HTTP server
+└── tack-cli/    # command-line tool
 ```
 
-Each crate has its own `Cargo.toml` (equivalent to `package.json` or `pom.xml`). A crate can depend on other crates in the workspace. `flexpm-api` depends on `flexpm-db` and `flexpm-core`; `flexpm-db` depends on `flexpm-core`. This hard boundary enforces the architectural rule that HTTP concerns do not leak into database code, and database concerns do not leak into pure business logic.
+Each crate has its own `Cargo.toml` (equivalent to `package.json` or `pom.xml`). A crate can depend on other crates in the workspace. `tack-api` depends on `tack-db` and `tack-core`; `tack-db` depends on `tack-core`. This hard boundary enforces the architectural rule that HTTP concerns do not leak into database code, and database concerns do not leak into pure business logic.
 
 ---
 
 ## Error handling in practice
 
-FlexPM uses `thiserror` to define typed error enums, and `anyhow` in main/CLI code where any error is acceptable.
+Tack uses `thiserror` to define typed error enums, and `anyhow` in main/CLI code where any error is acceptable.
 
 ```rust
-// From crates/flexpm-core/src/error.rs
+// From crates/tack-core/src/error.rs
 
 #[derive(Debug, thiserror::Error)]
 pub enum CoreError {
@@ -283,7 +283,7 @@ pub enum CoreError {
 
 The `#[error("...")]` attribute generates the `Display` implementation — the string you see in logs and API responses. The `{0}`, `{from}`, `{column}` are interpolated from the enum variant's fields.
 
-The `ApiError` type in `flexpm-api` wraps `CoreError` and implements `IntoResponse` to map each variant to the correct HTTP status code:
+The `ApiError` type in `tack-api` wraps `CoreError` and implements `IntoResponse` to map each variant to the correct HTTP status code:
 
 ```rust
 CoreError::ItemNotFound(_) => (StatusCode::NOT_FOUND, err.to_string()),
