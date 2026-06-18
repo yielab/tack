@@ -35,7 +35,7 @@ dev: frontend/node_modules ## Development mode: API + Vite hot-reload + tunnel (
 	npm --prefix frontend run dev & \
 	wait
 
-tunnel: ## Start only the Cloudflare tunnel (api.yielab.com → localhost:3210)
+tunnel: ## Start only the Cloudflare tunnel (your hostname → localhost:3210; see cloudflared.yml)
 	cloudflared tunnel --config cloudflared.yml run
 
 frontend/node_modules:

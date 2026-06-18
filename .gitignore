@@ -16,6 +16,9 @@ tack.toml
 # Logs
 /logs/
 
+# QA artifact (generated; not source)
+/qa-report.html
+
 # IDE
 .vscode/
 .idea/
