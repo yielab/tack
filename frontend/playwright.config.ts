@@ -20,6 +20,10 @@ process.env.E2E_API_ORIGIN = process.env.E2E_API_ORIGIN || `http://127.0.0.1:${A
 
 export default defineConfig({
   testDir: './e2e',
+  // Capture specs (screenshots / hero GIF) are local-only tools — they require
+  // ffmpeg and a running dev environment. Exclude them from the default CI suite;
+  // run them explicitly with `make screenshots` or `make gif`.
+  testIgnore: ['**/screenshots.spec.ts', '**/hero-gif.spec.ts'],
   // One test file shouldn't leak state into another; each creates what it needs.
   fullyParallel: true,
   forbidOnly: isCI,
