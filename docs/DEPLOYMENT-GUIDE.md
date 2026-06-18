@@ -789,7 +789,7 @@ EOF
 ## Support
 
 **Resources:**
-- [GitHub Issues](https://github.com/yourusername/tack/issues)
+- [GitHub Issues](https://github.com/yielab/Tack/issues)
 - [Documentation](../README.md)
 - [API Reference](./API-REFERENCE.md)
 

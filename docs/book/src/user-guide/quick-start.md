@@ -19,7 +19,7 @@ The API server and Vite dev server run as separate processes. Start the API firs
 **Terminal 1 — API server:**
 
 ```sh
-git clone https://github.com/santiagoyie/Tack.git
+git clone https://github.com/yielab/Tack.git
 cd Tack
 cargo run --bin tack-api
 ```
