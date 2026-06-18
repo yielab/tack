@@ -267,7 +267,7 @@ small-team use case.
 ### Future / Optional
 
 #### Multi-User / Auth
-The current design is explicitly local-first and single-user. The API token (`FLEXPM_API_TOKEN`)
+The current design is explicitly local-only and single-user (one shared token, no per-user accounts or identities). The API token (`FLEXPM_API_TOKEN`)
 covers the "shared on a LAN" use case. Full multi-user would require a proper auth layer (session
 or JWT), per-user access control, and an audit log.
 

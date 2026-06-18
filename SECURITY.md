@@ -2,13 +2,13 @@
 
 ## Scope
 
-FlexPM is a **local-first** tool designed to run on `127.0.0.1`. It has no built-in authentication beyond the optional `FLEXPM_API_TOKEN` bearer token, and is not intended to be exposed to the public internet without an authenticating reverse proxy.
+FlexPM is a **self-hosted, local-only** tool designed to run on `127.0.0.1`. It has no built-in authentication beyond the optional `FLEXPM_API_TOKEN` bearer token — one shared token, no per-user identities — and is not intended to be exposed to the public internet without an authenticating reverse proxy.
 
 ## Reporting a Vulnerability
 
 Open a [GitHub Issue](https://github.com/santiagoyie/flexpm/issues) marked **[security]** in the title.
 
-If you prefer private disclosure, email **yie.worker@gmail.com** with subject `[flexpm] security`. I aim to respond within 7 days.
+If you prefer private disclosure, email **[yie.worker@gmail.com](mailto:yie.worker@gmail.com)** with subject `[flexpm] security`. I aim to respond within 7 days.
 
 ## Supported Versions
 
