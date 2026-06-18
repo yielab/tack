@@ -1,4 +1,4 @@
-.PHONY: build run dev debug cli tunnel test test-verbose test-core test-db e2e e2e-install e2e-ui audit load check lint fmt fmt-check reset-db inspect-db api-health api-stats api-projects clean clean-all help
+.PHONY: build run dev debug cli tunnel test test-verbose test-core test-db e2e e2e-install e2e-ui screenshots gif audit load check lint fmt fmt-check reset-db inspect-db api-health api-stats api-projects clean clean-all help
 
 # ─── Default ──────────────────────────────────────
 help: ## Show this help
@@ -69,6 +69,12 @@ e2e: frontend/node_modules ## Run E2E tests (starts API + Vite automatically, al
 
 e2e-ui: frontend/node_modules ## Run E2E tests in the interactive Playwright UI
 	npm --prefix frontend run test:e2e:ui
+
+screenshots: frontend/node_modules ## Capture README screenshots → docs/screenshots/ (starts API + Vite automatically)
+	npm --prefix frontend exec playwright test e2e/screenshots.spec.ts -- --project=chromium --workers=1
+
+gif: frontend/node_modules ## Capture hero GIF → docs/screenshots/hero.gif (requires ffmpeg)
+	npm --prefix frontend exec playwright test e2e/hero-gif.spec.ts -- --project=chromium --workers=1
 
 # ─── Security & Performance ──────────────────────
 audit: ## Scan Rust + npm dependencies for known CVEs
