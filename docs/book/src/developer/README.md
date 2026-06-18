@@ -6,34 +6,34 @@ You have read the quick-start and can run the server. This document explains *wh
 
 ## 1. The Layering Rule
 
-FlexPM enforces a strict one-way dependency graph between its four crates:
+Tack enforces a strict one-way dependency graph between its four crates:
 
 ```
-flexpm-core  ←  flexpm-db  ←  flexpm-api  ←  flexpm-cli
+tack-core  ←  tack-db  ←  tack-api  ←  tack-cli
 ```
 
 Each arrow means "depends on". No reverse arrows are allowed.
 
 **What this means in practice:**
 
-- `flexpm-core` has zero I/O. It cannot open a file, touch a database, or make a network call. It only contains pure Rust structs, enums, and functions. You can run every test in it without a database process.
-- `flexpm-db` knows about `flexpm-core` (it persists those structs), but it knows nothing about HTTP, routing, or config files.
-- `flexpm-api` is the only place where HTTP concerns (status codes, request extraction, CORS) and database concerns meet.
-- `flexpm-cli` talks to `flexpm-api` over HTTP. It never opens the database directly. This means the CLI works whether the server is running locally or on a remote machine.
+- `tack-core` has zero I/O. It cannot open a file, touch a database, or make a network call. It only contains pure Rust structs, enums, and functions. You can run every test in it without a database process.
+- `tack-db` knows about `tack-core` (it persists those structs), but it knows nothing about HTTP, routing, or config files.
+- `tack-api` is the only place where HTTP concerns (status codes, request extraction, CORS) and database concerns meet.
+- `tack-cli` talks to `tack-api` over HTTP. It never opens the database directly. This means the CLI works whether the server is running locally or on a remote machine.
 
 **Why bother?** The layering prevents the kind of "everything knows about everything" entanglement that makes codebases brittle. It also means:
 
-- Workflow rules are always consistent. Because all validation lives in `flexpm-core`, neither a direct DB call nor an API call nor a CLI command can bypass it.
+- Workflow rules are always consistent. Because all validation lives in `tack-core`, neither a direct DB call nor an API call nor a CLI command can bypass it.
 - Tests are fast. Core tests are pure function calls — no test database, no async runtime, no cleanup.
-- The domain model can be reused. If a future project needs the same workflow engine, it can depend on `flexpm-core` without dragging in SQLite or Axum.
+- The domain model can be reused. If a future project needs the same workflow engine, it can depend on `tack-core` without dragging in SQLite or Axum.
 
 ---
 
 ## 2. The Universal Item Model
 
-Every piece of work in FlexPM — whether it is called a task, an epic, a bug, a work order, or an assignment — is stored as an `Item`. There is one table, one struct, one set of repository functions.
+Every piece of work in Tack — whether it is called a task, an epic, a bug, a work order, or an assignment — is stored as an `Item`. There is one table, one struct, one set of repository functions.
 
-The `Item` struct in `flexpm-core/src/models.rs` carries an `item_type` field that records what kind of thing it is (`Task`, `Epic`, `Bug`, `Feature`, `Subtask`, `Requirement`, or a `Custom(String)` for anything else). The **vocabulary** system then translates that type name into whatever label the project uses.
+The `Item` struct in `tack-core/src/models.rs` carries an `item_type` field that records what kind of thing it is (`Task`, `Epic`, `Bug`, `Feature`, `Subtask`, `Requirement`, or a `Custom(String)` for anything else). The **vocabulary** system then translates that type name into whatever label the project uses.
 
 Think of it like a spreadsheet: every row has the same columns. The header labels change depending on who is looking at the sheet. A construction project relabels `task` as `Work Order` and `sprint` as `Phase`, but the underlying row structure is identical.
 
@@ -55,10 +55,10 @@ Here is a concrete walk-through of `PATCH /api/items/{id}` — the endpoint that
 HTTP client
     │
     ▼
-Axum router (flexpm-api/src/router.rs)
+Axum router (tack-api/src/router.rs)
     │  Extracts: Path(item_id), State(AppState), Json(UpdateItem)
     ▼
-Handler: update_item (flexpm-api/src/handlers/items.rs)
+Handler: update_item (tack-api/src/handlers/items.rs)
     │  1. Calls repo.get_item(id) to load current item
     │  2. Calls repo.get_project(project_id) to load workflow
     │  3. Calls workflow.validate_transition(old_status, new_status)  ← pure, no I/O
@@ -67,7 +67,7 @@ Handler: update_item (flexpm-api/src/handlers/items.rs)
     │  6. Calls repo.check_and_update_parent_status(...)  ← best-effort parent cascade
     │  7. Calls broadcast_event(ItemUpdated { ... })  ← fires WebSocket event
     ▼
-Repository (flexpm-db/src/repo/items.rs)
+Repository (tack-db/src/repo/items.rs)
     │  Runs parameterised SQL via sqlx
     ▼
 SQLite
@@ -82,9 +82,9 @@ HTTP client receives JSON
 
 A few things worth noting:
 
-- Steps 3 and 4 call pure functions in `flexpm-core`. No database round-trip is needed to validate the transition — the entire workflow config was loaded with the project in step 2, and it lives in memory as a `WorkflowConfig` struct.
+- Steps 3 and 4 call pure functions in `tack-core`. No database round-trip is needed to validate the transition — the entire workflow config was loaded with the project in step 2, and it lives in memory as a `WorkflowConfig` struct.
 - The handler owns the orchestration. It decides the order of validation, persistence, and notification. The repository and the core crate do not know about each other.
-- Errors propagate upward via Rust's `?` operator. The `ApiError` type (in `flexpm-api/src/error.rs`) implements `IntoResponse`, mapping each `CoreError` variant to the appropriate HTTP status code.
+- Errors propagate upward via Rust's `?` operator. The `ApiError` type (in `tack-api/src/error.rs`) implements `IntoResponse`, mapping each `CoreError` variant to the appropriate HTTP status code.
 
 ---
 
@@ -104,11 +104,11 @@ The `WorkflowConfig` holds:
 
 If the transition list is absent (`None`), any move between two valid statuses is allowed. This is the Scrum and Kanban default. The construction workflow, by contrast, defines an explicit list — you cannot skip from `Permit` to `Handover`.
 
-**Why is this in `flexpm-core` and not in the database layer?**
+**Why is this in `tack-core` and not in the database layer?**
 
-Because it is a business rule, not a storage rule. The database does not know what statuses are valid — that is configuration data stored in a JSON column. Only `flexpm-core` knows how to interpret that configuration and enforce the rules. Putting the validation in the repository would mean the repository would need to import workflow logic, violating the layer boundary. Putting it in the handler (without core) would scatter the logic and make it untestable without a running server.
+Because it is a business rule, not a storage rule. The database does not know what statuses are valid — that is configuration data stored in a JSON column. Only `tack-core` knows how to interpret that configuration and enforce the rules. Putting the validation in the repository would mean the repository would need to import workflow logic, violating the layer boundary. Putting it in the handler (without core) would scatter the logic and make it untestable without a running server.
 
-By living in `flexpm-core`, the validation is:
+By living in `tack-core`, the validation is:
 
 - Testable with zero dependencies (67 unit tests, none of which touch a database).
 - Reusable by any layer that loads a `WorkflowConfig`.
@@ -151,7 +151,7 @@ The broadcast channel is the pub/sub backbone. Every handler that modifies data 
 ```
 .
 ├── crates/
-│   ├── flexpm-core/         Pure domain logic; no I/O
+│   ├── tack-core/         Pure domain logic; no I/O
 │   │   └── src/
 │   │       ├── models.rs    All domain structs and DTOs
 │   │       ├── workflow.rs  WorkflowConfig, validation, presets
@@ -160,14 +160,14 @@ The broadcast channel is the pub/sub backbone. Every handler that modifies data 
 │   │       ├── error.rs     CoreError enum
 │   │       └── lib.rs       Re-exports
 │   │
-│   ├── flexpm-db/           SQLite persistence layer
+│   ├── tack-db/           SQLite persistence layer
 │   │   └── src/
 │   │       ├── lib.rs       init_pool() — WAL mode, foreign keys on
 │   │       ├── migrations.rs 16 migrations as embedded SQL strings
 │   │       ├── repo.rs      Repository struct — delegates to submodules
 │   │       └── repo/        One file per entity (items, projects, sprints, …)
 │   │
-│   ├── flexpm-api/          Axum HTTP server + WebSocket
+│   ├── tack-api/          Axum HTTP server + WebSocket
 │   │   └── src/
 │   │       ├── main.rs      Startup: config, pool, migrations, listen
 │   │       ├── router.rs    All routes + AppState + middleware wiring
@@ -177,11 +177,11 @@ The broadcast channel is the pub/sub backbone. Every handler that modifies data 
 │   │       ├── middleware.rs Bearer token gate
 │   │       └── handlers/    One file per entity group + websocket.rs
 │   │
-│   └── flexpm-cli/          CLI (clap), talks to API over HTTP
+│   └── tack-cli/          CLI (clap), talks to API over HTTP
 │       └── src/
 │           ├── main.rs      Command tree + implementation functions
-│           ├── client.rs    FlexpmClient — thin reqwest wrapper
-│           ├── config.rs    ~/.flexpmrc reader/writer
+│           ├── client.rs    TackClient — thin reqwest wrapper
+│           ├── config.rs    ~/.tackrc reader/writer
 │           └── vocab.rs     Fetch and cache project vocabulary
 │
 ├── frontend/                SolidJS + TypeScript + Tailwind v4

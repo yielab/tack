@@ -1,4 +1,4 @@
-// k6 load test — establishes the flexpm-api performance baseline.
+// k6 load test — establishes the tack-api performance baseline.
 //
 //   k6 run tests/load/smoke.js
 //   BASE_URL=http://localhost:3210 TOKEN=secret k6 run tests/load/smoke.js

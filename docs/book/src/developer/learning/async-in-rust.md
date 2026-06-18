@@ -1,6 +1,6 @@
 # Async/Await in Rust
 
-If you have written async code in JavaScript, Python, or Java, the concepts here transfer directly. The mechanics differ in ways that matter. This chapter covers what you need to know to read and write async code in FlexPM.
+If you have written async code in JavaScript, Python, or Java, the concepts here transfer directly. The mechanics differ in ways that matter. This chapter covers what you need to know to read and write async code in Tack.
 
 ---
 
@@ -13,12 +13,12 @@ If you have written async code in JavaScript, Python, or Java, the concepts here
 | Node.js | libuv | No — it is baked in |
 | Python | asyncio | No — it is in the stdlib |
 | Java | ForkJoinPool / virtual threads | Somewhat — you configure it |
-| Rust | *none built in* | Yes — FlexPM uses Tokio |
+| Rust | *none built in* | Yes — Tack uses Tokio |
 
-FlexPM uses [Tokio](https://tokio.rs/), the most widely used async runtime in the Rust ecosystem. The entry point of the server annotates `main` with `#[tokio::main]`:
+Tack uses [Tokio](https://tokio.rs/), the most widely used async runtime in the Rust ecosystem. The entry point of the server annotates `main` with `#[tokio::main]`:
 
 ```rust
-// crates/flexpm-api/src/main.rs
+// crates/tack-api/src/main.rs
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -61,7 +61,7 @@ This laziness is a feature. It means you can construct, compose, and cancel futu
 
 ---
 
-## Why this matters for FlexPM
+## Why this matters for Tack
 
 Every interaction with the database or network is async. The `sqlx` queries do not block a thread while waiting for disk I/O — they yield control to Tokio, which runs other tasks in the meantime:
 
@@ -75,7 +75,7 @@ let item = state.repo.get_item(id).await?;
 
 The Axum HTTP server is also fully async. A server handling 1,000 concurrent connections does not need 1,000 threads — Tokio multiplexes them on a small thread pool (by default, one thread per CPU core).
 
-The WebSocket handler in `crates/flexpm-api/src/handlers/websocket.rs` is the clearest example of the async model in action:
+The WebSocket handler in `crates/tack-api/src/handlers/websocket.rs` is the clearest example of the async model in action:
 
 ```rust
 async fn handle_socket(socket: WebSocket, project_id: Uuid, state: AppState) {
@@ -127,7 +127,7 @@ tokio::spawn(async move {
 });
 ```
 
-The spawned task runs independently of the caller. `tokio::spawn` returns a `JoinHandle<T>` that you can `.await` to get the result, or ignore if you do not care when it finishes. In FlexPM's WebSocket handler, `tokio::select!` waits for the first of two tasks to complete, then cleans up the other.
+The spawned task runs independently of the caller. `tokio::spawn` returns a `JoinHandle<T>` that you can `.await` to get the result, or ignore if you do not care when it finishes. In Tack's WebSocket handler, `tokio::select!` waits for the first of two tasks to complete, then cleans up the other.
 
 ---
 

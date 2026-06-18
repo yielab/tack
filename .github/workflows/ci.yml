@@ -97,16 +97,16 @@ jobs:
           name: frontend-dist
           path: frontend/dist/
       - name: Clippy with embed-spa
-        run: cargo clippy -p flexpm-api --features embed-spa -- -D warnings
+        run: cargo clippy -p tack-api --features embed-spa -- -D warnings
       - name: Test with embed-spa
-        run: cargo test -p flexpm-api --features embed-spa
+        run: cargo test -p tack-api --features embed-spa
       - name: Build release binary
-        run: cargo build -p flexpm-api --release --features embed-spa
+        run: cargo build -p tack-api --release --features embed-spa
       - name: Report binary size
         run: |
-          SIZE=$(stat -c%s target/release/flexpm-api)
+          SIZE=$(stat -c%s target/release/tack-api)
           MB=$(echo "scale=1; $SIZE / 1048576" | bc)
-          echo "flexpm-api binary: $SIZE bytes (${MB} MB)"
+          echo "tack-api binary: $SIZE bytes (${MB} MB)"
 
   security:
     name: Security (dependency audit)
@@ -140,7 +140,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Pre-build API (warms the cache the Playwright webServer reuses)
-        run: cargo build -p flexpm-api
+        run: cargo build -p tack-api
       - uses: actions/setup-node@v4
         with:
           node-version: "20"

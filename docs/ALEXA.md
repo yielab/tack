@@ -1,6 +1,6 @@
 # Alexa Voice Integration
 
-FlexPM can receive commands from an Amazon Alexa custom skill via
+Tack can receive commands from an Amazon Alexa custom skill via
 `POST /api/alexa`. You can add tasks, list open work, and complete items by
 voice — using the same workflow validation (transitions, WIP limits,
 auto-parent-completion) as the web UI, and broadcasting the same WebSocket
@@ -36,10 +36,10 @@ Notes:
 Set the skill ID (found in the Alexa developer console, `amzn1.ask.skill.…`):
 
 ```bash
-FLEXPM_ALEXA_SKILL_ID=amzn1.ask.skill.xxxx-xxxx cargo run --bin flexpm-api
+TACK_ALEXA_SKILL_ID=amzn1.ask.skill.xxxx-xxxx cargo run --bin tack-api
 ```
 
-or in `flexpm.toml`:
+or in `tack.toml`:
 
 ```toml
 alexa_skill_id = "amzn1.ask.skill.xxxx-xxxx"
@@ -61,10 +61,10 @@ alongside the app, so the public endpoint comes up with a single command.
 - **Timestamp check** — requests older (or newer) than 150 seconds are
   rejected (`400`), preventing replays. This is Alexa's own tolerance window.
 - **Bearer-token exemption** — Alexa cannot send custom headers, so
-  `/api/alexa` is exempt from the `FLEXPM_API_TOKEN` gate; the skill-ID check
+  `/api/alexa` is exempt from the `TACK_API_TOKEN` gate; the skill-ID check
   is its authentication.
 
-**Limitation:** FlexPM does not validate Amazon's request signature
+**Limitation:** Tack does not validate Amazon's request signature
 (`SignatureCertChainUrl` X.509 chain). That is required for *certified* skills
 published in the Alexa store, but personal/development skills work without it.
 For a self-hosted deployment, keep the endpoint URL private and always serve
@@ -227,7 +227,7 @@ tareas pendientes".
 You can exercise the endpoint with `curl` (timestamp must be current):
 
 ```bash
-curl -s https://flexpm.test/api/alexa \
+curl -s https://tack.test/api/alexa \
   -H 'Content-Type: application/json' \
   -d '{
     "version": "1.0",

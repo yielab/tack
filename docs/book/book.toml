@@ -1,7 +1,7 @@
 [book]
-title = "FlexPM Documentation"
+title = "Tack Documentation"
 authors = ["Santiago Yie"]
-description = "User guide, developer guide, learning path, and roadmap for FlexPM"
+description = "User guide, developer guide, learning path, and roadmap for Tack"
 src = "src"
 language = "en"
 

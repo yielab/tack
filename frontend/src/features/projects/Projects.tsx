@@ -48,7 +48,7 @@ const Projects: Component = () => {
                 Track any kind of work — your terms, your workflow
               </h2>
               <p class="max-w-md mb-8" style={{ color: 'var(--color-text-secondary)' }}>
-                FlexPM adapts to software teams, construction projects, personal tasks, and more.
+                Tack adapts to software teams, construction projects, personal tasks, and more.
                 Create your first project to get started.
               </p>
               <div class="flex flex-col sm:flex-row gap-3">

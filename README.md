@@ -1,4 +1,4 @@
-# FlexPM
+# Tack
 
 [![CI](https://github.com/santiagoyie/FlexPM/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/santiagoyie/FlexPM/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -36,19 +36,19 @@ Supports any workflow — Scrum, Kanban, phase-based construction, personal task
 The release binary (~5 MB, statically linked) embeds the web UI, the REST API, and the SQLite engine. There is nothing else to install or run.
 
 ```bash
-./flexpm-api   # serves the UI at http://localhost:3210 and the API at :3210/api
+./tack-api   # serves the UI at http://localhost:3210 and the API at :3210/api
 ```
 
-Your data is two paths: `flexpm.db` and a `storage/` folder for attachments — both next to the binary. Copy those two to back up everything. Move them to migrate.
+Your data is two paths: `tack.db` and a `storage/` folder for attachments — both next to the binary. Copy those two to back up everything. Move them to migrate.
 
 ### API & CLI — drive it from a terminal or a script
 
 - **64 REST endpoints** — full CRUD for all entities plus debug and diagnostic routes
-- **CLI** (`flexpm`) with `--json` output and shell completions (bash/zsh/fish)
+- **CLI** (`tack`) with `--json` output and shell completions (bash/zsh/fish)
 - **GitHub Issues import** — fetch from any public or private repo; label filter, PAT, cursor pagination
 - **Linear import** — fetch via Linear's GraphQL API; team/project filter, label filter, priority mapping
 - **Outbound webhooks** — POST events to any URL on item changes, sprint starts, and due-soon alerts; HMAC-SHA256 signing
-- **Optional Bearer token** auth (`FLEXPM_API_TOKEN`)
+- **Optional Bearer token** auth (`TACK_API_TOKEN`)
 
 ### Views
 
@@ -91,7 +91,7 @@ Your data is two paths: `flexpm.db` and a `storage/` folder for attachments — 
 
 ## Status & Limitations
 
-FlexPM is in **beta**. Core features are complete; a few constraints to know upfront:
+Tack is in **beta**. Core features are complete; a few constraints to know upfront:
 
 | Area | Current State |
 | --- | --- |
@@ -99,7 +99,7 @@ FlexPM is in **beta**. Core features are complete; a few constraints to know upf
 | Multi-user | No per-user identities or permissions. All API clients share the same access level. "Small team" means a few trusted people sharing one token, not an org with roles and ACLs. |
 | Multi-device sync | None — single server, single database. Your data stays on your machine; there is no sync or replication between instances. |
 | Mobile | Responsive web UI works on mobile browsers; no native app. |
-| Binary signing | Not code-signed yet. macOS: `right-click → Open` on first run (or `xattr -d com.apple.quarantine flexpm-api`). Windows: `More info → Run anyway` if SmartScreen appears. Roadmap item. |
+| Binary signing | Not code-signed yet. macOS: `right-click → Open` on first run (or `xattr -d com.apple.quarantine tack-api`). Windows: `More info → Run anyway` if SmartScreen appears. Roadmap item. |
 | Offline | No offline client — the browser UI requires the local server to be running. |
 
 ---
@@ -108,7 +108,7 @@ FlexPM is in **beta**. Core features are complete; a few constraints to know upf
 
 Existing PM tools either lock you into one workflow (Jira), require accounts and cloud infrastructure (Linear, Asana, ClickUp), or hit a customization ceiling that does not extend to non-software domains (Trello). I wanted something I could run locally as a single binary, fully customizable per project — the same tool for software sprints, a kitchen renovation, or thesis chapters.
 
-FlexPM is also a deliberate exploration of stacks. Rust (Axum, sqlx), modular crate architecture with strict layering (no I/O in the domain crate), and SolidJS are all areas I wanted to work with in a project of meaningful scope.
+Tack is also a deliberate exploration of stacks. Rust (Axum, sqlx), modular crate architecture with strict layering (no I/O in the domain crate), and SolidJS are all areas I wanted to work with in a project of meaningful scope.
 
 ### Why Rust?
 
@@ -116,7 +116,7 @@ The honest answer is split between technical fit and deliberate learning.
 
 **Technical fit:** A self-hosted tool that ships as a single binary with no runtime dependencies and a SQLite file as its only data store is a genuinely good fit for Rust. The binary is ~5 MB statically linked, starts in milliseconds, and uses negligible memory at rest.
 
-**Learning purpose:** My day-to-day work runs on more standard stacks. I picked Rust specifically because it forces explicit thinking about things those languages abstract away — memory layout, async runtimes, error propagation without exceptions. FlexPM was scoped large enough to encounter those problems in real form: async handlers, a multi-crate workspace with strict layering, compile-time SQL, a broadcast channel for WebSockets. A todo-list tutorial would not have surfaced any of that.
+**Learning purpose:** My day-to-day work runs on more standard stacks. I picked Rust specifically because it forces explicit thinking about things those languages abstract away — memory layout, async runtimes, error propagation without exceptions. Tack was scoped large enough to encounter those problems in real form: async handlers, a multi-crate workspace with strict layering, compile-time SQL, a broadcast channel for WebSockets. A todo-list tutorial would not have surfaced any of that.
 
 ---
 
@@ -126,29 +126,29 @@ The honest answer is split between technical fit and deliberate learning.
 
 Grab the archive for your system from the [**releases page**](https://github.com/santiagoyie/FlexPM/releases), extract it, and run the server — everything (UI, API, database engine) is inside one file.
 
-> FlexPM is currently in **beta** — these builds are published for testing. If something breaks, please [open an issue](https://github.com/santiagoyie/FlexPM/issues).
+> Tack is currently in **beta** — these builds are published for testing. If something breaks, please [open an issue](https://github.com/santiagoyie/FlexPM/issues).
 
 | System | File |
 | --- | --- |
-| Linux (x86_64) | `flexpm-vX.Y.Z-linux-x86_64.tar.gz` |
-| macOS (Apple Silicon) | `flexpm-vX.Y.Z-macos-aarch64.tar.gz` |
-| macOS (Intel) | `flexpm-vX.Y.Z-macos-x86_64.tar.gz` |
-| Windows (x86_64) | `flexpm-vX.Y.Z-windows-x86_64.zip` |
+| Linux (x86_64) | `tack-vX.Y.Z-linux-x86_64.tar.gz` |
+| macOS (Apple Silicon) | `tack-vX.Y.Z-macos-aarch64.tar.gz` |
+| macOS (Intel) | `tack-vX.Y.Z-macos-x86_64.tar.gz` |
+| Windows (x86_64) | `tack-vX.Y.Z-windows-x86_64.zip` |
 
 **Linux / macOS:**
 
 ```bash
-tar xzf flexpm-*.tar.gz && cd flexpm-*/
-./flexpm-api
+tar xzf tack-*.tar.gz && cd tack-*/
+./tack-api
 ```
 
-**Windows:** extract the zip and double-click `flexpm-api.exe`.
+**Windows:** extract the zip and double-click `tack-api.exe`.
 
-Then open **`http://localhost:3210`** in your browser. Your data lives in `flexpm.db` (plus a `storage/` folder for attachments) next to the binary — back up those files and you've backed up everything.
+Then open **`http://localhost:3210`** in your browser. Your data lives in `tack.db` (plus a `storage/` folder for attachments) next to the binary — back up those files and you've backed up everything.
 
-> **First-run warnings:** the binaries are not code-signed yet. On macOS, right-click `flexpm-api` → **Open** the first time (or run `xattr -d com.apple.quarantine flexpm-api`). On Windows, click **More info → Run anyway** if SmartScreen appears.
+> **First-run warnings:** the binaries are not code-signed yet. On macOS, right-click `tack-api` → **Open** the first time (or run `xattr -d com.apple.quarantine tack-api`). On Windows, click **More info → Run anyway** if SmartScreen appears.
 
-Each archive also includes `flexpm`, the optional [CLI client](#cli).
+Each archive also includes `tack`, the optional [CLI client](#cli).
 
 ### Build it yourself (single binary)
 
@@ -156,7 +156,7 @@ Each archive also includes `flexpm`, the optional [CLI client](#cli).
 
 ```bash
 git clone https://github.com/santiagoyie/FlexPM.git
-cd FlexPM
+cd Tack
 make build   # compile: builds frontend then embeds it into the release binary (~30s)
 make run     # start: launches the pre-built binary, nothing is recompiled
 ```
@@ -190,49 +190,49 @@ make help         # full command list
 
 ## CLI
 
-The `flexpm` CLI talks to a running API server.
+The `tack` CLI talks to a running API server.
 
 ```bash
 # Point at the server (default: http://127.0.0.1:3210)
-export FLEXPM_API_URL=http://127.0.0.1:3210
+export TACK_API_URL=http://127.0.0.1:3210
 
 # Projects
-flexpm init "Kitchen Reno" --type construction
-flexpm projects
+tack init "Kitchen Reno" --type construction
+tack projects
 
 # Items
-flexpm add "Design login page" --project <id> --type task --priority high
-flexpm list --project <id>
-flexpm move <item-id> "In Progress"
+tack add "Design login page" --project <id> --type task --priority high
+tack list --project <id>
+tack move <item-id> "In Progress"
 
 # Sprints
-flexpm sprint create --project <id> --name "Sprint 1"
-flexpm sprint start <sprint-id>
-flexpm sprint close <sprint-id>
+tack sprint create --project <id> --name "Sprint 1"
+tack sprint start <sprint-id>
+tack sprint close <sprint-id>
 
 # Templates
-flexpm template list
-flexpm template show <template-id>
-flexpm template create-from <template-id> "My New Project"
+tack template list
+tack template show <template-id>
+tack template create-from <template-id> "My New Project"
 
 # Roles, comments, custom fields
-flexpm role create --project <id> --name "Designer"
-flexpm comment create <item-id> --content "Looks good"
-flexpm field create --project <id> --name "Story Points" --type number
-flexpm field set <item-id> <field-id> 5
+tack role create --project <id> --name "Designer"
+tack comment create <item-id> --content "Looks good"
+tack field create --project <id> --name "Story Points" --type number
+tack field set <item-id> <field-id> 5
 
 # Backup and restore
-flexpm backup                        # saves flexpm-backup.db in the current directory
-flexpm backup --path /safe/place.db  # custom path
-flexpm restore /safe/place.db        # stages the restore; restart the server to apply
+tack backup                        # saves tack-backup.db in the current directory
+tack backup --path /safe/place.db  # custom path
+tack restore /safe/place.db        # stages the restore; restart the server to apply
 
 # Config
-flexpm config --url http://myserver:3210 --token mytoken
-flexpm config --show
+tack config --url http://myserver:3210 --token mytoken
+tack config --show
 
 # Shell completions
-flexpm completions bash >> ~/.bashrc
-flexpm completions zsh  >> ~/.zshrc
+tack completions bash >> ~/.bashrc
+tack completions zsh  >> ~/.zshrc
 ```
 
 All commands support `--json` for machine-readable output.
@@ -270,7 +270,7 @@ Base URL: `http://127.0.0.1:3210/api`
 | `POST /restore` | Stage a backup file for next-startup restore |
 | `GET /projects/{id}/search?q=term` | FTS5 full-text search |
 | `GET /search?q=term` | Global search across all projects |
-| `POST /alexa` | Alexa skill webhook (requires `FLEXPM_ALEXA_SKILL_ID`) |
+| `POST /alexa` | Alexa skill webhook (requires `TACK_ALEXA_SKILL_ID`) |
 
 See [API Reference](docs/API-REFERENCE.md) for the full endpoint list.
 
@@ -309,34 +309,34 @@ curl -s -X POST $BASE/projects/$PID/import-github \
 
 ## Configuration
 
-`flexpm.toml` in the working directory, or environment variables:
+`tack.toml` in the working directory, or environment variables:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `FLEXPM_HOST` | `127.0.0.1` | Bind address |
-| `FLEXPM_PORT` | `3210` | Port |
-| `FLEXPM_DATABASE_URL` | `sqlite:flexpm.db?mode=rwc` | SQLite path |
-| `FLEXPM_LOG_LEVEL` | `info` | `trace` · `debug` · `info` · `warn` · `error` |
-| `FLEXPM_LOG_JSON` | `false` | Structured JSON logs |
-| `FLEXPM_LOG_FILE` | _(none)_ | Optional log file |
-| `FLEXPM_STORAGE_DIR` | `./storage` | Attachment storage |
-| `FLEXPM_API_TOKEN` | _(none)_ | Bearer token — required on all `/api/*` requests when set |
-| `FLEXPM_ALLOWED_ORIGINS` | `localhost:5173,127.0.0.1:5173,...` | CORS allow-list |
-| `FLEXPM_MAX_BODY_SIZE` | `2097152` | Global body limit (bytes); upload routes always 50 MB |
-| `FLEXPM_ALEXA_SKILL_ID` | _(none)_ | Enables `POST /api/alexa`; endpoint returns 404 when unset |
-| `FLEXPM_WEBHOOK_URL` | _(none)_ | Outbound webhook destination; off when unset |
-| `FLEXPM_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 signing key for webhook payloads |
+| `TACK_HOST` | `127.0.0.1` | Bind address |
+| `TACK_PORT` | `3210` | Port |
+| `TACK_DATABASE_URL` | `sqlite:tack.db?mode=rwc` | SQLite path |
+| `TACK_LOG_LEVEL` | `info` | `trace` · `debug` · `info` · `warn` · `error` |
+| `TACK_LOG_JSON` | `false` | Structured JSON logs |
+| `TACK_LOG_FILE` | _(none)_ | Optional log file |
+| `TACK_STORAGE_DIR` | `./storage` | Attachment storage |
+| `TACK_API_TOKEN` | _(none)_ | Bearer token — required on all `/api/*` requests when set |
+| `TACK_ALLOWED_ORIGINS` | `localhost:5173,127.0.0.1:5173,...` | CORS allow-list |
+| `TACK_MAX_BODY_SIZE` | `2097152` | Global body limit (bytes); upload routes always 50 MB |
+| `TACK_ALEXA_SKILL_ID` | _(none)_ | Enables `POST /api/alexa`; endpoint returns 404 when unset |
+| `TACK_WEBHOOK_URL` | _(none)_ | Outbound webhook destination; off when unset |
+| `TACK_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 signing key for webhook payloads |
 
-Example `flexpm.toml`:
+Example `tack.toml`:
 
 ```toml
 host = "127.0.0.1"
 port = 3210
-database_url = "sqlite:flexpm.db?mode=rwc"
+database_url = "sqlite:tack.db?mode=rwc"
 log_level = "info"
 storage_dir = "./storage"
 # api_token = "change-me"
-# webhook_url = "https://hooks.example.com/flexpm"
+# webhook_url = "https://hooks.example.com/tack"
 # webhook_secret = "change-me"
 # alexa_skill_id = "amzn1.ask.skill.xxxxxxxx"
 ```
@@ -393,7 +393,7 @@ curl -X PATCH http://localhost:3210/api/projects/$PID \
 
 ## Webhooks
 
-Set `FLEXPM_WEBHOOK_URL` to receive POST events on every significant state change:
+Set `TACK_WEBHOOK_URL` to receive POST events on every significant state change:
 
 | Event | Trigger |
 | --- | --- |
@@ -404,7 +404,7 @@ Set `FLEXPM_WEBHOOK_URL` to receive POST events on every significant state chang
 | `sprint.completed` | Sprint moved to Closed |
 | `item.due_soon` | Item due within the next hour (checked hourly) |
 
-Payloads are signed when `FLEXPM_WEBHOOK_SECRET` is set — verify with the `X-FlexPM-Signature: sha256=<hex>` header. Delivery is fire-and-forget; errors are logged and never surfaced to API callers.
+Payloads are signed when `TACK_WEBHOOK_SECRET` is set — verify with the `X-Tack-Signature: sha256=<hex>` header. Delivery is fire-and-forget; errors are logged and never surfaced to API callers.
 
 ---
 
@@ -421,7 +421,7 @@ curl -X POST http://localhost:3210/api/restore \
 # → {"status":"staged","message":"Restore staged. Stop the server and restart to apply."}
 
 # On next server start, the staged file is applied automatically.
-# The previous database is moved to flexpm.db.bak.
+# The previous database is moved to tack.db.bak.
 ```
 
 ---
@@ -433,16 +433,16 @@ curl -X POST http://localhost:3210/api/restore \
 cargo test --workspace
 
 # With embed-spa feature (requires frontend/dist/ to exist)
-cargo test -p flexpm-api --features embed-spa
+cargo test -p tack-api --features embed-spa
 
 # Single crate
-cargo test -p flexpm-core   # 67 unit tests
-cargo test -p flexpm-db     # 22 integration tests
-cargo test -p flexpm-api    # 70 tests (17 unit + 17 Alexa + 36 handler)
-cargo test -p flexpm-cli    # 11 CLI tests
+cargo test -p tack-core   # 67 unit tests
+cargo test -p tack-db     # 22 integration tests
+cargo test -p tack-api    # 70 tests (17 unit + 17 Alexa + 36 handler)
+cargo test -p tack-cli    # 11 CLI tests
 
 # Run the ignored 50k-item performance test
-cargo test -p flexpm-db list_items_p95 -- --ignored
+cargo test -p tack-db list_items_p95 -- --ignored
 
 # Frontend tests (144 Vitest unit tests)
 cd frontend && npm test
@@ -472,16 +472,16 @@ the policy for tracking justified advisory/a11y exceptions.
 
 ```text
 crates/
-├── flexpm-core/     Pure domain logic — no I/O
+├── tack-core/     Pure domain logic — no I/O
 │   ├── models.rs    All entities, DTOs, and custom field validation
 │   ├── workflow.rs  Transition validation, WIP limits, presets
 │   ├── vocabulary.rs Customizable term mapping
 │   ├── dependency.rs DAG with cycle detection
 │   └── error.rs     Typed domain errors
-├── flexpm-db/       SQLite persistence (sqlx, async)
+├── tack-db/       SQLite persistence (sqlx, async)
 │   ├── migrations.rs 16 migrations, FTS5, WAL mode
 │   └── repo/        Repository pattern per entity
-├── flexpm-api/      Axum HTTP server + WebSocket
+├── tack-api/      Axum HTTP server + WebSocket
 │   ├── router.rs    All routes, middleware, AppState
 │   ├── handlers/    One module per entity
 │   │   ├── alexa.rs         Voice skill endpoint
@@ -503,7 +503,7 @@ crates/
 │   ├── config.rs    TOML + env config
 │   ├── webhook.rs   Outbound webhook delivery
 │   └── debug.rs     Health and diagnostics
-└── flexpm-cli/      clap CLI — talks to the API over HTTP
+└── tack-cli/      clap CLI — talks to the API over HTTP
 
 frontend/
 ├── src/
@@ -518,12 +518,12 @@ frontend/
 ### Crate dependency rules
 
 ```text
-flexpm-core  ← no deps on other crates (pure logic)
+tack-core  ← no deps on other crates (pure logic)
      ↑
-flexpm-db    ← adds SQLite I/O
+tack-db    ← adds SQLite I/O
      ↑
-flexpm-api   ← adds HTTP transport
-flexpm-cli   ← talks to flexpm-api over HTTP (no DB access)
+tack-api   ← adds HTTP transport
+tack-cli   ← talks to tack-api over HTTP (no DB access)
 ```
 
 ---
@@ -542,7 +542,7 @@ flexpm-cli   ← talks to flexpm-api over HTTP (no DB access)
 
 ```bash
 git clone https://github.com/santiagoyie/FlexPM.git
-cd FlexPM
+cd Tack
 
 # Activate the pre-push hook (runs fmt + clippy before every push)
 git config core.hooksPath .githooks

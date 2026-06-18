@@ -93,30 +93,30 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Build release binaries
-        run: cargo build --release --target ${{ matrix.target }} -p flexpm-api -p flexpm-cli --features flexpm-api/embed-spa
+        run: cargo build --release --target ${{ matrix.target }} -p tack-api -p tack-cli --features tack-api/embed-spa
 
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'
         run: |
-          STAGE="flexpm-${GITHUB_REF_NAME}-${{ matrix.platform }}"
+          STAGE="tack-${GITHUB_REF_NAME}-${{ matrix.platform }}"
           mkdir "$STAGE"
-          cp "target/${{ matrix.target }}/release/flexpm-api" "$STAGE/"
-          cp "target/${{ matrix.target }}/release/flexpm" "$STAGE/"
+          cp "target/${{ matrix.target }}/release/tack-api" "$STAGE/"
+          cp "target/${{ matrix.target }}/release/tack" "$STAGE/"
           cp LICENSE README.md "$STAGE/"
           cat > "$STAGE/QUICKSTART.txt" <<'EOF'
-          FlexPM — Quick Start
+          Tack — Quick Start
           ====================
 
-          1. Run the server:        ./flexpm-api
+          1. Run the server:        ./tack-api
           2. Open your browser at:  http://localhost:3210
           3. Stop with Ctrl+C.
 
-          Your data is stored in flexpm.db (and ./storage for attachments)
+          Your data is stored in tack.db (and ./storage for attachments)
           in the directory where you run the server. Keep those files to
           keep your projects.
 
-          The "flexpm" binary is an optional command-line client.
-          Run "./flexpm --help" while the server is running.
+          The "tack" binary is an optional command-line client.
+          Run "./tack --help" while the server is running.
           EOF
           tar czf "$STAGE.tar.gz" "$STAGE"
           echo "ASSET=$STAGE.tar.gz" >> "$GITHUB_ENV"
@@ -125,28 +125,28 @@ jobs:
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
-          $stage = "flexpm-$env:GITHUB_REF_NAME-${{ matrix.platform }}"
+          $stage = "tack-$env:GITHUB_REF_NAME-${{ matrix.platform }}"
           New-Item -ItemType Directory -Path $stage | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/flexpm-api.exe" $stage
-          Copy-Item "target/${{ matrix.target }}/release/flexpm.exe" $stage
+          Copy-Item "target/${{ matrix.target }}/release/tack-api.exe" $stage
+          Copy-Item "target/${{ matrix.target }}/release/tack.exe" $stage
           Copy-Item LICENSE, README.md $stage
           @"
-          FlexPM — Quick Start
+          Tack — Quick Start
           ====================
 
-          1. Double-click flexpm-api.exe (a console window opens).
+          1. Double-click tack-api.exe (a console window opens).
           2. Open your browser at:  http://localhost:3210
           3. Close the console window to stop the server.
 
           If Windows SmartScreen warns about an unrecognized app, click
           "More info" then "Run anyway".
 
-          Your data is stored in flexpm.db (and the storage folder for
+          Your data is stored in tack.db (and the storage folder for
           attachments) next to the .exe. Keep those files to keep your
           projects.
 
-          flexpm.exe is an optional command-line client.
-          Run "flexpm.exe --help" while the server is running.
+          tack.exe is an optional command-line client.
+          Run "tack.exe --help" while the server is running.
           "@ | Set-Content "$stage/QUICKSTART.txt"
           Compress-Archive -Path $stage -DestinationPath "$stage.zip"
           "ASSET=$stage.zip" | Out-File -FilePath $env:GITHUB_ENV -Append

@@ -1,4 +1,4 @@
-# FlexPM API Reference
+# Tack API Reference
 
 **Version:** 1.2
 **Base URL:** `http://localhost:3210/api`
@@ -1095,8 +1095,8 @@ Receives requests from an Amazon Alexa custom skill and maps voice intents onto
 the regular item/workflow logic. See [ALEXA.md](ALEXA.md) for skill setup and
 the interaction model.
 
-**Enabling:** disabled by default. Set `FLEXPM_ALEXA_SKILL_ID` (or
-`alexa_skill_id` in `flexpm.toml`) to your skill's ID (`amzn1.ask.skill.…`).
+**Enabling:** disabled by default. Set `TACK_ALEXA_SKILL_ID` (or
+`alexa_skill_id` in `tack.toml`) to your skill's ID (`amzn1.ask.skill.…`).
 
 **Authentication:** this route is exempt from the Bearer-token gate (Alexa
 cannot send custom headers). Instead, every request's embedded
@@ -1131,7 +1131,7 @@ HTTP errors are reserved for verification failures:
 
 ## Remote Cloud Backup
 
-Requires `FLEXPM_BACKUP_BUCKET`, `FLEXPM_BACKUP_ACCESS_KEY`, and `FLEXPM_BACKUP_SECRET_KEY`
+Requires `TACK_BACKUP_BUCKET`, `TACK_BACKUP_ACCESS_KEY`, and `TACK_BACKUP_SECRET_KEY`
 to be set (see [configuration](../CLAUDE.md)). All three endpoints return `409 Conflict`
 when remote backup is not configured.
 
@@ -1143,7 +1143,7 @@ POST /api/backup/remote
 
 Creates a `.tar.zst` bundle of the SQLite database + attachments directory and uploads
 it to the configured S3-compatible bucket. Prunes old backups to keep only
-`FLEXPM_BACKUP_RETENTION` (default 10) copies.
+`TACK_BACKUP_RETENTION` (default 10) copies.
 
 **Response `200`:**
 ```json
@@ -1154,7 +1154,7 @@ it to the configured S3-compatible bucket. Prunes old backups to keep only
   "db_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "install_id": "a1b2c3d4-...",
   "item_count": 42,
-  "object_key": "flexpm/flexpm-backup-2026-06-12T15-04-05+00-00Z.tar.zst",
+  "object_key": "tack/tack-backup-2026-06-12T15-04-05+00-00Z.tar.zst",
   "bundle_size_bytes": 1048576
 }
 ```
@@ -1176,21 +1176,21 @@ manifests (no full bundle download needed).
 POST /api/backup/remote/restore
 Content-Type: application/json
 
-{ "key": "flexpm/flexpm-backup-2026-06-12T15-04-05+00-00Z.tar.zst" }
+{ "key": "tack/tack-backup-2026-06-12T15-04-05+00-00Z.tar.zst" }
 ```
 
 Downloads the bundle and stages it for the next server restart. Omit `key` (or send
 an empty body) to restore the latest backup automatically.
 
 **Rejection:** returns `409 Conflict` when the snapshot's `migration_version` is
-higher than the running binary's — upgrade FlexPM before restoring.
+higher than the running binary's — upgrade Tack before restoring.
 
 **Response `200`:**
 ```json
 {
   "staged": true,
   "restart_required": true,
-  "object_key": "flexpm/flexpm-backup-2026-06-12T15-04-05+00-00Z.tar.zst",
+  "object_key": "tack/tack-backup-2026-06-12T15-04-05+00-00Z.tar.zst",
   "message": "Restore staged. Restart the server to apply."
 }
 ```
@@ -1262,7 +1262,7 @@ For production deployments, consider adding rate limiting at the reverse proxy l
 
 **Current Status:** CORS enabled for all origins (development mode)
 
-For production, configure `FLEXPM_CORS_ORIGIN` environment variable to restrict origins.
+For production, configure `TACK_CORS_ORIGIN` environment variable to restrict origins.
 
 ---
 
@@ -1303,7 +1303,7 @@ GET /api/debug/info
 ```json
 {
   "version": "1.0.0",
-  "database": "sqlite:flexpm.db",
+  "database": "sqlite:tack.db",
   "log_level": "debug",
   "storage_dir": "./storage"
 }

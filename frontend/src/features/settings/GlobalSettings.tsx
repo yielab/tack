@@ -37,7 +37,7 @@ const GlobalSettings: Component = () => {
     setBackingUp(true);
     try {
       const blob = await api.data.backup();
-      downloadBlob(blob, 'flexpm-backup.db');
+      downloadBlob(blob, 'tack-backup.db');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Backup failed');
     } finally {

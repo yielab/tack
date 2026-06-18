@@ -1,6 +1,6 @@
 # Views
 
-FlexPM has five **work tabs** — Board, List, Calendar, Timeline, Sprint — all showing the same
+Tack has five **work tabs** — Board, List, Calendar, Timeline, Sprint — all showing the same
 item set. Switching between tabs never re-fetches data; an item created on the Board appears
 immediately in every other view. A sixth screen, **Overview (Dashboard)**, is accessible from
 the sidebar and shows project statistics.

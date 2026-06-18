@@ -95,7 +95,7 @@ Categories drive reporting (cycle time, throughput) and auto-complete logic. Onl
 
 ## Auto-Complete (Parent Rollup)
 
-When an item moves to a `done` column, FlexPM checks whether all siblings under the same parent are also done. If they are, the parent auto-moves to its own done column. This cascades up the hierarchy.
+When an item moves to a `done` column, Tack checks whether all siblings under the same parent are also done. If they are, the parent auto-moves to its own done column. This cascades up the hierarchy.
 
 **Example:**
 

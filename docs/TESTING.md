@@ -1,8 +1,8 @@
-# FlexPM Testing Guide
+# Tack Testing Guide
 
 **Rust tests:** 164 passing + 1 `#[ignore]` perf test (`cargo test --workspace`)
 **Frontend tests:** 144 Vitest unit tests (`cd frontend && npm test`)
-**With embed-spa feature:** ~167 tests (`cargo test -p flexpm-api --features embed-spa`)
+**With embed-spa feature:** ~167 tests (`cargo test -p tack-api --features embed-spa`)
 
 ## Quick start
 
@@ -17,10 +17,10 @@ cargo test --workspace -- --nocapture
 cargo test test_workflow_transition_validation
 
 # One crate
-cargo test -p flexpm-core
-cargo test -p flexpm-db
-cargo test -p flexpm-api
-cargo test -p flexpm-cli
+cargo test -p tack-core
+cargo test -p tack-db
+cargo test -p tack-api
+cargo test -p tack-cli
 
 # Frontend
 cd frontend && npm test
@@ -34,24 +34,24 @@ Integration tests use in-memory SQLite — no external services needed.
 
 | Crate | Count | Type |
 | --- | --- | --- |
-| `flexpm-core` | 67 | Unit tests (`#[cfg(test)]` in source files) |
-| `flexpm-db` | 22 | Integration tests in `tests/integration_test.rs` |
-| `flexpm-db` | 1 | Performance test (`#[ignore]`, seeds 50k items) |
-| `flexpm-api` | 36 | Handler integration tests in `tests/api_test.rs` |
-| `flexpm-api` | 17 | Alexa endpoint tests in `tests/alexa_test.rs` |
-| `flexpm-api` | 11 | Unit tests (middleware, GitHub URL parsing) |
-| `flexpm-cli` | 11 | CLI tests (wiremock + unit) |
+| `tack-core` | 67 | Unit tests (`#[cfg(test)]` in source files) |
+| `tack-db` | 22 | Integration tests in `tests/integration_test.rs` |
+| `tack-db` | 1 | Performance test (`#[ignore]`, seeds 50k items) |
+| `tack-api` | 36 | Handler integration tests in `tests/api_test.rs` |
+| `tack-api` | 17 | Alexa endpoint tests in `tests/alexa_test.rs` |
+| `tack-api` | 11 | Unit tests (middleware, GitHub URL parsing) |
+| `tack-cli` | 11 | CLI tests (wiremock + unit) |
 | **Rust total** | **164** | |
 | Frontend | 144 | Vitest unit tests across 21 test files |
 
 ---
 
-## Core unit tests (`flexpm-core`)
+## Core unit tests (`tack-core`)
 
-Business logic lives in `flexpm-core` with no I/O. Tests go in the same file inside `#[cfg(test)]`.
+Business logic lives in `tack-core` with no I/O. Tests go in the same file inside `#[cfg(test)]`.
 
 ```bash
-cargo test -p flexpm-core   # 67 tests
+cargo test -p tack-core   # 67 tests
 ```
 
 Key test areas:
@@ -75,13 +75,13 @@ fn construction_workflow_rejects_skip() {
 
 ---
 
-## DB integration tests (`flexpm-db`)
+## DB integration tests (`tack-db`)
 
-Located in `crates/flexpm-db/tests/integration_test.rs`. Each test gets a fresh
+Located in `crates/tack-db/tests/integration_test.rs`. Each test gets a fresh
 in-memory SQLite database with all migrations applied via `setup_test_db()`.
 
 ```bash
-cargo test -p flexpm-db   # 22 tests + 1 ignored
+cargo test -p tack-db   # 22 tests + 1 ignored
 ```
 
 Covers: project CRUD, item hierarchy, sprint lifecycle, custom fields, boards,
@@ -92,7 +92,7 @@ templates, FTS5 search, dependency graph, assignee filtering, role assignment.
 Seeds 50k items in a single transaction and asserts `list_items` p95 < 100 ms:
 
 ```bash
-cargo test -p flexpm-db list_items_p95 -- --ignored
+cargo test -p tack-db list_items_p95 -- --ignored
 ```
 
 ### Test helpers (`tests/common/mod.rs`)
@@ -106,13 +106,13 @@ make_item(&repo, project_id) // creates an item in that project
 
 ---
 
-## API handler tests (`flexpm-api`)
+## API handler tests (`tack-api`)
 
-All tests in `crates/flexpm-api/tests/`. Uses `axum::Router::oneshot()` to fire
+All tests in `crates/tack-api/tests/`. Uses `axum::Router::oneshot()` to fire
 requests without binding a real port.
 
 ```bash
-cargo test -p flexpm-api   # 64 tests
+cargo test -p tack-api   # 64 tests
 ```
 
 ### API test helpers (`tests/common/mod.rs`)
@@ -144,7 +144,7 @@ test_app_with_file_db(db_url)     // file-based DB (needed for backup/restore te
 
 ### Alexa endpoint tests (`tests/alexa_test.rs`) — 17 tests
 
-- 404 when `FLEXPM_ALEXA_SKILL_ID` not configured
+- 404 when `TACK_ALEXA_SKILL_ID` not configured
 - Wrong skill ID rejected (403)
 - Timestamp tolerance enforcement
 - LaunchRequest welcome message (EN and ES)
@@ -162,17 +162,17 @@ test_app_with_file_db(db_url)     // file-based DB (needed for backup/restore te
 
 ```bash
 cd frontend && npm run build && cd ..
-cargo test -p flexpm-api --features embed-spa
+cargo test -p tack-api --features embed-spa
 ```
 
 ---
 
-## CLI tests (`flexpm-cli`)
+## CLI tests (`tack-cli`)
 
-Located in `crates/flexpm-cli/tests/cli_test.rs`. Uses `wiremock` to stub the API.
+Located in `crates/tack-cli/tests/cli_test.rs`. Uses `wiremock` to stub the API.
 
 ```bash
-cargo test -p flexpm-cli   # 11 tests
+cargo test -p tack-cli   # 11 tests
 ```
 
 Covers: `init`, `add`, `list`, `move`, sprint commands, global search, config save/load,
@@ -226,9 +226,9 @@ npm run build
 Runs after `frontend` finishes. Downloads the built dist artifact, then:
 
 ```bash
-cargo clippy -p flexpm-api --features embed-spa -- -D warnings
-cargo test -p flexpm-api --features embed-spa
-cargo build -p flexpm-api --release --features embed-spa
+cargo clippy -p tack-api --features embed-spa -- -D warnings
+cargo test -p tack-api --features embed-spa
+cargo build -p tack-api --release --features embed-spa
 # Reports binary size (~5 MB)
 ```
 
@@ -255,13 +255,13 @@ cargo llvm-cov --workspace --html --output-dir coverage/
 open coverage/index.html
 ```
 
-Targets: `flexpm-core` ≥ 85% lines, `flexpm-db` + `flexpm-api` ≥ 70% combined.
+Targets: `tack-core` ≥ 85% lines, `tack-db` + `tack-api` ≥ 70% combined.
 
 ---
 
 ## Manual smoke test
 
-With the server running (`cargo run --bin flexpm-api`):
+With the server running (`cargo run --bin tack-api`):
 
 ```bash
 BASE=http://localhost:3210/api
@@ -305,7 +305,7 @@ curl -s -X DELETE $BASE/projects/$PID
 
 ## End-to-end, accessibility & API-contract tests (Playwright)
 
-Browser-level tests that drive the **real** app — the `flexpm-api` server plus
+Browser-level tests that drive the **real** app — the `tack-api` server plus
 the Vite-served SPA — in Chromium, Firefox and WebKit. Playwright owns both
 server lifecycles, so a single command is all that's needed; the API runs
 against a throwaway `e2e.db` so your working database is never touched.
@@ -363,7 +363,7 @@ CI (needs a running server, time-consuming) — run on demand.
 
 ```bash
 # terminal 1: a server with a throwaway DB
-FLEXPM_DATABASE_URL='sqlite:load.db?mode=rwc' cargo run -p flexpm-api --release
+TACK_DATABASE_URL='sqlite:load.db?mode=rwc' cargo run -p tack-api --release
 # terminal 2:
 make load
 ```

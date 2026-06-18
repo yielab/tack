@@ -1,6 +1,6 @@
 # SolidJS for Frontend Developers
 
-FlexPM's frontend uses SolidJS. If you know React, the JSX syntax will feel familiar — but the execution model is fundamentally different. This chapter explains what changes and why it matters when reading FlexPM code.
+Tack's frontend uses SolidJS. If you know React, the JSX syntax will feel familiar — but the execution model is fundamentally different. This chapter explains what changes and why it matters when reading Tack code.
 
 ---
 
@@ -13,7 +13,7 @@ The surface similarity is deceptive. React and SolidJS both use JSX and look sim
 
 The mental model shift is from "what should render?" to "what will update?". Components are not render functions — they are setup functions that establish reactive bindings and return a DOM structure. After mount, the component function never runs again.
 
-This has practical consequences for reading FlexPM code:
+This has practical consequences for reading Tack code:
 - Variables declared inside a component do not "reset" on re-render — there is no re-render
 - Reactive values are signals, not state variables — you call them as functions to read them
 - Control flow uses dedicated components, not ternaries and `.map()`
@@ -39,7 +39,7 @@ The key differences:
 1. `count` in SolidJS is a getter function — you call it with `()` to read the current value. This is how SolidJS's reactivity system tracks which signals you read — it wraps reads in a subscription.
 2. When `setCount(1)` is called, SolidJS does not re-run the component function. It directly updates the DOM nodes that read `count()` and nothing else.
 
-You will see this throughout FlexPM's frontend. From `Board.tsx`:
+You will see this throughout Tack's frontend. From `Board.tsx`:
 
 ```tsx
 const [isDragging, setIsDragging] = createSignal(false)
@@ -296,7 +296,7 @@ Linking:
 
 ---
 
-## What to keep in mind when reading FlexPM code
+## What to keep in mind when reading Tack code
 
 - **`items()`** with parens — reading a signal. The value changes reactively; no re-render needed.
 - **Component functions run once** — anything in a component body runs at mount time, not on every update. If you want something to run reactively, it belongs in `createEffect`, `createMemo`, or JSX.

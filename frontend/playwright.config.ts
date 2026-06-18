@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// End-to-end tests drive the real app: the flexpm-api server + the Vite-served
+// End-to-end tests drive the real app: the tack-api server + the Vite-served
 // SPA, in a real browser. Playwright owns the lifecycle of both servers via the
 // `webServer` block below, so `npm run test:e2e` is the only command needed.
 //
@@ -50,21 +50,21 @@ export default defineConfig({
   webServer: [
     {
       // Run from frontend/ (the config dir) — NOT the repo root — so the e2e
-      // API does not pick up the repo-root flexpm.toml. Config::load() returns
-      // early when flexpm.toml exists and ignores all FLEXPM_* env vars, so the
-      // toml's absence here is what lets FLEXPM_PORT / DATABASE_URL take effect.
+      // API does not pick up the repo-root tack.toml. Config::load() returns
+      // early when tack.toml exists and ignores all TACK_* env vars, so the
+      // toml's absence here is what lets TACK_PORT / DATABASE_URL take effect.
       // cargo still resolves the workspace by searching upward.
-      command: 'cargo run -p flexpm-api',
+      command: 'cargo run -p tack-api',
       url: `http://127.0.0.1:${API_PORT}/api/health`,
       timeout: 180_000, // first compile can be slow
       reuseExistingServer: !isCI,
       stdout: 'ignore',
       stderr: 'pipe',
       env: {
-        FLEXPM_PORT: String(API_PORT),
-        FLEXPM_DATABASE_URL: 'sqlite:e2e.db?mode=rwc',
-        FLEXPM_STORAGE_DIR: './storage-e2e',
-        FLEXPM_LOG_LEVEL: 'warn',
+        TACK_PORT: String(API_PORT),
+        TACK_DATABASE_URL: 'sqlite:e2e.db?mode=rwc',
+        TACK_STORAGE_DIR: './storage-e2e',
+        TACK_LOG_LEVEL: 'warn',
       },
     },
     {

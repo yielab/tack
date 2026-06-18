@@ -10,9 +10,9 @@ This chapter describes the three most common extension patterns: adding a new en
 
 A Milestone is a date-anchored checkpoint associated with a project. It has a name, an optional description, a target date, and a status.
 
-### Step 1: Define the model in `flexpm-core`
+### Step 1: Define the model in `tack-core`
 
-Open `crates/flexpm-core/src/models.rs` and add the struct and any associated DTOs:
+Open `crates/tack-core/src/models.rs` and add the struct and any associated DTOs:
 
 ```rust
 // ─── Milestone ────────────────────────────────────────────────
@@ -47,11 +47,11 @@ pub struct UpdateMilestone {
 }
 ```
 
-`flexpm-core` is the right home for these types because it is the layer all other crates share. The API crate uses `CreateMilestone` for deserialization; the DB crate uses it as the input to the repository function. Keeping them in one place avoids duplication.
+`tack-core` is the right home for these types because it is the layer all other crates share. The API crate uses `CreateMilestone` for deserialization; the DB crate uses it as the input to the repository function. Keeping them in one place avoids duplication.
 
-### Step 2: Add the migration in `flexpm-db`
+### Step 2: Add the migration in `tack-db`
 
-Open `crates/flexpm-db/src/migrations.rs`. Find the `migrations` vec in `run_all()` and append:
+Open `crates/tack-db/src/migrations.rs`. Find the `migrations` vec in `run_all()` and append:
 
 ```rust
 ("017_milestones", &MIGRATION_017[..]),
@@ -79,13 +79,13 @@ Migrations are append-only and run in order. Never edit an existing migration �
 
 ### Step 3: Create the repository module
 
-Create `crates/flexpm-db/src/repo/milestones.rs`. Follow the same pattern as other repository files: functions take `&SqlitePool`, bind parameters, run the query, and return the struct.
+Create `crates/tack-db/src/repo/milestones.rs`. Follow the same pattern as other repository files: functions take `&SqlitePool`, bind parameters, run the query, and return the struct.
 
 ```rust
 use chrono::Utc;
 use uuid::Uuid;
 use sqlx::SqlitePool;
-use flexpm_core::models::{CreateMilestone, Milestone, UpdateMilestone};
+use tack_core::models::{CreateMilestone, Milestone, UpdateMilestone};
 
 pub async fn create_milestone(
     pool: &SqlitePool,
@@ -125,7 +125,7 @@ pub async fn create_milestone(
 
 ### Step 4: Register in `repo/mod.rs`
 
-Open `crates/flexpm-db/src/repo.rs` and add:
+Open `crates/tack-db/src/repo.rs` and add:
 
 ```rust
 pub mod milestones;
@@ -153,7 +153,7 @@ This pattern — thin delegating methods on `Repository` — keeps the struct as
 
 ### Step 5: Create the handler
 
-Create `crates/flexpm-api/src/handlers/milestones.rs`:
+Create `crates/tack-api/src/handlers/milestones.rs`:
 
 ```rust
 use axum::{
@@ -164,7 +164,7 @@ use axum::{
 use uuid::Uuid;
 use validator::Validate;
 
-use flexpm_core::models::{CreateMilestone, Milestone, UpdateMilestone};
+use tack_core::models::{CreateMilestone, Milestone, UpdateMilestone};
 
 use crate::{error::{ApiError, ApiResult}, router::AppState};
 
@@ -194,7 +194,7 @@ pub async fn list_milestones(
 
 ### Step 6: Register routes in `router.rs`
 
-Open `crates/flexpm-api/src/router.rs`. Add the import:
+Open `crates/tack-api/src/router.rs`. Add the import:
 
 ```rust
 use crate::handlers::milestones;
@@ -211,7 +211,7 @@ Then add the routes in the `api` router builder:
 .route("/milestones/{id}", delete(milestones::delete_milestone))
 ```
 
-At this point the feature is complete. Run `cargo test --workspace` to verify nothing is broken, then add integration tests in `crates/flexpm-db/tests/integration_test.rs` and handler tests in `crates/flexpm-api/tests/api_test.rs`.
+At this point the feature is complete. Run `cargo test --workspace` to verify nothing is broken, then add integration tests in `crates/tack-db/tests/integration_test.rs` and handler tests in `crates/tack-api/tests/api_test.rs`.
 
 ---
 
@@ -219,9 +219,9 @@ At this point the feature is complete. Run `cargo test --workspace` to verify no
 
 **Example: education_workflow for an online-course project type**
 
-### Step 1: Add the preset function in `flexpm-core`
+### Step 1: Add the preset function in `tack-core`
 
-Open `crates/flexpm-core/src/workflow.rs` and add the function after the existing presets:
+Open `crates/tack-core/src/workflow.rs` and add the function after the existing presets:
 
 ```rust
 pub fn education_workflow() -> WorkflowConfig {
@@ -279,7 +279,7 @@ Unit testing presets here is valuable because these tests run without any databa
 
 ### Step 3: Add the `ProjectType` variant
 
-Open `crates/flexpm-core/src/models.rs` and add `Education` to the `ProjectType` enum:
+Open `crates/tack-core/src/models.rs` and add `Education` to the `ProjectType` enum:
 
 ```rust
 pub enum ProjectType {
@@ -320,7 +320,7 @@ pub fn workflow_for_type(project_type: &ProjectType) -> WorkflowConfig {
 
 ### Step 5: Add a vocabulary preset
 
-Open `crates/flexpm-core/src/vocabulary.rs` and add a case to `vocabulary_for_type`:
+Open `crates/tack-core/src/vocabulary.rs` and add a case to `vocabulary_for_type`:
 
 ```rust
 ProjectType::Education => HashMap::from([
@@ -343,9 +343,9 @@ At this point `POST /api/projects` with `"project_type": "education"` will auto-
 
 Sometimes you need new logic in the workflow engine itself — for example, a rule that prevents moving an item to `Done` if any of its dependencies are still incomplete.
 
-### Step 1: Add the function to `flexpm-core`
+### Step 1: Add the function to `tack-core`
 
-Open `crates/flexpm-core/src/workflow.rs`. Add a pure function:
+Open `crates/tack-core/src/workflow.rs`. Add a pure function:
 
 ```rust
 impl WorkflowConfig {
@@ -377,7 +377,7 @@ Unit tests for workflow logic are intentionally cheap to write here because ther
 
 ### Step 3: Update the handler
 
-Open `crates/flexpm-api/src/handlers/items.rs`. In `update_item`, after loading the project and before calling `repo.update_item`, add the new check:
+Open `crates/tack-api/src/handlers/items.rs`. In `update_item`, after loading the project and before calling `repo.update_item`, add the new check:
 
 ```rust
 if let Some(new_status) = &input.status {

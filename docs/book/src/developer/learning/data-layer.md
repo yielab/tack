@@ -1,6 +1,6 @@
 # The Data Layer (sqlx & Repository Pattern)
 
-FlexPM's data layer looks nothing like Sequelize, SQLAlchemy, Hibernate, or ActiveRecord. It uses `sqlx`, which is not an ORM. This chapter explains how it works and why it is structured the way it is.
+Tack's data layer looks nothing like Sequelize, SQLAlchemy, Hibernate, or ActiveRecord. It uses `sqlx`, which is not an ORM. This chapter explains how it works and why it is structured the way it is.
 
 ---
 
@@ -32,10 +32,10 @@ This comes at a cost: you write more SQL. The payoff: you have full SQL power �
 
 ## The Repository pattern
 
-All database operations live in `crates/flexpm-db/src/repo/`. The structure:
+All database operations live in `crates/tack-db/src/repo/`. The structure:
 
 ```
-crates/flexpm-db/src/
+crates/tack-db/src/
 ├── lib.rs           # declares Repository struct; re-exports all repo modules
 ├── migrations.rs    # 16 migrations embedded as strings
 └── repo/
@@ -76,7 +76,7 @@ Compare to patterns you know:
 ## A typical query
 
 ```rust
-// From crates/flexpm-db/src/repo/items.rs
+// From crates/tack-db/src/repo/items.rs
 
 pub async fn get_item(&self, id: Uuid) -> Result<Option<Item>, sqlx::Error> {
     let row = sqlx::query_as::<_, ItemRow>(
@@ -110,7 +110,7 @@ The three fetch methods:
 | `fetch_one` | `T` | Exactly one row expected; errors if missing |
 | `fetch_optional` | `Option<T>` | Zero or one row; missing is a valid state |
 
-**UUIDs as TEXT**: SQLite has no native UUID type. FlexPM stores them as TEXT (`id.to_string()` on write, `Uuid::parse_str(&row.id)` on read). The conversion is handled in the `ItemRow::into_item()` method that converts raw row strings into typed domain structs.
+**UUIDs as TEXT**: SQLite has no native UUID type. Tack stores them as TEXT (`id.to_string()` on write, `Uuid::parse_str(&row.id)` on read). The conversion is handled in the `ItemRow::into_item()` method that converts raw row strings into typed domain structs.
 
 ---
 
@@ -159,10 +159,10 @@ This dynamic approach is necessary because `sqlx`'s compile-time checking only w
 
 ## Migrations
 
-FlexPM has 16 migrations, embedded as constant string arrays in `crates/flexpm-db/src/migrations.rs`. They run automatically on server startup via `migrations::run_all(&pool)`.
+Tack has 16 migrations, embedded as constant string arrays in `crates/tack-db/src/migrations.rs`. They run automatically on server startup via `migrations::run_all(&pool)`.
 
 ```rust
-// From crates/flexpm-db/src/migrations.rs
+// From crates/tack-db/src/migrations.rs
 
 pub async fn run_all(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     // Create the tracking table if it does not exist
@@ -238,7 +238,7 @@ The FTS search query that uses this:
 
 ## JSON fields in SQLite
 
-Some columns store structured data as JSON text. The main cases in FlexPM:
+Some columns store structured data as JSON text. The main cases in Tack:
 
 - `projects.workflow` — a `WorkflowConfig` struct, serialized to JSON
 - `projects.vocabulary` — a `HashMap<String, String>`, serialized to JSON
@@ -264,7 +264,7 @@ If the JSON is malformed (e.g. a migration corrupted it), this returns a `sqlx::
 
 ## Auto-complete: check_and_update_parent_status
 
-When an item moves to a Done status, FlexPM automatically checks if all siblings are also done. If so, the parent is updated to Done too. This logic lives in the data layer because it requires querying sibling state:
+When an item moves to a Done status, Tack automatically checks if all siblings are also done. If so, the parent is updated to Done too. This logic lives in the data layer because it requires querying sibling state:
 
 ```rust
 // From repo/items.rs

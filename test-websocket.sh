@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# Test WebSocket Real-Time Updates for FlexPM
+# Test WebSocket Real-Time Updates for Tack
 # This script demonstrates how multiple clients receive real-time updates
 
 set -e
 
 API_URL="http://localhost:3210/api"
 
-echo "🧪 FlexPM WebSocket Real-Time Test"
+echo "🧪 Tack WebSocket Real-Time Test"
 echo "=================================="
 echo ""
 

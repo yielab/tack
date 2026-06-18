@@ -8,7 +8,7 @@ help: ## Show this help
 build: ## Compile — frontend + release binary with embedded UI (~30s first time)
 	npm --prefix frontend ci
 	npm --prefix frontend run build
-	cargo build -p flexpm-api --release --features embed-spa
+	cargo build -p tack-api --release --features embed-spa
 	@echo ""
 	@echo "  Ready. Start with: make run"
 
@@ -25,13 +25,13 @@ endef
 run: ## Start the pre-built binary + Cloudflare tunnel (Ctrl-C stops both)
 	@trap 'kill 0' SIGINT SIGTERM; \
 	$(START_TUNNEL); \
-	./target/release/flexpm-api & \
+	./target/release/tack-api & \
 	wait
 
 dev: frontend/node_modules ## Development mode: API + Vite hot-reload + tunnel (Ctrl-C stops all)
 	@trap 'kill 0' SIGINT; \
 	$(START_TUNNEL); \
-	cargo run --bin flexpm-api & \
+	cargo run --bin tack-api & \
 	npm --prefix frontend run dev & \
 	wait
 
@@ -42,10 +42,10 @@ frontend/node_modules:
 	npm --prefix frontend install
 
 debug: ## Start API only with verbose logging
-	RUST_LOG=flexpm_api=debug,flexpm_db=debug,tower_http=debug cargo run --bin flexpm-api
+	RUST_LOG=tack_api=debug,tack_db=debug,tower_http=debug cargo run --bin tack-api
 
 cli: ## Run the CLI (use ARGS="..." to pass arguments)
-	cargo run --bin flexpm-cli -- $(ARGS)
+	cargo run --bin tack-cli -- $(ARGS)
 
 # ─── Testing ─────────────────────────────────────
 test: ## Run all tests
@@ -55,10 +55,10 @@ test-verbose: ## Run all tests with output
 	cargo test --workspace -- --nocapture
 
 test-core: ## Run only core unit tests
-	cargo test -p flexpm-core
+	cargo test -p tack-core
 
 test-db: ## Run only database integration tests
-	cargo test -p flexpm-db
+	cargo test -p tack-db
 
 # ─── End-to-End (browser) ────────────────────────
 e2e-install: frontend/node_modules ## Install Playwright browsers (one-time)
@@ -71,10 +71,10 @@ e2e-ui: frontend/node_modules ## Run E2E tests in the interactive Playwright UI
 	npm --prefix frontend run test:e2e:ui
 
 screenshots: frontend/node_modules ## Capture README screenshots → docs/screenshots/ (starts API + Vite automatically)
-	npm --prefix frontend exec playwright test e2e/screenshots.spec.ts -- --project=chromium --workers=1
+	cd frontend && npx playwright test e2e/screenshots.spec.ts --config playwright.capture.config.ts --project=chromium --workers=1
 
 gif: frontend/node_modules ## Capture hero GIF → docs/screenshots/hero.gif (requires ffmpeg)
-	npm --prefix frontend exec playwright test e2e/hero-gif.spec.ts -- --project=chromium --workers=1
+	cd frontend && npx playwright test e2e/hero-gif.spec.ts --config playwright.capture.config.ts --project=chromium --workers=1
 
 # ─── Security & Performance ──────────────────────
 audit: ## Scan Rust + npm dependencies for known CVEs
@@ -101,11 +101,11 @@ fmt-check: ## Check formatting (used in CI)
 
 # ─── Database ────────────────────────────────────
 reset-db: ## Delete the database (auto-recreated on next run)
-	rm -f flexpm.db flexpm.db-shm flexpm.db-wal
+	rm -f tack.db tack.db-shm tack.db-wal
 	@echo "Database deleted. Run 'make run' or 'make dev' to recreate."
 
 inspect-db: ## Open the live database in SQLite CLI
-	sqlite3 flexpm.db
+	sqlite3 tack.db
 
 # ─── Quick API Checks ────────────────────────────
 api-health: ## Check server health

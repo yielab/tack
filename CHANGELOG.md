@@ -1,4 +1,4 @@
-# FlexPM Changelog
+# Tack Changelog
 
 All notable changes to this project will be documented in this file.
 
@@ -65,11 +65,11 @@ published. Public versioning starts here at 0.1.0-beta.1 and will reach
 
 ### Phase 10 — Outbound webhook notifications
 
-- `FLEXPM_WEBHOOK_URL` — POST events to any HTTP endpoint on item and sprint changes
+- `TACK_WEBHOOK_URL` — POST events to any HTTP endpoint on item and sprint changes
 - Events: `item.created`, `item.updated`, `item.deleted`, `sprint.started`, `sprint.completed`, `item.due_soon` (hourly background check)
-- Optional HMAC-SHA256 payload signing via `FLEXPM_WEBHOOK_SECRET` (`X-FlexPM-Signature: sha256=<hex>`)
+- Optional HMAC-SHA256 payload signing via `TACK_WEBHOOK_SECRET` (`X-Tack-Signature: sha256=<hex>`)
 - Delivery is fire-and-forget — errors are logged, never surfaced to API callers
-- `WebhookClient` in `crates/flexpm-api/src/webhook.rs`
+- `WebhookClient` in `crates/tack-api/src/webhook.rs`
 
 ### Phase 9 — Full integration test coverage
 
@@ -81,7 +81,7 @@ published. Public versioning starts here at 0.1.0-beta.1 and will reach
 ### Release engineering
 
 - Tag-triggered GitHub release workflow (`.github/workflows/release.yml`): pushing `vX.Y.Z` builds the embedded-SPA server + CLI for Linux (musl, static), macOS (Intel + Apple Silicon), and Windows, and attaches the archives to a GitHub Release with generated notes
-- Each archive ships `flexpm-api` (server with embedded UI), `flexpm` (CLI), LICENSE, README, and a QUICKSTART.txt for non-developers
+- Each archive ships `tack-api` (server with embedded UI), `tack` (CLI), LICENSE, README, and a QUICKSTART.txt for non-developers
 - Startup banner now prints the URL to open (`http://localhost:3210`) on plain stdout, independent of log configuration
 - Workspace, frontend, and tag versions unified at 0.1.0-beta.1 for the first public beta
 
@@ -105,7 +105,7 @@ and release-readiness tooling.
 - `GET /api/projects/{id}/board` removed — replaced by `GET /api/boards/{id}/view`
   (multi-board system, migration 014 back-fills a default board for every project)
 - `GET /api/projects/{id}/board/live` WebSocket moved to `GET /api/projects/{id}/boards/live`
-- `flexpm-cli` no longer opens SQLite directly; all commands go through the HTTP API
+- `tack-cli` no longer opens SQLite directly; all commands go through the HTTP API
 - `/api/health` response shape changed: removed `"service"` field, added `"migrations_applied"`
 
 ### Added
@@ -114,8 +114,8 @@ and release-readiness tooling.
 
 - `GET /api/backup` — WAL checkpoint + `VACUUM INTO` temp file, streamed as `application/octet-stream`
 - `POST /api/restore` — validates SQLite magic bytes, writes `<db>.restore` next to the live file; applied automatically on next server start (old DB saved as `.bak`)
-- `flexpm backup [path]` and `flexpm restore <path>` CLI commands
-- `get_bytes` / `post_bytes` helpers on `FlexpmClient`
+- `tack backup [path]` and `tack restore <path>` CLI commands
+- `get_bytes` / `post_bytes` helpers on `TackClient`
 
 #### Observability (T-402)
 
@@ -124,7 +124,7 @@ and release-readiness tooling.
 
 #### Single-binary packaging (T-403)
 
-- `--features embed-spa` on `flexpm-api` embeds the pre-built SPA at compile time via `rust-embed`; `serve_spa` fallback handler serves exact-path assets or falls back to `index.html` for client-side routes
+- `--features embed-spa` on `tack-api` embeds the pre-built SPA at compile time via `rust-embed`; `serve_spa` fallback handler serves exact-path assets or falls back to `index.html` for client-side routes
 - API routes at `/api/*` always take priority over the SPA fallback
 - Dedicated `embed-spa` CI job builds frontend, runs clippy + tests with feature, builds release binary, reports size (~5.2 MB)
 
@@ -132,8 +132,8 @@ and release-readiness tooling.
 
 - `sprint` subcommands: `create`, `start`, `review`, `close`, `list`
 - `--json` flag on every command for machine-readable output
-- `flexpm config [--url] [--token] [--show]` — reads/writes `~/.flexpmrc`
-- `flexpm completions <bash|zsh|fish|…>` via `clap_complete`
+- `tack config [--url] [--token] [--show]` — reads/writes `~/.tackrc`
+- `tack completions <bash|zsh|fish|…>` via `clap_complete`
 - Vocabulary-aware output on `list` and `board` (translates terms per project vocab)
 
 #### Vocabulary + workflow UI (T-302)
@@ -162,13 +162,13 @@ and release-readiness tooling.
 
 ### Changed
 
-- **Workflow validation moved to `flexpm-core`** (T-201): `validate_transition`,
+- **Workflow validation moved to `tack-core`** (T-201): `validate_transition`,
   `check_wip_limit`, `find_first_done_status`, `should_complete_parent` are now
-  pure functions in `flexpm-core::workflow`; handlers are thin transports
+  pure functions in `tack-core::workflow`; handlers are thin transports
 - **Dual board system removed** (T-202): `board_views` table dropped (migration 014),
   legacy `handlers/board.rs` removed, WebSocket endpoint consolidated under boards
-- **CLI rewritten** (T-203): `flexpm-cli` now uses `reqwest` blocking HTTP client;
-  `sqlx` and `flexpm-db` dependencies removed from CLI crate; `~/.flexpmrc` config
+- **CLI rewritten** (T-203): `tack-cli` now uses `reqwest` blocking HTTP client;
+  `sqlx` and `tack-db` dependencies removed from CLI crate; `~/.tackrc` config
 - `cargo clippy --all-features` replaced with `cargo clippy --all-targets` in the
   main CI job (embed-spa feature requires a pre-built frontend, tested separately)
 
@@ -177,7 +177,7 @@ and release-readiness tooling.
 - Pre-existing `collapsible_if` lint errors resolved via Rust let-chains across
   `dependency.rs`, `workflow.rs`, `config.rs`, `export.rs`, `items.rs`
 - `redundant_closure` in `items.rs` (`.map_err(ApiError::Core)`)
-- `dead_code` warnings on test helpers in `flexpm-db/tests/common/mod.rs`
+- `dead_code` warnings on test helpers in `tack-db/tests/common/mod.rs`
 - `empty_line_after_doc_comments` in `debug.rs`
 - `test_app_with_config` helper now overrides `database_url` to `sqlite::memory:`
   so config and pool are consistent
@@ -196,7 +196,7 @@ and release-readiness tooling.
 
 ### 🎉 Enterprise Features Release
 
-Three major enterprise-level features that bring FlexPM to feature parity with Jira, Asana, and ClickUp.
+Three major enterprise-level features that bring Tack to feature parity with Jira, Asana, and ClickUp.
 
 ### ✨ Added - Project Templates
 
@@ -432,7 +432,7 @@ Four new priority views added to enhance project management capabilities.
 
 ### 🎉 Initial Production Release
 
-FlexPM v1.0 is production-ready with complete backend, frontend, and comprehensive documentation.
+Tack v1.0 is production-ready with complete backend, frontend, and comprehensive documentation.
 
 ### ✨ Added - Frontend (Phase 4 Complete)
 
@@ -578,7 +578,7 @@ FlexPM v1.0 is production-ready with complete backend, frontend, and comprehensi
 #### Docker Compose
 - Backend: `http://localhost:3210`
 - Frontend: `http://localhost:8080`
-- Caddy: `https://flexpm.local` (optional, requires hosts file)
+- Caddy: `https://tack.local` (optional, requires hosts file)
 
 #### Quick Start
 ```bash
@@ -662,7 +662,7 @@ Built with:
 
 ## Links
 
-- **Repository:** https://github.com/user/flexpm (example)
+- **Repository:** https://github.com/user/tack (example)
 - **Documentation:** [README.md](README.md)
 - **API Reference:** [docs/API-REFERENCE.md](docs/API-REFERENCE.md)
 - **Deployment Guide:** [docs/DEPLOYMENT-GUIDE.md](docs/DEPLOYMENT-GUIDE.md)

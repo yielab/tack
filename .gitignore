@@ -8,7 +8,7 @@
 *.db-wal
 
 # Config (keep the example)
-flexpm.toml
+tack.toml
 
 # Storage
 /storage/

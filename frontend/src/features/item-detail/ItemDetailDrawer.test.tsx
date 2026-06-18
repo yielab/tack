@@ -38,7 +38,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 
 function jsonOf(url: string): unknown {
   // GET /api/items/{id} returns the detail envelope, matching the real handler
-  // (crates/flexpm-api/src/handlers/items.rs) that api.items.get() unwraps.
+  // (crates/tack-api/src/handlers/items.rs) that api.items.get() unwraps.
   if (url.endsWith('/api/items/item-1')) return { item: ITEM, roles: [], dependencies: [] };
   if (url.includes('/sprints')) return [];
   return {};

@@ -10,7 +10,7 @@ page summarizes the endpoint surface for quick orientation.
 
 ## Authentication
 
-When `FLEXPM_API_TOKEN` is set, all requests need:
+When `TACK_API_TOKEN` is set, all requests need:
 
 ```
 Authorization: Bearer <token>

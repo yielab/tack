@@ -1,10 +1,10 @@
-# FlexPM
+# Tack
 
 [![CI](https://github.com/santiagoyie/FlexPM/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/santiagoyie/FlexPM/actions/workflows/ci.yml)
 
 **Local-first, single-binary project management for solo developers and small teams.**
 
-FlexPM tracks work for any domain — software sprints, a kitchen renovation, thesis chapters, a
+Tack tracks work for any domain — software sprints, a kitchen renovation, thesis chapters, a
 maintenance schedule — through fully configurable vocabulary and workflow columns. No accounts.
 No cloud. No subscriptions. One binary, one SQLite file.
 
@@ -14,7 +14,7 @@ No cloud. No subscriptions. One binary, one SQLite file.
 
 | Section | For whom |
 |---------|----------|
-| **User Guide** | Anyone running FlexPM: setup, views, CLI, configuration |
+| **User Guide** | Anyone running Tack: setup, views, CLI, configuration |
 | **Developer Guide** | Contributors and people extending the codebase |
 | **Learning Path** | Developers new to Rust, Axum, or SolidJS; explains the stack with analogies |
 | **Roadmap** | Planned work and known gaps |

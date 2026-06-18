@@ -1,17 +1,17 @@
-# Caddy configuration for FlexPM with custom domain support
+# Caddy configuration for Tack with custom domain support
 # Uses dnsmasq for automatic *.test domain resolution
 # Ports 9000/9443 to avoid conflicts in multi-app environments
 
-# FlexPM custom domain - HTTP
-http://flexpm.test:9000 {
+# Tack custom domain - HTTP
+http://tack.test:9000 {
     # API routes go to backend
     handle /api/* {
-        reverse_proxy flexpm:3210
+        reverse_proxy tack:3210
     }
 
     # WebSocket endpoint for board live updates
     handle /ws/* {
-        reverse_proxy flexpm:3210 {
+        reverse_proxy tack:3210 {
             # WebSocket headers
             header_up Connection {>Connection}
             header_up Upgrade {>Upgrade}
@@ -44,19 +44,19 @@ http://flexpm.test:9000 {
     }
 }
 
-# FlexPM custom domain - HTTPS with self-signed certificate
-https://flexpm.test:9443 {
+# Tack custom domain - HTTPS with self-signed certificate
+https://tack.test:9443 {
     # Self-signed certificate for .test domain
     tls internal
 
     # API routes go to backend
     handle /api/* {
-        reverse_proxy flexpm:3210
+        reverse_proxy tack:3210
     }
 
     # WebSocket endpoint for board live updates
     handle /ws/* {
-        reverse_proxy flexpm:3210 {
+        reverse_proxy tack:3210 {
             # WebSocket headers
             header_up Connection {>Connection}
             header_up Upgrade {>Upgrade}
@@ -93,12 +93,12 @@ https://flexpm.test:9443 {
 http://localhost:9000 {
     # API routes go to backend
     handle /api/* {
-        reverse_proxy flexpm:3210
+        reverse_proxy tack:3210
     }
 
     # WebSocket endpoint for board live updates
     handle /ws/* {
-        reverse_proxy flexpm:3210 {
+        reverse_proxy tack:3210 {
             # WebSocket headers
             header_up Connection {>Connection}
             header_up Upgrade {>Upgrade}

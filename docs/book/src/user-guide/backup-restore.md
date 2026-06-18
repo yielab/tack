@@ -1,6 +1,6 @@
 # Backup and Restore
 
-FlexPM offers two data-protection mechanisms: **hot backup** (a full SQLite copy) and **JSON
+Tack offers two data-protection mechanisms: **hot backup** (a full SQLite copy) and **JSON
 export** (a human-readable per-project snapshot). Both can be triggered via the API or the CLI.
 
 ---
@@ -13,8 +13,8 @@ server is running. No downtime required.
 **Via CLI:**
 
 ```sh
-flexpm backup                        # timestamped file in current directory
-flexpm backup --path /backups/flexpm.db
+tack backup                        # timestamped file in current directory
+tack backup --path /backups/tack.db
 ```
 
 **Via API:**
@@ -34,7 +34,7 @@ curl -O -J -H "Authorization: Bearer <token>" http://127.0.0.1:3210/api/backup
 
 **What it does NOT include:**
 
-- Attachment files — stored in `FLEXPM_STORAGE_DIR` (default `./storage`). Back that directory up separately.
+- Attachment files — stored in `TACK_STORAGE_DIR` (default `./storage`). Back that directory up separately.
 
 ---
 
@@ -48,23 +48,23 @@ swap happens on the next startup.
 1. Upload the backup:
 
 ```sh
-flexpm restore /backups/flexpm.db
+tack restore /backups/tack.db
 ```
 
 or via API:
 
 ```sh
 curl -X POST http://127.0.0.1:3210/api/restore \
-  -F "file=@/backups/flexpm.db"
+  -F "file=@/backups/tack.db"
 # → {"status":"staged","message":"Restart the server to apply."}
 ```
 
-2. Restart the server. On startup, FlexPM:
-   - Moves `flexpm.db` → `flexpm.db.bak`
-   - Moves the staged file → `flexpm.db`
+2. Restart the server. On startup, Tack:
+   - Moves `tack.db` → `tack.db.bak`
+   - Moves the staged file → `tack.db`
    - Runs any pending migrations
 
-The previous database is kept as `flexpm.db.bak`. Delete it once you've verified the restore.
+The previous database is kept as `tack.db.bak`. Delete it once you've verified the restore.
 
 ---
 
@@ -84,10 +84,10 @@ curl "http://127.0.0.1:3210/api/projects/{id}/export?format=csv" -o items.csv
 
 ## Attachment Files
 
-Attachment files live in `FLEXPM_STORAGE_DIR` (default `./storage`) and are not part of the database backup. Back them up separately:
+Attachment files live in `TACK_STORAGE_DIR` (default `./storage`) and are not part of the database backup. Back them up separately:
 
 ```sh
-rsync -a ./storage/ /backups/flexpm/storage/
+rsync -a ./storage/ /backups/tack/storage/
 ```
 
 For a complete restore you need both the database backup and the storage directory snapshot taken at approximately the same time.
@@ -107,7 +107,7 @@ For a complete restore you need both the database backup and the storage directo
 
 ```sh
 0 2 * * * curl -s -O -J \
-  -H "Authorization: Bearer $FLEXPM_TOKEN" \
+  -H "Authorization: Bearer $TACK_TOKEN" \
   http://127.0.0.1:3210/api/backup \
-  --output-dir /backups/flexpm/
+  --output-dir /backups/tack/
 ```

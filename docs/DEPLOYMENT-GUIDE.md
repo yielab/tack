@@ -1,6 +1,6 @@
-# FlexPM Deployment Guide
+# Tack Deployment Guide
 
-This guide covers deploying FlexPM to production environments.
+This guide covers deploying Tack to production environments.
 
 ---
 
@@ -25,7 +25,7 @@ This guide covers deploying FlexPM to production environments.
 ```bash
 # Clone the repository
 git clone <repo-url>
-cd flexpm
+cd tack
 
 # Start all services
 docker compose up -d
@@ -41,7 +41,7 @@ docker compose logs -f
 **Services:**
 - Backend API: http://localhost:3210
 - Frontend: http://localhost:8080
-- Data: Persisted in Docker volume `flexpm-data`
+- Data: Persisted in Docker volume `tack-data`
 
 ---
 
@@ -60,17 +60,17 @@ sudo usermod -aG docker $USER
 **2. Clone and configure:**
 
 ```bash
-git clone <repo-url> /opt/flexpm
-cd /opt/flexpm
+git clone <repo-url> /opt/tack
+cd /opt/tack
 
 # Create production environment file
 cat > .env.production <<EOF
-FLEXPM_HOST=0.0.0.0
-FLEXPM_PORT=3210
-FLEXPM_LOG_LEVEL=warn
-FLEXPM_LOG_JSON=true
-FLEXPM_LOG_FILE=/data/logs/flexpm.log
-FLEXPM_STORAGE_DIR=/data/storage
+TACK_HOST=0.0.0.0
+TACK_PORT=3210
+TACK_LOG_LEVEL=warn
+TACK_LOG_JSON=true
+TACK_LOG_FILE=/data/logs/tack.log
+TACK_STORAGE_DIR=/data/storage
 EOF
 ```
 
@@ -80,43 +80,43 @@ EOF
 version: '3.8'
 
 services:
-  flexpm:
+  tack:
     build: .
-    container_name: flexpm
+    container_name: tack
     restart: unless-stopped
     ports:
       - "3210:3210"
     volumes:
-      - flexpm-data:/data
+      - tack-data:/data
     environment:
-      - FLEXPM_HOST=0.0.0.0
-      - FLEXPM_PORT=3210
-      - FLEXPM_LOG_LEVEL=warn
-      - FLEXPM_LOG_JSON=true
+      - TACK_HOST=0.0.0.0
+      - TACK_PORT=3210
+      - TACK_LOG_LEVEL=warn
+      - TACK_LOG_JSON=true
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3210/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
     networks:
-      - flexpm-network
+      - tack-network
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: flexpm-frontend
+    container_name: tack-frontend
     restart: unless-stopped
     ports:
       - "8080:80"
     depends_on:
-      - flexpm
+      - tack
     networks:
-      - flexpm-network
+      - tack-network
 
   caddy:
     image: caddy:2-alpine
-    container_name: flexpm-caddy
+    container_name: tack-caddy
     restart: unless-stopped
     ports:
       - "80:80"
@@ -126,13 +126,13 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
-      - flexpm
+      - tack
       - frontend
     networks:
-      - flexpm-network
+      - tack-network
 
 volumes:
-  flexpm-data:
+  tack-data:
     driver: local
   caddy-data:
     driver: local
@@ -140,7 +140,7 @@ volumes:
     driver: local
 
 networks:
-  flexpm-network:
+  tack-network:
     driver: bridge
 ```
 
@@ -164,7 +164,7 @@ docker compose logs -f
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Build backend
-cd /opt/flexpm
+cd /opt/tack
 cargo build --release
 
 # Build frontend
@@ -182,15 +182,15 @@ separate static host). From a clean checkout, one command does everything:
 ```bash
 make build-spa
 # → builds frontend/dist, then:
-#   cargo build -p flexpm-api --release --features embed-spa
-# Produces: target/release/flexpm-api  (~5 MB)
+#   cargo build -p tack-api --release --features embed-spa
+# Produces: target/release/tack-api  (~5 MB)
 ```
 
 Run it anywhere — it needs only the SQLite database path:
 
 ```bash
-FLEXPM_DATABASE_URL="sqlite:/var/lib/flexpm/flexpm.db?mode=rwc" \
-  ./target/release/flexpm-api
+TACK_DATABASE_URL="sqlite:/var/lib/tack/tack.db?mode=rwc" \
+  ./target/release/tack-api
 # Open http://<host>:3210/  → the SPA loads and talks to /api same-origin.
 ```
 
@@ -203,23 +203,23 @@ and test the feature-gated binary (`.github/workflows/ci.yml`).
 
 ```bash
 # Create systemd service file
-sudo tee /etc/systemd/system/flexpm.service <<EOF
+sudo tee /etc/systemd/system/tack.service <<EOF
 [Unit]
-Description=FlexPM Project Management API
+Description=Tack Project Management API
 After=network.target
 
 [Service]
 Type=simple
-User=flexpm
-Group=flexpm
-WorkingDirectory=/opt/flexpm
-Environment="FLEXPM_HOST=127.0.0.1"
-Environment="FLEXPM_PORT=3210"
-Environment="FLEXPM_DATABASE_URL=sqlite:/var/lib/flexpm/flexpm.db?mode=rwc"
-Environment="FLEXPM_LOG_LEVEL=warn"
-Environment="FLEXPM_LOG_FILE=/var/log/flexpm/flexpm.log"
-Environment="FLEXPM_STORAGE_DIR=/var/lib/flexpm/storage"
-ExecStart=/opt/flexpm/target/release/flexpm-api
+User=tack
+Group=tack
+WorkingDirectory=/opt/tack
+Environment="TACK_HOST=127.0.0.1"
+Environment="TACK_PORT=3210"
+Environment="TACK_DATABASE_URL=sqlite:/var/lib/tack/tack.db?mode=rwc"
+Environment="TACK_LOG_LEVEL=warn"
+Environment="TACK_LOG_FILE=/var/log/tack/tack.log"
+Environment="TACK_STORAGE_DIR=/var/lib/tack/storage"
+ExecStart=/opt/tack/target/release/tack-api
 Restart=always
 RestartSec=10
 
@@ -228,29 +228,29 @@ WantedBy=multi-user.target
 EOF
 
 # Create user and directories
-sudo useradd -r -s /bin/false flexpm
-sudo mkdir -p /var/lib/flexpm/storage
-sudo mkdir -p /var/log/flexpm
-sudo chown -R flexpm:flexpm /var/lib/flexpm /var/log/flexpm
+sudo useradd -r -s /bin/false tack
+sudo mkdir -p /var/lib/tack/storage
+sudo mkdir -p /var/log/tack
+sudo chown -R tack:tack /var/lib/tack /var/log/tack
 
 # Enable and start
 sudo systemctl daemon-reload
-sudo systemctl enable flexpm
-sudo systemctl start flexpm
-sudo systemctl status flexpm
+sudo systemctl enable tack
+sudo systemctl start tack
+sudo systemctl status tack
 ```
 
 **3. Configure nginx for frontend:**
 
 ```bash
-sudo tee /etc/nginx/sites-available/flexpm <<EOF
+sudo tee /etc/nginx/sites-available/tack <<EOF
 server {
     listen 80;
-    server_name flexpm.example.com;
+    server_name tack.example.com;
 
     # Frontend
     location / {
-        root /opt/flexpm/frontend/dist;
+        root /opt/tack/frontend/dist;
         try_files \$uri \$uri/ /index.html;
         expires 1h;
         add_header Cache-Control "public, immutable";
@@ -273,7 +273,7 @@ server {
 }
 EOF
 
-sudo ln -s /etc/nginx/sites-available/flexpm /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/tack /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -286,38 +286,38 @@ sudo systemctl reload nginx
 
 ```bash
 # Server Configuration
-FLEXPM_HOST=0.0.0.0                              # Bind to all interfaces
-FLEXPM_PORT=3210                                 # API port
+TACK_HOST=0.0.0.0                              # Bind to all interfaces
+TACK_PORT=3210                                 # API port
 
 # Database
-FLEXPM_DATABASE_URL=sqlite:/data/flexpm.db?mode=rwc
+TACK_DATABASE_URL=sqlite:/data/tack.db?mode=rwc
 
 # Logging
-FLEXPM_LOG_LEVEL=warn                            # Reduce verbosity
-FLEXPM_LOG_JSON=true                             # Structured logging
-FLEXPM_LOG_FILE=/data/logs/flexpm.log           # Persistent logs
+TACK_LOG_LEVEL=warn                            # Reduce verbosity
+TACK_LOG_JSON=true                             # Structured logging
+TACK_LOG_FILE=/data/logs/tack.log           # Persistent logs
 
 # Storage
-FLEXPM_STORAGE_DIR=/data/storage                 # Attachments directory
+TACK_STORAGE_DIR=/data/storage                 # Attachments directory
 
 # Optional: CORS (restrict origins in production)
-# FLEXPM_CORS_ORIGIN=https://flexpm.example.com
+# TACK_CORS_ORIGIN=https://tack.example.com
 ```
 
-### Configuration File (flexpm.toml)
+### Configuration File (tack.toml)
 
 ```toml
 # Production configuration
 host = "0.0.0.0"
 port = 3210
-database_url = "sqlite:/data/flexpm.db?mode=rwc"
+database_url = "sqlite:/data/tack.db?mode=rwc"
 log_level = "warn"
 log_json = true
-log_file = "/data/logs/flexpm.log"
+log_file = "/data/logs/tack.log"
 storage_dir = "/data/storage"
 
 # Optional: Set CORS origin
-# cors_origin = "https://flexpm.example.com"
+# cors_origin = "https://tack.example.com"
 ```
 
 ---
@@ -329,7 +329,7 @@ storage_dir = "/data/storage"
 **1. Create Caddyfile:**
 
 ```caddyfile
-flexpm.example.com {
+tack.example.com {
     # Frontend
     handle /* {
         reverse_proxy frontend:80
@@ -337,7 +337,7 @@ flexpm.example.com {
 
     # API
     handle /api/* {
-        reverse_proxy flexpm:3210
+        reverse_proxy tack:3210
     }
 
     # WebSocket
@@ -345,7 +345,7 @@ flexpm.example.com {
         path /api/projects/*/board/live
     }
     handle @websocket {
-        reverse_proxy flexpm:3210 {
+        reverse_proxy tack:3210 {
             header_up Upgrade {http.request.header.Upgrade}
             header_up Connection {http.request.header.Connection}
         }
@@ -364,7 +364,7 @@ flexpm.example.com {
 
     # Logging
     log {
-        output file /var/log/caddy/flexpm.log
+        output file /var/log/caddy/tack.log
         level INFO
     }
 }
@@ -385,7 +385,7 @@ Caddy automatically obtains and renews Let's Encrypt certificates.
 sudo apt install certbot python3-certbot-nginx
 
 # Obtain certificate
-sudo certbot --nginx -d flexpm.example.com
+sudo certbot --nginx -d tack.example.com
 
 # Auto-renewal is configured automatically
 sudo systemctl status certbot.timer
@@ -399,32 +399,32 @@ sudo systemctl status certbot.timer
 
 ```bash
 # Using Docker
-docker compose exec flexpm sqlite3 /data/flexpm.db ".backup /data/backup-$(date +%Y%m%d).db"
-docker cp flexpm:/data/backup-20260316.db ./backups/
+docker compose exec tack sqlite3 /data/tack.db ".backup /data/backup-$(date +%Y%m%d).db"
+docker cp tack:/data/backup-20260316.db ./backups/
 
 # Using native installation
-sqlite3 /var/lib/flexpm/flexpm.db ".backup /var/backups/flexpm-$(date +%Y%m%d).db"
+sqlite3 /var/lib/tack/tack.db ".backup /var/backups/tack-$(date +%Y%m%d).db"
 ```
 
 ### Automated Backups (cron)
 
 ```bash
 # Create backup script
-cat > /opt/flexpm/backup.sh <<'EOF'
+cat > /opt/tack/backup.sh <<'EOF'
 #!/bin/bash
-BACKUP_DIR="/var/backups/flexpm"
+BACKUP_DIR="/var/backups/tack"
 DATE=$(date +%Y%m%d-%H%M%S)
 RETENTION_DAYS=30
 
 mkdir -p $BACKUP_DIR
 
 # Backup database
-docker compose exec -T flexpm sqlite3 /data/flexpm.db ".backup /data/backup-$DATE.db"
-docker cp flexpm:/data/backup-$DATE.db $BACKUP_DIR/
-docker compose exec flexpm rm /data/backup-$DATE.db
+docker compose exec -T tack sqlite3 /data/tack.db ".backup /data/backup-$DATE.db"
+docker cp tack:/data/backup-$DATE.db $BACKUP_DIR/
+docker compose exec tack rm /data/backup-$DATE.db
 
 # Backup attachments
-tar -czf $BACKUP_DIR/storage-$DATE.tar.gz -C /var/lib/docker/volumes/flexpm-data/_data storage
+tar -czf $BACKUP_DIR/storage-$DATE.tar.gz -C /var/lib/docker/volumes/tack-data/_data storage
 
 # Delete old backups
 find $BACKUP_DIR -name "*.db" -mtime +$RETENTION_DAYS -delete
@@ -433,23 +433,23 @@ find $BACKUP_DIR -name "*.tar.gz" -mtime +$RETENTION_DAYS -delete
 echo "Backup completed: $DATE"
 EOF
 
-chmod +x /opt/flexpm/backup.sh
+chmod +x /opt/tack/backup.sh
 
 # Add to crontab (daily at 2 AM)
-(crontab -l 2>/dev/null; echo "0 2 * * * /opt/flexpm/backup.sh >> /var/log/flexpm-backup.log 2>&1") | crontab -
+(crontab -l 2>/dev/null; echo "0 2 * * * /opt/tack/backup.sh >> /var/log/tack-backup.log 2>&1") | crontab -
 ```
 
 ### Restore from Backup
 
 ```bash
 # Stop the service
-docker compose stop flexpm
+docker compose stop tack
 
 # Restore database
-docker cp backups/backup-20260316.db flexpm:/data/flexpm.db
+docker cp backups/backup-20260316.db tack:/data/tack.db
 
 # Restart
-docker compose start flexpm
+docker compose start tack
 ```
 
 ---
@@ -475,17 +475,17 @@ curl http://localhost:3210/api/health
 docker compose logs -f
 
 # Export logs
-docker compose logs --since 24h > flexpm-logs-$(date +%Y%m%d).log
+docker compose logs --since 24h > tack-logs-$(date +%Y%m%d).log
 ```
 
 **Using journalctl (systemd):**
 
 ```bash
 # View logs
-sudo journalctl -u flexpm -f
+sudo journalctl -u tack -f
 
 # Export logs
-sudo journalctl -u flexpm --since "24 hours ago" > flexpm-logs.txt
+sudo journalctl -u tack --since "24 hours ago" > tack-logs.txt
 ```
 
 ### Application Metrics
@@ -508,8 +508,8 @@ curl http://localhost:3210/api/debug/db-stats
 
 ```bash
 # Monitor endpoints
-- https://flexpm.example.com (Frontend)
-- https://flexpm.example.com/api/health (Backend)
+- https://tack.example.com (Frontend)
+- https://tack.example.com/api/health (Backend)
 
 # Alert conditions
 - HTTP status != 200
@@ -528,7 +528,7 @@ curl http://localhost:3210/api/debug/db-stats
 ```yaml
 # docker-compose.yml
 services:
-  flexpm:
+  tack:
     deploy:
       resources:
         limits:
@@ -566,7 +566,7 @@ PRAGMA temp_store=memory;
 **Add to startup:**
 
 ```rust
-// In flexpm-db initialization
+// In tack-db initialization
 sqlx::query("PRAGMA journal_mode=WAL").execute(&pool).await?;
 sqlx::query("PRAGMA synchronous=NORMAL").execute(&pool).await?;
 ```
@@ -579,10 +579,10 @@ sqlx::query("PRAGMA synchronous=NORMAL").execute(&pool).await?;
 
 - [ ] Change default ports (optional)
 - [ ] Enable HTTPS (Caddy or Certbot)
-- [ ] Set `FLEXPM_LOG_LEVEL=warn` (reduce verbosity)
-- [ ] Enable `FLEXPM_LOG_JSON=true` for log parsing
+- [ ] Set `TACK_LOG_LEVEL=warn` (reduce verbosity)
+- [ ] Enable `TACK_LOG_JSON=true` for log parsing
 - [ ] Disable debug endpoints in production
-- [ ] Set strict CORS origin (`FLEXPM_CORS_ORIGIN`)
+- [ ] Set strict CORS origin (`TACK_CORS_ORIGIN`)
 - [ ] Configure firewall (allow 80, 443; block 3210, 8080)
 - [ ] Use strong database file permissions
 - [ ] Enable log rotation
@@ -603,7 +603,7 @@ sudo ufw enable
 ### Rate Limiting (Caddy)
 
 ```caddyfile
-flexpm.example.com {
+tack.example.com {
     # Rate limit API requests
     rate_limit {
         zone api {
@@ -617,7 +617,7 @@ flexpm.example.com {
     @api path /api/*
     handle @api {
         rate_limit api
-        reverse_proxy flexpm:3210
+        reverse_proxy tack:3210
     }
 }
 ```
@@ -628,7 +628,7 @@ flexpm.example.com {
 
 ```bash
 # Using SQLCipher
-FLEXPM_DATABASE_URL="sqlite:/data/flexpm.db?cipher=sqlcipher&key=your-encryption-key"
+TACK_DATABASE_URL="sqlite:/data/tack.db?cipher=sqlcipher&key=your-encryption-key"
 ```
 
 Note: Requires recompiling with SQLCipher support.
@@ -642,13 +642,13 @@ Note: Requires recompiling with SQLCipher support.
 **Check logs:**
 
 ```bash
-docker compose logs flexpm
+docker compose logs tack
 # or
-sudo journalctl -u flexpm -n 50
+sudo journalctl -u tack -n 50
 ```
 
 **Common issues:**
-- Port already in use → Change `FLEXPM_PORT`
+- Port already in use → Change `TACK_PORT`
 - Database locked → Check for multiple instances
 - Migrations failed → Check `_migrations` table
 
@@ -657,7 +657,7 @@ sudo journalctl -u flexpm -n 50
 **Check memory:**
 
 ```bash
-docker stats flexpm
+docker stats tack
 ```
 
 **Solutions:**
@@ -670,7 +670,7 @@ docker stats flexpm
 **Verify integrity:**
 
 ```bash
-sqlite3 flexpm.db "PRAGMA integrity_check;"
+sqlite3 tack.db "PRAGMA integrity_check;"
 ```
 
 **Recovery:**
@@ -716,10 +716,10 @@ CREATE INDEX idx_items_priority ON items(priority);
 
 ```bash
 # 1. Backup
-/opt/flexpm/backup.sh
+/opt/tack/backup.sh
 
 # 2. Pull latest code
-cd /opt/flexpm
+cd /opt/tack
 git pull
 
 # 3. Rebuild and restart
@@ -734,7 +734,7 @@ docker compose logs -f
 
 ```bash
 # Reclaim space and optimize
-docker compose exec flexpm sqlite3 /data/flexpm.db "VACUUM;"
+docker compose exec tack sqlite3 /data/tack.db "VACUUM;"
 ```
 
 Run monthly or when database size is large.
@@ -743,17 +743,17 @@ Run monthly or when database size is large.
 
 ```bash
 # Create logrotate config
-sudo tee /etc/logrotate.d/flexpm <<EOF
-/var/log/flexpm/*.log {
+sudo tee /etc/logrotate.d/tack <<EOF
+/var/log/tack/*.log {
     daily
     rotate 14
     compress
     delaycompress
     notifempty
-    create 0644 flexpm flexpm
+    create 0644 tack tack
     sharedscripts
     postrotate
-        systemctl reload flexpm
+        systemctl reload tack
     endscript
 }
 EOF
@@ -765,7 +765,7 @@ EOF
 
 ### Before Go-Live
 
-- [ ] DNS configured (A record for flexpm.example.com)
+- [ ] DNS configured (A record for tack.example.com)
 - [ ] HTTPS enabled and tested
 - [ ] Backups automated and tested (restore test)
 - [ ] Monitoring configured (health checks)
@@ -789,7 +789,7 @@ EOF
 ## Support
 
 **Resources:**
-- [GitHub Issues](https://github.com/yourusername/flexpm/issues)
+- [GitHub Issues](https://github.com/yourusername/tack/issues)
 - [Documentation](../README.md)
 - [API Reference](./API-REFERENCE.md)
 
