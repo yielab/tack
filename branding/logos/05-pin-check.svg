@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="g05" x1="16" y1="4" x2="48" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#6d28d9"/>
+    </linearGradient>
+  </defs>
+  <!-- Map/task pin with a check = a tracked task, done & located -->
+  <path d="M32 4c-12 0-21 9-21 21 0 14 21 35 21 35s21-21 21-35C53 13 44 4 32 4z" fill="url(#g05)"/>
+  <circle cx="32" cy="25" r="13" fill="#f5f3ff"/>
+  <path d="M25.5 25.5 L30 30 L39 20.5" fill="none" stroke="#6d28d9" stroke-width="4"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

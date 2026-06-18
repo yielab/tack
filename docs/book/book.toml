@@ -13,6 +13,6 @@ build-dir = "book"
 create-missing = false
 
 [output.html]
-git-repository-url = "https://github.com/santiagoyie/FlexPM"
-edit-url-template = "https://github.com/santiagoyie/FlexPM/edit/develop/docs/book/src/{path}"
+git-repository-url = "https://github.com/santiagoyie/Tack"
+edit-url-template = "https://github.com/santiagoyie/Tack/edit/develop/docs/book/src/{path}"
 no-section-label = false
