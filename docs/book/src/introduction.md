@@ -1,6 +1,6 @@
 # Tack
 
-[![CI](https://github.com/santiagoyie/Tack/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/santiagoyie/Tack/actions/workflows/ci.yml)
+[![CI](https://github.com/yielab/Tack/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/yielab/Tack/actions/workflows/ci.yml)
 
 **Local-first, single-binary project management for solo developers and small teams.**
 
