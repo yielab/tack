@@ -252,6 +252,23 @@ Each test gets its own isolated in-memory database — no cleanup needed.
 
 ---
 
+## Good First Contributions
+
+If you're looking for a focused starting point, these areas are self-contained and well-defined:
+
+| Area | What to do | Files to touch |
+| --- | --- | --- |
+| New project-type preset | Add a workflow + vocabulary pair for a new domain (e.g. `education`, `events`, `research`) | `workflow.rs`, `vocabulary.rs`, `models.rs` |
+| New custom field type | Add a new type variant with validation logic | `flexpm-core/src/models.rs` (CustomFieldType + validate_value) |
+| Vocabulary translation | Add a non-English vocabulary pack for an existing project type | `flexpm-core/src/vocabulary.rs` |
+| CLI output polish | Improve table formatting or add a `--format table\|csv\|json` flag to a command | `flexpm-cli/src/main.rs` |
+| Frontend view polish | Fix a visual edge case, improve empty-state UX, or add keyboard shortcuts | `frontend/src/pages/` or `frontend/src/components/` |
+| Test coverage | Add handler tests for an endpoint that only has a smoke test | `crates/flexpm-api/tests/api_test.rs` |
+
+The crate layering rule is the main constraint: keep `flexpm-core` free of I/O and `flexpm-cli` free of direct DB access (all data goes through the HTTP API). See the Dependency Flow section above.
+
+---
+
 ## How To Add a New Feature
 
 ### Adding a New Entity (e.g., "TimeEntry")

@@ -4,14 +4,51 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 
-> Local-first, single-binary project management for solo developers and small teams.
+> A complete project manager in a single 5 MB binary — no Docker, no database to run, no cloud, no accounts. One file is the app; one file is your data. Drive it from a GUI, a terminal, or a script. Reshape it for software sprints, a renovation, or a thesis.
+>
 > Built with Rust (backend) + SolidJS (frontend).
 
 Supports any workflow — Scrum, Kanban, phase-based construction, personal tasks — through fully configurable vocabulary and status columns. No accounts, no cloud, no subscriptions. One binary, one SQLite file.
 
+![Board drag-and-drop → Timeline → command palette → vocabulary editor](docs/screenshots/hero.gif)
+
+<details>
+<summary>More screenshots</summary>
+
+![Board — Kanban with WIP limits, drag-and-drop, and live WebSocket updates](docs/screenshots/board.png)
+
+![Timeline — Gantt view with draggable bars; drag an edge to adjust the due date](docs/screenshots/timeline.png)
+
+![Dashboard — status distribution, priority breakdown, and sprint throughput](docs/screenshots/dashboard.png)
+
+![List — sortable rows with inline editing and bulk operations](docs/screenshots/list.png)
+
+![Vocabulary editor — rename any term to match your domain; the UI, CLI, and API all follow](docs/screenshots/settings-vocabulary.png)
+
+</details>
+
 ---
 
 ## Features
+
+### Single binary — the whole stack in one file
+
+The release binary (~5 MB, statically linked) embeds the web UI, the REST API, and the SQLite engine. There is nothing else to install or run.
+
+```bash
+./flexpm-api   # serves the UI at http://localhost:3210 and the API at :3210/api
+```
+
+Your data is two paths: `flexpm.db` and a `storage/` folder for attachments — both next to the binary. Copy those two to back up everything. Move them to migrate.
+
+### API & CLI — drive it from a terminal or a script
+
+- **64 REST endpoints** — full CRUD for all entities plus debug and diagnostic routes
+- **CLI** (`flexpm`) with `--json` output and shell completions (bash/zsh/fish)
+- **GitHub Issues import** — fetch from any public or private repo; label filter, PAT, cursor pagination
+- **Linear import** — fetch via Linear's GraphQL API; team/project filter, label filter, priority mapping
+- **Outbound webhooks** — POST events to any URL on item changes, sprint starts, and due-soon alerts; HMAC-SHA256 signing
+- **Optional Bearer token** auth (`FLEXPM_API_TOKEN`)
 
 ### Views
 
@@ -24,11 +61,11 @@ Supports any workflow — Scrum, Kanban, phase-based construction, personal task
 | **Dashboard** | Throughput charts and sprint progress |
 | **Sprints** | Two-pane sprint planning (Backlog ↔ Sprint), capacity and burndown |
 
-### Workflow engine
+### Workflow engine & vocabulary
 
 - **7 project types** with pre-built workflows: `software`, `web`, `mobile`, `construction`, `personal`, `homework`, `maintenance`
+- **Per-project vocabulary** — rename 16 terms to match your domain: Task → Work Order, Sprint → Phase, Epic → Building. The UI, CLI, and API all speak your terms.
 - **Custom workflows** — define any columns, categories (todo / in-progress / done), WIP limits, and explicit transition rules
-- **Per-project vocabulary** — rename 16 terms to match your domain: Task → Work Order, Sprint → Phase, Epic → Building
 - **Dependency graph** — DAG with cycle detection; blocks / relates-to / depends-on
 - **Auto-complete** — parent item closes automatically when all children reach done
 
@@ -39,9 +76,7 @@ Supports any workflow — Scrum, Kanban, phase-based construction, personal task
 - **Full-text search** — SQLite FTS5, per-project and global (Ctrl+/)
 - **Export** — JSON (full snapshot) and CSV per project
 - **Import** — JSON round-trip with ID remapping; CSV into existing project
-- **GitHub Issues import** — fetch issues from any public or private repo; supports label filter, PAT, and closed-issue toggle
-- **Linear import** — fetch issues via Linear's GraphQL API; team/project filter, label filter, priority mapping
-- **Backup / restore** — hot backup via `VACUUM INTO`; staged restore on next startup
+- **Backup / restore** — hot backup via `VACUUM INTO`; staged restore on next startup; optional auto-backup to any S3-compatible bucket (Cloudflare R2, Backblaze B2, AWS S3)
 - **Project templates** — built-in templates per project type; save any project as a template
 
 ### Interface
@@ -52,20 +87,20 @@ Supports any workflow — Scrum, Kanban, phase-based construction, personal task
 - **Dark mode**, skeleton loading screens, toast notifications
 - **22 KB entry bundle** (lazy-loaded routes)
 
-### API & CLI
+---
 
-- **64 REST endpoints** — full CRUD for all entities plus debug and diagnostic routes
-- **CLI** (`flexpm`) with `--json` output and shell completions (bash/zsh/fish)
-- **Optional Bearer token** auth (`FLEXPM_API_TOKEN`)
-- **Outbound webhooks** — POST events to any URL on item changes, sprint starts, and due-soon alerts; HMAC-SHA256 signing available
-- Single binary with embedded SPA (`--features embed-spa`, ~5 MB)
+## Status & Limitations
 
-### Voice (Amazon Alexa)
+FlexPM is in **beta**. Core features are complete; a few constraints to know upfront:
 
-- **Alexa skill webhook** (`POST /api/alexa`) — add tasks, list open work, and complete items by voice
-- **Bilingual** — understands and answers in English and Spanish, following the request locale
-- **Same rules as the UI** — workflow transitions, WIP limits, auto-parent-completion, and per-project vocabulary all apply; boards update live via WebSocket
-- **Off by default** — enable by setting `FLEXPM_ALEXA_SKILL_ID`; see [docs/ALEXA.md](docs/ALEXA.md) for skill setup
+| Area | Current State |
+| --- | --- |
+| Authentication | One shared optional Bearer token — no per-user accounts or identities. Built for solo use or a small group of trusted people on the same network. |
+| Multi-user | No per-user identities or permissions. All API clients share the same access level. "Small team" means a few trusted people sharing one token, not an org with roles and ACLs. |
+| Multi-device sync | None — single server, single database. Your data stays on your machine; there is no sync or replication between instances. |
+| Mobile | Responsive web UI works on mobile browsers; no native app. |
+| Binary signing | Not code-signed yet. macOS: `right-click → Open` on first run (or `xattr -d com.apple.quarantine flexpm-api`). Windows: `More info → Run anyway` if SmartScreen appears. Roadmap item. |
+| Offline | No offline client — the browser UI requires the local server to be running. |
 
 ---
 
@@ -79,7 +114,7 @@ FlexPM is also a deliberate exploration of stacks. Rust (Axum, sqlx), modular cr
 
 The honest answer is split between technical fit and deliberate learning.
 
-**Technical fit:** A local-first tool that ships as a single binary with no runtime dependencies and a SQLite file as its only data store is a genuinely good fit for Rust. The binary is ~5 MB statically linked, starts in milliseconds, and uses negligible memory at rest.
+**Technical fit:** A self-hosted tool that ships as a single binary with no runtime dependencies and a SQLite file as its only data store is a genuinely good fit for Rust. The binary is ~5 MB statically linked, starts in milliseconds, and uses negligible memory at rest.
 
 **Learning purpose:** My day-to-day work runs on more standard stacks. I picked Rust specifically because it forces explicit thinking about things those languages abstract away — memory layout, async runtimes, error propagation without exceptions. FlexPM was scoped large enough to encounter those problems in real form: async handlers, a multi-crate workspace with strict layering, compile-time SQL, a broadcast channel for WebSockets. A todo-list tutorial would not have surfaced any of that.
 
