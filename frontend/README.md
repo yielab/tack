@@ -1,6 +1,6 @@
-# FlexPM Frontend
+# Tack Frontend
 
-Modern, responsive frontend for FlexPM built with SolidJS, TypeScript, and Tailwind CSS.
+Modern, responsive frontend for Tack built with SolidJS, TypeScript, and Tailwind CSS.
 
 ## Tech Stack
 
@@ -52,7 +52,7 @@ Modern, responsive frontend for FlexPM built with SolidJS, TypeScript, and Tailw
 ### Prerequisites
 
 - Node.js 18+ and npm
-- FlexPM backend running (default: `http://localhost:3210`)
+- Tack backend running (default: `http://localhost:3210`)
 
 ### Installation
 

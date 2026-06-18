@@ -1,10 +1,10 @@
-# Contributing to FlexPM
+# Contributing to Tack
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/santiagoyie/FlexPM.git
-cd FlexPM
+cd Tack
 
 # Activate the pre-push hook — runs fmt + clippy before every push
 git config core.hooksPath .githooks
@@ -35,14 +35,14 @@ No external database, Docker, or services needed. SQLite is embedded.
 ## Project Structure
 
 ```text
-FlexPM/
+Tack/
 ├── Cargo.toml                  # Workspace root (shared dependencies)
 ├── Cargo.lock                  # Pinned dependency versions
 ├── Makefile                    # Common dev commands
 ├── .githooks/
 │   └── pre-push                # fmt + clippy gate (activate with git config core.hooksPath .githooks)
 ├── crates/
-│   ├── flexpm-core/            # Pure domain logic (no I/O, no DB)
+│   ├── tack-core/            # Pure domain logic (no I/O, no DB)
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── models.rs       # All data structures, DTOs, and custom-field validation
@@ -50,7 +50,7 @@ FlexPM/
 │   │       ├── vocabulary.rs   # Term customization system
 │   │       ├── dependency.rs   # Dependency graph (DAG with cycle detection)
 │   │       └── error.rs        # Domain error types
-│   ├── flexpm-db/              # Database layer
+│   ├── tack-db/              # Database layer
 │   │   ├── src/
 │   │   │   ├── lib.rs          # Pool initialization, WAL mode
 │   │   │   ├── migrations.rs   # 16 schema migrations (auto-run on startup)
@@ -69,7 +69,7 @@ FlexPM/
 │   │   └── tests/
 │   │       ├── integration_test.rs  # DB integration tests
 │   │       └── perf_test.rs         # 50k-item perf test (#[ignore])
-│   ├── flexpm-api/             # Axum HTTP server + WebSocket
+│   ├── tack-api/             # Axum HTTP server + WebSocket
 │   │   ├── src/
 │   │   │   ├── main.rs         # Server entry point + staged restore
 │   │   │   ├── lib.rs
@@ -100,11 +100,11 @@ FlexPM/
 │   │       ├── common/mod.rs       # test_app(), test_app_with_config()
 │   │       ├── api_test.rs         # 36 handler integration tests
 │   │       └── alexa_test.rs       # 17 Alexa endpoint tests
-│   └── flexpm-cli/             # clap CLI (talks to API over HTTP)
+│   └── tack-cli/             # clap CLI (talks to API over HTTP)
 │       └── src/
 │           ├── main.rs         # All commands
 │           ├── client.rs       # HTTP client wrapper (reqwest)
-│           ├── config.rs       # ~/.flexpmrc reader
+│           ├── config.rs       # ~/.tackrc reader
 │           └── vocab.rs        # Vocabulary-aware output
 ├── frontend/
 │   ├── src/
@@ -119,20 +119,20 @@ FlexPM/
 ## Dependency Flow
 
 ```text
-flexpm-core  (pure logic, no I/O)
+tack-core  (pure logic, no I/O)
      ^
      |
-flexpm-db    (depends on core, adds SQLite)
+tack-db    (depends on core, adds SQLite)
      ^
      |
-flexpm-api   (depends on core + db, adds HTTP)
+tack-api   (depends on core + db, adds HTTP)
 
-flexpm-cli   (depends on core only — talks to flexpm-api over HTTP, no DB)
+tack-cli   (depends on core only — talks to tack-api over HTTP, no DB)
 ```
 
-**Rule:** `flexpm-core` must never import `flexpm-db` or any I/O crate.
-Keep business logic testable without a database. `flexpm-cli` must never import
-`flexpm-db` — all data access goes through the HTTP API.
+**Rule:** `tack-core` must never import `tack-db` or any I/O crate.
+Keep business logic testable without a database. `tack-cli` must never import
+`tack-db` — all data access goes through the HTTP API.
 
 ---
 
@@ -144,14 +144,14 @@ Keep business logic testable without a database. `flexpm-cli` must never import
 # ─── Building ────────────────────────────────────
 cargo build                    # Debug build (fast compile)
 cargo build --release          # Release build (optimized, ~5 MB binary)
-cargo build -p flexpm-core     # Build only one crate
+cargo build -p tack-core     # Build only one crate
 
 # ─── Testing ─────────────────────────────────────
 cargo test --workspace         # Run all 164 tests
-cargo test -p flexpm-core      # Test core (67 unit tests)
-cargo test -p flexpm-db        # Test DB layer (22 integration tests)
-cargo test -p flexpm-api       # Test API (64 tests)
-cargo test -p flexpm-cli       # Test CLI (11 tests)
+cargo test -p tack-core      # Test core (67 unit tests)
+cargo test -p tack-db        # Test DB layer (22 integration tests)
+cargo test -p tack-api       # Test API (64 tests)
+cargo test -p tack-cli       # Test CLI (11 tests)
 cargo test test_workflow        # Run tests matching a name
 cargo test -- --nocapture      # Show println! output during tests
 
@@ -159,8 +159,8 @@ cargo test -- --nocapture      # Show println! output during tests
 cd frontend && npm test         # 144 Vitest unit tests
 
 # ─── Running ─────────────────────────────────────
-cargo run --bin flexpm-api              # Start the API server
-cargo run --bin flexpm-cli -- --help    # CLI help
+cargo run --bin tack-api              # Start the API server
+cargo run --bin tack-cli -- --help    # CLI help
 
 # ─── Code Quality ────────────────────────────────
 cargo fmt --all                         # Format all code
@@ -169,14 +169,14 @@ cargo clippy --workspace -- -D warnings # Lint (same as CI)
 cargo check                             # Type-check without building
 
 # ─── Debugging ───────────────────────────────────
-RUST_LOG=debug cargo run --bin flexpm-api           # Debug logging
-RUST_LOG=flexpm_db=trace cargo run --bin flexpm-api # Trace SQL queries
-FLEXPM_LOG_JSON=true cargo run --bin flexpm-api     # JSON log output
+RUST_LOG=debug cargo run --bin tack-api           # Debug logging
+RUST_LOG=tack_db=trace cargo run --bin tack-api # Trace SQL queries
+TACK_LOG_JSON=true cargo run --bin tack-api     # JSON log output
 ```
 
 ### Manual API Testing
 
-Once the server is running (`cargo run --bin flexpm-api`):
+Once the server is running (`cargo run --bin tack-api`):
 
 ```bash
 # 1. Check health
@@ -216,7 +216,7 @@ mod tests {
 }
 ```
 
-**API handler tests** go in `crates/flexpm-api/tests/api_test.rs` using `axum::Router::oneshot()`:
+**API handler tests** go in `crates/tack-api/tests/api_test.rs` using `axum::Router::oneshot()`:
 
 ```rust
 #[tokio::test]
@@ -233,7 +233,7 @@ async fn my_handler_returns_200() {
 }
 ```
 
-**DB integration tests** go in `crates/flexpm-db/tests/integration_test.rs`:
+**DB integration tests** go in `crates/tack-db/tests/integration_test.rs`:
 
 ```rust
 #[tokio::test]
@@ -259,13 +259,13 @@ If you're looking for a focused starting point, these areas are self-contained a
 | Area | What to do | Files to touch |
 | --- | --- | --- |
 | New project-type preset | Add a workflow + vocabulary pair for a new domain (e.g. `education`, `events`, `research`) | `workflow.rs`, `vocabulary.rs`, `models.rs` |
-| New custom field type | Add a new type variant with validation logic | `flexpm-core/src/models.rs` (CustomFieldType + validate_value) |
-| Vocabulary translation | Add a non-English vocabulary pack for an existing project type | `flexpm-core/src/vocabulary.rs` |
-| CLI output polish | Improve table formatting or add a `--format table\|csv\|json` flag to a command | `flexpm-cli/src/main.rs` |
+| New custom field type | Add a new type variant with validation logic | `tack-core/src/models.rs` (CustomFieldType + validate_value) |
+| Vocabulary translation | Add a non-English vocabulary pack for an existing project type | `tack-core/src/vocabulary.rs` |
+| CLI output polish | Improve table formatting or add a `--format table\|csv\|json` flag to a command | `tack-cli/src/main.rs` |
 | Frontend view polish | Fix a visual edge case, improve empty-state UX, or add keyboard shortcuts | `frontend/src/pages/` or `frontend/src/components/` |
-| Test coverage | Add handler tests for an endpoint that only has a smoke test | `crates/flexpm-api/tests/api_test.rs` |
+| Test coverage | Add handler tests for an endpoint that only has a smoke test | `crates/tack-api/tests/api_test.rs` |
 
-The crate layering rule is the main constraint: keep `flexpm-core` free of I/O and `flexpm-cli` free of direct DB access (all data goes through the HTTP API). See the Dependency Flow section above.
+The crate layering rule is the main constraint: keep `tack-core` free of I/O and `tack-cli` free of direct DB access (all data goes through the HTTP API). See the Dependency Flow section above.
 
 ---
 
@@ -273,20 +273,20 @@ The crate layering rule is the main constraint: keep `flexpm-core` free of I/O a
 
 ### Adding a New Entity (e.g., "TimeEntry")
 
-1. **Define the model** in `crates/flexpm-core/src/models.rs`
-2. **Add a migration** in `crates/flexpm-db/src/migrations.rs` and add it to `run_all()`
-3. **Add a repository module** at `crates/flexpm-db/src/repo/time_entries.rs`; add `pub mod time_entries;` to `repo.rs`
-4. **Add a handler module** at `crates/flexpm-api/src/handlers/time_entries.rs`; add it to the `use crate::handlers::{...}` import in `router.rs`
-5. **Add routes** in `crates/flexpm-api/src/router.rs`
-6. **Write tests** in `crates/flexpm-api/tests/api_test.rs`
+1. **Define the model** in `crates/tack-core/src/models.rs`
+2. **Add a migration** in `crates/tack-db/src/migrations.rs` and add it to `run_all()`
+3. **Add a repository module** at `crates/tack-db/src/repo/time_entries.rs`; add `pub mod time_entries;` to `repo.rs`
+4. **Add a handler module** at `crates/tack-api/src/handlers/time_entries.rs`; add it to the `use crate::handlers::{...}` import in `router.rs`
+5. **Add routes** in `crates/tack-api/src/router.rs`
+6. **Write tests** in `crates/tack-api/tests/api_test.rs`
 
 ### Adding a New Workflow Preset
 
-Edit `crates/flexpm-core/src/workflow.rs`, add a new `pub fn my_workflow() -> WorkflowConfig` function and wire it into `workflow_for_type()`.
+Edit `crates/tack-core/src/workflow.rs`, add a new `pub fn my_workflow() -> WorkflowConfig` function and wire it into `workflow_for_type()`.
 
 ### Adding a New Vocabulary Pack
 
-Edit `crates/flexpm-core/src/vocabulary.rs`, add a new match arm in `vocabulary_for_type()`.
+Edit `crates/tack-core/src/vocabulary.rs`, add a new match arm in `vocabulary_for_type()`.
 
 ---
 
@@ -316,14 +316,14 @@ SQLite with WAL mode enabled. Tables:
 ### Resetting the Database
 
 ```bash
-rm flexpm.db flexpm.db-shm flexpm.db-wal
-cargo run --bin flexpm-api   # migrations re-run automatically
+rm tack.db tack.db-shm tack.db-wal
+cargo run --bin tack-api   # migrations re-run automatically
 ```
 
 ### Inspecting the Database
 
 ```bash
-sqlite3 flexpm.db
+sqlite3 tack.db
 .tables
 SELECT * FROM _migrations;
 PRAGMA journal_mode;   -- should show "wal"
@@ -333,9 +333,9 @@ PRAGMA journal_mode;   -- should show "wal"
 
 ## Error Handling
 
-- **`flexpm-core`** — `CoreError` (thiserror)
-- **`flexpm-db`** — `sqlx::Error` + `DependencyError`
-- **`flexpm-api`** — `ApiError` maps all errors to HTTP status codes:
+- **`tack-core`** — `CoreError` (thiserror)
+- **`tack-db`** — `sqlx::Error` + `DependencyError`
+- **`tack-api`** — `ApiError` maps all errors to HTTP status codes:
 
 | Domain Error | HTTP Status |
 | --- | --- |
@@ -358,9 +358,9 @@ All logging uses the `tracing` crate with structured spans.
 - **HTTP middleware** — `TraceLayer` logs every request with method, URI, and duration
 
 ```bash
-RUST_LOG=error cargo run --bin flexpm-api                # errors only
-RUST_LOG=flexpm_db=debug cargo run --bin flexpm-api      # debug the DB layer
-RUST_LOG=trace cargo run --bin flexpm-api                # everything (very verbose)
+RUST_LOG=error cargo run --bin tack-api                # errors only
+RUST_LOG=tack_db=debug cargo run --bin tack-api      # debug the DB layer
+RUST_LOG=trace cargo run --bin tack-api                # everything (very verbose)
 ```
 
 ---
@@ -369,7 +369,7 @@ RUST_LOG=trace cargo run --bin flexpm-api                # everything (very verb
 
 - Run `cargo fmt --all` before committing (the pre-push hook will catch it anyway)
 - Fix all `cargo clippy --workspace -- -D warnings` before pushing
-- Keep `flexpm-core` free of I/O dependencies
+- Keep `tack-core` free of I/O dependencies
 - Use `#[instrument]` on public async functions for tracing
 - Prefer returning `Result` over panicking
 - Write tests for any new business logic

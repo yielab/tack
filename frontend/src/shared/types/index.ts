@@ -323,7 +323,7 @@ export interface CustomFieldValue {
 
 // ─── Realtime board events (WebSocket) ─────────────────────────────────────
 //
-// Mirrors `BoardEvent` in crates/flexpm-api/src/handlers/websocket.rs, which is
+// Mirrors `BoardEvent` in crates/tack-api/src/handlers/websocket.rs, which is
 // serialized with `#[serde(tag = "type", rename_all = "snake_case")]`.
 
 export type BoardEvent =

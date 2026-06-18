@@ -1,6 +1,6 @@
 # Axum — HTTP Without Magic
 
-Axum is the HTTP framework FlexPM uses for its API server. If you come from Express, FastAPI, or Spring MVC, the concepts map clearly — but the amount of "magic" is different in each case.
+Axum is the HTTP framework Tack uses for its API server. If you come from Express, FastAPI, or Spring MVC, the concepts map clearly — but the amount of "magic" is different in each case.
 
 ---
 
@@ -17,7 +17,7 @@ Compare the scope:
 | Express | Yes | No | No | No | No | No |
 | **Axum** | Yes | No | No | No | No | No |
 
-Axum is closer to Express in philosophy: it gives you routing and a composable middleware system, then gets out of the way. Everything else you compose yourself. In FlexPM:
+Axum is closer to Express in philosophy: it gives you routing and a composable middleware system, then gets out of the way. Everything else you compose yourself. In Tack:
 
 - Database access: `sqlx` + the Repository pattern
 - Validation: `validator` crate on request DTOs
@@ -39,7 +39,7 @@ app.patch('/api/projects/:id', updateProject)
 app.delete('/api/projects/:id', deleteProject)
 ```
 
-In Axum (from `crates/flexpm-api/src/router.rs`):
+In Axum (from `crates/tack-api/src/router.rs`):
 ```rust
 Router::new()
     .route("/projects",     get(list_projects).post(create_project))
@@ -59,7 +59,7 @@ Routes are nested under `/api` using `.nest("/api", api_router)`. This is equiva
 A handler is just an `async fn`. Its parameters are *extractors* — types that know how to pull information out of an incoming HTTP request.
 
 ```rust
-// From crates/flexpm-api/src/handlers/items.rs
+// From crates/tack-api/src/handlers/items.rs
 
 pub async fn create_item(
     State(state): State<AppState>,       // shared application state
@@ -100,7 +100,7 @@ public ResponseEntity<Item> createItem(
 ) { }
 ```
 
-The key Axum extractors you will see throughout FlexPM:
+The key Axum extractors you will see throughout Tack:
 
 | Extractor | What it extracts | Analogy |
 |-----------|-----------------|---------|
@@ -134,7 +134,7 @@ Err(ApiError::NotFound("Item 42 not found".into()))
 `ApiResult<T>` is a type alias for `Result<T, ApiError>`. The `ApiError` type implements `IntoResponse`, which maps each error variant to the correct HTTP status:
 
 ```rust
-// From crates/flexpm-api/src/error.rs
+// From crates/tack-api/src/error.rs
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
@@ -163,7 +163,7 @@ This is the pattern that makes handlers clean: each handler returns `?` on every
 ## Shared state — AppState
 
 ```rust
-// From crates/flexpm-api/src/router.rs
+// From crates/tack-api/src/router.rs
 
 #[derive(Clone)]
 pub struct AppState {
@@ -195,7 +195,7 @@ Because `AppState` derives `Clone`, Axum clones it cheaply for each request. `Sq
 
 Axum uses Tower's middleware model: a stack of layers wrapping the router. Conceptually identical to Express middleware, Spring `HandlerInterceptor`, or FastAPI middleware — code that runs on every request before and/or after the handler.
 
-FlexPM's middleware stack (bottom of `build_router` in `router.rs`):
+Tack's middleware stack (bottom of `build_router` in `router.rs`):
 
 ```rust
 outer

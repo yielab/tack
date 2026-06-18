@@ -1,6 +1,6 @@
 # Testing
 
-FlexPM's test suite is structured as a pyramid: fast pure-function tests at the base, integration tests in the middle, handler tests and CLI tests at the top. All 133 tests run with a single command and require no external services.
+Tack's test suite is structured as a pyramid: fast pure-function tests at the base, integration tests in the middle, handler tests and CLI tests at the top. All 133 tests run with a single command and require no external services.
 
 ---
 
@@ -8,10 +8,10 @@ FlexPM's test suite is structured as a pyramid: fast pure-function tests at the 
 
 | Crate | Count | Kind | Speed |
 |---|---|---|---|
-| `flexpm-core` | 67 | Unit — pure functions, zero I/O | Very fast |
-| `flexpm-db` | 22 + 1 ignored | Integration — in-memory SQLite | Fast |
-| `flexpm-api` | 33 | Handler — in-memory SQLite + Axum | Fast |
-| `flexpm-cli` | 11 | Contract — `wiremock` mock server | Fast |
+| `tack-core` | 67 | Unit — pure functions, zero I/O | Very fast |
+| `tack-db` | 22 + 1 ignored | Integration — in-memory SQLite | Fast |
+| `tack-api` | 33 | Handler — in-memory SQLite + Axum | Fast |
+| `tack-cli` | 11 | Contract — `wiremock` mock server | Fast |
 | **Total** | **133** | | |
 
 ---
@@ -29,26 +29,26 @@ cargo test --workspace -- --nocapture
 cargo test test_workflow_transition_validation
 
 # Run a single crate
-cargo test -p flexpm-core
-cargo test -p flexpm-db
-cargo test -p flexpm-api
-cargo test -p flexpm-cli
+cargo test -p tack-core
+cargo test -p tack-db
+cargo test -p tack-api
+cargo test -p tack-cli
 
 # Performance test — ignored by default, requires ~5 s
-cargo test -p flexpm-db list_items_p95 -- --ignored
+cargo test -p tack-db list_items_p95 -- --ignored
 
 # Handler tests that require the bundled SPA (needs frontend/dist/ to exist first)
 npm run build --prefix frontend
-cargo test -p flexpm-api --features embed-spa
+cargo test -p tack-api --features embed-spa
 ```
 
 ---
 
-## `flexpm-core` — Unit Tests
+## `tack-core` — Unit Tests
 
 All tests live alongside their source code in `#[cfg(test)]` modules inside `workflow.rs`, `vocabulary.rs`, and `dependency.rs`.
 
-Because `flexpm-core` has no I/O, tests are plain synchronous functions:
+Because `tack-core` has no I/O, tests are plain synchronous functions:
 
 ```rust
 #[test]
@@ -80,9 +80,9 @@ assert_matches!(
 
 ---
 
-## `flexpm-db` — Integration Tests
+## `tack-db` — Integration Tests
 
-Tests live in `crates/flexpm-db/tests/integration_test.rs`.
+Tests live in `crates/tack-db/tests/integration_test.rs`.
 
 Each test gets a fresh in-memory database via the `setup_test_db()` helper:
 
@@ -133,7 +133,7 @@ Helper functions in `tests/common/mod.rs` reduce boilerplate:
 
 ### Performance test
 
-`crates/flexpm-db/tests/perf_test.rs` contains one test marked `#[ignore]`:
+`crates/tack-db/tests/perf_test.rs` contains one test marked `#[ignore]`:
 
 ```
 list_items_p95_under_100ms_at_50k
@@ -142,14 +142,14 @@ list_items_p95_under_100ms_at_50k
 This test inserts 50,000 items and measures the P95 latency of `list_items`. It is excluded from normal CI runs because it takes several seconds. Run it manually when you change query structure or add indexes:
 
 ```sh
-cargo test -p flexpm-db list_items_p95 -- --ignored
+cargo test -p tack-db list_items_p95 -- --ignored
 ```
 
 ---
 
-## `flexpm-api` — Handler Tests
+## `tack-api` — Handler Tests
 
-Tests live in `crates/flexpm-api/tests/api_test.rs`.
+Tests live in `crates/tack-api/tests/api_test.rs`.
 
 The `test_app()` helper in `tests/common/mod.rs` builds a fully wired Axum router backed by an in-memory SQLite database. It returns both the router and the test workspace ID:
 
@@ -232,9 +232,9 @@ A variant helper, `test_app_with_file_db(db_url)`, creates a router backed by a 
 
 ---
 
-## `flexpm-cli` — Contract Tests
+## `tack-cli` — Contract Tests
 
-Tests live in `crates/flexpm-cli/tests/cli_test.rs`. They use `wiremock` to spin up a mock HTTP server in the test process.
+Tests live in `crates/tack-cli/tests/cli_test.rs`. They use `wiremock` to spin up a mock HTTP server in the test process.
 
 ```rust
 #[tokio::test]
@@ -254,7 +254,7 @@ async fn init_sends_post_projects() {
     let uri = server.uri();
     let resp = run_blocking(move || {
         let config = make_config(&uri);
-        FlexpmClient::new(&config).unwrap()
+        TackClient::new(&config).unwrap()
             .post("/projects", &serde_json::json!({
                 "name": "My App",
                 "project_type": "software"
@@ -266,7 +266,7 @@ async fn init_sends_post_projects() {
 }
 ```
 
-Because `FlexpmClient` uses `reqwest::blocking`, tests wrap the call in `tokio::task::spawn_blocking` (via the `run_blocking` helper) to avoid blocking the async test executor.
+Because `TackClient` uses `reqwest::blocking`, tests wrap the call in `tokio::task::spawn_blocking` (via the `run_blocking` helper) to avoid blocking the async test executor.
 
 **What to test in the CLI layer:**
 
@@ -282,6 +282,6 @@ Because `FlexpmClient` uses `reqwest::blocking`, tests wrap the call in `tokio::
 GitHub Actions runs the following on every push to `develop`:
 
 1. **`cargo test --workspace`** — all 133 tests (excluding the ignored perf test).
-2. **embed-spa job** — builds the frontend with `npm run build`, then runs `cargo test -p flexpm-api --features embed-spa` to verify the SPA embedding and the additional handler tests that require a built frontend.
+2. **embed-spa job** — builds the frontend with `npm run build`, then runs `cargo test -p tack-api --features embed-spa` to verify the SPA embedding and the additional handler tests that require a built frontend.
 
 The performance test (`list_items_p95`) is not run in CI. Run it locally when profiling query performance.

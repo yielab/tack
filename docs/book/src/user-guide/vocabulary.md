@@ -59,8 +59,8 @@ A "Sprint" in a software project and a "Phase" in a construction project are the
 The CLI displays vocabulary-mapped labels in human-readable mode. Use `--json` to bypass labels and get raw field names:
 
 ```sh
-flexpm list --project <id>          # shows "Work Order" instead of "Task"
-flexpm list --project <id> --json   # returns {"item_type":"task", ...}
+tack list --project <id>          # shows "Work Order" instead of "Task"
+tack list --project <id> --json   # returns {"item_type":"task", ...}
 ```
 
 ---

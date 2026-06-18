@@ -1,6 +1,6 @@
 # Load / performance tests
 
-HTTP-level load tests for the flexpm-api server, written for [k6](https://k6.io).
+HTTP-level load tests for the tack-api server, written for [k6](https://k6.io).
 
 These establish a **performance baseline** before launch so regressions are
 visible. They are intentionally **not** part of the default CI run (they need a
@@ -26,7 +26,7 @@ brew install k6
 Start the API first (a throwaway DB is recommended):
 
 ```bash
-FLEXPM_DATABASE_URL='sqlite:load.db?mode=rwc' cargo run -p flexpm-api --release
+TACK_DATABASE_URL='sqlite:load.db?mode=rwc' cargo run -p tack-api --release
 ```
 
 Then, from the repo root:

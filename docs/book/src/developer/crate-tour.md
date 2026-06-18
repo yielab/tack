@@ -4,9 +4,9 @@ This chapter walks through each of the four crates in depth: what it owns, what 
 
 ---
 
-## `flexpm-core`
+## `tack-core`
 
-**Lives in:** `crates/flexpm-core/src/`
+**Lives in:** `crates/tack-core/src/`
 
 **Owns:** domain models, workflow engine, vocabulary system, dependency DAG, typed error enum.
 
@@ -21,7 +21,7 @@ The single source of truth for every domain struct. Notable types:
 - `Item` — the universal work unit. Fields include `item_type: ItemType`, `status: String`, `parent_id: Option<Uuid>`, `tags: Vec<String>`. The `status` field is a plain string rather than an enum because valid statuses are project-specific configuration, not compile-time constants.
 - `Project` — carries the `workflow: WorkflowConfig` and `vocabulary: VocabularyMap` inline. Both are serialised to JSON when stored in SQLite.
 - `ItemType` — an enum with `Epic`, `Feature`, `Task`, `Subtask`, `Bug`, `Requirement`, and `Custom(String)`. The `Custom` variant allows ad-hoc item types without a code change.
-- `CreateItem`, `UpdateItem`, `CreateProject`, `UpdateProject`, etc. — all DTOs used for both API deserialization and repository function parameters. Keeping them in `flexpm-core` means the API and CLI reference the same validated shapes.
+- `CreateItem`, `UpdateItem`, `CreateProject`, `UpdateProject`, etc. — all DTOs used for both API deserialization and repository function parameters. Keeping them in `tack-core` means the API and CLI reference the same validated shapes.
 
 Validation constraints (length, range) are expressed via the `validator` crate's derive macros directly on the DTO structs. The API handlers call `.validate()?` before doing anything with the data.
 
@@ -108,13 +108,13 @@ pub struct DependencyGraph {
 - `ItemNotFound(Uuid)`, `ProjectNotFound(Uuid)`, `SprintNotFound(Uuid)`, `RoleNotFound(Uuid)` — map to HTTP 404.
 - `InvalidTransition { from, to }`, `WipLimitExceeded { column, limit, current }`, `DependencyCycle(Uuid)`, `DuplicateDependency { ... }`, `InvalidVocabularyKey(String)`, `EmptyWorkflow`, `HasChildren(Uuid, usize)`, `Validation(String)` — map to HTTP 400.
 
-The mapping from `CoreError` to HTTP status codes lives in `flexpm-api/src/error.rs`, keeping the core crate free of HTTP knowledge.
+The mapping from `CoreError` to HTTP status codes lives in `tack-api/src/error.rs`, keeping the core crate free of HTTP knowledge.
 
 ---
 
-## `flexpm-db`
+## `tack-db`
 
-**Lives in:** `crates/flexpm-db/src/`
+**Lives in:** `crates/tack-db/src/`
 
 **Owns:** SQLite connection pool initialisation, migration runner, repository pattern over all entities.
 
@@ -176,17 +176,17 @@ This design gives callers a single `repo` value to pass around while keeping eac
 - JSON fields (`workflow`, `vocabulary`, `tags`) are serialised to/from strings with `serde_json`.
 - Timestamps are stored as RFC 3339 strings and parsed via `chrono::DateTime<Utc>`.
 
-**Notable function: `check_and_update_parent_status`** (in `items.rs`). After an item is moved to a `Done`-category status, the handler calls this function with the item's `parent_id`. It queries whether all sibling items are also in a done status, and if so, updates the parent. The `WorkflowConfig::should_complete_parent(all_siblings_done)` call in `flexpm-core` provides the decision logic — the repository only handles the data queries.
+**Notable function: `check_and_update_parent_status`** (in `items.rs`). After an item is moved to a `Done`-category status, the handler calls this function with the item's `parent_id`. It queries whether all sibling items are also in a done status, and if so, updates the parent. The `WorkflowConfig::should_complete_parent(all_siblings_done)` call in `tack-core` provides the decision logic — the repository only handles the data queries.
 
 ---
 
-## `flexpm-api`
+## `tack-api`
 
-**Lives in:** `crates/flexpm-api/src/`
+**Lives in:** `crates/tack-api/src/`
 
 **Owns:** HTTP server startup, route registration, request/response handling, configuration, WebSocket management, error mapping.
 
-**Does not own:** SQL queries (those are in `flexpm-db`) or business rules (those are in `flexpm-core`). Handlers orchestrate calls to both.
+**Does not own:** SQL queries (those are in `tack-db`) or business rules (those are in `tack-core`). Handlers orchestrate calls to both.
 
 ---
 
@@ -256,7 +256,7 @@ Any handler that mutates data calls this after a successful write.
 
 ### `config.rs`
 
-`AppConfig::load()` tries to read `flexpm.toml` from the current directory. If that fails, it reads environment variables (`FLEXPM_HOST`, `FLEXPM_PORT`, `FLEXPM_DATABASE_URL`, etc.) over a `Default::default()` base. There is no `figment` or other config framework — the logic is a straightforward chain of `if let Ok(v) = std::env::var(...)` assignments.
+`AppConfig::load()` tries to read `tack.toml` from the current directory. If that fails, it reads environment variables (`TACK_HOST`, `TACK_PORT`, `TACK_DATABASE_URL`, etc.) over a `Default::default()` base. There is no `figment` or other config framework — the logic is a straightforward chain of `if let Ok(v) = std::env::var(...)` assignments.
 
 The API token is never logged. The only place it appears in logs is a boolean "token configured: true/false" in the startup message.
 
@@ -280,13 +280,13 @@ The response body is always `{ "error": { "status": <code>, "message": "<text>" 
 
 ---
 
-## `flexpm-cli`
+## `tack-cli`
 
-**Lives in:** `crates/flexpm-cli/src/`
+**Lives in:** `crates/tack-cli/src/`
 
 **Owns:** command-line parsing, human-readable output formatting, HTTP calls to the API.
 
-**Does not own:** any `flexpm-core` or `flexpm-db` types directly. The CLI works entirely through the HTTP API — it serialises to JSON for requests and deserialises from `serde_json::Value` for responses (no strongly-typed response structs). This keeps the CLI decoupled from internal model changes that do not affect the API contract.
+**Does not own:** any `tack-core` or `tack-db` types directly. The CLI works entirely through the HTTP API — it serialises to JSON for requests and deserialises from `serde_json::Value` for responses (no strongly-typed response structs). This keeps the CLI decoupled from internal model changes that do not affect the API contract.
 
 ---
 
@@ -294,9 +294,9 @@ The response body is always `{ "error": { "status": <code>, "message": "<text>" 
 
 Uses `clap`'s derive API. The top-level `Cli` struct has two global flags (`--api-url`, `--token`) and a `Commands` enum. Commands include `init`, `projects`, `add`, `list`, `move`, `board`, `search`, `sprint`, `config`, `completions`, `backup`, and `restore`.
 
-Two commands (`config` and `completions`) are handled before the `FlexpmClient` is constructed, since they do not need a live connection.
+Two commands (`config` and `completions`) are handled before the `TackClient` is constructed, since they do not need a live connection.
 
-All other commands instantiate a `FlexpmClient`, call the appropriate method, and then either print raw JSON (with `--json`) or format a human-readable table. The table formatter (`print_table_row`) pads and truncates columns to fixed widths, which keeps the output readable in standard terminals.
+All other commands instantiate a `TackClient`, call the appropriate method, and then either print raw JSON (with `--json`) or format a human-readable table. The table formatter (`print_table_row`) pads and truncates columns to fixed widths, which keeps the output readable in standard terminals.
 
 The `add` and `list` commands fetch the project's vocabulary via `vocab::fetch()` and translate `item_type` strings through it before printing — so a construction project shows `Work Order` rather than `task` in the output.
 
@@ -304,7 +304,7 @@ The `add` and `list` commands fetch the project's vocabulary via `vocab::fetch()
 
 ### `client.rs`
 
-`FlexpmClient` wraps `reqwest::blocking::Client`. All methods prepend `/api` to the supplied path and attach the `Authorization: Bearer <token>` header when a token is configured.
+`TackClient` wraps `reqwest::blocking::Client`. All methods prepend `/api` to the supplied path and attach the `Authorization: Bearer <token>` header when a token is configured.
 
 Public methods:
 
@@ -324,8 +324,8 @@ Error handling: the `extract()` helper parses the response body regardless of st
 `Config::load(base_url_override, token_override)` applies a precedence chain:
 
 1. CLI flag value (passed as `Option<String>`)
-2. Environment variable (`FLEXPM_API_URL`, `FLEXPM_API_TOKEN`)
-3. `~/.flexpmrc` — a TOML file with `base_url` and optional `token` fields
+2. Environment variable (`TACK_API_URL`, `TACK_API_TOKEN`)
+3. `~/.tackrc` — a TOML file with `base_url` and optional `token` fields
 4. Default: `http://127.0.0.1:3210`
 
-`config::save(base_url, token)` writes `~/.flexpmrc`. This is what `flexpm config --url <url>` does.
+`config::save(base_url, token)` writes `~/.tackrc`. This is what `tack config --url <url>` does.

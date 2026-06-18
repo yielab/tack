@@ -3,7 +3,7 @@ import { type Page, type APIRequestContext, expect } from '@playwright/test';
 // Shared helpers for E2E specs. The single source of truth for the app's API
 // response shapes lives here so a backend contract change is fixed in one place.
 //
-// Response-shape notes (verified against crates/flexpm-api/src/handlers):
+// Response-shape notes (verified against crates/tack-api/src/handlers):
 //   GET  /api/projects        -> Project[]            (plain array, no envelope)
 //   POST /api/projects        -> Project              (the created object)
 //   GET  /api/projects/:id/items -> Item[]            (plain array)

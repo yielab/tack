@@ -13,13 +13,13 @@ Dead code removed. Docs consolidated. Status and architecture accurately documen
 
 ### Phase 1 — CI & Security Baseline
 - GitHub Actions: fmt + clippy + test + frontend typecheck + build + bundle size gate
-- CORS allow-list (`FLEXPM_ALLOWED_ORIGINS`)
+- CORS allow-list (`TACK_ALLOWED_ORIGINS`)
 - Global body-size limit + 50 MB upload cap
-- Optional Bearer token auth (`FLEXPM_API_TOKEN`)
+- Optional Bearer token auth (`TACK_API_TOKEN`)
 - Input validation via `validator` on all Create/Update DTOs
 
 ### Phase 2 — Architecture Correctness
-- Workflow validation moved into `flexpm-core` (was in DB layer)
+- Workflow validation moved into `tack-core` (was in DB layer)
 - Dual-board system removed — one `boards` table
 - CLI rewritten to use the HTTP API (no direct DB access)
 - Import implemented (JSON round-trip with ID remapping)
@@ -61,15 +61,15 @@ Dead code removed. Docs consolidated. Status and architecture accurately documen
 - Template payload validation: at least one status per category, no duplicate names, Select/MultiSelect require options
 
 ### Phase 8 — Custom Field Validation + Alexa Voice Integration
-- `CustomFieldDefinition::validate_value()` in `flexpm-core`: enforces type (string, number, boolean, date, URL, select option membership, multi-select array), plus JSON-configured rules (`pattern`, `min_length`, `max_length`, `min`, `max`, `max_items`)
-- `set_field_value` handler returns `422 Unprocessable Entity` on validation failure instead of silently storing bad data; 28 new unit tests in `flexpm-core`
+- `CustomFieldDefinition::validate_value()` in `tack-core`: enforces type (string, number, boolean, date, URL, select option membership, multi-select array), plus JSON-configured rules (`pattern`, `min_length`, `max_length`, `min`, `max`, `max_items`)
+- `set_field_value` handler returns `422 Unprocessable Entity` on validation failure instead of silently storing bad data; 28 new unit tests in `tack-core`
 - `POST /api/alexa` custom-skill endpoint: maps voice intents onto existing item/workflow logic
   - **AddTaskIntent** — creates item at the initial workflow status
   - **ListTasksIntent** — speaks open-item count and first few titles
   - **CompleteTaskIntent** — moves matching open item to first Done status; enforces transition rules and WIP limits; propagates parent auto-completion
 - Alexa endpoint authentication: constant-time skill-ID comparison + ±150 s timestamp replay guard
 - Vocabulary-aware spoken responses (construction projects say "Work Order", not "task")
-- Endpoint is exempt from the Bearer-token gate; disabled (404) when `FLEXPM_ALEXA_SKILL_ID` is unset
+- Endpoint is exempt from the Bearer-token gate; disabled (404) when `TACK_ALEXA_SKILL_ID` is unset
 - Board view applies per-board item filters on fetch (replaces TODO no-op)
 - 13 new Alexa handler tests covering verification, all intents, and edge cases
 
@@ -81,15 +81,15 @@ Dead code removed. Docs consolidated. Status and architecture accurately documen
 
 ### Phase 10 — Webhook Notifications
 
-- `FLEXPM_WEBHOOK_URL` — when set, POSTs JSON events for every item create/update/delete, sprint status transition, and items due within the next hour
-- `FLEXPM_WEBHOOK_SECRET` — optional HMAC-SHA256 signing; adds `X-FlexPM-Signature: sha256=<hex>` so receivers can verify authenticity
+- `TACK_WEBHOOK_URL` — when set, POSTs JSON events for every item create/update/delete, sprint status transition, and items due within the next hour
+- `TACK_WEBHOOK_SECRET` — optional HMAC-SHA256 signing; adds `X-Tack-Signature: sha256=<hex>` so receivers can verify authenticity
 - Background task fires `item.due_soon` once per hour for incomplete items whose `due_date` falls in the next 60 minutes
 - Delivery is fire-and-forget (tokio::spawn); errors are logged but never fail the originating request
 - All event payloads include `event`, `timestamp`, and `project_id` fields
 
 ### Phase 11 — GitHub Issues Import
 
-- `POST /api/projects/{id}/import-github` — fetches issues from any public (or token-accessible private) GitHub repository and creates FlexPM items
+- `POST /api/projects/{id}/import-github` — fetches issues from any public (or token-accessible private) GitHub repository and creates Tack items
 - Request body: `repo` (owner/repo or full URL), `token` (optional PAT), `import_closed` (default false), `label_filter` (optional label allow-list)
 - Pull requests are silently skipped; closed issues map to the first Done-category status
 - Pagination handled automatically (100 issues/request until the last page)
@@ -98,7 +98,7 @@ Dead code removed. Docs consolidated. Status and architecture accurately documen
 
 ### Phase 12 — Linear Import
 
-- `POST /api/projects/{id}/import-linear` — fetches issues from Linear's GraphQL API and creates FlexPM items
+- `POST /api/projects/{id}/import-linear` — fetches issues from Linear's GraphQL API and creates Tack items
 - Request body: `api_key` (Linear personal API key), `team_id` (optional slug or ID), `project_id` (optional; overrides `team_id`), `import_completed` (default false), `label_filter` (optional label allow-list)
 - Priority mapping: Urgent→Critical, High→High, Medium→Medium, Low→Low; No priority→unset
 - Cursor-based pagination (50 issues per request)
@@ -107,14 +107,14 @@ Dead code removed. Docs consolidated. Status and architecture accurately documen
 
 ### Phase 13 — Remote Cloud Backup (S3-Compatible)
 
-**Goal:** Let a user back up their entire FlexPM instance to any S3-compatible object
+**Goal:** Let a user back up their entire Tack instance to any S3-compatible object
 store (Cloudflare R2 / Backblaze B2 free tiers, AWS S3, or a self-hosted MinIO) and
 restore it on a different machine — so the same data is reusable across local
 installations. This is **snapshot replication**, not a live shared database: semantics
 are "one active writer at a time, last upload wins." It reuses the existing
-`VACUUM INTO` backup flow ([backup.rs](../../../crates/flexpm-api/src/handlers/backup.rs))
+`VACUUM INTO` backup flow ([backup.rs](../../../crates/tack-api/src/handlers/backup.rs))
 and the existing staged-restore-on-startup mechanism
-([main.rs](../../../crates/flexpm-api/src/main.rs)).
+([main.rs](../../../crates/tack-api/src/main.rs)).
 
 **Design decisions (locked):**
 
@@ -122,7 +122,7 @@ and the existing staged-restore-on-startup mechanism
   free provider and a custom server are the same thing (an endpoint + access keys),
   so there is exactly one code path. No per-provider SDKs.
 - The backup bundle **includes uploaded attachments**, not just the database, because
-  attachments live on disk in `FLEXPM_STORAGE_DIR` (not in SQLite) and would otherwise
+  attachments live on disk in `TACK_STORAGE_DIR` (not in SQLite) and would otherwise
   be lost on cross-machine restore.
 - Keep it simple: no incremental/delta backups, no encryption in v1 (documented as a
   follow-up), no multi-writer conflict resolution.
@@ -130,7 +130,7 @@ and the existing staged-restore-on-startup mechanism
 #### Task 1 — Dependencies
 
 Add to the workspace `Cargo.toml` `[workspace.dependencies]` and wire into
-`crates/flexpm-api/Cargo.toml`:
+`crates/tack-api/Cargo.toml`:
 
 - `object_store = { version = "0.11", features = ["aws"] }` — the `aws` feature speaks
   the S3 API and supports custom endpoints (R2/B2/MinIO).
@@ -139,18 +139,18 @@ Add to the workspace `Cargo.toml` `[workspace.dependencies]` and wire into
 
 #### Task 2 — Bundle format
 
-A single artifact `flexpm-backup-<UTC-RFC3339>.tar.zst` containing:
+A single artifact `tack-backup-<UTC-RFC3339>.tar.zst` containing:
 
 - `database.db` — the `VACUUM INTO` snapshot (reuse the existing helper in
   `handlers/backup.rs`; factor the snapshot-to-bytes logic into a reusable function).
-- `attachments/…` — a recursive copy of `FLEXPM_STORAGE_DIR` (skip if the dir is empty
+- `attachments/…` — a recursive copy of `TACK_STORAGE_DIR` (skip if the dir is empty
   or unset).
 - `manifest.json` — `{ "format_version": 1, "created_at": <rfc3339>, "migration_version": <u32>, "db_sha256": <hex>, "install_id": <uuid>, "item_count": <u64> }`.
   `migration_version` = the count of applied rows in the `_migrations` table.
   `install_id` = a UUID persisted once in a new `app_meta` row (or a sidecar file next
   to the DB); generate on first run if absent.
 
-#### Task 3 — New module `crates/flexpm-api/src/remote_backup.rs`
+#### Task 3 — New module `crates/tack-api/src/remote_backup.rs`
 
 Pure-ish module, unit-testable. Public surface:
 
@@ -172,26 +172,26 @@ pub async fn prune(store: &dyn ObjectStore, prefix: &str, keep: usize) -> Result
 - Define a `BackupError` (`thiserror`) mapped to HTTP 5xx, plus a 400 for "remote backup
   not configured."
 
-#### Task 4 — Config ([config.rs](../../../crates/flexpm-api/src/config.rs))
+#### Task 4 — Config ([config.rs](../../../crates/tack-api/src/config.rs))
 
-Add fields to `AppConfig`, loaded from `flexpm.toml` and `FLEXPM_BACKUP_*` env vars
+Add fields to `AppConfig`, loaded from `tack.toml` and `TACK_BACKUP_*` env vars
 (same precedence pattern as existing config):
 
 | Env var | TOML key | Type | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `FLEXPM_BACKUP_ENDPOINT` | `backup.endpoint` | `Option<String>` | none | e.g. `https://<acct>.r2.cloudflarestorage.com` |
-| `FLEXPM_BACKUP_BUCKET` | `backup.bucket` | `Option<String>` | none | required to enable |
-| `FLEXPM_BACKUP_REGION` | `backup.region` | `String` | `auto` | R2 uses `auto` |
-| `FLEXPM_BACKUP_ACCESS_KEY` | `backup.access_key` | `Option<String>` | none | |
-| `FLEXPM_BACKUP_SECRET_KEY` | `backup.secret_key` | `Option<String>` | none | never log |
-| `FLEXPM_BACKUP_PREFIX` | `backup.prefix` | `String` | `flexpm` | object key prefix |
-| `FLEXPM_BACKUP_INTERVAL_SECS` | `backup.interval_secs` | `Option<u64>` | none | omit = manual only |
-| `FLEXPM_BACKUP_RETENTION` | `backup.retention` | `usize` | `10` | keep newest N |
+| `TACK_BACKUP_ENDPOINT` | `backup.endpoint` | `Option<String>` | none | e.g. `https://<acct>.r2.cloudflarestorage.com` |
+| `TACK_BACKUP_BUCKET` | `backup.bucket` | `Option<String>` | none | required to enable |
+| `TACK_BACKUP_REGION` | `backup.region` | `String` | `auto` | R2 uses `auto` |
+| `TACK_BACKUP_ACCESS_KEY` | `backup.access_key` | `Option<String>` | none | |
+| `TACK_BACKUP_SECRET_KEY` | `backup.secret_key` | `Option<String>` | none | never log |
+| `TACK_BACKUP_PREFIX` | `backup.prefix` | `String` | `tack` | object key prefix |
+| `TACK_BACKUP_INTERVAL_SECS` | `backup.interval_secs` | `Option<u64>` | none | omit = manual only |
+| `TACK_BACKUP_RETENTION` | `backup.retention` | `usize` | `10` | keep newest N |
 
 Add a helper `AppConfig::remote_backup_enabled() -> bool` (true when bucket + access
 key + secret key are all set). Document every key in `CLAUDE.md` and the deployment guide.
 
-#### Task 5 — Endpoints ([router.rs](../../../crates/flexpm-api/src/router.rs) + `handlers/backup.rs`)
+#### Task 5 — Endpoints ([router.rs](../../../crates/tack-api/src/router.rs) + `handlers/backup.rs`)
 
 All gated behind `remote_backup_enabled()` (return `409 Conflict` with a clear message
 when disabled). All subject to the existing Bearer-token middleware.
@@ -204,7 +204,7 @@ when disabled). All subject to the existing Bearer-token middleware.
   (reject newer snapshots with `409` to prevent corruption), then stage (Task 6).
   Returns `{ "staged": true, "restart_required": true }`.
 
-#### Task 6 — Atomic staged restore (extend [main.rs](../../../crates/flexpm-api/src/main.rs))
+#### Task 6 — Atomic staged restore (extend [main.rs](../../../crates/tack-api/src/main.rs))
 
 The current code stages a `.restore` DB file applied on next startup. Extend it so the
 **DB and attachments swap together**:
@@ -223,13 +223,13 @@ When `interval_secs` is set, `tokio::spawn` a loop that sleeps the interval, cal
 backup path, prunes to `retention`, and logs success/failure (never panics the server).
 Model it on the existing hourly `item.due_soon` background task.
 
-#### Task 8 — CLI ([flexpm-cli/src/main.rs](../../../crates/flexpm-cli/src/main.rs))
+#### Task 8 — CLI ([tack-cli/src/main.rs](../../../crates/tack-cli/src/main.rs))
 
 Thin wrappers over the new endpoints (CLI talks HTTP, never the DB directly):
 
-- `flexpm backup --remote` → `POST /api/backup/remote`, print manifest.
-- `flexpm backups` → `GET /api/backup/remote`, print a table (date, size, item count, key).
-- `flexpm restore --remote [--key <key>]` → `POST /api/backup/remote/restore`; print the
+- `tack backup --remote` → `POST /api/backup/remote`, print manifest.
+- `tack backups` → `GET /api/backup/remote`, print a table (date, size, item count, key).
+- `tack restore --remote [--key <key>]` → `POST /api/backup/remote/restore`; print the
   "restart the server to apply" notice. Support `--json` like every other command.
 
 #### Task 9 — Tests
@@ -243,9 +243,9 @@ Thin wrappers over the new endpoints (CLI talks HTTP, never the DB directly):
 
 #### Acceptance criteria
 
-- With env vars pointing at any S3-compatible bucket, `flexpm backup --remote` uploads a
-  `.tar.zst` bundle + sidecar manifest; `flexpm backups` lists it.
-- On a second, empty install pointed at the same bucket, `flexpm restore --remote`
+- With env vars pointing at any S3-compatible bucket, `tack backup --remote` uploads a
+  `.tar.zst` bundle + sidecar manifest; `tack backups` lists it.
+- On a second, empty install pointed at the same bucket, `tack restore --remote`
   followed by a server restart reproduces the **items, sprints, and attachments** of the
   source install.
 - Restoring a snapshot created by a newer schema is rejected, not silently applied.
@@ -267,7 +267,7 @@ small-team use case.
 ### Future / Optional
 
 #### Multi-User / Auth
-The current design is explicitly local-only and single-user (one shared token, no per-user accounts or identities). The API token (`FLEXPM_API_TOKEN`)
+The current design is explicitly local-only and single-user (one shared token, no per-user accounts or identities). The API token (`TACK_API_TOKEN`)
 covers the "shared on a LAN" use case. Full multi-user would require a proper auth layer (session
 or JWT), per-user access control, and an audit log.
 

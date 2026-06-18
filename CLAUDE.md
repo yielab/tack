@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Local Domain (Caddy Reverse Proxy)
 
-This project is served at **https://flexpm.test** via a centralized Caddy + dnsmasq setup.
+This project is served at **https://tack.test** via a centralized Caddy + dnsmasq setup.
 
 - The `Caddyfile.local` in this directory is auto-imported by the global `/home/ox/Sites/Caddyfile`
 - **Do NOT add a global `{}` block** to `Caddyfile.local` — it conflicts with the main config
@@ -14,7 +14,7 @@ This project is served at **https://flexpm.test** via a centralized Caddy + dnsm
 
 ## Project Overview
 
-FlexPM is a lightweight, versatile project management tool built in Rust (backend) and SolidJS (frontend). It supports multiple workflows (Scrum, Kanban, phase-based) with fully customizable terminology and statuses. Designed for solo developers and small teams across diverse domains: software development, construction, personal tasks, etc.
+Tack is a lightweight, versatile project management tool built in Rust (backend) and SolidJS (frontend). It supports multiple workflows (Scrum, Kanban, phase-based) with fully customizable terminology and statuses. Designed for solo developers and small teams across diverse domains: software development, construction, personal tasks, etc.
 
 **Core Philosophy:** Universal work tracking with domain-specific vocabulary. The same underlying system adapts to different project types through configurable workflows and terminology.
 
@@ -33,10 +33,10 @@ FlexPM is a lightweight, versatile project management tool built in Rust (backen
 cargo build
 
 # Run the API server (http://127.0.0.1:3210)
-cargo run --bin flexpm-api
+cargo run --bin tack-api
 
 # Run the CLI tool
-cargo run --bin flexpm-cli -- --help
+cargo run --bin tack-cli -- --help
 
 # Release binary (slow compile — use sparingly)
 cargo build --release
@@ -55,9 +55,9 @@ cargo test --workspace -- --nocapture
 cargo test test_workflow_transition_validation
 
 # One crate only
-cargo test -p flexpm-core
-cargo test -p flexpm-db
-cargo test -p flexpm-api
+cargo test -p tack-core
+cargo test -p tack-db
+cargo test -p tack-api
 
 # End-to-end (Playwright: cross-browser smoke + journeys + a11y + API contract)
 make e2e-install   # one-time: download browser engines
@@ -86,43 +86,43 @@ Start the API server before the frontend dev server.
 
 ### Configuration
 
-The API server loads configuration from `flexpm.toml` (if present) or environment variables:
+The API server loads configuration from `tack.toml` (if present) or environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `FLEXPM_HOST` | `127.0.0.1` | Server bind address |
-| `FLEXPM_PORT` | `3210` | Server port |
-| `FLEXPM_DATABASE_URL` | `sqlite:flexpm.db?mode=rwc` | SQLite database path |
-| `FLEXPM_LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error` |
-| `FLEXPM_LOG_JSON` | `false` | Structured JSON logging |
-| `FLEXPM_LOG_FILE` | _(none)_ | Optional log file path |
-| `FLEXPM_STORAGE_DIR` | `./storage` | Attachment storage directory |
-| `FLEXPM_API_TOKEN` | _(none)_ | Optional Bearer token — requires `Authorization: Bearer <token>` on all API requests |
-| `FLEXPM_ALLOWED_ORIGINS` | `localhost:8080,127.0.0.1:8080` | Comma-separated CORS allow-list |
-| `FLEXPM_MAX_BODY_SIZE` | `2097152` | Global request body limit in bytes (default 2 MB; upload endpoint is always 50 MB) |
-| `FLEXPM_ALEXA_SKILL_ID` | _(none)_ | Amazon Alexa skill ID — enables `POST /api/alexa` (see `docs/ALEXA.md`); endpoint returns 404 when unset |
-| `FLEXPM_WEBHOOK_URL` | _(none)_ | Outbound webhook URL — when set, POSTs JSON events on item create/update/delete, sprint status changes, and due-soon alerts |
-| `FLEXPM_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 signing secret; adds `X-FlexPM-Signature: sha256=<hex>` to each delivery |
-| `FLEXPM_BACKUP_ENDPOINT` | _(none)_ | S3-compatible endpoint URL (e.g. `https://<acct>.r2.cloudflarestorage.com`); omit for AWS S3 |
-| `FLEXPM_BACKUP_BUCKET` | _(none)_ | Bucket name — **required** to enable remote backup |
-| `FLEXPM_BACKUP_REGION` | `auto` | AWS/S3 region; Cloudflare R2 uses `auto` |
-| `FLEXPM_BACKUP_ACCESS_KEY` | _(none)_ | S3 access key ID — required to enable remote backup |
-| `FLEXPM_BACKUP_SECRET_KEY` | _(none)_ | S3 secret access key — required; never logged |
-| `FLEXPM_BACKUP_PREFIX` | `flexpm` | Object key prefix inside the bucket |
-| `FLEXPM_BACKUP_INTERVAL_SECS` | _(none)_ | Auto-backup interval in seconds; omit for manual-only |
-| `FLEXPM_BACKUP_RETENTION` | `10` | Number of remote backups to keep after each upload |
+| `TACK_HOST` | `127.0.0.1` | Server bind address |
+| `TACK_PORT` | `3210` | Server port |
+| `TACK_DATABASE_URL` | `sqlite:tack.db?mode=rwc` | SQLite database path |
+| `TACK_LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error` |
+| `TACK_LOG_JSON` | `false` | Structured JSON logging |
+| `TACK_LOG_FILE` | _(none)_ | Optional log file path |
+| `TACK_STORAGE_DIR` | `./storage` | Attachment storage directory |
+| `TACK_API_TOKEN` | _(none)_ | Optional Bearer token — requires `Authorization: Bearer <token>` on all API requests |
+| `TACK_ALLOWED_ORIGINS` | `localhost:8080,127.0.0.1:8080` | Comma-separated CORS allow-list |
+| `TACK_MAX_BODY_SIZE` | `2097152` | Global request body limit in bytes (default 2 MB; upload endpoint is always 50 MB) |
+| `TACK_ALEXA_SKILL_ID` | _(none)_ | Amazon Alexa skill ID — enables `POST /api/alexa` (see `docs/ALEXA.md`); endpoint returns 404 when unset |
+| `TACK_WEBHOOK_URL` | _(none)_ | Outbound webhook URL — when set, POSTs JSON events on item create/update/delete, sprint status changes, and due-soon alerts |
+| `TACK_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 signing secret; adds `X-Tack-Signature: sha256=<hex>` to each delivery |
+| `TACK_BACKUP_ENDPOINT` | _(none)_ | S3-compatible endpoint URL (e.g. `https://<acct>.r2.cloudflarestorage.com`); omit for AWS S3 |
+| `TACK_BACKUP_BUCKET` | _(none)_ | Bucket name — **required** to enable remote backup |
+| `TACK_BACKUP_REGION` | `auto` | AWS/S3 region; Cloudflare R2 uses `auto` |
+| `TACK_BACKUP_ACCESS_KEY` | _(none)_ | S3 access key ID — required to enable remote backup |
+| `TACK_BACKUP_SECRET_KEY` | _(none)_ | S3 secret access key — required; never logged |
+| `TACK_BACKUP_PREFIX` | `tack` | Object key prefix inside the bucket |
+| `TACK_BACKUP_INTERVAL_SECS` | _(none)_ | Auto-backup interval in seconds; omit for manual-only |
+| `TACK_BACKUP_RETENTION` | `10` | Number of remote backups to keep after each upload |
 
 ### Debugging
 
 ```bash
 # Debug logging
-FLEXPM_LOG_LEVEL=debug cargo run --bin flexpm-api
+TACK_LOG_LEVEL=debug cargo run --bin tack-api
 
 # Trace SQL queries
-RUST_LOG=flexpm_db=trace,flexpm_api=debug cargo run --bin flexpm-api
+RUST_LOG=tack_db=trace,tack_api=debug cargo run --bin tack-api
 
 # JSON logs (for log aggregators)
-FLEXPM_LOG_JSON=true cargo run --bin flexpm-api
+TACK_LOG_JSON=true cargo run --bin tack-api
 ```
 
 ## Architecture
@@ -130,10 +130,10 @@ FLEXPM_LOG_JSON=true cargo run --bin flexpm-api
 **Project structure:**
 ```
 crates/
-├── flexpm-core/     Pure business logic (no I/O)
-├── flexpm-db/       SQLite persistence layer
-├── flexpm-api/      Axum HTTP server + WebSocket
-└── flexpm-cli/      CLI tool (clap)
+├── tack-core/     Pure business logic (no I/O)
+├── tack-db/       SQLite persistence layer
+├── tack-api/      Axum HTTP server + WebSocket
+└── tack-cli/      CLI tool (clap)
 
 frontend/
 ├── src/
@@ -153,21 +153,21 @@ docs/                Documentation
 
 ### Crate Boundaries & Responsibilities
 
-**flexpm-core** (pure, zero I/O):
+**tack-core** (pure, zero I/O):
 - Domain models: `Project`, `Item`, `Sprint`, `Role`, `Comment`, `Dependency`, etc.
 - Workflow engine: validates transitions, enforces WIP limits, provides presets
 - Vocabulary system: customizable term mapping per project
 - Dependency graph: DAG with cycle detection (DFS-based)
 - Error types: typed domain errors (`CoreError`)
 
-**flexpm-db**:
+**tack-db**:
 - SQLite via `sqlx` (async)
 - 10 migrations with FTS5 full-text search on items
 - Repository pattern: CRUD for all entities in `repo/` submodules
 - Auto-runs migrations on startup
 - Database is created automatically if missing
 
-**flexpm-api**:
+**tack-api**:
 - Axum HTTP server with 34 REST endpoints (100% complete)
 - WebSocket support for real-time board updates
 - Request handlers in `handlers/` (per entity)
@@ -177,7 +177,7 @@ docs/                Documentation
 - File upload support: multipart/form-data (max 50MB)
 - Export functionality: JSON and CSV formats
 
-**flexpm-cli**:
+**tack-cli**:
 - Terminal interface using `clap`
 - Commands: `init`, `add`, `list`, `move`, etc.
 - Status: 20% complete (basic structure exists)
@@ -244,7 +244,7 @@ All routes follow RESTful conventions:
 - `/api/items/{id}/comments` — Comments on items (2 endpoints)
 - `/api/projects/{id}/search` — Full-text search within project (1 endpoint)
 - `/api/search` — **Global search** across all projects (1 endpoint)
-- `/api/alexa` — **Alexa skill webhook** (1 endpoint; disabled unless `FLEXPM_ALEXA_SKILL_ID` is set; authenticates via skill-ID + timestamp checks and is exempt from the Bearer-token gate)
+- `/api/alexa` — **Alexa skill webhook** (1 endpoint; disabled unless `TACK_ALEXA_SKILL_ID` is set; authenticates via skill-ID + timestamp checks and is exempt from the Bearer-token gate)
 - `/api/projects/{id}/import-github` — GitHub Issues import (1 endpoint; `owner/repo` or full URL, optional PAT, label filter, PR-skipping, cursor pagination)
 - `/api/projects/{id}/import-linear` — Linear import (1 endpoint; Linear API key, optional team/project filter, label filter, priority mapping, cursor pagination)
 
@@ -307,7 +307,7 @@ Items can only be assigned to active or planning sprints (enforced in handlers).
 
 - Upload via multipart/form-data to `/api/items/{id}/attachments`
 - Max file size: 50MB (configurable in handler)
-- Files stored in `FLEXPM_STORAGE_DIR` organized by item ID
+- Files stored in `TACK_STORAGE_DIR` organized by item ID
 - Unique filenames prevent collisions (UUID-based)
 - Download includes proper Content-Type and Content-Disposition headers
 - Metadata stored in database: filename, mime_type, storage_path, size_bytes
@@ -344,9 +344,9 @@ Items can only be assigned to active or planning sprints (enforced in handlers).
 
 ### Testing Strategy
 
-- **Unit tests** in `flexpm-core` for business logic (workflow, dependencies, vocabulary)
-- **Integration tests** in `flexpm-db` for repository operations (require SQLite)
-- **Handler tests** in `flexpm-api` use in-memory databases
+- **Unit tests** in `tack-core` for business logic (workflow, dependencies, vocabulary)
+- **Integration tests** in `tack-db` for repository operations (require SQLite)
+- **Handler tests** in `tack-api` use in-memory databases
 - **Frontend unit tests** in `frontend/src/**/*.test.tsx` (Vitest + jsdom)
 - **End-to-end tests** in `frontend/e2e/` (Playwright): cross-browser smoke, user
   journeys, axe accessibility scans, and API wire-contract checks. Test setup
@@ -362,16 +362,16 @@ frontend unit/E2E tests (e.g. the `GET /items/{id}` detail envelope).
 
 ### Adding a New Entity
 
-1. Define model in `flexpm-core/src/models.rs`
-2. Add migration in `flexpm-db/src/migrations.rs`
-3. Create repository module in `flexpm-db/src/repo/`
-4. Add handler in `flexpm-api/src/handlers/`
-5. Register routes in `flexpm-api/src/router.rs`
+1. Define model in `tack-core/src/models.rs`
+2. Add migration in `tack-db/src/migrations.rs`
+3. Create repository module in `tack-db/src/repo/`
+4. Add handler in `tack-api/src/handlers/`
+5. Register routes in `tack-api/src/router.rs`
 6. Add DTOs for create/update operations
 
 ### Extending Workflow Logic
 
-1. Add logic to `flexpm-core/src/workflow.rs`
+1. Add logic to `tack-core/src/workflow.rs`
 2. Write unit tests in the same file
 3. Update handlers to call new validation/logic
 4. No database changes needed (workflow is JSON in DB)
@@ -397,7 +397,7 @@ frontend unit/E2E tests (e.g. the `GET /items/{id}` detail envelope).
 
 **FTS5 not found:**
 - SQLite must be compiled with FTS5 support
-- Check with: `sqlite3 flexpm.db "PRAGMA compile_options;"`
+- Check with: `sqlite3 tack.db "PRAGMA compile_options;"`
 
 ## Code Style Notes
 

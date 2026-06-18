@@ -1,17 +1,17 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/flexpm-core",
-    "crates/flexpm-db",
-    "crates/flexpm-api",
-    "crates/flexpm-cli",
+    "crates/tack-core",
+    "crates/tack-db",
+    "crates/tack-api",
+    "crates/tack-cli",
 ]
 
 [workspace.package]
 version = "0.1.0-beta.2"
 edition = "2024"
 license = "MIT"
-authors = ["FlexPM Contributors"]
+authors = ["Tack Contributors"]
 
 [workspace.dependencies]
 # Async runtime

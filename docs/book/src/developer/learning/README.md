@@ -1,6 +1,6 @@
 # Learning Path
 
-This section explains the FlexPM stack for developers coming from other backend and frontend backgrounds. It is not a comprehensive Rust or SolidJS tutorial — it is enough context to read, understand, and contribute to this specific codebase without drowning in language novelty.
+This section explains the Tack stack for developers coming from other backend and frontend backgrounds. It is not a comprehensive Rust or SolidJS tutorial — it is enough context to read, understand, and contribute to this specific codebase without drowning in language novelty.
 
 You do not need to read all of it. Pick the chapters that match where you are.
 
@@ -24,15 +24,15 @@ Start with [Rust for Backend Developers](rust-primer.md). The structs-and-traits
 
 ## What each chapter covers
 
-**[Rust for Backend Developers](rust-primer.md)** — Ownership, borrowing, structs, enums with data (`Option`, `Result`), traits, the module system, and error handling. Uses FlexPM models and error types as examples. This is the densest chapter; take it slow if ownership feels confusing.
+**[Rust for Backend Developers](rust-primer.md)** — Ownership, borrowing, structs, enums with data (`Option`, `Result`), traits, the module system, and error handling. Uses Tack models and error types as examples. This is the densest chapter; take it slow if ownership feels confusing.
 
-**[Async/Await in Rust](async-in-rust.md)** — How Rust's async model compares to JavaScript Promises, Python asyncio, and Java's CompletableFuture. Covers Tokio (the runtime FlexPM uses), spawning tasks, broadcast channels, and the patterns you will see in every Axum handler.
+**[Async/Await in Rust](async-in-rust.md)** — How Rust's async model compares to JavaScript Promises, Python asyncio, and Java's CompletableFuture. Covers Tokio (the runtime Tack uses), spawning tasks, broadcast channels, and the patterns you will see in every Axum handler.
 
-**[Axum — HTTP Without Magic](axum-primer.md)** — How FlexPM's HTTP layer works. Routing, extractors (how request data flows into handler functions), shared state (`AppState`), response types, error mapping, and middleware. Concrete before/after comparisons to Express and FastAPI.
+**[Axum — HTTP Without Magic](axum-primer.md)** — How Tack's HTTP layer works. Routing, extractors (how request data flows into handler functions), shared state (`AppState`), response types, error mapping, and middleware. Concrete before/after comparisons to Express and FastAPI.
 
 **[The Data Layer (sqlx & Repository Pattern)](data-layer.md)** — sqlx is not an ORM. It checks your SQL at compile time and maps rows to structs. Covers the Repository struct, migrations, JSON fields in SQLite, FTS5 search, and the auto-complete parent status logic.
 
-**[SolidJS for Frontend Developers](solidjs-primer.md)** — For developers who know React (or Vue/Angular). SolidJS looks like React but never re-renders components. Covers signals, derived state, effects, control flow primitives (`<Show>`, `<For>`), context, routing, and what that means when reading FlexPM's frontend code.
+**[SolidJS for Frontend Developers](solidjs-primer.md)** — For developers who know React (or Vue/Angular). SolidJS looks like React but never re-renders components. Covers signals, derived state, effects, control flow primitives (`<Show>`, `<For>`), context, routing, and what that means when reading Tack's frontend code.
 
 ---
 

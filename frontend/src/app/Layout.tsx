@@ -33,24 +33,24 @@ const LayoutInner: Component<LayoutProps> = (props) => {
 
   const projectId = () => params.id as string | undefined;
 
-  // document.title — "<Project> — <View> · FlexPM"
+  // document.title — "<Project> — <View> · Tack"
   createEffect(() => {
     const path = location.pathname;
     const segments = path.split('/').filter(Boolean);
     const view = [...Object.keys(VIEW_LABELS)].find(v => segments.includes(v));
     const proj = project();
 
-    let title = 'FlexPM';
+    let title = 'Tack';
     if (proj && view) {
-      title = `${proj.name} — ${VIEW_LABELS[view]} · FlexPM`;
+      title = `${proj.name} — ${VIEW_LABELS[view]} · Tack`;
     } else if (proj) {
-      title = `${proj.name} · FlexPM`;
+      title = `${proj.name} · Tack`;
     } else if (path.startsWith('/templates')) {
-      title = 'Templates · FlexPM';
+      title = 'Templates · Tack';
     } else if (path.startsWith('/settings')) {
-      title = 'Settings · FlexPM';
+      title = 'Settings · Tack';
     } else {
-      title = 'Projects · FlexPM';
+      title = 'Projects · Tack';
     }
     document.title = title;
   });

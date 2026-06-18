@@ -1,6 +1,6 @@
 # Deployment
 
-FlexPM is a single process with no external service dependencies. The deployment model is
+Tack is a single process with no external service dependencies. The deployment model is
 intentionally minimal: copy a binary, point it at a directory, run it.
 
 ---
@@ -14,23 +14,23 @@ Build one binary that embeds the SPA and serves everything:
 cd frontend && npm ci && npm run build && cd ..
 
 # 2. Build the release binary with embedded SPA
-cargo build --release --features embed-spa -p flexpm-api
+cargo build --release --features embed-spa -p tack-api
 
-# Result: target/release/flexpm-api (~5 MB)
+# Result: target/release/tack-api (~5 MB)
 ```
 
 Copy the binary to the server and run it:
 
 ```sh
-scp target/release/flexpm-api user@server:/opt/flexpm/flexpm-api
+scp target/release/tack-api user@server:/opt/tack/tack-api
 ssh user@server
 
 # On the server
-mkdir -p /var/data/flexpm /var/log/flexpm
-FLEXPM_DATABASE_URL=sqlite:/var/data/flexpm/flexpm.db \
-FLEXPM_STORAGE_DIR=/var/data/flexpm/storage \
-FLEXPM_LOG_FILE=/var/log/flexpm/api.log \
-/opt/flexpm/flexpm-api
+mkdir -p /var/data/tack /var/log/tack
+TACK_DATABASE_URL=sqlite:/var/data/tack/tack.db \
+TACK_STORAGE_DIR=/var/data/tack/storage \
+TACK_LOG_FILE=/var/log/tack/api.log \
+/opt/tack/tack-api
 ```
 
 The binary is statically linked and has no runtime dependencies.
@@ -39,26 +39,26 @@ The binary is statically linked and has no runtime dependencies.
 
 ## systemd Service
 
-Create `/etc/systemd/system/flexpm.service`:
+Create `/etc/systemd/system/tack.service`:
 
 ```ini
 [Unit]
-Description=FlexPM API server
+Description=Tack API server
 After=network.target
 
 [Service]
 Type=simple
-User=flexpm
-WorkingDirectory=/opt/flexpm
-ExecStart=/opt/flexpm/flexpm-api
+User=tack
+WorkingDirectory=/opt/tack
+ExecStart=/opt/tack/tack-api
 Restart=on-failure
 RestartSec=5
 
-Environment=FLEXPM_DATABASE_URL=sqlite:/var/data/flexpm/flexpm.db
-Environment=FLEXPM_STORAGE_DIR=/var/data/flexpm/storage
-Environment=FLEXPM_LOG_FILE=/var/log/flexpm/api.log
-Environment=FLEXPM_LOG_JSON=true
-Environment=FLEXPM_API_TOKEN=change-me
+Environment=TACK_DATABASE_URL=sqlite:/var/data/tack/tack.db
+Environment=TACK_STORAGE_DIR=/var/data/tack/storage
+Environment=TACK_LOG_FILE=/var/log/tack/api.log
+Environment=TACK_LOG_JSON=true
+Environment=TACK_API_TOKEN=change-me
 
 [Install]
 WantedBy=multi-user.target
@@ -66,8 +66,8 @@ WantedBy=multi-user.target
 
 ```sh
 sudo systemctl daemon-reload
-sudo systemctl enable --now flexpm
-sudo journalctl -u flexpm -f
+sudo systemctl enable --now tack
+sudo journalctl -u tack -f
 ```
 
 ---
@@ -77,7 +77,7 @@ sudo journalctl -u flexpm -f
 Put Caddy in front to get automatic HTTPS:
 
 ```
-flexpm.example.com {
+tack.example.com {
     reverse_proxy 127.0.0.1:3210
 }
 ```
@@ -95,10 +95,10 @@ Caddy handles TLS certificates via Let's Encrypt automatically.
 ```nginx
 server {
     listen 443 ssl;
-    server_name flexpm.example.com;
+    server_name tack.example.com;
 
-    ssl_certificate     /etc/letsencrypt/live/flexpm.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/flexpm.example.com/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/tack.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/tack.example.com/privkey.pem;
 
     location / {
         proxy_pass         http://127.0.0.1:3210;
@@ -120,7 +120,7 @@ The `Upgrade` and `Connection` headers are required for the WebSocket endpoint (
 For local use behind the project's `Caddyfile.local`:
 
 ```
-flexpm.test {
+tack.test {
     reverse_proxy 127.0.0.1:3210
 }
 ```
@@ -131,14 +131,14 @@ Import it from the global `/home/ox/Sites/Caddyfile` and reload:
 sudo systemctl reload caddy
 ```
 
-The app is then available at `https://flexpm.test`.
+The app is then available at `https://tack.test`.
 
 ---
 
 ## Security Checklist
 
-- [ ] Set `FLEXPM_API_TOKEN` to a long random string
-- [ ] Set `FLEXPM_ALLOWED_ORIGINS` to your domain only
+- [ ] Set `TACK_API_TOKEN` to a long random string
+- [ ] Set `TACK_ALLOWED_ORIGINS` to your domain only
 - [ ] Run behind HTTPS (Caddy or nginx with Let's Encrypt)
 - [ ] Run as a non-root system user
 - [ ] Set database and storage paths outside the binary directory
@@ -152,7 +152,7 @@ The app is then available at `https://flexpm.test`.
 **Migration errors on startup:**
 
 ```sh
-sqlite3 /var/data/flexpm/flexpm.db "SELECT * FROM _migrations;"
+sqlite3 /var/data/tack/tack.db "SELECT * FROM _migrations;"
 ```
 
 If a migration record is corrupt, delete that row and restart — the migration will re-run.
@@ -162,13 +162,13 @@ If a migration record is corrupt, delete that row and restart — the migration 
 SQLite allows only one writer at a time. Check for another process holding the file:
 
 ```sh
-lsof /var/data/flexpm/flexpm.db
+lsof /var/data/tack/tack.db
 ```
 
 **FTS5 not available:**
 
 ```sh
-sqlite3 /var/data/flexpm/flexpm.db "PRAGMA compile_options;" | grep FTS5
+sqlite3 /var/data/tack/tack.db "PRAGMA compile_options;" | grep FTS5
 ```
 
 If FTS5 is missing, recompile SQLite with `SQLITE_ENABLE_FTS5`, or install a SQLite package that includes it.

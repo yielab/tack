@@ -10,7 +10,7 @@
 [advisories]
 ignore = [
   # rsa 0.9.x — "Marvin Attack" RSA timing side-channel. No fixed upgrade is
-  # available upstream. Pulled in transitively; FlexPM performs no RSA
+  # available upstream. Pulled in transitively; Tack performs no RSA
   # decryption (SQLite-only DB; S3 backup uses HMAC request signing, not RSA),
   # so the vulnerable code path is not exercised.
   "RUSTSEC-2023-0071",

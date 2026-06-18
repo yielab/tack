@@ -5,12 +5,12 @@
 // exported here — no raw `fetch` and no absolute API hosts anywhere else.
 
 /** Base URL for the API. Relative by default so the SPA works same-origin when
- * served from the `flexpm-api` binary (T-403) or behind a reverse proxy. */
+ * served from the `tack-api` binary (T-403) or behind a reverse proxy. */
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
 
 /**
  * Optional bearer token store. The backend can gate the API with
- * `FLEXPM_API_TOKEN`; when set, every request must carry
+ * `TACK_API_TOKEN`; when set, every request must carry
  * `Authorization: Bearer <token>`. The token may be empty (no auth).
  */
 export const tokenStore = {
@@ -19,15 +19,15 @@ export const tokenStore = {
     const fromEnv = import.meta.env.VITE_API_TOKEN as string | undefined;
     if (fromEnv) return fromEnv;
     try {
-      return localStorage.getItem('flexpm_api_token');
+      return localStorage.getItem('tack_api_token');
     } catch {
       return null;
     }
   },
   set(token: string | null): void {
     try {
-      if (token) localStorage.setItem('flexpm_api_token', token);
-      else localStorage.removeItem('flexpm_api_token');
+      if (token) localStorage.setItem('tack_api_token', token);
+      else localStorage.removeItem('tack_api_token');
     } catch {
       /* ignore — localStorage may be unavailable */
     }
