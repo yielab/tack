@@ -1,6 +1,6 @@
 # Tack
 
-[![CI](https://github.com/santiagoyie/FlexPM/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/santiagoyie/FlexPM/actions/workflows/ci.yml)
+[![CI](https://github.com/santiagoyie/Tack/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/santiagoyie/Tack/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 
@@ -124,9 +124,9 @@ The honest answer is split between technical fit and deliberate learning.
 
 ### Download (no install, no toolchain)
 
-Grab the archive for your system from the [**releases page**](https://github.com/santiagoyie/FlexPM/releases), extract it, and run the server — everything (UI, API, database engine) is inside one file.
+Grab the archive for your system from the [**releases page**](https://github.com/santiagoyie/Tack/releases), extract it, and run the server — everything (UI, API, database engine) is inside one file.
 
-> Tack is currently in **beta** — these builds are published for testing. If something breaks, please [open an issue](https://github.com/santiagoyie/FlexPM/issues).
+> Tack is currently in **beta** — these builds are published for testing. If something breaks, please [open an issue](https://github.com/santiagoyie/Tack/issues).
 
 | System | File |
 | --- | --- |
@@ -155,7 +155,7 @@ Each archive also includes `tack`, the optional [CLI client](#cli).
 **Prerequisites:** [Rust toolchain](https://rustup.rs/) · [Node.js 20+](https://nodejs.org/)
 
 ```bash
-git clone https://github.com/santiagoyie/FlexPM.git
+git clone https://github.com/santiagoyie/Tack.git
 cd Tack
 make build   # compile: builds frontend then embeds it into the release binary (~30s)
 make run     # start: launches the pre-built binary, nothing is recompiled
@@ -541,7 +541,7 @@ tack-cli   ← talks to tack-api over HTTP (no DB access)
 ### First clone
 
 ```bash
-git clone https://github.com/santiagoyie/FlexPM.git
+git clone https://github.com/santiagoyie/Tack.git
 cd Tack
 
 # Activate the pre-push hook (runs fmt + clippy before every push)

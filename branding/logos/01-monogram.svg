@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="g01" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#6d28d9"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#g01)"/>
+  <!-- Geometric T monogram -->
+  <path d="M18 20h28a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H37v20a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2V28H18a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2z" fill="#fff"/>
+</svg>

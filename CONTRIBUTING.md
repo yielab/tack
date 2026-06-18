@@ -3,7 +3,7 @@
 ## Quick Start
 
 ```bash
-git clone https://github.com/santiagoyie/FlexPM.git
+git clone https://github.com/santiagoyie/Tack.git
 cd Tack
 
 # Activate the pre-push hook — runs fmt + clippy before every push
