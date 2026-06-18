@@ -34,7 +34,7 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: "npm"
@@ -120,7 +120,7 @@ jobs:
           tool: cargo-audit
       - name: Rust dependency audit (honors .cargo/audit.toml)
         run: cargo audit
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: "npm"
@@ -141,7 +141,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Pre-build API (warms the cache the Playwright webServer reuses)
         run: cargo build -p tack-api
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: "npm"
