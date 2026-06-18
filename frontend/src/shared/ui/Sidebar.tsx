@@ -58,9 +58,20 @@ const Sidebar: Component = () => {
       {/* Logo */}
       <div class="hidden lg:flex items-center px-5 py-4 border-b" style={{ 'border-color': 'var(--color-border-light)' }}>
         <A href="/projects" class="flex items-center gap-2" onClick={close}>
-          <div class="w-7 h-7 bg-linear-to-br from-brand-500 to-brand-700 rounded-lg flex items-center justify-center">
-            <span class="text-white font-bold text-sm">T</span>
-          </div>
+          <svg class="w-7 h-7" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <defs>
+              <linearGradient id="tack-logo-g" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#4f46e5" />
+                <stop offset="0.55" stop-color="#9333ea" />
+                <stop offset="1" stop-color="#db2777" />
+              </linearGradient>
+            </defs>
+            <rect width="64" height="64" rx="16" fill="url(#tack-logo-g)" />
+            <rect x="12" y="14" width="40" height="7" rx="3.5" fill="#fff" />
+            <rect x="12" y="26" width="10" height="14" rx="3" fill="#fff" opacity="0.55" />
+            <rect x="27" y="26" width="10" height="24" rx="3" fill="#fff" />
+            <rect x="42" y="26" width="10" height="18" rx="3" fill="#fff" opacity="0.55" />
+          </svg>
           <span class="text-lg font-bold" style={{ color: 'var(--color-text-primary)' }}>Tack</span>
         </A>
       </div>
