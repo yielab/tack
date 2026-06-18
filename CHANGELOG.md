@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.0-beta.3] - 2026-06-18
+
+First public beta under the **Tack** name and the `yielab` GitHub organization.
+No functional changes to the application itself — this release rebrands, relocates,
+and hardens the project for its public debut.
+
+### Changed
+
+- **Renamed the project FlexPM → Tack** across the codebase, CLI, docs, and binaries.
+- **New brand:** redesigned logo (Kanban-T mark, indigo-fuchsia gradient) with
+  regenerated README screenshots and hero animation.
+- **Moved to the `yielab` organization** — all repository URLs, badges, clone
+  instructions, and the GitHub import user-agent now point at
+  `github.com/yielab/Tack`.
+
+### Security
+
+- Bumped **undici 7.27.2 → 7.28.0** (transitive via the `jsdom` test dependency)
+  to clear a high-severity npm audit advisory (TLS certificate-validation bypass
+  and shared-cache information disclosure).
+- Scrubbed personal contact details from the repository and git history ahead of
+  going public; security contact is now `info@yielab.com`.
+
+---
+
 ## [0.1.0-beta.2] - 2026-06-13
 
 Quality, accessibility, and test-infrastructure release. No user-facing feature
