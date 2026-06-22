@@ -20,7 +20,7 @@ tokio = { version = "1", features = ["full"] }
 # Web framework
 axum = { version = "0.8", features = ["ws", "multipart"] }
 tower = { version = "0.5", features = ["full"] }
-tower-http = { version = "0.6", features = ["cors", "trace", "fs", "compression-gzip", "set-header"] }
+tower-http = { version = "0.7", features = ["cors", "trace", "fs", "compression-gzip", "set-header"] }
 validator = { version = "0.20", features = ["derive"] }
 
 # Database
