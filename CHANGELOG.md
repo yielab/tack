@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.0-beta.5] - 2026-06-22
+
+### Added
+
+- **Cloud backup in the UI.** A new **Settings → Cloud Backup** section configures
+  an external S3-compatible destination (Cloudflare R2, Backblaze B2, AWS S3, MinIO)
+  directly in the app — endpoint, bucket, region, access/secret key, prefix, and
+  retention. A connection-status badge, a **Back up now** (sync) button, a
+  **Restore latest** button, and a list of existing cloud backups with per-item
+  restore make the whole flow one-click.
+  - New endpoints `GET`/`PUT /api/settings/backup`. Settings are stored in a new
+    `app_meta` table (migration 017) and override the `TACK_BACKUP_*` env defaults.
+    The secret key is write-only — never returned to clients.
+- **Version is now visible in the UI** — in the sidebar footer (previously a
+  hardcoded "v1.0") and at the top of the Settings page, read live from
+  `/api/health`.
+
+### Changed
+
+- The remote-backup endpoints now resolve their effective configuration from the
+  DB-stored settings (falling back to env), so UI changes take effect immediately
+  for manual backups and restores.
+
+---
+
 ## [0.1.0-beta.4] - 2026-06-22
 
 ### Changed

@@ -76,7 +76,7 @@ Your data is two paths: `tack.db` and a `storage/` folder for attachments — bo
 - **Full-text search** — SQLite FTS5, per-project and global (Ctrl+/)
 - **Export** — JSON (full snapshot) and CSV per project
 - **Import** — JSON round-trip with ID remapping; CSV into existing project
-- **Backup / restore** — hot backup via `VACUUM INTO`; staged restore on next startup; optional auto-backup to any S3-compatible bucket (Cloudflare R2, Backblaze B2, AWS S3)
+- **Backup / restore** — hot backup via `VACUUM INTO`; staged restore on next startup; one-click cloud backup & restore to any S3-compatible bucket (Cloudflare R2, Backblaze B2, AWS S3), configurable in **Settings → Cloud Backup**
 - **Project templates** — built-in templates per project type; save any project as a template
 
 ### Interface
@@ -479,7 +479,7 @@ crates/
 │   ├── dependency.rs DAG with cycle detection
 │   └── error.rs     Typed domain errors
 ├── tack-db/       SQLite persistence (sqlx, async)
-│   ├── migrations.rs 16 migrations, FTS5, WAL mode
+│   ├── migrations.rs 17 migrations, FTS5, WAL mode
 │   └── repo/        Repository pattern per entity
 ├── tack-api/      Axum HTTP server + WebSocket
 │   ├── router.rs    All routes, middleware, AppState

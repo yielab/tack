@@ -38,6 +38,7 @@ const Sidebar: Component = () => {
 
   const currentProjectId = () => params.id as string | undefined;
   const [projects] = createResource(() => api.projects.list());
+  const [health] = createResource(() => api.system.health());
 
   // "Work" is active when on any lens route
   const workActive = () => {
@@ -170,7 +171,9 @@ const Sidebar: Component = () => {
       </nav>
 
       <div class="px-4 py-3 border-t" style={{ 'border-color': 'var(--color-border-light)' }}>
-        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>Tack v1.0</p>
+        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+          Tack {health() ? `v${health()!.version}` : ''}
+        </p>
       </div>
     </div>
   );

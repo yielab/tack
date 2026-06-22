@@ -37,7 +37,7 @@ All database operations live in `crates/tack-db/src/repo/`. The structure:
 ```
 crates/tack-db/src/
 ├── lib.rs           # declares Repository struct; re-exports all repo modules
-├── migrations.rs    # 16 migrations embedded as strings
+├── migrations.rs    # 17 migrations embedded as strings
 └── repo/
     ├── items.rs
     ├── projects.rs
@@ -159,7 +159,7 @@ This dynamic approach is necessary because `sqlx`'s compile-time checking only w
 
 ## Migrations
 
-Tack has 16 migrations, embedded as constant string arrays in `crates/tack-db/src/migrations.rs`. They run automatically on server startup via `migrations::run_all(&pool)`.
+Tack has 17 migrations, embedded as constant string arrays in `crates/tack-db/src/migrations.rs`. They run automatically on server startup via `migrations::run_all(&pool)`.
 
 ```rust
 // From crates/tack-db/src/migrations.rs

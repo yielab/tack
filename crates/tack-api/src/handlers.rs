@@ -11,6 +11,7 @@ pub mod import_linear;
 pub mod items;
 pub mod projects;
 pub mod roles;
+pub mod settings;
 #[cfg(feature = "embed-spa")]
 pub mod spa;
 pub mod sprints;

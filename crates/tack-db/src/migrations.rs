@@ -35,6 +35,7 @@ pub async fn run_all(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         ("014_consolidate_boards", &MIGRATION_014[..]),
         ("015_item_assignee", &MIGRATION_015[..]),
         ("016_perf_indexes", &MIGRATION_016[..]),
+        ("017_app_meta", &MIGRATION_017[..]),
     ];
 
     for (name, statements) in migrations {
@@ -315,4 +316,11 @@ const MIGRATION_015: [&str; 2] = [
 const MIGRATION_016: [&str; 1] = [
     // Sprint-grouping board view filters items by (project_id, sprint_id); no composite index existed.
     "CREATE INDEX IF NOT EXISTS idx_items_sprint ON items(project_id, sprint_id)",
+];
+
+const MIGRATION_017: [&str; 1] = [
+    // Generic key/value store for app-level settings (e.g. install_id, cloud-backup
+    // config edited from the UI). Created IF NOT EXISTS because install_id may have
+    // lazily created it on an older install.
+    "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)",
 ];
