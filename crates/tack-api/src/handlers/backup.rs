@@ -136,12 +136,13 @@ fn backup_err(e: remote_backup::BackupError) -> (StatusCode, Json<serde_json::Va
 pub async fn post_remote_backup(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    if !state.config.remote_backup_enabled() {
+    let cfg = crate::handlers::settings::effective_backup_config(&state).await;
+    if !cfg.remote_backup_enabled() {
         return Err(remote_not_configured());
     }
 
-    let store = remote_backup::store_from_config(&state.config).map_err(backup_err)?;
-    let (bundle, manifest) = remote_backup::create_bundle(state.pool(), &state.config)
+    let store = remote_backup::store_from_config(&cfg).map_err(backup_err)?;
+    let (bundle, manifest) = remote_backup::create_bundle(state.pool(), &cfg)
         .await
         .map_err(backup_err)?;
 
@@ -149,13 +150,9 @@ pub async fn post_remote_backup(
         .await
         .map_err(backup_err)?;
 
-    remote_backup::prune(
-        store.as_ref(),
-        &state.config.backup_prefix,
-        state.config.backup_retention,
-    )
-    .await
-    .map_err(backup_err)?;
+    remote_backup::prune(store.as_ref(), &cfg.backup_prefix, cfg.backup_retention)
+        .await
+        .map_err(backup_err)?;
 
     Ok(Json(serde_json::to_value(&manifest).unwrap()))
 }
@@ -165,12 +162,13 @@ pub async fn post_remote_backup(
 pub async fn get_remote_backups(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    if !state.config.remote_backup_enabled() {
+    let cfg = crate::handlers::settings::effective_backup_config(&state).await;
+    if !cfg.remote_backup_enabled() {
         return Err(remote_not_configured());
     }
 
-    let store = remote_backup::store_from_config(&state.config).map_err(backup_err)?;
-    let manifests = remote_backup::list(store.as_ref(), &state.config.backup_prefix)
+    let store = remote_backup::store_from_config(&cfg).map_err(backup_err)?;
+    let manifests = remote_backup::list(store.as_ref(), &cfg.backup_prefix)
         .await
         .map_err(backup_err)?;
 
@@ -189,11 +187,12 @@ pub async fn post_remote_restore(
     State(state): State<AppState>,
     raw_body: Bytes,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    if !state.config.remote_backup_enabled() {
+    let cfg = crate::handlers::settings::effective_backup_config(&state).await;
+    if !cfg.remote_backup_enabled() {
         return Err(remote_not_configured());
     }
 
-    let store = remote_backup::store_from_config(&state.config).map_err(backup_err)?;
+    let store = remote_backup::store_from_config(&cfg).map_err(backup_err)?;
 
     let req_key: Option<String> = if raw_body.is_empty() {
         None
@@ -207,7 +206,7 @@ pub async fn post_remote_restore(
     let key = if let Some(k) = req_key.clone() {
         k
     } else {
-        let manifests = remote_backup::list(store.as_ref(), &state.config.backup_prefix)
+        let manifests = remote_backup::list(store.as_ref(), &cfg.backup_prefix)
             .await
             .map_err(backup_err)?;
         manifests
@@ -240,7 +239,7 @@ pub async fn post_remote_restore(
         .await
         .map_err(|e| backup_err(e.into()))?;
 
-    let db_path = state.config.db_file_path().ok_or((
+    let db_path = cfg.db_file_path().ok_or((
         StatusCode::BAD_REQUEST,
         Json(json!({"error": "restore requires a file-based database"})),
     ))?;
@@ -250,7 +249,7 @@ pub async fn post_remote_restore(
         &manifest,
         local_version as u32,
         &db_path,
-        &state.config.storage_dir,
+        &cfg.storage_dir,
     )
     .await
     .map_err(backup_err)?;

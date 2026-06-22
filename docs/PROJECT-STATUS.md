@@ -10,7 +10,7 @@
 
 | Component | Status | Notes |
 | --- | --- | --- |
-| Backend API | ✅ Working | REST endpoints, Axum + SQLite, 16 migrations |
+| Backend API | ✅ Working | REST endpoints, Axum + SQLite, 17 migrations |
 | Domain logic | ✅ Working | Workflow engine, vocabulary, dependency DAG |
 | Frontend SPA | ✅ Working | Board, List, Sprint, Calendar, Timeline (all interactive) |
 | WebSocket | ✅ Working | Live board updates via `/api/projects/{id}/boards/live` |

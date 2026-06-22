@@ -20,7 +20,7 @@ Tack is a lightweight, versatile project management tool built in Rust (backend)
 
 **Current Status:** Phase 8 complete
 
-- Backend: complete (REST endpoints + WebSocket, 16 migrations, custom field value validation, Alexa voice integration)
+- Backend: complete (REST endpoints + WebSocket, 17 migrations, custom field value validation, Alexa voice integration)
 - Frontend: complete (Board, List, Timeline, Sprints, Settings views; 144 Vitest unit tests + Playwright E2E)
 - CLI: complete (init, add, list, move, board, search, sprint, template, role, comment, field, backup, restore)
 
@@ -112,6 +112,8 @@ The API server loads configuration from `tack.toml` (if present) or environment 
 | `TACK_BACKUP_INTERVAL_SECS` | _(none)_ | Auto-backup interval in seconds; omit for manual-only |
 | `TACK_BACKUP_RETENTION` | `10` | Number of remote backups to keep after each upload |
 
+The `TACK_BACKUP_*` values are **defaults**. Cloud-backup settings (endpoint, bucket, region, access/secret key, prefix, retention) can also be edited at runtime from the UI (**Settings → Cloud Backup**) and are stored in the `app_meta` table; UI values override the env defaults. `TACK_BACKUP_INTERVAL_SECS` (automatic scheduling) remains env-only and takes effect at startup. The secret key is write-only over the API — never returned to clients.
+
 ### Debugging
 
 ```bash
@@ -162,7 +164,7 @@ docs/                Documentation
 
 **tack-db**:
 - SQLite via `sqlx` (async)
-- 10 migrations with FTS5 full-text search on items
+- 17 migrations with FTS5 full-text search on items
 - Repository pattern: CRUD for all entities in `repo/` submodules
 - Auto-runs migrations on startup
 - Database is created automatically if missing
@@ -219,7 +221,7 @@ docs/                Documentation
 
 ### Database Schema Highlights
 
-- **16 migrations** tracked in `_migrations` table
+- **17 migrations** tracked in `_migrations` table
 - **FTS5 virtual table** (`items_fts`) for full-text search across titles, descriptions, tags
 - **Triggers** maintain FTS index on INSERT/UPDATE/DELETE
 - **Foreign keys** enforce referential integrity (e.g., items → projects, items → sprints)
@@ -248,6 +250,9 @@ All routes follow RESTful conventions:
 - `/api/alexa` — **Alexa skill webhook** (1 endpoint; disabled unless `TACK_ALEXA_SKILL_ID` is set; authenticates via skill-ID + timestamp checks and is exempt from the Bearer-token gate)
 - `/api/projects/{id}/import-github` — GitHub Issues import (1 endpoint; `owner/repo` or full URL, optional PAT, label filter, PR-skipping, cursor pagination)
 - `/api/projects/{id}/import-linear` — Linear import (1 endpoint; Linear API key, optional team/project filter, label filter, priority mapping, cursor pagination)
+- `/api/backup`, `/api/restore` — Local DB backup download / staged restore (2 endpoints)
+- `/api/backup/remote` (POST/GET), `/api/backup/remote/restore` — Cloud (S3-compatible) backup, list, and staged restore (3 endpoints)
+- `/api/settings/backup` (GET/PUT) — Read/update the UI-editable cloud-backup config; secret key is write-only (returned as a `secret_key_set` boolean)
 
 Query parameters support filtering, pagination, and search.
 

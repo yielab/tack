@@ -19,7 +19,7 @@ use crate::debug;
 use crate::handlers::spa;
 use crate::handlers::{
     alexa, attachments, backup, boards_multi, comments, custom_fields, dependencies, export,
-    import_github, import_linear, items, projects, roles, sprints, templates, websocket,
+    import_github, import_linear, items, projects, roles, settings, sprints, templates, websocket,
 };
 use crate::middleware::require_token;
 use crate::webhook::WebhookClient;
@@ -87,6 +87,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/backup/remote", post(backup::post_remote_backup))
         .route("/backup/remote", get(backup::get_remote_backups))
         .route("/backup/remote/restore", post(backup::post_remote_restore))
+        // ─── Cloud backup settings (UI-editable) ──────────────────────────
+        .route(
+            "/settings/backup",
+            get(settings::get_backup_settings).put(settings::put_backup_settings),
+        )
         // ─── Projects ────────────────────────────────────────────────────
         .route("/projects", post(projects::create_project))
         .route("/projects", get(projects::list_projects))

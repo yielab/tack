@@ -133,7 +133,7 @@ The mapping from `CoreError` to HTTP status codes lives in `tack-api/src/error.r
 
 ### `migrations.rs`
 
-Contains 16 migrations as `const` arrays of SQL strings. Each entry is `(&str name, &[&str] statements)`. The runner:
+Contains 17 migrations as `const` arrays of SQL strings. Each entry is `(&str name, &[&str] statements)`. The runner:
 
 1. Creates `_migrations` table if absent.
 2. For each migration, checks if the name is already recorded.

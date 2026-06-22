@@ -1131,9 +1131,10 @@ HTTP errors are reserved for verification failures:
 
 ## Remote Cloud Backup
 
-Requires `TACK_BACKUP_BUCKET`, `TACK_BACKUP_ACCESS_KEY`, and `TACK_BACKUP_SECRET_KEY`
-to be set (see [configuration](../CLAUDE.md)). All three endpoints return `409 Conflict`
-when remote backup is not configured.
+Requires a cloud destination to be configured — either via the `TACK_BACKUP_*`
+environment variables (see [configuration](../CLAUDE.md)) or at runtime through the
+settings endpoint below (UI: **Settings → Cloud Backup**). The backup/list/restore
+endpoints return `409 Conflict` when no destination is configured.
 
 ### Trigger Remote Backup
 
@@ -1198,6 +1199,50 @@ higher than the running binary's — upgrade Tack before restoring.
 After the server restarts, both the database and the attachments directory are
 swapped atomically. The previous DB and attachments are preserved as `<path>.bak`
 for manual recovery.
+
+### Cloud Backup Settings
+
+```http
+GET /api/settings/backup
+```
+
+Returns the effective cloud-backup configuration — env defaults with any
+UI-saved overrides applied. The secret key is **never** returned; instead a
+`secret_key_set` boolean indicates whether one is stored.
+
+**Response `200`:**
+```json
+{
+  "configured": true,
+  "endpoint": "https://<account>.r2.cloudflarestorage.com",
+  "bucket": "my-tack-backups",
+  "region": "auto",
+  "access_key": "AKIA…",
+  "secret_key_set": true,
+  "prefix": "tack",
+  "retention": 10
+}
+```
+
+```http
+PUT /api/settings/backup
+Content-Type: application/json
+
+{
+  "endpoint": "https://<account>.r2.cloudflarestorage.com",
+  "bucket": "my-tack-backups",
+  "region": "auto",
+  "access_key": "AKIA…",
+  "secret_key": "…",
+  "prefix": "tack",
+  "retention": 10
+}
+```
+
+Saves the configuration to the `app_meta` table. Leave `secret_key` blank to keep
+the currently stored secret (so the masked UI field can be submitted untouched).
+Any blank string field clears that override and falls back to the environment
+default. Returns the same masked shape as `GET`.
 
 ---
 

@@ -1,7 +1,16 @@
-import { type Component, createSignal, createResource, For, Show } from 'solid-js';
+import {
+  type Component,
+  createSignal,
+  createResource,
+  createEffect,
+  For,
+  Show,
+} from 'solid-js';
+import { FiUploadCloud, FiDownloadCloud, FiRefreshCw } from 'solid-icons/fi';
 import { api } from '../../shared/api';
+import type { CloudBackupConfigInput } from '../../shared/api/data';
 import { toast } from '../../shared/ui/toast';
-import { Button } from '../../shared/ui';
+import { Button, Field, Badge } from '../../shared/ui';
 import { getStoredTheme, setTheme, type Theme } from '../../shared/state/theme';
 
 const THEMES: { value: Theme; label: string }[] = [
@@ -21,12 +30,20 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
 const GlobalSettings: Component = () => {
   const [theme, setThemeSig] = createSignal<Theme>(getStoredTheme());
   const [backingUp, setBackingUp] = createSignal(false);
   const [restoring, setRestoring] = createSignal(false);
   const [showSystem, setShowSystem] = createSignal(false);
   let restoreInput: HTMLInputElement | undefined;
+
+  const [health] = createResource(() => api.system.health());
 
   const chooseTheme = (t: Theme) => {
     setTheme(t);
@@ -64,14 +81,114 @@ const GlobalSettings: Component = () => {
     }
   };
 
-  const [health] = createResource(showSystem, () => api.system.health());
+  // ── Cloud backup ───────────────────────────────────────────────────────────
+  const [cloudConfig, { refetch: refetchConfig }] = createResource(() =>
+    api.data.getCloudConfig(),
+  );
+
+  const [endpoint, setEndpoint] = createSignal('');
+  const [bucket, setBucket] = createSignal('');
+  const [region, setRegion] = createSignal('auto');
+  const [accessKey, setAccessKey] = createSignal('');
+  const [secretKey, setSecretKey] = createSignal('');
+  const [prefix, setPrefix] = createSignal('tack');
+  const [retention, setRetention] = createSignal(10);
+
+  const [savingCloud, setSavingCloud] = createSignal(false);
+  const [cloudBackingUp, setCloudBackingUp] = createSignal(false);
+  const [cloudRestoring, setCloudRestoring] = createSignal(false);
+
+  // Populate the form whenever the saved config (re)loads.
+  createEffect(() => {
+    const c = cloudConfig();
+    if (!c) return;
+    setEndpoint(c.endpoint ?? '');
+    setBucket(c.bucket ?? '');
+    setRegion(c.region ?? 'auto');
+    setAccessKey(c.access_key ?? '');
+    setPrefix(c.prefix ?? 'tack');
+    setRetention(c.retention ?? 10);
+    setSecretKey(''); // never prefilled; blank = keep stored secret
+  });
+
+  const configured = () => cloudConfig()?.configured ?? false;
+
+  const [cloudBackups, { refetch: refetchBackups }] = createResource(
+    configured,
+    (isConfigured) => (isConfigured ? api.data.cloudBackups() : Promise.resolve([])),
+  );
+
+  const saveCloud = async () => {
+    setSavingCloud(true);
+    try {
+      const payload: CloudBackupConfigInput = {
+        endpoint: endpoint(),
+        bucket: bucket(),
+        region: region(),
+        access_key: accessKey(),
+        prefix: prefix(),
+        retention: retention(),
+      };
+      // Only send the secret if the user typed a new one.
+      if (secretKey().trim()) payload.secret_key = secretKey();
+      await api.data.saveCloudConfig(payload);
+      await refetchConfig();
+      toast.success('Cloud backup settings saved.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save settings');
+    } finally {
+      setSavingCloud(false);
+    }
+  };
+
+  const backupNow = async () => {
+    setCloudBackingUp(true);
+    try {
+      await api.data.cloudBackupNow();
+      toast.success('Backed up to cloud storage.');
+      void refetchBackups();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Cloud backup failed');
+    } finally {
+      setCloudBackingUp(false);
+    }
+  };
+
+  const restoreFromCloud = async (key?: string) => {
+    if (
+      !confirm(
+        'Restoring from the cloud REPLACES the entire database on the next restart. Continue?',
+      )
+    ) {
+      return;
+    }
+    setCloudRestoring(true);
+    try {
+      const res = await api.data.cloudRestore(key);
+      toast.success(res.message ?? 'Restore staged. Restart to apply.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Cloud restore failed');
+    } finally {
+      setCloudRestoring(false);
+    }
+  };
+
   const [dbStats] = createResource(showSystem, () => api.system.dbStats());
 
   return (
     <div class="max-w-2xl mx-auto px-6 py-8 space-y-10">
-      <h1 class="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
-        Settings
-      </h1>
+      <div class="flex items-baseline justify-between gap-3">
+        <h1 class="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
+          Settings
+        </h1>
+        <Show when={health()}>
+          {(h) => (
+            <span class="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+              Tack v{h().version}
+            </span>
+          )}
+        </Show>
+      </div>
 
       {/* Appearance */}
       <section class="space-y-3">
@@ -95,13 +212,13 @@ const GlobalSettings: Component = () => {
         </div>
       </section>
 
-      {/* Data & Backup */}
+      {/* Data & Backup (local) */}
       <section class="space-y-3 border-t pt-6" style={{ 'border-color': 'var(--color-border-light)' }}>
         <h2 class="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-          Data &amp; Backup
+          Local Backup
         </h2>
         <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-          Download a full database backup, or restore from a previous one.
+          Download a full database backup file, or restore from a previous one.
         </p>
         <div class="flex flex-wrap gap-2">
           <Button onClick={() => void downloadBackup()} loading={backingUp()} disabled={backingUp()}>
@@ -123,6 +240,163 @@ const GlobalSettings: Component = () => {
         </div>
         <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
           Restoring replaces the entire database.
+        </p>
+      </section>
+
+      {/* Cloud / external backup */}
+      <section class="space-y-4 border-t pt-6" style={{ 'border-color': 'var(--color-border-light)' }}>
+        <div class="flex items-center gap-3">
+          <h2 class="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+            Cloud Backup
+          </h2>
+          <Show
+            when={configured()}
+            fallback={<Badge tone="neutral">Not configured</Badge>}
+          >
+            <Badge tone="success">Connected</Badge>
+          </Show>
+        </div>
+        <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+          Sync your database to an external S3-compatible store (Cloudflare R2,
+          Backblaze B2, AWS S3, MinIO). Enter the destination once, then back up
+          or restore with one click.
+        </p>
+
+        <div class="grid gap-3 sm:grid-cols-2">
+          <Field
+            label="Endpoint URL"
+            placeholder="https://<account>.r2.cloudflarestorage.com"
+            hint="Leave blank for AWS S3."
+            value={endpoint()}
+            onInput={(e) => setEndpoint(e.currentTarget.value)}
+          />
+          <Field
+            label="Bucket"
+            placeholder="my-tack-backups"
+            value={bucket()}
+            onInput={(e) => setBucket(e.currentTarget.value)}
+          />
+          <Field
+            label="Region"
+            placeholder="auto"
+            hint="Cloudflare R2 uses “auto”; AWS needs the real region."
+            value={region()}
+            onInput={(e) => setRegion(e.currentTarget.value)}
+          />
+          <Field
+            label="Object prefix"
+            placeholder="tack"
+            value={prefix()}
+            onInput={(e) => setPrefix(e.currentTarget.value)}
+          />
+          <Field
+            label="Access key ID"
+            value={accessKey()}
+            onInput={(e) => setAccessKey(e.currentTarget.value)}
+          />
+          <Field
+            label="Secret access key"
+            type="password"
+            placeholder={
+              cloudConfig()?.secret_key_set ? '•••••••• (unchanged)' : 'secret access key'
+            }
+            hint="Stored locally; never shown again. Leave blank to keep the current one."
+            value={secretKey()}
+            onInput={(e) => setSecretKey(e.currentTarget.value)}
+          />
+          <Field
+            label="Keep last N backups"
+            type="number"
+            min="1"
+            value={String(retention())}
+            onInput={(e) => setRetention(Number(e.currentTarget.value) || 1)}
+          />
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <Button onClick={() => void saveCloud()} loading={savingCloud()} disabled={savingCloud()}>
+            Save settings
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => void backupNow()}
+            loading={cloudBackingUp()}
+            disabled={!configured() || cloudBackingUp()}
+            title={configured() ? 'Sync the database to cloud storage now' : 'Configure cloud storage first'}
+          >
+            <FiUploadCloud size={16} class="mr-1.5" /> Back up now
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => void restoreFromCloud()}
+            loading={cloudRestoring()}
+            disabled={!configured() || cloudRestoring()}
+            title="Restore the latest cloud backup (applied on next restart)"
+          >
+            <FiDownloadCloud size={16} class="mr-1.5" /> Restore latest
+          </Button>
+          <Show when={configured()}>
+            <Button
+              variant="ghost"
+              onClick={() => void refetchBackups()}
+              title="Refresh the list of cloud backups"
+            >
+              <FiRefreshCw size={16} />
+            </Button>
+          </Show>
+        </div>
+
+        {/* Existing cloud backups */}
+        <Show when={configured()}>
+          <div class="rounded-lg border" style={{ 'border-color': 'var(--color-border-light)' }}>
+            <p
+              class="px-3 py-2 text-xs font-semibold uppercase tracking-wide border-b"
+              style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}
+            >
+              Cloud backups
+            </p>
+            <Show
+              when={(cloudBackups() ?? []).length > 0}
+              fallback={
+                <p class="px-3 py-3 text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+                  {cloudBackups.loading ? 'Loading…' : 'No cloud backups yet.'}
+                </p>
+              }
+            >
+              <ul>
+                <For each={cloudBackups()}>
+                  {(b) => (
+                    <li
+                      class="flex items-center justify-between gap-3 px-3 py-2 text-sm border-b last:border-b-0"
+                      style={{ 'border-color': 'var(--color-border-light)', color: 'var(--color-text-secondary)' }}
+                    >
+                      <div class="min-w-0">
+                        <div style={{ color: 'var(--color-text-primary)' }}>
+                          {new Date(b.created_at).toLocaleString()}
+                        </div>
+                        <div class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                          {b.item_count} items · {formatBytes(b.bundle_size_bytes)}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={cloudRestoring()}
+                        onClick={() => void restoreFromCloud(b.object_key)}
+                      >
+                        Restore
+                      </Button>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+          </div>
+        </Show>
+
+        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+          Restoring is staged and applied on the next server restart. Schema newer
+          than your running version is rejected.
         </p>
       </section>
 

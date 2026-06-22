@@ -163,7 +163,7 @@ The broadcast channel is the pub/sub backbone. Every handler that modifies data 
 │   ├── tack-db/           SQLite persistence layer
 │   │   └── src/
 │   │       ├── lib.rs       init_pool() — WAL mode, foreign keys on
-│   │       ├── migrations.rs 16 migrations as embedded SQL strings
+│   │       ├── migrations.rs 17 migrations as embedded SQL strings
 │   │       ├── repo.rs      Repository struct — delegates to submodules
 │   │       └── repo/        One file per entity (items, projects, sprints, …)
 │   │
