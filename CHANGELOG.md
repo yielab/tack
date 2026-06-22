@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.0-beta.6] - 2026-06-22
+
+### Security
+
+- **quinn-proto 0.11.14 → 0.11.15** — fixes RUSTSEC-2026-0185 (high: remote
+  memory exhaustion via unbounded out-of-order stream reassembly), clearing the
+  failing `cargo audit` gate.
+
+### Changed
+
+- Dependency maintenance, consolidating the open Dependabot PRs:
+  - **tower-http 0.6 → 0.7**, **sha2 0.10 → 0.11**, **hmac 0.12 → 0.13** (the
+    HMAC webhook signing now imports `KeyInit` for `new_from_slice`).
+  - In-semver cargo minor/patch bumps (tokio, axum, serde_json, chrono, uuid,
+    clap, tracing-appender, hyper, h2, …).
+  - Frontend: **@solidjs/router 0.15 → 0.16**, tailwindcss 4.3, solid-js 1.9.13,
+    vitest 4.1.9, @playwright/test 1.61, and the rest of the npm minor/patch group.
+  - CI: `actions/checkout` v4 → v7.
+
+---
+
 ## [0.1.0-beta.5] - 2026-06-22
 
 ### Added
