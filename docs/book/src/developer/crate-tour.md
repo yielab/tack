@@ -188,11 +188,14 @@ This design gives callers a single `repo` value to pass around while keeping eac
 
 **Does not own:** SQL queries (those are in `tack-db`) or business rules (those are in `tack-core`). Handlers orchestrate calls to both.
 
+This crate is a **library only** — it does not produce its own binary. The single
+`tack` binary (in `tack-cli`) calls `tack_api::serve()` to start the server.
+
 ---
 
-### `main.rs`
+### `server.rs`
 
-The entry point does five things in order:
+Exposes `pub async fn serve()`, the server entry point. It does these things in order:
 
 1. Loads `AppConfig` (TOML file or environment variables).
 2. Initialises the `tracing` subscriber (plain text or JSON depending on config).
@@ -200,6 +203,9 @@ The entry point does five things in order:
 4. Calls `init_pool()` and `migrations::run_all()`.
 5. Ensures a default workspace row exists (creates one if the table is empty).
 6. Builds `AppState`, calls `build_router(state)`, and starts `axum::serve` with graceful shutdown on `CTRL+C`.
+
+`tack-cli` builds a Tokio runtime and calls `serve()` when you run `tack` with no
+subcommand (or `tack serve`).
 
 ---
 
@@ -284,17 +290,19 @@ The response body is always `{ "error": { "status": <code>, "message": "<text>" 
 
 **Lives in:** `crates/tack-cli/src/`
 
-**Owns:** command-line parsing, human-readable output formatting, HTTP calls to the API.
+**Owns:** the single `tack` binary — both starting the server and the command-line client (parsing, human-readable output, HTTP calls to the API).
 
-**Does not own:** any `tack-core` or `tack-db` types directly. The CLI works entirely through the HTTP API — it serialises to JSON for requests and deserialises from `serde_json::Value` for responses (no strongly-typed response structs). This keeps the CLI decoupled from internal model changes that do not affect the API contract.
+**Does not own:** any `tack-core` or `tack-db` types directly. The client commands work entirely through the HTTP API — they serialise to JSON for requests and deserialise from `serde_json::Value` for responses (no strongly-typed response structs). This keeps the CLI decoupled from internal model changes that do not affect the API contract. (To *run* the server it depends on `tack-api` and calls `tack_api::serve()`.)
 
 ---
 
 ### `main.rs`
 
-Uses `clap`'s derive API. The top-level `Cli` struct has two global flags (`--api-url`, `--token`) and a `Commands` enum. Commands include `init`, `projects`, `add`, `list`, `move`, `board`, `search`, `sprint`, `config`, `completions`, `backup`, and `restore`.
+Uses `clap`'s derive API. The top-level `Cli` struct has two global flags (`--api-url`, `--token`) and an **optional** `Commands` enum. Commands include `serve`, `init`, `projects`, `add`, `list`, `move`, `board`, `search`, `sprint`, `config`, `completions`, `backup`, and `restore`.
 
-Two commands (`config` and `completions`) are handled before the `TackClient` is constructed, since they do not need a live connection.
+Running `tack` with **no subcommand** — or `tack serve` — starts the server + web UI: `run_server()` builds a Tokio runtime and calls `tack_api::serve()`. This is the primary, UI-first entry point. Everything else is the CLI client.
+
+Three cases (`serve`, `config`, and `completions`) are handled before the `TackClient` is constructed, since they do not need a live connection.
 
 All other commands instantiate a `TackClient`, call the appropriate method, and then either print raw JSON (with `--json`) or format a human-readable table. The table formatter (`print_table_row`) pads and truncates columns to fixed widths, which keeps the output readable in standard terminals.
 

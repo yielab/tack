@@ -13,6 +13,6 @@ build-dir = "book"
 create-missing = false
 
 [output.html]
-git-repository-url = "https://github.com/yielab/Tack"
-edit-url-template = "https://github.com/yielab/Tack/edit/develop/docs/book/src/{path}"
+git-repository-url = "https://github.com/yielab/tack"
+edit-url-template = "https://github.com/yielab/tack/edit/develop/docs/book/src/{path}"
 no-section-label = false

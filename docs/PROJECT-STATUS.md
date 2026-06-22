@@ -37,7 +37,7 @@
 | Linear import | ✅ Working | `POST /api/projects/{id}/import-linear`; accepts API key, optional team/project filter, label filter, completed-issue toggle; priority mapping; cursor pagination |
 | Input validation | ✅ Done | `validator` on all `Create*/Update*` DTOs |
 | Workflow correctness | ✅ Done | Parent-auto-complete + WIP decisions live in `tack-core` |
-| Single binary | ✅ Done | `--features embed-spa` embeds SPA; ~5 MB release binary |
+| Single binary | ✅ Done | One `tack` binary (server + CLI); `--features embed-spa` embeds the UI; ~10 MB release binary |
 
 ---
 

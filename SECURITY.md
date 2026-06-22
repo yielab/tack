@@ -6,7 +6,7 @@ Tack is a **self-hosted, local-only** tool designed to run on `127.0.0.1`. It ha
 
 ## Reporting a Vulnerability
 
-Open a [GitHub Issue](https://github.com/yielab/Tack/issues) marked **[security]** in the title.
+Open a [GitHub Issue](https://github.com/yielab/tack/issues) marked **[security]** in the title.
 
 If you prefer private disclosure, email **[info@yielab.com](mailto:info@yielab.com)** with subject `[tack] security`. I aim to respond within 7 days.
 

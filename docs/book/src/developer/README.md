@@ -19,7 +19,7 @@ Each arrow means "depends on". No reverse arrows are allowed.
 - `tack-core` has zero I/O. It cannot open a file, touch a database, or make a network call. It only contains pure Rust structs, enums, and functions. You can run every test in it without a database process.
 - `tack-db` knows about `tack-core` (it persists those structs), but it knows nothing about HTTP, routing, or config files.
 - `tack-api` is the only place where HTTP concerns (status codes, request extraction, CORS) and database concerns meet.
-- `tack-cli` talks to `tack-api` over HTTP. It never opens the database directly. This means the CLI works whether the server is running locally or on a remote machine.
+- `tack-cli` is the single `tack` binary. It depends on `tack-api` so that `tack serve` can start the server in-process, but its **client** commands only talk to a running server over HTTP — they never open the database directly. This means the CLI works whether the server is local or on a remote machine.
 
 **Why bother?** The layering prevents the kind of "everything knows about everything" entanglement that makes codebases brittle. It also means:
 

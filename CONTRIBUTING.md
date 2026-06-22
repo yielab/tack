@@ -3,7 +3,7 @@
 ## Quick Start
 
 ```bash
-git clone https://github.com/yielab/Tack.git
+git clone https://github.com/yielab/tack.git
 cd Tack
 
 # Activate the pre-push hook — runs fmt + clippy before every push
@@ -143,7 +143,7 @@ Keep business logic testable without a database. `tack-cli` must never import
 ```bash
 # ─── Building ────────────────────────────────────
 cargo build                    # Debug build (fast compile)
-cargo build --release          # Release build (optimized, ~5 MB binary)
+cargo build --release          # Release build (optimized, ~10 MB binary)
 cargo build -p tack-core     # Build only one crate
 
 # ─── Testing ─────────────────────────────────────
