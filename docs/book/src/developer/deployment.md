@@ -14,15 +14,15 @@ Build one binary that embeds the SPA and serves everything:
 cd frontend && npm ci && npm run build && cd ..
 
 # 2. Build the release binary with embedded SPA
-cargo build --release --features embed-spa -p tack-api
+cargo build --release --features embed-spa -p tack-cli
 
-# Result: target/release/tack-api (~5 MB)
+# Result: target/release/tack (~10 MB)
 ```
 
 Copy the binary to the server and run it:
 
 ```sh
-scp target/release/tack-api user@server:/opt/tack/tack-api
+scp target/release/tack user@server:/opt/tack/tack
 ssh user@server
 
 # On the server
@@ -30,7 +30,7 @@ mkdir -p /var/data/tack /var/log/tack
 TACK_DATABASE_URL=sqlite:/var/data/tack/tack.db \
 TACK_STORAGE_DIR=/var/data/tack/storage \
 TACK_LOG_FILE=/var/log/tack/api.log \
-/opt/tack/tack-api
+/opt/tack/tack
 ```
 
 The binary is statically linked and has no runtime dependencies.
@@ -50,7 +50,7 @@ After=network.target
 Type=simple
 User=tack
 WorkingDirectory=/opt/tack
-ExecStart=/opt/tack/tack-api
+ExecStart=/opt/tack/tack
 Restart=on-failure
 RestartSec=5
 

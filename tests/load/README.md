@@ -26,7 +26,7 @@ brew install k6
 Start the API first (a throwaway DB is recommended):
 
 ```bash
-TACK_DATABASE_URL='sqlite:load.db?mode=rwc' cargo run -p tack-api --release
+TACK_DATABASE_URL='sqlite:load.db?mode=rwc' cargo run -p tack-cli --release -- serve
 ```
 
 Then, from the repo root:

@@ -54,7 +54,7 @@ export default defineConfig({
       // early when tack.toml exists and ignores all TACK_* env vars, so the
       // toml's absence here is what lets TACK_PORT / DATABASE_URL take effect.
       // cargo still resolves the workspace by searching upward.
-      command: 'cargo run -p tack-api',
+      command: 'cargo run -p tack-cli -- serve',
       url: `http://127.0.0.1:${API_PORT}/api/health`,
       timeout: 180_000, // first compile can be slow
       reuseExistingServer: !isCI,

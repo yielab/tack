@@ -32,11 +32,11 @@ Tack is a lightweight, versatile project management tool built in Rust (backend)
 # Check the whole workspace compiles
 cargo build
 
-# Run the API server (http://127.0.0.1:3210)
-cargo run --bin tack-api
+# Run the server + web UI (http://127.0.0.1:3210) — bare `tack` defaults to serve
+cargo run -p tack-cli -- serve
 
-# Run the CLI tool
-cargo run --bin tack-cli -- --help
+# Run the CLI tool (same binary)
+cargo run --bin tack -- --help
 
 # Release binary (slow compile — use sparingly)
 cargo build --release
@@ -116,13 +116,13 @@ The API server loads configuration from `tack.toml` (if present) or environment 
 
 ```bash
 # Debug logging
-TACK_LOG_LEVEL=debug cargo run --bin tack-api
+TACK_LOG_LEVEL=debug cargo run -p tack-cli -- serve
 
 # Trace SQL queries
-RUST_LOG=tack_db=trace,tack_api=debug cargo run --bin tack-api
+RUST_LOG=tack_db=trace,tack_api=debug cargo run -p tack-cli -- serve
 
 # JSON logs (for log aggregators)
-TACK_LOG_JSON=true cargo run --bin tack-api
+TACK_LOG_JSON=true cargo run -p tack-cli -- serve
 ```
 
 ## Architecture
@@ -420,4 +420,4 @@ codegen-units = 1       # Better optimization, slower compile
 opt-level = "z"         # Optimize for size
 ```
 
-This produces ~5MB binaries. For faster compile times during development, use `--release` sparingly.
+This produces a ~3.5 MB CLI (`tack`) and a ~10 MB server (`tack-api`, which embeds the SPA). For faster compile times during development, use `--release` sparingly.

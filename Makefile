@@ -5,10 +5,10 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 # ─── Building & Running ───────────────────────────
-build: ## Compile — frontend + release binary with embedded UI (~30s first time)
+build: ## Compile — frontend + single `tack` binary with embedded UI (~30s first time)
 	npm --prefix frontend ci
 	npm --prefix frontend run build
-	cargo build -p tack-api --release --features embed-spa
+	cargo build -p tack-cli --release --features embed-spa
 	@echo ""
 	@echo "  Ready. Start with: make run"
 
@@ -25,13 +25,13 @@ endef
 run: ## Start the pre-built binary + Cloudflare tunnel (Ctrl-C stops both)
 	@trap 'kill 0' SIGINT SIGTERM; \
 	$(START_TUNNEL); \
-	./target/release/tack-api & \
+	./target/release/tack & \
 	wait
 
-dev: frontend/node_modules ## Development mode: API + Vite hot-reload + tunnel (Ctrl-C stops all)
+dev: frontend/node_modules ## Development mode: server + Vite hot-reload + tunnel (Ctrl-C stops all)
 	@trap 'kill 0' SIGINT; \
 	$(START_TUNNEL); \
-	cargo run --bin tack-api & \
+	cargo run -p tack-cli -- serve & \
 	npm --prefix frontend run dev & \
 	wait
 
@@ -41,11 +41,11 @@ tunnel: ## Start only the Cloudflare tunnel (your hostname → localhost:3210; s
 frontend/node_modules:
 	npm --prefix frontend install
 
-debug: ## Start API only with verbose logging
-	RUST_LOG=tack_api=debug,tack_db=debug,tower_http=debug cargo run --bin tack-api
+debug: ## Start the server with verbose logging
+	RUST_LOG=tack_api=debug,tack_db=debug,tower_http=debug cargo run -p tack-cli -- serve
 
 cli: ## Run the CLI (use ARGS="..." to pass arguments)
-	cargo run --bin tack-cli -- $(ARGS)
+	cargo run --bin tack -- $(ARGS)
 
 # ─── Testing ─────────────────────────────────────
 test: ## Run all tests

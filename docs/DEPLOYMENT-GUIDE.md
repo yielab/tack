@@ -180,17 +180,17 @@ process serves both the API (`/api/*`) and the UI (same-origin — no CORS, no
 separate static host). From a clean checkout, one command does everything:
 
 ```bash
-make build-spa
+make build
 # → builds frontend/dist, then:
-#   cargo build -p tack-api --release --features embed-spa
-# Produces: target/release/tack-api  (~5 MB)
+#   cargo build -p tack-cli --release --features embed-spa
+# Produces the single binary: target/release/tack  (~10 MB)
 ```
 
 Run it anywhere — it needs only the SQLite database path:
 
 ```bash
 TACK_DATABASE_URL="sqlite:/var/lib/tack/tack.db?mode=rwc" \
-  ./target/release/tack-api
+  ./target/release/tack
 # Open http://<host>:3210/  → the SPA loads and talks to /api same-origin.
 ```
 
@@ -219,7 +219,7 @@ Environment="TACK_DATABASE_URL=sqlite:/var/lib/tack/tack.db?mode=rwc"
 Environment="TACK_LOG_LEVEL=warn"
 Environment="TACK_LOG_FILE=/var/log/tack/tack.log"
 Environment="TACK_STORAGE_DIR=/var/lib/tack/storage"
-ExecStart=/opt/tack/target/release/tack-api
+ExecStart=/opt/tack/target/release/tack
 Restart=always
 RestartSec=10
 

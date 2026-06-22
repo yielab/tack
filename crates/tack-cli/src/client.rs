@@ -136,7 +136,7 @@ pub fn check_connection(config: &Config) -> anyhow::Result<()> {
     client.get("/health").map_err(|_| {
         anyhow::anyhow!(
             "Cannot reach Tack API at {}\n\
-             Make sure the server is running: cargo run --bin tack-api",
+             Make sure the server is running: cargo run -p tack-cli -- serve",
             config.base_url
         )
     })?;

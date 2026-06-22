@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 
-> A complete project manager in a single 5 MB binary — no Docker, no database to run, no cloud, no accounts. One file is the app; one file is your data. Drive it from a GUI, a terminal, or a script. Reshape it for software sprints, a renovation, or a thesis.
+> A complete project manager in a single ~10 MB binary — no Docker, no database to run, no cloud, no accounts. One file is the app; one file is your data. Drive it from a GUI, a terminal, or a script. Reshape it for software sprints, a renovation, or a thesis.
 >
 > Built with Rust (backend) + SolidJS (frontend).
 
@@ -33,10 +33,10 @@ Supports any workflow — Scrum, Kanban, phase-based construction, personal task
 
 ### Single binary — the whole stack in one file
 
-The release binary (~5 MB, statically linked) embeds the web UI, the REST API, and the SQLite engine. There is nothing else to install or run.
+The release binary (~10 MB, statically linked) embeds the web UI, the REST API, and the SQLite engine. There is nothing else to install or run. (Release downloads are ~6 MB compressed.)
 
 ```bash
-./tack-api   # serves the UI at http://localhost:3210 and the API at :3210/api
+./tack   # serves the UI at http://localhost:3210 and the API at :3210/api
 ```
 
 Your data is two paths: `tack.db` and a `storage/` folder for attachments — both next to the binary. Copy those two to back up everything. Move them to migrate.
@@ -44,7 +44,7 @@ Your data is two paths: `tack.db` and a `storage/` folder for attachments — bo
 ### API & CLI — drive it from a terminal or a script
 
 - **64 REST endpoints** — full CRUD for all entities plus debug and diagnostic routes
-- **CLI** (`tack`) with `--json` output and shell completions (bash/zsh/fish)
+- **CLI** — the same `tack` binary is also a command-line client (`tack add`, `tack list`, …) with `--json` output and shell completions (bash/zsh/fish)
 - **GitHub Issues import** — fetch from any public or private repo; label filter, PAT, cursor pagination
 - **Linear import** — fetch via Linear's GraphQL API; team/project filter, label filter, priority mapping
 - **Outbound webhooks** — POST events to any URL on item changes, sprint starts, and due-soon alerts; HMAC-SHA256 signing
@@ -99,7 +99,7 @@ Tack is in **beta**. Core features are complete; a few constraints to know upfro
 | Multi-user | No per-user identities or permissions. All API clients share the same access level. "Small team" means a few trusted people sharing one token, not an org with roles and ACLs. |
 | Multi-device sync | None — single server, single database. Your data stays on your machine; there is no sync or replication between instances. |
 | Mobile | Responsive web UI works on mobile browsers; no native app. |
-| Binary signing | Not code-signed yet. macOS: `right-click → Open` on first run (or `xattr -d com.apple.quarantine tack-api`). Windows: `More info → Run anyway` if SmartScreen appears. Roadmap item. |
+| Binary signing | Not code-signed yet. macOS: `right-click → Open` on first run (or `xattr -d com.apple.quarantine tack`). Windows: `More info → Run anyway` if SmartScreen appears. Roadmap item. |
 | Offline | No offline client — the browser UI requires the local server to be running. |
 
 ---
@@ -114,7 +114,7 @@ Tack is also a deliberate exploration of stacks. Rust (Axum, sqlx), modular crat
 
 The honest answer is split between technical fit and deliberate learning.
 
-**Technical fit:** A self-hosted tool that ships as a single binary with no runtime dependencies and a SQLite file as its only data store is a genuinely good fit for Rust. The binary is ~5 MB statically linked, starts in milliseconds, and uses negligible memory at rest.
+**Technical fit:** A self-hosted tool that ships as a single binary with no runtime dependencies and a SQLite file as its only data store is a genuinely good fit for Rust. The binary is ~10 MB statically linked, starts in milliseconds, and uses negligible memory at rest.
 
 **Learning purpose:** My day-to-day work runs on more standard stacks. I picked Rust specifically because it forces explicit thinking about things those languages abstract away — memory layout, async runtimes, error propagation without exceptions. Tack was scoped large enough to encounter those problems in real form: async handlers, a multi-crate workspace with strict layering, compile-time SQL, a broadcast channel for WebSockets. A todo-list tutorial would not have surfaced any of that.
 
@@ -139,16 +139,16 @@ Grab the archive for your system from the [**releases page**](https://github.com
 
 ```bash
 tar xzf tack-*.tar.gz && cd tack-*/
-./tack-api
+./tack
 ```
 
-**Windows:** extract the zip and double-click `tack-api.exe`.
+**Windows:** extract the zip and double-click `tack.exe`.
 
 Then open **`http://localhost:3210`** in your browser. Your data lives in `tack.db` (plus a `storage/` folder for attachments) next to the binary — back up those files and you've backed up everything.
 
-> **First-run warnings:** the binaries are not code-signed yet. On macOS, right-click `tack-api` → **Open** the first time (or run `xattr -d com.apple.quarantine tack-api`). On Windows, click **More info → Run anyway** if SmartScreen appears.
+> **First-run warnings:** the binary is not code-signed yet. On macOS, right-click `tack` → **Open** the first time (or run `xattr -d com.apple.quarantine tack`). On Windows, click **More info → Run anyway** if SmartScreen appears.
 
-Each archive also includes `tack`, the optional [CLI client](#cli).
+The same `tack` binary is also the optional [CLI client](#cli) — run `./tack --help` to see the commands.
 
 ### Build it yourself (single binary)
 
@@ -501,9 +501,10 @@ crates/
 │   │   ├── templates.rs
 │   │   └── websocket.rs
 │   ├── config.rs    TOML + env config
+│   ├── server.rs   Server entry point (pub fn serve)
 │   ├── webhook.rs   Outbound webhook delivery
 │   └── debug.rs     Health and diagnostics
-└── tack-cli/      clap CLI — talks to the API over HTTP
+└── tack-cli/      The `tack` binary — runs the server (tack serve) and is the CLI client
 
 frontend/
 ├── src/
@@ -522,8 +523,10 @@ tack-core  ← no deps on other crates (pure logic)
      ↑
 tack-db    ← adds SQLite I/O
      ↑
-tack-api   ← adds HTTP transport
-tack-cli   ← talks to tack-api over HTTP (no DB access)
+tack-api   ← adds HTTP transport (library: pub fn serve)
+     ↑
+tack-cli   ← the `tack` binary: embeds tack-api to run the server,
+             and is the CLI client (talks to the API over HTTP)
 ```
 
 ---

@@ -1,3 +1,6 @@
+//! Server entry point, exposed as a library function so the single `tack`
+//! binary (in the `tack-cli` crate) can start the HTTP server in-process.
+
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -5,14 +8,15 @@ use chrono::Utc;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use tack_api::config::AppConfig;
-use tack_api::remote_backup;
-use tack_api::router::{AppState, build_router};
-use tack_api::webhook::WebhookClient;
+use crate::config::AppConfig;
+use crate::remote_backup;
+use crate::router::{AppState, build_router};
+use crate::webhook::WebhookClient;
 use tack_db::{Repository, init_pool, migrations, repo};
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+/// Boot the Tack HTTP server: load config, run migrations, start background
+/// tasks, and serve until a shutdown signal is received.
+pub async fn serve() -> anyhow::Result<()> {
     // Load configuration
     let config = AppConfig::load();
 

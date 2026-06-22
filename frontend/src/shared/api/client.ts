@@ -5,7 +5,7 @@
 // exported here — no raw `fetch` and no absolute API hosts anywhere else.
 
 /** Base URL for the API. Relative by default so the SPA works same-origin when
- * served from the `tack-api` binary (T-403) or behind a reverse proxy. */
+ * served from the `tack` binary (T-403) or behind a reverse proxy. */
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
 
 /**

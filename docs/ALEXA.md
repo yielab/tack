@@ -36,7 +36,7 @@ Notes:
 Set the skill ID (found in the Alexa developer console, `amzn1.ask.skill.…`):
 
 ```bash
-TACK_ALEXA_SKILL_ID=amzn1.ask.skill.xxxx-xxxx cargo run --bin tack-api
+TACK_ALEXA_SKILL_ID=amzn1.ask.skill.xxxx-xxxx cargo run -p tack-cli -- serve
 ```
 
 or in `tack.toml`:

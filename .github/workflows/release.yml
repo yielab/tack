@@ -92,31 +92,31 @@ jobs:
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      - name: Build release binaries
-        run: cargo build --release --target ${{ matrix.target }} -p tack-api -p tack-cli --features tack-api/embed-spa
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }} -p tack-cli --features embed-spa
 
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'
         run: |
           STAGE="tack-${GITHUB_REF_NAME}-${{ matrix.platform }}"
           mkdir "$STAGE"
-          cp "target/${{ matrix.target }}/release/tack-api" "$STAGE/"
           cp "target/${{ matrix.target }}/release/tack" "$STAGE/"
           cp LICENSE README.md "$STAGE/"
           cat > "$STAGE/QUICKSTART.txt" <<'EOF'
           Tack — Quick Start
           ====================
 
-          1. Run the server:        ./tack-api
+          1. Start the app:         ./tack
           2. Open your browser at:  http://localhost:3210
           3. Stop with Ctrl+C.
 
           Your data is stored in tack.db (and ./storage for attachments)
-          in the directory where you run the server. Keep those files to
-          keep your projects.
+          in the directory where you run it. Keep those files to keep
+          your projects.
 
-          The "tack" binary is an optional command-line client.
-          Run "./tack --help" while the server is running.
+          The same binary is also an optional command-line client:
+          run "./tack --help" (while the app is running) to see the
+          commands — e.g. "./tack add", "./tack list".
           EOF
           tar czf "$STAGE.tar.gz" "$STAGE"
           echo "ASSET=$STAGE.tar.gz" >> "$GITHUB_ENV"
@@ -127,16 +127,15 @@ jobs:
         run: |
           $stage = "tack-$env:GITHUB_REF_NAME-${{ matrix.platform }}"
           New-Item -ItemType Directory -Path $stage | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/tack-api.exe" $stage
           Copy-Item "target/${{ matrix.target }}/release/tack.exe" $stage
           Copy-Item LICENSE, README.md $stage
           @"
           Tack — Quick Start
           ====================
 
-          1. Double-click tack-api.exe (a console window opens).
+          1. Double-click tack.exe (a console window opens).
           2. Open your browser at:  http://localhost:3210
-          3. Close the console window to stop the server.
+          3. Close the console window to stop.
 
           If Windows SmartScreen warns about an unrecognized app, click
           "More info" then "Run anyway".
@@ -145,8 +144,9 @@ jobs:
           attachments) next to the .exe. Keep those files to keep your
           projects.
 
-          tack.exe is an optional command-line client.
-          Run "tack.exe --help" while the server is running.
+          The same binary is also an optional command-line client:
+          run "tack.exe --help" (while the app is running) to see the
+          commands — e.g. "tack.exe add", "tack.exe list".
           "@ | Set-Content "$stage/QUICKSTART.txt"
           Compress-Archive -Path $stage -DestinationPath "$stage.zip"
           "ASSET=$stage.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
