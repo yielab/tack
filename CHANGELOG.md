@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.0-beta.4] - 2026-06-22
+
+### Changed
+
+- **One executable instead of two.** The server and the CLI are now a single
+  `tack` binary. Running `tack` with no arguments (or `tack serve`) starts the
+  server and web UI — the primary, UI-first experience — while `tack <command>`
+  (e.g. `tack add`, `tack list`) is the optional CLI client. Previously the
+  release shipped both a `tack-api` server binary and a separate `tack` CLI,
+  which was confusing.
+- The server entry point now lives in the `tack-api` library (`tack_api::serve`);
+  the `tack-api` crate no longer produces its own binary.
+- Release archives now contain a single binary; the `tack-api` binary is gone.
+- Corrected the advertised binary size in the README (~10 MB on disk, ~6 MB
+  compressed download — the previous "5 MB" predated embedding the web UI).
+
+---
+
 ## [0.1.0-beta.3] - 2026-06-18
 
 First public beta under the **Tack** name and the `yielab` GitHub organization.

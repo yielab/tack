@@ -24,11 +24,15 @@ struct Cli {
     token: Option<String>,
 
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Start the Tack server and web UI (this is the default when you run
+    /// `tack` with no subcommand)
+    Serve,
+
     /// Create a new project
     Init {
         /// Project name
@@ -449,8 +453,15 @@ enum FieldAction {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    // Config and Completions don't need a live client.
-    match &cli.command {
+    // Bare `tack` (no subcommand) launches the server + web UI — the primary,
+    // UI-first experience. `tack serve` does the same explicitly.
+    let Some(command) = cli.command else {
+        return run_server();
+    };
+
+    // Serve, Config and Completions don't need a live API client.
+    match &command {
+        Commands::Serve => return run_server(),
         Commands::Config { url, token, show } => {
             return cmd_config(
                 url.as_deref(),
@@ -471,7 +482,7 @@ fn main() -> anyhow::Result<()> {
     let config = Config::load(cli.api_url, cli.token);
     let client = TackClient::new(&config)?;
 
-    match cli.command {
+    match command {
         Commands::Init {
             name,
             r#type,
@@ -610,8 +621,17 @@ fn main() -> anyhow::Result<()> {
         },
 
         // Already handled above; unreachable but required for exhaustiveness.
-        Commands::Config { .. } | Commands::Completions { .. } => unreachable!(),
+        Commands::Serve | Commands::Config { .. } | Commands::Completions { .. } => unreachable!(),
     }
+}
+
+/// Start the in-process HTTP server (the app + embedded web UI).
+///
+/// The rest of the CLI is synchronous (it uses a blocking HTTP client), so we
+/// build a Tokio runtime on demand here rather than making `main` async.
+fn run_server() -> anyhow::Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(tack_api::serve())
 }
 
 // ─── Command implementations ─────────────────────────────────────────────────

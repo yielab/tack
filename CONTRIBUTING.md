@@ -159,7 +159,7 @@ cargo test -- --nocapture      # Show println! output during tests
 cd frontend && npm test         # 144 Vitest unit tests
 
 # ─── Running ─────────────────────────────────────
-cargo run --bin tack-api              # Start the API server
+cargo run -p tack-cli -- serve              # Start the API server
 cargo run --bin tack-cli -- --help    # CLI help
 
 # ─── Code Quality ────────────────────────────────
@@ -169,14 +169,14 @@ cargo clippy --workspace -- -D warnings # Lint (same as CI)
 cargo check                             # Type-check without building
 
 # ─── Debugging ───────────────────────────────────
-RUST_LOG=debug cargo run --bin tack-api           # Debug logging
-RUST_LOG=tack_db=trace cargo run --bin tack-api # Trace SQL queries
-TACK_LOG_JSON=true cargo run --bin tack-api     # JSON log output
+RUST_LOG=debug cargo run -p tack-cli -- serve           # Debug logging
+RUST_LOG=tack_db=trace cargo run -p tack-cli -- serve # Trace SQL queries
+TACK_LOG_JSON=true cargo run -p tack-cli -- serve     # JSON log output
 ```
 
 ### Manual API Testing
 
-Once the server is running (`cargo run --bin tack-api`):
+Once the server is running (`cargo run -p tack-cli -- serve`):
 
 ```bash
 # 1. Check health
@@ -317,7 +317,7 @@ SQLite with WAL mode enabled. Tables:
 
 ```bash
 rm tack.db tack.db-shm tack.db-wal
-cargo run --bin tack-api   # migrations re-run automatically
+cargo run -p tack-cli -- serve   # migrations re-run automatically
 ```
 
 ### Inspecting the Database
@@ -358,9 +358,9 @@ All logging uses the `tracing` crate with structured spans.
 - **HTTP middleware** — `TraceLayer` logs every request with method, URI, and duration
 
 ```bash
-RUST_LOG=error cargo run --bin tack-api                # errors only
-RUST_LOG=tack_db=debug cargo run --bin tack-api      # debug the DB layer
-RUST_LOG=trace cargo run --bin tack-api                # everything (very verbose)
+RUST_LOG=error cargo run -p tack-cli -- serve                # errors only
+RUST_LOG=tack_db=debug cargo run -p tack-cli -- serve      # debug the DB layer
+RUST_LOG=trace cargo run -p tack-cli -- serve                # everything (very verbose)
 ```
 
 ---

@@ -228,7 +228,7 @@ Runs after `frontend` finishes. Downloads the built dist artifact, then:
 ```bash
 cargo clippy -p tack-api --features embed-spa -- -D warnings
 cargo test -p tack-api --features embed-spa
-cargo build -p tack-api --release --features embed-spa
+cargo build -p tack-cli --release --features embed-spa
 # Reports binary size (~5 MB)
 ```
 
@@ -261,7 +261,7 @@ Targets: `tack-core` ≥ 85% lines, `tack-db` + `tack-api` ≥ 70% combined.
 
 ## Manual smoke test
 
-With the server running (`cargo run --bin tack-api`):
+With the server running (`cargo run -p tack-cli -- serve`):
 
 ```bash
 BASE=http://localhost:3210/api
@@ -363,7 +363,7 @@ CI (needs a running server, time-consuming) — run on demand.
 
 ```bash
 # terminal 1: a server with a throwaway DB
-TACK_DATABASE_URL='sqlite:load.db?mode=rwc' cargo run -p tack-api --release
+TACK_DATABASE_URL='sqlite:load.db?mode=rwc' cargo run -p tack-cli --release -- serve
 # terminal 2:
 make load
 ```

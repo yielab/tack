@@ -21,7 +21,7 @@ The API server and Vite dev server run as separate processes. Start the API firs
 ```sh
 git clone https://github.com/yielab/Tack.git
 cd Tack
-cargo run --bin tack-api
+cargo run -p tack-cli -- serve
 ```
 
 On first start, the server creates `tack.db` and runs all 16 database migrations automatically. Binds to `http://127.0.0.1:3210`.
@@ -62,10 +62,10 @@ One process that serves both the API and the SPA — useful for deployments and 
 cd frontend && npm run build && cd ..
 
 # 2. Build the API with embedded SPA
-cargo build --release --features embed-spa -p tack-api
+cargo build --release --features embed-spa -p tack-cli
 
 # 3. Run the single binary
-./target/release/tack-api
+./target/release/tack
 # open http://127.0.0.1:3210
 ```
 

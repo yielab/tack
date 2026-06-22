@@ -23,7 +23,7 @@ body:
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. cargo run --bin tack-api
+        1. cargo run -p tack-cli -- serve
         2. POST /api/projects ...
         3. See error
     validations:

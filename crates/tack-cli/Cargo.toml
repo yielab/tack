@@ -12,7 +12,16 @@ path = "src/main.rs"
 name = "tack_cli"
 path = "src/lib.rs"
 
+[features]
+# Embed the pre-built SPA into the single `tack` binary for distribution.
+# Forwards to tack-api's embed-spa feature (requires frontend/dist/ at build time).
+embed-spa = ["tack-api/embed-spa"]
+
 [dependencies]
+# The server runs in-process via `tack serve` (and bare `tack`), so the single
+# `tack` binary is both the app and the CLI client.
+tack-api = { path = "../tack-api" }
+tokio = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

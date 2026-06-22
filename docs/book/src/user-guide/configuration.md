@@ -66,13 +66,13 @@ Rebuild the frontend after changing `.env`.
 Development — plain text at debug level:
 
 ```sh
-TACK_LOG_LEVEL=debug cargo run --bin tack-api
+TACK_LOG_LEVEL=debug cargo run -p tack-cli -- serve
 ```
 
 Trace all SQL queries:
 
 ```sh
-RUST_LOG=tack_db=trace,tack_api=debug cargo run --bin tack-api
+RUST_LOG=tack_db=trace,tack_api=debug cargo run -p tack-cli -- serve
 ```
 
 Production — JSON logs to a file:
