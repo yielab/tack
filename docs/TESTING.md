@@ -229,7 +229,7 @@ Runs after `frontend` finishes. Downloads the built dist artifact, then:
 cargo clippy -p tack-api --features embed-spa -- -D warnings
 cargo test -p tack-api --features embed-spa
 cargo build -p tack-cli --release --features embed-spa
-# Reports binary size (~5 MB)
+# Reports binary size (~10 MB)
 ```
 
 ### Pre-push hook (local)

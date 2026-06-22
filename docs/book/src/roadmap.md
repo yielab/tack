@@ -33,7 +33,7 @@ Dead code removed. Docs consolidated. Status and architecture accurately documen
 ### Phase 4 — Release Readiness
 - Backup/restore: `GET /api/backup` (VACUUM INTO), `POST /api/restore` (staged), CLI commands
 - Observability: `/api/health` with migration count, all handlers instrumented with `#[instrument]`
-- Single-binary: `--features embed-spa` embeds SPA into the release binary (~5 MB)
+- Single-binary: `--features embed-spa` embeds SPA into the release binary (~10 MB)
 
 ### Phase 5 — Frontend View Consolidation
 - "Group By" removed; Board always shows columns by workflow status — no setting to configure

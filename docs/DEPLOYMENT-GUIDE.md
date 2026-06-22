@@ -175,9 +175,9 @@ npm run build
 
 ### Option 3: Single binary (embedded SPA)
 
-For the simplest deployment, embed the built SPA into the API binary so one
-process serves both the API (`/api/*`) and the UI (same-origin — no CORS, no
-separate static host). From a clean checkout, one command does everything:
+For the simplest deployment, embed the built SPA into the single `tack` binary
+so one process serves both the API (`/api/*`) and the UI (same-origin — no CORS,
+no separate static host). From a clean checkout, one command does everything:
 
 ```bash
 make build
@@ -789,7 +789,7 @@ EOF
 ## Support
 
 **Resources:**
-- [GitHub Issues](https://github.com/yielab/Tack/issues)
+- [GitHub Issues](https://github.com/yielab/tack/issues)
 - [Documentation](../README.md)
 - [API Reference](./API-REFERENCE.md)
 

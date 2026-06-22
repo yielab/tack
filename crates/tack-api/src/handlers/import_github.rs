@@ -95,7 +95,7 @@ pub async fn import_github(
         .to_string();
 
     let client = reqwest::Client::builder()
-        .user_agent("Tack/1.0 (github.com/yielab/Tack)")
+        .user_agent("Tack/1.0 (github.com/yielab/tack)")
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| ApiError::Internal(anyhow::anyhow!("HTTP client error: {e}")))?;

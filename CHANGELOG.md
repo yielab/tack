@@ -38,7 +38,7 @@ and hardens the project for its public debut.
   regenerated README screenshots and hero animation.
 - **Moved to the `yielab` organization** — all repository URLs, badges, clone
   instructions, and the GitHub import user-agent now point at
-  `github.com/yielab/Tack`.
+  `github.com/yielab/tack`.
 
 ### Security
 

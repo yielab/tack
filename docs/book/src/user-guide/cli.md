@@ -1,6 +1,11 @@
 # CLI Reference
 
-The `tack` CLI talks to a running API server over HTTP. All commands require the server to be reachable.
+`tack` is a single binary that is both the **server** and the **CLI client**.
+Run `tack` with no arguments (or `tack serve`) to start the server + web UI;
+run `tack <command>` to use the CLI.
+
+The CLI commands below talk to a running server over HTTP, so start the server
+first (`tack serve`) — all client commands require it to be reachable.
 
 ## Configuration
 

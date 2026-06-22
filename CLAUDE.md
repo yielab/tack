@@ -132,8 +132,8 @@ TACK_LOG_JSON=true cargo run -p tack-cli -- serve
 crates/
 ├── tack-core/     Pure business logic (no I/O)
 ├── tack-db/       SQLite persistence layer
-├── tack-api/      Axum HTTP server + WebSocket
-└── tack-cli/      CLI tool (clap)
+├── tack-api/      Axum HTTP server + WebSocket (library; pub fn serve)
+└── tack-cli/      The single `tack` binary — runs the server (tack serve) and the CLI client
 
 frontend/
 ├── src/
@@ -167,8 +167,9 @@ docs/                Documentation
 - Auto-runs migrations on startup
 - Database is created automatically if missing
 
-**tack-api**:
+**tack-api** (library — does not build its own binary):
 - Axum HTTP server with 34 REST endpoints (100% complete)
+- Server entry point exposed as `tack_api::serve()` (in `server.rs`)
 - WebSocket support for real-time board updates
 - Request handlers in `handlers/` (per entity)
 - Config loading: TOML + env vars
@@ -177,10 +178,10 @@ docs/                Documentation
 - File upload support: multipart/form-data (max 50MB)
 - Export functionality: JSON and CSV formats
 
-**tack-cli**:
-- Terminal interface using `clap`
-- Commands: `init`, `add`, `list`, `move`, etc.
-- Status: 20% complete (basic structure exists)
+**tack-cli** (the single `tack` binary):
+- `tack` with no subcommand (or `tack serve`) starts the server + web UI via `tack_api::serve()` — the primary, UI-first entry point
+- CLI client using `clap`: `init`, `add`, `list`, `move`, `board`, `search`, `sprint`, `template`, `role`, `comment`, `field`, `backup`, `restore` (complete)
+- Client commands talk to the server over HTTP (blocking `reqwest`); never open the DB directly
 
 **frontend** (SolidJS + TypeScript):
 - Responsive SPA with dark mode support
@@ -420,4 +421,4 @@ codegen-units = 1       # Better optimization, slower compile
 opt-level = "z"         # Optimize for size
 ```
 
-This produces a ~3.5 MB CLI (`tack`) and a ~10 MB server (`tack-api`, which embeds the SPA). For faster compile times during development, use `--release` sparingly.
+This produces the single `tack` binary — ~10 MB with the SPA embedded (`--features embed-spa`), or ~3.5 MB without. For faster compile times during development, use `--release` sparingly.
