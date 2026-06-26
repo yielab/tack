@@ -454,10 +454,14 @@ endpoint with optimistic UI. Sort + filter + column show/hide.
 > persistence). **Custom-field columns deferred** — they need per-item value fetches
 > (a separate, larger change); the rest of the column set shipped.
 
-#### Task 2 — Density toggle
+#### Task 2 — Density toggle ✅ _done_
 
 Wire the table to the `--density-*` tokens from the design roadmap's Phase 18 if they've
 landed; otherwise ship comfortable-only.
+
+> Shipped: a self-contained comfortable/compact toggle on the Table (row padding),
+> persisted to `localStorage` — independent of the design roadmap's Phase 18 tokens,
+> which can later supersede the local padding values.
 
 #### Acceptance criteria
 
@@ -513,22 +517,33 @@ guide. Unit-test in `workflow.rs`.
 - `docs/BENCHMARKS.md` published with reproducible numbers; a user can install Tack with
   one command; README leads with the differentiators; new project types are selectable.
 
-### Phase 25 — Plaintext / Local-First _(gated on decision #3)_
+### Phase 25 — Plaintext / Local-First ✅ _done_
 
-**Goal:** Court the plaintext + local-first crowd. **Do not start** until decision #3
-puts it in scope this cycle.
+**Goal:** Court the plaintext + local-first crowd.
 
-#### Task 1 — YAML/TOML project round-trip
+#### Task 1 — YAML/TOML project round-trip ✅ _done_
 
 Extend [handlers/export.rs](../../../crates/tack-api/src/handlers/export.rs) with a
 `format=yaml` export and a matching import; stable key ordering for clean git diffs;
 reuse the existing round-trip ID remapping. Golden-file test for lossless round-trip.
 
-#### Task 2 — Offline-capable PWA (spike)
+> Shipped: `export?format=yaml` plus content-negotiated import (YAML when
+> `Content-Type` mentions YAML, else JSON — both decode to the same intermediate
+> `Value`, so a YAML export round-trips unchanged). serde_json's sorted keys keep
+> diffs stable. Exposed in Settings → Data (Export YAML; import accepts `.yaml`/
+> `.yml`). Integration test `export_yaml_round_trips_through_import`. Chose YAML over
+> TOML because items' many null/Option fields can't serialize to TOML.
+
+#### Task 2 — Offline-capable PWA (spike) ✅ _done_
 
 Time-boxed spike: evaluate a service-worker + IndexedDB cache over the SolidJS SPA, and
 whether CRDT sync is worth it vs the WebSocket model. Output `docs/LOCAL-FIRST-SPIKE.md`
 with a go/no-go recommendation — not an implementation.
+
+> Shipped: [docs/LOCAL-FIRST-SPIKE.md](../../LOCAL-FIRST-SPIKE.md). Recommendation:
+> **NO-GO on CRDT sync** (misaligned with the single-writer/small-team model);
+> **conditional-go, low-priority on a read-only offline PWA**; the YAML round-trip
+> (Task 1) already captures the high-value, low-cost part of the trend.
 
 #### Acceptance criteria
 

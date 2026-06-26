@@ -1264,3 +1264,67 @@ async fn export_csv_starts_with_header_row() {
         "CSV must have header + at least one data row"
     );
 }
+
+#[tokio::test]
+async fn export_yaml_round_trips_through_import() {
+    use axum::body::to_bytes;
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+    make_item(&app, &pid).await;
+
+    // Export as YAML.
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/projects/{pid}/export?format=yaml"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), 131072).await.unwrap();
+    let yaml = String::from_utf8(bytes.to_vec()).unwrap();
+    // It must be YAML (block mappings), not JSON braces.
+    assert!(yaml.contains("project:") && yaml.contains("items:"), "got: {yaml}");
+    let parsed: serde_json::Value = serde_yaml::from_str(&yaml).unwrap();
+    assert_eq!(parsed["items"].as_array().unwrap().len(), 1);
+
+    // Import the same YAML back: a new project is created with the item.
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/projects/import")
+                .header("Content-Type", "application/x-yaml")
+                .body(Body::from(yaml))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), 131072).await.unwrap();
+    let out: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(out["success"], true, "import response: {out}");
+    let new_pid = out["project"]["id"].as_str().unwrap();
+    assert_ne!(new_pid, pid, "import must create a new project");
+
+    // The imported project has the round-tripped item.
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/projects/{new_pid}/items"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(res.into_body(), 131072).await.unwrap();
+    let items: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(items.as_array().unwrap().len(), 1, "imported items: {items}");
+}

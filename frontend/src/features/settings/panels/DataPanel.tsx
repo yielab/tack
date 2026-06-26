@@ -24,7 +24,7 @@ const DataPanel: Component = () => {
   let importJsonInput: HTMLInputElement | undefined;
   let importCsvInput: HTMLInputElement | undefined;
 
-  const exportAs = async (format: 'json' | 'csv') => {
+  const exportAs = async (format: 'json' | 'yaml' | 'csv') => {
     const id = projectId();
     if (!id) return;
     setBusy(true);
@@ -39,13 +39,17 @@ const DataPanel: Component = () => {
     }
   };
 
-  const importFromJson = async (file: File) => {
+  // Accepts a JSON or YAML snapshot, routed by file extension.
+  const importSnapshot = async (file: File) => {
     setBusy(true);
     try {
-      const snapshot = JSON.parse(await file.text());
-      const created = await api.data.importProject(snapshot);
+      const text = await file.text();
+      const isYaml = /\.ya?ml$/i.test(file.name);
+      const created = isYaml
+        ? await api.data.importProjectYaml(text)
+        : await api.data.importProject(JSON.parse(text));
       toast.success('Project imported');
-      navigate(`/projects/${created.id}/board`);
+      navigate(`/projects/${created.project.id}/board`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Import failed (invalid file?)');
     } finally {
@@ -78,6 +82,9 @@ const DataPanel: Component = () => {
           <Button variant="secondary" onClick={() => void exportAs('json')} disabled={busy()}>
             Export JSON
           </Button>
+          <Button variant="secondary" onClick={() => void exportAs('yaml')} disabled={busy()}>
+            Export YAML
+          </Button>
           <Button variant="secondary" onClick={() => void exportAs('csv')} disabled={busy()}>
             Export CSV
           </Button>
@@ -92,20 +99,20 @@ const DataPanel: Component = () => {
         <div class="space-y-3">
           <div>
             <p class="text-sm mb-2" style={{ color: 'var(--color-text-secondary)' }}>
-              Restore a full project from a previously exported JSON snapshot (creates a new project).
+              Restore a full project from a previously exported JSON or YAML snapshot (creates a new project).
             </p>
             <Button onClick={() => importJsonInput?.click()} disabled={busy()}>
-              Import from JSON…
+              Import from JSON / YAML…
             </Button>
             <input
               ref={importJsonInput}
               type="file"
-              accept="application/json,.json"
+              accept="application/json,.json,application/x-yaml,.yaml,.yml"
               class="hidden"
               onChange={(e) => {
                 const f = e.currentTarget.files?.[0];
                 e.currentTarget.value = '';
-                if (f) void importFromJson(f);
+                if (f) void importSnapshot(f);
               }}
             />
           </div>

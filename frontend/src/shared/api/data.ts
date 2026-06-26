@@ -1,6 +1,6 @@
 import { request, requestBlob, apiUrl } from './client';
 
-export type ExportFormat = 'json' | 'csv';
+export type ExportFormat = 'json' | 'yaml' | 'csv';
 
 /** Export / import (per project) and full-database backup / restore. */
 export const data = {
@@ -13,9 +13,17 @@ export const data = {
 
   /** Import a project from a previously exported JSON snapshot. */
   importProject: (snapshot: unknown) =>
-    request<{ id: string }>('/projects/import', {
+    request<ImportResult>('/projects/import', {
       method: 'POST',
       body: JSON.stringify(snapshot),
+    }),
+
+  /** Import a project from a previously exported YAML snapshot (raw text). */
+  importProjectYaml: (yamlText: string) =>
+    request<ImportResult>('/projects/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-yaml' },
+      body: yamlText,
     }),
 
   /** Import items from a CSV file into an existing project. */
@@ -74,6 +82,12 @@ export const data = {
       { method: 'POST', body: JSON.stringify(key ? { key } : {}) },
     ),
 };
+
+/** Response from the project-import endpoint. */
+export interface ImportResult {
+  success: boolean;
+  project: { id: string };
+}
 
 /** Cloud-backup config as returned by the API (secret masked to a boolean). */
 export interface CloudBackupConfig {
