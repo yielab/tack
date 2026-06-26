@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **YAML project export/import** — `GET /api/projects/{id}/export?format=yaml`
+  produces a plaintext, git-diffable snapshot; the import endpoint round-trips it
+  back (parsed as YAML when `Content-Type` mentions YAML, else JSON). Exposed in
+  **Settings → Data** (Export YAML, and import now accepts `.yaml`/`.yml`).
+  (Phase 25, Task 1.)
+- **Table density toggle** — the Table view now switches between comfortable and
+  compact row spacing, persisted to `localStorage`. (Phase 23, Task 2.)
 - **One-line installer** — `curl -fsSL …/install.sh | sh` resolves the newest
   release asset for your platform from the GitHub API (Linux/macOS, x86_64 +
   Apple Silicon) and installs the single `tack` binary. Also documented

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
-use axum::http::header;
+use axum::http::{HeaderMap, header};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use tracing::{info, instrument};
@@ -49,22 +49,24 @@ pub async fn export_project(
     let sprints = state.repo.list_sprints(project_id).await?;
     let dependencies = state.repo.list_dependencies_for_project(project_id).await?;
 
+    // Shared snapshot used by the structured (JSON / YAML) formats. Keys serialize
+    // in a stable order, so YAML/JSON exports produce clean, git-diffable text.
+    let export_data = serde_json::json!({
+        "project": project,
+        "items": items,
+        "sprints": sprints,
+        "dependencies": dependencies,
+        "metadata": {
+            "exported_at": chrono::Utc::now().to_rfc3339(),
+            "version": env!("CARGO_PKG_VERSION"),
+            "total_items": items.len(),
+            "total_sprints": sprints.len(),
+            "total_dependencies": dependencies.len(),
+        }
+    });
+
     match query.format.as_str() {
         "json" => {
-            let export_data = serde_json::json!({
-                "project": project,
-                "items": items,
-                "sprints": sprints,
-                "dependencies": dependencies,
-                "metadata": {
-                    "exported_at": chrono::Utc::now().to_rfc3339(),
-                    "version": env!("CARGO_PKG_VERSION"),
-                    "total_items": items.len(),
-                    "total_sprints": sprints.len(),
-                    "total_dependencies": dependencies.len(),
-                }
-            });
-
             let json_data = serde_json::to_string_pretty(&export_data)
                 .map_err(|e| anyhow::anyhow!("Failed to serialize: {}", e))?;
 
@@ -79,6 +81,24 @@ pub async fn export_project(
                     ),
                 ],
                 json_data,
+            )
+                .into_response())
+        }
+        "yaml" => {
+            let yaml_data = serde_yaml::to_string(&export_data)
+                .map_err(|e| anyhow::anyhow!("Failed to serialize YAML: {}", e))?;
+
+            let filename = format!("{}-export.yaml", project.name.replace(' ', "-"));
+
+            Ok((
+                [
+                    (header::CONTENT_TYPE, "application/x-yaml"),
+                    (
+                        header::CONTENT_DISPOSITION,
+                        &format!("attachment; filename=\"{filename}\""),
+                    ),
+                ],
+                yaml_data,
             )
                 .into_response())
         }
@@ -115,7 +135,7 @@ pub async fn export_project(
                 .into_response())
         }
         _ => Err(ApiError::BadRequest(format!(
-            "Unsupported format '{}'. Use 'json' or 'csv'",
+            "Unsupported format '{}'. Use 'json', 'yaml', or 'csv'",
             query.format
         ))),
     }
@@ -133,12 +153,32 @@ struct ImportPayload {
 }
 
 /// POST /api/projects/import
-#[instrument(skip(state))]
+///
+/// Accepts the same snapshot shape produced by `export?format=json|yaml`. The
+/// body is parsed as YAML when the `Content-Type` mentions YAML, otherwise JSON —
+/// so a YAML export round-trips back in unchanged. (YAML is a JSON superset, so
+/// both decode into the same intermediate `serde_json::Value`.)
+#[instrument(skip(state, body))]
 pub async fn import_project(
     State(state): State<AppState>,
-    Json(raw): Json<serde_json::Value>,
+    headers: HeaderMap,
+    body: Bytes,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     info!("Import endpoint called");
+
+    let is_yaml = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|ct| ct.contains("yaml"))
+        .unwrap_or(false);
+
+    let raw: serde_json::Value = if is_yaml {
+        serde_yaml::from_slice(&body)
+            .map_err(|e| ApiError::BadRequest(format!("Invalid YAML import payload: {e}")))?
+    } else {
+        serde_json::from_slice(&body)
+            .map_err(|e| ApiError::BadRequest(format!("Invalid JSON import payload: {e}")))?
+    };
 
     let payload: ImportPayload = serde_json::from_value(raw)
         .map_err(|e| ApiError::BadRequest(format!("Invalid import payload: {e}")))?;

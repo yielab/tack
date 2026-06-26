@@ -81,6 +81,9 @@ const PRIORITY_EMOJI: Record<string, string> = {
 };
 
 const COLS_STORAGE_KEY = 'tack_table_cols';
+const DENSITY_STORAGE_KEY = 'tack_table_density';
+
+export type Density = 'comfortable' | 'compact';
 
 function loadHiddenCols(): Set<string> {
   try {
@@ -88,6 +91,14 @@ function loadHiddenCols(): Set<string> {
     if (raw) return new Set(JSON.parse(raw) as string[]);
   } catch { /* ignore */ }
   return new Set();
+}
+
+function loadDensity(): Density {
+  try {
+    const v = localStorage.getItem(DENSITY_STORAGE_KEY);
+    if (v === 'compact' || v === 'comfortable') return v;
+  } catch { /* ignore */ }
+  return 'comfortable';
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -101,7 +112,19 @@ export default function Table() {
   const [sortDir, setSortDir] = createSignal<SortDir>('asc');
   const [query, setQuery] = createSignal('');
   const [hidden, setHidden] = createSignal<Set<string>>(loadHiddenCols());
+  const [density, setDensity] = createSignal<Density>(loadDensity());
   const [colMenuOpen, setColMenuOpen] = createSignal(false);
+
+  // Row padding driven by the density toggle (comfortable default / compact).
+  const cellPad = () => (density() === 'compact' ? 'px-3 py-0.5' : 'px-3 py-1.5');
+
+  function toggleDensity() {
+    setDensity((d) => {
+      const next: Density = d === 'compact' ? 'comfortable' : 'compact';
+      try { localStorage.setItem(DENSITY_STORAGE_KEY, next); } catch { /* ignore */ }
+      return next;
+    });
+  }
   const [editing, setEditing] = createSignal<{ id: string; key: SortKey } | null>(null);
   const [saving, setSaving] = createSignal<string | null>(null);
 
@@ -202,7 +225,21 @@ export default function Table() {
         <span class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
           {rows().length} item{rows().length === 1 ? '' : 's'}
         </span>
-        <div class="ml-auto relative">
+        <button
+          type="button"
+          onClick={toggleDensity}
+          aria-pressed={density() === 'compact'}
+          title="Toggle row density"
+          class="ml-auto px-3 py-1.5 rounded-md text-sm font-medium"
+          style={{
+            background: 'var(--color-bg-subtle)',
+            border: '1px solid var(--color-border-light)',
+            color: 'var(--color-text-secondary)',
+          }}
+        >
+          {density() === 'compact' ? 'Comfortable' : 'Compact'}
+        </button>
+        <div class="relative">
           <button
             type="button"
             onClick={() => setColMenuOpen((o) => !o)}
@@ -285,7 +322,7 @@ export default function Table() {
                     >
                       <For each={visibleColumns()}>
                         {(c) => (
-                          <td class="px-3 py-1.5 align-middle">
+                          <td class={`${cellPad()} align-middle`}>
                             <Show
                               when={c.editable && isEditing(item.id, c.key)}
                               fallback={
