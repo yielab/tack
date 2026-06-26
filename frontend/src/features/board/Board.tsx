@@ -2,7 +2,7 @@ import { createMemo, For, Show, createSignal, createEffect, onMount, onCleanup, 
 import { useParams, useSearchParams } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { deriveBoard } from '../../shared/api/boards';
-import type { BoardColumn, Item, BoardState } from '../../shared/types';
+import type { BoardColumn, Item, BoardState, Priority } from '../../shared/types';
 import CreateItemModal from '../../shared/ui/CreateItemModal';
 import { createBoardSocket, type BoardSocket, type SocketStatus } from '../../shared/realtime/boardSocket';
 import { useKeyboard, keyboardManager, type ShortcutContext } from '../../shared/keyboard/keyboard';
@@ -10,12 +10,24 @@ import { withOptimisticUpdate } from '../../shared/state/optimistic';
 import { BoardSkeleton } from '../../shared/ui/SkeletonScreen';
 import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
+import { useVocab } from '../../shared/vocab/useVocab';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import EmptyProjectGuide from '../../shared/ui/EmptyProjectGuide';
+import { Avatar, AvatarStack, TypeBadge, PriorityDot, WipChip, typeKey } from '../../shared/ui';
+import { IconPlus } from '../../shared/ui/icons';
+
+const ESTIMATE_SUFFIX: Record<string, string> = {
+  story_points: 'pts', hours: 'h', days: 'd', custom: '',
+};
+
+/** Short, human id for the card header (real ids are UUIDs). */
+function shortId(id: string): string {
+  return id.replace(/-/g, '').slice(0, 6).toUpperCase();
+}
 
 const ItemCard: Component<{
   item: Item;
-  onStatusChange: (itemId: string, newStatus: string) => void;
+  typeLabel: string;
   onEdit: (item: Item) => void;
 }> = (props) => {
   const [isDragging, setIsDragging] = createSignal(false);
@@ -25,16 +37,14 @@ const ItemCard: Component<{
     e.dataTransfer!.effectAllowed = 'move';
     e.dataTransfer!.setData('text/plain', props.item.id);
   };
+  const handleDragEnd = () => setIsDragging(false);
+  const handleClick = () => { if (!isDragging()) props.onEdit(props.item); };
 
-  const handleDragEnd = () => {
-    setIsDragging(false);
-  };
-
-  const handleClick = (e: MouseEvent) => {
-    // Only trigger edit if not dragging and clicking the card itself (not badges)
-    if (!isDragging() && (e.target as HTMLElement).closest('.item-card-content')) {
-      props.onEdit(props.item);
-    }
+  const estimate = () => {
+    const e = props.item.estimate;
+    if (e == null) return null;
+    const suffix = ESTIMATE_SUFFIX[props.item.estimate_unit] ?? '';
+    return suffix ? `${e} ${suffix}` : `${e}`;
   };
 
   return (
@@ -43,67 +53,58 @@ const ItemCard: Component<{
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onClick={handleClick}
-      class="rounded-lg p-4 shadow-sm border transition-colors cursor-pointer group"
       style={{
-        "background-color": "var(--color-bg-elevated)",
-        "border-color": "var(--color-border-light)",
+        background: 'var(--color-bg-base)',
+        border: '1px solid var(--color-border-light)',
+        'border-radius': '11px',
+        padding: '11px 12px',
+        cursor: 'pointer',
+        'box-shadow': 'var(--shadow-sm)',
+        transition: 'border-color .12s, box-shadow .12s, transform .12s',
+        opacity: isDragging() ? 0.4 : 1,
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--color-primary-500)")}
-      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--color-border-light)")}
-      classList={{
-        'opacity-40': isDragging(),
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = 'var(--color-accent-line)';
+        e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
+        e.currentTarget.style.transform = 'translateY(-1px)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = 'var(--color-border-light)';
+        e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+        e.currentTarget.style.transform = 'translateY(0)';
       }}
     >
-      <div class="item-card-content">
-        <div class="flex items-start justify-between mb-2">
-          <h4 class="font-medium flex-1" style={{ color: "var(--color-text-primary)" }}>
-            {props.item.title}
-          </h4>
-          <span class="text-xs opacity-0 group-hover:opacity-100 transition-opacity ml-2" style={{ color: "var(--color-text-tertiary)" }}>
-            Click to edit
-          </span>
-        </div>
-        <Show when={props.item.description}>
-          <p class="text-sm mb-2 line-clamp-2" style={{ color: "var(--color-text-secondary)" }}>
-            {props.item.description}
-          </p>
-        </Show>
+      <div style={{ display: 'flex', 'align-items': 'center', gap: '6px', 'margin-bottom': '7px' }}>
+        <TypeBadge type={props.item.item_type} label={props.typeLabel} />
+        <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '10.5px', color: 'var(--color-text-tertiary)' }}>
+          {shortId(props.item.id)}
+        </span>
       </div>
-      <div class="flex items-center gap-2 flex-wrap">
-        <span
-          class="text-xs px-2 py-1 rounded"
-          style={{
-            "background-color":
-              props.item.priority === 'critical' || props.item.priority === 'high'
-                ? "var(--color-danger-light)"
-                : props.item.priority === 'medium'
-                ? "var(--color-warning-light)"
-                : "var(--color-bg-subtle)",
-            color:
-              props.item.priority === 'critical' || props.item.priority === 'high'
-                ? "var(--color-danger)"
-                : props.item.priority === 'medium'
-                ? "var(--color-warning-700)"
-                : "var(--color-text-secondary)",
-          }}
-        >
-          {props.item.priority}
-        </span>
-        <span class="text-xs" style={{ color: "var(--color-text-secondary)" }}>
-          {props.item.item_type.toString()}
-        </span>
-        <Show when={props.item.estimate}>
-          <span class="text-xs" style={{ color: "var(--color-primary-600)" }}>
-            {props.item.estimate} pts
+      <h4 style={{ 'font-size': '13px', 'font-weight': 600, margin: '0 0 9px', 'line-height': 1.35, color: 'var(--color-text-primary)' }}>
+        {props.item.title}
+      </h4>
+      <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
+        <Show when={props.item.priority !== 'none'}>
+          <PriorityDot priority={props.item.priority as Priority} showLabel />
+        </Show>
+        <div style={{ flex: 1 }} />
+        <Show when={estimate()}>
+          <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '10px', 'font-weight': 500, color: 'var(--color-text-secondary)', background: 'var(--color-chip)', padding: '1px 6px', 'border-radius': '5px' }}>
+            {estimate()}
           </span>
+        </Show>
+        <Show when={props.item.assignee}>
+          <Avatar name={props.item.assignee!} size="sm" />
         </Show>
       </div>
     </div>
   );
 };
 
-const BoardColumn: Component<{
+const BoardColumnView: Component<{
   column: BoardColumn;
+  dotColor: string;
+  typeLabelOf: (item: Item) => string;
   onItemDrop: (itemId: string, newStatus: string) => void;
   onAddItem: (status: string) => void;
   onEditItem: (item: Item) => void;
@@ -115,88 +116,68 @@ const BoardColumn: Component<{
     e.dataTransfer!.dropEffect = 'move';
     setIsDragOver(true);
   };
-
-  const handleDragLeave = () => {
-    setIsDragOver(false);
-  };
-
-  const handleDrop = async (e: DragEvent) => {
+  const handleDragLeave = () => setIsDragOver(false);
+  const handleDrop = (e: DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-
     const itemId = e.dataTransfer!.getData('text/plain');
-    if (itemId) {
-      props.onItemDrop(itemId, props.column.status);
-    }
+    if (itemId) props.onItemDrop(itemId, props.column.status);
   };
 
   return (
-    <div class="shrink-0 w-80">
+    <section style={{
+      width: '282px', 'flex-shrink': 0, display: 'flex', 'flex-direction': 'column',
+      'max-height': '100%', background: 'var(--color-bg-base)',
+      border: '1px solid var(--color-border-light)', 'border-radius': '13px',
+    }}>
+      <div style={{ display: 'flex', 'align-items': 'center', gap: '8px', padding: '12px 13px 10px' }}>
+        <span style={{ width: '8px', height: '8px', 'border-radius': '99px', 'flex-shrink': 0, background: props.dotColor }} />
+        <h3 style={{ 'font-size': '12.5px', 'font-weight': 700, margin: 0, 'letter-spacing': '.01em', color: 'var(--color-text-primary)' }}>
+          {props.column.status}
+        </h3>
+        <span style={{ 'font-size': '11px', 'font-weight': 600, color: 'var(--color-text-tertiary)' }}>
+          {props.column.items.length}
+        </span>
+        <div style={{ flex: 1 }} />
+        <Show when={props.column.wip_limit != null}>
+          <WipChip count={props.column.items.length} limit={props.column.wip_limit!} />
+        </Show>
+        <button
+          onClick={() => props.onAddItem(props.column.status)}
+          title="Add item"
+          style={{
+            width: '22px', height: '22px', 'border-radius': '6px', border: 'none',
+            background: 'transparent', cursor: 'pointer', color: 'var(--color-text-tertiary)',
+            display: 'flex', 'align-items': 'center', 'justify-content': 'center',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-border-subtle)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--color-text-tertiary)'; }}
+        >
+          <IconPlus size={14} />
+        </button>
+      </div>
       <div
-        class="rounded-lg p-4 min-h-125"
-        style={{ "background-color": "var(--color-bg-subtle)" }}
-        classList={{
-          'ring-2 ring-brand-500 ring-inset': isDragOver(),
-        }}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
+        style={{
+          flex: 1, 'overflow-y': 'auto', display: 'flex', 'flex-direction': 'column', gap: '8px',
+          padding: '2px 11px 12px',
+          'border-radius': '0 0 13px 13px',
+          outline: isDragOver() ? '2px solid var(--color-accent-line)' : 'none',
+          'outline-offset': '-4px',
+        }}
       >
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="font-semibold" style={{ color: "var(--color-text-primary)" }}>
-            {props.column.status}
-          </h3>
-          <div class="flex items-center gap-2">
-            <span class="text-sm" style={{ color: "var(--color-text-secondary)" }}>
-              {props.column.items.length}
-            </span>
-            <Show when={props.column.wip_limit}>
-              <span
-                class="text-xs px-2 py-1 rounded"
-                style={{
-                  "background-color": props.column.wip_exceeded
-                    ? "var(--color-danger-light)"
-                    : "var(--color-bg-subtle)",
-                  color: props.column.wip_exceeded
-                    ? "var(--color-danger)"
-                    : "var(--color-text-secondary)",
-                }}
-              >
-                / {props.column.wip_limit}
-              </span>
-            </Show>
+        <For each={props.column.items}>
+          {(item) => <ItemCard item={item} typeLabel={props.typeLabelOf(item)} onEdit={props.onEditItem} />}
+        </For>
+        <Show when={props.column.items.length === 0}>
+          <div style={{ border: '1.5px dashed var(--color-border-light)', 'border-radius': '9px', padding: '18px', 'text-align': 'center', 'font-size': '11.5px', color: 'var(--color-text-tertiary)' }}>
+            Drop items here
           </div>
-        </div>
-
-        <div class="space-y-3">
-          <For each={props.column.items}>
-            {(item) => (
-              <ItemCard
-                item={item}
-                onStatusChange={props.onItemDrop}
-                onEdit={props.onEditItem}
-              />
-            )}
-          </For>
-
-          <Show when={props.column.items.length === 0}>
-            <div class="border-2 border-dashed rounded-lg p-8 text-center text-sm" style={{ "border-color": "var(--color-border-medium)", color: "var(--color-text-secondary)" }}>
-              Drop items here or click "+ Add item" below
-            </div>
-          </Show>
-        </div>
-
-        <button
-          onClick={() => props.onAddItem(props.column.status)}
-          class="w-full mt-3 py-2 text-sm transition-colors"
-          style={{ color: "var(--color-text-secondary)" }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-primary-600)")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-text-secondary)")}
-        >
-          + Add item
-        </button>
+        </Show>
       </div>
-    </div>
+    </section>
   );
 };
 
@@ -204,16 +185,28 @@ const Board: Component = () => {
   const params = useParams();
   const projectId = () => params.id;
   const { vocabulary, project } = useProject();
+  const vocab = useVocab();
   const { items, loading, refetch } = useProjectItems();
   const [, setSearchParams] = useSearchParams();
 
-  // Derive board columns from shared items + project workflow (no extra API call)
   const boardStateFromServer = createMemo((): BoardState | null => {
     const proj = project();
     const its = items();
     if (!proj || !its) return null;
     return deriveBoard(proj, its);
   });
+
+  // status name → category, for the column dot color.
+  const categoryOf = (status: string): 'todo' | 'in_progress' | 'done' =>
+    project()?.workflow.statuses.find((s) => s.name === status)?.category ?? 'todo';
+  const dotColor = (status: string): string => {
+    switch (categoryOf(status)) {
+      case 'in_progress': return 'var(--color-primary-600)';
+      case 'done': return 'var(--color-success-600)';
+      default: return 'var(--color-accent2)';
+    }
+  };
+  const typeLabelOf = (item: Item) => vocab.t(typeKey(item.item_type));
 
   const [showCreateModal, setShowCreateModal] = createSignal(false);
   const [selectedColumn, setSelectedColumn] = createSignal<string | null>(null);
@@ -222,29 +215,29 @@ const Board: Component = () => {
   const [modalMode, setModalMode] = createSignal<'create' | 'edit'>('create');
   const [optimisticBoardState, setOptimisticBoardState] = createSignal<BoardState | null>(null);
 
-  // Get the current board state (optimistic or real)
   const currentBoard = (): BoardState | null | undefined => optimisticBoardState() || boardStateFromServer();
 
-  // Real-time board updates via the reconnecting socket (T-513). The socket
-  // filters to this project and parses the backend's snake_case events; any
-  // board-relevant event refreshes the board so other clients' edits appear
-  // without a manual reload.
+  // Unique assignees across the board → toolbar avatar stack.
+  const assignees = createMemo(() => {
+    const set = new Set<string>();
+    for (const col of currentBoard()?.columns ?? []) {
+      for (const it of col.items) if (it.assignee) set.add(it.assignee);
+    }
+    return [...set];
+  });
+  const itemCount = () => (currentBoard()?.columns ?? []).reduce((n, c) => n + c.items.length, 0);
+
+  // Real-time board updates via the reconnecting socket (T-513).
   const [sock, setSock] = createSignal<BoardSocket>();
   const socketStatus = (): SocketStatus => sock()?.status() ?? 'closed';
 
   createEffect(() => {
     const pid = projectId();
-    if (!pid) {
-      setSock(undefined);
-      return;
-    }
+    if (!pid) { setSock(undefined); return; }
     const s = createBoardSocket(pid);
     const off = s.onEvent(() => void refetch());
     setSock(s);
-    onCleanup(() => {
-      off();
-      s.close();
-    });
+    onCleanup(() => { off(); s.close(); });
   });
 
   // Resync when the connection comes back after dropping.
@@ -258,13 +251,8 @@ const Board: Component = () => {
     }
   });
 
-  // Keyboard shortcuts
   useKeyboard(activeContext);
-
-  // Update keyboard context when modal opens/closes
-  createEffect(() => {
-    setActiveContext(showCreateModal() ? 'modal' : 'board');
-  });
+  createEffect(() => setActiveContext(showCreateModal() ? 'modal' : 'board'));
 
   createEffect(() => {
     keyboardManager.register('board', {
@@ -275,47 +263,30 @@ const Board: Component = () => {
         if (firstColumn) handleAddItem(firstColumn.status);
       },
     });
-    keyboardManager.register('board', {
-      key: 'r',
-      description: 'Refresh board',
-      action: () => refetch(),
-    });
-    keyboardManager.register('modal', {
-      key: 'Escape',
-      description: 'Close modal',
-      action: () => setShowCreateModal(false),
-    });
+    keyboardManager.register('board', { key: 'r', description: 'Refresh board', action: () => refetch() });
+    keyboardManager.register('modal', { key: 'Escape', description: 'Close modal', action: () => setShowCreateModal(false) });
   });
 
   const handleItemDrop = async (itemId: string, newStatus: string) => {
     const realBoard = boardStateFromServer();
     if (!realBoard) return;
-
-    // Find the item being moved
-    const item = realBoard.columns
-      .flatMap(col => col.items)
-      .find(i => i.id === itemId);
-
+    const item = realBoard.columns.flatMap((col) => col.items).find((i) => i.id === itemId);
     if (!item || item.status === newStatus) return;
 
-    // Create optimistic board state
     const optimisticBoard = {
       ...realBoard,
-      columns: realBoard.columns.map(col => ({
+      columns: realBoard.columns.map((col) => ({
         ...col,
         items: col.items
-          .filter(i => i.id !== itemId) // Remove from old column
-          .concat(col.status === newStatus ? [{ ...item, status: newStatus }] : []) // Add to new column
-      }))
+          .filter((i) => i.id !== itemId)
+          .concat(col.status === newStatus ? [{ ...item, status: newStatus }] : []),
+      })),
     };
 
     await withOptimisticUpdate(
       () => api.items.update(itemId, { status: newStatus }),
       () => setOptimisticBoardState(optimisticBoard),
-      async () => {
-        setOptimisticBoardState(null);
-        await refetch();
-      },
+      async () => { setOptimisticBoardState(null); await refetch(); },
       {
         showSuccessToast: true,
         successMessage: `Item moved to ${newStatus}`,
@@ -324,7 +295,6 @@ const Board: Component = () => {
       }
     );
 
-    // Clear optimistic state and refetch real data
     setOptimisticBoardState(null);
     await refetch();
   };
@@ -336,70 +306,79 @@ const Board: Component = () => {
     setShowCreateModal(true);
   };
 
-  // Open the item detail drawer (deep-linkable via ?item=).
-  const handleEditItem = (item: Item) => {
-    setSearchParams({ item: item.id });
-  };
+  const handleEditItem = (item: Item) => setSearchParams({ item: item.id });
 
-  // Refresh the board when the drawer edits an item.
   onMount(() => {
     const onItemUpdated = () => void refetch();
     window.addEventListener(ITEM_UPDATED_EVENT, onItemUpdated);
     onCleanup(() => window.removeEventListener(ITEM_UPDATED_EVENT, onItemUpdated));
   });
 
-  return (
-    <div>
-      <Show when={sock()}>
-        <div class="mb-4 flex items-center justify-end">
-          <div class="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-            <div
-              class="w-1.5 h-1.5 rounded-full"
-              classList={{
-                'bg-success-500': socketStatus() === 'open',
-                'bg-warning-500': socketStatus() === 'connecting' || socketStatus() === 'reconnecting',
-                'bg-content-subtle': socketStatus() === 'closed',
-              }}
-            />
-            {socketStatus() === 'open' && 'Live'}
-            {(socketStatus() === 'connecting' || socketStatus() === 'reconnecting') && 'Connecting…'}
-            {socketStatus() === 'closed' && 'Offline'}
-          </div>
-        </div>
-      </Show>
+  const liveLabel = () =>
+    socketStatus() === 'open' ? 'Live'
+      : socketStatus() === 'connecting' || socketStatus() === 'reconnecting' ? 'Connecting…'
+        : 'Offline';
+  const liveColor = () =>
+    socketStatus() === 'open' ? 'var(--color-success-600)'
+      : socketStatus() === 'closed' ? 'var(--color-text-tertiary)'
+        : 'var(--color-warning-600)';
 
-      <Show
-        when={!loading()}
-        fallback={<BoardSkeleton />}
-      >
-        <Show when={projectId()}>
-          {/* Guide shown when project exists but has no items yet */}
-          <Show when={(currentBoard()?.columns ?? []).every(col => col.items.length === 0) && (currentBoard()?.columns ?? []).length > 0}>
-            <EmptyProjectGuide onAddItem={() => handleAddItem(currentBoard()!.columns[0].status)} />
+  return (
+    <div style={{ flex: 1, display: 'flex', 'flex-direction': 'column', 'min-width': 0, height: '100%' }}>
+      {/* board toolbar */}
+      <div style={{ 'flex-shrink': 0, padding: '13px 18px 11px', display: 'flex', 'align-items': 'center', gap: '10px', 'border-bottom': '1px solid var(--color-border-subtle)' }}>
+        <h1 style={{ 'font-size': '17px', 'font-weight': 800, 'letter-spacing': '-.01em', margin: 0, color: 'var(--color-text-primary)' }}>
+          {vocab.t('board')}
+        </h1>
+        <Show when={sock()}>
+          <span style={{
+            display: 'inline-flex', 'align-items': 'center', gap: '5px', 'font-size': '11px', 'font-weight': 600,
+            color: liveColor(),
+            background: socketStatus() === 'open' ? 'var(--color-success-100)' : 'var(--color-chip)',
+            padding: '3px 8px', 'border-radius': '99px',
+          }}>
+            <span style={{ width: '6px', height: '6px', 'border-radius': '99px', background: liveColor(), animation: socketStatus() === 'open' ? 'tk-pulse 2s ease-in-out infinite' : 'none' }} />
+            {liveLabel()}
+          </span>
+        </Show>
+        <span style={{ 'font-size': '12px', color: 'var(--color-text-tertiary)' }}>·</span>
+        <span style={{ 'font-size': '12px', color: 'var(--color-text-secondary)' }}>{itemCount()} items</span>
+        <div style={{ flex: 1 }} />
+        <Show when={assignees().length > 0}>
+          <AvatarStack names={assignees()} max={5} />
+        </Show>
+      </div>
+
+      <Show when={!loading()} fallback={<div style={{ padding: '16px 18px' }}><BoardSkeleton /></div>}>
+        <Show
+          when={projectId()}
+          fallback={<div style={{ 'text-align': 'center', padding: '48px', color: 'var(--color-text-secondary)' }}>Please select a project from the Projects page</div>}
+        >
+          <Show when={(currentBoard()?.columns ?? []).length > 0 && (currentBoard()?.columns ?? []).every((col) => col.items.length === 0)}>
+            <div style={{ padding: '16px 18px 0' }}>
+              <EmptyProjectGuide onAddItem={() => handleAddItem(currentBoard()!.columns[0].status)} />
+            </div>
           </Show>
 
-          <div class="flex gap-4 overflow-x-auto pb-4">
-            <For each={currentBoard()?.columns || []}>
-              {(column) => (
-                <BoardColumn
-                  column={column}
-                  onItemDrop={handleItemDrop}
-                  onAddItem={handleAddItem}
-                  onEditItem={handleEditItem}
-                />
-              )}
-            </For>
-          </div>
-        </Show>
-
-        <Show when={!projectId()}>
-          <div class="text-center py-12" style={{ color: "var(--color-text-secondary)" }}>
-            Please select a project from the Projects page
+          <div style={{ flex: 1, 'overflow-x': 'auto', 'overflow-y': 'hidden', padding: '16px 18px 18px' }}>
+            <div style={{ display: 'flex', gap: '14px', height: '100%', 'align-items': 'flex-start' }}>
+              <For each={currentBoard()?.columns || []}>
+                {(column) => (
+                  <BoardColumnView
+                    column={column}
+                    dotColor={dotColor(column.status)}
+                    typeLabelOf={typeLabelOf}
+                    onItemDrop={handleItemDrop}
+                    onAddItem={handleAddItem}
+                    onEditItem={handleEditItem}
+                  />
+                )}
+              </For>
+            </div>
           </div>
         </Show>
       </Show>
 
-      {/* Create/Edit Item Modal */}
       <Show when={projectId()}>
         <CreateItemModal
           isOpen={showCreateModal()}
@@ -417,7 +396,6 @@ const Board: Component = () => {
           existingItem={editingItem() || undefined}
         />
       </Show>
-
     </div>
   );
 };

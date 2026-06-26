@@ -1,13 +1,19 @@
 import { createSignal, Show, For, createEffect, onCleanup, type Component } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
 import { api } from '../api';
-import type { Item } from '../types';
+import type { Item, Priority } from '../types';
+import { IconSearch, IconClose } from './icons';
+import TypeBadge from './TypeBadge';
+import PriorityDot from './PriorityDot';
+import KbdHint from './KbdHint';
 
 export interface SearchBarProps {
   projectId?: string;
   placeholder?: string;
 }
 
+/** Global / in-project item search. Debounced API query with a token-styled
+ *  results dropdown; ↑↓ to navigate, Enter opens the item drawer, ⌃/ focuses. */
 const SearchBar: Component<SearchBarProps> = (props) => {
   const navigate = useNavigate();
   const [query, setQuery] = createSignal('');
@@ -15,27 +21,24 @@ const SearchBar: Component<SearchBarProps> = (props) => {
   const [isOpen, setIsOpen] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
   const [selectedIndex, setSelectedIndex] = createSignal(0);
+  const [focused, setFocused] = createSignal(false);
   let searchRef: HTMLDivElement | undefined;
   let inputRef: HTMLInputElement | undefined;
   let searchTimeout: number | undefined;
 
-  // Global keyboard shortcut (Ctrl+/)
+  // ⌃/ (or ⌘/) focuses the search input.
   createEffect(() => {
-    const handleGlobalKeydown = (e: KeyboardEvent) => {
-      // Ctrl+/ or Cmd+/ to focus search
+    const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === '/') {
         e.preventDefault();
         inputRef?.focus();
       }
     };
-
-    window.addEventListener('keydown', handleGlobalKeydown);
-    onCleanup(() => {
-      window.removeEventListener('keydown', handleGlobalKeydown);
-    });
+    window.addEventListener('keydown', onKey);
+    onCleanup(() => window.removeEventListener('keydown', onKey));
   });
 
-  // Debounced search
+  // Debounced search.
   createEffect(() => {
     const q = query();
     if (q.trim().length < 2) {
@@ -43,20 +46,13 @@ const SearchBar: Component<SearchBarProps> = (props) => {
       setIsOpen(false);
       return;
     }
-
-    if (searchTimeout) {
-      clearTimeout(searchTimeout);
-    }
-
+    if (searchTimeout) clearTimeout(searchTimeout);
     searchTimeout = window.setTimeout(async () => {
       setLoading(true);
       try {
-        let items: Item[];
-        if (props.projectId) {
-          items = await api.search.inProject(props.projectId, q);
-        } else {
-          items = await api.search.global(q);
-        }
+        const items = props.projectId
+          ? await api.search.inProject(props.projectId, q)
+          : await api.search.global(q);
         setResults(items);
         setIsOpen(items.length > 0);
         setSelectedIndex(0);
@@ -69,23 +65,17 @@ const SearchBar: Component<SearchBarProps> = (props) => {
     }, 300);
   });
 
-  // Click outside to close
+  // Click outside closes the dropdown.
   createEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (searchRef && !searchRef.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
+    const onDown = (e: MouseEvent) => {
+      if (searchRef && !searchRef.contains(e.target as Node)) setIsOpen(false);
     };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    onCleanup(() => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    });
+    document.addEventListener('mousedown', onDown);
+    onCleanup(() => document.removeEventListener('mousedown', onDown));
   });
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (!isOpen()) return;
-
     const items = results();
     switch (e.key) {
       case 'ArrowDown':
@@ -98,9 +88,7 @@ const SearchBar: Component<SearchBarProps> = (props) => {
         break;
       case 'Enter':
         e.preventDefault();
-        if (items[selectedIndex()]) {
-          handleSelectItem(items[selectedIndex()]);
-        }
+        if (items[selectedIndex()]) handleSelectItem(items[selectedIndex()]);
         break;
       case 'Escape':
         e.preventDefault();
@@ -111,143 +99,112 @@ const SearchBar: Component<SearchBarProps> = (props) => {
   };
 
   const handleSelectItem = (item: Item) => {
-    // Navigate to board view with the item's project
-    navigate(`/projects/${item.project_id}/board`);
+    // Deep-link to the item drawer over its project board.
+    navigate(`/projects/${item.project_id}/board?item=${item.id}`);
     setQuery('');
     setResults([]);
     setIsOpen(false);
     inputRef?.blur();
   };
 
-  const formatItemType = (type: Item['item_type']): string => {
-    if (typeof type === 'string') {
-      return type;
-    }
-    return 'custom';
-  };
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'critical':
-      case 'high':
-        return 'text-danger-600';
-      case 'medium':
-        return 'text-warning-600';
-      case 'low':
-      case 'none':
-        return 'text-content-subtle';
-      default:
-        return 'text-content-subtle';
-    }
+  const clear = () => {
+    setQuery('');
+    setResults([]);
+    setIsOpen(false);
   };
 
   return (
-    <div ref={searchRef} class="relative w-full max-w-md">
-      <div class="relative">
+    <div ref={searchRef} style={{ position: 'relative', width: '240px' }}>
+      {/* search pill */}
+      <div
+        style={{
+          display: 'flex', 'align-items': 'center', gap: '8px',
+          padding: '7px 11px', 'border-radius': '9px',
+          background: 'var(--color-bg-app)',
+          border: '1px solid ' + (focused() ? 'var(--color-accent-line)' : 'var(--color-border-light)'),
+          color: 'var(--color-text-secondary)',
+        }}
+      >
+        <Show
+          when={loading()}
+          fallback={<span style={{ display: 'flex', 'flex-shrink': 0 }}><IconSearch size={14} /></span>}
+        >
+          <span
+            style={{
+              width: '14px', height: '14px', 'flex-shrink': 0, 'border-radius': '99px',
+              border: '2px solid var(--color-border-light)', 'border-top-color': 'var(--color-primary-600)',
+              animation: 'tk-spin .6s linear infinite',
+            }}
+          />
+        </Show>
         <input
           ref={inputRef}
           type="text"
           value={query()}
           onInput={(e) => setQuery(e.currentTarget.value)}
           onKeyDown={handleKeyDown}
-          onFocus={() => {
-            if (results().length > 0) {
-              setIsOpen(true);
-            }
+          onFocus={() => { setFocused(true); if (results().length > 0) setIsOpen(true); }}
+          onBlur={() => setFocused(false)}
+          placeholder={props.placeholder ?? 'Search items…'}
+          style={{
+            flex: 1, 'min-width': 0, border: 'none', outline: 'none', background: 'transparent',
+            'font-family': 'inherit', 'font-size': '12.5px', color: 'var(--color-text-primary)',
           }}
-          placeholder={props.placeholder || 'Search items...'}
-          class="w-full pl-10 pr-4 py-2 border border-line-medium rounded-lg bg-elevated text-content placeholder-content-faint focus:ring-2 focus:ring-brand-500 focus:border-transparent"
         />
-        <div class="absolute left-3 top-1/2 -translate-y-1/2 text-content-subtle">
-          {loading() ? (
-            <svg class="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-              <circle
-                class="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                stroke-width="4"
-              />
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
-            </svg>
-          ) : (
-            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-          )}
-        </div>
-        <Show when={query()}>
+        <Show when={query()} fallback={<KbdHint>⌃/</KbdHint>}>
           <button
-            onClick={() => {
-              setQuery('');
-              setResults([]);
-              setIsOpen(false);
-            }}
-            class="absolute right-3 top-1/2 -translate-y-1/2 text-content-subtle hover:text-content-muted"
+            onClick={clear}
+            aria-label="Clear search"
+            style={{ display: 'flex', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)', padding: 0 }}
           >
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+            <IconClose size={13} />
           </button>
         </Show>
       </div>
 
-      {/* Results Dropdown */}
+      {/* results dropdown */}
       <Show when={isOpen() && results().length > 0}>
-        <div class="absolute z-50 w-full mt-2 bg-elevated rounded-lg shadow-lg border border-line max-h-96 overflow-y-auto">
-          <For each={results()}>
-            {(item, index) => (
-              <button
-                onClick={() => handleSelectItem(item)}
-                onMouseEnter={() => setSelectedIndex(index())}
-                class="w-full px-4 py-3 text-left hover:bg-sunken transition-colors border-b border-line last:border-0"
-                classList={{
-                  'bg-brand-50': index() === selectedIndex(),
-                }}
-              >
-                <div class="flex items-start justify-between gap-3">
-                  <div class="flex-1 min-w-0">
-                    <h4 class="font-medium text-content truncate">
+        <div
+          style={{
+            position: 'absolute', 'z-index': 50, width: '360px', 'max-width': '78vw', right: 0, 'margin-top': '8px',
+            background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)',
+            'border-radius': '13px', 'box-shadow': 'var(--shadow-lg)', overflow: 'hidden',
+            animation: 'tk-pal .16s cubic-bezier(.2,.7,.3,1)',
+          }}
+        >
+          <div style={{ 'max-height': '50vh', 'overflow-y': 'auto', padding: '6px' }}>
+            <For each={results()}>
+              {(item, index) => {
+                const active = () => index() === selectedIndex();
+                return (
+                  <button
+                    onClick={() => handleSelectItem(item)}
+                    onMouseEnter={() => setSelectedIndex(index())}
+                    style={{
+                      width: '100%', display: 'flex', 'flex-direction': 'column', gap: '5px',
+                      padding: '9px 10px', 'border-radius': '9px', border: 'none', cursor: 'pointer',
+                      'text-align': 'left', 'font-family': 'inherit',
+                      background: active() ? 'var(--color-accent-soft)' : 'transparent',
+                    }}
+                  >
+                    <span style={{ 'font-size': '13px', 'font-weight': 600, color: 'var(--color-text-primary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis', 'max-width': '100%' }}>
                       {item.title}
-                    </h4>
-                    <Show when={item.description}>
-                      <p class="text-sm text-content-muted line-clamp-1 mt-1">
-                        {item.description}
-                      </p>
-                    </Show>
-                    <div class="flex items-center gap-2 mt-2">
-                      <span class="text-xs px-2 py-0.5 rounded bg-sunken text-content-muted">
-                        {formatItemType(item.item_type)}
-                      </span>
-                      <span class={`text-xs font-medium ${getPriorityColor(item.priority)}`}>
-                        {item.priority}
-                      </span>
-                      <span class="text-xs text-content-subtle">
-                        {item.status}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </button>
-            )}
-          </For>
-          <div class="px-4 py-2 text-xs text-content-subtle bg-sunken border-t border-line">
-            <span>Use ↑ ↓ to navigate · Enter to select · Esc to close</span>
+                    </span>
+                    <span style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
+                      <TypeBadge type={item.item_type} />
+                      <Show when={item.priority !== 'none'}>
+                        <PriorityDot priority={item.priority as Priority} showLabel />
+                      </Show>
+                      <span style={{ 'font-size': '11px', color: 'var(--color-text-tertiary)' }}>{item.status}</span>
+                    </span>
+                  </button>
+                );
+              }}
+            </For>
+          </div>
+          <div style={{ display: 'flex', 'align-items': 'center', gap: '12px', padding: '8px 12px', 'border-top': '1px solid var(--color-border-light)', background: 'var(--color-bg-base)', 'font-size': '11px', color: 'var(--color-text-tertiary)' }}>
+            <span style={{ display: 'flex', 'align-items': 'center', gap: '5px' }}><KbdHint>↑↓</KbdHint>navigate</span>
+            <span style={{ display: 'flex', 'align-items': 'center', gap: '5px' }}><KbdHint>↵</KbdHint>open</span>
           </div>
         </div>
       </Show>

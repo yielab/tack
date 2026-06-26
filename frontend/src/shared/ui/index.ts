@@ -28,5 +28,23 @@ export type { DrawerProps } from './Drawer';
 export { default as Tabs } from './Tabs';
 export type { TabsProps, TabItem } from './Tabs';
 
-export { default as Menu, MenuItem } from './Menu';
-export type { MenuProps, MenuItemProps } from './Menu';
+// Redesign primitives (Tack.dc.html) — token-styled atoms shared across the
+// shell, board, and drawer.
+export { default as Avatar, AvatarStack, hueFromName, initialsOf } from './Avatar';
+export type { AvatarProps, AvatarStackProps, AvatarSize } from './Avatar';
+
+export { default as TypeBadge, typeKey, typeBadgeTone } from './TypeBadge';
+export type { TypeBadgeProps } from './TypeBadge';
+
+export { default as PriorityDot, priorityColor, priorityLabel } from './PriorityDot';
+export type { PriorityDotProps } from './PriorityDot';
+
+export { default as WipChip, wipChipStyle } from './WipChip';
+export type { WipChipProps } from './WipChip';
+
+export { default as KbdHint } from './KbdHint';
+export type { KbdHintProps } from './KbdHint';
+
+export * as Icons from './icons';
+export { BrandMark } from './icons';
+export type { IconProps } from './icons';

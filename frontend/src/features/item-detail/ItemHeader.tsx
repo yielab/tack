@@ -1,9 +1,12 @@
 import { type Component, createSignal, createEffect, For, Show } from 'solid-js';
 import { createResource } from 'solid-js';
-import { Field, Select, Badge } from '../../shared/ui';
+import { Field, Select, Badge, TypeBadge, typeKey } from '../../shared/ui';
 import { useProject } from '../../shared/state/projectContext';
+import { useVocab } from '../../shared/vocab/useVocab';
 import { api } from '../../shared/api';
 import type { Item, UpdateItem, Priority } from '../../shared/types';
+
+const shortId = (id: string) => id.replace(/-/g, '').slice(0, 6).toUpperCase();
 
 const PRIORITIES: { value: Priority; label: string }[] = [
   { value: 'critical', label: '🔥 Critical' },
@@ -22,6 +25,7 @@ export interface ItemHeaderProps {
 /** Inline-editable core fields for an item. Each commit calls `onPatch`. */
 const ItemHeader: Component<ItemHeaderProps> = (props) => {
   const { workflow } = useProject();
+  const vocab = useVocab();
 
   // Title is locally mirrored so it commits on blur / Enter, not every keypress.
   const [title, setTitle] = createSignal(props.item.title);
@@ -51,6 +55,14 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
 
   return (
     <div class="space-y-4">
+      {/* Type + id */}
+      <div class="flex items-center gap-2">
+        <TypeBadge type={props.item.item_type} label={vocab.t(typeKey(props.item.item_type))} />
+        <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '12px', color: 'var(--color-text-tertiary)' }}>
+          {shortId(props.item.id)}
+        </span>
+      </div>
+
       {/* Title */}
       <input
         value={title()}
@@ -68,18 +80,33 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
         aria-label="Item title"
       />
 
+      {/* Status pills */}
+      <div class="flex flex-wrap gap-1.5" role="group" aria-label="Status">
+        <For each={statuses()}>
+          {(s) => {
+            const active = () => props.item.status === s.name;
+            return (
+              <button
+                type="button"
+                onClick={() => { if (!active()) props.onPatch({ status: s.name }); }}
+                aria-pressed={active() ? 'true' : 'false'}
+                style={{
+                  padding: '5px 11px', 'border-radius': '8px', cursor: 'pointer',
+                  'font-size': '12px', 'font-weight': 600, 'font-family': 'inherit',
+                  border: '1px solid ' + (active() ? 'transparent' : 'var(--color-border-light)'),
+                  background: active() ? 'var(--color-primary-600)' : 'var(--color-bg-base)',
+                  color: active() ? 'var(--color-on-accent)' : 'var(--color-text-secondary)',
+                }}
+              >
+                {s.name}
+              </button>
+            );
+          }}
+        </For>
+      </div>
+
       {/* Field grid */}
       <div class="grid grid-cols-2 gap-3">
-        <Select
-          label="Status"
-          value={props.item.status}
-          onChange={(e) => props.onPatch({ status: e.currentTarget.value })}
-        >
-          <For each={statuses()}>
-            {(s) => <option value={s.name}>{s.name}</option>}
-          </For>
-        </Select>
-
         <Select
           label="Priority"
           value={props.item.priority}

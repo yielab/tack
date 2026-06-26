@@ -6,7 +6,8 @@ import ToastContainer from '../shared/ui/ToastContainer';
 import Breadcrumb from '../shared/ui/Breadcrumb';
 import { ProjectProvider } from '../shared/state/projectContext';
 import CommandPalette, { type Command } from '../shared/ui/CommandPalette';
-import { Button } from '../shared/ui';
+import { paletteOpen, openPalette, closePalette } from '../shared/state/commandPalette';
+import { IconPlus } from '../shared/ui/icons';
 import { getLastLens } from '../shared/state/lastView';
 import CreateItemModal from '../shared/ui/CreateItemModal';
 import CreateProjectModal from '../features/projects/CreateProjectModal';
@@ -19,7 +20,7 @@ interface LayoutProps {
 }
 
 const VIEW_LABELS: Record<string, string> = {
-  board: 'Board', list: 'List', calendar: 'Calendar', timeline: 'Timeline', sprint: 'Sprint',
+  board: 'Board', list: 'List', table: 'Table', calendar: 'Calendar', timeline: 'Timeline', sprint: 'Sprint',
   overview: 'Overview', settings: 'Settings',
 };
 
@@ -32,6 +33,9 @@ const LayoutInner: Component<LayoutProps> = (props) => {
   const { project } = useProject();
 
   const projectId = () => params.id as string | undefined;
+
+  // The board manages its own full-height horizontal-scroll layout.
+  const fullBleed = () => location.pathname.endsWith('/board');
 
   // document.title — "<Project> — <View> · Tack"
   createEffect(() => {
@@ -55,19 +59,16 @@ const LayoutInner: Component<LayoutProps> = (props) => {
     document.title = title;
   });
 
-  // Global command palette
-  const [showPalette, setShowPalette] = createSignal(false);
-
   // Context-aware + New
   const [showNewItem, setShowNewItem] = createSignal(false);
   const [showNewProject, setShowNewProject] = createSignal(false);
 
-  // Ctrl+K global shortcut
+  // Ctrl+K opens the command palette (Ctrl+/ is owned by SearchBar → focus).
   onMount(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
-        setShowPalette(true);
+        openPalette();
       }
     };
     window.addEventListener('keydown', handler);
@@ -81,24 +82,24 @@ const LayoutInner: Component<LayoutProps> = (props) => {
 
     if (pid) {
       cmds.push(
-        { id: 'new-item',     label: 'New Item',          icon: '➕', shortcut: 'N', action: () => setShowNewItem(true) },
-        { id: 'go-board',     label: 'Work → Board',      icon: '⬛', action: () => navigate(`/projects/${pid}/board`) },
-        { id: 'go-list',      label: 'Work → List',       icon: '☰',  action: () => navigate(`/projects/${pid}/list`) },
-        { id: 'go-table',     label: 'Work → Table',      icon: '▦',  action: () => navigate(`/projects/${pid}/table`) },
-        { id: 'go-calendar',  label: 'Work → Calendar',   icon: '📅', action: () => navigate(`/projects/${pid}/calendar`) },
-        { id: 'go-timeline',  label: 'Work → Timeline',   icon: '📊', action: () => navigate(`/projects/${pid}/timeline`) },
-        { id: 'go-sprint',    label: 'Work → Sprint',     icon: '🏃', action: () => navigate(`/projects/${pid}/sprint`) },
-        { id: 'go-overview',  label: 'Overview',          icon: '📈', action: () => navigate(`/projects/${pid}/overview`) },
-        { id: 'go-settings',  label: 'Project Settings',  icon: '⚙️', action: () => navigate(`/projects/${pid}/settings`) },
+        { id: 'new-item',     label: 'New Item',          icon: '➕', shortcut: 'N', group: 'Actions', action: () => setShowNewItem(true) },
+        { id: 'go-board',     label: 'Work → Board',      icon: '⬛', group: 'Go to', action: () => navigate(`/projects/${pid}/board`) },
+        { id: 'go-list',      label: 'Work → List',       icon: '☰',  group: 'Go to', action: () => navigate(`/projects/${pid}/list`) },
+        { id: 'go-table',     label: 'Work → Table',      icon: '▦',  group: 'Go to', action: () => navigate(`/projects/${pid}/table`) },
+        { id: 'go-calendar',  label: 'Work → Calendar',   icon: '📅', group: 'Go to', action: () => navigate(`/projects/${pid}/calendar`) },
+        { id: 'go-timeline',  label: 'Work → Timeline',   icon: '📊', group: 'Go to', action: () => navigate(`/projects/${pid}/timeline`) },
+        { id: 'go-sprint',    label: 'Work → Sprint',     icon: '🏃', group: 'Go to', action: () => navigate(`/projects/${pid}/sprint`) },
+        { id: 'go-overview',  label: 'Overview',          icon: '📈', group: 'Go to', action: () => navigate(`/projects/${pid}/overview`) },
+        { id: 'go-settings',  label: 'Project Settings',  icon: '⚙️', group: 'Go to', action: () => navigate(`/projects/${pid}/settings`) },
       );
       void lens; // used via getLastLens in sidebar
     }
 
     cmds.push(
-      { id: 'go-projects',  label: 'All Projects',        icon: '🏠', action: () => navigate('/projects') },
-      { id: 'go-templates', label: 'Templates',           icon: '📋', action: () => navigate('/templates') },
-      { id: 'go-gsettings', label: 'Global Settings',     icon: '🔧', action: () => navigate('/settings') },
-      { id: 'new-project',  label: 'New Project',         icon: '📁', action: () => setShowNewProject(true) },
+      { id: 'go-projects',  label: 'All Projects',        icon: '🏠', group: 'Workspace', action: () => navigate('/projects') },
+      { id: 'go-templates', label: 'Templates',           icon: '📋', group: 'Workspace', action: () => navigate('/templates') },
+      { id: 'go-gsettings', label: 'Global Settings',     icon: '🔧', group: 'Workspace', action: () => navigate('/settings') },
+      { id: 'new-project',  label: 'New Project',         icon: '📁', group: 'Actions', action: () => setShowNewProject(true) },
     );
 
     return cmds;
@@ -108,55 +109,70 @@ const LayoutInner: Component<LayoutProps> = (props) => {
     <div class="flex h-screen" style={{ 'background-color': 'var(--color-bg-app)' }}>
       <Sidebar />
 
-      <main class="flex-1 overflow-auto pt-14 lg:pt-0 flex flex-col min-w-0">
+      <main class="flex-1 overflow-hidden pt-14 lg:pt-0 flex flex-col min-w-0">
         {/* Top bar */}
         <div
-          class="sticky top-0 z-40 border-b px-4 py-2.5 shadow-sm"
+          class="sticky top-0 z-40 flex items-center gap-3.5"
           style={{
+            height: '54px',
+            'flex-shrink': 0,
+            padding: '0 18px',
             'background-color': 'var(--color-bg-base)',
-            'border-color': 'var(--color-border-light)',
+            'border-bottom': '1px solid var(--color-border-light)',
           }}
         >
-          <div class="flex items-center justify-between gap-4 max-w-7xl mx-auto">
-            <Breadcrumb />
+          <Breadcrumb />
 
-            <div class="flex items-center gap-2">
-              <SearchBar placeholder="Search… (Ctrl+/)" />
+          <div style={{ flex: 1 }} />
 
-              {/* ＋ New — context-aware */}
-              <Button
-                size="sm"
-                onClick={() => projectId() ? setShowNewItem(true) : setShowNewProject(true)}
-                title={projectId() ? 'New item (Ctrl+K → New Item)' : 'New project'}
-              >
-                + New
-              </Button>
-
-              {/* ⌘K trigger */}
-              <button
-                onClick={() => setShowPalette(true)}
-                class="hidden sm:flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md transition-colors"
-                style={{
-                  color: 'var(--color-text-tertiary)',
-                  'border-color': 'var(--color-border-medium)',
-                  background: 'var(--color-bg-subtle)',
-                }}
-              >
-                <span class="font-mono">Ctrl+K</span>
-              </button>
-            </div>
+          {/* item search */}
+          <div class="hidden sm:block">
+            <SearchBar projectId={projectId()} />
           </div>
+
+          {/* ＋ New — context-aware */}
+          <button
+            onClick={() => projectId() ? setShowNewItem(true) : setShowNewProject(true)}
+            title={projectId() ? 'New item' : 'New project'}
+            style={{
+              display: 'flex', 'align-items': 'center', gap: '6px',
+              padding: '8px 13px', 'border-radius': '9px', border: 'none', cursor: 'pointer',
+              background: 'var(--color-primary-600)', color: 'var(--color-on-accent)',
+              'font-family': 'inherit', 'font-size': '12.5px', 'font-weight': 700,
+              'box-shadow': 'var(--shadow-sm)',
+            }}
+          >
+            <IconPlus size={14} /> New
+          </button>
+
+          {/* ⌃K trigger */}
+          <button
+            onClick={() => openPalette()}
+            title="Command palette"
+            style={{
+              display: 'flex', 'align-items': 'center', padding: '7px 9px',
+              'border-radius': '8px', cursor: 'pointer',
+              border: '1px solid var(--color-border-light)', background: 'var(--color-bg-app)',
+              color: 'var(--color-text-tertiary)', 'font-family': 'var(--font-mono)', 'font-size': '11px',
+            }}
+          >
+            ⌃K
+          </button>
         </div>
 
-        <div class="flex-1 container mx-auto px-4 py-6 max-w-7xl">
-          {props.children}
-        </div>
+        {/* Board is full-bleed (own scroll); other views get the centered column. */}
+        <Show
+          when={fullBleed()}
+          fallback={<div class="flex-1 overflow-auto container mx-auto px-4 py-6 max-w-7xl">{props.children}</div>}
+        >
+          <div class="flex-1 min-w-0 flex flex-col overflow-hidden">{props.children}</div>
+        </Show>
       </main>
 
       {/* Global command palette */}
       <CommandPalette
-        isOpen={showPalette()}
-        onClose={() => setShowPalette(false)}
+        isOpen={paletteOpen()}
+        onClose={closePalette}
         commands={globalCommands()}
       />
 

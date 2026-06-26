@@ -1,37 +1,85 @@
 import { A, useParams, useLocation, useNavigate } from '@solidjs/router';
-import { FiHome, FiSettings, FiMenu, FiX, FiLayers, FiGitBranch, FiBarChart2, FiBookOpen } from 'solid-icons/fi';
-import { createSignal, Show, For, createResource, type Component } from 'solid-js';
+import { createSignal, Show, For, createResource, type Component, type JSX } from 'solid-js';
 import { api } from '../api';
 import { getLastLens } from '../state/lastView';
+import { openPalette } from '../state/commandPalette';
+import { currentPalette, setPalette, PALETTES, type Palette } from '../state/palette';
+import { isDarkActive, toggleTheme } from '../state/theme';
+import {
+  BrandMark,
+  IconSearch, IconBoard, IconList, IconCalendar, IconTimeline, IconSprint,
+  IconOverview, IconProjects, IconTemplates, IconSettings, IconSun, IconMoon,
+  IconChevronDown, type IconProps,
+} from './icons';
+import KbdHint from './KbdHint';
 
-const NavLink: Component<{ href: string; icon: any; label: string; end?: boolean; onClick?: () => void }> = (p) => {
+type Glyph = Component<IconProps>;
+
+/** A nav row: design icon + label, active = accent-soft pill. */
+const NavButton: Component<{
+  href: string;
+  icon: Glyph;
+  label: string;
+  end?: boolean;
+  badge?: JSX.Element;
+  onClick?: () => void;
+}> = (p) => {
   const location = useLocation();
-  const active = () => p.end ? location.pathname === p.href : location.pathname.startsWith(p.href);
-
+  const active = () => (p.end ? location.pathname === p.href : location.pathname.startsWith(p.href));
   return (
     <A
       href={p.href}
-      class="flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all"
-      style={active()
-        ? { background: 'var(--color-primary-50)', color: 'var(--color-primary-600)' }
-        : { color: 'var(--color-text-secondary)' }}
       onClick={p.onClick}
+      style={{
+        width: '100%',
+        display: 'flex',
+        'align-items': 'center',
+        gap: '9px',
+        padding: '7px 10px',
+        'border-radius': '8px',
+        'font-size': '13px',
+        'font-weight': 500,
+        'margin-bottom': '2px',
+        background: active() ? 'var(--color-accent-soft)' : 'transparent',
+        color: active() ? 'var(--color-accent-ink)' : 'var(--color-text-secondary)',
+      }}
+      onMouseEnter={(e) => { if (!active()) e.currentTarget.style.background = 'var(--color-border-subtle)'; }}
+      onMouseLeave={(e) => { if (!active()) e.currentTarget.style.background = 'transparent'; }}
     >
-      <p.icon class="mr-3 shrink-0" size={17} />
-      {p.label}
+      <p.icon size={16} />
+      <span style={{ flex: 1, 'text-align': 'left' }}>{p.label}</span>
+      {p.badge}
     </A>
   );
 };
 
 const SectionLabel: Component<{ label: string }> = (p) => (
-  <p class="px-3 pb-1.5 text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--color-text-tertiary)' }}>
-    {p.label}
-  </p>
+  <div style={{ padding: '8px 8px 4px' }}>
+    <span style={{
+      'font-size': '10.5px', 'font-weight': 700, 'letter-spacing': '.07em',
+      'text-transform': 'uppercase', color: 'var(--color-text-tertiary)',
+    }}>{p.label}</span>
+  </div>
 );
+
+const PaletteSwatch: Component<{ value: Palette; color: string; title: string }> = (p) => {
+  const selected = () => currentPalette() === p.value;
+  return (
+    <button
+      title={p.title}
+      onClick={() => setPalette(p.value)}
+      style={{
+        width: '18px', height: '18px', 'border-radius': '99px', cursor: 'pointer',
+        background: p.color, padding: 0,
+        border: selected() ? '2px solid var(--color-text-primary)' : '2px solid transparent',
+        'box-shadow': selected() ? 'none' : '0 0 0 1px var(--color-border-light)',
+      }}
+    />
+  );
+};
 
 const Sidebar: Component = () => {
   const params = useParams();
-  const location = useLocation();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = createSignal(false);
   const close = () => setIsOpen(false);
@@ -40,140 +88,125 @@ const Sidebar: Component = () => {
   const [projects] = createResource(() => api.projects.list());
   const [health] = createResource(() => api.system.health());
 
-  // "Work" is active when on any lens route
-  const workActive = () => {
-    const p = location.pathname;
-    return ['board', 'list', 'tree', 'calendar', 'timeline'].some(l =>
-      p.endsWith(`/${l}`) || p.includes(`/${l}/`)
-    );
-  };
-
   const handleProjectSwitch = (id: string) => {
-    const lens = getLastLens();
-    navigate(`/projects/${id}/${lens}`);
+    navigate(`/projects/${id}/${getLastLens()}`);
     close();
   };
 
   const inner = (
-    <div class="flex flex-col h-full">
-      {/* Logo */}
-      <div class="hidden lg:flex items-center px-5 py-4 border-b" style={{ 'border-color': 'var(--color-border-light)' }}>
-        <A href="/projects" class="flex items-center gap-2" onClick={close}>
-          <svg class="w-7 h-7" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <defs>
-              <linearGradient id="tack-logo-g" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-                <stop stop-color="#4f46e5" />
-                <stop offset="0.55" stop-color="#9333ea" />
-                <stop offset="1" stop-color="#db2777" />
-              </linearGradient>
-            </defs>
-            <rect width="64" height="64" rx="16" fill="url(#tack-logo-g)" />
-            <rect x="12" y="14" width="40" height="7" rx="3.5" fill="#fff" />
-            <rect x="12" y="26" width="10" height="14" rx="3" fill="#fff" opacity="0.55" />
-            <rect x="27" y="26" width="10" height="24" rx="3" fill="#fff" />
-            <rect x="42" y="26" width="10" height="18" rx="3" fill="#fff" opacity="0.55" />
-          </svg>
-          <span class="text-lg font-bold" style={{ color: 'var(--color-text-primary)' }}>Tack</span>
-        </A>
+    <div style={{ display: 'flex', 'flex-direction': 'column', height: '100%' }}>
+      {/* brand */}
+      <div style={{ padding: '16px 16px 12px', display: 'flex', 'align-items': 'center', gap: '10px' }}>
+        <BrandMark size={26} />
+        <div style={{ display: 'flex', 'flex-direction': 'column', 'line-height': '1.05' }}>
+          <span style={{ 'font-size': '18px', 'font-weight': 800, 'letter-spacing': '-.02em', color: 'var(--color-text-primary)' }}>Tack</span>
+          <span style={{ 'font-size': '10px', 'font-weight': 500, 'letter-spacing': '.06em', 'text-transform': 'uppercase', color: 'var(--color-text-tertiary)' }}>self-hosted</span>
+        </div>
       </div>
 
-      <nav class="flex-1 px-3 py-4 space-y-6 overflow-y-auto mt-14 lg:mt-0">
-        {/* Workspace */}
-        <div class="space-y-0.5">
-          <SectionLabel label="Workspace" />
-          <NavLink href="/projects" end icon={FiHome}     label="All Projects" onClick={close} />
-          <NavLink href="/templates"     icon={FiBookOpen} label="Templates"    onClick={close} />
-          <NavLink href="/settings"      icon={FiSettings} label="Settings"     onClick={close} />
+      {/* workspace pill */}
+      <div style={{ padding: '0 12px 10px' }}>
+        <div style={{
+          width: '100%', display: 'flex', 'align-items': 'center', gap: '8px',
+          padding: '8px 10px', 'border-radius': '9px',
+          border: '1px solid var(--color-border-light)', background: 'var(--color-bg-base)',
+        }}>
+          <span style={{ width: '7px', height: '7px', 'border-radius': '99px', background: health() ? 'var(--color-success-600)' : 'var(--color-text-tertiary)', 'flex-shrink': 0 }} />
+          <span style={{ flex: 1, 'text-align': 'left', 'font-size': '12.5px', 'font-weight': 600, color: 'var(--color-text-primary)' }}>Local workspace</span>
+          <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '10px', color: 'var(--color-text-tertiary)' }}>tack.db</span>
         </div>
+      </div>
 
-        {/* Current project */}
+      {/* search trigger */}
+      <div style={{ padding: '0 12px 12px' }}>
+        <button
+          onClick={() => { openPalette(); close(); }}
+          style={{
+            width: '100%', display: 'flex', 'align-items': 'center', gap: '8px',
+            padding: '8px 10px', 'border-radius': '9px', cursor: 'pointer',
+            border: '1px solid var(--color-border-light)', background: 'var(--color-bg-app)',
+            'font-family': 'inherit', color: 'var(--color-text-secondary)',
+          }}
+        >
+          <IconSearch size={15} />
+          <span style={{ flex: 1, 'text-align': 'left', 'font-size': '12.5px' }}>Search…</span>
+          <KbdHint>⌃/</KbdHint>
+        </button>
+      </div>
+
+      {/* nav */}
+      <div style={{ flex: 1, 'overflow-y': 'auto', padding: '0 10px' }}>
         <Show when={currentProjectId()}>
-          <div class="space-y-1">
-            <SectionLabel label="Project" />
+          <SectionLabel label="Project" />
 
-            {/* Instant project switcher — no page reload */}
-            <div class="px-1 pb-1">
+          {/* project switcher pill */}
+          <div style={{ padding: '0 0 6px' }}>
+            <div style={{ position: 'relative' }}>
               <select
                 aria-label="Switch project"
                 value={currentProjectId()}
                 onChange={(e) => handleProjectSwitch(e.currentTarget.value)}
-                class="w-full px-3 py-2 text-sm font-semibold rounded-lg border cursor-pointer transition-all focus:outline-none focus-visible:ring-2"
                 style={{
-                  background: 'var(--color-bg-subtle)',
+                  width: '100%', appearance: 'none', cursor: 'pointer',
+                  padding: '7px 28px 7px 10px', 'border-radius': '8px',
+                  border: '1px solid var(--color-border-light)', background: 'var(--color-bg-base)',
+                  'font-family': 'inherit', 'font-size': '13px', 'font-weight': 600,
                   color: 'var(--color-text-primary)',
-                  'border-color': 'var(--color-border-medium)',
-                  '--tw-ring-color': 'var(--color-focus-ring)',
                 }}
               >
-                <For each={projects()}>
-                  {(p) => <option value={p.id}>{p.name}</option>}
-                </For>
+                <For each={projects()}>{(p) => <option value={p.id}>{p.name}</option>}</For>
               </select>
+              <span style={{ position: 'absolute', right: '9px', top: '50%', transform: 'translateY(-50%)', 'pointer-events': 'none', color: 'var(--color-text-tertiary)', display: 'flex' }}>
+                <IconChevronDown size={13} />
+              </span>
             </div>
-
-            {/* Overview */}
-            <NavLink
-              href={`/projects/${currentProjectId()}/overview`}
-              icon={FiBarChart2}
-              label="Overview"
-              onClick={close}
-            />
-
-            {/* Work (all 5 lenses behind one destination) */}
-            <A
-              href={`/projects/${currentProjectId()}/${getLastLens()}`}
-              class="flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all"
-              style={workActive()
-                ? { background: 'var(--color-primary-50)', color: 'var(--color-primary-600)' }
-                : { color: 'var(--color-text-secondary)' }}
-              onClick={close}
-            >
-              <FiLayers class="mr-3 shrink-0" size={17} />
-              Work
-            </A>
-
-            <NavLink
-              href={`/projects/${currentProjectId()}/sprint`}
-              icon={FiGitBranch}
-              label="Sprint"
-              onClick={close}
-            />
-            <NavLink
-              href={`/projects/${currentProjectId()}/settings`}
-              icon={FiSettings}
-              label="Settings"
-              onClick={close}
-            />
           </div>
+
+          <NavButton href={`/projects/${currentProjectId()}/board`} icon={IconBoard} label="Board" onClick={close} />
+          <NavButton href={`/projects/${currentProjectId()}/list`} icon={IconList} label="List" onClick={close} />
+          <NavButton href={`/projects/${currentProjectId()}/calendar`} icon={IconCalendar} label="Calendar" onClick={close} />
+          <NavButton href={`/projects/${currentProjectId()}/timeline`} icon={IconTimeline} label="Timeline" onClick={close} />
+          <NavButton href={`/projects/${currentProjectId()}/sprint`} icon={IconSprint} label="Sprints" onClick={close} />
+          <NavButton href={`/projects/${currentProjectId()}/overview`} icon={IconOverview} label="Overview" onClick={close} />
+
+          <div style={{ height: '1px', background: 'var(--color-border-light)', margin: '10px 8px' }} />
         </Show>
 
-        {/* Other projects quick-links */}
-        <Show when={projects() && (projects()!.length > 1 || !currentProjectId())}>
-          <div class="space-y-0.5">
-            <SectionLabel label={currentProjectId() ? 'Other Projects' : 'Projects'} />
-            <For each={projects()}>
-              {(p) => (
-                <Show when={p.id !== currentProjectId()}>
-                  <button
-                    class="w-full flex items-start px-3 py-2 text-sm rounded-lg text-left transition-all"
-                    style={{ color: 'var(--color-text-secondary)' }}
-                    onClick={() => { handleProjectSwitch(p.id); }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-bg-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = ''; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-                  >
-                    <span class="truncate">{p.name}</span>
-                  </button>
-                </Show>
-              )}
-            </For>
-          </div>
-        </Show>
-      </nav>
+        <SectionLabel label="Workspace" />
+        <NavButton href="/projects" end icon={IconProjects} label="All projects" onClick={close} />
+        <NavButton href="/templates" icon={IconTemplates} label="Templates" onClick={close} />
+        <NavButton href={currentProjectId() ? `/projects/${currentProjectId()}/settings` : '/settings'} icon={IconSettings} label="Settings" onClick={close} />
+      </div>
 
-      <div class="px-4 py-3 border-t" style={{ 'border-color': 'var(--color-border-light)' }}>
-        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-          Tack {health() ? `v${health()!.version}` : ''}
-        </p>
+      {/* footer: theme + palette + identity */}
+      <div style={{ 'border-top': '1px solid var(--color-border-light)', padding: '10px 12px', display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
+        <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
+          <button
+            onClick={toggleTheme}
+            title="Toggle theme"
+            style={{
+              width: '30px', height: '30px', 'border-radius': '8px', cursor: 'pointer',
+              border: '1px solid var(--color-border-light)', background: 'var(--color-bg-base)',
+              display: 'flex', 'align-items': 'center', 'justify-content': 'center',
+              color: 'var(--color-text-secondary)',
+            }}
+          >
+            <Show when={isDarkActive()} fallback={<IconSun size={15} />}><IconMoon size={15} /></Show>
+          </button>
+          <div style={{ display: 'flex', 'align-items': 'center', gap: '6px', flex: 1, 'justify-content': 'flex-end' }}>
+            <span style={{ 'font-size': '10.5px', color: 'var(--color-text-tertiary)', 'margin-right': '2px' }}>Palette</span>
+            <PaletteSwatch value={PALETTES[0]} color="#0d9488" title="Teal" />
+            <PaletteSwatch value={PALETTES[1]} color="#c2410c" title="Clay" />
+            <PaletteSwatch value={PALETTES[2]} color="#84cc16" title="Graphite" />
+          </div>
+        </div>
+        <div style={{ display: 'flex', 'align-items': 'center', gap: '9px', padding: '2px' }}>
+          <span style={{ width: '26px', height: '26px', 'border-radius': '99px', background: 'var(--color-primary-600)', color: 'var(--color-on-accent)', display: 'flex', 'align-items': 'center', 'justify-content': 'center', 'font-size': '11px', 'font-weight': 700, 'flex-shrink': 0 }}>T</span>
+          <div style={{ flex: 1, 'line-height': '1.15', 'min-width': 0 }}>
+            <div style={{ 'font-size': '12.5px', 'font-weight': 600, color: 'var(--color-text-primary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis' }}>Local</div>
+            <div style={{ 'font-size': '10.5px', color: 'var(--color-text-tertiary)' }}>{health() ? `v${health()!.version} · single token` : 'single token'}</div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -182,26 +215,29 @@ const Sidebar: Component = () => {
     <>
       {/* Mobile top bar */}
       <div
-        class="lg:hidden fixed top-0 left-0 right-0 z-20 border-b shadow-sm flex items-center justify-between px-4 py-3"
-        style={{ background: 'var(--color-bg-elevated)', 'border-color': 'var(--color-border-light)' }}
+        class="lg:hidden fixed top-0 left-0 right-0 z-20 border-b flex items-center justify-between px-4 py-3"
+        style={{ background: 'var(--color-bg-elevated)', 'border-color': 'var(--color-border-light)', 'box-shadow': 'var(--shadow-sm)' }}
       >
-        <span class="text-xl font-bold" style={{ color: 'var(--color-text-primary)' }}>Tack</span>
-        <button onClick={() => setIsOpen(!isOpen())} class="p-2 rounded-lg transition-colors" style={{ color: 'var(--color-text-secondary)' }}>
-          <Show when={isOpen()} fallback={<FiMenu size={22} />}><FiX size={22} /></Show>
+        <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
+          <BrandMark size={22} />
+          <span style={{ 'font-size': '18px', 'font-weight': 800, color: 'var(--color-text-primary)' }}>Tack</span>
+        </div>
+        <button onClick={() => setIsOpen(!isOpen())} class="p-2 rounded-lg" style={{ color: 'var(--color-text-secondary)' }} aria-label="Toggle menu">
+          <Show when={isOpen()} fallback={<IconList size={22} />}><IconChevronDown size={22} /></Show>
         </button>
       </div>
 
       {/* Sidebar panel */}
       <div
-        class={`fixed inset-y-0 left-0 z-10 w-60 border-r transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static ${isOpen() ? 'translate-x-0' : '-translate-x-full'}`}
-        style={{ background: 'var(--color-bg-sidebar)', 'border-color': 'var(--color-border-medium)' }}
+        class={`fixed inset-y-0 left-0 z-10 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static ${isOpen() ? 'translate-x-0' : '-translate-x-full'}`}
+        style={{ width: '252px', 'flex-shrink': 0, background: 'var(--color-bg-sidebar)', 'border-right': '1px solid var(--color-border-light)' }}
       >
         {inner}
       </div>
 
       {/* Mobile overlay */}
       <Show when={isOpen()}>
-        <div class="fixed inset-0 bg-black/40 z-0 lg:hidden" onClick={close} />
+        <div class="fixed inset-0 z-0 lg:hidden" style={{ background: 'var(--color-bg-overlay)' }} onClick={close} />
       </Show>
     </>
   );

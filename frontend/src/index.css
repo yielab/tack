@@ -1,55 +1,112 @@
 @import "tailwindcss";
 
+/* Brand typography — self-hosted (offline-safe), no CDN. */
+@import "@fontsource/hanken-grotesk/400.css";
+@import "@fontsource/hanken-grotesk/500.css";
+@import "@fontsource/hanken-grotesk/600.css";
+@import "@fontsource/hanken-grotesk/700.css";
+@import "@fontsource/hanken-grotesk/800.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+
 /*
- * Design tokens (T-504).
+ * Design tokens (T-504 / Tack redesign).
  *
- * Single source of theme values. `:root` holds the LIGHT theme; the `.dark`
- * block (applied to <html> by the T-512 theme toggle) overrides only the
- * tokens that change. System preference is honored pre-toggle via the
- * prefers-color-scheme media query below. The shared UI kit (shared/ui/*)
- * consumes ONLY these tokens — never raw hex/Tailwind color literals — so a
- * single class flip restyles the whole kit.
+ * Single source of theme values. The token system has TWO axes:
+ *   - mode    → `.dark` class on <html> (theme.ts). `:root` holds LIGHT.
+ *   - palette → `data-palette="clay|graphite"` attr on <html> (palette.ts).
+ *               No attribute = the default **Teal** palette.
+ *
+ * Component code (shared/ui/* and features) consumes ONLY these `--color-*`
+ * names via inline `style` — never raw hex or Tailwind color literals — so a
+ * single class/attr flip restyles the whole app across all 3 palettes × 2 modes.
+ *
+ * Each palette/mode block below defines only the PRIMITIVE values. Everything
+ * derived (hover, primary ramp, semantic ramps, inverse text…) is expressed
+ * once in `:root` as `var()` aliases that re-resolve against whichever palette
+ * is active — so adding a palette only means one more primitives block.
  */
+
+/* ============================================================= *
+ *  TEAL — light (default palette, base values + shared aliases) *
+ * ============================================================= */
 :root {
-  /* Primary — Deep Purple */
-  --color-primary-50: #f5f3ff;
-  --color-primary-100: #ede9fe;
-  --color-primary-200: #ddd6fe;
-  --color-primary-300: #c4b5fd;
-  --color-primary-400: #a78bfa;
-  --color-primary-500: #8b5cf6;
-  --color-primary-600: #7c3aed;
-  --color-primary-700: #6d28d9;
-  --color-primary-800: #5b21b6;
+  /* — primitives — */
+  --color-bg-app: #f3f6f5;
+  --color-bg-base: #ffffff;
+  --color-bg-elevated: #ffffff;
+  --color-bg-sidebar: #ebf0ee;
+  --color-bg-subtle: #eef2f1;
 
-  /* Semantic scales (50/100 surfaces · 500–700 solids) */
-  --color-success-50: #ecfdf5;
-  --color-success-100: #d1fae5;
-  --color-success-500: #10b981;
-  --color-success-600: #059669;
-  --color-success-700: #047857;
+  --color-border-light: #e1e8e6;
+  --color-border-subtle: #eef2f1;
 
-  --color-warning-50: #fffbeb;
-  --color-warning-100: #fef3c7;
-  --color-warning-500: #f59e0b;
-  --color-warning-600: #d97706;
-  /* warning-700 darkened to #92400e so warning text on warning-100 backgrounds
-     (badges) meets WCAG AA 4.5:1 — #b45309 only reached 4.51 borderline. */
-  --color-warning-700: #92400e;
+  --color-text-primary: #152521;
+  --color-text-secondary: #566b66;
+  --color-text-tertiary: #8a9b96;
 
-  --color-danger-50: #fef2f2;
-  --color-danger-100: #fee2e2;
-  --color-danger-500: #ef4444;
+  --color-on-accent: #ffffff;
+  --color-accent-soft: #e3f4f1;
+  --color-accent-line: #bbe5de;
+  --color-accent-ink: #0a7268;
+  --color-accent2: #3f5d8a;
+  --color-accent2-soft: #eaeff7;
+
+  --color-primary-600: #0d9488;
+
+  --color-success-600: #15803d;
+  --color-success-100: #e6f4ec;
+  --color-warning-600: #b45309;
+  --color-warning-100: #f7ecdb;
   --color-danger-600: #dc2626;
-  --color-danger-700: #b91c1c;
+  --color-danger-100: #fbe9e9;
 
-  --color-info-50: #eff6ff;
-  --color-info-100: #dbeafe;
-  --color-info-500: #3b82f6;
-  --color-info-600: #2563eb;
-  --color-info-700: #1d4ed8;
+  --color-bg-overlay: rgb(10 16 14 / 0.42);
+  --color-text-inverse: #ffffff;
 
-  /* Back-compat aliases */
+  --shadow-sm: 0 1px 2px rgb(15 40 35 / 0.06);
+  --shadow-md: 0 1px 2px rgb(15 40 35 / 0.06), 0 4px 12px rgb(15 40 35 / 0.04);
+  --shadow-lg: 0 18px 44px rgb(15 40 35 / 0.18);
+  --shadow-xl: 0 22px 52px rgb(15 40 35 / 0.22);
+
+  /* — derived aliases (re-resolve per active palette) — */
+  --color-chip: var(--color-bg-subtle);
+  --color-bg-hover: var(--color-bg-subtle);
+  --color-bg-active: var(--color-accent-soft);
+
+  --color-border-medium: var(--color-border-light);
+  --color-border-strong: var(--color-text-tertiary);
+  --color-border-dark: var(--color-text-secondary);
+
+  --color-text-muted: var(--color-text-tertiary);
+
+  /* Primary (brand) ramp — built from the accent + its soft/line/ink tints. */
+  --color-primary-50: var(--color-accent-soft);
+  --color-primary-100: var(--color-accent-soft);
+  --color-primary-200: var(--color-accent-line);
+  --color-primary-300: var(--color-accent-line);
+  --color-primary-400: var(--color-primary-600);
+  --color-primary-500: var(--color-primary-600);
+  --color-primary-700: var(--color-accent-ink);
+  --color-primary-800: var(--color-accent-ink);
+
+  /* Semantic ramps (50/100 surfaces · 500–700 solids) from solid + soft. */
+  --color-success-50: var(--color-success-100);
+  --color-success-500: var(--color-success-600);
+  --color-success-700: var(--color-success-600);
+  --color-warning-50: var(--color-warning-100);
+  --color-warning-500: var(--color-warning-600);
+  --color-warning-700: var(--color-warning-600);
+  --color-danger-50: var(--color-danger-100);
+  --color-danger-500: var(--color-danger-600);
+  --color-danger-700: var(--color-danger-600);
+  --color-info-50: var(--color-accent2-soft);
+  --color-info-100: var(--color-accent2-soft);
+  --color-info-500: var(--color-accent2);
+  --color-info-600: var(--color-accent2);
+  --color-info-700: var(--color-accent2);
+
+  /* Back-compat aliases (pre-redesign names still referenced in places). */
   --color-success: var(--color-success-600);
   --color-success-light: var(--color-success-100);
   --color-warning: var(--color-warning-600);
@@ -59,71 +116,207 @@
   --color-info: var(--color-info-600);
   --color-info-light: var(--color-info-100);
 
-  /* Backgrounds */
-  --color-bg-app: #f8f9fa;
-  --color-bg-base: #ffffff;
-  --color-bg-elevated: #ffffff;
-  --color-bg-sidebar: #f1f3f5;
-  --color-bg-subtle: #e9ecef;
-  --color-bg-hover: #e3e6e9;
-  --color-bg-active: #f5f3ff;
-  --color-bg-overlay: rgb(0 0 0 / 0.5);
+  --color-focus-ring: var(--color-primary-600);
 
-  /* Borders */
-  --color-border-light: #dee2e6;
-  --color-border-medium: #ced4da;
-  --color-border-strong: #adb5bd;
-  --color-border-dark: #6c757d;
-
-  /* Text */
-  --color-text-primary: #212529;
-  --color-text-secondary: #495057;
-  /* tertiary darkened from #6c757d so muted text meets WCAG AA 4.5:1 on the
-     light subtle/sidebar backgrounds (#e9ecef/#f1f3f5). */
-  --color-text-tertiary: #5c636a;
-  --color-text-inverse: #ffffff;
-  --color-text-muted: #adb5bd;
-
-  /* Focus ring (accessibility) */
-  --color-focus-ring: var(--color-primary-500);
-
-  /* Shadows */
-  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -1px rgb(0 0 0 / 0.06);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.05);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 10px 10px -5px rgb(0 0 0 / 0.04);
-
-  /* Radius */
+  /* Radius (static across themes). */
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
+
+  /* Mono font token (JetBrains Mono — ids, kbd hints, estimates). */
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ============================== *
+ *  TEAL — dark                   *
+ * ============================== */
+.dark {
+  --color-bg-app: #0a1311;
+  --color-bg-base: #101e1a;
+  --color-bg-elevated: #152822;
+  --color-bg-sidebar: #0b1815;
+  --color-bg-subtle: #1b2a25;
+
+  --color-border-light: #1f322d;
+  --color-border-subtle: #172622;
+
+  --color-text-primary: #e7f0ed;
+  --color-text-secondary: #94aaa4;
+  --color-text-tertiary: #67807a;
+
+  --color-on-accent: #052824;
+  --color-accent-soft: rgb(45 212 191 / 0.13);
+  --color-accent-line: rgb(45 212 191 / 0.28);
+  --color-accent-ink: #5eead4;
+  --color-accent2: #9bb6dd;
+  --color-accent2-soft: rgb(155 182 221 / 0.14);
+
+  --color-primary-600: #2dd4bf;
+
+  --color-success-600: #4ade80;
+  --color-success-100: rgb(74 222 128 / 0.13);
+  --color-warning-600: #fbbf24;
+  --color-warning-100: rgb(251 191 36 / 0.13);
+  --color-danger-600: #f87171;
+  --color-danger-100: rgb(248 113 113 / 0.13);
+
+  --color-bg-overlay: rgb(5 10 8 / 0.6);
+  --color-text-inverse: #0c1714;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 12px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 22px 52px rgb(0 0 0 / 0.58);
+  --shadow-xl: 0 26px 60px rgb(0 0 0 / 0.66);
+}
+
+/* ============================== *
+ *  CLAY — light                  *
+ * ============================== */
+:root[data-palette="clay"] {
+  --color-bg-app: #faf6f1;
+  --color-bg-base: #fffdfb;
+  --color-bg-elevated: #ffffff;
+  --color-bg-sidebar: #f3ebe1;
+  --color-bg-subtle: #f4ece2;
+
+  --color-border-light: #ece0d3;
+  --color-border-subtle: #f4ece2;
+
+  --color-text-primary: #241a12;
+  --color-text-secondary: #6e5c4b;
+  --color-text-tertiary: #a08c79;
+
+  --color-on-accent: #ffffff;
+  --color-accent-soft: #fbe8dd;
+  --color-accent-line: #f1cdb6;
+  --color-accent-ink: #9a3412;
+  --color-accent2: #2f7d6e;
+  --color-accent2-soft: #e3f1ed;
+
+  --color-primary-600: #c2410c;
+
+  --color-success-600: #15803d;
+  --color-success-100: #e7f3ea;
+  --color-warning-600: #a16207;
+  --color-warning-100: #f6edd6;
+  --color-danger-600: #c0392b;
+  --color-danger-100: #f9e7e3;
+}
+
+/* ============================== *
+ *  GRAPHITE — light              *
+ * ============================== */
+:root[data-palette="graphite"] {
+  --color-bg-app: #f6f7f8;
+  --color-bg-base: #ffffff;
+  --color-bg-elevated: #ffffff;
+  --color-bg-sidebar: #eff1f3;
+  --color-bg-subtle: #eef0f2;
+
+  --color-border-light: #e3e6ea;
+  --color-border-subtle: #eef0f2;
+
+  --color-text-primary: #15181d;
+  --color-text-secondary: #535a63;
+  --color-text-tertiary: #868d97;
+
+  --color-on-accent: #1a2e05;
+  --color-accent-soft: #eef7dc;
+  --color-accent-line: #d2e9a4;
+  --color-accent-ink: #4d7c0f;
+  --color-accent2: #475569;
+  --color-accent2-soft: #eceff3;
+
+  --color-primary-600: #84cc16;
+
+  --color-success-600: #16a34a;
+  --color-success-100: #e7f5ec;
+  --color-warning-600: #d97706;
+  --color-warning-100: #fcefdd;
+  --color-danger-600: #dc2626;
+  --color-danger-100: #fbe9e9;
+}
+
+/* ============================== *
+ *  CLAY — dark                   *
+ * ============================== */
+.dark[data-palette="clay"] {
+  --color-bg-app: #140f0a;
+  --color-bg-base: #1d160f;
+  --color-bg-elevated: #241b12;
+  --color-bg-sidebar: #100b07;
+  --color-bg-subtle: #251b12;
+
+  --color-border-light: #2e2317;
+  --color-border-subtle: #241a11;
+
+  --color-text-primary: #f1e8db;
+  --color-text-secondary: #b29b83;
+  --color-text-tertiary: #81705c;
+
+  --color-on-accent: #2a1407;
+  --color-accent-soft: rgb(251 146 60 / 0.13);
+  --color-accent-line: rgb(251 146 60 / 0.28);
+  --color-accent-ink: #fdba74;
+  --color-accent2: #6cc3b0;
+  --color-accent2-soft: rgb(108 195 176 / 0.14);
+
+  --color-primary-600: #fb923c;
+
+  --color-success-600: #4ade80;
+  --color-success-100: rgb(74 222 128 / 0.13);
+  --color-warning-600: #fbbf24;
+  --color-warning-100: rgb(251 191 36 / 0.13);
+  --color-danger-600: #f87171;
+  --color-danger-100: rgb(248 113 113 / 0.13);
+}
+
+/* ============================== *
+ *  GRAPHITE — dark               *
+ * ============================== */
+.dark[data-palette="graphite"] {
+  --color-bg-app: #0b0d10;
+  --color-bg-base: #14171b;
+  --color-bg-elevated: #1a1e23;
+  --color-bg-sidebar: #090b0e;
+  --color-bg-subtle: #1c2127;
+
+  --color-border-light: #242a31;
+  --color-border-subtle: #1b2026;
+
+  --color-text-primary: #e8ebef;
+  --color-text-secondary: #99a2ac;
+  --color-text-tertiary: #6a7480;
+
+  --color-on-accent: #15240a;
+  --color-accent-soft: rgb(163 230 53 / 0.13);
+  --color-accent-line: rgb(163 230 53 / 0.28);
+  --color-accent-ink: #bef264;
+  --color-accent2: #94a3b8;
+  --color-accent2-soft: rgb(148 163 184 / 0.14);
+
+  --color-primary-600: #a3e635;
+
+  --color-success-600: #4ade80;
+  --color-success-100: rgb(74 222 128 / 0.13);
+  --color-warning-600: #fbbf24;
+  --color-warning-100: rgb(251 191 36 / 0.13);
+  --color-danger-600: #f87171;
+  --color-danger-100: rgb(248 113 113 / 0.13);
 }
 
 /*
- * Tailwind utility bridge (T-514 / Phase 14).
- *
- * Tailwind v4 only generates color utilities for names in its `--color-*`
- * namespace. The tokens above live in plain `:root`, so until now `bg-surface`,
- * `text-content`, `bg-brand` etc. did NOT exist — which is why feature code
- * reached for raw literals like `bg-purple-600` / `dark:bg-gray-800`.
- *
- * `@theme inline` registers semantic + brand names as real utilities while
- * INLINING `var(--…)` references to the runtime tokens above. Because the
- * reference is inlined (not re-declared in :root), the `.dark` class flip and
- * the prefers-color-scheme fallback keep working untouched — one source of
- * truth, now reachable from Tailwind. These are ADDITIVE: every existing
- * `var(--color-*)` keeps resolving exactly as before.
- *
- * Migration map (see docs/DESIGN-ROADMAP.md, Phase 15):
- *   bg-white / dark:bg-gray-800   → bg-surface / bg-elevated
- *   text-gray-900 / dark:text-white → text-content
- *   text-gray-500                 → text-content-muted / -subtle
- *   border-gray-200               → border-line
- *   bg-purple-600 / text-purple-* → bg-brand / text-brand-*
+ * Tailwind utility bridge (T-514). Tailwind v4 only generates color utilities
+ * for names in its `--color-*` namespace. The runtime tokens above live in
+ * plain `:root`, so this `@theme inline` re-registers semantic + brand names as
+ * real utilities while INLINING `var(--…)` references — the `.dark` class and
+ * `data-palette` attribute keep flipping the underlying values untouched.
+ *   bg-surface/elevated/sidebar · text-content/-muted/-subtle · border-line
+ *   bg-brand / text-brand-* · bg-accent-soft · text-accent-ink · etc.
  */
 @theme inline {
-  /* Brand ramp (mirrors the primary scale) */
+  /* Brand ramp (mirrors the primary/accent scale) */
   --color-brand-50: var(--color-primary-50);
   --color-brand-100: var(--color-primary-100);
   --color-brand-200: var(--color-primary-200);
@@ -134,6 +327,14 @@
   --color-brand-700: var(--color-primary-700);
   --color-brand-800: var(--color-primary-800);
   --color-brand: var(--color-primary-600);
+
+  /* Accent tints (new redesign tokens) */
+  --color-accent-soft: var(--color-accent-soft);
+  --color-accent-line: var(--color-accent-line);
+  --color-accent-ink: var(--color-accent-ink);
+  --color-accent2: var(--color-accent2);
+  --color-accent2-soft: var(--color-accent2-soft);
+  --color-on-accent: var(--color-on-accent);
 
   /* Semantic ramps (expose existing scales as utilities) */
   --color-success-50: var(--color-success-50);
@@ -163,6 +364,7 @@
   --color-elevated: var(--color-bg-elevated);
   --color-sidebar: var(--color-bg-sidebar);
   --color-sunken: var(--color-bg-subtle);
+  --color-chip: var(--color-chip);
   --color-hover: var(--color-bg-hover);
   --color-active: var(--color-bg-active);
 
@@ -175,81 +377,110 @@
 
   /* Lines (borders) */
   --color-line: var(--color-border-light);
+  --color-line-subtle: var(--color-border-subtle);
   --color-line-medium: var(--color-border-medium);
   --color-line-strong: var(--color-border-strong);
+
+  /* Fonts */
+  --font-sans: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono);
 }
 
-/* Dark theme overrides — only the tokens that differ from light. */
-.dark {
-  --color-primary-50: #2e1065;
-  --color-primary-100: #4c1d95;
-  --color-primary-200: #5b21b6;
-  --color-primary-300: #6d28d9;
-  --color-primary-400: #8b5cf6;
-  --color-primary-500: #a78bfa;
-  --color-primary-600: #8b5cf6;
-  --color-primary-700: #7c3aed;
-  --color-primary-800: #6d28d9;
-
-  --color-success-50: #052e23;
-  --color-success-100: #064e3b;
-  --color-warning-50: #3a2606;
-  --color-warning-100: #78350f;
-  --color-danger-50: #3a0a0a;
-  --color-danger-100: #7f1d1d;
-  --color-info-50: #0a1f44;
-  --color-info-100: #1e3a8a;
-
-  --color-bg-app: #0f1115;
-  --color-bg-base: #15181e;
-  --color-bg-elevated: #1c2027;
-  --color-bg-sidebar: #12151a;
-  --color-bg-subtle: #20242c;
-  --color-bg-hover: #272c35;
-  --color-bg-active: #2e1065;
-  --color-bg-overlay: rgb(0 0 0 / 0.6);
-
-  --color-border-light: #2a2f37;
-  --color-border-medium: #3a414b;
-  --color-border-strong: #4b535f;
-  --color-border-dark: #6c757d;
-
-  --color-text-primary: #e9ecef;
-  --color-text-secondary: #adb5bd;
-  --color-text-tertiary: #868e96;
-  --color-text-inverse: #15181e;
-  --color-text-muted: #6c757d;
-
-  --color-focus-ring: var(--color-primary-400);
-}
-
-/* Follow the OS preference until the user picks an explicit theme (T-512). */
+/*
+ * Follow the OS preference until the user picks an explicit theme (T-512).
+ * One block per palette so a system-dark user still gets the right dark values
+ * for their chosen palette before toggling mode explicitly.
+ */
 @media (prefers-color-scheme: dark) {
   :root:not(.light):not(.dark) {
-    --color-bg-app: #0f1115;
-    --color-bg-base: #15181e;
-    --color-bg-elevated: #1c2027;
-    --color-bg-sidebar: #12151a;
-    --color-bg-subtle: #20242c;
-    --color-bg-hover: #272c35;
-    --color-bg-active: #2e1065;
-    --color-bg-overlay: rgb(0 0 0 / 0.6);
-    --color-border-light: #2a2f37;
-    --color-border-medium: #3a414b;
-    --color-border-strong: #4b535f;
-    --color-text-primary: #e9ecef;
-    --color-text-secondary: #adb5bd;
-    --color-text-tertiary: #868e96;
-    --color-text-inverse: #15181e;
-    --color-text-muted: #6c757d;
-    --color-focus-ring: var(--color-primary-400);
+    --color-bg-app: #0a1311;
+    --color-bg-base: #101e1a;
+    --color-bg-elevated: #152822;
+    --color-bg-sidebar: #0b1815;
+    --color-bg-subtle: #1b2a25;
+    --color-border-light: #1f322d;
+    --color-border-subtle: #172622;
+    --color-text-primary: #e7f0ed;
+    --color-text-secondary: #94aaa4;
+    --color-text-tertiary: #67807a;
+    --color-on-accent: #052824;
+    --color-accent-soft: rgb(45 212 191 / 0.13);
+    --color-accent-line: rgb(45 212 191 / 0.28);
+    --color-accent-ink: #5eead4;
+    --color-accent2: #9bb6dd;
+    --color-accent2-soft: rgb(155 182 221 / 0.14);
+    --color-primary-600: #2dd4bf;
+    --color-success-600: #4ade80;
+    --color-success-100: rgb(74 222 128 / 0.13);
+    --color-warning-600: #fbbf24;
+    --color-warning-100: rgb(251 191 36 / 0.13);
+    --color-danger-600: #f87171;
+    --color-danger-100: rgb(248 113 113 / 0.13);
+    --color-bg-overlay: rgb(5 10 8 / 0.6);
+    --color-text-inverse: #0c1714;
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-md: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 12px rgb(0 0 0 / 0.3);
+    --shadow-lg: 0 22px 52px rgb(0 0 0 / 0.58);
+    --shadow-xl: 0 26px 60px rgb(0 0 0 / 0.66);
+  }
+  :root[data-palette="clay"]:not(.light):not(.dark) {
+    --color-bg-app: #140f0a;
+    --color-bg-base: #1d160f;
+    --color-bg-elevated: #241b12;
+    --color-bg-sidebar: #100b07;
+    --color-bg-subtle: #251b12;
+    --color-border-light: #2e2317;
+    --color-border-subtle: #241a11;
+    --color-text-primary: #f1e8db;
+    --color-text-secondary: #b29b83;
+    --color-text-tertiary: #81705c;
+    --color-on-accent: #2a1407;
+    --color-accent-soft: rgb(251 146 60 / 0.13);
+    --color-accent-line: rgb(251 146 60 / 0.28);
+    --color-accent-ink: #fdba74;
+    --color-accent2: #6cc3b0;
+    --color-accent2-soft: rgb(108 195 176 / 0.14);
+    --color-primary-600: #fb923c;
+    --color-success-600: #4ade80;
+    --color-success-100: rgb(74 222 128 / 0.13);
+    --color-warning-600: #fbbf24;
+    --color-warning-100: rgb(251 191 36 / 0.13);
+    --color-danger-600: #f87171;
+    --color-danger-100: rgb(248 113 113 / 0.13);
+  }
+  :root[data-palette="graphite"]:not(.light):not(.dark) {
+    --color-bg-app: #0b0d10;
+    --color-bg-base: #14171b;
+    --color-bg-elevated: #1a1e23;
+    --color-bg-sidebar: #090b0e;
+    --color-bg-subtle: #1c2127;
+    --color-border-light: #242a31;
+    --color-border-subtle: #1b2026;
+    --color-text-primary: #e8ebef;
+    --color-text-secondary: #99a2ac;
+    --color-text-tertiary: #6a7480;
+    --color-on-accent: #15240a;
+    --color-accent-soft: rgb(163 230 53 / 0.13);
+    --color-accent-line: rgb(163 230 53 / 0.28);
+    --color-accent-ink: #bef264;
+    --color-accent2: #94a3b8;
+    --color-accent2-soft: rgb(148 163 184 / 0.14);
+    --color-primary-600: #a3e635;
+    --color-success-600: #4ade80;
+    --color-success-100: rgb(74 222 128 / 0.13);
+    --color-warning-600: #fbbf24;
+    --color-warning-100: rgb(251 191 36 / 0.13);
+    --color-danger-600: #f87171;
+    --color-danger-100: rgb(248 113 113 / 0.13);
   }
 }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   margin: 0;
   min-height: 100vh;
+  font-size: 14px;
+  line-height: 1.45;
   background-color: var(--color-bg-app);
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
@@ -261,23 +492,41 @@ body {
   background-color: var(--color-bg-app);
 }
 
-/* Toast animations */
-@keyframes slideInRight {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
+/* Themed scrollbars. */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: var(--color-border-light);
+  border-radius: 99px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-track { background: transparent; }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+/* Animations. */
+@keyframes tk-overlay {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes tk-drawer {
+  from { transform: translateX(24px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+@keyframes tk-pal {
+  from { transform: translateY(-8px) scale(0.985); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes tk-toast {
+  from { transform: translateY(12px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+@keyframes tk-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+@keyframes tk-spin {
+  to { transform: rotate(360deg); }
 }
