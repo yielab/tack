@@ -23,6 +23,9 @@ export type ProjectType =
   | 'personal'
   | 'homework'
   | 'maintenance'
+  | 'legal'
+  | 'research'
+  | 'event'
   | 'custom';
 
 export interface WorkflowConfig {
@@ -71,6 +74,7 @@ export interface Item {
   tags: string[];
   sort_order: number;
   sprint_id?: string;
+  assignee?: string;
   due_date?: string;
   started_at?: string;
   completed_at?: string;
@@ -114,6 +118,7 @@ export interface UpdateItem {
   tags?: string[];
   parent_id?: string;
   sprint_id?: string | null;
+  assignee?: string | null;
   due_date?: string | null;
 }
 

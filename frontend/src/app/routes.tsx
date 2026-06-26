@@ -7,6 +7,7 @@ import WorkLayout from './WorkLayout';
 const Projects      = lazy(() => import('../features/projects/Projects'));
 const Board         = lazy(() => import('../features/board/Board'));
 const List          = lazy(() => import('../features/list/List'));
+const Table         = lazy(() => import('../features/table/Table'));
 const Dashboard     = lazy(() => import('../features/dashboard/Dashboard'));
 const Sprints       = lazy(() => import('../features/sprints/Sprints'));
 const Calendar      = lazy(() => import('../features/calendar/Calendar'));
@@ -34,6 +35,7 @@ export const routes: RouteDefinition[] = [
     children: [
       { path: '/board',    component: Board },
       { path: '/list',     component: List },
+      { path: '/table',    component: Table },
       { path: '/calendar', component: Calendar },
       { path: '/timeline', component: Timeline },
       { path: '/sprint',   component: Sprints },

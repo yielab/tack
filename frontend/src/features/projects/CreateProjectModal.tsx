@@ -13,6 +13,9 @@ const PROJECT_TYPE_OPTIONS = [
   { value: 'personal', label: 'Personal (Simple)' },
   { value: 'homework', label: 'Homework (Simple)' },
   { value: 'maintenance', label: 'Maintenance (Kanban)' },
+  { value: 'legal', label: 'Legal / Case (Phase-based)' },
+  { value: 'research', label: 'Research / Lab (Kanban)' },
+  { value: 'event', label: 'Event Planning (Phase-based)' },
   { value: 'custom', label: 'Custom' },
 ];
 

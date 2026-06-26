@@ -122,6 +122,60 @@ pub fn vocabulary_for_type(project_type: &ProjectType) -> VocabularyMap {
             ("milestone".into(), "Inspection".into()),
             ("release".into(), "Sign-off".into()),
         ]),
+        ProjectType::Legal => HashMap::from([
+            ("epic".into(), "Matter".into()),
+            ("feature".into(), "Case".into()),
+            ("task".into(), "Filing".into()),
+            ("subtask".into(), "Document".into()),
+            ("bug".into(), "Issue".into()),
+            ("requirement".into(), "Statute".into()),
+            ("sprint".into(), "Term".into()),
+            ("backlog".into(), "Intake".into()),
+            ("board".into(), "Docket".into()),
+            ("blocker".into(), "Hold".into()),
+            ("story_points".into(), "Billable Hours".into()),
+            ("assignee".into(), "Counsel".into()),
+            ("deliverable".into(), "Brief".into()),
+            ("phase".into(), "Stage".into()),
+            ("milestone".into(), "Hearing".into()),
+            ("release".into(), "Settlement".into()),
+        ]),
+        ProjectType::Research => HashMap::from([
+            ("epic".into(), "Study".into()),
+            ("feature".into(), "Experiment".into()),
+            ("task".into(), "Protocol".into()),
+            ("subtask".into(), "Procedure".into()),
+            ("bug".into(), "Anomaly".into()),
+            ("requirement".into(), "Hypothesis".into()),
+            ("sprint".into(), "Cycle".into()),
+            ("backlog".into(), "Question Bank".into()),
+            ("board".into(), "Lab Board".into()),
+            ("blocker".into(), "Blocker".into()),
+            ("story_points".into(), "Effort".into()),
+            ("assignee".into(), "Researcher".into()),
+            ("deliverable".into(), "Finding".into()),
+            ("phase".into(), "Phase".into()),
+            ("milestone".into(), "Milestone".into()),
+            ("release".into(), "Publication".into()),
+        ]),
+        ProjectType::Event => HashMap::from([
+            ("epic".into(), "Event".into()),
+            ("feature".into(), "Track".into()),
+            ("task".into(), "Task".into()),
+            ("subtask".into(), "Detail".into()),
+            ("bug".into(), "Issue".into()),
+            ("requirement".into(), "Requirement".into()),
+            ("sprint".into(), "Milestone Week".into()),
+            ("backlog".into(), "Ideas".into()),
+            ("board".into(), "Run Sheet".into()),
+            ("blocker".into(), "Blocker".into()),
+            ("story_points".into(), "Effort".into()),
+            ("assignee".into(), "Owner".into()),
+            ("deliverable".into(), "Deliverable".into()),
+            ("phase".into(), "Phase".into()),
+            ("milestone".into(), "Milestone".into()),
+            ("release".into(), "Go-Live".into()),
+        ]),
         _ => default_vocabulary(),
     }
 }
@@ -164,6 +218,28 @@ mod tests {
         let vocab = vocabulary_for_type(&ProjectType::Construction);
         assert_eq!(vocab.get("task").unwrap(), "Work Order");
         assert_eq!(vocab.get("sprint").unwrap(), "Phase");
+    }
+
+    #[test]
+    fn test_new_domain_vocabularies_rename_and_are_complete() {
+        for ptype in [
+            ProjectType::Legal,
+            ProjectType::Research,
+            ProjectType::Event,
+        ] {
+            let vocab = vocabulary_for_type(&ptype);
+            // Every domain vocabulary must define all known keys and validate clean.
+            for key in VOCABULARY_KEYS {
+                assert!(vocab.contains_key(*key), "{ptype} missing key: {key}");
+            }
+            assert!(validate(&vocab).is_ok(), "{ptype} vocabulary failed validation");
+        }
+        assert_eq!(vocabulary_for_type(&ProjectType::Legal).get("task").unwrap(), "Filing");
+        assert_eq!(
+            vocabulary_for_type(&ProjectType::Research).get("epic").unwrap(),
+            "Study"
+        );
+        assert_eq!(vocabulary_for_type(&ProjectType::Event).get("board").unwrap(), "Run Sheet");
     }
 
     #[test]

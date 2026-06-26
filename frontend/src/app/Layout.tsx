@@ -84,6 +84,7 @@ const LayoutInner: Component<LayoutProps> = (props) => {
         { id: 'new-item',     label: 'New Item',          icon: '➕', shortcut: 'N', action: () => setShowNewItem(true) },
         { id: 'go-board',     label: 'Work → Board',      icon: '⬛', action: () => navigate(`/projects/${pid}/board`) },
         { id: 'go-list',      label: 'Work → List',       icon: '☰',  action: () => navigate(`/projects/${pid}/list`) },
+        { id: 'go-table',     label: 'Work → Table',      icon: '▦',  action: () => navigate(`/projects/${pid}/table`) },
         { id: 'go-calendar',  label: 'Work → Calendar',   icon: '📅', action: () => navigate(`/projects/${pid}/calendar`) },
         { id: 'go-timeline',  label: 'Work → Timeline',   icon: '📊', action: () => navigate(`/projects/${pid}/timeline`) },
         { id: 'go-sprint',    label: 'Work → Sprint',     icon: '🏃', action: () => navigate(`/projects/${pid}/sprint`) },

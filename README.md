@@ -10,6 +10,8 @@ Most project management tools force you into their workflow. Tack works the othe
 
 **Your data stays on your machine.** Everything is stored in a single SQLite file next to the binary. Back it up by copying one file. Migrate by moving two files. No vendor lock-in, no sync, no network required to use your own data.
 
+**AI-agent-ready.** `tack mcp` exposes the board to Claude Code, Codex, and any [MCP](https://modelcontextprotocol.io) client, so an agent can read, search, and update work — with the same workflow rules your team relies on.
+
 Built with Rust (Axum + sqlx) and SolidJS.
 
 ![Board, Timeline, command palette, and vocabulary editor](docs/screenshots/hero.gif)
@@ -27,6 +29,28 @@ Built with Rust (Axum + sqlx) and SolidJS.
 
 ---
 
+## Why Tack
+
+Most self-hosted PM tools are built on heavy multi-service stacks. Tack is one Rust
+binary and one SQLite file — and it's **AI-agent-ready** out of the box.
+
+| | **Tack** | Plane | Vikunja | Huly |
+| --- | --- | --- | --- | --- |
+| Built in | Rust | Python/Django | Go | TypeScript |
+| Deploy | **single binary** | Docker Compose (multi-service) | single binary or Docker | Docker Compose (multi-service) |
+| Runtime deps | **none** (embedded SQLite) | Postgres + Redis | SQLite / Postgres / MySQL | MongoDB + others |
+| Idle footprint | **~12 MiB RSS** | hundreds of MiB | tens of MiB | hundreds of MiB |
+| License | **MIT** | AGPL-3.0 | AGPL-3.0 | EPL-2.0 |
+| First-class CLI | **yes** | no | partial | no |
+| MCP server (AI agents) | **yes** (`tack mcp`) | yes | no | no |
+| Per-project vocabulary | **yes** | no | no | no |
+
+_Competitor details are best-effort from public docs/repos as of 2026-06; stacks
+change. Footprints are order-of-magnitude. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md)
+for Tack's measured, reproducible numbers._
+
+---
+
 ## Features
 
 ### Deployment
@@ -40,7 +64,8 @@ Built with Rust (Axum + sqlx) and SolidJS.
 | View | Description |
 | --- | --- |
 | **Board** | Kanban-style drag-and-drop with configurable columns and WIP limits |
-| **List** | Sortable table with inline editing and bulk operations |
+| **List** | Sortable, hierarchy-aware list with inline editing and bulk operations |
+| **Table** | Spreadsheet-style grid: inline-edit title/status/priority/assignee/due, sort, filter, and show/hide columns |
 | **Calendar** | Items by due date — drag to reschedule |
 | **Timeline** | Gantt-style view with dependency overlay — drag to reschedule |
 | **Dashboard** | Throughput charts, status distribution, and sprint burndown |
@@ -53,7 +78,7 @@ Built with Rust (Axum + sqlx) and SolidJS.
 
 ### Workflow & Project Types
 
-- **7 project types** with pre-built workflows and vocabulary out of the box:
+- **10 project types** with pre-built workflows and vocabulary out of the box:
 
 | Type | Default workflow | Vocabulary highlights |
 | --- | --- | --- |
@@ -62,6 +87,9 @@ Built with Rust (Axum + sqlx) and SolidJS.
 | `personal` | Simple (To Do → Doing → Done) | Goal, Action, Step |
 | `homework` | Simple | Course, Assignment, Module, Week |
 | `maintenance` | Kanban | System, Ticket, Job |
+| `legal` | Phase-based (Intake → Discovery → Drafting → Review → Closed) | Matter, Case, Filing, Counsel |
+| `research` | Kanban (Hypothesis → Design → Experiment → Analysis → Published) | Study, Experiment, Protocol, Researcher |
+| `event` | Phase-based (Ideas → Booked → In Progress → Confirmed → Done) | Event, Track, Run Sheet |
 
 - **Custom vocabulary** — rename any of 16 terms per project; the UI, CLI, and API all follow your terms
 - **Custom workflows** — define any columns, WIP limits per column, and explicit transition rules
@@ -77,7 +105,8 @@ Built with Rust (Axum + sqlx) and SolidJS.
 ### API & Integrations
 
 - **64 REST endpoints** — full CRUD for all entities, search, export, and diagnostics
-- **CLI client** — the same `tack` binary with `tack add`, `tack list`, `tack move`, and more; `--json` output and shell completions (bash/zsh/fish)
+- **CLI client** — the same `tack` binary with `tack add`, `tack list`, `tack move`, `tack branch` (git branch from an item), and more; `--json` output and shell completions (bash/zsh/fish)
+- **MCP server for AI agents** — `tack mcp` exposes the board to Claude Code, Codex, and any MCP client (list/search/read items, create/update/move, comment) over stdio; writes still pass through workflow validation. See [docs/MCP.md](docs/MCP.md)
 - **Import** — GitHub Issues (public or private repos, label filter, PAT), Linear (GraphQL API, team/project filter), JSON round-trip, CSV
 - **Export** — JSON full snapshot and CSV per project
 - **Backup / restore** — hot backup via `VACUUM INTO`; cloud backup to any S3-compatible bucket (Cloudflare R2, Backblaze B2, AWS S3); configurable from **Settings → Cloud Backup**
@@ -87,7 +116,20 @@ Built with Rust (Axum + sqlx) and SolidJS.
 
 ## Quick Start
 
-**Download** the archive for your system from the [releases page](https://github.com/yielab/tack/releases), then:
+**One line (Linux / macOS):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh | sh
+tack            # starts the server + web UI at http://localhost:3210
+```
+
+**With Cargo** (builds the single binary with the UI embedded):
+
+```bash
+cargo install --git https://github.com/yielab/tack tack-cli --features embed-spa
+```
+
+**Or download** the archive for your system from the [releases page](https://github.com/yielab/tack/releases):
 
 ```bash
 # Linux / macOS
@@ -199,8 +241,10 @@ mdbook serve docs/book   # opens http://localhost:3000
 | [Quick Start](docs/book/src/user-guide/quick-start.md) | First-run walkthrough |
 | [API Reference](docs/book/src/developer/api-reference.md) | All 64 endpoints with request/response shapes |
 | [CLI Reference](docs/book/src/user-guide/cli.md) | Every `tack` subcommand |
+| [MCP Server](docs/MCP.md) | Wire Tack into Claude Code / AI agents via `tack mcp` |
 | [Configuration](docs/book/src/developer/deployment.md) | Full variable reference and `tack.toml` |
 | [Architecture](docs/book/src/developer/README.md) | Crate boundaries, design decisions |
+| [Benchmarks](docs/BENCHMARKS.md) | Measured footprint and latency, with repro steps |
 | [Testing](docs/TESTING.md) | Unit, integration, E2E, load, and security tests |
 | [Roadmap](docs/book/src/roadmap.md) | Planned features and known gaps |
 

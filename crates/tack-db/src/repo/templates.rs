@@ -43,16 +43,7 @@ pub async fn create_template(
     let default_boards = serde_json::to_string(&data.default_boards.unwrap_or_default())
         .unwrap_or_else(|_| "[]".to_string());
 
-    let project_type_str = match data.project_type {
-        ProjectType::Software => "software",
-        ProjectType::Web => "web",
-        ProjectType::Mobile => "mobile",
-        ProjectType::Construction => "construction",
-        ProjectType::Personal => "personal",
-        ProjectType::Homework => "homework",
-        ProjectType::Maintenance => "maintenance",
-        ProjectType::Custom => "custom",
-    };
+    let project_type_str = data.project_type.to_string();
 
     sqlx::query(
         "INSERT INTO project_templates
@@ -125,16 +116,7 @@ pub async fn list_templates(
     project_type: Option<ProjectType>,
 ) -> Result<Vec<ProjectTemplate>, sqlx::Error> {
     let rows = if let Some(ptype) = project_type {
-        let type_str = match ptype {
-            ProjectType::Software => "software",
-            ProjectType::Web => "web",
-            ProjectType::Mobile => "mobile",
-            ProjectType::Construction => "construction",
-            ProjectType::Personal => "personal",
-            ProjectType::Homework => "homework",
-            ProjectType::Maintenance => "maintenance",
-            ProjectType::Custom => "custom",
-        };
+        let type_str = ptype.to_string();
 
         sqlx::query_as::<_, TemplateRow>(
             "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at
@@ -256,6 +238,21 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
             project_type: ProjectType::Maintenance,
         },
         BuiltinSpec {
+            name: "Legal Matter",
+            description: "Case management workflow: Intake → Discovery → Drafting → Review → Closed.",
+            project_type: ProjectType::Legal,
+        },
+        BuiltinSpec {
+            name: "Research Study",
+            description: "Lab workflow: Hypothesis → Design → Experiment → Analysis → Published.",
+            project_type: ProjectType::Research,
+        },
+        BuiltinSpec {
+            name: "Event Plan",
+            description: "Event planning workflow: Ideas → Booked → In Progress → Confirmed → Done.",
+            project_type: ProjectType::Event,
+        },
+        BuiltinSpec {
             name: "Custom Project",
             description: "Blank template — minimal workflow with no domain-specific vocabulary.",
             project_type: ProjectType::Custom,
@@ -263,21 +260,12 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
     ];
 
     for spec in specs {
-        let type_str = match spec.project_type {
-            ProjectType::Software => "software",
-            ProjectType::Web => "web",
-            ProjectType::Mobile => "mobile",
-            ProjectType::Construction => "construction",
-            ProjectType::Personal => "personal",
-            ProjectType::Homework => "homework",
-            ProjectType::Maintenance => "maintenance",
-            ProjectType::Custom => "custom",
-        };
+        let type_str = spec.project_type.to_string();
 
         // Skip if a builtin already exists for this project type
         let exists: bool =
             sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM project_templates WHERE project_type = ? AND is_builtin = 1)")
-                .bind(type_str)
+                .bind(type_str.as_str())
                 .fetch_one(pool)
                 .await?;
 
@@ -318,7 +306,7 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
         .bind(id.to_string())
         .bind(spec.name)
         .bind(spec.description)
-        .bind(type_str)
+        .bind(type_str.as_str())
         .bind(serde_json::to_string(&vocabulary).unwrap_or_else(|_| "{}".to_string()))
         .bind(serde_json::to_string(&workflow).unwrap_or_else(|_| "{}".to_string()))
         .bind(serde_json::to_string(&default_boards).unwrap_or_else(|_| "[]".to_string()))
@@ -329,7 +317,7 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
 
         tracing::info!(
             template_name = spec.name,
-            project_type = type_str,
+            project_type = type_str.as_str(),
             "Seeded built-in template"
         );
     }
