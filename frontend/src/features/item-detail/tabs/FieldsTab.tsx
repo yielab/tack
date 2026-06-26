@@ -17,7 +17,7 @@ const controlStyle = {
   '--tw-ring-color': 'var(--color-focus-ring)',
 } as const;
 
-/** Custom field values + role assignment for an item (T-510). */
+/** Custom field values + role assignment for an item. */
 const FieldsTab: Component<FieldsTabProps> = (props) => {
   const projectId = () => props.item.project_id;
 

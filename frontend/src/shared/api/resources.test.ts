@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { api, tokenStore } from './index';
 
 // Verifies the URL + HTTP method (and body where relevant) of every resource
-// method exercised by the T-501 page conversions. The page handlers are thin
+// method on the typed api.* client. The page handlers are thin
 // wrappers over these, so asserting the contract here covers "the converted
 // page calls api.* against the right endpoint".
 
@@ -131,7 +131,7 @@ describe('api.search', () => {
   });
 });
 
-// ─── T-502 parity additions ──────────────────────────────────────────────
+// ─── Additional resource coverage ──────────────────────────────────────────────
 
 
 describe('api.comments', () => {

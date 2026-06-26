@@ -1,4 +1,4 @@
-//! Push-only GitHub status sync (Phase 21, v1).
+//! Push-only GitHub status sync.
 //!
 //! When a Tack item linked to a GitHub issue crosses the Done boundary, its
 //! issue is closed (or reopened). This is best-effort and fire-and-forget: it

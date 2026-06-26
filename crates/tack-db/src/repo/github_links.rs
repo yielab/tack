@@ -1,4 +1,4 @@
-//! Item ↔ GitHub issue links for push-only status sync (Phase 21).
+//! Item ↔ GitHub issue links for push-only status sync.
 
 use sqlx::SqlitePool;
 use uuid::Uuid;

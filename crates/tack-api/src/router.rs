@@ -220,7 +220,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/boards/{id}/view", get(boards_multi::get_board_view))
         // ─── Alexa voice integration (skill-ID auth, exempt from token) ──
         .route("/alexa", post(alexa::handle_request))
-        // ─── Auth token gate (T-104) ──────────────────────────────────────
+        // ─── Auth token gate ──────────────────────────────────────
         .layer(middleware::from_fn_with_state(state.clone(), require_token));
 
     let outer = Router::new().nest("/api", api);

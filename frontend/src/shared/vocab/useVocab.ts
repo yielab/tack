@@ -16,7 +16,7 @@ export interface Vocab {
 }
 
 /**
- * Reactive vocabulary bound to the active project (T-505). `t()` re-evaluates
+ * Reactive vocabulary bound to the active project. `t()` re-evaluates
  * whenever the project's vocabulary changes, so labels update app-wide the
  * moment Settings saves — no page reload.
  */

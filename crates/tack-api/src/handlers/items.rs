@@ -164,7 +164,7 @@ pub async fn update_item(
     // Auto-propagate parent status when all siblings reach Done
     propagate_parent_completion(&state, &item, &old_status).await;
 
-    // Push the open/closed state back to a linked GitHub issue (Phase 21).
+    // Push the open/closed state back to a linked GitHub issue.
     maybe_sync_github(&state, &item, &old_status).await;
 
     Ok(Json(serde_json::to_value(item).unwrap()))

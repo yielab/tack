@@ -1,4 +1,4 @@
-// Design-system kit (T-504). Every component consumes design tokens only —
+// Design-system kit. Every component consumes design tokens only —
 // no hardcoded colors — so a single `.dark` class flip restyles the lot.
 
 export { default as Button } from './Button';

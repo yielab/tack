@@ -10,7 +10,7 @@
 @import "@fontsource/jetbrains-mono/500.css";
 
 /*
- * Design tokens (T-504 / Tack redesign).
+ * Design tokens.
  *
  * Single source of theme values. The token system has TWO axes:
  *   - mode    → `.dark` class on <html> (theme.ts). `:root` holds LIGHT.
@@ -317,7 +317,7 @@
 }
 
 /*
- * Tailwind utility bridge (T-514). Tailwind v4 only generates color utilities
+ * Tailwind utility bridge. Tailwind v4 only generates color utilities
  * for names in its `--color-*` namespace. The runtime tokens above live in
  * plain `:root`, so this `@theme inline` re-registers semantic + brand names as
  * real utilities while INLINING `var(--…)` references — the `.dark` class and
@@ -397,7 +397,7 @@
 }
 
 /*
- * Follow the OS preference until the user picks an explicit theme (T-512).
+ * Follow the OS preference until the user picks an explicit theme.
  * One block per palette so a system-dark user still gets the right dark values
  * for their chosen palette before toggling mode explicitly.
  */

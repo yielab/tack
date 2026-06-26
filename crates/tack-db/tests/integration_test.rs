@@ -5,7 +5,7 @@ use tack_core::models::*;
 use tack_core::vocabulary;
 use tack_core::workflow;
 
-// ─── GitHub link Tests (Phase 21) ────────────────────────────
+// ─── GitHub link Tests ────────────────────────────
 
 #[tokio::test]
 async fn test_github_link_round_trip_and_upsert() {

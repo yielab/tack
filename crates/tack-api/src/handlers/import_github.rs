@@ -217,7 +217,7 @@ pub async fn import_github(
                 Ok(created_item) => {
                     created += 1;
                     // Link the new item to its issue so status changes can be
-                    // pushed back to GitHub (Phase 21). Best-effort.
+                    // pushed back to GitHub. Best-effort.
                     let repo_full = format!("{owner}/{repo_name}");
                     if let Err(e) = state
                         .repo

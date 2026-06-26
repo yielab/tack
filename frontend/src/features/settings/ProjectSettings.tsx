@@ -21,7 +21,7 @@ const TABS: TabItem[] = [
   { id: 'data', label: 'Data' },
 ];
 
-/** One tabbed surface for every project setting (T-511). */
+/** One tabbed surface for every project setting. */
 const ProjectSettings: Component = () => {
   const { project, projectId } = useProject();
   const navigate = useNavigate();

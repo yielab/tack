@@ -1,4 +1,4 @@
-// Theme persistence + application (T-512). Light/dark/system, applied by
+// Theme persistence + application. Light/dark/system, applied by
 // toggling a class on <html>; the token CSS in index.css supplies the values
 // (`.dark` overrides, `prefers-color-scheme` fallback when no class is set).
 // Pairs with palette.ts (the accent/surface axis).

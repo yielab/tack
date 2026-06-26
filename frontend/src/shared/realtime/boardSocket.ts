@@ -30,7 +30,7 @@ export function boardLiveUrl(projectId: string): string {
 }
 
 /**
- * Reconnecting WebSocket for live board updates (T-502).
+ * Reconnecting WebSocket for live board updates.
  *
  * - capped exponential backoff on unexpected close;
  * - filters events to the given `projectId` (the server already filters, this

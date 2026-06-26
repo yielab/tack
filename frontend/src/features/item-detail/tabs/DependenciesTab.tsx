@@ -35,7 +35,7 @@ function classify(dep: Dependency, itemId: string): { dir: Direction | 'related'
   return { dir: 'related', otherId: other };
 }
 
-/** Dependencies tab (T-508): blocks / blocked-by lists, an item picker to add,
+/** Dependencies tab: blocks / blocked-by lists, an item picker to add,
  * cycle-error surfaced inline, links open the target item's drawer. */
 const DependenciesTab: Component<DependenciesTabProps> = (props) => {
   const [, setSearchParams] = useSearchParams();
