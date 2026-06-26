@@ -10,6 +10,17 @@ No cloud. No subscriptions. One binary, one SQLite file.
 
 ---
 
+## Core concepts
+
+Four terms recur throughout this documentation:
+
+| Term | What it means |
+|------|---------------|
+| **Item** | The basic unit of work. One `Item` model backs everything — a task, bug, feature, epic, building, work order, assignment — and your project's vocabulary decides how it's labeled. |
+| **Workflow** | The set of named status columns an item moves through (e.g. To Do → Doing → Done), each with a category and an optional WIP limit. See [Workflows & Statuses](user-guide/workflows.md). |
+| **Project type** | A template chosen at creation that pre-loads a matching workflow *and* vocabulary (software, construction, legal, …). Everything stays editable afterward. |
+| **Vocabulary** | Per-project label overrides that rename built-in terms to your domain — "Task" → "Work Order", "Sprint" → "Phase". The UI, CLI, and API all follow your terms. See [Vocabulary](user-guide/vocabulary.md). |
+
 ## How this documentation is organized
 
 | Section | For whom |
@@ -25,7 +36,7 @@ No cloud. No subscriptions. One binary, one SQLite file.
 - [Architecture Overview](developer/README.md) — the mental model behind the codebase
 - [Frontend & Design System](developer/frontend.md) — tokens, palettes, and the UI kit
 - [Rust Primer](developer/learning/rust-primer.md) — start here if Rust is new to you
-- [API Reference](developer/api-reference.md) — all 64 REST endpoints
+- [API Reference](developer/api-reference.md) — all 68 REST endpoints
 
 ## Keeping docs current
 

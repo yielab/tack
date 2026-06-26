@@ -1,8 +1,8 @@
 # Tack Testing Guide
 
-**Rust tests:** 164 passing + 1 `#[ignore]` perf test (`cargo test --workspace`)
-**Frontend tests:** 144 Vitest unit tests (`cd frontend && npm test`)
-**With embed-spa feature:** ~167 tests (`cargo test -p tack-api --features embed-spa`)
+**Rust tests:** 207 passing + 1 `#[ignore]` perf test (`cargo test --workspace`)
+**Frontend tests:** 168 Vitest unit tests (`cd frontend && npm test`)
+**With embed-spa feature:** ~210 tests (`cargo test -p tack-api --features embed-spa`)
 
 ## Quick start
 
@@ -34,15 +34,15 @@ Integration tests use in-memory SQLite — no external services needed.
 
 | Crate | Count | Type |
 | --- | --- | --- |
-| `tack-core` | 67 | Unit tests (`#[cfg(test)]` in source files) |
-| `tack-db` | 22 | Integration tests in `tests/integration_test.rs` |
+| `tack-core` | 73 | Unit tests (`#[cfg(test)]` in source files) |
+| `tack-db` | 23 | Integration tests in `tests/integration_test.rs` |
 | `tack-db` | 1 | Performance test (`#[ignore]`, seeds 50k items) |
-| `tack-api` | 36 | Handler integration tests in `tests/api_test.rs` |
+| `tack-api` | 38 | Handler integration tests in `tests/api_test.rs` |
 | `tack-api` | 17 | Alexa endpoint tests in `tests/alexa_test.rs` |
-| `tack-api` | 11 | Unit tests (middleware, GitHub URL parsing) |
-| `tack-cli` | 11 | CLI tests (wiremock + unit) |
-| **Rust total** | **164** | |
-| Frontend | 144 | Vitest unit tests across 21 test files |
+| `tack-api` | 27 | Unit tests (middleware, GitHub URL parsing, config) |
+| `tack-cli` | 29 | CLI tests (wiremock contract + unit) |
+| **Rust total** | **207** | |
+| Frontend | 168 | Vitest unit tests across 23 test files |
 
 ---
 
@@ -51,7 +51,7 @@ Integration tests use in-memory SQLite — no external services needed.
 Business logic lives in `tack-core` with no I/O. Tests go in the same file inside `#[cfg(test)]`.
 
 ```bash
-cargo test -p tack-core   # 67 tests
+cargo test -p tack-core   # 73 tests
 ```
 
 Key test areas:
@@ -81,7 +81,7 @@ Located in `crates/tack-db/tests/integration_test.rs`. Each test gets a fresh
 in-memory SQLite database with all migrations applied via `setup_test_db()`.
 
 ```bash
-cargo test -p tack-db   # 22 tests + 1 ignored
+cargo test -p tack-db   # 23 tests + 1 ignored
 ```
 
 Covers: project CRUD, item hierarchy, sprint lifecycle, custom fields, boards,
@@ -112,7 +112,7 @@ All tests in `crates/tack-api/tests/`. Uses `axum::Router::oneshot()` to fire
 requests without binding a real port.
 
 ```bash
-cargo test -p tack-api   # 64 tests
+cargo test -p tack-api   # 82 tests
 ```
 
 ### API test helpers (`tests/common/mod.rs`)
@@ -123,7 +123,7 @@ test_app_with_config(config)      // same with custom AppConfig
 test_app_with_file_db(db_url)     // file-based DB (needed for backup/restore tests)
 ```
 
-### Handler integration tests (`tests/api_test.rs`) — 36 tests
+### Handler integration tests (`tests/api_test.rs`) — 38 tests
 
 - Health endpoint shape (`status`, `version`, `migrations_applied`)
 - API token auth: no token, correct token, wrong token
@@ -153,10 +153,12 @@ test_app_with_file_db(db_url)     // file-based DB (needed for backup/restore te
 - CompleteTaskIntent: not-found, WIP-limit rejection, successful completion
 - Locale detection: `es-MX` → Spanish, `en-US` → English
 
-### Unit tests — 11 tests
+### Unit tests — 27 tests
 
 - Bearer token middleware (no token / correct / wrong / health bypass)
 - GitHub URL parsing: `owner/repo`, full HTTPS URL, SSH URL, trailing `.git`, invalid inputs
+- Config loading and precedence (env vars over TOML defaults)
+- Webhook payload signing (HMAC-SHA256 signature header)
 
 ### Running with embed-spa
 
@@ -172,7 +174,7 @@ cargo test -p tack-api --features embed-spa
 Located in `crates/tack-cli/tests/cli_test.rs`. Uses `wiremock` to stub the API.
 
 ```bash
-cargo test -p tack-cli   # 11 tests
+cargo test -p tack-cli   # 29 tests
 ```
 
 Covers: `init`, `add`, `list`, `move`, sprint commands, global search, config save/load,
@@ -183,7 +185,7 @@ vocab fetch (including graceful 404 fallback), Bearer token forwarding.
 ## Frontend tests
 
 ```bash
-cd frontend && npm test   # 144 tests across 21 files
+cd frontend && npm test   # 168 tests across 23 files
 ```
 
 Covers:

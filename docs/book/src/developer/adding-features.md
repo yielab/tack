@@ -397,4 +397,20 @@ if let Some(new_status) = &input.status {
 
 No migration is needed. The workflow engine is pure logic — it reads from a `WorkflowConfig` struct that is already stored as JSON. Adding a new method to `WorkflowConfig` does not require any database schema change.
 
+---
+
+## Anti-Patterns to Avoid
+
+The crate layering is the project's load-bearing constraint. Most review feedback on new features comes down to one of these:
+
+- **Don't put I/O in `tack-core`.** No file access, no HTTP calls, no `sqlx`, no `tokio` runtime needs. Core is pure, synchronous domain logic so it stays trivially testable. If a rule needs data, take it as a function parameter and let the handler load it (as in the dependency check above).
+- **Don't scatter validation across handlers.** Transition rules, WIP limits, cycle checks, and field validation belong in `tack-core`, called from the handler. Duplicating a rule inline in a handler means the CLI, API, and MCP server can disagree about what's valid.
+- **Don't reach past the repository layer.** Handlers call `Repository` methods; they never build SQL or touch the pool directly. New queries go in the matching `repo/<entity>.rs` module.
+- **Don't let `tack-cli` import `tack-db`.** The CLI is an HTTP client — all data access goes through the API so workflow rules are enforced server-side. The same applies to the MCP server.
+- **Don't edit an existing migration.** Migrations are append-only and idempotent. Changing a shipped migration corrupts databases that already applied it. Add a new numbered migration and wire it into `run_all()`.
+- **Don't hardcode colors in the frontend.** Components consume `--color-*` design tokens via inline `style`, never raw hex, so the theme/palette system keeps working. See [Frontend & Design System](frontend.md).
+- **Don't add an endpoint without a handler test.** Every new route gets at least a success-path and an error-path test in `crates/tack-api/tests/api_test.rs`. See [Testing](testing.md).
+
+When a change feels like it needs to break one of these, that's usually a sign the logic belongs in a different layer — move it rather than bending the boundary.
+
 If the new logic requires new *configuration* (for example, a per-project flag to enable or disable dependency-blocking), then you would add a field to `WorkflowConfig`, update the struct, and add a migration to handle existing rows that do not have that field (SQLite will use the column default).

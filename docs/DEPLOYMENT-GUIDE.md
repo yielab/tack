@@ -342,7 +342,7 @@ tack.example.com {
 
     # WebSocket
     @websocket {
-        path /api/projects/*/board/live
+        path /api/projects/*/boards/live
     }
     handle @websocket {
         reverse_proxy tack:3210 {
@@ -690,7 +690,7 @@ sqlite3 tack.db "PRAGMA integrity_check;"
 
 ```bash
 # Using websocat
-websocat ws://localhost:3210/api/projects/<project-id>/board/live
+websocat ws://localhost:3210/api/projects/<project-id>/boards/live
 ```
 
 ### Performance Issues

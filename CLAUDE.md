@@ -174,7 +174,7 @@ docs/                Documentation
 - Database is created automatically if missing
 
 **tack-api** (library — does not build its own binary):
-- Axum HTTP server with 64 REST endpoints (100% complete)
+- Axum HTTP server with 68 REST endpoints + 1 WebSocket (100% complete)
 - Server entry point exposed as `tack_api::serve()` (in `server.rs`)
 - WebSocket support for real-time board updates
 - Request handlers in `handlers/` (per entity)

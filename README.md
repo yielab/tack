@@ -105,7 +105,7 @@ for Tack's measured, reproducible numbers._
 
 ### API & Integrations
 
-- **64 REST endpoints** — full CRUD for all entities, search, export, and diagnostics
+- **68 REST endpoints + WebSocket** — full CRUD for all entities, search, export, and diagnostics
 - **CLI client** — the same `tack` binary with `tack add`, `tack list`, `tack move`, `tack branch` (git branch from an item), and more; `--json` output and shell completions (bash/zsh/fish)
 - **MCP server for AI agents** — `tack mcp` exposes the board to Claude Code, Codex, and any MCP client (list/search/read items, create/update/move, comment) over stdio; writes still pass through workflow validation. See [docs/MCP.md](docs/MCP.md)
 - **Import** — GitHub Issues (public or private repos, label filter, PAT), Linear (GraphQL API, team/project filter), JSON/YAML round-trip, CSV
@@ -182,7 +182,7 @@ make dev     # starts API + Vite dev server; open http://localhost:5173
 Other commands:
 
 ```bash
-make test         # all Rust tests (170 tests)
+make test         # all Rust tests (207 tests)
 make e2e          # Playwright end-to-end tests (auto-starts servers)
 make e2e-install  # one-time: download browser engines
 make audit        # CVE scan (cargo audit + npm audit)
@@ -209,7 +209,7 @@ Configuration is loaded from `tack.toml` in the working directory, or from envir
 | `TACK_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 signing key for webhook payloads |
 | `TACK_BACKUP_BUCKET` | _(none)_ | S3 bucket name — required to enable cloud backup |
 
-See the full variable reference in the [Configuration guide](docs/book/src/developer/deployment.md).
+See the full variable reference in the [Configuration guide](docs/book/src/user-guide/configuration.md), or [Administration & Security](docs/book/src/user-guide/administration.md) for tokens, CORS, webhooks, and cloud backup.
 
 ---
 
@@ -218,9 +218,9 @@ See the full variable reference in the [Configuration guide](docs/book/src/devel
 ```text
 tack-core   Pure domain logic — models, workflow engine, vocabulary, dependency graph (no I/O)
     ↑
-tack-db     SQLite persistence via sqlx — 17 migrations, FTS5, repository pattern
+tack-db     SQLite persistence via sqlx — 18 migrations, FTS5, repository pattern
     ↑
-tack-api    Axum HTTP server + WebSocket — 64 endpoints, config, webhooks (library crate)
+tack-api    Axum HTTP server + WebSocket — 68 REST endpoints, config, webhooks (library crate)
     ↑
 tack-cli    The `tack` binary — embeds tack-api to run the server; also the CLI client
 ```
@@ -241,10 +241,10 @@ mdbook serve docs/book   # opens http://localhost:3000
 | Guide | Description |
 | --- | --- |
 | [Quick Start](docs/book/src/user-guide/quick-start.md) | First-run walkthrough |
-| [API Reference](docs/book/src/developer/api-reference.md) | All 64 endpoints with request/response shapes |
+| [API Reference](docs/book/src/developer/api-reference.md) | All 68 endpoints with request/response shapes |
 | [CLI Reference](docs/book/src/user-guide/cli.md) | Every `tack` subcommand |
 | [MCP Server](docs/MCP.md) | Wire Tack into Claude Code / AI agents via `tack mcp` |
-| [Configuration](docs/book/src/developer/deployment.md) | Full variable reference and `tack.toml` |
+| [Configuration](docs/book/src/user-guide/configuration.md) | Full variable reference and `tack.toml` |
 | [Architecture](docs/book/src/developer/README.md) | Crate boundaries, design decisions |
 | [Benchmarks](docs/BENCHMARKS.md) | Measured footprint and latency, with repro steps |
 | [Testing](docs/TESTING.md) | Unit, integration, E2E, load, and security tests |

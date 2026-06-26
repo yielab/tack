@@ -19,6 +19,9 @@ When you create a project, its type determines the starting workflow. Everything
 |---|---|---|
 | `software`, `web`, `mobile` | Scrum | Backlog → To Do → In Progress → In Review → Done |
 | `construction` | Phase-based, **strict** | Permit → Procurement → Build → Inspect → Handover |
+| `legal` | Phase-based | Intake → Discovery → Drafting → Review → Closed |
+| `research` | Kanban | Hypothesis → Design → Experiment → Analysis → Published |
+| `event` | Phase-based | Ideas → Booked → In Progress → Confirmed → Done |
 | `personal`, `homework` | Simple | To Do → Doing → Done |
 | `maintenance` | Kanban | Backlog → In Progress → Done (no sprints) |
 | `custom` | Simple | To Do → Doing → Done (fully editable) |

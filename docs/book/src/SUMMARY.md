@@ -8,13 +8,17 @@
 
 - [Quick Start](user-guide/quick-start.md)
 - [Views](user-guide/views.md)
+- [Working with Items](user-guide/items.md)
 - [Command Palette & Search](user-guide/command-palette.md)
 - [Appearance](user-guide/appearance.md)
 - [Workflows & Statuses](user-guide/workflows.md)
 - [Vocabulary](user-guide/vocabulary.md)
+- [Import & Export](user-guide/import-export.md)
+- [Backup & Restore](user-guide/backup-restore.md)
 - [CLI](user-guide/cli.md)
 - [Configuration](user-guide/configuration.md)
-- [Backup & Restore](user-guide/backup-restore.md)
+- [Administration & Security](user-guide/administration.md)
+- [Troubleshooting & FAQ](user-guide/troubleshooting.md)
 
 ---
 
