@@ -1,7 +1,7 @@
 // Aggregated, typed API surface. Import `api` and call e.g.
 // `api.projects.list()`, `api.items.update(id, patch)`.
 //
-// Covers the full backend route inventory (T-501 + T-502). The realtime board
+// Covers the full backend route inventory. The realtime board
 // socket lives in `shared/realtime/boardSocket.ts`.
 
 import { projects } from './projects';

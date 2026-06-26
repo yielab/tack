@@ -23,7 +23,7 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-/** Comments for an item, newest-last, with optimistic posting (T-507). */
+/** Comments for an item, newest-last, with optimistic posting. */
 const ActivityTab: Component<ActivityTabProps> = (props) => {
   const [comments, { mutate }] = createResource(
     () => props.itemId,

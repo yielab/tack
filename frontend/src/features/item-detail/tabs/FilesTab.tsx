@@ -15,7 +15,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Attachments tab (T-509): drag-drop / picker upload, list, download, delete. */
+/** Attachments tab: drag-drop / picker upload, list, download, delete. */
 const FilesTab: Component<FilesTabProps> = (props) => {
   const [files, { refetch }] = createResource(
     () => props.itemId,

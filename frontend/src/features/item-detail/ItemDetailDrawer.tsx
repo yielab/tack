@@ -22,7 +22,7 @@ const TABS: TabItem[] = [
 ];
 
 /**
- * Item detail drawer (T-506). Mounted once at the app root; opens whenever the
+ * Item detail drawer. Mounted once at the app root; opens whenever the
  * `?item=<id>` query param is present (deep-linkable / shareable), fetches the
  * item, and exposes inline header editing + a tab bar. Built on the kit Drawer
  * (ESC + focus return).

@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, dirname, resolve, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Enforces the hard architectural rule from T-503:
+// Enforces the hard architectural rule:
 //   features/* may import from shared/* — never from another features/*.
 // Implemented as a plain filesystem scan so it needs no extra tooling
 // (no dependency-cruiser / eslint-plugin-boundaries dependency) and runs in CI

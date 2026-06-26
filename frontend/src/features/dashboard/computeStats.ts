@@ -17,7 +17,7 @@ export interface DashboardStats {
 const typeKey = (i: Item) =>
   typeof i.item_type === 'string' ? i.item_type : i.item_type.custom;
 
-/** Pure aggregation of project items for the dashboard (T-514). `now` is
+/** Pure aggregation of project items for the dashboard. `now` is
  * injected so time-window metrics are deterministic in tests. */
 export function computeDashboardStats(
   items: Item[],

@@ -227,7 +227,7 @@ const Board: Component = () => {
   });
   const itemCount = () => (currentBoard()?.columns ?? []).reduce((n, c) => n + c.items.length, 0);
 
-  // Real-time board updates via the reconnecting socket (T-513).
+  // Real-time board updates via the reconnecting socket.
   const [sock, setSock] = createSignal<BoardSocket>();
   const socketStatus = (): SocketStatus => sock()?.status() ?? 'closed';
 

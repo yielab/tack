@@ -47,7 +47,7 @@ async fn health_response_contains_version_and_migration_count() {
     );
 }
 
-// ─── API token (T-104) ───────────────────────────────────────────────────────
+// ─── API token ───────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn no_token_configured_allows_request() {
@@ -149,7 +149,7 @@ async fn health_bypasses_token_check() {
     assert_eq!(res.status(), StatusCode::OK);
 }
 
-// ─── Body limit (T-103) ──────────────────────────────────────────────────────
+// ─── Body limit ──────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn oversized_body_rejected() {
@@ -173,7 +173,7 @@ async fn oversized_body_rejected() {
     assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
 }
 
-// ─── Input validation (T-105) ────────────────────────────────────────────────
+// ─── Input validation ────────────────────────────────────────────────
 
 #[tokio::test]
 async fn create_project_empty_name_rejected() {
@@ -253,7 +253,7 @@ async fn create_item_empty_title_rejected() {
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
 }
 
-// ─── Vocabulary + workflow (T-302) ───────────────────────────────────────────
+// ─── Vocabulary + workflow ───────────────────────────────────────────
 
 async fn create_test_project(app: &axum::Router) -> String {
     use axum::body::to_bytes;
@@ -341,7 +341,7 @@ async fn update_project_workflow_statuses_valid() {
     assert_eq!(statuses[1]["wip_limit"], 3);
 }
 
-// ─── Backup / restore (T-401) ────────────────────────────────────────────────
+// ─── Backup / restore ────────────────────────────────────────────────
 
 #[tokio::test]
 async fn backup_in_memory_db_returns_bad_request() {
@@ -430,7 +430,7 @@ async fn backup_roundtrip_with_file_db() {
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }
 
-// ─── Embedded SPA (T-403) — only compiled with --features embed-spa ──────────
+// ─── Embedded SPA — only compiled with --features embed-spa ──────────
 
 #[cfg(feature = "embed-spa")]
 #[tokio::test]
@@ -1336,7 +1336,7 @@ async fn export_yaml_round_trips_through_import() {
     );
 }
 
-// ─── GitHub push sync (Phase 21) ───────────────────────────────────────────────
+// ─── GitHub push sync ───────────────────────────────────────────────
 
 #[tokio::test]
 async fn github_import_links_items_then_completion_pushes_close() {

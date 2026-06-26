@@ -22,7 +22,7 @@ export const sprints = {
 
   // NOTE: the backend currently only exposes PATCH /sprints/{id}/status
   // (see router.rs). A full-sprint edit endpoint does not exist yet; this
-  // preserves the existing page behavior and is reconciled in T-502.
+  // preserves the existing page behavior until a full edit endpoint exists.
   update: (id: string, data: SprintInput) =>
     request<Sprint>(`/sprints/${id}`, {
       method: 'PATCH',

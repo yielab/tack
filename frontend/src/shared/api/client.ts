@@ -1,11 +1,11 @@
-// Unified API client foundation (T-501).
+// Unified API client foundation.
 //
 // Single place for base-URL resolution, auth header injection, and error
 // handling. Every network call in the app must flow through one of the helpers
 // exported here — no raw `fetch` and no absolute API hosts anywhere else.
 
 /** Base URL for the API. Relative by default so the SPA works same-origin when
- * served from the `tack` binary (T-403) or behind a reverse proxy. */
+ * served from the `tack` binary or behind a reverse proxy. */
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
 
 /**
