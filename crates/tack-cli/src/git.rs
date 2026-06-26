@@ -156,11 +156,15 @@ mod tests {
 
     #[test]
     fn branch_name_truncates_long_title() {
-        let title = "This is an extremely long item title that should be truncated at a word boundary";
+        let title =
+            "This is an extremely long item title that should be truncated at a word boundary";
         let b = branch_name("task", "a1b2c3d4-xxxx", title, None);
         // prefix + short id + at most MAX_TITLE_SLUG_LEN of slug
         let slug_part = b.split_once('-').unwrap().1;
-        assert!(slug_part.len() <= MAX_TITLE_SLUG_LEN, "slug part too long: {slug_part}");
+        assert!(
+            slug_part.len() <= MAX_TITLE_SLUG_LEN,
+            "slug part too long: {slug_part}"
+        );
         assert!(!b.ends_with('-'));
         assert!(b.starts_with("task/a1b2c3d4-this-is-an"));
     }

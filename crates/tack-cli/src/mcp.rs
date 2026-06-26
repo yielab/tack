@@ -155,7 +155,14 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
             let id = require_str(args, "id")?;
             let mut body = json!({});
             let mut touched = false;
-            for field in ["title", "description", "priority", "assignee", "status", "due_date"] {
+            for field in [
+                "title",
+                "description",
+                "priority",
+                "assignee",
+                "status",
+                "due_date",
+            ] {
                 if let Some(v) = args.get(field).filter(|v| !v.is_null()) {
                     body[field] = v.clone();
                     touched = true;
@@ -281,74 +288,106 @@ fn urlencode(s: &str) -> String {
 
 fn tool_specs() -> Value {
     json!([
-        tool("list_projects", "List all projects.", json!({
-            "type": "object", "properties": {}
-        })),
-        tool("list_items", "List items in a project, optionally filtered.", json!({
-            "type": "object",
-            "properties": {
-                "project_id": { "type": "string", "description": "Project UUID" },
-                "status": { "type": "string", "description": "Filter by status column name" },
-                "item_type": { "type": "string", "description": "Filter by item type" },
-                "assignee": { "type": "string", "description": "Filter by assignee" }
-            },
-            "required": ["project_id"]
-        })),
-        tool("get_item", "Get one item with full detail, roles, and dependencies.", json!({
-            "type": "object",
-            "properties": { "id": { "type": "string", "description": "Item UUID" } },
-            "required": ["id"]
-        })),
-        tool("search_items", "Full-text search items, globally or within a project.", json!({
-            "type": "object",
-            "properties": {
-                "query": { "type": "string" },
-                "project_id": { "type": "string", "description": "Optional; omit to search all projects" }
-            },
-            "required": ["query"]
-        })),
-        tool("create_item", "Create an item in a project.", json!({
-            "type": "object",
-            "properties": {
-                "project_id": { "type": "string" },
-                "title": { "type": "string" },
-                "item_type": { "type": "string", "description": "task (default), epic, feature, bug, subtask, requirement" },
-                "priority": { "type": "string", "description": "critical, high, medium (default), low" },
-                "parent_id": { "type": "string" },
-                "assignee": { "type": "string" }
-            },
-            "required": ["project_id", "title"]
-        })),
-        tool("update_item", "Update fields on an item. Status changes are validated against the workflow.", json!({
-            "type": "object",
-            "properties": {
-                "id": { "type": "string" },
-                "title": { "type": "string" },
-                "description": { "type": "string" },
-                "priority": { "type": "string" },
-                "assignee": { "type": "string" },
-                "status": { "type": "string" },
-                "due_date": { "type": "string", "description": "RFC3339 timestamp" }
-            },
-            "required": ["id"]
-        })),
-        tool("move_item", "Move an item to a new status (validated transition + WIP limits).", json!({
-            "type": "object",
-            "properties": {
-                "id": { "type": "string" },
-                "status": { "type": "string", "description": "Target status column name (case-sensitive)" }
-            },
-            "required": ["id", "status"]
-        })),
-        tool("add_comment", "Add a comment to an item.", json!({
-            "type": "object",
-            "properties": {
-                "item_id": { "type": "string" },
-                "content": { "type": "string" },
-                "author": { "type": "string" }
-            },
-            "required": ["item_id", "content"]
-        })),
+        tool(
+            "list_projects",
+            "List all projects.",
+            json!({
+                "type": "object", "properties": {}
+            })
+        ),
+        tool(
+            "list_items",
+            "List items in a project, optionally filtered.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "project_id": { "type": "string", "description": "Project UUID" },
+                    "status": { "type": "string", "description": "Filter by status column name" },
+                    "item_type": { "type": "string", "description": "Filter by item type" },
+                    "assignee": { "type": "string", "description": "Filter by assignee" }
+                },
+                "required": ["project_id"]
+            })
+        ),
+        tool(
+            "get_item",
+            "Get one item with full detail, roles, and dependencies.",
+            json!({
+                "type": "object",
+                "properties": { "id": { "type": "string", "description": "Item UUID" } },
+                "required": ["id"]
+            })
+        ),
+        tool(
+            "search_items",
+            "Full-text search items, globally or within a project.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string" },
+                    "project_id": { "type": "string", "description": "Optional; omit to search all projects" }
+                },
+                "required": ["query"]
+            })
+        ),
+        tool(
+            "create_item",
+            "Create an item in a project.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "project_id": { "type": "string" },
+                    "title": { "type": "string" },
+                    "item_type": { "type": "string", "description": "task (default), epic, feature, bug, subtask, requirement" },
+                    "priority": { "type": "string", "description": "critical, high, medium (default), low" },
+                    "parent_id": { "type": "string" },
+                    "assignee": { "type": "string" }
+                },
+                "required": ["project_id", "title"]
+            })
+        ),
+        tool(
+            "update_item",
+            "Update fields on an item. Status changes are validated against the workflow.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "title": { "type": "string" },
+                    "description": { "type": "string" },
+                    "priority": { "type": "string" },
+                    "assignee": { "type": "string" },
+                    "status": { "type": "string" },
+                    "due_date": { "type": "string", "description": "RFC3339 timestamp" }
+                },
+                "required": ["id"]
+            })
+        ),
+        tool(
+            "move_item",
+            "Move an item to a new status (validated transition + WIP limits).",
+            json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "status": { "type": "string", "description": "Target status column name (case-sensitive)" }
+                },
+                "required": ["id", "status"]
+            })
+        ),
+        tool(
+            "add_comment",
+            "Add a comment to an item.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "item_id": { "type": "string" },
+                    "content": { "type": "string" },
+                    "author": { "type": "string" }
+                },
+                "required": ["item_id", "content"]
+            })
+        ),
     ])
 }
 

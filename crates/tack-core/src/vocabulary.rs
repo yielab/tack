@@ -232,14 +232,29 @@ mod tests {
             for key in VOCABULARY_KEYS {
                 assert!(vocab.contains_key(*key), "{ptype} missing key: {key}");
             }
-            assert!(validate(&vocab).is_ok(), "{ptype} vocabulary failed validation");
+            assert!(
+                validate(&vocab).is_ok(),
+                "{ptype} vocabulary failed validation"
+            );
         }
-        assert_eq!(vocabulary_for_type(&ProjectType::Legal).get("task").unwrap(), "Filing");
         assert_eq!(
-            vocabulary_for_type(&ProjectType::Research).get("epic").unwrap(),
+            vocabulary_for_type(&ProjectType::Legal)
+                .get("task")
+                .unwrap(),
+            "Filing"
+        );
+        assert_eq!(
+            vocabulary_for_type(&ProjectType::Research)
+                .get("epic")
+                .unwrap(),
             "Study"
         );
-        assert_eq!(vocabulary_for_type(&ProjectType::Event).get("board").unwrap(), "Run Sheet");
+        assert_eq!(
+            vocabulary_for_type(&ProjectType::Event)
+                .get("board")
+                .unwrap(),
+            "Run Sheet"
+        );
     }
 
     #[test]
