@@ -164,7 +164,43 @@ pub async fn update_item(
     // Auto-propagate parent status when all siblings reach Done
     propagate_parent_completion(&state, &item, &old_status).await;
 
+    // Push the open/closed state back to a linked GitHub issue (Phase 21).
+    maybe_sync_github(&state, &item, &old_status).await;
+
     Ok(Json(serde_json::to_value(item).unwrap()))
+}
+
+/// Best-effort, fire-and-forget GitHub push: when a linked item crosses the
+/// Done boundary, close (or reopen) its GitHub issue. No-op unless a
+/// `TACK_GITHUB_TOKEN` is configured and the item has a `github_links` row.
+pub(crate) async fn maybe_sync_github(state: &AppState, item: &Item, old_status: &str) {
+    let Some(token) = state.config.github_token.clone() else {
+        return;
+    };
+    if item.status == old_status {
+        return;
+    }
+    let Ok(Some((repo, number))) = state.repo.get_github_link(item.id).await else {
+        return;
+    };
+    let Ok(Some(proj)) = state.repo.get_project(item.project_id).await else {
+        return;
+    };
+    let Some(closed) = crate::github_sync::state_change(
+        proj.workflow.is_done_status(old_status),
+        proj.workflow.is_done_status(&item.status),
+    ) else {
+        return;
+    };
+
+    let base = state.config.github_api_base.clone();
+    tokio::spawn(async move {
+        if let Err(e) =
+            crate::github_sync::push_issue_state(&base, &token, &repo, number, closed).await
+        {
+            tracing::warn!(repo = %repo, issue = number, error = %e, "GitHub status push failed");
+        }
+    });
 }
 
 /// Best-effort: when `item` just moved into a Done-category status, mark its

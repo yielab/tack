@@ -10,7 +10,8 @@
 
 | Component | Status | Notes |
 | --- | --- | --- |
-| Backend API | ✅ Working | REST endpoints, Axum + SQLite, 17 migrations |
+| Backend API | ✅ Working | REST endpoints, Axum + SQLite, 18 migrations |
+| GitHub push sync | ✅ Working (v1) | Imported items linked to issues; completing an item closes its GitHub issue when `TACK_GITHUB_TOKEN` is set (push-only). See `docs/GITHUB-SYNC.md` |
 | Domain logic | ✅ Working | Workflow engine, vocabulary, dependency DAG; 10 project-type presets (incl. legal, research, event) |
 | Frontend SPA | ✅ Working | Board, List, Table, Sprint, Calendar, Timeline (all interactive) |
 | Table view | ✅ Working | Editable grid: inline-edit title/status/priority/assignee/due, sort, filter, column show/hide |

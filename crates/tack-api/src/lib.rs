@@ -1,6 +1,7 @@
 pub mod config;
 pub mod debug;
 pub mod error;
+pub mod github_sync;
 pub mod handlers;
 pub mod middleware;
 pub mod remote_backup;

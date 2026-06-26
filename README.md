@@ -107,8 +107,9 @@ for Tack's measured, reproducible numbers._
 - **64 REST endpoints** — full CRUD for all entities, search, export, and diagnostics
 - **CLI client** — the same `tack` binary with `tack add`, `tack list`, `tack move`, `tack branch` (git branch from an item), and more; `--json` output and shell completions (bash/zsh/fish)
 - **MCP server for AI agents** — `tack mcp` exposes the board to Claude Code, Codex, and any MCP client (list/search/read items, create/update/move, comment) over stdio; writes still pass through workflow validation. See [docs/MCP.md](docs/MCP.md)
-- **Import** — GitHub Issues (public or private repos, label filter, PAT), Linear (GraphQL API, team/project filter), JSON round-trip, CSV
-- **Export** — JSON full snapshot and CSV per project
+- **Import** — GitHub Issues (public or private repos, label filter, PAT), Linear (GraphQL API, team/project filter), JSON/YAML round-trip, CSV
+- **GitHub push sync** — set `TACK_GITHUB_TOKEN` and completing an imported item closes its GitHub issue (push-only v1). See [docs/GITHUB-SYNC.md](docs/GITHUB-SYNC.md)
+- **Export** — JSON snapshot, plaintext **YAML** (git-diffable), and CSV per project
 - **Backup / restore** — hot backup via `VACUUM INTO`; cloud backup to any S3-compatible bucket (Cloudflare R2, Backblaze B2, AWS S3); configurable from **Settings → Cloud Backup**
 - **Webhooks** — outbound POST events on item changes and sprint transitions; HMAC-SHA256 payload signing
 

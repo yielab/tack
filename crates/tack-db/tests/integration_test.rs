@@ -5,6 +5,68 @@ use tack_core::models::*;
 use tack_core::vocabulary;
 use tack_core::workflow;
 
+// ─── GitHub link Tests (Phase 21) ────────────────────────────
+
+#[tokio::test]
+async fn test_github_link_round_trip_and_upsert() {
+    let repo = setup_test_db().await;
+    let ws_id = create_test_workspace(&repo).await;
+    let project = repo
+        .create_project(
+            ws_id,
+            CreateProject {
+                name: "P".into(),
+                description: None,
+                project_type: ProjectType::Software,
+                template: None,
+            },
+        )
+        .await
+        .unwrap();
+    let status = project.workflow.initial_status().unwrap().to_string();
+    let item = repo
+        .create_item(
+            project.id,
+            &status,
+            CreateItem {
+                title: "Issue item".into(),
+                description: None,
+                item_type: Some(ItemType::Task),
+                parent_id: None,
+                priority: None,
+                estimate: None,
+                estimate_unit: None,
+                tags: None,
+                due_date: None,
+                sprint_id: None,
+                assignee: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    // No link initially.
+    assert_eq!(repo.get_github_link(item.id).await.unwrap(), None);
+
+    // Set, then read back.
+    repo.set_github_link(item.id, "acme/widgets", 42)
+        .await
+        .unwrap();
+    assert_eq!(
+        repo.get_github_link(item.id).await.unwrap(),
+        Some(("acme/widgets".to_string(), 42))
+    );
+
+    // Upsert replaces the existing link (no duplicate-key error).
+    repo.set_github_link(item.id, "acme/widgets", 99)
+        .await
+        .unwrap();
+    assert_eq!(
+        repo.get_github_link(item.id).await.unwrap(),
+        Some(("acme/widgets".to_string(), 99))
+    );
+}
+
 // ─── Project Tests ───────────────────────────────────────────
 
 #[tokio::test]

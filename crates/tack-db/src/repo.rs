@@ -3,6 +3,7 @@ pub mod boards;
 pub mod comments;
 pub mod custom_fields;
 pub mod dependencies;
+pub mod github_links;
 pub mod items;
 pub mod projects;
 pub mod roles;
@@ -27,6 +28,26 @@ impl Repository {
 
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────────
+    // GitHub link methods (push-only status sync)
+    // ────────────────────────────────────────────────────────────────────────────────
+
+    pub async fn set_github_link(
+        &self,
+        item_id: Uuid,
+        repo: &str,
+        issue_number: i64,
+    ) -> Result<(), sqlx::Error> {
+        github_links::set_link(self.pool(), item_id, repo, issue_number).await
+    }
+
+    pub async fn get_github_link(
+        &self,
+        item_id: Uuid,
+    ) -> Result<Option<(String, i64)>, sqlx::Error> {
+        github_links::get_link(self.pool(), item_id).await
     }
 
     // ────────────────────────────────────────────────────────────────────────────────

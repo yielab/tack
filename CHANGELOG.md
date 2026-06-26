@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GitHub push sync (v1, push-only)** — items imported from GitHub are now linked
+  to their issue (new `github_links` table). When `TACK_GITHUB_TOKEN` is set,
+  completing a linked item **closes** its GitHub issue (and moving it back out of
+  Done **reopens** it). Best-effort and fire-and-forget — never blocks the update.
+  `TACK_GITHUB_API_BASE` overrides the API root (GitHub Enterprise / testing). See
+  [docs/GITHUB-SYNC.md](docs/GITHUB-SYNC.md). (Phase 21, push-only slice; inbound
+  sync and comment mirroring remain future work.)
 - **YAML project export/import** — `GET /api/projects/{id}/export?format=yaml`
   produces a plaintext, git-diffable snapshot; the import endpoint round-trips it
   back (parsed as YAML when `Content-Type` mentions YAML, else JSON). Exposed in
