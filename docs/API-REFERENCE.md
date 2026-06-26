@@ -1151,7 +1151,7 @@ it to the configured S3-compatible bucket. Prunes old backups to keep only
 {
   "format_version": 1,
   "created_at": "2026-06-12T15:04:05+00:00",
-  "migration_version": 16,
+  "migration_version": 18,
   "db_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "install_id": "a1b2c3d4-...",
   "item_count": 42,

@@ -72,6 +72,7 @@ for Tack's measured, reproducible numbers._
 | **Sprints** | Two-pane sprint planning (Backlog ↔ Sprint), capacity tracking |
 
 - **Command palette** (Ctrl+K) and **global search** (Ctrl+/) available everywhere
+- **Themes & palettes** — light/dark plus three accent palettes (Teal, Clay, Graphite), switched from the sidebar; WCAG AA contrast, verified in CI
 - **Real-time updates** via WebSocket — open the same board in multiple tabs
 - **Optimistic UI** — changes apply instantly, roll back on error
 - Dark mode, skeleton loading screens, toast notifications

@@ -1,10 +1,14 @@
 # Tack — Design System & Brand Roadmap
 
-_Status: proposal · Author: design audit · Date: 2026-06-13_
+_Status: **largely shipped** (Phases 14–19) · Author: design audit · Originally 2026-06-13, updated 2026-06-26_
 
-This document audits Tack's current UI/UX and styling, benchmarks it against
-2025–2026 best practices, defines a proper brand, and lays out a phased roadmap
-to get there. It follows the project's existing "Phase N" convention.
+This document audited Tack's UI/UX and laid out a phased roadmap to a real brand.
+**The roadmap has since been delivered**: the UI was redesigned onto a teal,
+multi-palette design system (Teal / Clay / Graphite × light/dark) with Hanken
+Grotesk + JetBrains Mono typography, an expanded `shared/ui` kit, and a CI-gated
+axe accessibility pass. See [Frontend & Design System](book/src/developer/frontend.md)
+and [Appearance](book/src/user-guide/appearance.md) for the shipped result; the
+sections below are kept as the original audit and rationale.
 
 ---
 
@@ -205,10 +209,10 @@ one developer.
 |-------|-------|----------|------|--------|
 | 14 | Token plumbing + lint gate | ★★★★★ | low | ✅ done |
 | 15 | Migrate raw literals | ★★★★☆ | low | ✅ done (288→0; P10 resolved) |
-| 16 | Typography + icons | ★★★★☆ | low | next |
-| 17 | Brand system | ★★★★☆ | med (design decisions) | — |
-| 18 | Component polish + density | ★★★☆☆ | med | — |
-| 19 | A11y + living docs | ★★★☆☆ | low | — |
+| 16 | Typography + icons | ★★★★☆ | low | ✅ done (Hanken Grotesk + JetBrains Mono; icon set) |
+| 17 | Brand system | ★★★★☆ | med (design decisions) | ✅ done (teal mark + Teal/Clay/Graphite palettes) |
+| 18 | Component polish + density | ★★★☆☆ | med | ✅ done (board/drawer/palette/toast/search reskin) |
+| 19 | A11y + living docs | ★★★☆☆ | low | ✅ done (axe AA gate in CI; appearance + frontend docs) |
 
 ---
 

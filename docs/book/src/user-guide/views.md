@@ -1,9 +1,14 @@
 # Views
 
-Tack has five **work tabs** — Board, List, Calendar, Timeline, Sprint — all showing the same
-item set. Switching between tabs never re-fetches data; an item created on the Board appears
-immediately in every other view. A sixth screen, **Overview (Dashboard)**, is accessible from
-the sidebar and shows project statistics.
+Tack has six **work tabs** — Board, List, Table, Calendar, Timeline, Sprint — all showing the
+same item set. Switching between tabs never re-fetches data; an item created on the Board
+appears immediately in every other view. A seventh screen, **Overview (Dashboard)**, is
+accessible from the sidebar and shows project statistics.
+
+Every view shares the same shell: a sidebar to switch project and view, a top bar with item
+[search](command-palette.md) and a **+ New** button, and the [command palette](command-palette.md)
+on `Ctrl+K`. Theme and accent palette are set from the sidebar footer — see
+[Appearance](appearance.md).
 
 ---
 
@@ -31,6 +36,20 @@ Sortable, flat or hierarchical table of all items.
 - **Inline edit:** click any field (title, type, priority, status) in the row to edit it.
 - **Bulk operations:** check multiple rows, then use the bulk action bar to move all to a new status or delete them.
 - Filter by status, priority, and type using the toolbar dropdowns.
+
+---
+
+## Table
+
+A dense spreadsheet view of every item — title, type, status, priority, assignee, and due date
+in sortable columns.
+
+- **Click a column header** to sort by it; click again to reverse. Title, status, priority,
+  assignee, and due date are all sortable.
+- **Filter** with the search box — matches across title, assignee, and status as you type.
+- **Inline edit:** click an editable cell (title, status, priority, assignee, due date) to
+  change it in place; the edit saves immediately.
+- Best for scanning or bulk-triaging a large backlog where the card layout is too tall.
 
 ---
 

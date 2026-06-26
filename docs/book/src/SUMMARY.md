@@ -8,6 +8,8 @@
 
 - [Quick Start](user-guide/quick-start.md)
 - [Views](user-guide/views.md)
+- [Command Palette & Search](user-guide/command-palette.md)
+- [Appearance](user-guide/appearance.md)
 - [Workflows & Statuses](user-guide/workflows.md)
 - [Vocabulary](user-guide/vocabulary.md)
 - [CLI](user-guide/cli.md)
@@ -20,6 +22,7 @@
 
 - [Architecture Overview](developer/README.md)
 - [Crate Tour](developer/crate-tour.md)
+- [Frontend & Design System](developer/frontend.md)
 - [Adding Features](developer/adding-features.md)
 - [API Reference](developer/api-reference.md)
 - [Testing](developer/testing.md)
