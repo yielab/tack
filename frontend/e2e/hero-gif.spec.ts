@@ -130,7 +130,8 @@ test('hero GIF', async ({ page }, testInfo) => {
   await page.waitForTimeout(1000);
 
   // ── Scene 3: Switch to Timeline ───────────────────────────────────────────────
-  await page.getByRole('link', { name: /timeline/i }).click();
+  // The sidebar now also has a per-lens Timeline link, so scope to the first match.
+  await page.getByRole('link', { name: /timeline/i }).first().click();
   await waitForApp(page);
   await page.waitForTimeout(1800);
 
