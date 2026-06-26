@@ -43,7 +43,9 @@
 
   --color-text-primary: #152521;
   --color-text-secondary: #566b66;
-  --color-text-tertiary: #8a9b96;
+  /* faint tier darkened from the design's #8a9b96 (only 2.9:1 on white) to a
+     teal-gray that clears WCAG AA 4.5:1 on every light surface, incl. sidebar. */
+  --color-text-tertiary: #556861;
 
   --color-on-accent: #ffffff;
   --color-accent-soft: #e3f4f1;
@@ -52,13 +54,19 @@
   --color-accent2: #3f5d8a;
   --color-accent2-soft: #eaeff7;
 
-  --color-primary-600: #0d9488;
+  /* teal-700 (not -600): white-on-accent must clear WCAG AA 4.5:1 — #0d9488
+     only reaches 3.74. #0f766e gives 5.47 while staying clearly teal. */
+  --color-primary-600: #0f766e;
 
-  --color-success-600: #15803d;
+  /* darkened from #15803d so success text on the success-soft surface and Live
+     pill clears AA 4.5:1 (was 4.42). */
+  --color-success-600: #146c33;
   --color-success-100: #e6f4ec;
   --color-warning-600: #b45309;
   --color-warning-100: #f7ecdb;
-  --color-danger-600: #dc2626;
+  /* red-700: danger text on the light app bg (#f3f6f5) needs 4.5:1 — #dc2626
+     only reaches 4.44. */
+  --color-danger-600: #b91c1c;
   --color-danger-100: #fbe9e9;
 
   --color-bg-overlay: rgb(10 16 14 / 0.42);
@@ -185,7 +193,8 @@
 
   --color-text-primary: #241a12;
   --color-text-secondary: #6e5c4b;
-  --color-text-tertiary: #a08c79;
+  /* faint tier darkened for WCAG AA (design #a08c79 fails on the light bg). */
+  --color-text-tertiary: #6c5b4a;
 
   --color-on-accent: #ffffff;
   --color-accent-soft: #fbe8dd;
@@ -219,7 +228,8 @@
 
   --color-text-primary: #15181d;
   --color-text-secondary: #535a63;
-  --color-text-tertiary: #868d97;
+  /* faint tier darkened for WCAG AA (design #868d97 fails on the light bg). */
+  --color-text-tertiary: #595f68;
 
   --color-on-accent: #1a2e05;
   --color-accent-soft: #eef7dc;
@@ -230,11 +240,11 @@
 
   --color-primary-600: #84cc16;
 
-  --color-success-600: #16a34a;
+  --color-success-600: #157a37;
   --color-success-100: #e7f5ec;
   --color-warning-600: #d97706;
   --color-warning-100: #fcefdd;
-  --color-danger-600: #dc2626;
+  --color-danger-600: #b91c1c;
   --color-danger-100: #fbe9e9;
 }
 
