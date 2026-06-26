@@ -1,6 +1,10 @@
 # Crate Tour
 
-This chapter walks through each of the four crates in depth: what it owns, what it deliberately does not own, the key files, and the patterns worth understanding.
+This chapter walks through each of the four Rust crates in depth: what it owns, what it deliberately does not own, the key files, and the patterns worth understanding.
+
+> The SolidJS web UI in `frontend/` is covered separately in
+> [Frontend & Design System](frontend.md) — structure, the design-token system,
+> and the `shared/ui` component kit.
 
 ---
 

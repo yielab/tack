@@ -20,8 +20,8 @@ Tack is a lightweight, versatile project management tool built in Rust (backend)
 
 **Current Status:** Core complete; competitive/growth phases in progress (see `docs/book/src/roadmap.md`)
 
-- Backend: complete (REST endpoints + WebSocket, 17 migrations, custom field value validation, Alexa voice integration)
-- Frontend: complete (Board, List, Table, Timeline, Sprints, Calendar, Settings views; 155 Vitest unit tests + Playwright E2E)
+- Backend: complete (REST endpoints + WebSocket, 18 migrations, custom field value validation, Alexa voice integration)
+- Frontend: complete (Board, List, Table, Timeline, Sprints, Calendar, Settings views; teal multi-palette design system — Teal/Clay/Graphite × light/dark; 168 Vitest unit tests + Playwright E2E)
 - CLI: complete (init, add, list, move, board, branch, search, sprint, template, role, comment, field, backup, restore, mcp)
 - AI agents: `tack mcp` — Model Context Protocol server over stdio (8 tools); see `docs/MCP.md`
 - Project types: 10 presets (software, web, mobile, construction, personal, homework, maintenance, legal, research, event, custom)
@@ -174,7 +174,7 @@ docs/                Documentation
 - Database is created automatically if missing
 
 **tack-api** (library — does not build its own binary):
-- Axum HTTP server with 34 REST endpoints (100% complete)
+- Axum HTTP server with 64 REST endpoints (100% complete)
 - Server entry point exposed as `tack_api::serve()` (in `server.rs`)
 - WebSocket support for real-time board updates
 - Request handlers in `handlers/` (per entity)
@@ -192,7 +192,7 @@ docs/                Documentation
 - Client commands talk to the server over HTTP (blocking `reqwest`); never open the DB directly
 
 **frontend** (SolidJS + TypeScript):
-- Responsive SPA with dark mode support
+- Responsive SPA on a **two-axis design-token system**: mode (`.dark` class) × palette (`data-palette` attr) → Teal/Clay/Graphite × light/dark, switched from the sidebar footer. All colors come from `--color-*` tokens in `index.css`; components never use raw hex. WCAG AA, axe-gated in CI. Fonts: Hanken Grotesk + JetBrains Mono (self-hosted via `@fontsource`). See `docs/book/src/developer/frontend.md`.
 - **Board view** with HTML5 drag-and-drop (visual Kanban-style)
 - **List view** with sortable table, filtering, and bulk operations
 - WebSocket integration for real-time updates

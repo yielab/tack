@@ -24,7 +24,7 @@ cd Tack
 cargo run -p tack-cli -- serve
 ```
 
-On first start, the server creates `tack.db` and runs all 16 database migrations automatically. Binds to `http://127.0.0.1:3210`.
+On first start, the server creates `tack.db` and runs all 18 database migrations automatically. Binds to `http://127.0.0.1:3210`.
 
 **Terminal 2 — frontend dev server:**
 
@@ -40,7 +40,7 @@ Vite starts at `http://localhost:5173` and proxies all `/api/*` requests to the 
 
 ```sh
 curl http://localhost:3210/api/health
-# {"status":"ok","version":"0.1.0","migrations_applied":16}
+# {"status":"ok","version":"0.1.0","migrations_applied":18}
 ```
 
 ## First use
@@ -52,6 +52,8 @@ curl http://localhost:3210/api/health
 3. **Move it.** Drag the card to another column. Status changes save immediately with optimistic UI (the card moves before the server confirms).
 
 4. **Open the detail drawer.** Click the card body (not the drag handle) to see all fields, dependencies, comments, attachments, and custom fields.
+
+5. **Find your way around.** Press `Ctrl+K` for the [command palette](command-palette.md) (jump to any view, run an action) or `Ctrl+/` to search items. Switch theme and palette from the sidebar footer — see [Appearance](appearance.md).
 
 ## Single-binary mode
 

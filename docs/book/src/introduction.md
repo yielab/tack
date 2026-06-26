@@ -23,8 +23,9 @@ No cloud. No subscriptions. One binary, one SQLite file.
 
 - [Quick Start](user-guide/quick-start.md) — up and running in five minutes
 - [Architecture Overview](developer/README.md) — the mental model behind the codebase
+- [Frontend & Design System](developer/frontend.md) — tokens, palettes, and the UI kit
 - [Rust Primer](developer/learning/rust-primer.md) — start here if Rust is new to you
-- [API Reference](developer/api-reference.md) — all 34 REST endpoints
+- [API Reference](developer/api-reference.md) — all 64 REST endpoints
 
 ## Keeping docs current
 

@@ -1,6 +1,6 @@
 # Tack Project Status
 
-**Last updated:** 2026-06-25
+**Last updated:** 2026-06-26
 **Version:** 2.0.0
 **Positioning:** Local-first, single-binary, AI-agent-ready project management for solo devs and tiny crews.
 
@@ -14,6 +14,7 @@
 | GitHub push sync | ✅ Working (v1) | Imported items linked to issues; completing an item closes its GitHub issue when `TACK_GITHUB_TOKEN` is set (push-only). See `docs/GITHUB-SYNC.md` |
 | Domain logic | ✅ Working | Workflow engine, vocabulary, dependency DAG; 10 project-type presets (incl. legal, research, event) |
 | Frontend SPA | ✅ Working | Board, List, Table, Sprint, Calendar, Timeline (all interactive) |
+| Design system | ✅ Working | Two-axis theming: Teal / Clay / Graphite × light/dark, sidebar switcher, WCAG AA (axe-gated in CI). See `docs/book/src/user-guide/appearance.md` |
 | Table view | ✅ Working | Editable grid: inline-edit title/status/priority/assignee/due, sort, filter, column show/hide |
 | MCP server | ✅ Working | `tack mcp` — stdio JSON-RPC for AI agents; 8 tools (list/search/read + create/update/move/comment); writes go through the API so workflow rules apply |
 | WebSocket | ✅ Working | Live board updates via `/api/projects/{id}/boards/live` |
@@ -58,7 +59,7 @@
 - **Total test functions:** 170 (`cargo test --workspace`) + 1 `#[ignore]` perf test
 - **Breakdown:** tack-core 67 unit (incl. 28 custom-field validation), tack-db 22 integration + 1 ignored perf test (in-memory SQLite), tack-api 70 handler tests (17 unit incl. 7 GitHub URL-parsing + 6 Linear query-building + 17 Alexa + 36 integration), tack-cli 11
 - **CI:** GitHub Actions runs `cargo test --workspace` on every push ✅; entry bundle gate (< 30 KB gzipped) ✅
-- **Frontend tests:** 144 Vitest unit tests across 21 test files; Playwright E2E deferred
+- **Frontend tests:** 168 Vitest unit tests across 23 test files; Playwright E2E suite in `frontend/e2e/` (cross-browser smoke, user journeys, axe accessibility scan, API wire-contract) run in CI
 
 ---
 
