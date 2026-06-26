@@ -316,7 +316,7 @@ export default function Timeline() {
                       onClick={() => setViewMode(mode)}
                       class="px-3 py-1.5 text-sm rounded-lg capitalize transition-colors"
                       style={viewMode() === mode
-                        ? { 'background-color': 'var(--color-primary-600)', color: 'var(--color-text-inverse)' }
+                        ? { 'background-color': 'var(--color-primary-600)', color: 'var(--color-on-accent)' }
                         : { 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
                     >
                       {mode}

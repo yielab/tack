@@ -121,10 +121,10 @@ describe('ItemDetailDrawer', () => {
     container.querySelector<HTMLButtonElement>('[data-testid="open"]')!.click();
     await flush();
 
-    // The first <select> in the drawer is Status.
-    const statusSelect = document.querySelector<HTMLSelectElement>('[role="dialog"] select')!;
-    statusSelect.value = 'done';
-    statusSelect.dispatchEvent(new Event('change'));
+    // Status is a row of pills; click the "done" pill.
+    const donePill = [...document.querySelectorAll<HTMLButtonElement>('[role="group"][aria-label="Status"] button')]
+      .find((b) => b.textContent === 'done')!;
+    donePill.click();
     await flush();
 
     const patch = fetchMock.mock.calls.find(

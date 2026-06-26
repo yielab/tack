@@ -1,11 +1,15 @@
-import { createSignal, For, Show, type Component, createEffect } from 'solid-js';
+import { createSignal, For, Show, type Component, createEffect, createMemo } from 'solid-js';
 import { Portal } from 'solid-js/web';
+import { IconSearch } from './icons';
+import KbdHint from './KbdHint';
 
 export interface Command {
   id: string;
   label: string;
   description?: string;
   icon?: string;
+  /** Section heading in the palette (e.g. "Go to", "Actions"). */
+  group?: string;
   action: () => void;
   shortcut?: string;
 }
@@ -21,43 +25,46 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   let inputRef: HTMLInputElement | undefined;
 
-  // Reset when opened
   createEffect(() => {
     if (props.isOpen) {
       setSearch('');
       setSelectedIndex(0);
-      // Focus input when opened
       setTimeout(() => inputRef?.focus(), 10);
     }
   });
 
-  // Filter commands based on search
-  const filteredCommands = () => {
-    const query = search().toLowerCase();
-    if (!query) return props.commands;
+  // Flat, filtered list (drives ↑↓ selection).
+  const filtered = createMemo(() => {
+    const q = search().toLowerCase();
+    if (!q) return props.commands;
+    return props.commands.filter(
+      (c) => c.label.toLowerCase().includes(q) || c.description?.toLowerCase().includes(q),
+    );
+  });
 
-    return props.commands.filter((cmd) => {
-      const labelMatch = cmd.label.toLowerCase().includes(query);
-      const descMatch = cmd.description?.toLowerCase().includes(query);
-      return labelMatch || descMatch;
+  // Same list, grouped for display, preserving the flat order/index.
+  const groups = createMemo(() => {
+    const out: { title: string; items: { cmd: Command; index: number }[] }[] = [];
+    filtered().forEach((cmd, index) => {
+      const title = cmd.group ?? 'Commands';
+      let g = out.find((x) => x.title === title);
+      if (!g) { g = { title, items: [] }; out.push(g); }
+      g.items.push({ cmd, index });
     });
-  };
+    return out;
+  });
 
-  // Keep selected index in bounds
   createEffect(() => {
-    const maxIndex = Math.max(0, filteredCommands().length - 1);
-    if (selectedIndex() > maxIndex) {
-      setSelectedIndex(maxIndex);
-    }
+    const max = Math.max(0, filtered().length - 1);
+    if (selectedIndex() > max) setSelectedIndex(max);
   });
 
   const handleKeyDown = (e: KeyboardEvent) => {
-    const commands = filteredCommands();
-
+    const cmds = filtered();
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        setSelectedIndex((i) => Math.min(i + 1, commands.length - 1));
+        setSelectedIndex((i) => Math.min(i + 1, cmds.length - 1));
         break;
       case 'ArrowUp':
         e.preventDefault();
@@ -65,10 +72,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
         break;
       case 'Enter':
         e.preventDefault();
-        if (commands[selectedIndex()]) {
-          commands[selectedIndex()].action();
-          props.onClose();
-        }
+        if (cmds[selectedIndex()]) { cmds[selectedIndex()].action(); props.onClose(); }
         break;
       case 'Escape':
         e.preventDefault();
@@ -77,90 +81,101 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
     }
   };
 
-  const handleCommandClick = (cmd: Command) => {
-    cmd.action();
-    props.onClose();
-  };
-
-  const handleBackdropClick = (e: MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      props.onClose();
-    }
-  };
+  const run = (cmd: Command) => { cmd.action(); props.onClose(); };
+  const handleBackdrop = (e: MouseEvent) => { if (e.target === e.currentTarget) props.onClose(); };
 
   return (
     <Show when={props.isOpen}>
       <Portal>
         <div
-          class="fixed inset-0 z-50 flex items-start justify-center pt-[20vh] px-4 bg-black/50 backdrop-blur-sm"
-          onClick={handleBackdropClick}
+          onClick={handleBackdrop}
+          style={{
+            position: 'fixed', inset: 0, 'z-index': 70, display: 'flex',
+            'align-items': 'flex-start', 'justify-content': 'center', 'padding-top': '12vh',
+            'background-color': 'var(--color-bg-overlay)', animation: 'tk-overlay .12s ease',
+          }}
         >
-          <div class="bg-surface rounded-lg shadow-2xl w-full max-w-2xl overflow-hidden border border-line">
-            {/* Search Input */}
-            <div class="p-4 border-b border-line">
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '560px', 'max-width': '92vw', background: 'var(--color-bg-elevated)',
+              border: '1px solid var(--color-border-light)', 'border-radius': '15px',
+              'box-shadow': 'var(--shadow-lg)', overflow: 'hidden',
+              animation: 'tk-pal .16s cubic-bezier(.2,.7,.3,1)',
+            }}
+          >
+            {/* search header */}
+            <div style={{ display: 'flex', 'align-items': 'center', gap: '10px', padding: '14px 16px', 'border-bottom': '1px solid var(--color-border-light)' }}>
+              <span style={{ color: 'var(--color-text-tertiary)', display: 'flex' }}><IconSearch size={17} /></span>
               <input
                 ref={inputRef}
-                type="text"
-                class="w-full px-4 py-3 text-lg bg-transparent border-none outline-none text-content placeholder-content-faint"
-                placeholder="Search commands..."
                 value={search()}
                 onInput={(e) => setSearch(e.currentTarget.value)}
                 onKeyDown={handleKeyDown}
+                placeholder="Search items, jump to a view, or run a command…"
+                style={{
+                  flex: 1, border: 'none', outline: 'none', background: 'transparent',
+                  'font-family': 'inherit', 'font-size': '14.5px', color: 'var(--color-text-primary)',
+                }}
               />
+              <KbdHint>esc</KbdHint>
             </div>
 
-            {/* Commands List */}
-            <div class="max-h-[60vh] overflow-y-auto">
+            {/* results */}
+            <div style={{ 'max-height': '50vh', 'overflow-y': 'auto', padding: '8px' }}>
               <Show
-                when={filteredCommands().length > 0}
-                fallback={
-                  <div class="px-4 py-8 text-center text-content-subtle">
-                    No commands found
-                  </div>
-                }
+                when={filtered().length > 0}
+                fallback={<div style={{ padding: '28px', 'text-align': 'center', 'font-size': '13px', color: 'var(--color-text-tertiary)' }}>No matches for “{search()}”</div>}
               >
-                <For each={filteredCommands()}>
-                  {(cmd, index) => (
-                    <button
-                      class="w-full px-4 py-3 flex items-center justify-between text-left transition-colors hover:bg-sunken"
-                      classList={{
-                        'bg-brand-50': index() === selectedIndex(),
-                      }}
-                      onClick={() => handleCommandClick(cmd)}
-                      onMouseEnter={() => setSelectedIndex(index())}
-                    >
-                      <div class="flex items-center gap-3 flex-1">
-                        {cmd.icon && (
-                          <span class="text-content-subtle">{cmd.icon}</span>
-                        )}
-                        <div class="flex-1">
-                          <div class="font-medium text-content">
-                            {cmd.label}
-                          </div>
-                          {cmd.description && (
-                            <div class="text-sm text-content-subtle">
-                              {cmd.description}
-                            </div>
-                          )}
-                        </div>
+                <For each={groups()}>
+                  {(g) => (
+                    <>
+                      <div style={{ padding: '8px 8px 4px' }}>
+                        <span style={{ 'font-size': '10.5px', 'font-weight': 700, 'letter-spacing': '.06em', 'text-transform': 'uppercase', color: 'var(--color-text-tertiary)' }}>{g.title}</span>
                       </div>
-                      {cmd.shortcut && (
-                        <div class="text-xs text-content-faint font-mono">
-                          {cmd.shortcut}
-                        </div>
-                      )}
-                    </button>
+                      <For each={g.items}>
+                        {({ cmd, index }) => {
+                          const active = () => index === selectedIndex();
+                          return (
+                            <button
+                              onClick={() => run(cmd)}
+                              onMouseEnter={() => setSelectedIndex(index)}
+                              style={{
+                                width: '100%', display: 'flex', 'align-items': 'center', gap: '10px',
+                                padding: '8px 8px', 'border-radius': '9px', border: 'none', cursor: 'pointer',
+                                'text-align': 'left', 'font-family': 'inherit',
+                                background: active() ? 'var(--color-accent-soft)' : 'transparent',
+                              }}
+                            >
+                              <span style={{
+                                width: '24px', height: '24px', 'border-radius': '7px', 'flex-shrink': 0,
+                                display: 'flex', 'align-items': 'center', 'justify-content': 'center', 'font-size': '12px',
+                                background: 'var(--color-chip)',
+                              }}>{cmd.icon ?? '•'}</span>
+                              <span style={{ flex: 1, 'font-size': '13px', 'font-weight': 500, color: 'var(--color-text-primary)' }}>{cmd.label}</span>
+                              <Show when={cmd.shortcut}>
+                                <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '10.5px', color: 'var(--color-text-tertiary)' }}>{cmd.shortcut}</span>
+                              </Show>
+                            </button>
+                          );
+                        }}
+                      </For>
+                    </>
                   )}
                 </For>
               </Show>
             </div>
 
-            {/* Footer */}
-            <div class="px-4 py-2 border-t border-line bg-sunken">
-              <div class="flex items-center justify-between text-xs text-content-subtle">
-                <span>Use ↑ ↓ to navigate</span>
-                <span>↵ to select · Esc to close</span>
-              </div>
+            {/* footer legend */}
+            <div style={{ display: 'flex', 'align-items': 'center', gap: '14px', padding: '9px 16px', 'border-top': '1px solid var(--color-border-light)', background: 'var(--color-bg-base)', 'font-size': '11px', color: 'var(--color-text-tertiary)' }}>
+              <span style={{ display: 'flex', 'align-items': 'center', gap: '5px' }}>
+                <KbdHint>↑↓</KbdHint>navigate
+              </span>
+              <span style={{ display: 'flex', 'align-items': 'center', gap: '5px' }}>
+                <KbdHint>↵</KbdHint>select
+              </span>
+              <div style={{ flex: 1 }} />
+              <span>Tack · ⌃K anywhere</span>
             </div>
           </div>
         </div>

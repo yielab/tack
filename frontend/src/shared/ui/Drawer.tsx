@@ -57,7 +57,7 @@ const Drawer: Component<DrawerProps> = (props) => {
       <Portal>
         <div
           class="fixed inset-0 z-50 flex justify-end"
-          style={{ 'background-color': 'var(--color-bg-overlay)' }}
+          style={{ 'background-color': 'var(--color-bg-overlay)', animation: 'tk-overlay .15s ease' }}
           onClick={handleBackdrop}
         >
           <div
@@ -67,10 +67,15 @@ const Drawer: Component<DrawerProps> = (props) => {
             aria-label={props.title}
             tabindex={-1}
             class={clsx(
-              'flex h-full w-full flex-col shadow-xl focus:outline-none',
+              'flex h-full w-full flex-col focus:outline-none',
               WIDTH[props.width ?? 'lg']
             )}
-            style={{ 'background-color': 'var(--color-bg-elevated)' }}
+            style={{
+              'background-color': 'var(--color-bg-app)',
+              'border-left': '1px solid var(--color-border-light)',
+              'box-shadow': 'var(--shadow-lg)',
+              animation: 'tk-drawer .22s cubic-bezier(.2,.7,.3,1)',
+            }}
           >
             <Show when={props.title}>
               <div

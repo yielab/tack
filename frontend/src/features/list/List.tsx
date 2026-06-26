@@ -611,7 +611,7 @@ function CreateForm(props: {
           onClick={props.onSave}
           class="flex-shrink-0 p-2 rounded-lg transition-colors shadow-sm"
           style={{
-            color: "var(--color-text-inverse)",
+            color: "var(--color-on-accent)",
             "background-color": "var(--color-primary-600)"
           }}
           onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "var(--color-primary-700)"}

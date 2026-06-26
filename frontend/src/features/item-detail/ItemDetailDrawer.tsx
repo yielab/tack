@@ -63,7 +63,7 @@ const ItemDetailDrawer: Component = () => {
   };
 
   return (
-    <Drawer isOpen={!!itemId()} onClose={close} title="Item details" width="xl">
+    <Drawer isOpen={!!itemId()} onClose={close} title="Item details" width="md">
       <Show
         when={item()}
         fallback={

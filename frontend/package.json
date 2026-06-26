@@ -16,6 +16,8 @@
     "lint:tokens": "bash scripts/check-tokens.sh"
   },
   "dependencies": {
+    "@fontsource/hanken-grotesk": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
     "@kobalte/core": "^0.13.7",
     "@solid-primitives/keyboard": "^1.2.8",
     "@solidjs/router": "^0.16.1",
