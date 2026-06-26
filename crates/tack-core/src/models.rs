@@ -45,6 +45,9 @@ pub enum ProjectType {
     Personal,
     Homework,
     Maintenance,
+    Legal,
+    Research,
+    Event,
     Custom,
 }
 
@@ -58,6 +61,9 @@ impl std::fmt::Display for ProjectType {
             Self::Personal => write!(f, "personal"),
             Self::Homework => write!(f, "homework"),
             Self::Maintenance => write!(f, "maintenance"),
+            Self::Legal => write!(f, "legal"),
+            Self::Research => write!(f, "research"),
+            Self::Event => write!(f, "event"),
             Self::Custom => write!(f, "custom"),
         }
     }

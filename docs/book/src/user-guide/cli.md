@@ -60,7 +60,22 @@ tack add "Design login page" \
 # Move an item to a different status column
 tack move <item-id> "In Progress"
 # The status name must exactly match the column name (case-sensitive)
+
+# Derive a git branch name from an item
+tack branch <item-id>
+# → prints: git checkout -b feat/<short-id>-<title-slug>
+
+# Create and switch to the branch in one step
+tack branch <item-id> --checkout
+
+# Override the type-derived prefix (default maps feature→feat, bug→fix, …)
+tack branch <item-id> --prefix hotfix
 ```
+
+`tack branch` reads the item over the API and builds a conventional branch name
+of the form `<prefix>/<short-id>-<title-slug>`. Without `--checkout` it prints
+the `git checkout -b …` command (handy to `eval` or copy-paste); with
+`--checkout` it runs it. Add `--json` for `{ branch, item_id, checked_out }`.
 
 ---
 
@@ -175,6 +190,24 @@ tack backup --path /safe/place/tack.db
 # Stage a restore (applied on next server startup)
 tack restore /safe/place/tack.db
 ```
+
+---
+
+## MCP Server (AI agents)
+
+`tack mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server
+over stdio so AI agents (Claude Code, Codex, …) can drive the board: list/search/read
+items and create/update/move them or add comments. Writes go through the API, so
+workflow rules still apply.
+
+```sh
+# Reads JSON-RPC on stdin, writes responses on stdout — wire it into an MCP client,
+# don't run it interactively. Honors TACK_API_URL / TACK_API_TOKEN.
+tack mcp
+```
+
+See the [MCP guide](../../MCP.md) for the Claude Code `.mcp.json` snippet and the
+full tool reference.
 
 ---
 

@@ -5,6 +5,7 @@ import { setLastLens, type Lens } from '../state/lastView';
 const TABS: { lens: Lens; label: string; icon: string }[] = [
   { lens: 'board',    label: 'Board',    icon: '⬛' },
   { lens: 'list',     label: 'List',     icon: '☰'  },
+  { lens: 'table',    label: 'Table',    icon: '▦'  },
   { lens: 'calendar', label: 'Calendar', icon: '📅' },
   { lens: 'timeline', label: 'Timeline', icon: '📊' },
   { lens: 'sprint',   label: 'Sprint',   icon: '🏃' },
@@ -18,6 +19,7 @@ export default function WorkTabs() {
   const activeLens = (): Lens => {
     const p = location.pathname;
     if (p.includes('/list'))     return 'list';
+    if (p.includes('/table'))    return 'table';
     if (p.includes('/calendar')) return 'calendar';
     if (p.includes('/timeline')) return 'timeline';
     if (p.includes('/sprint'))   return 'sprint';

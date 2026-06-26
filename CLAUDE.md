@@ -18,11 +18,13 @@ Tack is a lightweight, versatile project management tool built in Rust (backend)
 
 **Core Philosophy:** Universal work tracking with domain-specific vocabulary. The same underlying system adapts to different project types through configurable workflows and terminology.
 
-**Current Status:** Phase 8 complete
+**Current Status:** Core complete; competitive/growth phases in progress (see `docs/book/src/roadmap.md`)
 
 - Backend: complete (REST endpoints + WebSocket, 17 migrations, custom field value validation, Alexa voice integration)
-- Frontend: complete (Board, List, Timeline, Sprints, Settings views; 144 Vitest unit tests + Playwright E2E)
-- CLI: complete (init, add, list, move, board, search, sprint, template, role, comment, field, backup, restore)
+- Frontend: complete (Board, List, Table, Timeline, Sprints, Calendar, Settings views; 155 Vitest unit tests + Playwright E2E)
+- CLI: complete (init, add, list, move, board, branch, search, sprint, template, role, comment, field, backup, restore, mcp)
+- AI agents: `tack mcp` — Model Context Protocol server over stdio (8 tools); see `docs/MCP.md`
+- Project types: 10 presets (software, web, mobile, construction, personal, homework, maintenance, legal, research, event, custom)
 
 ## Development Commands
 
@@ -182,7 +184,9 @@ docs/                Documentation
 
 **tack-cli** (the single `tack` binary):
 - `tack` with no subcommand (or `tack serve`) starts the server + web UI via `tack_api::serve()` — the primary, UI-first entry point
-- CLI client using `clap`: `init`, `add`, `list`, `move`, `board`, `search`, `sprint`, `template`, `role`, `comment`, `field`, `backup`, `restore` (complete)
+- CLI client using `clap`: `init`, `add`, `list`, `move`, `board`, `branch`, `search`, `sprint`, `template`, `role`, `comment`, `field`, `backup`, `restore` (complete)
+- `tack mcp` — Model Context Protocol server over stdio (hand-rolled JSON-RPC 2.0 in `mcp.rs`); proxies tool calls to a running server over HTTP so workflow rules apply. See `docs/MCP.md`
+- `tack branch <item-id>` — derives/creates a git branch from an item (`git.rs`)
 - Client commands talk to the server over HTTP (blocking `reqwest`); never open the DB directly
 
 **frontend** (SolidJS + TypeScript):

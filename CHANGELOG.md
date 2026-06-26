@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **One-line installer** — `curl -fsSL …/install.sh | sh` resolves the newest
+  release asset for your platform from the GitHub API (Linux/macOS, x86_64 +
+  Apple Silicon) and installs the single `tack` binary. Also documented
+  `cargo install --git … tack-cli --features embed-spa`. (Phase 24, Task 2.)
+- **`docs/BENCHMARKS.md`** — measured, reproducible footprint and latency
+  (10.3 MiB binary, ~113 ms cold start, ~12 MiB idle RSS, sub-3 ms p99 reads) plus
+  a README "Why Tack" comparison table vs Plane/Vikunja/Huly. (Phase 24, Task 1.)
+- **Table view** — a sixth work lens: a sortable, filterable, column-configurable
+  grid with inline editing of title, status, priority, assignee, and due date
+  (edits round-trip through the API, so workflow rules apply and other views update
+  over WebSocket). Headers respect per-project vocabulary; column visibility
+  persists to `localStorage`. Reachable via the Table tab, `/projects/:id/table`,
+  and the command palette. (Phase 23, Task 1.) Also threads `assignee` through the
+  frontend `Item`/`UpdateItem` types (previously backend/CLI-only).
+- **Three new domain project types** — `legal` (case management:
+  Intake → Discovery → Drafting → Review → Closed; vocabulary Matter/Case/Filing/
+  Counsel/…), `research` (lab: Hypothesis → Design → Experiment → Analysis →
+  Published; Study/Experiment/Protocol/Researcher/…), and `event` (planning:
+  Ideas → Booked → In Progress → Confirmed → Done; Event/Track/Run Sheet/…). Each
+  ships a workflow + vocabulary preset and a seeded built-in template, and is
+  selectable in the CLI (`tack init -t legal`) and the New Project dialog.
+  (Phase 24, Task 3.)
+- **`tack mcp` — Model Context Protocol server.** Exposes a Tack instance to AI
+  agents (Claude Code, Codex, …) over stdio (JSON-RPC 2.0). Eight tools:
+  `list_projects`, `list_items`, `get_item`, `search_items`, `create_item`,
+  `update_item`, `move_item`, `add_comment`. Writes go through the REST API, so
+  workflow validation, WIP limits, and parent-auto-completion still apply. See
+  [docs/MCP.md](docs/MCP.md) for the Claude Code config. (Phase 20.)
+- **`tack branch <item-id>`** — derives a conventional git branch name from an
+  item (`<prefix>/<short-id>-<title-slug>`, e.g. `feat/a1b2c3d4-add-table-view`).
+  Prints the `git checkout -b …` command by default, creates and switches with
+  `--checkout`, overrides the type-derived prefix with `--prefix`, and supports
+  `--json`. (Phase 22, Task 1.)
+
+---
+
 ## [0.1.0-beta.6] - 2026-06-22
 
 ### Security

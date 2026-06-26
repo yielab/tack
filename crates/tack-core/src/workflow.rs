@@ -20,6 +20,9 @@ pub enum WorkflowType {
     Mixed,
     Simple,
     Construction,
+    Legal,
+    Research,
+    Event,
     Custom,
 }
 
@@ -193,6 +196,9 @@ pub fn workflow_for_type(project_type: &ProjectType) -> WorkflowConfig {
         ProjectType::Construction => construction_workflow(),
         ProjectType::Personal | ProjectType::Homework => simple_workflow(),
         ProjectType::Maintenance => kanban_workflow(),
+        ProjectType::Legal => legal_workflow(),
+        ProjectType::Research => research_workflow(),
+        ProjectType::Event => event_workflow(),
         ProjectType::Custom => simple_workflow(),
     }
 }
@@ -356,6 +362,149 @@ pub fn construction_workflow() -> WorkflowConfig {
     }
 }
 
+/// Legal case management: a staged matter lifecycle from intake to close.
+/// Linear with a review→drafting rework loop, mirroring the construction model.
+pub fn legal_workflow() -> WorkflowConfig {
+    WorkflowConfig {
+        workflow_type: WorkflowType::Legal,
+        statuses: vec![
+            StatusDef {
+                name: "Intake".into(),
+                category: StatusCategory::Todo,
+                wip_limit: None,
+                order: 0,
+            },
+            StatusDef {
+                name: "Discovery".into(),
+                category: StatusCategory::InProgress,
+                wip_limit: None,
+                order: 1,
+            },
+            StatusDef {
+                name: "Drafting".into(),
+                category: StatusCategory::InProgress,
+                wip_limit: None,
+                order: 2,
+            },
+            StatusDef {
+                name: "Review".into(),
+                category: StatusCategory::InProgress,
+                wip_limit: Some(3),
+                order: 3,
+            },
+            StatusDef {
+                name: "Closed".into(),
+                category: StatusCategory::Done,
+                wip_limit: None,
+                order: 4,
+            },
+        ],
+        transitions: Some(vec![
+            Transition {
+                from: "Intake".into(),
+                to: "Discovery".into(),
+            },
+            Transition {
+                from: "Discovery".into(),
+                to: "Drafting".into(),
+            },
+            Transition {
+                from: "Drafting".into(),
+                to: "Review".into(),
+            },
+            Transition {
+                from: "Review".into(),
+                to: "Closed".into(),
+            },
+            Transition {
+                from: "Review".into(),
+                to: "Drafting".into(),
+            }, // revise after review
+        ]),
+    }
+}
+
+/// Research / lab study: hypothesis → design → experiment → analysis → published.
+/// A Kanban-style flow with WIP caps on the active stages.
+pub fn research_workflow() -> WorkflowConfig {
+    WorkflowConfig {
+        workflow_type: WorkflowType::Research,
+        statuses: vec![
+            StatusDef {
+                name: "Hypothesis".into(),
+                category: StatusCategory::Todo,
+                wip_limit: None,
+                order: 0,
+            },
+            StatusDef {
+                name: "Design".into(),
+                category: StatusCategory::Todo,
+                wip_limit: None,
+                order: 1,
+            },
+            StatusDef {
+                name: "Experiment".into(),
+                category: StatusCategory::InProgress,
+                wip_limit: Some(4),
+                order: 2,
+            },
+            StatusDef {
+                name: "Analysis".into(),
+                category: StatusCategory::InProgress,
+                wip_limit: Some(3),
+                order: 3,
+            },
+            StatusDef {
+                name: "Published".into(),
+                category: StatusCategory::Done,
+                wip_limit: None,
+                order: 4,
+            },
+        ],
+        transitions: None,
+    }
+}
+
+/// Event planning: ideas → booked → in progress → confirmed → done.
+pub fn event_workflow() -> WorkflowConfig {
+    WorkflowConfig {
+        workflow_type: WorkflowType::Event,
+        statuses: vec![
+            StatusDef {
+                name: "Ideas".into(),
+                category: StatusCategory::Todo,
+                wip_limit: None,
+                order: 0,
+            },
+            StatusDef {
+                name: "Booked".into(),
+                category: StatusCategory::Todo,
+                wip_limit: None,
+                order: 1,
+            },
+            StatusDef {
+                name: "In Progress".into(),
+                category: StatusCategory::InProgress,
+                wip_limit: Some(5),
+                order: 2,
+            },
+            StatusDef {
+                name: "Confirmed".into(),
+                category: StatusCategory::InProgress,
+                wip_limit: None,
+                order: 3,
+            },
+            StatusDef {
+                name: "Done".into(),
+                category: StatusCategory::Done,
+                wip_limit: None,
+                order: 4,
+            },
+        ],
+        transitions: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -380,6 +529,47 @@ mod tests {
     #[test]
     fn initial_status_kanban_is_queue() {
         assert_eq!(kanban_workflow().initial_status().unwrap(), "Queue");
+    }
+
+    #[test]
+    fn initial_status_legal_is_intake() {
+        assert_eq!(legal_workflow().initial_status().unwrap(), "Intake");
+    }
+
+    #[test]
+    fn initial_status_research_is_hypothesis() {
+        assert_eq!(research_workflow().initial_status().unwrap(), "Hypothesis");
+    }
+
+    #[test]
+    fn initial_status_event_is_ideas() {
+        assert_eq!(event_workflow().initial_status().unwrap(), "Ideas");
+    }
+
+    #[test]
+    fn workflow_for_type_maps_new_domains() {
+        use crate::models::ProjectType;
+        assert_eq!(
+            workflow_for_type(&ProjectType::Legal).workflow_type,
+            WorkflowType::Legal
+        );
+        assert_eq!(
+            workflow_for_type(&ProjectType::Research).workflow_type,
+            WorkflowType::Research
+        );
+        assert_eq!(
+            workflow_for_type(&ProjectType::Event).workflow_type,
+            WorkflowType::Event
+        );
+    }
+
+    #[test]
+    fn legal_review_can_revise_or_close() {
+        let wf = legal_workflow();
+        assert!(wf.validate_transition("Review", "Closed").is_ok());
+        assert!(wf.validate_transition("Review", "Drafting").is_ok());
+        // Skipping a stage is not allowed under the linear matter lifecycle.
+        assert!(wf.validate_transition("Intake", "Closed").is_err());
     }
 
     #[test]

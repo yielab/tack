@@ -1,8 +1,8 @@
 # Tack Project Status
 
-**Last updated:** 2026-06-11
+**Last updated:** 2026-06-25
 **Version:** 2.0.0
-**Positioning:** Local-first, single-binary project management for solo devs and tiny crews.
+**Positioning:** Local-first, single-binary, AI-agent-ready project management for solo devs and tiny crews.
 
 ---
 
@@ -11,8 +11,10 @@
 | Component | Status | Notes |
 | --- | --- | --- |
 | Backend API | ✅ Working | REST endpoints, Axum + SQLite, 17 migrations |
-| Domain logic | ✅ Working | Workflow engine, vocabulary, dependency DAG |
-| Frontend SPA | ✅ Working | Board, List, Sprint, Calendar, Timeline (all interactive) |
+| Domain logic | ✅ Working | Workflow engine, vocabulary, dependency DAG; 10 project-type presets (incl. legal, research, event) |
+| Frontend SPA | ✅ Working | Board, List, Table, Sprint, Calendar, Timeline (all interactive) |
+| Table view | ✅ Working | Editable grid: inline-edit title/status/priority/assignee/due, sort, filter, column show/hide |
+| MCP server | ✅ Working | `tack mcp` — stdio JSON-RPC for AI agents; 8 tools (list/search/read + create/update/move/comment); writes go through the API so workflow rules apply |
 | WebSocket | ✅ Working | Live board updates via `/api/projects/{id}/boards/live` |
 | File attachments | ✅ Working | Multipart upload, up to 50 MB |
 | FTS5 search | ✅ Working | Per-project + global |
@@ -25,7 +27,7 @@
 | Sprint view | ✅ Working | Two-pane backlog ↔ sprint planning; capacity + burndown per lane |
 | Calendar/Timeline | ✅ Working | Fully interactive — drag to reschedule items |
 | Assignee field | ✅ Working | `assignee: Option<String>` on Item, filter support |
-| CLI | ✅ Working | HTTP client; projects, items, sprints, templates, roles, comments, custom fields, backup/restore; `--json` everywhere; shell completions |
+| CLI | ✅ Working | HTTP client; projects, items, sprints, templates, roles, comments, custom fields, backup/restore, `branch` (git branch from item), `mcp`; `--json` everywhere; shell completions |
 | CI pipeline | ✅ Done | GitHub Actions: fmt + clippy + test + frontend build |
 | CORS restrictions | ✅ Done | Allow-list via `TACK_ALLOWED_ORIGINS` |
 | Body size limits | ✅ Done | 2 MB global, 50 MB upload route |

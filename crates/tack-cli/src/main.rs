@@ -4,6 +4,7 @@ use serde_json::json;
 
 use tack_cli::client::TackClient;
 use tack_cli::config::{self, Config};
+use tack_cli::git;
 use tack_cli::vocab;
 
 // ─── CLI structure ────────────────────────────────────────────────────────────
@@ -37,7 +38,7 @@ enum Commands {
     Init {
         /// Project name
         name: String,
-        /// Project type (software, web, mobile, construction, personal, homework, maintenance, custom)
+        /// Project type (software, web, mobile, construction, personal, homework, maintenance, legal, research, event, custom)
         #[arg(short = 't', long, default_value = "software")]
         r#type: String,
         /// Optional description
@@ -121,6 +122,24 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+
+    /// Derive a git branch name from an item (and optionally create it)
+    Branch {
+        /// Item ID
+        id: String,
+        /// Create and switch to the branch (runs `git checkout -b`)
+        #[arg(short, long)]
+        checkout: bool,
+        /// Override the type-derived prefix (e.g. `hotfix`, `wip`)
+        #[arg(long)]
+        prefix: Option<String>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Run a Model Context Protocol (MCP) server over stdio for AI agents
+    Mcp,
 
     /// Search items
     Search {
@@ -273,7 +292,7 @@ enum SprintAction {
 enum TemplateAction {
     /// List available templates
     List {
-        /// Filter by project type (software, web, mobile, construction, personal, homework, maintenance, custom)
+        /// Filter by project type (software, web, mobile, construction, personal, homework, maintenance, legal, research, event, custom)
         #[arg(short = 't', long)]
         project_type: Option<String>,
         /// Output raw JSON
@@ -516,6 +535,15 @@ fn main() -> anyhow::Result<()> {
         Commands::Move { id, status, json } => cmd_move(&client, id, status, json),
 
         Commands::Board { project, json } => cmd_board(&client, project, json),
+
+        Commands::Branch {
+            id,
+            checkout,
+            prefix,
+            json,
+        } => cmd_branch(&client, id, checkout, prefix, json),
+
+        Commands::Mcp => tack_cli::mcp::run(&client),
 
         Commands::Search {
             query,
@@ -814,6 +842,58 @@ fn cmd_move(client: &TackClient, id: String, status: String, as_json: bool) -> a
         return Ok(());
     }
     println!("Moved {}: → {status}", &id[..8.min(id.len())]);
+    Ok(())
+}
+
+fn cmd_branch(
+    client: &TackClient,
+    id: String,
+    checkout: bool,
+    prefix: Option<String>,
+    as_json: bool,
+) -> anyhow::Result<()> {
+    let resp = client.get(&format!("/items/{id}"))?;
+    let item = resp.get("item").unwrap_or(&resp);
+
+    let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("");
+    let item_type = item
+        .get("item_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("task");
+    // The server echoes the canonical id; fall back to the user-supplied one.
+    let item_id = item.get("id").and_then(|v| v.as_str()).unwrap_or(&id);
+
+    let branch = git::branch_name(item_type, item_id, title, prefix.as_deref());
+
+    if checkout {
+        let status = std::process::Command::new("git")
+            .args(["checkout", "-b", &branch])
+            .status()
+            .map_err(|e| anyhow::anyhow!("failed to run git: {e}"))?;
+        if !status.success() {
+            anyhow::bail!("git checkout -b {branch} failed");
+        }
+    }
+
+    if as_json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "branch": branch,
+                "item_id": item_id,
+                "checked_out": checkout,
+            }))?
+        );
+        return Ok(());
+    }
+
+    if checkout {
+        println!("Switched to a new branch '{branch}'");
+    } else {
+        // Print the command so it can be eval'd or copy-pasted; the bare branch
+        // name goes to stderr context-free for scripting via the last word.
+        println!("git checkout -b {branch}");
+    }
     Ok(())
 }
 
