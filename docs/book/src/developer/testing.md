@@ -1,6 +1,8 @@
 # Testing
 
-Tack's test suite is structured as a pyramid: fast pure-function tests at the base, integration tests in the middle, handler tests and CLI tests at the top. All 133 tests run with a single command and require no external services.
+Tack's test suite is structured as a pyramid: fast pure-function tests at the base, integration tests in the middle, handler tests and CLI tests at the top. All 207 Rust tests run with a single command and require no external services.
+
+> **Scope of this page.** This chapter explains how to *write and run* the Rust tests, crate by crate. For the full cross-cutting test strategy — including the Playwright end-to-end suite, the k6 load baseline, the security audits, and the CI gate matrix — see [`docs/TESTING.md`](../../../TESTING.md), the authoritative testing reference. Counts here are kept in sync with `cargo test --workspace`.
 
 ---
 
@@ -8,11 +10,13 @@ Tack's test suite is structured as a pyramid: fast pure-function tests at the ba
 
 | Crate | Count | Kind | Speed |
 |---|---|---|---|
-| `tack-core` | 67 | Unit — pure functions, zero I/O | Very fast |
-| `tack-db` | 22 + 1 ignored | Integration — in-memory SQLite | Fast |
-| `tack-api` | 33 | Handler — in-memory SQLite + Axum | Fast |
-| `tack-cli` | 11 | Contract — `wiremock` mock server | Fast |
-| **Total** | **133** | | |
+| `tack-core` | 73 | Unit — pure functions, zero I/O | Very fast |
+| `tack-db` | 23 + 1 ignored | Integration — in-memory SQLite | Fast |
+| `tack-api` | 82 | Handler + Alexa + unit — in-memory SQLite + Axum | Fast |
+| `tack-cli` | 29 | Contract — `wiremock` mock server + unit | Fast |
+| **Total** | **207** (+1 ignored perf) | | |
+
+The frontend adds **168 Vitest unit tests** (`cd frontend && npm test`) plus a cross-browser **Playwright** end-to-end suite (`make e2e`) that boots an isolated API and the SPA. The `tack-api` count includes 38 handler integration tests (`api_test.rs`), 17 Alexa endpoint tests (`alexa_test.rs`), and the crate's inline unit tests.
 
 ---
 
@@ -281,7 +285,9 @@ Because `TackClient` uses `reqwest::blocking`, tests wrap the call in `tokio::ta
 
 GitHub Actions runs the following on every push to `develop`:
 
-1. **`cargo test --workspace`** — all 133 tests (excluding the ignored perf test).
+1. **`cargo test --workspace`** — all 207 tests (excluding the ignored perf test).
 2. **embed-spa job** — builds the frontend with `npm run build`, then runs `cargo test -p tack-api --features embed-spa` to verify the SPA embedding and the additional handler tests that require a built frontend.
+3. **frontend job** — `npm run type-check`, `npm test` (Vitest), and `npm run build`.
+4. **quality gates** — `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, the Playwright accessibility scan (axe, WCAG AA), and a bundle-size budget.
 
-The performance test (`list_items_p95`) is not run in CI. Run it locally when profiling query performance.
+The performance test (`list_items_p95`) is not run in CI. Run it locally when profiling query performance. See [`docs/TESTING.md`](../../../TESTING.md) for the complete CI gate matrix and the load/security suites.

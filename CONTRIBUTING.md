@@ -4,7 +4,7 @@
 
 ```bash
 git clone https://github.com/yielab/tack.git
-cd Tack
+cd tack
 
 # Activate the pre-push hook — runs fmt + clippy before every push
 git config core.hooksPath .githooks
@@ -53,7 +53,7 @@ Tack/
 │   ├── tack-db/              # Database layer
 │   │   ├── src/
 │   │   │   ├── lib.rs          # Pool initialization, WAL mode
-│   │   │   ├── migrations.rs   # 16 schema migrations (auto-run on startup)
+│   │   │   ├── migrations.rs   # 18 schema migrations (auto-run on startup)
 │   │   │   ├── repo.rs         # Repository struct
 │   │   │   └── repo/           # One file per entity
 │   │   │       ├── projects.rs
@@ -89,6 +89,7 @@ Tack/
 │   │   │       ├── dependencies.rs
 │   │   │       ├── export.rs           # JSON/CSV export + import
 │   │   │       ├── import_github.rs    # GitHub Issues import
+│   │   │       ├── import_linear.rs    # Linear import
 │   │   │       ├── items.rs
 │   │   │       ├── projects.rs
 │   │   │       ├── roles.rs
@@ -98,7 +99,7 @@ Tack/
 │   │   │       └── websocket.rs
 │   │   └── tests/
 │   │       ├── common/mod.rs       # test_app(), test_app_with_config()
-│   │       ├── api_test.rs         # 36 handler integration tests
+│   │       ├── api_test.rs         # 38 handler integration tests
 │   │       └── alexa_test.rs       # 17 Alexa endpoint tests
 │   └── tack-cli/             # clap CLI (talks to API over HTTP)
 │       └── src/
@@ -147,16 +148,16 @@ cargo build --release          # Release build (optimized, ~10 MB binary)
 cargo build -p tack-core     # Build only one crate
 
 # ─── Testing ─────────────────────────────────────
-cargo test --workspace         # Run all 164 tests
-cargo test -p tack-core      # Test core (67 unit tests)
-cargo test -p tack-db        # Test DB layer (22 integration tests)
-cargo test -p tack-api       # Test API (64 tests)
-cargo test -p tack-cli       # Test CLI (11 tests)
+cargo test --workspace         # Run all 207 tests
+cargo test -p tack-core      # Test core (73 unit tests)
+cargo test -p tack-db        # Test DB layer (23 integration tests)
+cargo test -p tack-api       # Test API (82 tests)
+cargo test -p tack-cli       # Test CLI (29 tests)
 cargo test test_workflow        # Run tests matching a name
 cargo test -- --nocapture      # Show println! output during tests
 
 # Frontend tests
-cd frontend && npm test         # 144 Vitest unit tests
+cd frontend && npm test         # 168 Vitest unit tests
 
 # ─── Running ─────────────────────────────────────
 cargo run -p tack-cli -- serve              # Start the API server

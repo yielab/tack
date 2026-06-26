@@ -3,6 +3,12 @@
 Tack is a single process with no external service dependencies. The deployment model is
 intentionally minimal: copy a binary, point it at a directory, run it.
 
+> This page covers the single-binary, systemd, and reverse-proxy models. For
+> **Docker / docker-compose**, the full environment-variable table, and production
+> hardening, see the standalone [Deployment Guide](../../../DEPLOYMENT-GUIDE.md).
+> For tokens, CORS, webhooks, and cloud backup, see
+> [Administration & Security](../user-guide/administration.md).
+
 ---
 
 ## Single-Binary Deployment (Recommended)

@@ -4,6 +4,11 @@
 Run `tack` with no arguments (or `tack serve`) to start the server + web UI;
 run `tack <command>` to use the CLI.
 
+The CLI is an alternative to the web UI — reach for it when you want to script
+Tack, wire it into automation or CI, or work without leaving the terminal. It is
+also how you create a git branch straight from an item (`tack branch`) and run the
+[MCP server](../../../MCP.md) for AI agents.
+
 The CLI commands below talk to a running server over HTTP, so start the server
 first (`tack serve`) — all client commands require it to be reachable.
 
@@ -37,7 +42,7 @@ tack completions fish  > ~/.config/fish/completions/tack.fish
 # Create a project
 tack init "Kitchen Reno" --type construction
 
-# Types: software · web · mobile · construction · personal · homework · maintenance · custom
+# Types: software · web · mobile · construction · personal · homework · maintenance · legal · research · event · custom
 ```
 
 ---
@@ -206,7 +211,7 @@ workflow rules still apply.
 tack mcp
 ```
 
-See the [MCP guide](../../MCP.md) for the Claude Code `.mcp.json` snippet and the
+See the [MCP guide](../../../MCP.md) for the Claude Code `.mcp.json` snippet and the
 full tool reference.
 
 ---

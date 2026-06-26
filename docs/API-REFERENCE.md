@@ -1,10 +1,14 @@
 # Tack API Reference
 
-**Version:** 1.2
+**Tack version:** 0.1.0-beta.6
 **Base URL:** `http://localhost:3210/api`
-**WebSocket URL:** `ws://localhost:3210/api/projects/{id}/board/live`
+**WebSocket URL:** `ws://localhost:3210/api/projects/{id}/boards/live`
 
-**Total Endpoints:** 54 (34 in v1.0 + 20 in v1.2)
+**Total endpoints:** 68 REST + 1 WebSocket
+
+> This is the canonical, request/response-level API reference. The mdBook page
+> [Developer → API Reference](book/src/developer/api-reference.md) is a shorter
+> endpoint summary that links here for full schemas.
 
 ---
 
@@ -33,9 +37,17 @@
 
 ## Authentication
 
-**Current Status:** No authentication required (solo/small team focus).
+Authentication is **optional and off by default** (solo/small-team focus). When the
+server is started with `TACK_API_TOKEN` set, every `/api/*` route except
+`GET /api/health` and `POST /api/alexa` requires a matching bearer token:
 
-Future versions may add optional authentication for multi-workspace deployments.
+```http
+Authorization: Bearer <token>
+```
+
+Requests with a missing or wrong token receive `401 Unauthorized`. There are no
+per-user accounts — all clients share the single token. See
+[Administration & Security](book/src/user-guide/administration.md) for setup.
 
 ---
 
@@ -198,7 +210,7 @@ Content-Type: application/json
 ### WebSocket Connection (Real-time Updates)
 
 ```javascript
-const ws = new WebSocket('ws://localhost:3210/api/projects/{id}/board/live');
+const ws = new WebSocket('ws://localhost:3210/api/projects/{id}/boards/live');
 
 ws.onmessage = (event) => {
   const boardEvent = JSON.parse(event.data);
@@ -1057,7 +1069,7 @@ GET /api/boards/{id}/view
 
 ```javascript
 const projectId = '550e8400-e29b-41d4-a716-446655440000';
-const ws = new WebSocket(`ws://localhost:3210/api/projects/${projectId}/board/live`);
+const ws = new WebSocket(`ws://localhost:3210/api/projects/${projectId}/boards/live`);
 
 ws.onopen = () => console.log('Connected');
 ws.onerror = (error) => console.error('WebSocket error:', error);

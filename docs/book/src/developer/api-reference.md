@@ -3,7 +3,7 @@
 **Base URL:** `http://127.0.0.1:3210/api`  
 **WebSocket:** `ws://127.0.0.1:3210/api/projects/{id}/boards/live`
 
-The full endpoint reference lives in [docs/API-REFERENCE.md](../../API-REFERENCE.md). This
+The full endpoint reference lives in [docs/API-REFERENCE.md](../../../API-REFERENCE.md). This
 page summarizes the endpoint surface for quick orientation.
 
 ---
@@ -136,6 +136,20 @@ Authorization: Bearer <token>
 | `GET` | `/health` | `{"status":"ok","version":"…","migrations_applied":N}` |
 | `GET` | `/debug/info` | Build info, config summary |
 | `GET` | `/debug/db-stats` | Table row counts |
+
+### Integrations & operations
+
+Import, export, backup, settings, and the Alexa endpoint round out the surface to
+**68 REST endpoints + 1 WebSocket**. They are documented with full request/response
+schemas in the canonical [API Reference](../../../API-REFERENCE.md):
+
+| Group | Paths |
+|---|---|
+| Import | `POST /projects/{id}/import-github`, `POST /projects/{id}/import-linear`, `POST /projects/import` |
+| Export | `GET /projects/{id}/export?format=json\|yaml\|csv` |
+| Backup | `GET /backup`, `POST /restore`, `POST/GET /backup/remote`, `POST /backup/remote/restore` |
+| Settings | `GET/PUT /settings/backup` |
+| Voice | `POST /alexa` |
 
 ---
 

@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current version:** 2.0.0  
+**Current version:** 0.1.0-beta.6  
 **Status:** All thirteen engineering phases complete, plus competitive/growth phases
 20 (MCP server), 22 (dev-native CLI), 23 (Table view), and 24 (positioning & presets).
 The product is feature-complete for the solo-dev / small-team use case; remaining work
@@ -551,17 +551,17 @@ reuse the existing round-trip ID remapping. Golden-file test for lossless round-
 #### Task 2 — Offline-capable PWA (spike) ✅ _done_
 
 Time-boxed spike: evaluate a service-worker + IndexedDB cache over the SolidJS SPA, and
-whether CRDT sync is worth it vs the WebSocket model. Output `docs/LOCAL-FIRST-SPIKE.md`
-with a go/no-go recommendation — not an implementation.
+whether CRDT sync is worth it vs the WebSocket model. Produce a go/no-go recommendation —
+not an implementation.
 
-> Shipped: [docs/LOCAL-FIRST-SPIKE.md](../../LOCAL-FIRST-SPIKE.md). Recommendation:
+> Spike complete. Recommendation:
 > **NO-GO on CRDT sync** (misaligned with the single-writer/small-team model);
 > **conditional-go, low-priority on a read-only offline PWA**; the YAML round-trip
 > (Task 1) already captures the high-value, low-cost part of the trend.
 
 #### Acceptance criteria
 
-- YAML export→edit→import round-trips losslessly; `docs/LOCAL-FIRST-SPIKE.md` carries a
+- YAML export→edit→import round-trips losslessly; the offline-PWA spike reached a
   clear go/no-go.
 
 ### Future / Optional
@@ -588,7 +588,7 @@ No current plans. The SPA is responsive on mobile browsers; no native app and no
 
 | Area | Gap |
 |---|---|
-| Frontend tests | 144 Vitest unit tests; Playwright E2E deferred |
+| Coverage reporting | 168 Vitest unit tests and a Playwright E2E suite ship; automated coverage thresholds in CI are not yet enforced |
 | Custom field validation | `validation` rules enforced (pattern, min/max, min/max_length, max_items); full JSON Schema not supported |
 | Auth | No multi-user auth (by design for v1) |
 
@@ -596,6 +596,6 @@ No current plans. The SPA is responsive on mobile browsers; no native app and no
 
 ## Contributing
 
-See [CONTRIBUTING.md](../../CONTRIBUTING.md) for code style, PR process, and how to add new
+See [CONTRIBUTING.md](../../../CONTRIBUTING.md) for code style, PR process, and how to add new
 features. The [Adding Features](developer/adding-features.md) guide walks through the
 three most common extension patterns.
