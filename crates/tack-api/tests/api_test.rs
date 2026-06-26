@@ -1288,7 +1288,10 @@ async fn export_yaml_round_trips_through_import() {
     let bytes = to_bytes(res.into_body(), 131072).await.unwrap();
     let yaml = String::from_utf8(bytes.to_vec()).unwrap();
     // It must be YAML (block mappings), not JSON braces.
-    assert!(yaml.contains("project:") && yaml.contains("items:"), "got: {yaml}");
+    assert!(
+        yaml.contains("project:") && yaml.contains("items:"),
+        "got: {yaml}"
+    );
     let parsed: serde_json::Value = serde_yaml::from_str(&yaml).unwrap();
     assert_eq!(parsed["items"].as_array().unwrap().len(), 1);
 
@@ -1326,7 +1329,11 @@ async fn export_yaml_round_trips_through_import() {
         .unwrap();
     let bytes = to_bytes(res.into_body(), 131072).await.unwrap();
     let items: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(items.as_array().unwrap().len(), 1, "imported items: {items}");
+    assert_eq!(
+        items.as_array().unwrap().len(),
+        1,
+        "imported items: {items}"
+    );
 }
 
 // ─── GitHub push sync (Phase 21) ───────────────────────────────────────────────
@@ -1397,7 +1404,10 @@ async fn github_import_links_items_then_completion_pushes_close() {
         .unwrap();
     let bytes = to_bytes(res.into_body(), 131072).await.unwrap();
     let items: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    let item_id = items.as_array().unwrap()[0]["id"].as_str().unwrap().to_string();
+    let item_id = items.as_array().unwrap()[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // Move it to Done → fires a best-effort close to GitHub.
     let res = app
@@ -1427,5 +1437,8 @@ async fn github_import_links_items_then_completion_pushes_close() {
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
-    assert!(closed, "expected a PATCH closing GitHub issue #42 after completion");
+    assert!(
+        closed,
+        "expected a PATCH closing GitHub issue #42 after completion"
+    );
 }

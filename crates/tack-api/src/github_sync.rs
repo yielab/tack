@@ -79,7 +79,9 @@ mod tests {
             .and(path("/repos/acme/widgets/issues/42"))
             .and(header("authorization", "Bearer tok-123"))
             .and(body_json(serde_json::json!({ "state": "closed" })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "number": 42 })))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "number": 42 })),
+            )
             .expect(1)
             .mount(&server)
             .await;

@@ -107,7 +107,11 @@ pub async fn import_github(
     let mut rate_limit_remaining: Option<u64> = None;
     let mut page = 1u32;
 
-    let api_base = state.config.github_api_base.trim_end_matches('/').to_string();
+    let api_base = state
+        .config
+        .github_api_base
+        .trim_end_matches('/')
+        .to_string();
 
     loop {
         let url = format!(
