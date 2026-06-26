@@ -107,9 +107,11 @@ pub async fn import_github(
     let mut rate_limit_remaining: Option<u64> = None;
     let mut page = 1u32;
 
+    let api_base = state.config.github_api_base.trim_end_matches('/').to_string();
+
     loop {
         let url = format!(
-            "https://api.github.com/repos/{owner}/{repo_name}/issues\
+            "{api_base}/repos/{owner}/{repo_name}/issues\
              ?state={gh_state}&per_page=100&page={page}"
         );
 
@@ -208,7 +210,19 @@ pub async fn import_github(
             };
 
             match state.repo.create_item(project_id, &status, data).await {
-                Ok(_) => created += 1,
+                Ok(created_item) => {
+                    created += 1;
+                    // Link the new item to its issue so status changes can be
+                    // pushed back to GitHub (Phase 21). Best-effort.
+                    let repo_full = format!("{owner}/{repo_name}");
+                    if let Err(e) = state
+                        .repo
+                        .set_github_link(created_item.id, &repo_full, issue.number as i64)
+                        .await
+                    {
+                        tracing::warn!(issue = issue.number, error = %e, "Failed to link imported issue");
+                    }
+                }
                 Err(e) => {
                     tracing::warn!(
                         issue = issue.number,

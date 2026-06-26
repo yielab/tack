@@ -358,11 +358,25 @@ Add a README feature bullet and a `CHANGELOG.md` entry.
 - Unit test the JSON-RPC tool dispatch; integration-test writes against an in-memory server.
 - A new user can wire Tack into Claude Code in under 5 minutes from `docs/MCP.md`.
 
-### Phase 21 — Bi-Directional GitHub Sync
+### Phase 21 — Bi-Directional GitHub Sync ⏳ _v1 push-only shipped; inbound + comments pending_
 
 **Goal:** Upgrade the existing one-way GitHub _import_ into two-way _sync_ so item
 status/comments/close-state mirror back to GitHub — closing the biggest "real work" gap
 vs Huly. Scope per decision #2.
+
+> **v1 shipped (push-only, status):** imported items are linked in a `github_links`
+> table; completing a linked item closes its GitHub issue (reopening on the way back
+> out) when `TACK_GITHUB_TOKEN` is set. Best-effort/fire-and-forget. Pieces:
+> migration 018, `repo/github_links.rs`, `github_sync.rs` (`push_issue_state` +
+> `state_change`), the `maybe_sync_github` hook in `handlers/items.rs`, and import
+> linking. `TACK_GITHUB_API_BASE` makes import+push testable/Enterprise-ready. Tests:
+> wiremock push (3), link round-trip, and a full import→complete→close integration
+> test — all against a **mocked** GitHub (no real repo touched). Decision recorded in
+> [docs/GITHUB-SYNC.md](../../GITHUB-SYNC.md).
+>
+> **Still pending (future slices):** Task 1 comments-mirroring, Task 4 inbound sync
+> (webhook/poll), per-project tokens + manual item linking, and a real-repo live test.
+> The task notes below describe the _full_ bi-directional vision.
 
 #### Task 1 — Spec the sync model
 

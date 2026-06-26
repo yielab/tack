@@ -36,6 +36,7 @@ pub async fn run_all(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         ("015_item_assignee", &MIGRATION_015[..]),
         ("016_perf_indexes", &MIGRATION_016[..]),
         ("017_app_meta", &MIGRATION_017[..]),
+        ("018_github_links", &MIGRATION_018[..]),
     ];
 
     for (name, statements) in migrations {
@@ -323,4 +324,15 @@ const MIGRATION_017: [&str; 1] = [
     // config edited from the UI). Created IF NOT EXISTS because install_id may have
     // lazily created it on an older install.
     "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)",
+];
+
+const MIGRATION_018: [&str; 1] = [
+    // Links a Tack item to a GitHub issue for push-only status sync (Phase 21).
+    // One issue per item; removed automatically when the item is deleted.
+    "CREATE TABLE IF NOT EXISTS github_links (
+        item_id TEXT PRIMARY KEY NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        repo TEXT NOT NULL,
+        issue_number INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )",
 ];

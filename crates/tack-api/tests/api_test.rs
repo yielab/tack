@@ -1328,3 +1328,104 @@ async fn export_yaml_round_trips_through_import() {
     let items: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(items.as_array().unwrap().len(), 1, "imported items: {items}");
 }
+
+// ─── GitHub push sync (Phase 21) ───────────────────────────────────────────────
+
+#[tokio::test]
+async fn github_import_links_items_then_completion_pushes_close() {
+    use axum::body::to_bytes;
+    use wiremock::matchers::{body_json, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let gh = MockServer::start().await;
+
+    // GitHub issues list returns one open issue (#42).
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/widgets/issues"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            {
+                "number": 42, "title": "Fix the thing", "body": "", "state": "open",
+                "labels": [], "assignee": null,
+                "html_url": "https://github.com/acme/widgets/issues/42"
+            }
+        ])))
+        .mount(&gh)
+        .await;
+
+    // The close we expect once the item is completed.
+    Mock::given(method("PATCH"))
+        .and(path("/repos/acme/widgets/issues/42"))
+        .and(body_json(serde_json::json!({ "state": "closed" })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "number": 42 })))
+        .mount(&gh)
+        .await;
+
+    let config = AppConfig {
+        github_token: Some("tok".into()),
+        github_api_base: gh.uri(),
+        ..AppConfig::default()
+    };
+    let (app, _) = common::test_app_with_config(config).await;
+    let pid = make_project(&app).await;
+
+    // Import → creates one item linked to issue #42.
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/projects/{pid}/import-github"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"repo":"acme/widgets"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // Grab the imported item.
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/projects/{pid}/items"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(res.into_body(), 131072).await.unwrap();
+    let items: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let item_id = items.as_array().unwrap()[0]["id"].as_str().unwrap().to_string();
+
+    // Move it to Done → fires a best-effort close to GitHub.
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/items/{item_id}"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"status":"Done"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // The push is fire-and-forget; poll the mock until the PATCH to #42 arrives.
+    let mut closed = false;
+    for _ in 0..40 {
+        let reqs = gh.received_requests().await.unwrap_or_default();
+        if reqs
+            .iter()
+            .any(|r| r.url.path() == "/repos/acme/widgets/issues/42")
+        {
+            closed = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(closed, "expected a PATCH closing GitHub issue #42 after completion");
+}

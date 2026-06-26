@@ -51,6 +51,17 @@ pub struct AppConfig {
     #[serde(default)]
     pub webhook_secret: Option<String>,
 
+    /// Optional GitHub personal access token (`repo` scope). When set, item
+    /// status changes are pushed back to linked GitHub issues (Phase 21,
+    /// push-only). Never logged.
+    #[serde(default)]
+    pub github_token: Option<String>,
+
+    /// GitHub API base URL. Override for GitHub Enterprise or to point tests at
+    /// a mock server. Defaults to `https://api.github.com`.
+    #[serde(default = "default_github_api_base")]
+    pub github_api_base: String,
+
     // ── Remote backup (S3-compatible object storage) ──────────────────────────
     /// S3-compatible endpoint URL. Omit for AWS S3; set for R2/B2/MinIO.
     /// Example: `https://<account>.r2.cloudflarestorage.com`
@@ -102,6 +113,8 @@ impl Default for AppConfig {
             alexa_skill_id: None,
             webhook_url: None,
             webhook_secret: None,
+            github_token: None,
+            github_api_base: default_github_api_base(),
             backup_endpoint: None,
             backup_bucket: None,
             backup_region: default_backup_region(),
@@ -114,6 +127,9 @@ impl Default for AppConfig {
     }
 }
 
+fn default_github_api_base() -> String {
+    "https://api.github.com".into()
+}
 fn default_host() -> String {
     "127.0.0.1".into()
 }
@@ -233,6 +249,16 @@ impl AppConfig {
             && !v.is_empty()
         {
             config.webhook_secret = Some(v);
+        }
+        if let Ok(v) = std::env::var("TACK_GITHUB_TOKEN")
+            && !v.is_empty()
+        {
+            config.github_token = Some(v);
+        }
+        if let Ok(v) = std::env::var("TACK_GITHUB_API_BASE")
+            && !v.is_empty()
+        {
+            config.github_api_base = v;
         }
         if let Ok(v) = std::env::var("TACK_BACKUP_ENDPOINT")
             && !v.is_empty()
