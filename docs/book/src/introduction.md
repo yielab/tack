@@ -41,8 +41,8 @@ Four terms recur throughout this documentation:
 ## Keeping docs current
 
 These docs live alongside the code in `docs/book/src/`. Every push to `develop` runs
-`mdbook build` and `mdbook test` in CI — code examples in the book are compiled and executed
-as tests. If an API changes and a doc example stops compiling, the build fails.
+`mdbook build` in CI (with a broken-link check). If the book fails to build, CI fails,
+so structural drift is caught before it merges.
 
 For prose changes (user-facing descriptions, learning explanations), update the relevant
 `.md` file in the same PR as your code change. The "Edit this page" link at the top of each

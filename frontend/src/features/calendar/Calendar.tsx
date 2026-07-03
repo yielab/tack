@@ -4,7 +4,8 @@ import { api } from '../../shared/api';
 import { Button, EmptyState } from '../../shared/ui';
 import { toast } from '../../shared/ui/toast';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
-import type { Item } from '../../shared/types';
+import { priorityColor } from '../../shared/ui/PriorityDot';
+import type { Item, Priority } from '../../shared/types';
 
 export default function Calendar() {
   const params = useParams();
@@ -44,15 +45,10 @@ export default function Calendar() {
 
   const unscheduledItems = createMemo(() => (items() || []).filter(i => !i.due_date));
 
-  const getPriorityStyle = (priority: string) => {
-    switch (priority) {
-      case 'critical': return { 'background-color': '#ef4444', color: 'var(--color-text-inverse)' };
-      case 'high':     return { 'background-color': '#f97316', color: 'var(--color-text-inverse)' };
-      case 'medium':   return { 'background-color': '#eab308', color: 'var(--color-text-inverse)' };
-      case 'low':      return { 'background-color': '#22c55e', color: 'var(--color-text-inverse)' };
-      default:         return { 'background-color': 'var(--color-border-medium)', color: 'var(--color-text-inverse)' };
-    }
-  };
+  const getPriorityStyle = (priority: string) => ({
+    'background-color': priorityColor(priority as Priority),
+    color: 'var(--color-text-inverse)',
+  });
 
   const isToday = (day: number) => {
     const t = new Date();
@@ -311,14 +307,14 @@ export default function Calendar() {
           >
             <div class="flex flex-wrap gap-4">
               <For each={[
-                { label: 'Critical', color: '#ef4444' },
-                { label: 'High',     color: '#f97316' },
-                { label: 'Medium',   color: '#eab308' },
-                { label: 'Low',      color: '#22c55e' },
-              ]}>
+                { label: 'Critical', priority: 'critical' },
+                { label: 'High',     priority: 'high' },
+                { label: 'Medium',   priority: 'medium' },
+                { label: 'Low',      priority: 'low' },
+              ] as const}>
                 {(p) => (
                   <div class="flex items-center gap-2">
-                    <div class="w-3 h-3 rounded" style={{ 'background-color': p.color }} />
+                    <div class="w-3 h-3 rounded" style={{ 'background-color': priorityColor(p.priority) }} />
                     <span class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{p.label}</span>
                   </div>
                 )}

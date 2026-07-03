@@ -4,11 +4,19 @@
 **Base URL:** `http://localhost:3210/api`
 **WebSocket URL:** `ws://localhost:3210/api/projects/{id}/boards/live`
 
-**Total endpoints:** 68 REST + 1 WebSocket
-
-> This is the canonical, request/response-level API reference. The mdBook page
-> [Developer → API Reference](book/src/developer/api-reference.md) is a shorter
-> endpoint summary that links here for full schemas.
+> ## The source of truth is the OpenAPI spec, not this file
+>
+> The authoritative, always-current contract is the machine-generated OpenAPI 3.1
+> document — served live at **`GET /api/openapi.json`** and checked into the repo at
+> **[`docs/openapi.json`](openapi.json)** (68 REST operations across 43 paths + 1
+> WebSocket). It is generated from the handler annotations and gated in CI, so it
+> cannot silently drift from the code.
+>
+> **This document is a hand-written companion** — narrative, auth model, and
+> copy-paste `curl` examples. Exact field names, status codes, and request/response
+> shapes may lag the code; when they disagree, **the spec wins**. Load
+> `docs/openapi.json` into any OpenAPI viewer (Redocly / Scalar / Swagger Editor) for
+> the exhaustive, verified schemas.
 
 ---
 
@@ -25,9 +33,9 @@
 9. [Comments](#comments)
 10. [Search](#search)
 11. [Export/Import](#exportimport)
-12. **[NEW v1.2]** [Templates](#templates)
-13. **[NEW v1.2]** [Custom Fields](#custom-fields)
-14. **[NEW v1.2]** [Multiple Boards](#multiple-boards)
+12. [Templates](#templates)
+13. [Custom Fields](#custom-fields)
+14. [Multiple Boards](#multiple-boards)
 15. [WebSocket Events](#websocket-events)
 16. [Alexa Voice Integration](#alexa-voice-integration)
 17. [Remote Cloud Backup](#remote-cloud-backup)
@@ -1317,9 +1325,13 @@ For production deployments, consider adding rate limiting at the reverse proxy l
 
 ## CORS
 
-**Current Status:** CORS enabled for all origins (development mode)
+CORS is controlled by `TACK_ALLOWED_ORIGINS` — a comma-separated allow-list of
+origins permitted to call the API from a browser. It defaults to
+`localhost:8080,127.0.0.1:8080`.
 
-For production, configure `TACK_CORS_ORIGIN` environment variable to restrict origins.
+The bundled SPA is served **same-origin** by the same binary, so it does not need
+CORS configured at all. `TACK_ALLOWED_ORIGINS` only matters when a *separate-origin*
+browser client calls the API. (There is no `TACK_CORS_ORIGIN` variable.)
 
 ---
 
@@ -1340,11 +1352,14 @@ GET /api/health
 **Response:**
 ```json
 {
-  "status": "healthy",
-  "version": "1.0.0",
-  "uptime_seconds": 86400
+  "status": "ok",
+  "version": "0.1.0-beta.7",
+  "migrations_applied": 18
 }
 ```
+
+`version` is the running binary's `CARGO_PKG_VERSION`; `migrations_applied` is the
+number of rows in the `_migrations` table (i.e. how many schema migrations have run).
 
 ---
 

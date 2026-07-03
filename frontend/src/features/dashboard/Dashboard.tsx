@@ -3,6 +3,7 @@ import { useParams, useNavigate } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { useProject } from '../../shared/state/projectContext';
 import { computeDashboardStats } from './computeStats';
+import { useVocab } from '../../shared/vocab/useVocab';
 import { Button, EmptyState } from '../../shared/ui';
 
 export default function Dashboard() {
@@ -11,6 +12,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   const { project } = useProject();
+  const { t } = useVocab();
   const [items] = createResource(() => api.items.list(projectId));
 
   // Computed statistics (pure aggregation in computeStats.ts).
@@ -231,7 +233,7 @@ export default function Dashboard() {
           {/* Story Points Progress */}
           <Show when={stats().totalEstimate > 0}>
             <div class="rounded-lg p-6" style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
-              <h2 class="text-xl font-bold mb-4" style={{ color: 'var(--color-text-primary)' }}>Story Points Progress</h2>
+              <h2 class="text-xl font-bold mb-4" style={{ color: 'var(--color-text-primary)' }}>{t('story_points')} Progress</h2>
               <div class="space-y-4">
                 <div class="flex items-center justify-between">
                   <span class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Total Points</span>

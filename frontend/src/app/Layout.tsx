@@ -12,6 +12,7 @@ import { getLastLens } from '../shared/state/lastView';
 import CreateItemModal from '../shared/ui/CreateItemModal';
 import CreateProjectModal from '../features/projects/CreateProjectModal';
 import { useProject } from '../shared/state/projectContext';
+import { useVocab } from '../shared/vocab/useVocab';
 
 const ItemDetailDrawer = lazy(() => import('../features/item-detail/ItemDetailDrawer'));
 
@@ -24,13 +25,17 @@ const VIEW_LABELS: Record<string, string> = {
   overview: 'Overview', settings: 'Settings',
 };
 
+// Views whose document-title label comes from the project vocabulary.
+const VOCAB_VIEW_KEYS: Record<string, string> = { sprint: 'sprint' };
+
 /** Inner layout — needs router context, so lives inside ProjectProvider. */
 const LayoutInner: Component<LayoutProps> = (props) => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const params = useParams();
   const location = useLocation();
-  const { project } = useProject();
+  const { project, vocabulary } = useProject();
+  const { t } = useVocab();
 
   const projectId = () => params.id as string | undefined;
 
@@ -46,7 +51,8 @@ const LayoutInner: Component<LayoutProps> = (props) => {
 
     let title = 'Tack';
     if (proj && view) {
-      title = `${proj.name} — ${VIEW_LABELS[view]} · Tack`;
+      const viewLabel = VOCAB_VIEW_KEYS[view] ? t(VOCAB_VIEW_KEYS[view]) : VIEW_LABELS[view];
+      title = `${proj.name} — ${viewLabel} · Tack`;
     } else if (proj) {
       title = `${proj.name} · Tack`;
     } else if (path.startsWith('/templates')) {
@@ -88,7 +94,7 @@ const LayoutInner: Component<LayoutProps> = (props) => {
         { id: 'go-table',     label: 'Work → Table',      icon: '▦',  group: 'Go to', action: () => navigate(`/projects/${pid}/table`) },
         { id: 'go-calendar',  label: 'Work → Calendar',   icon: '📅', group: 'Go to', action: () => navigate(`/projects/${pid}/calendar`) },
         { id: 'go-timeline',  label: 'Work → Timeline',   icon: '📊', group: 'Go to', action: () => navigate(`/projects/${pid}/timeline`) },
-        { id: 'go-sprint',    label: 'Work → Sprint',     icon: '🏃', group: 'Go to', action: () => navigate(`/projects/${pid}/sprint`) },
+        { id: 'go-sprint',    label: `Work → ${t('sprint')}`, icon: '🏃', group: 'Go to', action: () => navigate(`/projects/${pid}/sprint`) },
         { id: 'go-overview',  label: 'Overview',          icon: '📈', group: 'Go to', action: () => navigate(`/projects/${pid}/overview`) },
         { id: 'go-settings',  label: 'Project Settings',  icon: '⚙️', group: 'Go to', action: () => navigate(`/projects/${pid}/settings`) },
       );
@@ -183,6 +189,7 @@ const LayoutInner: Component<LayoutProps> = (props) => {
           onClose={() => setShowNewItem(false)}
           onSuccess={() => setShowNewItem(false)}
           projectId={projectId()!}
+          vocabulary={vocabulary()}
         />
       </Show>
       <Show when={showNewProject()}>

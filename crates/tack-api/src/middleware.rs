@@ -21,6 +21,12 @@ pub async fn require_token(
         return Ok(next.run(req).await);
     }
 
+    // The OpenAPI contract is public documentation — readable without a token so
+    // tooling (codegen, docs) can fetch it.
+    if req.uri().path().ends_with("/openapi.json") {
+        return Ok(next.run(req).await);
+    }
+
     // Alexa cannot attach Authorization headers; /api/alexa authenticates
     // itself by verifying the configured skill ID inside the handler.
     if req.uri().path().ends_with("/alexa") {

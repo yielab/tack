@@ -1,144 +1,68 @@
-// Single source of frontend DTOs mirroring the backend.
+// Frontend DTO surface.
+//
+// The backend DTOs below are DERIVED from the machine-generated OpenAPI schema
+// (`src/shared/api/schema.gen.ts`, produced by `npm run gen:api` from
+// `docs/openapi.json`). They therefore cannot silently drift from the Rust API:
+// if a handler's request/response shape changes, `gen:api` regenerates the
+// schema and any incompatible usage fails `type-check` in CI.
+//
+// Only genuinely frontend-internal shapes that have no 1:1 backend schema stay
+// hand-written here:
+//   - `BoardState` / `BoardColumn` — the *derived* Kanban view built client-side
+//     by `deriveBoard()` (the backend has no single "board state" response).
+//   - `BoardEvent` — the WebSocket event union (WS frames aren't in the REST spec).
+//   - the template-builder shapes (`TemplateCustomField`, `TemplateBoardConfig`,
+//     `CreateTemplate`) — the editor's working model, which is looser than the
+//     backend's `CreateProjectTemplate` body.
+
+import type { components } from '../api/schema.gen';
+
+type Schemas = components['schemas'];
 
 // ─── Projects ──────────────────────────────────────────────────────────────
 
-export interface Project {
-  id: string;
-  workspace_id: string;
-  name: string;
-  description?: string;
-  project_type: ProjectType;
-  vocabulary: Record<string, string>;
-  workflow: WorkflowConfig;
-  created_at: string;
-  updated_at: string;
-  archived: boolean;
-}
-
-export type ProjectType =
-  | 'software'
-  | 'web'
-  | 'mobile'
-  | 'construction'
-  | 'personal'
-  | 'homework'
-  | 'maintenance'
-  | 'legal'
-  | 'research'
-  | 'event'
-  | 'custom';
-
-export interface WorkflowConfig {
-  workflow_type: string;
-  statuses: WorkflowStatus[];
-  transitions?: Array<{ from: string; to: string }>;
-}
-
-export interface WorkflowStatus {
-  name: string;
-  category: 'todo' | 'in_progress' | 'done';
-  wip_limit?: number;
-  order: number;
-}
-
-export interface UpdateProject {
-  name?: string;
-  description?: string;
-  vocabulary?: Record<string, string>;
-  workflow?: WorkflowConfig;
-  archived?: boolean;
-}
-
-export interface CreateProject {
-  name: string;
-  description?: string;
-  /** Selects the default workflow and vocabulary. Required by the API. */
-  project_type: ProjectType;
-  /** Optional named template to seed from. */
-  template?: string;
-}
+export type Project = Schemas['Project'];
+export type ProjectType = Schemas['ProjectType'];
+export type WorkflowConfig = Schemas['WorkflowConfig'];
+export type WorkflowType = Schemas['WorkflowType'];
+export type StatusCategory = Schemas['StatusCategory'];
+/** A single workflow status column (`StatusDef` in the backend schema). */
+export type WorkflowStatus = Schemas['StatusDef'];
+export type UpdateProject = Schemas['UpdateProject'];
+export type CreateProject = Schemas['CreateProject'];
 
 // ─── Items ─────────────────────────────────────────────────────────────────
 
-export interface Item {
-  id: string;
-  project_id: string;
-  parent_id?: string;
-  title: string;
-  description?: string;
-  item_type: ItemType;
-  status: string;
-  priority: Priority;
-  estimate?: number;
-  estimate_unit: EstimateUnit;
-  tags: string[];
-  sort_order: number;
-  sprint_id?: string;
-  assignee?: string;
-  due_date?: string;
-  started_at?: string;
-  completed_at?: string;
-  created_at: string;
-  updated_at: string;
-}
+export type Item = Schemas['Item'];
 
-export type ItemType =
-  | 'epic'
-  | 'feature'
-  | 'task'
-  | 'subtask'
-  | 'bug'
-  | 'requirement'
-  | { custom: string };
+/**
+ * Paginated envelope returned by `GET /api/projects/:id/items` (`PaginatedItems`
+ * in the backend schema). Clients page through `total` items using
+ * `page`/`per_page` so large projects are never silently truncated.
+ */
+export type ItemPage = Schemas['PaginatedItems'];
 
-export type Priority = 'critical' | 'high' | 'medium' | 'low' | 'none';
+/** Detail envelope for `GET /api/items/:id` (item + roles + dependencies). */
+export type ItemDetail = Schemas['ItemDetail'];
 
-export type EstimateUnit = 'story_points' | 'hours' | 'days' | 'custom';
+export type ItemType = Schemas['ItemType'];
+export type Priority = Schemas['Priority'];
+export type EstimateUnit = Schemas['EstimateUnit'];
 
-export interface CreateItem {
-  title: string;
-  description?: string;
-  item_type: ItemType;
-  status?: string;
-  priority?: Priority;
-  estimate?: number;
-  estimate_unit?: EstimateUnit;
-  tags?: string[];
-  parent_id?: string;
-  sprint_id?: string;
-  due_date?: string;
-}
-
-export interface UpdateItem {
-  title?: string;
-  description?: string;
-  status?: string;
-  priority?: Priority;
-  estimate?: number;
-  tags?: string[];
-  parent_id?: string;
-  sprint_id?: string | null;
-  assignee?: string | null;
-  due_date?: string | null;
-}
+// NB: the backend `CreateItem` has **no `status`** (creates land in the first
+// workflow column) and **does** accept `assignee` — both reconciled here by
+// deriving from the spec. `UpdateItem` likewise has no `parent_id` (re-parenting
+// via PATCH is not supported by the API — see List.tsx).
+export type CreateItem = Schemas['CreateItem'];
+export type UpdateItem = Schemas['UpdateItem'];
 
 // ─── Sprints ───────────────────────────────────────────────────────────────
 
-export interface Sprint {
-  id: string;
-  project_id: string;
-  name: string;
-  goal?: string;
-  start_date?: string;
-  end_date?: string;
-  status: SprintStatus;
-  created_at: string;
-  updated_at: string;
-}
+export type Sprint = Schemas['Sprint'];
+export type SprintStatus = Schemas['SprintStatus'];
+export type CreateSprint = Schemas['CreateSprint'];
 
-export type SprintStatus = 'planning' | 'active' | 'review' | 'closed';
-
-// ─── Board ─────────────────────────────────────────────────────────────────
+// ─── Board (frontend-derived, not a backend response) ──────────────────────
 
 export interface BoardState {
   columns: BoardColumn[];
@@ -147,58 +71,30 @@ export interface BoardState {
 export interface BoardColumn {
   status: string;
   items: Item[];
-  wip_limit?: number;
+  wip_limit?: number | null;
   wip_exceeded: boolean;
 }
 
 // ─── Custom fields (definitions) ───────────────────────────────────────────
 
-export type CustomFieldType =
-  | 'text'
-  | 'long_text'
-  | 'number'
-  | 'date'
-  | 'boolean'
-  | 'select'
-  | 'multi_select'
-  | 'url'
-  | 'email';
-
-export interface CustomField {
-  id: string;
-  project_id: string;
-  name: string;
-  field_type: CustomFieldType; // Fixed: strict union instead of string
-  description: string | null;
-  required: boolean;
-  default_value: unknown;
-  options: string[] | null;
-  validation: unknown;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreateCustomField {
-  name: string;
-  field_type: CustomFieldType; // Fixed: strict union instead of string
-  description?: string | null;
-  required?: boolean;
-  options?: string[] | null; // Fixed: added null
-}
-
-export interface UpdateCustomField {
-  name?: string;
-  field_type?: CustomFieldType; // Fixed: strict union instead of string
-  description?: string | null;
-  required?: boolean;
-  options?: string[] | null; // Fixed: added null
-}
+export type CustomFieldType = Schemas['CustomFieldType'];
+/** Field definition (`CustomFieldDefinition` in the backend schema). */
+export type CustomField = Schemas['CustomFieldDefinition'];
+export type CreateCustomField = Schemas['CreateCustomField'];
+export type UpdateCustomField = Schemas['UpdateCustomField'];
+export type CustomFieldValue = Schemas['CustomFieldValue'];
 
 // ─── Project templates ─────────────────────────────────────────────────────
 
+export type ProjectTemplate = Schemas['ProjectTemplate'];
+export type CreateProjectFromTemplate = Schemas['CreateProjectFromTemplate'];
+
+// The template *builder* keeps its own looser working shapes. These feed the
+// `POST /custom-templates` body (backend `CreateProjectTemplate`); the editor
+// carries extra UI-only conveniences (e.g. `collapsed`) not sent to the API.
 export interface TemplateCustomField {
   name: string;
-  field_type: CustomFieldType; // Fixed: strict union instead of string
+  field_type: CustomFieldType;
   description?: string | null;
   required?: boolean;
   options?: string[] | null;
@@ -217,119 +113,43 @@ export interface TemplateBoardConfig {
   is_default?: boolean;
 }
 
-export interface ProjectTemplate {
-  id: string;
-  name: string;
-  description: string | null;
-  project_type: ProjectType; // Fixed: explicit type parity
-  vocabulary: Record<string, string> | null;
-  workflow: WorkflowConfig | null;
-  custom_fields: TemplateCustomField[] | null;
-  default_boards: TemplateBoardConfig[] | null;
-  is_builtin: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface CreateTemplate {
   name: string;
   description?: string | null;
-  project_type: ProjectType; // Fixed: explicit type parity
+  project_type: ProjectType;
   vocabulary?: Record<string, string> | null;
   workflow?: WorkflowConfig | null;
   custom_fields?: TemplateCustomField[] | null;
   default_boards?: TemplateBoardConfig[] | null;
 }
 
-export interface CreateProjectFromTemplate {
-  name: string;
-  description?: string | null;
-}
-
 // ─── Comments ──────────────────────────────────────────────────────────────
 
-export type CommentType = 'comment' | 'status_change' | 'edit' | 'system';
-
-export interface Comment {
-  id: string;
-  item_id: string;
-  author: string | null;
-  content: string;
-  comment_type: CommentType;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreateComment {
-  content: string;
-  author?: string;
-}
+export type CommentType = Schemas['CommentType'];
+export type Comment = Schemas['Comment'];
+export type CreateComment = Schemas['CreateComment'];
 
 // ─── Dependencies ──────────────────────────────────────────────────────────
 
-export type DependencyType =
-  | 'blocks'
-  | 'is_blocked_by'
-  | 'relates_to'
-  | 'duplicates';
-
-export interface Dependency {
-  id: string;
-  source_item_id: string;
-  target_item_id: string;
-  dependency_type: DependencyType;
-  created_at: string;
-}
-
-export interface CreateDependency {
-  target_item_id: string;
-  dependency_type: DependencyType;
-}
+export type DependencyType = Schemas['DependencyType'];
+export type Dependency = Schemas['Dependency'];
+export type CreateDependency = Schemas['CreateDependency'];
 
 // ─── Roles / specialties ───────────────────────────────────────────────────
 
-export interface Role {
-  id: string;
-  project_id: string;
-  name: string;
-  color: string;
-  icon: string | null;
-  created_at: string;
-}
-
-export interface CreateRole {
-  name: string;
-  color?: string;
-  icon?: string | null; // Fixed: added null
-}
+export type Role = Schemas['Role'];
+export type CreateRole = Schemas['CreateRole'];
 
 // ─── Attachments ───────────────────────────────────────────────────────────
 
-export interface Attachment {
-  id: string;
-  item_id: string;
-  filename: string;
-  mime_type: string;
-  storage_path: string;
-  size_bytes: number;
-  uploaded_at: string;
-}
-
-// ─── Custom field values (per item) ────────────────────────────────────────
-
-export interface CustomFieldValue {
-  id: string;
-  item_id: string;
-  field_id: string;
-  value: unknown;
-  created_at: string;
-  updated_at: string;
-}
+export type Attachment = Schemas['Attachment'];
 
 // ─── Realtime board events (WebSocket) ─────────────────────────────────────
 //
 // Mirrors `BoardEvent` in crates/tack-api/src/handlers/websocket.rs, which is
-// serialized with `#[serde(tag = "type", rename_all = "snake_case")]`.
+// serialized with `#[serde(tag = "type", rename_all = "snake_case")]`. The
+// WebSocket frames are not part of the REST OpenAPI document, so this union
+// stays hand-written.
 
 export type BoardEvent =
   | { type: 'item_created'; project_id: string; item_id: string; status: string }

@@ -1,10 +1,26 @@
 # Roadmap
 
-**Current version:** 0.1.0-beta.6  
+**Current version:** 0.1.0-beta.6 (unreleased work pending → `v0.1.0-beta.7`)  
 **Status:** All thirteen engineering phases complete, plus competitive/growth phases
-20 (MCP server), 22 (dev-native CLI), 23 (Table view), and 24 (positioning & presets).
-The product is feature-complete for the solo-dev / small-team use case; remaining work
-(Phase 21 GitHub sync, Phase 25 local-first) is additive and gated — see **Planned** below.
+20 (MCP server), 22 (dev-native CLI), 23 (Table view), 24 (positioning & presets),
+and 25 (local-first). A full-repo audit (July 2026) produced the **audit-driven
+Phases 26–32**, which are now **implemented and verified green** (244 Rust tests,
+169 Vitest, clippy clean, frontend builds) — see the status board below. The work
+is staged for release as `v0.1.0-beta.7`.
+
+## Audit-driven cycle (Phases 26–32) — status board
+
+| Phase | Title | Status | Deferred within phase |
+|---|---|---|---|
+| 26 | Correctness Hotfix | ✅ Done | — (release cut/tag itself pending) |
+| 27 | Security Hardening | ✅ Done | 27.1 shipped a shared-secret Alexa gate instead of full X.509 cert-chain validation (size-budget trade-off, documented) |
+| 28 | Backup → Sync v2 | ✅ Done (28.1–28.5) | 28.6 client-side bundle encryption — deliberately deferred (crypto-dep size cost) |
+| 29 | Contract-First API | ✅ Done (29.1, 29.3–29.6) | 29.2 partial: pagination + error-envelope shipped; full handler response-typing + 201/204 normalization still pending (~20 endpoints still return ad-hoc JSON, modeled as `Object` in the spec) |
+| 30 | Vocabulary & Nav | ✅ Done | — |
+| 31 | Construction Verticals | ✅ Done | — |
+| 32 | Enterprise OSS Standards | ✅ Done (32.1–32.5) | 32.6 binary-size guard (tokio `full` trim, feature-gate `object_store`, CI size gate) not started; retroactive git tags for beta.1–5 pending |
+
+**Still open after this cycle:** Phase 21 inbound GitHub sync (webhook/poll + comment mirroring); the four deferred sub-tasks above (28.6, 29.2 typing, 32.6, historical tags). Everything else in 26–32 is code-complete and tested.
 
 ---
 
@@ -564,6 +580,526 @@ not an implementation.
 - YAML export→edit→import round-trips losslessly; the offline-PWA spike reached a
   clear go/no-go.
 
+## Next — Audit-Driven Phases 26–32 (July 2026)
+
+A four-track parallel audit (backend/security, frontend/UX, docs/OSS standards,
+backup-sync/API contracts) of the full repo produced these phases. They are ordered
+by risk: **Phase 26 is a release blocker** (two shipped UI features silently lose
+data); 27 closes security holes; 28–32 are quality/growth. Every task carries file
+paths and acceptance criteria so it can be dispatched cold to an agent.
+
+**Headline audit findings (evidence, not opinion):**
+
+| # | Finding | Where | Severity |
+|---|---------|-------|----------|
+| 1 | `update_item` has **no UPDATE branch for `sprint_id`, `due_date`, `estimate_unit`** — drag-to-sprint (`Sprints.tsx:191`) and due-date edits (`ItemHeader.tsx:133`) are silent no-ops that vanish on refresh | `crates/tack-db/src/repo/items.rs:179-262` | Critical |
+| 2 | `started_at`/`completed_at` are **never set on ordinary status moves** (only in parent auto-propagation) — due-soon webhooks keep firing for completed items; cycle-time data is never populated; contradicts CLAUDE.md | `crates/tack-db/src/repo/items.rs:202-208` vs `:401` | Critical |
+| 3 | Alexa endpoint authenticates by **skill-ID + timestamp only — no Amazon cert-chain/signature validation**; skill IDs are not secret, so the endpoint is forgeable when enabled | `crates/tack-api/src/handlers/alexa.rs:368-384` | High |
+| 4 | No warning when binding non-loopback with no `TACK_API_TOKEN` — unauthenticated read/write API + DB download exposed | `crates/tack-api/src/server.rs:104-108`, `middleware.rs:30-33` | High |
+| 5 | `PRAGMA foreign_keys=ON` runs on **one pooled connection**; the other 4 enforce nothing — advertised referential integrity is best-effort | `crates/tack-db/src/lib.rs:24` | High |
+| 6 | Backup restore: **tar path traversal** (`attachments/../../…` escapes staging), `db_sha256` **never verified**, stale `-wal`/`-shm` not removed (corruption risk at recovery time), swap can strand an empty DB | `crates/tack-api/src/remote_backup.rs:461-471`, `server.rs:183-218` | High |
+| 7 | **S3 secret key + install_id ride inside every backup bundle** (they live in `app_meta`, which `VACUUM INTO` snapshots) — exfiltratable via `GET /api/backup`; restore clones another install's identity | `crates/tack-api/src/handlers/settings.rs` + backup flow | High |
+| 8 | Backup **scheduler reads env config only** — UI-saved settings (Settings → Cloud Backup) are ignored by scheduled runs; split-brain destinations | `crates/tack-api/src/server.rs:229-239` vs `effective_backup_config()` | High |
+| 9 | Linear import interpolates `team_id`/`project_id` **unescaped into GraphQL** (cursor is sanitized; these aren't) | `crates/tack-api/src/handlers/import_linear.rs:303-312` | Medium |
+| 10 | Vocabulary promise half-kept: global "+ New" modal ignores project vocabulary; Sprints view, WorkTabs, command palette, first-run guide hardcode "sprint"/"Story Points" | `frontend/src/app/Layout.tsx:181`, `features/sprints/Sprints.tsx`, `shared/ui/WorkTabs.tsx:11` | High (product) |
+| 11 | Breadcrumb broken for Table + Sprints views (stale `tree` key, `sprints` vs `/sprint` mismatch); Table view missing from the sidebar entirely | `frontend/src/shared/ui/Breadcrumb.tsx:5-10`, `Sidebar.tsx:165-170` | Medium |
+| 12 | `docs/API-REFERENCE.md` ("canonical") drifts from `router.rs` in 8+ places; `docs/DEPLOYMENT-GUIDE.md` documents a **Docker/compose setup that does not exist in the repo** | docs | High (trust) |
+| 13 | No API contract artifact (no OpenAPI/schema); DTOs triple-maintained by hand (Rust ⇄ TS types ⇄ test mocks); two incompatible error JSON shapes; item lists silently truncate at 100 in the UI | `crates/tack-api/src/handlers/*`, `frontend/src/types/` | High (SDD) |
+| 14 | Releases ship unsigned (no checksums/SBOM/provenance); SECURITY.md routes disclosure through **public** issues; no CoC; MSRV claim (1.75+) not enforced anywhere | `.github/workflows/release.yml`, `SECURITY.md` | Medium |
+
+**What the audit confirmed is genuinely strong (keep, don't churn):** pure
+`tack-core` reused identically by REST/CLI/MCP/Alexa; centralized `CoreError→HTTP`
+mapping; disciplined parameterized SQL; constant-time token compare + write-only
+secrets; ~82 KB gzip total frontend JS with per-route lazy loading; aggressive
+release profile (10.3 MiB binary); 6-job CI with bundle-size, design-token, and
+axe gates. The architecture is **not overengineered** — the two size wins available
+are trimming `tokio = "full"` features and feature-gating `object_store`.
+
+### Phase 26 — Correctness Hotfix ✅ _done_ (release blocker → cut `v0.1.0-beta.7`)
+
+**Goal:** No shipped surface silently loses user data. Everything here is small,
+sequential-free, and must land before any other phase ships.
+
+#### Task 26.1 — Persist the missing `update_item` fields
+
+In [repo/items.rs](../../../crates/tack-db/src/repo/items.rs) add UPDATE branches for
+`sprint_id`, `due_date`, `estimate_unit`. Support **null-clears** (the frontend
+already sends `null` to clear): switch the Rust `UpdateItem` fields in
+[models.rs](../../../crates/tack-core/src/models.rs) to double-`Option`
+(`#[serde(default, with = "::serde_with::rust::double_option")]`) so "absent" ≠
+"set to null", and thread through the handler. Regression tests: PATCH sprint
+assignment persists across a re-fetch; PATCH `due_date: null` clears it.
+
+#### Task 26.2 — Set `started_at` / `completed_at` on status transitions
+
+In the item-update path, when the target status category becomes in-progress and
+`started_at` is NULL → set it; when it becomes done → set `completed_at`; when it
+leaves done → clear `completed_at`. This fixes `list_items_due_soon`
+([items.rs:157](../../../crates/tack-db/src/repo/items.rs)) firing webhooks for
+completed items. Assert both timestamps in tests (none exist today — that's why
+this shipped broken).
+
+#### Task 26.3 — Enforce foreign keys on every pooled connection
+
+Replace the one-off `PRAGMA foreign_keys=ON` ([lib.rs:24](../../../crates/tack-db/src/lib.rs))
+with `SqliteConnectOptions::foreign_keys(true)` (or `after_connect`). Add a test that
+an orphaning insert actually rejects.
+
+#### Task 26.4 — Fix broken frontend navigation
+
+[Breadcrumb.tsx](../../../frontend/src/shared/ui/Breadcrumb.tsx): drop stale `tree`,
+add `table` + `sprint` keys, fix the `sprints`/`/sprint` mismatch. Add the Table
+lens to [Sidebar.tsx](../../../frontend/src/shared/ui/Sidebar.tsx). Pick one label
+("Sprints") across WorkTabs / Sidebar / Breadcrumb / document title.
+
+#### Task 26.5 — Alexa create path must validate
+
+`add_task` in [alexa.rs](../../../crates/tack-api/src/handlers/alexa.rs) builds
+`CreateItem` and skips `.validate()` — the only mutation path that does. Add it.
+
+#### Task 26.6 — Cut the release
+
+Add the pending UI-redesign + WCAG entries to `CHANGELOG.md [Unreleased]`
+(commits `536d959`, `bef2771` are undocumented), fold in 26.1–26.5, tag
+`v0.1.0-beta.7`. The Unreleased section currently holds ~10 shipped features —
+that backlog is itself a cadence bug.
+
+**Acceptance:** drag an item into a sprint, refresh — it's still there. Set and
+clear a due date — persists. Complete an item — `completed_at` set, no due-soon
+webhook. `cargo test --workspace` includes new regressions for every fix.
+
+### Phase 27 — Security Hardening ✅ _done_
+
+**Goal:** Safe-by-default for a tool that invites `TACK_HOST=0.0.0.0` + a public
+S3 bucket. Independent tasks; parallelize freely.
+
+> Shipped. Note: 27.1 landed a **mandatory shared-secret gate**
+> (`TACK_ALEXA_SHARED_SECRET`, constant-time compared, passed via the skill
+> endpoint URL) rather than full Amazon `SignatureCertChainUrl` X.509/RSA
+> verification — the pure-Rust cert stack was judged too heavy for the ~10 MB
+> binary budget. Documented in [docs/ALEXA.md](../../ALEXA.md). All other tasks
+> (exposed-bind warning, tar-slip rejection, sha256 + format_version restore
+> verification, secret-scrubbed bundles, Linear GraphQL escaping, validation
+> stragglers) shipped as specified.
+
+#### Task 27.1 — Alexa request signature validation
+
+Implement Amazon's required `SignatureCertChainUrl` + `Signature` validation
+(cert-chain URL allow-list `https://s3.amazonaws.com/echo.api/…`, chain verification,
+SAN check for `echo.api`, body-hash compare) in
+[alexa.rs](../../../crates/tack-api/src/handlers/alexa.rs), keeping the existing
+skill-ID + timestamp checks. If the cert dependency is deemed too heavy for the
+binary budget, the fallback is a mandatory shared-secret query param documented in
+`docs/ALEXA.md` — but say so explicitly; today's check is forgeable by anyone who
+knows the (non-secret) skill ID.
+
+#### Task 27.2 — Refuse/warn on exposed unauthenticated bind
+
+In [server.rs](../../../crates/tack-api/src/server.rs): if the bind host is
+non-loopback and `api_token` is `None`, log a prominent warning at startup (and
+consider requiring `TACK_INSECURE_NO_AUTH=1` to proceed). Also stop returning
+`database_url` from `/api/debug/info` ([debug.rs:40](../../../crates/tack-api/src/handlers/debug.rs)).
+
+#### Task 27.3 — Sanitize tar extraction
+
+In `parse_bundle` ([remote_backup.rs:461-471](../../../crates/tack-api/src/remote_backup.rs)):
+reject any entry whose path contains `..`/absolute components (mirror
+`tar::Entry::unpack_in` semantics). Test with a malicious bundle fixture.
+
+#### Task 27.4 — Verify backup integrity on restore
+
+`stage_restore` must verify `db_sha256` and `format_version` from the manifest
+before staging (both are computed at backup time and ignored at restore time).
+Reject mismatches with a clear 409. ~15 lines + tests.
+
+#### Task 27.5 — Escape Linear GraphQL filter fields
+
+Apply the cursor-style sanitization to `team_id`/`project_id` in
+[import_linear.rs:303-312](../../../crates/tack-api/src/handlers/import_linear.rs);
+add the injection test that exists for cursors but not for these.
+
+#### Task 27.6 — Keep secrets out of backup bundles
+
+Strip (or re-key) `app_meta.backup_config` and `install_id` from the `VACUUM INTO`
+snapshot — the S3 secret currently ships inside every local download and remote
+bundle, and restoring clones the source install's identity. Simplest: after
+snapshotting to the temp file, open it and `DELETE FROM app_meta WHERE key IN (…)`;
+on restore, regenerate `install_id`.
+
+#### Task 27.7 — Validation stragglers
+
+Add `validator` derives + `.validate()` calls to `GitHubImportRequest`,
+`LinearImportRequest`, board create/update, `UpdateSprintStatus`,
+`CreateProjectFromTemplate`, and `UpdateBackupSettings` (retention ≥ 1,
+interval ≥ 60 — today `retention: 0` deletes the backup you just made and
+`interval_secs: 0` panics the scheduler task).
+
+**Acceptance:** a forged Alexa POST with a known skill ID is rejected; a bundle
+with `attachments/../../x` fails restore; a tampered bundle fails the sha check;
+`retention=0` returns 422; startup on `0.0.0.0` without a token screams.
+
+### Phase 28 — Backup → Sync v2 (safe personal multi-device) ✅ _done (28.1–28.5); 28.6 deferred_
+
+**Goal:** Upgrade snapshot replication into a **trustworthy** "one active writer,
+last upload wins" sync across a user's machines — without building CRDTs (Phase 25
+spike already ruled that out). Depends on 27.3/27.4/27.6.
+
+> Shipped: generation-counter conflict detection (persisted in `app_meta`, no
+> migration), scheduler honoring runtime UI settings, fail-safe restore swap
+> (stale `-wal`/`-shm` cleanup, rollback-on-failure, backup-before-restore),
+> sidecar-first + `put_multipart` uploads with orphan reconciliation, a
+> `POST /api/backup/remote/verify` preview endpoint wired into the Settings panel,
+> and migration-version parity on the local restore path. **28.6 (client-side
+> bundle encryption) is deferred** — it would add a crypto dependency against the
+> binary-size budget; a `// TODO(phase-28.6)` marks the hook and
+> [DEPLOYMENT-GUIDE.md](../../DEPLOYMENT-GUIDE.md) documents the interim guidance
+> (private bucket + provider-side encryption-at-rest).
+
+#### Task 28.1 — Scheduler honors runtime (UI) settings
+
+`run_scheduled_backup` ([server.rs:229-239](../../../crates/tack-api/src/server.rs))
+must call `effective_backup_config()` each tick instead of captured env config —
+today UI-configured backups never schedule, and UI-overridden buckets are silently
+ignored by the scheduler. Set `MissedTickBehavior::Delay` while there.
+
+#### Task 28.2 — Generation counter + conflict detection
+
+Add a monotonically increasing `generation` in `app_meta`, bumped on every write
+transaction batch (or per-backup), recorded in the manifest. On **upload**: if the
+remote head manifest has `generation` ≥ local and a different `install_id`, return
+a 409 with both manifests ("another device has uploaded newer work — restore first
+or force"). On **restore**: if local `generation` > snapshot's, require
+`{"force": true}`. This is the single biggest missing piece for sync semantics.
+
+#### Task 28.3 — Fail-safe restore swap
+
+Make `apply_staged_restore` transactional-ish: delete stale `-wal`/`-shm` files,
+roll back to `.bak` if any rename in the sequence fails (today a half-failed swap
+boots a brand-new empty DB), keep one timestamped `.bak` generation, and clear
+pre-existing `.restore` staging dirs before unpacking (they currently merge across
+attempts). Auto-snapshot to the remote (if configured) before staging — "backup
+before restore".
+
+#### Task 28.4 — Upload robustness
+
+Upload the sidecar manifest **before** the bundle (or reconcile orphans in
+`prune`) — today a failed sidecar PUT leaks an invisible, unprunable bundle
+forever. Use `object_store::put_multipart` for bundles over ~32 MB instead of
+building everything in RAM (bundle creation currently holds DB + all attachments +
+tar + zstd output simultaneously).
+
+#### Task 28.5 — Restore preview + local-path parity
+
+`POST /api/backup/remote/verify` (download + sha + version check, no staging) and
+surface it in Settings → Cloud Backup as "Verify". Give the **local** `POST
+/api/restore` the same migration-version guard the remote path has (today a local
+restore of a newer-schema DB bricks startup).
+
+#### Task 28.6 — Optional bundle encryption (v2 follow-up, keep scoped)
+
+`age`-style symmetric encryption of bundles with a user passphrase stored only in
+memory/env. Explicitly out of scope if it threatens the size budget; document
+either way in `docs/DEPLOYMENT-GUIDE.md`.
+
+**Acceptance:** two installs pointed at one bucket cannot silently overwrite each
+other's newer snapshot; a mid-restore failure leaves the original DB bootable; a
+UI-only cloud config schedules backups; 500 MB of attachments backs up without
+holding it all in RAM.
+
+### Phase 29 — Contract-First API (the SDD workflow) ✅ _done (29.1, 29.3–29.6); 29.2 partial_
+
+**Goal:** One machine-readable contract, generated from the code, gating CI, and
+feeding the frontend types and the docs — making the API-REFERENCE drift class of
+bug structurally impossible. Sequence: 29.1 → 29.2 → 29.3 → (29.4 ∥ 29.5 ∥ 29.6).
+
+> Shipped: the error envelope is unified across all handlers and parsed by the
+> frontend; item lists return a `{data,total,page,per_page}` envelope (fixing the
+> silent truncation at 100) with the CLI, MCP, and SPA consumers updated;
+> **`utoipa` generates an OpenAPI 3.1 spec** (68 operations / 43 paths) served at
+> `GET /api/openapi.json` and committed to [docs/openapi.json](../../openapi.json)
+> — no bundled Swagger UI, and `ToSchema` is feature-gated so `tack-core` stays
+> pure. Two CI drift gates lock the chain **handlers → `docs/openapi.json` →
+> `frontend/src/shared/api/schema.gen.ts`** (Rust `git diff` gate + frontend
+> `gen:api` gate), so neither the spec nor the generated TS client can silently
+> diverge. Both API-reference docs now point at the spec as the source of truth
+> instead of listing endpoints by hand. **29.2 is partial:** the pagination and
+> error-envelope fixes shipped, but the broader refactor of ~59 `Json<Value>`
+> handlers to typed response DTOs and the create→201 / delete→204 normalization
+> are **not done** — ~20 endpoints are modeled as free-form `Object` in the spec
+> until their handlers return named types. That typed-response pass + a `/api/v1`
+> prefix is the batched pre-1.0 breaking change.
+
+#### Task 29.1 — Unify the error contract
+
+Migrate `handlers/backup.rs` and `handlers/settings.rs` ad-hoc `{"error": "…"}`
+tuples to the structured `ApiError` envelope
+([error.rs:85-92](../../../crates/tack-api/src/error.rs)); make the frontend's
+`toApiError` ([client.ts:62-70](../../../frontend/src/shared/api/client.ts)) parse
+it (users currently see raw JSON in error toasts).
+
+#### Task 29.2 — Type the responses
+
+Replace `Json<serde_json::Value>` returns with typed DTOs across
+`handlers/` (~59 REST handlers; the DTOs mostly already exist in `tack-core`).
+Standardize: creates → `201` + entity, deletes → `204` (they're currently split
+between `{"deleted": true}`/200 and 204 by module). Add a pagination envelope
+`{data, total, page, per_page}` to item lists — the UI silently truncates at 100
+items today because no total is returned — and thread paging through
+[api/items.ts](../../../frontend/src/shared/api/items.ts).
+
+#### Task 29.3 — Generate `openapi.json` with `utoipa`
+
+`utoipa` + `utoipa-axum` derives on DTOs/handlers (behind a feature flag in
+`tack-core` so the pure crate stays dependency-light); serve at
+`/api/openapi.json`; CI drift gate: regenerate and `git diff --exit-code` a
+committed `docs/openapi.json`. Known manual spots: multipart upload, WS endpoint,
+`ItemType::Custom` untagged enum.
+
+#### Task 29.4 — Generate the frontend types
+
+`openapi-typescript` in `frontend/scripts/`, replacing the hand-written
+`frontend/src/types/` mirrors (the audit found `CreateItem.status` sent but
+ignored, `assignee` supported but omitted). Type-check gate stays; hand-written
+types remain only for frontend-internal shapes.
+
+#### Task 29.5 — Regenerate the API docs from the spec
+
+Replace the endpoint tables in `docs/API-REFERENCE.md` and
+`docs/book/src/developer/api-reference.md` with spec-generated sections (keep the
+prose). The audit found 8+ documented endpoints that don't exist (old board routes,
+`PATCH/DELETE /sprints/{id}`, wrong role-assignment verbs, `GET /items/{id}/history`)
+and shipped endpoints that are undocumented (import-github/linear/csv, YAML export,
+save-as-template, backup/restore).
+
+#### Task 29.6 — Contract tests
+
+Point `schemathesis` (or a Rust equivalent) at the spec against the in-memory test
+app in CI; retire the hand-rolled envelope checks in `frontend/e2e/api.spec.ts`
+once redundant. `/api/v1` prefixing is **deliberately deferred** until the first
+post-1.0 breaking change; batch the 201/204 normalization (29.2) as the last
+pre-contract break.
+
+**Acceptance:** `git diff --exit-code docs/openapi.json` gates CI; frontend types
+are generated, not hand-copied; both API reference docs match `router.rs` because
+they're derived from it; error toasts show human messages.
+
+### Phase 30 — Vocabulary Integrity & Navigation Polish ✅ _done_
+
+**Goal:** The core differentiator — per-project vocabulary — holds on **every**
+surface. A construction project must never say "sprint". All frontend; parallelize
+by file.
+
+> Shipped: the global "+ New" modal, Sprints view, WorkTabs, command palette,
+> document titles, and the first-run guide all resolve per-project vocabulary;
+> breadcrumb + sidebar navigation fixed (Table lens now reachable); ~28 raw
+> priority-hex literals replaced with tokens (dark-mode/palette-correct); dead
+> deps removed; axe scans extended to five more pages; `check-tokens.sh` now also
+> catches hex in inline styles.
+
+#### Task 30.1 — Fix the global "+ New" modal
+
+[Layout.tsx:181-187](../../../frontend/src/app/Layout.tsx) renders
+`CreateItemModal` without the `vocabulary` prop (Board passes it; the global
+entry doesn't) — the type picker shows Epic/Feature/Task regardless of project.
+Resolve vocabulary from the active project context.
+
+#### Task 30.2 — Vocab-ify the Sprints view
+
+[Sprints.tsx](../../../frontend/src/features/sprints/Sprints.tsx): "Sprint
+Planning" h1, "Backlog" pane (vocab key exists: "Pending Work"), drag hints,
+toasts, "Sprint 1" placeholder — `t()` is already in scope; this is mechanical.
+Same pass: `CreateItemModal.tsx:332` "Story Points" → `t('story_points')`,
+`Dashboard.tsx:234`, `ItemHeader.tsx:138`.
+
+#### Task 30.3 — Vocab-ify the chrome
+
+WorkTabs "Sprint" tab, Sidebar "Sprints", command palette entries
+([Layout.tsx:85-103](../../../frontend/src/app/Layout.tsx)), document titles, and
+[EmptyProjectGuide.tsx:88-96](../../../frontend/src/shared/ui/EmptyProjectGuide.tsx)
+step 3 ("Plan a sprint") — the **first-run screen** a construction user sees.
+Point the guide's vocabulary link at the vocabulary tab, not `/settings`.
+
+#### Task 30.4 — Token + hygiene sweep
+
+Replace the 28 raw hex literals in inline styles (priority colors duplicated in
+`Sprints.tsx:33-38`, `Timeline.tsx:260-265,457-460`, `Calendar.tsx:49-52`) with the
+existing tokenized `priorityColor()` from
+[PriorityDot.tsx](../../../frontend/src/shared/ui/PriorityDot.tsx) — they currently
+ignore dark mode and the Clay/Graphite palettes. Extend `scripts/check-tokens.sh`
+to catch hex in `style` props. Remove dead deps `@kobalte/core` and
+`@solid-primitives/keyboard` (zero imports). Extend axe E2E scans beyond the
+current 3 pages to Table, Timeline, Calendar, Sprints, and the item drawer.
+
+**Acceptance:** `grep -ri "sprint\|story points" frontend/src --include='*.tsx'`
+returns only vocab-resolved or teaching-copy hits; a `construction` project reads
+Phase/Work Order/Effort Hours on every surface including first-run; all palettes
+render priority colors correctly in dark mode.
+
+### Phase 31 — Construction Verticals & Preset Onboarding ✅ _done_
+
+**Goal:** Make "works for building projects" concretely true for wood-frame,
+steel-frame, and SIP-panel builds — and make presets discoverable at project
+creation. The template system already carries vocabulary + workflow +
+custom-fields + boards as JSON; **no schema change, no new enum variants.**
+
+> Shipped: three seeded `BuiltinSpec` construction verticals (Wood Frame, Steel
+> Frame, SIP Panel), each with a tailored linear-plus-rework workflow and
+> build-system custom fields (stud spacing, steel grade, panel count, …); the
+> built-in seed dedup key moved from project-type to template-name so multiple
+> Construction templates coexist (backward-compatible). The New Project modal is
+> now template-first (selectable cards with a workflow + vocabulary preview and a
+> "start blank" fallback), and the Templates page type filter covers all 11 types.
+
+#### Task 31.1 — Three construction sub-preset templates
+
+Add `BuiltinSpec` entries (all `ProjectType::Construction`) in
+[templates.rs:201-260](../../../crates/tack-db/src/repo/templates.rs):
+
+- **Wood Frame Build** — Permit → Foundation → Framing → Rough-In (MEP) →
+  Insulation & Drywall → Finish → Inspect → Handover; custom fields: stud spacing
+  (select: 16"/24" o.c.), lumber grade, sheathing type, shear-wall schedule ref.
+- **Steel Frame Build** — Permit → Engineering → Fabrication → Erection →
+  Decking/MEP → Fireproofing → Inspect → Handover; custom fields: steel grade,
+  bolt spec, weld inspection class, torque log ref.
+- **SIP Panel Build** — Design/Shop Drawings → Panel Fabrication → Delivery →
+  Foundation → Panel Set → Seal & Penetrations → MEP Chases → Inspect → Handover;
+  custom fields: panel count, panel thickness, spline type, sealant spec.
+
+Each keeps the construction vocabulary base (Work Order/Phase/Inspection Point)
+with per-template workflow transitions (linear + rework loops back from Inspect).
+Unit-test seeding and workflow transition rules.
+
+#### Task 31.2 — Templates in the New Project modal
+
+[CreateProjectModal.tsx](../../../frontend/src/shared/ui/CreateProjectModal.tsx)
+currently offers a bare 11-way `<select>`; the richer Templates gallery is a
+disconnected page. Replace the type select with template cards (the
+`templateSummaryChips` preview component already exists) grouped by domain, with
+"start blank" fallback. Fix the Templates page type filter which is missing
+legal/research/event ([Templates.tsx:38-47](../../../frontend/src/pages/Templates.tsx)).
+
+#### Task 31.3 — Preset preview
+
+On template-card focus, show the workflow columns and 3 sample vocabulary mappings
+("task → Work Order") before the user commits — today the only hint is one line of
+help text.
+
+**Acceptance:** a user can create a "SIP Panel Build" project from the New Project
+dialog in two clicks, and its board shows SIP phases with SIP custom fields;
+`tack init --template` can instantiate the same from the CLI.
+
+### Phase 32 — Enterprise OSS Standards ✅ _done (32.1–32.5); 32.6 not started_
+
+**Goal:** Close the governance/integrity gaps between "excellent solo hygiene" and
+"enterprise-grade open source". All independent; ideal for parallel dispatch.
+
+> Shipped: truthful single-binary deployment docs **plus** a real `Dockerfile` +
+> `docker-compose.yml` (the old guide documented a compose setup that didn't
+> exist); release integrity in `release.yml` (SHA256SUMS, build provenance
+> attestation, CycloneDX SBOMs, `cargo auditable`); private disclosure via GitHub
+> Security Advisories; `CODE_OF_CONDUCT.md`, `GOVERNANCE.md`, PR-process +
+> branching sections in CONTRIBUTING; CI gates for MSRV (**Rust 1.85**, the
+> edition-2024 floor — the old "1.75+" claim was impossible), `cargo-llvm-cov` +
+> Vitest coverage thresholds, `cargo-deny`, and a weekly scheduled audit; and the
+> enumerated doc-staleness fixes. **32.6 (binary-size guard — trim `tokio` `full`
+> features, feature-gate `object_store`, add a CI binary-size gate) is not
+> started.** Retroactive git tags for beta.1–5 remain a manual follow-up.
+
+#### Task 32.1 — Truthful deployment docs
+
+`docs/DEPLOYMENT-GUIDE.md` leads with Docker Compose instructions **for a
+Dockerfile and compose file that do not exist in the repo**, describing the retired
+two-service architecture. Either ship a minimal `Dockerfile` (scratch/distroless +
+the static musl binary — trivially small) + compose file, or rewrite the guide
+around the single-binary + systemd + Caddy reality. Decide and do one.
+
+#### Task 32.2 — Release integrity
+
+In `.github/workflows/release.yml`: emit `SHA256SUMS`, add
+`actions/attest-build-provenance`, publish an SBOM (`cargo auditable` +
+CycloneDX; npm SBOM for the SPA). Tag every future CHANGELOG release (beta.1–5
+have entries but no tags; only beta.6 is tagged).
+
+#### Task 32.3 — Security policy & community files
+
+SECURITY.md currently tells reporters to open a **public** issue — switch to GitHub
+Security Advisories (keep email fallback `info@yielab.com`). Add
+CODE_OF_CONDUCT.md (Contributor Covenant), a PR-process/branching section in
+CONTRIBUTING.md (README promises it's there; it isn't), `.github/ISSUE_TEMPLATE/config.yml`
+with a security-contact link, and a one-paragraph GOVERNANCE.md (BDFL statement).
+
+#### Task 32.4 — MSRV + coverage gates
+
+README claims "Rust 1.75+" but nothing enforces it: set `rust-version` in the
+workspace `Cargo.toml`, add an MSRV CI job, state the bump policy. Add
+`cargo-llvm-cov` + Vitest coverage thresholds to CI (TESTING.md documents targets
+core ≥85% / db+api ≥70% with zero enforcement). Add `cargo-deny`
+(license + duplicate-dep policy) and a weekly scheduled audit run.
+
+#### Task 32.5 — Doc staleness sweep
+
+Fix the enumerated drift: introduction.md's false "`mdbook test` in CI" claim,
+TESTING.md's stale a11y-debt note + "three jobs" (there are six),
+developer/README.md "67 unit tests" → 73, API-REFERENCE CORS section
+(`TACK_CORS_ORIGIN` doesn't exist → `TACK_ALLOWED_ORIGINS`), health-response
+example shape. (The endpoint tables themselves are superseded by Phase 29.5.)
+
+#### Task 32.6 — Binary size guard
+
+Trim `tokio = { features = ["full"] }` to the used set
+(`rt-multi-thread, net, macros, signal, time, fs`); feature-gate `object_store`
+(`remote-backup` feature, on by default in releases) so minimal builds drop the
+S3 machinery; verify `regex` is actually needed at the workspace level. Add a
+binary-size gate to CI next to the existing 30 KB frontend bundle gate.
+
+**Acceptance:** release assets ship with checksums + provenance + SBOM; a security
+report can be filed privately; CI enforces MSRV + coverage + licenses; every doc
+claim spot-checked in the audit is now true.
+
+### Multi-Agent Dispatch Plan (Phases 26–32)
+
+Designed for parallel agent execution. Rules of engagement: every agent writes
+regression tests for its own fixes, runs `cargo test --workspace`, `cargo clippy`,
+and `npm run type-check` before finishing, and never touches another track's files.
+
+**Wave 1 — no interdependencies, dispatch simultaneously:**
+
+| Agent | Scope | Tasks | Primary files |
+|-------|-------|-------|---------------|
+| A1 (Rust, DB) | Item persistence hotfix | 26.1, 26.2, 26.3 | `tack-db/src/repo/items.rs`, `tack-core/src/models.rs`, `tack-db/src/lib.rs` |
+| A2 (Rust, security) | Restore integrity | 27.3, 27.4, 28.3 | `tack-api/src/remote_backup.rs`, `tack-api/src/server.rs` |
+| A3 (Rust, security) | Endpoint hardening | 27.1, 27.2, 27.5, 26.5 | `handlers/alexa.rs`, `server.rs`, `handlers/import_linear.rs` |
+| A4 (Rust, backup) | Sync correctness | 28.1, 28.4, 27.6, 27.7 | `server.rs`, `remote_backup.rs`, `handlers/settings.rs` |
+| A5 (frontend) | Nav + vocab integrity | 26.4, 30.1, 30.2, 30.3 | `Breadcrumb.tsx`, `Sidebar.tsx`, `Layout.tsx`, `Sprints.tsx` |
+| A6 (frontend) | Hygiene sweep | 30.4 | inline-style hex, dead deps, axe coverage |
+| A7 (docs/CI) | OSS standards | 32.1–32.5 | `SECURITY.md`, `CONTRIBUTING.md`, `.github/`, `docs/` |
+
+**Wave 2 — after Wave 1 merges:**
+
+| Agent | Scope | Tasks | Depends on |
+|-------|-------|-------|-----------|
+| B1 (Rust) | Error + response typing | 29.1, 29.2 | A1 (touches `handlers/`) |
+| B2 (Rust+data) | Generation-counter sync | 28.2, 28.5 | A2, A4 |
+| B3 (Rust, templates) | Construction presets | 31.1 | none (waits only to avoid `templates.rs` churn) |
+| B4 (frontend) | Template-first onboarding | 31.2, 31.3 | B3 (template data) |
+| B5 (build) | Size guard | 32.6 | A4 (feature-gating `object_store`) |
+| B6 (release) | Cut `v0.1.0-beta.7` | 26.6 | A1–A5 merged |
+
+**Wave 3 — the SDD backbone (sequential inside the track):**
+
+| Agent | Scope | Tasks | Depends on |
+|-------|-------|-------|-----------|
+| C1 (Rust) | utoipa spec + CI drift gate | 29.3 | B1 |
+| C2 (frontend) | Generated TS types | 29.4 | C1 |
+| C3 (docs) | Spec-generated API reference | 29.5 | C1 |
+| C4 (QA) | Contract tests in CI | 29.6 | C1 |
+
+**Definition of done for the whole cycle:** `v0.1.0-beta.7` tagged with all Wave 1
+fixes; a SIP-panel construction project creatable in two clicks with correct
+vocabulary end-to-end; two devices sharing a bucket cannot clobber each other;
+`openapi.json` gates CI and generates the frontend types and the API docs; release
+assets are signed and SBOM'd.
+
 ### Future / Optional
 
 #### Multi-User / Auth
@@ -586,11 +1122,17 @@ No current plans. The SPA is responsive on mobile browsers; no native app and no
 
 ## Known Gaps
 
-| Area | Gap |
-|---|---|
-| Coverage reporting | 168 Vitest unit tests and a Playwright E2E suite ship; automated coverage thresholds in CI are not yet enforced |
-| Custom field validation | `validation` rules enforced (pattern, min/max, min/max_length, max_items); full JSON Schema not supported |
-| Auth | No multi-user auth (by design for v1) |
+| Area | Gap | Tracked in |
+|---|---|---|
+| Item updates | `sprint_id` / `due_date` / `estimate_unit` not persisted by `update_item`; `started_at`/`completed_at` never set on ordinary status moves | Phase 26 (blocker) |
+| Security | Alexa endpoint lacks Amazon cert-chain validation; no warning on unauthenticated non-loopback bind; tar-slip + unverified sha256 in backup restore; S3 secret embedded in backup bundles | Phase 27 |
+| Backup as sync | No conflict detection between installs; scheduler ignores UI-saved settings; non-atomic restore swap | Phase 28 |
+| API contract | No OpenAPI spec; hand-maintained TS types and API docs have drifted from the router; two error JSON shapes; item lists truncate at 100 without a total | Phase 29 |
+| Vocabulary | Global "+ New" modal, Sprints view, tabs/palette/first-run guide hardcode "sprint"/"Story Points" | Phase 30 |
+| Coverage reporting | 168 Vitest unit tests and a Playwright E2E suite ship; automated coverage thresholds in CI are not yet enforced | Phase 32 |
+| Release integrity | No checksums/SBOM/provenance on release assets; SECURITY.md routes disclosure through public issues | Phase 32 |
+| Custom field validation | `validation` rules enforced (pattern, min/max, min/max_length, max_items); full JSON Schema not supported | Future |
+| Auth | No multi-user auth (by design for v1) | Future |
 
 ---
 

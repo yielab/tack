@@ -15,6 +15,20 @@ use crate::router::AppState;
 /// Upload a file attachment to an item.
 /// Accepts multipart/form-data with a "file" field.
 #[instrument(skip(state, multipart))]
+#[utoipa::path(
+    post,
+    path = "/api/items/{item_id}/attachments",
+    tag = "attachments",
+    params(
+        ("item_id" = Uuid, Path, description = "Item ID"),
+    ),
+    request_body(content = String, content_type = "multipart/form-data", description = "Send the binary in a `file` form field (max 50 MB)"),
+    responses(
+        (status = 200, description = "Attachment metadata", body = serde_json::Value),
+        (status = 400, description = "Missing/oversized file", body = crate::openapi::ErrorEnvelope),
+        (status = 404, description = "Item not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn upload_attachment(
     State(state): State<AppState>,
     Path(item_id): Path<Uuid>,
@@ -141,6 +155,18 @@ pub async fn upload_attachment(
 ///
 /// Download an attachment file.
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/attachments/{id}",
+    tag = "attachments",
+    params(
+        ("id" = Uuid, Path, description = "Attachment ID"),
+    ),
+    responses(
+        (status = 200, description = "Attachment file bytes", content_type = "application/octet-stream"),
+        (status = 404, description = "Attachment not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn download_attachment(
     State(state): State<AppState>,
     Path(attachment_id): Path<Uuid>,
@@ -200,6 +226,18 @@ pub async fn download_attachment(
 ///
 /// List all attachments for an item.
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/items/{item_id}/attachments",
+    tag = "attachments",
+    params(
+        ("item_id" = Uuid, Path, description = "Item ID"),
+    ),
+    responses(
+        (status = 200, description = "Attachments on the item", body = Vec<serde_json::Value>),
+        (status = 404, description = "Item not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn list_attachments(
     State(state): State<AppState>,
     Path(item_id): Path<Uuid>,
@@ -232,6 +270,18 @@ pub async fn list_attachments(
 ///
 /// Delete an attachment file.
 #[instrument(skip(state))]
+#[utoipa::path(
+    delete,
+    path = "/api/attachments/{id}",
+    tag = "attachments",
+    params(
+        ("id" = Uuid, Path, description = "Attachment ID"),
+    ),
+    responses(
+        (status = 204, description = "Attachment deleted"),
+        (status = 404, description = "Attachment not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn delete_attachment(
     State(state): State<AppState>,
     Path(attachment_id): Path<Uuid>,

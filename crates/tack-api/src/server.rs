@@ -23,6 +23,9 @@ pub async fn serve() -> anyhow::Result<()> {
     // Initialize logging/tracing
     init_tracing(&config);
 
+    // Shout about insecure configurations before doing anything else.
+    security_preflight(&config);
+
     info!(
         version = env!("CARGO_PKG_VERSION"),
         host = %config.host,
@@ -61,13 +64,30 @@ pub async fn serve() -> anyhow::Result<()> {
         webhook,
     };
 
-    // Spawn background task: automatic remote backup on configured interval
-    if let Some(interval_secs) = config.backup_interval_secs
-        && config.remote_backup_enabled()
-    {
+    // Spawn background task: automatic remote backup on configured interval.
+    // Guard the interval: `tokio::time::interval` panics on a zero duration, and
+    // anything under a minute would hammer the object store, so clamp low values.
+    //
+    // The interval itself is env-only (`TACK_BACKUP_INTERVAL_SECS`), but whether
+    // the destination is *configured* can also come from UI-saved settings, so
+    // spawn whenever an interval is set and re-check the effective config each
+    // tick — a UI-only cloud config still schedules (28.1).
+    if let Some(interval_secs) = config.backup_interval_secs {
+        const MIN_BACKUP_INTERVAL_SECS: u64 = 60;
+        let interval_secs = if interval_secs < MIN_BACKUP_INTERVAL_SECS {
+            warn!(
+                requested = interval_secs,
+                clamped_to = MIN_BACKUP_INTERVAL_SECS,
+                "TACK_BACKUP_INTERVAL_SECS is below the 60s minimum; clamping"
+            );
+            MIN_BACKUP_INTERVAL_SECS
+        } else {
+            interval_secs
+        };
         let bg_state = state.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             interval.tick().await; // skip the first immediate tick
             loop {
                 interval.tick().await;
@@ -119,6 +139,55 @@ pub async fn serve() -> anyhow::Result<()> {
 
     info!("Server shut down gracefully");
     Ok(())
+}
+
+/// Loudly flag insecure-by-default configurations at startup. Does not refuse to
+/// boot (a non-loopback bind without a token can be intentional behind a trusted
+/// reverse proxy), but makes the exposure impossible to miss in the logs.
+fn security_preflight(config: &AppConfig) {
+    let host = config.host.as_str();
+    let loopback = matches!(host, "127.0.0.1" | "::1" | "localhost")
+        || host.starts_with("127.")
+        || host.eq_ignore_ascii_case("::ffff:127.0.0.1");
+
+    if !loopback && config.api_token.is_none() {
+        let opted_in = std::env::var("TACK_INSECURE_NO_AUTH")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+
+        warn!(
+            "═══════════════════════════════════════════════════════════════════════"
+        );
+        warn!(
+            host = %host,
+            "SECURITY: Tack is bound to a NON-LOOPBACK address with NO API token."
+        );
+        warn!(
+            "Every project, item and attachment is reachable by anyone who can reach"
+        );
+        warn!("this host. Set TACK_API_TOKEN to require a Bearer token on all requests,");
+        warn!("or bind to 127.0.0.1 for local-only use.");
+        if opted_in {
+            warn!("Proceeding anyway because TACK_INSECURE_NO_AUTH is set.");
+        } else {
+            warn!(
+                "Proceeding anyway. Set TACK_INSECURE_NO_AUTH=1 to acknowledge and silence-flag this."
+            );
+        }
+        warn!(
+            "═══════════════════════════════════════════════════════════════════════"
+        );
+    }
+
+    // The Alexa endpoint is only skill-ID-authenticated (forgeable) unless a
+    // shared secret is configured — warn when it is exposed without one.
+    if config.alexa_skill_id.is_some() && config.alexa_shared_secret.is_none() {
+        warn!(
+            "SECURITY: /api/alexa is enabled without TACK_ALEXA_SHARED_SECRET. The skill \
+             ID is not a secret, so requests are forgeable. Set TACK_ALEXA_SHARED_SECRET \
+             and append ?token=<secret> to the skill's endpoint URL (see docs/ALEXA.md)."
+        );
+    }
 }
 
 fn init_tracing(config: &AppConfig) {
@@ -175,44 +244,151 @@ async fn ensure_default_workspace(pool: &sqlx::SqlitePool) -> anyhow::Result<Uui
 /// If a `.restore` file exists next to the live DB, apply it before startup.
 ///
 /// When the restore originated from a remote bundle, an attachments staging dir
-/// (`<storage_dir>.restore/`) may also exist. Both are swapped atomically:
-/// - current DB   → `<db>.bak`
-/// - `.restore`   → live DB path
-/// - current attachments dir → `<storage_dir>.bak/`
-/// - `.restore/`  → live storage dir
+/// (`<storage_dir>.restore/`) may also exist. The swap is fail-safe: on any
+/// failure it rolls back to the original files rather than booting an empty DB
+/// (28.3). Stale `-wal`/`-shm` sidecars of the old DB are deleted first so
+/// SQLite cannot replay them onto the freshly restored database.
 fn apply_staged_restore(config: &AppConfig) {
+    use std::path::Path;
+
     let Some(db_path) = config.db_file_path() else {
         return;
     };
     let restore_str = format!("{}.restore", db_path.to_string_lossy());
-    let restore_path = std::path::Path::new(&restore_str);
+    let restore_path = Path::new(&restore_str);
     if !restore_path.exists() {
         return;
     }
     warn!(path = %restore_str, "Applying staged restore");
 
-    // Swap database
-    let bak_str = format!("{}.bak", db_path.to_string_lossy());
-    let _ = std::fs::rename(&db_path, &bak_str);
-    if let Err(e) = std::fs::rename(restore_path, &db_path) {
-        warn!("Failed to apply staged DB restore: {e}");
-        return;
-    }
-    info!("DB restore applied; previous DB backed up to {bak_str}");
-
-    // Swap attachments dir if a staging dir exists
+    let ts = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
     let storage_restore = format!("{}.restore", config.storage_dir);
-    let storage_restore_path = std::path::Path::new(&storage_restore);
-    if storage_restore_path.exists() {
-        let storage_bak = format!("{}.bak", config.storage_dir);
-        let _ = std::fs::rename(&config.storage_dir, &storage_bak);
-        if let Err(e) = std::fs::rename(storage_restore_path, &config.storage_dir) {
-            warn!("Failed to apply staged attachments restore: {e}");
-        } else {
+    let storage_restore_path = Path::new(&storage_restore);
+
+    match apply_restore_swap(
+        &db_path,
+        restore_path,
+        Path::new(&config.storage_dir),
+        storage_restore_path,
+        &ts,
+    ) {
+        Ok(baks) => {
             info!(
-                "Attachments restore applied; previous dir backed up to {}",
-                storage_bak
+                db_bak = %baks.db_bak,
+                "Restore applied; previous DB preserved as a timestamped .bak"
             );
+            // Keep only the newest .bak generation for each target.
+            prune_old_baks(&db_path, &baks.db_bak);
+            if let Some(storage_bak) = &baks.storage_bak {
+                prune_old_baks(Path::new(&config.storage_dir), storage_bak);
+            }
+        }
+        Err(e) => warn!(
+            "Staged restore failed and was rolled back; the original database is intact: {e}"
+        ),
+    }
+}
+
+/// Paths of the timestamped backups produced by a successful swap.
+struct RestoreBaks {
+    db_bak: String,
+    storage_bak: Option<String>,
+}
+
+/// Fail-safe swap of the staged DB (and optional attachments dir) into place.
+///
+/// Sequence, each step rolled back on failure of a later step:
+/// 1. delete stale `<db>-wal`/`<db>-shm`
+/// 2. move current DB → `<db>.bak-<ts>`
+/// 3. promote `<db>.restore` → live DB
+/// 4. (if a storage staging dir exists) move current storage → `<dir>.bak-<ts>`
+/// 5. promote `<dir>.restore` → live storage dir
+///
+/// On success returns the `.bak` paths. On any failure the original DB and
+/// storage dir are put back so the server boots the pre-restore state.
+fn apply_restore_swap(
+    db_path: &std::path::Path,
+    restore_db: &std::path::Path,
+    storage_dir: &std::path::Path,
+    storage_restore: &std::path::Path,
+    ts: &str,
+) -> std::io::Result<RestoreBaks> {
+    // 1. Delete stale WAL/SHM of the DB about to be replaced.
+    let wal = format!("{}-wal", db_path.to_string_lossy());
+    let shm = format!("{}-shm", db_path.to_string_lossy());
+    let _ = std::fs::remove_file(&wal);
+    let _ = std::fs::remove_file(&shm);
+
+    // 2. Move the current DB aside (may not exist on a fresh install).
+    let db_bak = format!("{}.bak-{}", db_path.to_string_lossy(), ts);
+    let db_existed = db_path.exists();
+    if db_existed {
+        std::fs::rename(db_path, &db_bak)?;
+    }
+
+    // 3. Promote the restored DB.
+    if let Err(e) = std::fs::rename(restore_db, db_path) {
+        // Roll back: put the original DB back.
+        if db_existed {
+            let _ = std::fs::rename(&db_bak, db_path);
+        }
+        return Err(e);
+    }
+
+    // 4/5. Storage swap (only when a staging dir is present).
+    let mut storage_bak = None;
+    if storage_restore.exists() {
+        let bak = format!("{}.bak-{}", storage_dir.to_string_lossy(), ts);
+        let storage_existed = storage_dir.exists();
+        if storage_existed && let Err(e) = std::fs::rename(storage_dir, &bak) {
+            // Roll back the DB swap.
+            let _ = std::fs::rename(db_path, restore_db);
+            if db_existed {
+                let _ = std::fs::rename(&db_bak, db_path);
+            }
+            return Err(e);
+        }
+        if let Err(e) = std::fs::rename(storage_restore, storage_dir) {
+            // Roll back storage, then the DB swap.
+            if storage_existed {
+                let _ = std::fs::rename(&bak, storage_dir);
+            }
+            let _ = std::fs::rename(db_path, restore_db);
+            if db_existed {
+                let _ = std::fs::rename(&db_bak, db_path);
+            }
+            return Err(e);
+        }
+        storage_bak = Some(bak);
+    }
+
+    Ok(RestoreBaks {
+        db_bak,
+        storage_bak,
+    })
+}
+
+/// Delete older `<base>.bak-*` generations, keeping only `keep`. Best-effort.
+fn prune_old_baks(base: &std::path::Path, keep: &str) {
+    let Some(parent) = base.parent() else { return };
+    let Some(name) = base.file_name().and_then(|n| n.to_str()) else {
+        return;
+    };
+    let prefix = format!("{name}.bak-");
+    let keep_name = std::path::Path::new(keep).file_name().and_then(|n| n.to_str());
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let fname = entry.file_name();
+        let Some(fname) = fname.to_str() else { continue };
+        if fname.starts_with(&prefix) && Some(fname) != keep_name {
+            let path = entry.path();
+            if path.is_dir() {
+                let _ = std::fs::remove_dir_all(&path);
+            } else {
+                let _ = std::fs::remove_file(&path);
+            }
         }
     }
 }
@@ -224,30 +400,37 @@ async fn shutdown_signal() {
     warn!("Shutdown signal received");
 }
 
-/// Run a scheduled remote backup: create bundle, upload, prune old backups.
+/// Run a scheduled remote backup. Reads the *effective* config each tick so
+/// UI-saved settings (bucket/prefix/creds/retention) are honored (28.1), and
+/// runs the conflict-safe upload path (28.2) — on a cross-device conflict it
+/// warns and skips rather than clobbering another device's newer work.
 async fn run_scheduled_backup(state: &AppState) {
-    match remote_backup::store_from_config(&state.config) {
-        Ok(store) => match remote_backup::create_bundle(state.pool(), &state.config).await {
-            Ok((bundle, manifest)) => {
-                if let Err(e) = remote_backup::upload(store.as_ref(), &manifest, bundle).await {
-                    warn!(error = %e, "Scheduled backup upload failed");
-                    return;
-                }
-                if let Err(e) = remote_backup::prune(
-                    store.as_ref(),
-                    &state.config.backup_prefix,
-                    state.config.backup_retention,
-                )
-                .await
-                {
-                    warn!(error = %e, "Scheduled backup prune failed");
-                } else {
-                    info!(key = %manifest.object_key, "Scheduled backup complete");
-                }
-            }
-            Err(e) => warn!(error = %e, "Scheduled backup bundle creation failed"),
-        },
-        Err(e) => warn!(error = %e, "Scheduled backup store init failed"),
+    let cfg = crate::handlers::settings::effective_backup_config(state).await;
+    if !cfg.remote_backup_enabled() {
+        // A UI-only config may not be set yet; nothing to do this tick.
+        tracing::debug!("Scheduled backup skipped: remote backup not configured");
+        return;
+    }
+
+    let store = match remote_backup::store_from_config(&cfg) {
+        Ok(store) => store,
+        Err(e) => {
+            warn!(error = %e, "Scheduled backup store init failed");
+            return;
+        }
+    };
+
+    // Scheduled backups never force: a conflict means another device is ahead,
+    // so we skip and let the user restore/resolve.
+    match remote_backup::perform_backup(state.pool(), &cfg, store.as_ref(), false).await {
+        Ok(manifest) => info!(key = %manifest.object_key, "Scheduled backup complete"),
+        Err(remote_backup::BackupError::GenerationConflict { remote_generation, .. }) => {
+            warn!(
+                remote_generation,
+                "Scheduled backup skipped: another device has newer work (restore to resolve)"
+            );
+        }
+        Err(e) => warn!(error = %e, "Scheduled backup failed"),
     }
 }
 
@@ -273,5 +456,107 @@ async fn check_due_soon(state: &AppState) {
         Err(e) => {
             tracing::warn!(error=%e, "Failed to query due-soon items for webhook");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::Path;
+
+    fn workdir(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("tack-swap-{tag}-{}", Uuid::new_v4()));
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// 28.3: the DB swap succeeds but the storage swap fails — the whole
+    /// operation must roll back so the original DB is intact and bootable.
+    #[test]
+    fn restore_swap_rolls_back_when_storage_swap_fails() {
+        let dir = workdir("storage-fail");
+        let db_path = dir.join("tack.db");
+        let restore_db = dir.join("tack.db.restore");
+        fs::write(&db_path, b"ORIGINAL").unwrap();
+        fs::write(&restore_db, b"RESTORED").unwrap();
+
+        // A staging dir exists (so the storage step runs)…
+        let storage_restore = dir.join("storage.restore");
+        fs::create_dir_all(&storage_restore).unwrap();
+        fs::write(storage_restore.join("a.bin"), b"attach").unwrap();
+
+        // …but the live storage path sits under a MISSING parent, so promoting
+        // the staging dir into place fails with ENOENT — after the DB swap.
+        let storage_dir = dir.join("missing_parent").join("storage");
+
+        let result =
+            apply_restore_swap(&db_path, &restore_db, &storage_dir, &storage_restore, "TS");
+        assert!(result.is_err(), "storage promotion should fail");
+
+        // Rolled back: the ORIGINAL DB is back in place and bootable.
+        assert_eq!(fs::read(&db_path).unwrap(), b"ORIGINAL");
+        // The staged restore file is put back for a future attempt.
+        assert_eq!(fs::read(&restore_db).unwrap(), b"RESTORED");
+        // No stray .bak left behind for the DB.
+        assert!(!Path::new(&format!("{}.bak-TS", db_path.to_string_lossy())).exists());
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Happy path: DB + storage both swap, and a timestamped .bak is kept.
+    #[test]
+    fn restore_swap_promotes_db_and_storage() {
+        let dir = workdir("ok");
+        let db_path = dir.join("tack.db");
+        let restore_db = dir.join("tack.db.restore");
+        fs::write(&db_path, b"ORIGINAL").unwrap();
+        fs::write(&restore_db, b"RESTORED").unwrap();
+
+        let storage_dir = dir.join("storage");
+        fs::create_dir_all(&storage_dir).unwrap();
+        fs::write(storage_dir.join("old.bin"), b"old").unwrap();
+        let storage_restore = dir.join("storage.restore");
+        fs::create_dir_all(&storage_restore).unwrap();
+        fs::write(storage_restore.join("new.bin"), b"new").unwrap();
+
+        let baks = apply_restore_swap(&db_path, &restore_db, &storage_dir, &storage_restore, "TS")
+            .expect("swap should succeed");
+
+        assert_eq!(fs::read(&db_path).unwrap(), b"RESTORED");
+        assert!(storage_dir.join("new.bin").exists());
+        assert!(!storage_dir.join("old.bin").exists());
+        assert!(Path::new(&baks.db_bak).exists());
+        assert!(baks.storage_bak.is_some());
+        // The staging inputs are consumed.
+        assert!(!restore_db.exists());
+        assert!(!storage_restore.exists());
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Stale `-wal`/`-shm` sidecars of the replaced DB are deleted so SQLite
+    /// cannot replay them onto the freshly restored database.
+    #[test]
+    fn restore_swap_deletes_stale_wal_shm() {
+        let dir = workdir("wal");
+        let db_path = dir.join("tack.db");
+        let restore_db = dir.join("tack.db.restore");
+        fs::write(&db_path, b"ORIGINAL").unwrap();
+        fs::write(&restore_db, b"RESTORED").unwrap();
+        fs::write(dir.join("tack.db-wal"), b"waljunk").unwrap();
+        fs::write(dir.join("tack.db-shm"), b"shmjunk").unwrap();
+
+        // No storage staging dir → storage step is skipped.
+        let storage_dir = dir.join("storage");
+        let storage_restore = dir.join("storage.restore");
+
+        apply_restore_swap(&db_path, &restore_db, &storage_dir, &storage_restore, "TS").unwrap();
+
+        assert!(!dir.join("tack.db-wal").exists(), "stale -wal must be deleted");
+        assert!(!dir.join("tack.db-shm").exists(), "stale -shm must be deleted");
+        assert_eq!(fs::read(&db_path).unwrap(), b"RESTORED");
+
+        fs::remove_dir_all(&dir).ok();
     }
 }

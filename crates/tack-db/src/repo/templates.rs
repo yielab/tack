@@ -1,5 +1,6 @@
 use sqlx::{FromRow, SqlitePool};
 use tack_core::models::*;
+use tack_core::workflow::WorkflowConfig;
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -193,87 +194,180 @@ struct BuiltinSpec {
     name: &'static str,
     description: &'static str,
     project_type: ProjectType,
+    /// Optional workflow override. When `None`, the workflow is derived from
+    /// `project_type` via `workflow_for_type`. Sub-preset templates (e.g. the
+    /// construction verticals) supply a tailored per-template workflow here.
+    workflow: Option<WorkflowConfig>,
+    /// Template-level custom field definitions (empty for the base presets).
+    custom_fields: Vec<CustomFieldDefinition>,
 }
 
-/// Seed one built-in template per `ProjectType` if none exist yet.
-/// Safe to call on every startup — inserts are skipped for already-seeded types.
+impl BuiltinSpec {
+    /// Base preset: workflow + vocabulary derived entirely from the project type.
+    fn base(name: &'static str, description: &'static str, project_type: ProjectType) -> Self {
+        Self {
+            name,
+            description,
+            project_type,
+            workflow: None,
+            custom_fields: Vec::new(),
+        }
+    }
+}
+
+/// Build a template-level custom field definition. `project_id` is `None`
+/// (template-scoped); ids/timestamps are generated fresh per seed.
+fn builtin_field(
+    name: &str,
+    field_type: CustomFieldType,
+    options: Option<Vec<String>>,
+) -> CustomFieldDefinition {
+    let now = chrono::Utc::now();
+    CustomFieldDefinition {
+        id: Uuid::new_v4(),
+        project_id: None,
+        name: name.to_string(),
+        field_type,
+        description: None,
+        required: false,
+        default_value: None,
+        options,
+        validation: None,
+        created_at: now,
+        updated_at: now,
+    }
+}
+
+/// Seed the built-in project templates if they don't exist yet.
+/// Safe to call on every startup — inserts are skipped by template name, so
+/// multiple built-ins can share a `ProjectType` (e.g. the construction
+/// verticals all reuse `ProjectType::Construction`).
 #[instrument(skip(pool))]
 pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error> {
-    use tack_core::{vocabulary::vocabulary_for_type, workflow::workflow_for_type};
+    use tack_core::{
+        vocabulary::vocabulary_for_type,
+        workflow::{sip_panel_workflow, steel_frame_workflow, wood_frame_workflow, workflow_for_type},
+    };
 
-    let specs: &[BuiltinSpec] = &[
+    let specs: Vec<BuiltinSpec> = vec![
+        BuiltinSpec::base(
+            "Software Project",
+            "Scrum workflow for software development — Backlog, To Do, In Progress, In Review, Done.",
+            ProjectType::Software,
+        ),
+        BuiltinSpec::base(
+            "Web App",
+            "Scrum workflow for web application development.",
+            ProjectType::Web,
+        ),
+        BuiltinSpec::base(
+            "Mobile App",
+            "Scrum workflow for mobile application development.",
+            ProjectType::Mobile,
+        ),
+        BuiltinSpec::base(
+            "Construction Project",
+            "Linear phase workflow: Permit → Procurement → Build → Inspect → Handover.",
+            ProjectType::Construction,
+        ),
+        // ── Construction verticals (all reuse ProjectType::Construction) ──
         BuiltinSpec {
-            name: "Software Project",
-            description: "Scrum workflow for software development — Backlog, To Do, In Progress, In Review, Done.",
-            project_type: ProjectType::Software,
-        },
-        BuiltinSpec {
-            name: "Web App",
-            description: "Scrum workflow for web application development.",
-            project_type: ProjectType::Web,
-        },
-        BuiltinSpec {
-            name: "Mobile App",
-            description: "Scrum workflow for mobile application development.",
-            project_type: ProjectType::Mobile,
-        },
-        BuiltinSpec {
-            name: "Construction Project",
-            description: "Linear phase workflow: Permit → Procurement → Build → Inspect → Handover.",
+            name: "Wood Frame Build",
+            description: "Stick-frame build: Permit → Foundation → Framing → Rough-In (MEP) → Insulation & Drywall → Finish → Inspect → Handover.",
             project_type: ProjectType::Construction,
+            workflow: Some(wood_frame_workflow()),
+            custom_fields: vec![
+                builtin_field(
+                    "Stud Spacing",
+                    CustomFieldType::Select,
+                    Some(vec!["16\" o.c.".to_string(), "24\" o.c.".to_string()]),
+                ),
+                builtin_field("Lumber Grade", CustomFieldType::Text, None),
+                builtin_field("Sheathing Type", CustomFieldType::Text, None),
+                builtin_field("Shear-Wall Schedule Ref", CustomFieldType::Text, None),
+            ],
         },
         BuiltinSpec {
-            name: "Personal Tasks",
-            description: "Simple To Do / Doing / Done board for personal goals and actions.",
-            project_type: ProjectType::Personal,
+            name: "Steel Frame Build",
+            description: "Structural-steel build: Permit → Engineering → Fabrication → Erection → Decking/MEP → Fireproofing → Inspect → Handover.",
+            project_type: ProjectType::Construction,
+            workflow: Some(steel_frame_workflow()),
+            custom_fields: vec![
+                builtin_field("Steel Grade", CustomFieldType::Text, None),
+                builtin_field("Bolt Spec", CustomFieldType::Text, None),
+                builtin_field("Weld Inspection Class", CustomFieldType::Text, None),
+                builtin_field("Torque Log Ref", CustomFieldType::Text, None),
+            ],
         },
         BuiltinSpec {
-            name: "Homework Tracker",
-            description: "Simple workflow for tracking assignments, quizzes, and exams.",
-            project_type: ProjectType::Homework,
+            name: "SIP Panel Build",
+            description: "Structural insulated panel build: Design/Shop Drawings → Panel Fabrication → Delivery → Foundation → Panel Set → Seal & Penetrations → MEP Chases → Inspect → Handover.",
+            project_type: ProjectType::Construction,
+            workflow: Some(sip_panel_workflow()),
+            custom_fields: vec![
+                builtin_field("Panel Count", CustomFieldType::Number, None),
+                builtin_field("Panel Thickness", CustomFieldType::Text, None),
+                builtin_field("Spline Type", CustomFieldType::Text, None),
+                builtin_field("Sealant Spec", CustomFieldType::Text, None),
+            ],
         },
-        BuiltinSpec {
-            name: "Maintenance Board",
-            description: "Kanban workflow for ongoing maintenance tickets and service requests.",
-            project_type: ProjectType::Maintenance,
-        },
-        BuiltinSpec {
-            name: "Legal Matter",
-            description: "Case management workflow: Intake → Discovery → Drafting → Review → Closed.",
-            project_type: ProjectType::Legal,
-        },
-        BuiltinSpec {
-            name: "Research Study",
-            description: "Lab workflow: Hypothesis → Design → Experiment → Analysis → Published.",
-            project_type: ProjectType::Research,
-        },
-        BuiltinSpec {
-            name: "Event Plan",
-            description: "Event planning workflow: Ideas → Booked → In Progress → Confirmed → Done.",
-            project_type: ProjectType::Event,
-        },
-        BuiltinSpec {
-            name: "Custom Project",
-            description: "Blank template — minimal workflow with no domain-specific vocabulary.",
-            project_type: ProjectType::Custom,
-        },
+        BuiltinSpec::base(
+            "Personal Tasks",
+            "Simple To Do / Doing / Done board for personal goals and actions.",
+            ProjectType::Personal,
+        ),
+        BuiltinSpec::base(
+            "Homework Tracker",
+            "Simple workflow for tracking assignments, quizzes, and exams.",
+            ProjectType::Homework,
+        ),
+        BuiltinSpec::base(
+            "Maintenance Board",
+            "Kanban workflow for ongoing maintenance tickets and service requests.",
+            ProjectType::Maintenance,
+        ),
+        BuiltinSpec::base(
+            "Legal Matter",
+            "Case management workflow: Intake → Discovery → Drafting → Review → Closed.",
+            ProjectType::Legal,
+        ),
+        BuiltinSpec::base(
+            "Research Study",
+            "Lab workflow: Hypothesis → Design → Experiment → Analysis → Published.",
+            ProjectType::Research,
+        ),
+        BuiltinSpec::base(
+            "Event Plan",
+            "Event planning workflow: Ideas → Booked → In Progress → Confirmed → Done.",
+            ProjectType::Event,
+        ),
+        BuiltinSpec::base(
+            "Custom Project",
+            "Blank template — minimal workflow with no domain-specific vocabulary.",
+            ProjectType::Custom,
+        ),
     ];
 
-    for spec in specs {
+    for spec in &specs {
         let type_str = spec.project_type.to_string();
 
-        // Skip if a builtin already exists for this project type
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM project_templates WHERE project_type = ? AND is_builtin = 1)")
-                .bind(type_str.as_str())
-                .fetch_one(pool)
-                .await?;
+        // Skip if a builtin with this name already exists (per-name dedup lets
+        // several builtins share one project_type).
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM project_templates WHERE name = ? AND is_builtin = 1)",
+        )
+        .bind(spec.name)
+        .fetch_one(pool)
+        .await?;
 
         if exists {
             continue;
         }
 
-        let workflow = workflow_for_type(&spec.project_type);
+        let workflow = spec
+            .workflow
+            .clone()
+            .unwrap_or_else(|| workflow_for_type(&spec.project_type));
         let vocabulary = vocabulary_for_type(&spec.project_type);
 
         // Build a default board whose columns mirror the workflow statuses
@@ -301,7 +395,7 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
         sqlx::query(
             "INSERT INTO project_templates
              (id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, '[]', ?, 1, ?, ?)"
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)"
         )
         .bind(id.to_string())
         .bind(spec.name)
@@ -309,6 +403,7 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
         .bind(type_str.as_str())
         .bind(serde_json::to_string(&vocabulary).unwrap_or_else(|_| "{}".to_string()))
         .bind(serde_json::to_string(&workflow).unwrap_or_else(|_| "{}".to_string()))
+        .bind(serde_json::to_string(&spec.custom_fields).unwrap_or_else(|_| "[]".to_string()))
         .bind(serde_json::to_string(&default_boards).unwrap_or_else(|_| "[]".to_string()))
         .bind(now.to_rfc3339())
         .bind(now.to_rfc3339())
@@ -323,4 +418,117 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn test_pool() -> SqlitePool {
+        let pool = crate::init_pool("sqlite::memory:")
+            .await
+            .expect("in-memory pool");
+        crate::migrations::run_all(&pool).await.expect("migrations");
+        pool
+    }
+
+    #[tokio::test]
+    async fn seeds_three_construction_verticals_with_fields_and_workflows() {
+        let pool = test_pool().await;
+        seed_builtin_templates(&pool).await.expect("seed");
+        // Re-running is idempotent (per-name dedup).
+        seed_builtin_templates(&pool).await.expect("re-seed");
+
+        let construction =
+            list_templates(&pool, Some(ProjectType::Construction))
+                .await
+                .expect("list");
+
+        // Base + three verticals, all ProjectType::Construction.
+        for name in [
+            "Construction Project",
+            "Wood Frame Build",
+            "Steel Frame Build",
+            "SIP Panel Build",
+        ] {
+            let t = construction
+                .iter()
+                .find(|t| t.name == name)
+                .unwrap_or_else(|| panic!("missing template {name}"));
+            assert_eq!(t.project_type, ProjectType::Construction);
+            assert!(t.is_builtin);
+        }
+
+        // Exactly one of each name (idempotent seeding, no duplicates).
+        assert_eq!(
+            construction
+                .iter()
+                .filter(|t| t.name == "SIP Panel Build")
+                .count(),
+            1
+        );
+
+        let wood = construction
+            .iter()
+            .find(|t| t.name == "Wood Frame Build")
+            .unwrap();
+        // Construction vocabulary base is preserved.
+        assert_eq!(wood.vocabulary.get("task").map(String::as_str), Some("Work Order"));
+        assert_eq!(wood.vocabulary.get("sprint").map(String::as_str), Some("Phase"));
+        // Build-system-specific custom fields present, incl. the select options.
+        assert_eq!(wood.custom_fields.len(), 4);
+        let stud = wood
+            .custom_fields
+            .iter()
+            .find(|f| f.name == "Stud Spacing")
+            .expect("stud spacing field");
+        assert_eq!(stud.field_type, CustomFieldType::Select);
+        assert_eq!(
+            stud.options.as_deref(),
+            Some(["16\" o.c.".to_string(), "24\" o.c.".to_string()].as_slice())
+        );
+
+        // SIP panel count is a Number field.
+        let sip = construction
+            .iter()
+            .find(|t| t.name == "SIP Panel Build")
+            .unwrap();
+        let panel_count = sip
+            .custom_fields
+            .iter()
+            .find(|f| f.name == "Panel Count")
+            .expect("panel count field");
+        assert_eq!(panel_count.field_type, CustomFieldType::Number);
+    }
+
+    #[tokio::test]
+    async fn seeded_vertical_workflows_enforce_transitions() {
+        let pool = test_pool().await;
+        seed_builtin_templates(&pool).await.expect("seed");
+
+        let construction = list_templates(&pool, Some(ProjectType::Construction))
+            .await
+            .expect("list");
+
+        let steel = construction
+            .iter()
+            .find(|t| t.name == "Steel Frame Build")
+            .unwrap();
+
+        // Linear step is allowed.
+        assert!(steel
+            .workflow
+            .validate_transition("Erection", "Decking/MEP")
+            .is_ok());
+        // Rework loop back from Inspect is allowed.
+        assert!(steel
+            .workflow
+            .validate_transition("Inspect", "Fireproofing")
+            .is_ok());
+        // Illegal skip is rejected.
+        assert!(steel
+            .workflow
+            .validate_transition("Permit", "Handover")
+            .is_err());
+    }
 }

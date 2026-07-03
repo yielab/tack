@@ -4,15 +4,23 @@ description = "Core domain models and business logic for Tack"
 version.workspace = true
 edition.workspace = true
 
+[features]
+# Derive `utoipa::ToSchema` / `IntoParams` on the domain models + DTOs so the
+# HTTP layer (tack-api) can generate an OpenAPI contract from them. Off by
+# default to keep this pure crate free of the utoipa dependency when used alone.
+openapi = ["dep:utoipa"]
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_with = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 validator = { workspace = true }
 regex = { workspace = true }
+utoipa = { workspace = true, optional = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }

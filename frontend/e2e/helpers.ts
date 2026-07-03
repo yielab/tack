@@ -6,7 +6,7 @@ import { type Page, type APIRequestContext, expect } from '@playwright/test';
 // Response-shape notes (verified against crates/tack-api/src/handlers):
 //   GET  /api/projects        -> Project[]            (plain array, no envelope)
 //   POST /api/projects        -> Project              (the created object)
-//   GET  /api/projects/:id/items -> Item[]            (plain array)
+//   GET  /api/projects/:id/items -> { data: Item[], total, page, per_page }  (paginated envelope)
 //   POST /api/projects/:id/items -> { id } | Item     (id is always present)
 //   GET  /api/items/:id       -> { item, roles, dependencies }  (detail envelope)
 
@@ -51,8 +51,11 @@ export async function getOrCreateItem(
   projectId: string,
   title = 'E2E Item',
 ): Promise<string> {
-  const existing = await request.get(`${API}/projects/${projectId}/items`).then((r) => r.json());
-  if (Array.isArray(existing) && existing.length) return existing[0].id;
+  const existing = await request
+    .get(`${API}/projects/${projectId}/items`)
+    .then((r) => r.json())
+    .then((p) => p.data ?? []);
+  if (existing.length) return existing[0].id;
 
   const res = await request.post(`${API}/projects/${projectId}/items`, {
     data: { title, item_type: 'task' },
@@ -61,6 +64,9 @@ export async function getOrCreateItem(
   const body = await res.json();
   if (body?.id) return body.id;
 
-  const list = await request.get(`${API}/projects/${projectId}/items`).then((r) => r.json());
+  const list = await request
+    .get(`${API}/projects/${projectId}/items`)
+    .then((r) => r.json())
+    .then((p) => p.data ?? []);
   return list[0].id;
 }

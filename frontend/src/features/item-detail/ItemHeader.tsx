@@ -5,6 +5,7 @@ import { useProject } from '../../shared/state/projectContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { api } from '../../shared/api';
 import type { Item, UpdateItem, Priority } from '../../shared/types';
+import { estimateUnitLabel } from '../../shared/estimateUnit';
 
 const shortId = (id: string) => id.replace(/-/g, '').slice(0, 6).toUpperCase();
 
@@ -115,7 +116,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
         />
 
         <Field
-          label={`Estimate${props.item.estimate_unit ? ` (${props.item.estimate_unit.replace('_', ' ')})` : ''}`}
+          label={`Estimate${props.item.estimate_unit ? ` (${estimateUnitLabel(props.item.estimate_unit)})` : ''}`}
           type="number"
           min="0"
           value={props.item.estimate ?? ''}
@@ -135,7 +136,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
         />
 
         <Select
-          label="Sprint"
+          label={vocab.t('sprint')}
           value={props.item.sprint_id ?? ''}
           onChange={(e) =>
             props.onPatch({ sprint_id: e.currentTarget.value || undefined })

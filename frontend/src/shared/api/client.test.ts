@@ -70,6 +70,23 @@ describe('shared/api/client', () => {
     expect(err.message).toBe('cycle detected');
   });
 
+  it('extracts the message from the structured error envelope', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: { status: 409, message: 'remote is ahead' } }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    const err = (await request('/backup/remote', { method: 'POST' }).catch(
+      (e) => e
+    )) as ApiError;
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(409);
+    // The user sees the human message, not the raw JSON body.
+    expect(err.message).toBe('remote is ahead');
+  });
+
   it('attaches a bearer token from the token store when present', async () => {
     vi.spyOn(tokenStore, 'get').mockReturnValue('secret');
     const fetchMock = vi

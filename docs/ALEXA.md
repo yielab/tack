@@ -55,21 +55,51 @@ alongside the app, so the public endpoint comes up with a single command.
 
 ## Security model
 
+- **Shared-secret gate (recommended — the real authentication)** — set
+  `TACK_ALEXA_SHARED_SECRET` to a random, URL-safe string and append it to the
+  skill's endpoint URL as a `?token=` query parameter
+  (`https://your-domain.example/api/alexa?token=<secret>`). When configured,
+  every request must carry a matching token (compared in constant time) or it
+  is rejected with `403`. Alexa always POSTs to *exactly* the URL you configure
+  in the developer console, including its query string, and it is the only
+  channel Alexa lets you attach a secret to — custom request headers are not
+  configurable on an HTTPS skill endpoint. **Set this.** Without it the endpoint
+  is authenticated only by the skill ID, which is *not* a secret and is
+  therefore forgeable by anyone who knows it.
 - **Skill ID verification** — every Alexa request embeds the skill's
   `applicationId`; it is compared against the configured value in constant
-  time. Mismatch → `403`.
+  time. Mismatch → `403`. This is a useful sanity check but, on its own, not a
+  secret.
 - **Timestamp check** — requests older (or newer) than 150 seconds are
   rejected (`400`), preventing replays. This is Alexa's own tolerance window.
-- **Bearer-token exemption** — Alexa cannot send custom headers, so
-  `/api/alexa` is exempt from the `TACK_API_TOKEN` gate; the skill-ID check
-  is its authentication.
+- **Bearer-token exemption** — Alexa cannot send an `Authorization` header, so
+  `/api/alexa` is exempt from the `TACK_API_TOKEN` gate; the shared-secret
+  query parameter is its equivalent.
 
-**Limitation:** Tack does not validate Amazon's request signature
-(`SignatureCertChainUrl` X.509 chain). That is required for *certified* skills
-published in the Alexa store, but personal/development skills work without it.
-For a self-hosted deployment, keep the endpoint URL private and always serve
-it over HTTPS. If you later need certification, signature validation would be
-the one missing piece.
+```bash
+# Enable the endpoint AND lock it to a secret only you and the skill know:
+TACK_ALEXA_SKILL_ID=amzn1.ask.skill.xxxx-xxxx \
+TACK_ALEXA_SHARED_SECRET=$(openssl rand -hex 24) \
+  cargo run -p tack-cli -- serve
+```
+
+If `TACK_ALEXA_SKILL_ID` is set but `TACK_ALEXA_SHARED_SECRET` is not, the
+server logs a prominent security warning at startup and keeps the endpoint open
+in the legacy skill-ID-only mode (for backward compatibility) — but that mode is
+forgeable and should not be used for anything but throwaway local testing.
+
+### Why a shared secret and not X.509 signature validation?
+
+Amazon's certification program requires validating each request's
+`SignatureCertChainUrl` + `Signature` against Amazon's X.509 certificate chain
+(RSA-SHA1 over the raw body). Pulling a full pure-Rust X.509/RSA verification
+stack into Tack was judged too heavy for the single-binary size budget (~10 MB),
+and getting chain-of-trust verification subtly wrong is itself a security risk.
+The mandatory shared-secret query parameter is a lightweight, auditable
+alternative that makes the endpoint genuinely unforgeable by anyone who does not
+know the secret. If you later publish a *certified* store skill, full signature
+validation would be the remaining piece to add. Either way, always serve the
+endpoint over HTTPS.
 
 ## Skill setup (Alexa developer console)
 
@@ -77,7 +107,8 @@ the one missing piece.
    Avoid single-letter words like "flex p m" — Alexa matches them poorly and
    the skill may simply never be invoked.
 2. Under *Endpoint*, choose **HTTPS** and enter
-   `https://your-domain.example/api/alexa`.
+   `https://your-domain.example/api/alexa?token=<your-shared-secret>` (the
+   `?token=` must match `TACK_ALEXA_SHARED_SECRET` — see *Security model* above).
 3. **SSL certificate type matters.** Check what your certificate actually
    covers: if it lists your exact hostname, pick *"…has a certificate from a
    trusted certificate authority"*; if it covers you via a **wildcard**

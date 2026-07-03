@@ -4,17 +4,17 @@
 //! can be edited from the UI. Values saved here override the `TACK_BACKUP_*`
 //! environment defaults — see [`effective_backup_config`].
 
-use axum::{Json, extract::State, http::StatusCode};
+use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing::instrument;
+use validator::Validate;
 
 use crate::config::AppConfig;
+use crate::error::{ApiError, ApiResult};
 use crate::router::AppState;
 
 const BACKUP_KEY: &str = "backup_config";
-
-type ApiErr = (StatusCode, Json<Value>);
 
 /// Cloud-backup settings as stored in the DB. Every field is optional so a
 /// partially-configured destination round-trips cleanly. The secret key is
@@ -110,6 +110,14 @@ fn public_view(cfg: &AppConfig) -> Value {
 
 /// GET /api/settings/backup — current cloud-backup configuration (secret masked).
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/settings/backup",
+    tag = "settings",
+    responses(
+        (status = 200, description = "Cloud-backup config (secret masked as `secret_key_set`)", body = serde_json::Value),
+    ),
+)]
 pub async fn get_backup_settings(State(state): State<AppState>) -> Json<Value> {
     let cfg = effective_backup_config(&state).await;
     Json(public_view(&cfg))
@@ -118,7 +126,7 @@ pub async fn get_backup_settings(State(state): State<AppState>) -> Json<Value> {
 /// Incoming update. Any omitted/blank string field clears that override and
 /// falls back to the environment default. A blank `secret_key` keeps the
 /// existing stored secret (so the masked UI field can be left untouched).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate, utoipa::ToSchema)]
 pub struct UpdateBackupSettings {
     #[serde(default)]
     pub endpoint: Option<String>,
@@ -132,7 +140,11 @@ pub struct UpdateBackupSettings {
     pub secret_key: Option<String>,
     #[serde(default)]
     pub prefix: Option<String>,
+    /// Number of backups to keep. Must be at least 1 — `retention: 0` would
+    /// prune the backup that was just created (and, when it is the only one,
+    /// leave zero backups).
     #[serde(default)]
+    #[validate(range(min = 1, message = "retention must be at least 1"))]
     pub retention: Option<usize>,
 }
 
@@ -142,10 +154,24 @@ fn clean(o: Option<String>) -> Option<String> {
 
 /// PUT /api/settings/backup — save cloud-backup configuration.
 #[instrument(skip(state, input))]
+#[utoipa::path(
+    put,
+    path = "/api/settings/backup",
+    tag = "settings",
+    request_body = UpdateBackupSettings,
+    responses(
+        (status = 200, description = "Updated config (secret masked)", body = serde_json::Value),
+        (status = 422, description = "Validation error", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn put_backup_settings(
     State(state): State<AppState>,
     Json(input): Json<UpdateBackupSettings>,
-) -> Result<Json<Value>, ApiErr> {
+) -> ApiResult<Json<Value>> {
+    input
+        .validate()
+        .map_err(|e| ApiError::Unprocessable(e.to_string()))?;
+
     let mut current = load(state.pool()).await;
 
     current.endpoint = clean(input.endpoint);
@@ -160,12 +186,7 @@ pub async fn put_backup_settings(
     current.prefix = clean(input.prefix);
     current.retention = input.retention;
 
-    save(state.pool(), &current).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": e.to_string()})),
-        )
-    })?;
+    save(state.pool(), &current).await?;
 
     let cfg = effective_backup_config(&state).await;
     Ok(Json(public_view(&cfg)))

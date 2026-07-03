@@ -536,6 +536,112 @@ async fn make_item(app: &axum::Router, project_id: &str) -> String {
 }
 
 #[tokio::test]
+async fn restore_rejects_non_sqlite_body_with_structured_error_envelope() {
+    use axum::body::to_bytes;
+    let (app, _) = common::test_app().await;
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/restore")
+                .body(Body::from("this is not a database"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    let bytes = to_bytes(res.into_body(), 65536).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    // Unified envelope: { "error": { "status", "message" } } — not a flat string.
+    assert_eq!(body["error"]["status"], 400);
+    assert!(
+        body["error"]["message"].is_string(),
+        "message must be a human-readable string, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn backup_settings_validation_returns_structured_422_envelope() {
+    use axum::body::to_bytes;
+    let (app, _) = common::test_app().await;
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/settings/backup")
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"retention":0}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let bytes = to_bytes(res.into_body(), 65536).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body["error"]["status"], 422);
+    assert!(body["error"]["message"].is_string());
+}
+
+#[tokio::test]
+async fn list_items_returns_pagination_envelope_and_slices_pages() {
+    use axum::body::to_bytes;
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+
+    // Three items so a per_page=2 page 1 has a remainder on page 2.
+    for _ in 0..3 {
+        make_item(&app, &pid).await;
+    }
+
+    // Page 1: envelope shape + total count + first slice.
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/projects/{pid}/items?per_page=2&page=1"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), 65536).await.unwrap();
+    let page1: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(page1["total"], 3, "total must count all matching items");
+    assert_eq!(page1["page"], 1);
+    assert_eq!(page1["per_page"], 2);
+    assert_eq!(
+        page1["data"].as_array().unwrap().len(),
+        2,
+        "page 1 holds per_page items"
+    );
+
+    // Page 2: the remaining slice.
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/projects/{pid}/items?per_page=2&page=2"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(res.into_body(), 65536).await.unwrap();
+    let page2: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(page2["total"], 3);
+    assert_eq!(page2["page"], 2);
+    assert_eq!(
+        page2["data"].as_array().unwrap().len(),
+        1,
+        "page 2 holds the remaining item"
+    );
+}
+
+#[tokio::test]
 async fn set_custom_field_value_correct_type_returns_ok() {
     let (app, _) = common::test_app().await;
     let pid = make_project(&app).await;
@@ -1330,7 +1436,7 @@ async fn export_yaml_round_trips_through_import() {
     let bytes = to_bytes(res.into_body(), 131072).await.unwrap();
     let items: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(
-        items.as_array().unwrap().len(),
+        items["data"].as_array().unwrap().len(),
         1,
         "imported items: {items}"
     );
@@ -1404,7 +1510,7 @@ async fn github_import_links_items_then_completion_pushes_close() {
         .unwrap();
     let bytes = to_bytes(res.into_body(), 131072).await.unwrap();
     let items: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    let item_id = items.as_array().unwrap()[0]["id"]
+    let item_id = items["data"].as_array().unwrap()[0]["id"]
         .as_str()
         .unwrap()
         .to_string();

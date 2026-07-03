@@ -10,6 +10,19 @@ use crate::error::{ApiError, ApiResult};
 use crate::router::AppState;
 
 #[instrument(skip(state))]
+#[utoipa::path(
+    post,
+    path = "/api/items/{item_id}/comments",
+    tag = "comments",
+    params(
+        ("item_id" = Uuid, Path, description = "Item ID"),
+    ),
+    request_body = tack_core::models::CreateComment,
+    responses(
+        (status = 200, description = "Comment created", body = tack_core::models::Comment),
+        (status = 400, description = "Validation error", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn create_comment(
     State(state): State<AppState>,
     Path(item_id): Path<Uuid>,
@@ -23,6 +36,17 @@ pub async fn create_comment(
 }
 
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/items/{item_id}/comments",
+    tag = "comments",
+    params(
+        ("item_id" = Uuid, Path, description = "Item ID"),
+    ),
+    responses(
+        (status = 200, description = "Comments on the item", body = Vec<tack_core::models::Comment>),
+    ),
+)]
 pub async fn list_comments(
     State(state): State<AppState>,
     Path(item_id): Path<Uuid>,

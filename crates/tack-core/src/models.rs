@@ -5,11 +5,12 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::vocabulary::VocabularyMap;
-use crate::workflow::WorkflowConfig;
+use crate::workflow::{StatusCategory, WorkflowConfig};
 
 // ─── Workspace ───────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Workspace {
     pub id: Uuid,
     pub name: String,
@@ -22,6 +23,7 @@ pub struct Workspace {
 // ─── Project ─────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Project {
     pub id: Uuid,
     pub workspace_id: Uuid,
@@ -37,6 +39,7 @@ pub struct Project {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum ProjectType {
     Software,
     Web,
@@ -72,6 +75,7 @@ impl std::fmt::Display for ProjectType {
 // ─── Item (universal work unit) ──────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Item {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -96,6 +100,7 @@ pub struct Item {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum ItemType {
     Epic,
     Feature,
@@ -122,6 +127,7 @@ impl std::fmt::Display for ItemType {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum Priority {
     Critical,
     High,
@@ -145,6 +151,7 @@ impl std::fmt::Display for Priority {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum EstimateUnit {
     #[default]
     StoryPoints,
@@ -156,6 +163,7 @@ pub enum EstimateUnit {
 // ─── Dependency ──────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Dependency {
     pub id: Uuid,
     pub source_item_id: Uuid,
@@ -166,6 +174,7 @@ pub struct Dependency {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum DependencyType {
     Blocks,
     IsBlockedBy,
@@ -187,6 +196,7 @@ impl std::fmt::Display for DependencyType {
 // ─── Role / Specialty ────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Role {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -197,6 +207,7 @@ pub struct Role {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ItemRole {
     pub item_id: Uuid,
     pub role_id: Uuid,
@@ -205,6 +216,7 @@ pub struct ItemRole {
 // ─── Comment ─────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Comment {
     pub id: Uuid,
     pub item_id: Uuid,
@@ -217,6 +229,7 @@ pub struct Comment {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum CommentType {
     Comment,
     StatusChange,
@@ -227,6 +240,7 @@ pub enum CommentType {
 // ─── Attachment ──────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Attachment {
     pub id: Uuid,
     pub item_id: Uuid,
@@ -240,6 +254,7 @@ pub struct Attachment {
 // ─── Sprint ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Sprint {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -254,6 +269,7 @@ pub struct Sprint {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum SprintStatus {
     Planning,
     Active,
@@ -275,6 +291,7 @@ impl std::fmt::Display for SprintStatus {
 // ─── Board View Config ──────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BoardView {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -286,6 +303,7 @@ pub struct BoardView {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BoardColumn {
     pub status: String,
     pub wip_limit: Option<usize>,
@@ -295,6 +313,7 @@ pub struct BoardColumn {
 // ─── DTOs for creation/updates ───────────────────────────────
 
 #[derive(Debug, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateProject {
     #[validate(length(min = 1, max = 200, message = "name must be 1–200 characters"))]
     pub name: String,
@@ -305,6 +324,7 @@ pub struct CreateProject {
 }
 
 #[derive(Debug, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateProject {
     #[validate(length(min = 1, max = 200, message = "name must be 1–200 characters"))]
     pub name: Option<String>,
@@ -316,6 +336,7 @@ pub struct UpdateProject {
 }
 
 #[derive(Debug, Default, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateItem {
     #[validate(length(min = 1, max = 500, message = "title must be 1–500 characters"))]
     pub title: String,
@@ -336,6 +357,7 @@ pub struct CreateItem {
 }
 
 #[derive(Debug, Default, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateItem {
     #[validate(length(min = 1, max = 500, message = "title must be 1–500 characters"))]
     pub title: Option<String>,
@@ -347,17 +369,30 @@ pub struct UpdateItem {
     pub priority: Option<Priority>,
     #[validate(range(min = 0.0, message = "estimate must be non-negative"))]
     pub estimate: Option<f64>,
-    pub estimate_unit: Option<EstimateUnit>,
+    // Double-`Option` fields: outer `None` = key absent (leave untouched),
+    // `Some(None)` = JSON `null` (clear the column), `Some(Some(v))` = set to `v`.
+    // This lets the frontend clear a sprint assignment / due date / estimate unit
+    // by sending `null`, which a plain `Option<T>` cannot distinguish from "absent".
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub estimate_unit: Option<Option<EstimateUnit>>,
     #[validate(length(max = 20, message = "too many tags (max 20)"))]
     pub tags: Option<Vec<String>>,
-    pub due_date: Option<DateTime<Utc>>,
-    pub sprint_id: Option<Uuid>,
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub due_date: Option<Option<DateTime<Utc>>>,
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub sprint_id: Option<Option<Uuid>>,
     pub sort_order: Option<i32>,
     #[validate(length(max = 200, message = "assignee name too long (max 200 chars)"))]
     pub assignee: Option<String>,
+    /// Server-only: the target status's category, populated by the update handler
+    /// when the status changes so the persistence layer can maintain
+    /// `started_at` / `completed_at`. Never (de)serialized from client requests.
+    #[serde(skip)]
+    pub status_category: Option<StatusCategory>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateSprint {
     #[validate(length(min = 1, max = 200, message = "name must be 1–200 characters"))]
     pub name: String,
@@ -368,6 +403,7 @@ pub struct CreateSprint {
 }
 
 #[derive(Debug, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateRole {
     #[validate(length(min = 1, max = 100, message = "name must be 1–100 characters"))]
     pub name: String,
@@ -376,6 +412,7 @@ pub struct CreateRole {
 }
 
 #[derive(Debug, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateComment {
     #[validate(length(min = 1, max = 10_000, message = "content must be 1–10 000 characters"))]
     pub content: String,
@@ -384,12 +421,14 @@ pub struct CreateComment {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateDependency {
     pub target_item_id: Uuid,
     pub dependency_type: DependencyType,
 }
 
 #[derive(Debug, Deserialize, Default)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
 pub struct ItemFilter {
     pub status: Option<String>,
     pub item_type: Option<ItemType>,
@@ -403,9 +442,31 @@ pub struct ItemFilter {
     pub per_page: Option<u32>,
 }
 
+impl ItemFilter {
+    /// Default page size when the client does not specify one.
+    pub const DEFAULT_PER_PAGE: u32 = 100;
+    /// Hard cap on page size so a single request can never scan the whole table.
+    pub const MAX_PER_PAGE: u32 = 500;
+
+    /// The effective, clamped page size (1..=`MAX_PER_PAGE`). Shared by the
+    /// list query, the pagination envelope, and any caller that needs to know
+    /// how many rows a page can hold.
+    pub fn effective_per_page(&self) -> u32 {
+        self.per_page
+            .unwrap_or(Self::DEFAULT_PER_PAGE)
+            .clamp(1, Self::MAX_PER_PAGE)
+    }
+
+    /// The effective, 1-based page number (never below 1).
+    pub fn effective_page(&self) -> u32 {
+        self.page.unwrap_or(1).max(1)
+    }
+}
+
 // ─── Project Template ────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ProjectTemplate {
     pub id: Uuid,
     pub name: String,
@@ -421,6 +482,7 @@ pub struct ProjectTemplate {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BoardTemplate {
     pub name: String,
     pub description: Option<String>,
@@ -430,6 +492,7 @@ pub struct BoardTemplate {
 }
 
 #[derive(Debug, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateProjectTemplate {
     #[validate(length(min = 1, max = 200, message = "name must be 1–200 characters"))]
     pub name: String,
@@ -445,6 +508,7 @@ pub struct CreateProjectTemplate {
 // ─── Custom Fields ───────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CustomFieldDefinition {
     pub id: Uuid,
     pub project_id: Option<Uuid>, // None for template-level fields
@@ -461,6 +525,7 @@ pub struct CustomFieldDefinition {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum CustomFieldType {
     Text,
     Number,
@@ -474,6 +539,7 @@ pub enum CustomFieldType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CustomFieldValue {
     pub id: Uuid,
     pub item_id: Uuid,
@@ -484,6 +550,7 @@ pub struct CustomFieldValue {
 }
 
 #[derive(Debug, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateCustomField {
     #[validate(length(min = 1, max = 100, message = "name must be 1–100 characters"))]
     pub name: String,
@@ -498,6 +565,7 @@ pub struct CreateCustomField {
 }
 
 #[derive(Debug, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateCustomField {
     #[validate(length(min = 1, max = 100, message = "name must be 1–100 characters"))]
     pub name: Option<String>,
@@ -511,6 +579,7 @@ pub struct UpdateCustomField {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SetCustomFieldValue {
     pub field_id: Uuid,
     pub value: serde_json::Value,
@@ -705,6 +774,7 @@ impl CustomFieldDefinition {
 // ─── Board (Multiple Boards per Project) ────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Board {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -719,6 +789,7 @@ pub struct Board {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum BoardGrouping {
     Status,            // Group by status (default Kanban)
     Priority,          // Group by priority
@@ -728,18 +799,24 @@ pub enum BoardGrouping {
     CustomField(Uuid), // Group by custom field
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateBoard {
+    #[validate(length(min = 1, max = 200, message = "name must be 1–200 characters"))]
     pub name: String,
+    #[validate(length(max = 10_000, message = "description too long (max 10 000 chars)"))]
     pub description: Option<String>,
     pub filters: Option<serde_json::Value>,
     pub grouping: Option<BoardGrouping>,
     pub is_default: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateBoard {
+    #[validate(length(min = 1, max = 200, message = "name must be 1–200 characters"))]
     pub name: Option<String>,
+    #[validate(length(max = 10_000, message = "description too long (max 10 000 chars)"))]
     pub description: Option<String>,
     pub filters: Option<serde_json::Value>,
     pub grouping: Option<BoardGrouping>,
@@ -969,5 +1046,33 @@ mod tests {
             json!({"max_items": 2}),
         );
         assert!(f.validate_value(&json!(["A", "B", "C"])).is_err());
+    }
+
+    // 26.1 — the double-`Option` PATCH fields must distinguish "absent" (leave
+    // untouched) from "null" (clear) from an explicit value.
+    #[test]
+    fn update_item_double_option_distinguishes_absent_null_and_value() {
+        // Absent → outer None.
+        let absent: UpdateItem = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(absent.sprint_id, None);
+        assert_eq!(absent.due_date, None);
+        assert_eq!(absent.estimate_unit, None);
+
+        // Explicit null → Some(None) (clear).
+        let nulled: UpdateItem =
+            serde_json::from_value(json!({"sprint_id": null, "due_date": null})).unwrap();
+        assert_eq!(nulled.sprint_id, Some(None));
+        assert_eq!(nulled.due_date, Some(None));
+
+        // Concrete value → Some(Some(_)).
+        let id = Uuid::new_v4();
+        let set: UpdateItem =
+            serde_json::from_value(json!({"sprint_id": id.to_string()})).unwrap();
+        assert_eq!(set.sprint_id, Some(Some(id)));
+
+        // status_category is server-only: never populated from client JSON.
+        let with_cat: UpdateItem =
+            serde_json::from_value(json!({"status_category": "done"})).unwrap();
+        assert_eq!(with_cat.status_category, None);
     }
 }

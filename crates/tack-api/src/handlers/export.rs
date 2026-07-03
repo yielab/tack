@@ -17,7 +17,8 @@ use tack_core::models::{
 use crate::error::ApiError;
 use crate::router::AppState;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ExportQuery {
     #[serde(default = "default_format")]
     format: String,
@@ -29,6 +30,20 @@ fn default_format() -> String {
 
 /// GET /api/projects/:id/export
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/projects/{id}/export",
+    tag = "export",
+    params(
+        ("id" = Uuid, Path, description = "Project ID"),
+        ExportQuery,
+    ),
+    responses(
+        (status = 200, description = "Export file (JSON, YAML, or CSV per the `format` query)"),
+        (status = 400, description = "Unsupported format", body = crate::openapi::ErrorEnvelope),
+        (status = 404, description = "Project not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn export_project(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
@@ -159,6 +174,16 @@ struct ImportPayload {
 /// so a YAML export round-trips back in unchanged. (YAML is a JSON superset, so
 /// both decode into the same intermediate `serde_json::Value`.)
 #[instrument(skip(state, body))]
+#[utoipa::path(
+    post,
+    path = "/api/projects/import",
+    tag = "import",
+    request_body(content = serde_json::Value, description = "Project snapshot (JSON, or YAML when Content-Type mentions yaml) as produced by export"),
+    responses(
+        (status = 200, description = "Import result with the new project and stats", body = serde_json::Value),
+        (status = 400, description = "Invalid import payload", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn import_project(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -345,6 +370,20 @@ async fn run_import(
 ///
 /// Returns `{ "created": N, "skipped": N }`.
 #[instrument(skip(state, body))]
+#[utoipa::path(
+    post,
+    path = "/api/projects/{id}/import-csv",
+    tag = "import",
+    params(
+        ("id" = Uuid, Path, description = "Project ID"),
+    ),
+    request_body(content = String, content_type = "text/csv", description = "CSV with a header row; `title` column required"),
+    responses(
+        (status = 200, description = "Counts of created and skipped rows", body = serde_json::Value),
+        (status = 400, description = "Malformed CSV", body = crate::openapi::ErrorEnvelope),
+        (status = 404, description = "Project not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn import_csv(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,

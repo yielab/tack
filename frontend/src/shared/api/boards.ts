@@ -1,4 +1,5 @@
 import { request } from './client';
+import { items as itemsApi } from './items';
 import type { BoardState, Item, Project } from '../types';
 
 /** Pure function: derive Kanban columns from a project's workflow + items list. */
@@ -27,7 +28,7 @@ export const boards = {
   projectBoardState: async (projectId: string): Promise<BoardState> => {
     const [project, allItems] = await Promise.all([
       request<Project>(`/projects/${projectId}`),
-      request<Item[]>(`/projects/${projectId}/items`),
+      itemsApi.list(projectId),
     ]);
     return deriveBoard(project, allItems);
   },

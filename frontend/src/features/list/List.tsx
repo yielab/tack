@@ -173,14 +173,12 @@ export default function List() {
     }
   };
 
-  const handleMove = async (itemId: string, newParentId: string | null) => {
-    try {
-      await api.items.update(itemId, { parent_id: newParentId || undefined });
-      toast.success('Item moved');
-      await refetch();
-    } catch {
-      toast.error('Failed to move');
-    }
+  const handleMove = (_itemId: string, _newParentId: string | null) => {
+    // Re-parenting is not supported by the API: `PATCH /items/:id` (UpdateItem in
+    // the OpenAPI contract) has no `parent_id` field, so the backend would
+    // silently ignore the change. Surface that honestly rather than showing a
+    // misleading "moved" toast. (Re-parenting needs a backend UpdateItem change.)
+    toast.info("Re-parenting items isn't supported yet");
   };
 
   const onDragEnd = ({ draggable, droppable }: any) => {

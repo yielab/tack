@@ -41,9 +41,13 @@ describe('api.projects', () => {
 });
 
 describe('api.items', () => {
-  it('list → GET /api/projects/{id}/items', async () => {
+  it('list → GET /api/projects/{id}/items?page=1&per_page=200 (paginated envelope)', async () => {
+    fetchMock.mockResolvedValue(ok({ data: [], total: 0, page: 1, per_page: 200 }));
     await api.items.list('p1');
-    expect(lastCall()).toMatchObject({ url: '/api/projects/p1/items', method: 'GET' });
+    expect(lastCall()).toMatchObject({
+      url: '/api/projects/p1/items?page=1&per_page=200',
+      method: 'GET',
+    });
   });
   it('update → PATCH /api/items/{id}', async () => {
     await api.items.update('i1', { status: 'done' });

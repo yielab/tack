@@ -53,6 +53,32 @@ pub enum BackupError {
     SchemaTooNew { snapshot: u32, local: u32 },
     #[error("bundle is corrupt or unrecognised format")]
     CorruptBundle,
+    #[error(
+        "restore rejected: unsupported bundle format_version {0} (this binary understands version 1)"
+    )]
+    UnsupportedFormat(u32),
+    #[error(
+        "restore rejected: database integrity check failed (manifest sha256 does not match the extracted database)"
+    )]
+    IntegrityMismatch,
+    #[error("restore rejected: bundle contains an unsafe path '{0}' (path traversal attempt)")]
+    UnsafePath(String),
+    #[error(
+        "upload rejected: another device uploaded newer work (remote generation {remote_generation} ≥ local {local_generation}) — restore first or force"
+    )]
+    GenerationConflict {
+        local_generation: u64,
+        remote_generation: u64,
+        /// The remote head manifest that would be clobbered (for the 409 body).
+        remote: Box<BackupManifest>,
+    },
+    #[error(
+        "restore rejected: local generation ({local_generation}) is ahead of the snapshot ({snapshot_generation}); this device has newer work — force to overwrite"
+    )]
+    RestoreWouldLoseWork {
+        local_generation: u64,
+        snapshot_generation: u64,
+    },
 }
 
 // ── Manifest ─────────────────────────────────────────────────────────────────
@@ -75,6 +101,11 @@ pub struct BackupManifest {
     pub object_key: String,
     /// Approximate bundle size in bytes.
     pub bundle_size_bytes: u64,
+    /// Monotonic sync generation this snapshot represents. Bumped once per
+    /// successful backup; used for cross-device conflict detection (Phase 28.2).
+    /// Defaults to 0 for older sidecars that predate the field.
+    #[serde(default)]
+    pub generation: u64,
 }
 
 // ── Store construction ────────────────────────────────────────────────────────
@@ -151,6 +182,119 @@ pub async fn install_id(pool: &SqlitePool) -> Result<String, BackupError> {
     Ok(id)
 }
 
+/// Read the monotonic sync generation counter (`app_meta.generation`).
+///
+/// Defaults to 0 when the row is absent — a brand-new install. This value is
+/// carried inside the DB snapshot (it is *not* scrubbed), so a device that
+/// restores another device's bundle adopts that bundle's generation.
+pub async fn generation(pool: &SqlitePool) -> Result<u64, BackupError> {
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)",
+    )
+    .execute(pool)
+    .await?;
+
+    let existing: Option<String> =
+        sqlx::query_scalar("SELECT value FROM app_meta WHERE key = 'generation'")
+            .fetch_optional(pool)
+            .await?;
+
+    Ok(existing.and_then(|s| s.parse::<u64>().ok()).unwrap_or(0))
+}
+
+/// Persist the sync generation counter.
+pub async fn set_generation(pool: &SqlitePool, value: u64) -> Result<(), BackupError> {
+    sqlx::query(
+        "INSERT INTO app_meta (key, value) VALUES ('generation', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .bind(value.to_string())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// The remote head: the manifest with the highest generation (ties broken by
+/// newest `created_at`). `None` when the bucket has no backups yet.
+pub async fn remote_head(
+    store: &dyn ObjectStore,
+    prefix: &str,
+) -> Result<Option<BackupManifest>, BackupError> {
+    let manifests = list(store, prefix).await?;
+    Ok(manifests
+        .into_iter()
+        .max_by(|a, b| a.generation.cmp(&b.generation).then(a.created_at.cmp(&b.created_at))))
+}
+
+/// Conflict guard for uploads. Returns `Some(remote_head)` when uploading at
+/// `prospective_generation` would clobber newer remote work from *another*
+/// install — i.e. the remote head's generation is `>= prospective_generation`
+/// and it belongs to a different install. `None` means it is safe to upload.
+pub async fn upload_conflict(
+    store: &dyn ObjectStore,
+    prefix: &str,
+    prospective_generation: u64,
+    local_install: &str,
+) -> Result<Option<BackupManifest>, BackupError> {
+    let head = remote_head(store, prefix).await?;
+    Ok(head.filter(|h| {
+        h.generation >= prospective_generation && h.install_id != local_install
+    }))
+}
+
+/// Whether restoring a snapshot at `snapshot_generation` onto a device at
+/// `local_generation` would discard newer local work. `force` overrides it.
+/// (28.2, restore direction.)
+pub fn restore_conflicts(local_generation: u64, snapshot_generation: u64, force: bool) -> bool {
+    !force && local_generation > snapshot_generation
+}
+
+/// `app_meta` keys that must never leave the machine inside a backup: the S3
+/// secret key is stored (JSON-encoded) under `backup_config`, and `install_id`
+/// is this install's identity — restoring it elsewhere would clone the identity.
+const SENSITIVE_META_KEYS: &[&str] = &["backup_config", "install_id"];
+
+/// Strip machine-local secrets/identity from a freshly-created snapshot DB file
+/// so they never ship inside a downloadable or uploadable bundle.
+///
+/// Because `install_id` is removed, a restored database has no identity row and
+/// [`install_id`] regenerates a fresh UUID on first use — restores no longer
+/// adopt the source install's identity.
+pub async fn scrub_snapshot_secrets(db_file: &Path) -> Result<(), BackupError> {
+    use sqlx::ConnectOptions;
+    use sqlx::sqlite::SqliteConnectOptions;
+
+    let mut conn = SqliteConnectOptions::new()
+        .filename(db_file)
+        .create_if_missing(false)
+        .connect()
+        .await?;
+
+    // The table may be absent on a brand-new DB — create defensively so the
+    // DELETE below is always valid.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)",
+    )
+    .execute(&mut conn)
+    .await?;
+
+    for key in SENSITIVE_META_KEYS {
+        sqlx::query("DELETE FROM app_meta WHERE key = ?")
+            .bind(key)
+            .execute(&mut conn)
+            .await?;
+    }
+
+    // A plain DELETE leaves the secret bytes in freed pages (the SQLite
+    // freelist), so a hex-dump of the snapshot would still reveal them. VACUUM
+    // rewrites the file and physically drops that content.
+    sqlx::query("VACUUM").execute(&mut conn).await?;
+
+    use sqlx::Connection;
+    conn.close().await?;
+    Ok(())
+}
+
 /// Create a VACUUM INTO snapshot and return the raw bytes of the DB file.
 async fn snapshot_db(pool: &SqlitePool, db_path: &Path) -> Result<Vec<u8>, BackupError> {
     // Checkpoint WAL into the main file first.
@@ -164,6 +308,9 @@ async fn snapshot_db(pool: &SqlitePool, db_path: &Path) -> Result<Vec<u8>, Backu
     sqlx::query(&format!("VACUUM INTO '{temp_str}'"))
         .execute(pool)
         .await?;
+
+    // Remove secrets/identity from the snapshot before reading its bytes.
+    scrub_snapshot_secrets(&temp).await?;
 
     let bytes = tokio::fs::read(&temp).await?;
     let _ = tokio::fs::remove_file(&temp).await;
@@ -186,6 +333,9 @@ pub async fn create_bundle(
     let mig_version = migration_version(pool).await?;
     let items = item_count(pool).await?;
     let install = install_id(pool).await?;
+    // The generation is expected to already be bumped/persisted by the caller
+    // (so the DB snapshot above carries the same value the manifest records).
+    let gen_val = generation(pool).await?;
     let created_at = Utc::now().to_rfc3339();
 
     // Build tar in memory, then compress.
@@ -197,7 +347,12 @@ pub async fn create_bundle(
         items,
         &install,
         &db_sha256,
+        gen_val,
     )?;
+
+    // TODO(phase-28.6): optional symmetric bundle encryption would wrap
+    // `tar_bytes` here (before zstd or after) using an in-memory/env passphrase.
+    // Deferred to keep the binary-size budget and avoid a crypto dependency.
 
     let compressed = zstd::encode_all(Cursor::new(&tar_bytes), 3)
         .map_err(|e| BackupError::Zstd(e.to_string()))?;
@@ -214,11 +369,13 @@ pub async fn create_bundle(
         item_count: items,
         object_key,
         bundle_size_bytes: compressed.len() as u64,
+        generation: gen_val,
     };
 
     Ok((compressed, manifest))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_tar(
     db_bytes: &[u8],
     storage_dir: &str,
@@ -227,6 +384,7 @@ fn build_tar(
     items: u64,
     install: &str,
     db_sha256: &str,
+    generation: u64,
 ) -> Result<Vec<u8>, BackupError> {
     let mut ar = tar::Builder::new(Vec::new());
 
@@ -251,6 +409,7 @@ fn build_tar(
         "db_sha256": db_sha256,
         "install_id": install,
         "item_count": items,
+        "generation": generation,
     }))?;
     let mut mh = tar::Header::new_gnu();
     mh.set_size(manifest_json.len() as u64);
@@ -289,7 +448,18 @@ fn append_dir_recursive(
 
 // ── Upload ────────────────────────────────────────────────────────────────────
 
+/// Bundles larger than this are streamed with `put_multipart` instead of a
+/// single buffered PUT, so the whole compressed archive need not be re-buffered
+/// as one request body inside the object-store client.
+const MULTIPART_THRESHOLD: usize = 32 * 1024 * 1024;
+/// Multipart chunk size (8 MiB — comfortably above S3's 5 MiB minimum part).
+const MULTIPART_PART_SIZE: usize = 8 * 1024 * 1024;
+
 /// Upload a bundle + sidecar manifest to the object store.
+///
+/// The bundle goes up first; a missing sidecar afterwards leaves an *orphan*
+/// bundle, which [`prune`] reconciles (deletes) on its next run so a failed
+/// sidecar PUT can never leak an invisible, unprunable object.
 pub async fn upload(
     store: &dyn ObjectStore,
     manifest: &BackupManifest,
@@ -298,9 +468,19 @@ pub async fn upload(
     let bundle_key = OsPath::from(manifest.object_key.clone());
     let sidecar_key = OsPath::from(format!("{}.manifest.json", manifest.object_key));
 
-    let bundle_payload = object_store::PutPayload::from(bundle);
-    store.put(&bundle_key, bundle_payload).await?;
-    info!(key = %manifest.object_key, bytes = manifest.bundle_size_bytes, "Uploaded backup bundle");
+    if bundle.len() > MULTIPART_THRESHOLD {
+        let mut upload = store.put_multipart(&bundle_key).await?;
+        for chunk in bundle.chunks(MULTIPART_PART_SIZE) {
+            let payload = object_store::PutPayload::from(chunk.to_vec());
+            upload.put_part(payload).await?;
+        }
+        upload.complete().await?;
+        info!(key = %manifest.object_key, bytes = bundle.len(), "Uploaded backup bundle (multipart)");
+    } else {
+        let bundle_payload = object_store::PutPayload::from(bundle);
+        store.put(&bundle_key, bundle_payload).await?;
+        info!(key = %manifest.object_key, bytes = manifest.bundle_size_bytes, "Uploaded backup bundle");
+    }
 
     let sidecar_bytes = serde_json::to_vec(manifest)?;
     let sidecar_payload = object_store::PutPayload::from(sidecar_bytes);
@@ -308,6 +488,54 @@ pub async fn upload(
     debug!(key = %sidecar_key, "Uploaded sidecar manifest");
 
     Ok(())
+}
+
+/// Full conflict-safe backup: read the local generation, reject if the remote
+/// head is newer work from another install (unless `force`), bump + persist the
+/// generation, snapshot, upload, and prune. On any failure after the bump the
+/// generation is rolled back so a failed attempt never silently advances it.
+///
+/// Returns [`BackupError::GenerationConflict`] when another device is ahead.
+pub async fn perform_backup(
+    pool: &SqlitePool,
+    cfg: &AppConfig,
+    store: &dyn ObjectStore,
+    force: bool,
+) -> Result<BackupManifest, BackupError> {
+    let local_gen = generation(pool).await?;
+    let prospective = local_gen + 1;
+    let my_install = install_id(pool).await?;
+
+    if !force
+        && let Some(remote) =
+            upload_conflict(store, &cfg.backup_prefix, prospective, &my_install).await?
+    {
+        return Err(BackupError::GenerationConflict {
+            local_generation: local_gen,
+            remote_generation: remote.generation,
+            remote: Box::new(remote),
+        });
+    }
+
+    // Persist the bump BEFORE snapshotting so the DB snapshot's app_meta carries
+    // the same generation the manifest records (restores adopt it).
+    set_generation(pool, prospective).await?;
+
+    let outcome = async {
+        let (bundle, manifest) = create_bundle(pool, cfg).await?;
+        upload(store, &manifest, bundle).await?;
+        prune(store, &cfg.backup_prefix, cfg.backup_retention).await?;
+        Ok::<_, BackupError>(manifest)
+    }
+    .await;
+
+    match outcome {
+        Ok(m) => Ok(m),
+        Err(e) => {
+            let _ = set_generation(pool, local_gen).await;
+            Err(e)
+        }
+    }
 }
 
 // ── List ──────────────────────────────────────────────────────────────────────
@@ -352,39 +580,81 @@ pub async fn download(store: &dyn ObjectStore, key: &str) -> Result<Vec<u8>, Bac
 
 // ── Prune ─────────────────────────────────────────────────────────────────────
 
-/// Delete oldest backups, keeping the newest `keep` bundles. Returns number deleted.
+/// Delete oldest backups, keeping the newest `keep` bundles, and reconcile any
+/// orphaned bundles (a `.tar.zst` with no sidecar manifest — the fingerprint of
+/// a backup whose sidecar PUT failed). Returns number of bundles deleted.
 pub async fn prune(
     store: &dyn ObjectStore,
     prefix: &str,
     keep: usize,
 ) -> Result<usize, BackupError> {
     let mut manifests = list(store, prefix).await?;
-    if manifests.len() <= keep {
-        return Ok(0);
-    }
-
-    // `list` returns newest-first; keep the first `keep`, delete the rest.
-    let to_delete = manifests.split_off(keep);
     let mut deleted = 0;
 
-    for m in &to_delete {
-        let bundle_key = OsPath::from(m.object_key.clone());
-        let sidecar_key = OsPath::from(format!("{}.manifest.json", m.object_key));
-        if let Err(e) = store.delete(&bundle_key).await {
-            warn!(key = %m.object_key, error = %e, "Failed to delete old bundle");
+    // ── Retention: `list` returns newest-first; delete everything past `keep`.
+    if manifests.len() > keep {
+        let to_delete = manifests.split_off(keep);
+        for m in &to_delete {
+            let bundle_key = OsPath::from(m.object_key.clone());
+            let sidecar_key = OsPath::from(format!("{}.manifest.json", m.object_key));
+            if let Err(e) = store.delete(&bundle_key).await {
+                warn!(key = %m.object_key, error = %e, "Failed to delete old bundle");
+            } else {
+                deleted += 1;
+            }
+            let _ = store.delete(&sidecar_key).await;
+        }
+    }
+
+    // ── Reconcile orphans: any bundle object without a matching sidecar.
+    let orphans = orphan_bundles(store, prefix).await?;
+    for key in orphans {
+        if let Err(e) = store.delete(&OsPath::from(key.clone())).await {
+            warn!(key = %key, error = %e, "Failed to delete orphaned bundle");
         } else {
+            debug!(key = %key, "Reconciled orphaned bundle (no sidecar)");
             deleted += 1;
         }
-        let _ = store.delete(&sidecar_key).await;
     }
 
     info!(deleted, kept = keep, "Pruned old remote backups");
     Ok(deleted)
 }
 
+/// List bundle object keys (`*.tar.zst`) that have no `*.tar.zst.manifest.json`
+/// sidecar — the leftover of a bundle upload whose sidecar PUT never landed.
+async fn orphan_bundles(
+    store: &dyn ObjectStore,
+    prefix: &str,
+) -> Result<Vec<String>, BackupError> {
+    use futures::StreamExt;
+    use std::collections::HashSet;
+
+    let prefix_path = OsPath::from(format!("{}/", prefix));
+    let mut stream = store.list(Some(&prefix_path));
+
+    let mut bundles: Vec<String> = Vec::new();
+    let mut sidecar_targets: HashSet<String> = HashSet::new();
+
+    while let Some(item) = stream.next().await {
+        let key = item?.location.to_string();
+        if let Some(bundle) = key.strip_suffix(".manifest.json") {
+            sidecar_targets.insert(bundle.to_string());
+        } else if key.ends_with(".tar.zst") {
+            bundles.push(key);
+        }
+    }
+
+    Ok(bundles
+        .into_iter()
+        .filter(|b| !sidecar_targets.contains(b))
+        .collect())
+}
+
 // ── Restore helpers ───────────────────────────────────────────────────────────
 
 /// A file extracted from a bundle, ready to be written to disk.
+#[derive(Debug)]
 struct ExtractedFile {
     dest: PathBuf,
     data: Vec<u8>,
@@ -402,6 +672,11 @@ pub async fn stage_restore(
     db_path: &Path,
     storage_dir: &str,
 ) -> Result<(), BackupError> {
+    // Reject unknown bundle formats before touching anything.
+    if manifest.format_version != 1 {
+        return Err(BackupError::UnsupportedFormat(manifest.format_version));
+    }
+
     if manifest.migration_version > local_migration_version {
         return Err(BackupError::SchemaTooNew {
             snapshot: manifest.migration_version,
@@ -413,11 +688,25 @@ pub async fn stage_restore(
     let restore_storage = format!("{}.restore", storage_dir);
     let restore_storage_path = PathBuf::from(&restore_storage);
 
+    // Clear any leftovers from a previous (aborted) restore attempt so a new
+    // bundle never merges into a stale staging tree.
+    let _ = tokio::fs::remove_file(&restore_db_path).await;
+    let _ = tokio::fs::remove_dir_all(&restore_storage_path).await;
+
     // All sync work (decompression + tar parsing) before any await points.
-    let (db_bytes, attachments) =
-        tokio::task::spawn_blocking(move || parse_bundle(&bundle_bytes, &restore_storage_path))
-            .await
-            .map_err(|e| BackupError::Io(std::io::Error::other(e.to_string())))??;
+    let restore_storage_for_parse = restore_storage_path.clone();
+    let (db_bytes, attachments) = tokio::task::spawn_blocking(move || {
+        parse_bundle(&bundle_bytes, &restore_storage_for_parse)
+    })
+    .await
+    .map_err(|e| BackupError::Io(std::io::Error::other(e.to_string())))??;
+
+    // Integrity: the extracted database must hash to the manifest's db_sha256.
+    // Guards against silent corruption/bit-rot and tampered bundles.
+    let actual_sha = hex::encode(Sha256::digest(&db_bytes));
+    if actual_sha != manifest.db_sha256 {
+        return Err(BackupError::IntegrityMismatch);
+    }
 
     // Async I/O: write the staged files.
     tokio::fs::write(&restore_db_path, &db_bytes).await?;
@@ -434,6 +723,42 @@ pub async fn stage_restore(
         storage_restore = %restore_storage,
         "Restore staged — restart the server to apply"
     );
+    Ok(())
+}
+
+/// Verify a bundle without staging anything: checks `format_version`, that the
+/// snapshot schema is not newer than the running binary, and that the extracted
+/// database hashes to the manifest's `db_sha256`. Used by the "Verify" preview
+/// (Phase 28.5) so a restore can be validated before touching the live DB.
+pub async fn verify_bundle(
+    bundle_bytes: Vec<u8>,
+    manifest: &BackupManifest,
+    local_migration_version: u32,
+) -> Result<(), BackupError> {
+    if manifest.format_version != 1 {
+        return Err(BackupError::UnsupportedFormat(manifest.format_version));
+    }
+    if manifest.migration_version > local_migration_version {
+        return Err(BackupError::SchemaTooNew {
+            snapshot: manifest.migration_version,
+            local: local_migration_version,
+        });
+    }
+
+    let expected_sha = manifest.db_sha256.clone();
+    // Parse in a blocking task (decompress + tar walk). The staging path is a
+    // throwaway — verify never writes.
+    let db_bytes = tokio::task::spawn_blocking(move || {
+        parse_bundle(&bundle_bytes, Path::new("/nonexistent-verify-staging"))
+            .map(|(db, _attachments)| db)
+    })
+    .await
+    .map_err(|e| BackupError::Io(std::io::Error::other(e.to_string())))??;
+
+    let actual_sha = hex::encode(Sha256::digest(&db_bytes));
+    if actual_sha != expected_sha {
+        return Err(BackupError::IntegrityMismatch);
+    }
     Ok(())
 }
 
@@ -464,6 +789,18 @@ fn parse_bundle(
                 .unwrap_or(&entry_path);
             if rel.as_os_str().is_empty() {
                 continue;
+            }
+            // Refuse path-traversal / absolute entries so a crafted bundle can
+            // never escape the staging dir (mirrors tar::Entry::unpack_in).
+            use std::path::Component;
+            let unsafe_component = rel.components().any(|c| {
+                matches!(
+                    c,
+                    Component::ParentDir | Component::RootDir | Component::Prefix(_)
+                )
+            });
+            if unsafe_component {
+                return Err(BackupError::UnsafePath(name.into_owned()));
             }
             let dest = restore_storage_path.join(rel);
             let mut buf = Vec::new();
@@ -500,6 +837,7 @@ mod tests {
             item_count: 42,
             object_key: "tack/tack-backup-test.tar.zst".into(),
             bundle_size_bytes: 1024,
+            generation: 0,
         };
         let json = serde_json::to_string(&m).unwrap();
         let m2: BackupManifest = serde_json::from_str(&json).unwrap();
@@ -521,6 +859,7 @@ mod tests {
             5,
             "test-install-id",
             "deadbeef",
+            0,
         )
         .unwrap();
 
@@ -556,6 +895,7 @@ mod tests {
             item_count: 1,
             object_key: "tack/tack-backup-test.tar.zst".into(),
             bundle_size_bytes: 4,
+            generation: 0,
         };
         let bundle_data = b"test".to_vec();
 
@@ -590,6 +930,7 @@ mod tests {
                 item_count: 0,
                 object_key: format!("tack/tack-backup-{i:02}.tar.zst"),
                 bundle_size_bytes: 1,
+                generation: 0,
             };
             upload(store.as_ref(), &m, b"x".to_vec()).await.unwrap();
         }
@@ -617,6 +958,7 @@ mod tests {
             item_count: 0,
             object_key: "key".into(),
             bundle_size_bytes: 0,
+            generation: 0,
         };
 
         let result = stage_restore(
@@ -640,6 +982,183 @@ mod tests {
         );
     }
 
+    // ── 27.3: tar extraction rejects path traversal ───────────────────────────
+    #[test]
+    fn parse_bundle_rejects_path_traversal() {
+        let mut ar = tar::Builder::new(Vec::new());
+
+        // A legitimate database entry, processed first.
+        let db = b"SQLite format 3\x00";
+        let mut h = tar::Header::new_gnu();
+        h.set_size(db.len() as u64);
+        h.set_mode(0o644);
+        h.set_cksum();
+        ar.append_data(&mut h, "database.db", Cursor::new(db)).unwrap();
+
+        // A malicious entry that tries to escape the staging directory. The tar
+        // writer refuses `..` via set_path, so write the raw name into the header
+        // directly — exactly what a hand-crafted malicious archive would do.
+        let evil = b"pwned";
+        let mut h2 = tar::Header::new_gnu();
+        h2.set_size(evil.len() as u64);
+        h2.set_mode(0o644);
+        let evil_name = b"attachments/../../x";
+        h2.as_gnu_mut().unwrap().name[..evil_name.len()].copy_from_slice(evil_name);
+        h2.set_cksum();
+        ar.append(&h2, Cursor::new(evil)).unwrap();
+
+        let tar_bytes = ar.into_inner().unwrap();
+        let bundle = zstd::encode_all(Cursor::new(&tar_bytes), 3).unwrap();
+
+        let res = parse_bundle(&bundle, Path::new("/tmp/tack-traversal-test.restore"));
+        assert!(
+            matches!(res, Err(BackupError::UnsafePath(_))),
+            "expected UnsafePath, got: {res:?}"
+        );
+    }
+
+    // ── 27.4: restore verifies db_sha256 and format_version ────────────────────
+    #[tokio::test]
+    async fn stage_restore_rejects_tampered_db() {
+        let db = b"SQLite format 3\x00 tamper test payload";
+        let real_sha = hex::encode(Sha256::digest(db));
+        let tar_bytes = build_tar(
+            db,
+            "/nonexistent_storage_dir",
+            "2026-06-12T00:00:00+00:00",
+            1,
+            0,
+            "id",
+            &real_sha,
+            0,
+        )
+        .unwrap();
+        let bundle = zstd::encode_all(Cursor::new(&tar_bytes), 3).unwrap();
+
+        let manifest = BackupManifest {
+            format_version: 1,
+            created_at: "2026-06-12T00:00:00+00:00".into(),
+            migration_version: 1,
+            db_sha256: "deadbeefdeadbeef".into(), // does NOT match the real DB
+            install_id: "id".into(),
+            item_count: 0,
+            object_key: "key".into(),
+            bundle_size_bytes: 0,
+            generation: 0,
+        };
+
+        let db_path = std::env::temp_dir().join(format!("tack-tamper-{}.db", Uuid::new_v4()));
+        let storage = std::env::temp_dir().join(format!("tack-tamper-{}", Uuid::new_v4()));
+        let res = stage_restore(
+            bundle,
+            &manifest,
+            16,
+            &db_path,
+            storage.to_string_lossy().as_ref(),
+        )
+        .await;
+
+        assert!(
+            matches!(res, Err(BackupError::IntegrityMismatch)),
+            "expected IntegrityMismatch, got: {res:?}"
+        );
+        // Nothing should have been staged.
+        assert!(!PathBuf::from(format!("{}.restore", db_path.to_string_lossy())).exists());
+    }
+
+    #[tokio::test]
+    async fn stage_restore_rejects_wrong_format_version() {
+        let manifest = BackupManifest {
+            format_version: 2, // unknown format
+            created_at: "2026-06-12T00:00:00+00:00".into(),
+            migration_version: 1,
+            db_sha256: "x".into(),
+            install_id: "id".into(),
+            item_count: 0,
+            object_key: "key".into(),
+            bundle_size_bytes: 0,
+            generation: 0,
+        };
+
+        let res = stage_restore(
+            b"dummy".to_vec(),
+            &manifest,
+            16,
+            Path::new("/tmp/tack_fmt_test.db"),
+            "/tmp/tack_fmt_storage",
+        )
+        .await;
+
+        assert!(
+            matches!(res, Err(BackupError::UnsupportedFormat(2))),
+            "expected UnsupportedFormat(2), got: {res:?}"
+        );
+    }
+
+    // ── 27.6: snapshots ship no secrets or install identity ────────────────────
+    #[tokio::test]
+    async fn scrub_removes_secrets_from_snapshot() {
+        use sqlx::ConnectOptions;
+        use sqlx::Connection;
+        use sqlx::sqlite::SqliteConnectOptions;
+
+        let path = std::env::temp_dir().join(format!("tack-scrub-{}.db", Uuid::new_v4()));
+        let secret = "SUPER-SECRET-S3-KEY-9f8e7d6c5b4a";
+
+        {
+            let mut conn = SqliteConnectOptions::new()
+                .filename(&path)
+                .create_if_missing(true)
+                .connect()
+                .await
+                .unwrap();
+            sqlx::query(
+                "CREATE TABLE app_meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)",
+            )
+            .execute(&mut conn)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO app_meta (key, value) VALUES ('install_id', 'source-install-uuid')",
+            )
+            .execute(&mut conn)
+            .await
+            .unwrap();
+            sqlx::query("INSERT INTO app_meta (key, value) VALUES ('backup_config', ?)")
+                .bind(format!(r#"{{"secret_key":"{secret}"}}"#))
+                .execute(&mut conn)
+                .await
+                .unwrap();
+            conn.close().await.unwrap();
+        }
+
+        scrub_snapshot_secrets(&path).await.unwrap();
+
+        // The sensitive rows are gone.
+        let mut conn = SqliteConnectOptions::new()
+            .filename(&path)
+            .connect()
+            .await
+            .unwrap();
+        let remaining: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM app_meta WHERE key IN ('install_id', 'backup_config')",
+        )
+        .fetch_one(&mut conn)
+        .await
+        .unwrap();
+        conn.close().await.unwrap();
+        assert_eq!(remaining, 0, "sensitive app_meta rows survived scrub");
+
+        // And the secret bytes are physically absent from the file (post-VACUUM).
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(
+            !bytes.windows(secret.len()).any(|w| w == secret.as_bytes()),
+            "secret string still present in snapshot bytes"
+        );
+
+        std::fs::remove_file(&path).ok();
+    }
+
     // ── prune is a no-op when below retention ─────────────────────────────────
 
     #[tokio::test]
@@ -654,9 +1173,202 @@ mod tests {
             item_count: 0,
             object_key: "tack/tack-backup-only.tar.zst".into(),
             bundle_size_bytes: 1,
+            generation: 0,
         };
         upload(store.as_ref(), &m, b"x".to_vec()).await.unwrap();
         let deleted = prune(store.as_ref(), "tack", 10).await.unwrap();
         assert_eq!(deleted, 0);
+    }
+
+    // ── 28.2: generation counter + conflict detection ─────────────────────────
+
+    fn manifest_at(gen_val: u64, install: &str, key: &str) -> BackupManifest {
+        BackupManifest {
+            format_version: 1,
+            created_at: "2026-06-12T00:00:00+00:00".into(),
+            migration_version: 1,
+            db_sha256: "x".into(),
+            install_id: install.into(),
+            item_count: 0,
+            object_key: key.into(),
+            bundle_size_bytes: 1,
+            generation: gen_val,
+        }
+    }
+
+    #[test]
+    fn restore_conflicts_guards_newer_local_work() {
+        // Local ahead of the snapshot → conflict unless forced.
+        assert!(restore_conflicts(5, 3, false));
+        assert!(!restore_conflicts(5, 3, true)); // force overrides
+        // Local at/behind the snapshot → never a conflict.
+        assert!(!restore_conflicts(3, 3, false));
+        assert!(!restore_conflicts(2, 3, false));
+    }
+
+    #[tokio::test]
+    async fn upload_conflict_only_for_other_device_that_is_ahead() {
+        let store = make_store();
+        // Remote head from another device at generation 5.
+        upload(store.as_ref(), &manifest_at(5, "device-a", "tack/a.tar.zst"), b"x".to_vec())
+            .await
+            .unwrap();
+
+        // We are "device-b" about to write generation 5 → conflict (other device ≥ us).
+        let c = upload_conflict(store.as_ref(), "tack", 5, "device-b")
+            .await
+            .unwrap();
+        assert!(c.is_some(), "expected a conflict when another device is ≥ our generation");
+
+        // If we are strictly ahead (prospective 6 > remote 5) → no conflict.
+        let c = upload_conflict(store.as_ref(), "tack", 6, "device-b")
+            .await
+            .unwrap();
+        assert!(c.is_none(), "no conflict when we are ahead of the remote head");
+
+        // Same install id → our own older backup, never a conflict.
+        let c = upload_conflict(store.as_ref(), "tack", 5, "device-a")
+            .await
+            .unwrap();
+        assert!(c.is_none(), "our own backups never conflict with us");
+    }
+
+    // Build a file-backed pool + config for full backup-path tests.
+    async fn file_backed() -> (SqlitePool, AppConfig, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("tack-gen-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("tack.db");
+        let db_url = format!("sqlite:{}?mode=rwc", db_path.to_string_lossy());
+        let pool = tack_db::init_pool(&db_url).await.unwrap();
+        tack_db::migrations::run_all(&pool).await.unwrap();
+        let cfg = AppConfig {
+            database_url: db_url,
+            storage_dir: dir.join("storage").to_string_lossy().into_owned(),
+            backup_prefix: "tack".into(),
+            backup_retention: 10,
+            ..AppConfig::default()
+        };
+        (pool, cfg, dir)
+    }
+
+    #[tokio::test]
+    async fn perform_backup_bumps_generation_and_enforces_conflict() {
+        let store = make_store();
+        let (pool, cfg, dir) = file_backed().await;
+
+        // First backup: generation 0 → 1.
+        let m1 = perform_backup(&pool, &cfg, store.as_ref(), false)
+            .await
+            .unwrap();
+        assert_eq!(m1.generation, 1);
+        assert_eq!(generation(&pool).await.unwrap(), 1);
+
+        // Second backup from the same device: 1 → 2, no conflict.
+        let m2 = perform_backup(&pool, &cfg, store.as_ref(), false)
+            .await
+            .unwrap();
+        assert_eq!(m2.generation, 2);
+
+        // Simulate another device uploading newer work at generation 5.
+        upload(store.as_ref(), &manifest_at(5, "other-device", "tack/other.tar.zst"), b"x".to_vec())
+            .await
+            .unwrap();
+
+        // Non-forced backup must be rejected and must NOT advance our generation.
+        let err = perform_backup(&pool, &cfg, store.as_ref(), false)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, BackupError::GenerationConflict { remote_generation: 5, .. }),
+            "expected GenerationConflict, got {err:?}"
+        );
+        assert_eq!(generation(&pool).await.unwrap(), 2, "conflict must not bump generation");
+
+        // Forcing overrides the conflict and proceeds.
+        let forced = perform_backup(&pool, &cfg, store.as_ref(), true)
+            .await
+            .unwrap();
+        assert_eq!(forced.generation, 3);
+        assert_eq!(generation(&pool).await.unwrap(), 3);
+
+        pool.close().await;
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // ── 28.5: verify_bundle validates without staging ─────────────────────────
+
+    #[tokio::test]
+    async fn verify_bundle_accepts_valid_and_rejects_tampered() {
+        let db = b"SQLite format 3\x00 verify payload";
+        let real_sha = hex::encode(Sha256::digest(db));
+        let tar_bytes =
+            build_tar(db, "/nonexistent", "2026-06-12T00:00:00+00:00", 1, 0, "id", &real_sha, 7)
+                .unwrap();
+        let bundle = zstd::encode_all(Cursor::new(&tar_bytes), 3).unwrap();
+
+        let mut manifest = manifest_at(7, "id", "key");
+        manifest.db_sha256 = real_sha.clone();
+        manifest.migration_version = 1;
+
+        // Valid bundle verifies OK against a running binary with ≥1 migrations.
+        verify_bundle(bundle.clone(), &manifest, 16).await.unwrap();
+
+        // Tampered sha → IntegrityMismatch.
+        let mut bad = manifest.clone();
+        bad.db_sha256 = "deadbeef".into();
+        assert!(matches!(
+            verify_bundle(bundle.clone(), &bad, 16).await,
+            Err(BackupError::IntegrityMismatch)
+        ));
+
+        // Newer schema than local → SchemaTooNew.
+        let mut newer = manifest.clone();
+        newer.migration_version = 99;
+        assert!(matches!(
+            verify_bundle(bundle, &newer, 16).await,
+            Err(BackupError::SchemaTooNew { .. })
+        ));
+    }
+
+    // ── 28.4: prune reconciles an orphaned bundle (no sidecar) ─────────────────
+
+    #[tokio::test]
+    async fn prune_reconciles_orphaned_bundle() {
+        let store = make_store();
+
+        // A healthy backup (bundle + sidecar).
+        upload(store.as_ref(), &manifest_at(1, "id", "tack/good.tar.zst"), b"x".to_vec())
+            .await
+            .unwrap();
+
+        // An orphan: a bundle object with NO sidecar (a failed sidecar PUT).
+        store
+            .put(&OsPath::from("tack/orphan.tar.zst"), object_store::PutPayload::from(b"junk".to_vec()))
+            .await
+            .unwrap();
+
+        let deleted = prune(store.as_ref(), "tack", 10).await.unwrap();
+        assert_eq!(deleted, 1, "the orphan bundle should be reconciled/deleted");
+
+        // The orphan is gone; the healthy backup remains.
+        assert!(orphan_bundles(store.as_ref(), "tack").await.unwrap().is_empty());
+        let remaining = list(store.as_ref(), "tack").await.unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].object_key, "tack/good.tar.zst");
+    }
+
+    // ── 28.4: multipart path uploads and round-trips a large bundle ────────────
+
+    #[tokio::test]
+    async fn upload_multipart_roundtrips_large_bundle() {
+        let store = make_store();
+        // Above MULTIPART_THRESHOLD so the multipart branch is exercised.
+        let big = vec![0xABu8; MULTIPART_THRESHOLD + 1024];
+        let manifest = manifest_at(1, "id", "tack/big.tar.zst");
+
+        upload(store.as_ref(), &manifest, big.clone()).await.unwrap();
+
+        let got = download(store.as_ref(), "tack/big.tar.zst").await.unwrap();
+        assert_eq!(got, big, "multipart-uploaded bundle must round-trip byte-for-byte");
     }
 }

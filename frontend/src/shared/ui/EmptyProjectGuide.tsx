@@ -1,6 +1,7 @@
 import { type Component, type JSX } from 'solid-js';
 import { A, useParams } from '@solidjs/router';
 import { Button } from '../../shared/ui';
+import { useVocab } from '../vocab/useVocab';
 
 interface Props {
   onAddItem: () => void;
@@ -33,6 +34,7 @@ const Step: Component<{ n: number; title: string; description: string; action: J
 
 const EmptyProjectGuide: Component<Props> = (props) => {
   const params = useParams();
+  const { t } = useVocab();
   const pid = () => params.id;
 
   return (
@@ -72,7 +74,7 @@ const EmptyProjectGuide: Component<Props> = (props) => {
             description={'Rename "Task", "Sprint", and "Epic" to match your domain — software, construction, research, anything.'}
             action={
               <A
-                href={`/projects/${pid()}/settings`}
+                href={`/projects/${pid()}/settings?tab=vocabulary`}
                 class="inline-flex items-center gap-1 text-sm font-medium"
                 style={{ color: 'var(--color-primary-600)' }}
               >
@@ -85,7 +87,7 @@ const EmptyProjectGuide: Component<Props> = (props) => {
 
           <Step
             n={3}
-            title="Plan a sprint"
+            title={`Plan a ${t('sprint').toLowerCase()}`}
             description="Group items into time-boxed iterations to track progress."
             action={
               <A
@@ -93,7 +95,7 @@ const EmptyProjectGuide: Component<Props> = (props) => {
                 class="inline-flex items-center gap-1 text-sm font-medium"
                 style={{ color: 'var(--color-text-tertiary)' }}
               >
-                Go to Sprint →
+                Go to {t('sprint')} →
               </A>
             }
           />

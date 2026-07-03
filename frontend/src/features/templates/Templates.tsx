@@ -5,6 +5,23 @@ import { api } from '../../shared/api';
 import { Button, Field, FieldShell, Modal, Badge, EmptyState } from '../../shared/ui';
 import type { ProjectTemplate } from '../../shared/types';
 
+/** Workflow column names in board order (for the preset preview). */
+function workflowColumns(t: ProjectTemplate): string[] {
+  const statuses = t.workflow?.statuses ?? [];
+  return [...statuses].sort((a, b) => a.order - b.order).map((s) => s.name);
+}
+
+/** Up to 3 sample "term → Renamed" vocabulary mappings, preferring common terms. */
+function vocabSamples(t: ProjectTemplate): string[] {
+  const vocab = t.vocabulary ?? {};
+  const preferred = ['task', 'sprint', 'milestone', 'epic', 'release', 'phase'];
+  const keys = [
+    ...preferred.filter((k) => k in vocab),
+    ...Object.keys(vocab).filter((k) => !preferred.includes(k)),
+  ];
+  return keys.slice(0, 3).map((k) => `${k} → ${vocab[k]}`);
+}
+
 function templateSummaryChips(t: ProjectTemplate) {
   const chips: { label: string; tone?: 'info' | 'success' | 'warning' }[] = [];
 
@@ -28,6 +45,8 @@ export default function Templates() {
   const [selectedType, setSelectedType] = createSignal<string | null>(null);
   const [showCreateProjectModal, setShowCreateProjectModal] = createSignal(false);
   const [selectedTemplate, setSelectedTemplate] = createSignal<ProjectTemplate | null>(null);
+  // Card being hovered/focused — drives the inline preset preview (Task 31.3).
+  const [previewId, setPreviewId] = createSignal<string | null>(null);
   const [projectName, setProjectName] = createSignal('');
   const [projectDescription, setProjectDescription] = createSignal('');
 
@@ -43,6 +62,9 @@ export default function Templates() {
     { value: 'personal', label: 'Personal', icon: '👤', color: 'green' },
     { value: 'homework', label: 'Homework', icon: '📚', color: 'yellow' },
     { value: 'maintenance', label: 'Maintenance', icon: '🔧', color: 'red' },
+    { value: 'legal', label: 'Legal / Case', icon: '⚖️', color: 'indigo' },
+    { value: 'research', label: 'Research / Lab', icon: '🔬', color: 'teal' },
+    { value: 'event', label: 'Event Planning', icon: '🎉', color: 'pink' },
     { value: 'custom', label: 'Custom', icon: '⚙️', color: 'gray' },
   ];
 
@@ -153,8 +175,22 @@ export default function Templates() {
           <For each={templates()}>
             {(template: ProjectTemplate) => {
               const typeInfo = getTypeInfo(template.project_type);
+              const showPreview = () => previewId() === template.id;
+              const columns = () => workflowColumns(template);
+              const samples = () => vocabSamples(template);
               return (
-                <div class="bg-elevated rounded-lg border border-line p-6 hover:shadow-lg transition-shadow">
+                <div
+                  class="bg-elevated rounded-lg border border-line p-6 hover:shadow-lg transition-shadow"
+                  tabindex="0"
+                  onMouseEnter={() => setPreviewId(template.id)}
+                  onMouseLeave={() =>
+                    setPreviewId((cur) => (cur === template.id ? null : cur))
+                  }
+                  onFocusIn={() => setPreviewId(template.id)}
+                  onFocusOut={() =>
+                    setPreviewId((cur) => (cur === template.id ? null : cur))
+                  }
+                >
                   {/* Header */}
                   <div class="flex items-start justify-between mb-4">
                     <div class="flex items-center gap-3">
@@ -191,6 +227,31 @@ export default function Templates() {
                       </div>
                     ) : null;
                   })()}
+
+                  {/* Preset preview (workflow columns + sample vocab) on hover/focus */}
+                  <Show when={showPreview() && (columns().length > 0 || samples().length > 0)}>
+                    <div class="rounded-md p-2 text-xs mb-1 bg-sunken text-content-muted">
+                      <Show when={columns().length > 0}>
+                        <div class="mb-1 flex flex-wrap items-center gap-1">
+                          <For each={columns()}>
+                            {(col, i) => (
+                              <>
+                                <span class="rounded px-1.5 py-0.5 bg-app">{col}</span>
+                                <Show when={i() < columns().length - 1}>
+                                  <span aria-hidden="true">→</span>
+                                </Show>
+                              </>
+                            )}
+                          </For>
+                        </div>
+                      </Show>
+                      <Show when={samples().length > 0}>
+                        <div class="flex flex-wrap gap-x-3 gap-y-0.5 font-mono">
+                          <For each={samples()}>{(s) => <span>{s}</span>}</For>
+                        </div>
+                      </Show>
+                    </div>
+                  </Show>
 
                   {/* Actions */}
                   <div class="flex gap-2 mt-4">

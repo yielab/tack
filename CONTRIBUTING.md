@@ -1,5 +1,14 @@
 # Contributing to Tack
 
+Thanks for your interest in Tack. This guide covers how to report bugs, propose
+features, submit pull requests, and set up your dev environment. All
+participation is governed by our [Code of Conduct](CODE_OF_CONDUCT.md); by
+contributing you agree to uphold it. Project decisions follow the
+[governance model](GOVERNANCE.md) (single-maintainer / BDFL).
+
+**Jump to:** [Reporting bugs & requesting features](#reporting-bugs--requesting-features)
+· [Pull request process](#pull-request-process) · [Branching model](#branching-model)
+
 ## Quick Start
 
 ```bash
@@ -22,7 +31,7 @@ The hook in `.githooks/pre-push` runs `cargo fmt --all --check` and `cargo clipp
 
 | Tool | Version | Install |
 | --- | --- | --- |
-| Rust | 1.75+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| Rust | 1.85+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | Node.js | 20+ | [nodejs.org](https://nodejs.org/) |
 | Git | 2.x | system package manager |
 | curl | any | pre-installed on most systems |
@@ -363,6 +372,86 @@ RUST_LOG=error cargo run -p tack-cli -- serve                # errors only
 RUST_LOG=tack_db=debug cargo run -p tack-cli -- serve      # debug the DB layer
 RUST_LOG=trace cargo run -p tack-cli -- serve                # everything (very verbose)
 ```
+
+---
+
+## Reporting Bugs & Requesting Features
+
+Issues are tracked on [GitHub Issues](https://github.com/yielab/tack/issues).
+
+- **Bugs:** open a [bug report](https://github.com/yielab/tack/issues/new?template=bug_report.yml).
+  Include the Tack version or commit, your OS and Rust version, exact steps to
+  reproduce, what you expected, and what happened (with any log output). A minimal
+  reproduction is the single most helpful thing you can provide.
+- **Features / ideas:** open a
+  [feature request](https://github.com/yielab/tack/issues/new?template=feature_request.yml),
+  or start a thread in [Discussions](https://github.com/yielab/tack/discussions)
+  if it is more open-ended. Describe the problem you are trying to solve, not just
+  the solution — it helps us keep Tack small and focused (see [GOVERNANCE.md](GOVERNANCE.md)).
+- **Security vulnerabilities:** **do not** open a public issue. Report privately
+  via [GitHub Security Advisories](https://github.com/yielab/tack/security/advisories/new)
+  or email <info@yielab.com>. See [SECURITY.md](SECURITY.md).
+
+For anything beyond a trivial fix, please open (or find) an issue before writing
+code, so the approach can be agreed first and you don't invest effort in a change
+that may not fit the roadmap.
+
+---
+
+## Pull Request Process
+
+1. **Discuss first for non-trivial work.** Link your PR to an issue. Docs, tests,
+   and small self-contained fixes can go straight to a PR.
+2. **Branch** off `develop` (see the branching model below). Keep one logical
+   change per PR — smaller PRs are reviewed and merged faster.
+3. **Write tests** for any new business logic or bug fix (a regression test that
+   fails before your change and passes after). See "Writing Tests" above.
+4. **Run the full local gate before pushing** — this mirrors CI exactly:
+
+   ```bash
+   cargo fmt --all --check
+   cargo clippy --workspace -- -D warnings
+   cargo test --workspace
+   cd frontend && npm run type-check && npm test   # if you touched the frontend
+   ```
+
+   Activating the pre-push hook (`git config core.hooksPath .githooks`) runs the
+   fmt + clippy portion automatically.
+5. **Update docs and the changelog.** If you changed behavior, config, or the API,
+   update the relevant docs in the same PR and add an entry to the `[Unreleased]`
+   section of [CHANGELOG.md](CHANGELOG.md). If you changed an API response shape,
+   update the Rust handler **and** the matching frontend types / test mocks.
+6. **Write a clear PR description** — what changed and why, how you tested it, and
+   any follow-ups. Fill out the [PR template](.github/PULL_REQUEST_TEMPLATE.md).
+7. **Keep commit messages clean.** Conventional-commit prefixes (`feat:`, `fix:`,
+   `docs:`, `refactor:`, `chore:`, `test:`) are appreciated. **No AI-attribution
+   lines** (no `Co-Authored-By` bot trailers) in commit messages.
+8. **Review.** The maintainer reviews, may request changes, and merges once CI is
+   green and the change is approved. Green CI is required — all jobs
+   (`rust`, `frontend`, `docs`, `embed-spa`, `security`, `e2e`) must pass.
+
+By submitting a pull request, you agree that your contribution is licensed under
+the project's [MIT License](LICENSE).
+
+---
+
+## Branching Model
+
+Tack uses a simple two-long-lived-branch model:
+
+| Branch | Role |
+| --- | --- |
+| `main` | Release branch. Tagged releases (`vX.Y.Z`) are cut from here. Kept stable. |
+| `develop` | Integration branch. Day-to-day work lands here first. |
+| `feat/…`, `fix/…`, `docs/…` | Short-lived topic branches for a single change. |
+
+- **Branch topic branches off `develop`** and open your PR **against `develop`**.
+- `main` receives changes from `develop` when a release is prepared; the release
+  tag triggers `.github/workflows/release.yml` to build and publish artifacts.
+- CI runs on pushes to `main`, `develop`, and `claude/**` branches, and on every
+  pull request.
+- `tack branch <item-id>` (the CLI) can generate a conventional topic-branch name
+  from a Tack work item if you track your work in Tack itself.
 
 ---
 

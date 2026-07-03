@@ -12,6 +12,20 @@ use crate::handlers::websocket::{self, BoardEvent};
 use crate::router::AppState;
 
 #[instrument(skip(state))]
+#[utoipa::path(
+    post,
+    path = "/api/projects/{project_id}/items",
+    tag = "items",
+    params(
+        ("project_id" = Uuid, Path, description = "Project ID"),
+    ),
+    request_body = tack_core::models::CreateItem,
+    responses(
+        (status = 200, description = "Item created", body = tack_core::models::Item),
+        (status = 400, description = "Validation error", body = crate::openapi::ErrorEnvelope),
+        (status = 404, description = "Project not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn create_item(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
@@ -61,16 +75,46 @@ pub async fn create_item(
 }
 
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project_id}/items",
+    tag = "items",
+    params(
+        ("project_id" = Uuid, Path, description = "Project ID"),
+        tack_core::models::ItemFilter,
+    ),
+    responses(
+        (status = 200, description = "Paginated items", body = crate::openapi::PaginatedItems),
+    ),
+)]
 pub async fn list_items(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
     Query(filter): Query<ItemFilter>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let items = state.repo.list_items(project_id, &filter).await?;
-    Ok(Json(serde_json::to_value(items).unwrap()))
+    let total = state.repo.count_items(project_id, &filter).await?;
+    Ok(Json(serde_json::json!({
+        "data": items,
+        "total": total,
+        "page": filter.effective_page(),
+        "per_page": filter.effective_per_page(),
+    })))
 }
 
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/items/{id}",
+    tag = "items",
+    params(
+        ("id" = Uuid, Path, description = "Item ID"),
+    ),
+    responses(
+        (status = 200, description = "Item with roles and dependencies", body = crate::openapi::ItemDetail),
+        (status = 404, description = "Item not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn get_item(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -93,10 +137,24 @@ pub async fn get_item(
 }
 
 #[instrument(skip(state))]
+#[utoipa::path(
+    patch,
+    path = "/api/items/{id}",
+    tag = "items",
+    params(
+        ("id" = Uuid, Path, description = "Item ID"),
+    ),
+    request_body = tack_core::models::UpdateItem,
+    responses(
+        (status = 200, description = "Updated item", body = tack_core::models::Item),
+        (status = 400, description = "Invalid transition / validation error", body = crate::openapi::ErrorEnvelope),
+        (status = 404, description = "Item not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn update_item(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(input): Json<UpdateItem>,
+    Json(mut input): Json<UpdateItem>,
 ) -> ApiResult<Json<serde_json::Value>> {
     input
         .validate()
@@ -130,6 +188,15 @@ pub async fn update_item(
             .count_items_by_status(old_item.project_id, new_status)
             .await? as usize;
         project.workflow.check_wip_limit(new_status, count)?;
+
+        // Resolve the target status category so the repo can maintain
+        // started_at / completed_at as the item crosses category boundaries.
+        input.status_category = project
+            .workflow
+            .statuses
+            .iter()
+            .find(|s| &s.name == new_status)
+            .map(|s| s.category.clone());
     }
 
     let item = state
@@ -222,6 +289,18 @@ pub(crate) async fn propagate_parent_completion(state: &AppState, item: &Item, o
 }
 
 #[instrument(skip(state))]
+#[utoipa::path(
+    delete,
+    path = "/api/items/{id}",
+    tag = "items",
+    params(
+        ("id" = Uuid, Path, description = "Item ID"),
+    ),
+    responses(
+        (status = 200, description = "Deleted", body = serde_json::Value),
+        (status = 404, description = "Item not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn delete_item(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -263,6 +342,17 @@ pub async fn delete_item(
 }
 
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project_id}/items/tree",
+    tag = "items",
+    params(
+        ("project_id" = Uuid, Path, description = "Project ID"),
+    ),
+    responses(
+        (status = 200, description = "Item hierarchy (parents with nested children)", body = Vec<tack_core::models::Item>),
+    ),
+)]
 pub async fn get_item_tree(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
@@ -272,6 +362,18 @@ pub async fn get_item_tree(
 }
 
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project_id}/search",
+    tag = "search",
+    params(
+        ("project_id" = Uuid, Path, description = "Project ID"),
+        SearchParams,
+    ),
+    responses(
+        (status = 200, description = "Matching items", body = Vec<tack_core::models::Item>),
+    ),
+)]
 pub async fn search_items(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
@@ -281,12 +383,24 @@ pub async fn search_items(
     Ok(Json(serde_json::to_value(items).unwrap()))
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct SearchParams {
     pub q: String,
 }
 
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/search",
+    tag = "search",
+    params(
+        SearchParams,
+    ),
+    responses(
+        (status = 200, description = "Matching items across all projects", body = Vec<tack_core::models::Item>),
+    ),
+)]
 pub async fn search_items_global(
     State(state): State<AppState>,
     Query(params): Query<SearchParams>,

@@ -3,20 +3,7 @@ import { useParams } from '@solidjs/router';
 import { api } from '../../../shared/api';
 import { toast } from '../../../shared/ui/toast';
 import { Button, Field, FieldShell, Select, Modal, Badge, EmptyState } from '../../../shared/ui';
-
-interface CustomField {
-  id: string;
-  project_id: string;
-  name: string;
-  field_type: string;
-  description: string | null;
-  required: boolean;
-  default_value: any;
-  options: string[] | null;
-  validation: any;
-  created_at: string;
-  updated_at: string;
-}
+import type { CustomField } from '../../../shared/types';
 
 export default function FieldsPanel() {
   const params = useParams();
