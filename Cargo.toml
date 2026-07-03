@@ -62,7 +62,7 @@ regex = { version = "1", features = ["std"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
 # Remote backup — S3-compatible object storage + compression
-object_store = { version = "0.13", features = ["aws"] }
+object_store = { version = "0.14", features = ["aws"] }
 tar = "0.4"
 zstd = "0.13"
 
