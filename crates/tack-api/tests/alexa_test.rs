@@ -46,12 +46,16 @@ fn slot(name: &str, value: &str) -> Value {
 }
 
 async fn post_alexa(app: &Router, body: &Value) -> (StatusCode, Value) {
+    post_alexa_to(app, "/api/alexa", body).await
+}
+
+async fn post_alexa_to(app: &Router, uri: &str, body: &Value) -> (StatusCode, Value) {
     let res = app
         .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/alexa")
+                .uri(uri)
                 .header("content-type", "application/json")
                 .body(Body::from(body.to_string()))
                 .unwrap(),
@@ -111,7 +115,9 @@ async fn list_project_items(app: &Router, project_id: &str) -> Vec<Value> {
     let bytes = axum::body::to_bytes(res.into_body(), 64 * 1024)
         .await
         .unwrap();
-    serde_json::from_slice(&bytes).unwrap()
+    // The item-list endpoint returns a `{ data, total, page, per_page }` envelope.
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    body["data"].as_array().cloned().unwrap()
 }
 
 // ─── Verification ────────────────────────────────────────────────────────────
@@ -138,6 +144,71 @@ async fn wrong_skill_id_is_rejected() {
     );
     let (status, _) = post_alexa(&app, &body).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+// ─── Shared-secret gate (27.1) ───────────────────────────────────────────────
+
+const SHARED_SECRET: &str = "s3cr3t-token-abc123";
+
+fn alexa_config_with_secret() -> AppConfig {
+    AppConfig {
+        alexa_skill_id: Some(SKILL_ID.into()),
+        alexa_shared_secret: Some(SHARED_SECRET.into()),
+        ..AppConfig::default()
+    }
+}
+
+#[tokio::test]
+async fn forged_request_without_token_is_rejected() {
+    // A caller who knows the (non-secret) skill ID but not the shared secret
+    // must be rejected once a secret is configured.
+    let (app, _) = common::test_app_with_config(alexa_config_with_secret()).await;
+    let body = envelope(
+        SKILL_ID,
+        chrono::Utc::now(),
+        json!({ "type": "LaunchRequest" }),
+    );
+    let (status, _) = post_alexa(&app, &body).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn wrong_token_is_rejected() {
+    let (app, _) = common::test_app_with_config(alexa_config_with_secret()).await;
+    let body = envelope(
+        SKILL_ID,
+        chrono::Utc::now(),
+        json!({ "type": "LaunchRequest" }),
+    );
+    let (status, _) = post_alexa_to(&app, "/api/alexa?token=not-the-secret", &body).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn correct_token_is_accepted() {
+    let (app, _) = common::test_app_with_config(alexa_config_with_secret()).await;
+    let body = envelope(
+        SKILL_ID,
+        chrono::Utc::now(),
+        json!({ "type": "LaunchRequest" }),
+    );
+    let uri = format!("/api/alexa?token={SHARED_SECRET}");
+    let (status, res) = post_alexa_to(&app, &uri, &body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(spoken(&res).contains("Welcome"));
+}
+
+#[tokio::test]
+async fn no_secret_configured_keeps_endpoint_open() {
+    // Backward-compatible: when no shared secret is set the gate is inactive.
+    let (app, _) = common::test_app_with_config(alexa_config()).await;
+    let body = envelope(
+        SKILL_ID,
+        chrono::Utc::now(),
+        json!({ "type": "LaunchRequest" }),
+    );
+    let (status, _) = post_alexa(&app, &body).await;
+    assert_eq!(status, StatusCode::OK);
 }
 
 #[tokio::test]
@@ -297,6 +368,13 @@ async fn complete_task_moves_item_to_done() {
 
     let items = list_project_items(&app, project["id"].as_str().unwrap()).await;
     assert_eq!(items[0]["status"], "Done");
+    // 26.5: completing via Alexa must stamp completed_at (status_category was
+    // being dropped, so this used to stay null).
+    assert!(
+        items[0]["completed_at"].is_string(),
+        "completed_at should be set after Alexa completion, got: {:?}",
+        items[0]["completed_at"]
+    );
 }
 
 #[tokio::test]

@@ -224,7 +224,14 @@ fn project_list(value: &Value) -> Value {
 }
 
 fn item_list(value: &Value) -> Value {
-    let arr = value.as_array().cloned().unwrap_or_default();
+    // The list endpoint returns a `{ data, total, page, per_page }` envelope;
+    // fall back to a bare array for other item-producing shapes.
+    let arr = value
+        .get("data")
+        .and_then(|d| d.as_array())
+        .or_else(|| value.as_array())
+        .cloned()
+        .unwrap_or_default();
     let items: Vec<Value> = arr.iter().map(compact_item).collect();
     json!({ "items": items, "count": items.len() })
 }

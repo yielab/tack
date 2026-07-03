@@ -3,6 +3,7 @@ use tracing::{debug, instrument};
 use uuid::Uuid;
 
 use tack_core::models::{CreateItem, Item, ItemFilter, ItemType, Priority, UpdateItem};
+use tack_core::workflow::StatusCategory;
 
 use super::Repository;
 
@@ -104,41 +105,14 @@ impl Repository {
         project_id: Uuid,
         filter: &ItemFilter,
     ) -> Result<Vec<Item>, sqlx::Error> {
-        let mut query = String::from(
+        let (where_clause, binds) = item_filter_clause(project_id, filter);
+        let mut query = format!(
             "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, started_at, completed_at, created_at, updated_at
-             FROM items WHERE project_id = ?"
+             FROM items{where_clause} ORDER BY sort_order ASC"
         );
-        let mut binds: Vec<String> = vec![project_id.to_string()];
 
-        if let Some(ref status) = filter.status {
-            query.push_str(" AND status = ?");
-            binds.push(status.clone());
-        }
-        if let Some(ref item_type) = filter.item_type {
-            query.push_str(" AND item_type = ?");
-            binds.push(item_type.to_string());
-        }
-        if let Some(ref priority) = filter.priority {
-            query.push_str(" AND priority = ?");
-            binds.push(priority.to_string());
-        }
-        if let Some(ref sprint_id) = filter.sprint_id {
-            query.push_str(" AND sprint_id = ?");
-            binds.push(sprint_id.to_string());
-        }
-        if let Some(ref parent_id) = filter.parent_id {
-            query.push_str(" AND parent_id = ?");
-            binds.push(parent_id.to_string());
-        }
-        if let Some(ref assignee) = filter.assignee {
-            query.push_str(" AND assignee = ?");
-            binds.push(assignee.clone());
-        }
-
-        query.push_str(" ORDER BY sort_order ASC");
-
-        let per_page = filter.per_page.unwrap_or(100).min(500) as i64;
-        let page = filter.page.unwrap_or(1).max(1) as i64;
+        let per_page = filter.effective_per_page() as i64;
+        let page = filter.effective_page() as i64;
         let offset = (page - 1) * per_page;
         query.push_str(&format!(" LIMIT {per_page} OFFSET {offset}"));
 
@@ -150,6 +124,24 @@ impl Repository {
 
         let rows = q.fetch_all(self.pool()).await?;
         Ok(rows.into_iter().map(|r| r.into_item()).collect())
+    }
+
+    /// Total number of items matching `filter` (ignoring pagination). Used to
+    /// build the `{ data, total, page, per_page }` list envelope so clients can
+    /// page through everything instead of silently truncating at one page.
+    #[instrument(skip(self))]
+    pub async fn count_items(
+        &self,
+        project_id: Uuid,
+        filter: &ItemFilter,
+    ) -> Result<i64, sqlx::Error> {
+        let (where_clause, binds) = item_filter_clause(project_id, filter);
+        let query = format!("SELECT COUNT(*) FROM items{where_clause}");
+        let mut q = sqlx::query_scalar::<_, i64>(&query);
+        for bind in &binds {
+            q = q.bind(bind);
+        }
+        q.fetch_one(self.pool()).await
     }
 
     /// Return all incomplete items whose `due_date` falls in `[from, to)`.
@@ -255,6 +247,75 @@ impl Repository {
                 .bind(id.to_string())
                 .execute(self.pool())
                 .await?;
+        }
+        // Double-`Option` fields: outer `Some` means "the client addressed this
+        // field", inner `Option` carries the new value (`None` ⇒ clear to NULL).
+        if let Some(sprint_id) = input.sprint_id {
+            sqlx::query("UPDATE items SET sprint_id = ?, updated_at = ? WHERE id = ?")
+                .bind(sprint_id.map(|s| s.to_string()))
+                .bind(&now)
+                .bind(id.to_string())
+                .execute(self.pool())
+                .await?;
+        }
+        if let Some(due_date) = input.due_date {
+            sqlx::query("UPDATE items SET due_date = ?, updated_at = ? WHERE id = ?")
+                .bind(due_date.map(|d| d.to_rfc3339()))
+                .bind(&now)
+                .bind(id.to_string())
+                .execute(self.pool())
+                .await?;
+        }
+        if let Some(estimate_unit) = input.estimate_unit {
+            // `estimate_unit` is stored as a JSON string; `None` clears it to SQL NULL.
+            let value = estimate_unit
+                .map(|u| serde_json::to_string(&u).unwrap());
+            sqlx::query("UPDATE items SET estimate_unit = ?, updated_at = ? WHERE id = ?")
+                .bind(value)
+                .bind(&now)
+                .bind(id.to_string())
+                .execute(self.pool())
+                .await?;
+        }
+
+        // Maintain started_at / completed_at from the status category the handler
+        // resolved for the target status. Only runs when the status is changing.
+        if let Some(category) = input.status_category {
+            match category {
+                // Entering in-progress: stamp the first start, and (if we came
+                // back out of Done) clear the completion timestamp.
+                StatusCategory::InProgress => {
+                    sqlx::query(
+                        "UPDATE items SET started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ? WHERE id = ?",
+                    )
+                    .bind(&now)
+                    .bind(&now)
+                    .bind(id.to_string())
+                    .execute(self.pool())
+                    .await?;
+                }
+                // Entering Done: record completion (keep an earlier value if set).
+                StatusCategory::Done => {
+                    sqlx::query(
+                        "UPDATE items SET completed_at = COALESCE(completed_at, ?), updated_at = ? WHERE id = ?",
+                    )
+                    .bind(&now)
+                    .bind(&now)
+                    .bind(id.to_string())
+                    .execute(self.pool())
+                    .await?;
+                }
+                // Leaving Done back to a Todo column: drop the completion stamp.
+                StatusCategory::Todo => {
+                    sqlx::query(
+                        "UPDATE items SET completed_at = NULL, updated_at = ? WHERE id = ?",
+                    )
+                    .bind(&now)
+                    .bind(id.to_string())
+                    .execute(self.pool())
+                    .await?;
+                }
+            }
         }
 
         self.get_item(id).await
@@ -503,4 +564,39 @@ fn parse_priority(s: &str) -> Priority {
         "none" => Priority::None,
         _ => Priority::Medium,
     }
+}
+
+/// Build the shared `WHERE` clause (and its ordered bind values) for the item
+/// list/count queries so both stay in lockstep. Returns a clause beginning with
+/// a leading space, e.g. ` WHERE project_id = ? AND status = ?`.
+fn item_filter_clause(project_id: Uuid, filter: &ItemFilter) -> (String, Vec<String>) {
+    let mut clause = String::from(" WHERE project_id = ?");
+    let mut binds: Vec<String> = vec![project_id.to_string()];
+
+    if let Some(ref status) = filter.status {
+        clause.push_str(" AND status = ?");
+        binds.push(status.clone());
+    }
+    if let Some(ref item_type) = filter.item_type {
+        clause.push_str(" AND item_type = ?");
+        binds.push(item_type.to_string());
+    }
+    if let Some(ref priority) = filter.priority {
+        clause.push_str(" AND priority = ?");
+        binds.push(priority.to_string());
+    }
+    if let Some(ref sprint_id) = filter.sprint_id {
+        clause.push_str(" AND sprint_id = ?");
+        binds.push(sprint_id.to_string());
+    }
+    if let Some(ref parent_id) = filter.parent_id {
+        clause.push_str(" AND parent_id = ?");
+        binds.push(parent_id.to_string());
+    }
+    if let Some(ref assignee) = filter.assignee {
+        clause.push_str(" AND assignee = ?");
+        binds.push(assignee.clone());
+    }
+
+    (clause, binds)
 }

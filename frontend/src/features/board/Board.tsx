@@ -15,10 +15,7 @@ import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import EmptyProjectGuide from '../../shared/ui/EmptyProjectGuide';
 import { Avatar, AvatarStack, TypeBadge, PriorityDot, WipChip, typeKey } from '../../shared/ui';
 import { IconPlus } from '../../shared/ui/icons';
-
-const ESTIMATE_SUFFIX: Record<string, string> = {
-  story_points: 'pts', hours: 'h', days: 'd', custom: '',
-};
+import { estimateUnitSuffix } from '../../shared/estimateUnit';
 
 /** Short, human id for the card header (real ids are UUIDs). */
 function shortId(id: string): string {
@@ -43,7 +40,7 @@ const ItemCard: Component<{
   const estimate = () => {
     const e = props.item.estimate;
     if (e == null) return null;
-    const suffix = ESTIMATE_SUFFIX[props.item.estimate_unit] ?? '';
+    const suffix = estimateUnitSuffix(props.item.estimate_unit);
     return suffix ? `${e} ${suffix}` : `${e}`;
   };
 

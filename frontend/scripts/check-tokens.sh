@@ -43,3 +43,44 @@ if [ "$COUNT" -lt "$BASELINE" ]; then
 fi
 
 echo "✓ token gate passed"
+
+# ── Gate 2: raw hex color literals in inline `style` props ────────────────────
+#
+# Inline styles like `color: '#ef4444'` or `border: '2px solid #ef4444'` bypass
+# the two-axis token system: they ignore .dark mode and the Clay/Graphite
+# palettes. Use tokens (var(--color-*)) or the shared priorityColor() helper.
+#
+# Same RATCHET rule as above. Test fixtures carry arbitrary color *data* (not
+# styling), so they're excluded. The lone remaining match is Avatar's white
+# initials over a computed hsl() chip — correct in both modes; keep at 1.
+STYLE_BASELINE=1
+
+# A hex literal used as a CSS value: right after a property colon, a border/
+# outline shorthand keyword, or the else-branch of a style ternary.
+STYLE_PATTERN="(:|solid|dashed|dotted)[[:space:]]*['\"]?#[0-9a-fA-F]{3,8}"
+
+STYLE_COUNT=$(grep -rhoE "$STYLE_PATTERN" src --include='*.tsx' --include='*.ts' \
+  | wc -l | tr -d ' ' || true)
+# Subtract test-fixture matches (color data, not styling).
+STYLE_TEST=$(grep -rhoE "$STYLE_PATTERN" src --include='*.test.tsx' --include='*.test.ts' \
+  | wc -l | tr -d ' ' || true)
+STYLE_COUNT=$((STYLE_COUNT - STYLE_TEST))
+
+echo "Inline-style hex literals: $STYLE_COUNT (baseline $STYLE_BASELINE, target 0)"
+
+if [ "$STYLE_COUNT" -gt "$STYLE_BASELINE" ]; then
+  echo ""
+  echo "ERROR: inline-style hex-literal count increased ($STYLE_COUNT > $STYLE_BASELINE)."
+  echo "Use design tokens or the priorityColor() helper instead of raw hex:"
+  echo "  color: '#ef4444'          → color: 'var(--color-danger-600)'"
+  echo "  '2px solid #ef4444'       → '2px solid var(--color-danger-600)'"
+  echo "  priority colors           → priorityColor(item.priority) (src/shared/ui/PriorityDot.tsx)"
+  exit 1
+fi
+
+if [ "$STYLE_COUNT" -lt "$STYLE_BASELINE" ]; then
+  echo "Progress: inline-style hex count dropped below baseline."
+  echo "→ Lower STYLE_BASELINE in scripts/check-tokens.sh to $STYLE_COUNT to lock it in."
+fi
+
+echo "✓ inline-style hex gate passed"

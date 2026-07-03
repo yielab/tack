@@ -60,12 +60,31 @@ function authHeaders(extra?: HeadersInit): Headers {
 }
 
 async function toApiError(res: Response): Promise<ApiError> {
-  let message = '';
+  let raw = '';
   try {
-    message = await res.text();
+    raw = await res.text();
   } catch {
     /* body already consumed or unavailable */
   }
+
+  // Preferred shape: the unified envelope `{ "error": { "status", "message" } }`.
+  // Fall back to the raw body text (or status text) for non-JSON error bodies so
+  // users never see raw JSON in a toast.
+  let message = raw;
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      const inner = parsed?.error;
+      if (inner && typeof inner === 'object' && typeof inner.message === 'string') {
+        message = inner.message;
+      } else if (typeof inner === 'string') {
+        message = inner;
+      }
+    } catch {
+      /* not JSON — keep the raw text */
+    }
+  }
+
   return new ApiError(res.status, message || res.statusText);
 }
 

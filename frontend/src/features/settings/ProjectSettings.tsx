@@ -1,5 +1,5 @@
 import { type Component, createSignal, Show, Switch, Match } from 'solid-js';
-import { useNavigate } from '@solidjs/router';
+import { useNavigate, useSearchParams } from '@solidjs/router';
 import Tabs, { type TabItem } from '../../shared/ui/Tabs';
 import { useProject } from '../../shared/state/projectContext';
 import { Button, Field, FieldShell, Modal } from '../../shared/ui';
@@ -25,7 +25,10 @@ const TABS: TabItem[] = [
 const ProjectSettings: Component = () => {
   const { project, projectId } = useProject();
   const navigate = useNavigate();
-  const [active, setActive] = createSignal('general');
+  const [searchParams] = useSearchParams();
+  // Allow deep-linking to a specific tab, e.g. `?tab=vocabulary`.
+  const initialTab = TABS.some(t => t.id === searchParams.tab) ? (searchParams.tab as string) : 'general';
+  const [active, setActive] = createSignal(initialTab);
 
   // Save as template state
   const [showSaveModal, setShowSaveModal] = createSignal(false);

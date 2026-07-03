@@ -11,7 +11,8 @@ import { Button, EmptyState } from '../../shared/ui';
 import { toast } from '../../shared/ui/toast';
 import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
-import type { Item } from '../../shared/types';
+import { priorityColor } from '../../shared/ui/PriorityDot';
+import type { Item, Priority } from '../../shared/types';
 
 // ── Drag state ─────────────────────────────────────────────────────────────
 
@@ -255,15 +256,7 @@ export default function Timeline() {
 
   // ── Style helpers ──────────────────────────────────────────────────────
 
-  const getPriorityColor = (p: string) => {
-    const map: Record<string, string> = {
-      critical: '#ef4444',
-      high: '#f97316',
-      medium: '#eab308',
-      low: '#22c55e',
-    };
-    return map[p] ?? '#6b7280';
-  };
+  const getPriorityColor = (p: string) => priorityColor(p as Priority);
 
   const getStatusOpacity = (status: string) => {
     const s = project()?.workflow?.statuses?.find(s => s.name === status);
@@ -395,7 +388,7 @@ export default function Timeline() {
                           cursor:  dragState()
                             ? (dragState()!.mode === 'move' ? 'grabbing' : 'ew-resize')
                             : 'grab',
-                          outline: isBlocked(item.id) ? '2px solid #ef4444' : 'none',
+                          outline: isBlocked(item.id) ? '2px solid var(--color-danger-600)' : 'none',
                           'outline-offset': '1px',
                         }}
                         onPointerDown={(e) => handleBarPointerDown(e, item, 'move')}
@@ -454,14 +447,14 @@ export default function Timeline() {
             style={{ 'background-color': 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}
           >
             <For each={[
-              { label: 'Critical', color: '#ef4444' },
-              { label: 'High',     color: '#f97316' },
-              { label: 'Medium',   color: '#eab308' },
-              { label: 'Low',      color: '#22c55e' },
-            ]}>
+              { label: 'Critical', priority: 'critical' },
+              { label: 'High',     priority: 'high' },
+              { label: 'Medium',   priority: 'medium' },
+              { label: 'Low',      priority: 'low' },
+            ] as const}>
               {(p) => (
                 <div class="flex items-center gap-2">
-                  <div class="w-4 h-3 rounded" style={{ 'background-color': p.color }} />
+                  <div class="w-4 h-3 rounded" style={{ 'background-color': priorityColor(p.priority) }} />
                   <span class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{p.label}</span>
                 </div>
               )}

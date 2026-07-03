@@ -1,757 +1,513 @@
 # Tack Deployment Guide
 
-This guide covers deploying Tack to production environments.
+This guide covers deploying Tack to production.
+
+Tack is a **single, self-contained binary** (~10 MB) with the SolidJS SPA
+embedded. One process serves the REST API (`/api/*`), the WebSocket, and the web
+UI — same-origin, so there is no separate frontend service, no CORS to configure
+for the bundled UI, and no static host to run. All state lives in one SQLite
+file plus an attachments directory. Deployment is therefore "run one binary
+behind a reverse proxy."
 
 ---
 
 ## Table of Contents
 
-1. [Quick Deploy (Docker)](#quick-deploy-docker)
-2. [Production Deployment](#production-deployment)
-3. [Environment Configuration](#environment-configuration)
-4. [HTTPS Setup](#https-setup)
-5. [Database Backups](#database-backups)
-6. [Monitoring & Logging](#monitoring--logging)
-7. [Scaling Considerations](#scaling-considerations)
-8. [Security Checklist](#security-checklist)
-9. [Troubleshooting](#troubleshooting)
+1. [Get the binary](#get-the-binary)
+2. [Run it](#run-it)
+3. [Systemd service (recommended)](#systemd-service-recommended)
+4. [Reverse proxy + HTTPS (Caddy)](#reverse-proxy--https-caddy)
+5. [Reverse proxy (nginx)](#reverse-proxy-nginx)
+6. [Docker](#docker)
+7. [Environment configuration](#environment-configuration)
+8. [Backups](#backups)
+9. [Monitoring & logging](#monitoring--logging)
+10. [Security checklist](#security-checklist)
+11. [Scaling considerations](#scaling-considerations)
+12. [Troubleshooting](#troubleshooting)
+13. [Maintenance](#maintenance)
 
 ---
 
-## Quick Deploy (Docker)
+## Get the binary
 
-**For development/testing:**
+### Option A — download a release
+
+Prebuilt binaries for Linux (x86_64), macOS (Intel + Apple Silicon), and Windows
+are attached to each [GitHub Release](https://github.com/yielab/tack/releases).
+Each archive contains the single `tack` executable, `LICENSE`, `README.md`, and a
+`QUICKSTART.txt`. From v0.1.0-beta.7 on, releases also ship a `SHA256SUMS` file,
+build provenance attestations, and an SBOM — verify before deploying:
 
 ```bash
-# Clone the repository
-git clone <repo-url>
+sha256sum -c SHA256SUMS            # checksums
+gh attestation verify tack --repo yielab/tack   # provenance (optional)
+```
+
+### Option B — one-line installer
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh | sh
+```
+
+Resolves the newest release asset for your platform and installs `tack`.
+
+### Option C — build from source
+
+The SPA must be built first so `--features embed-spa` can embed it. The Makefile
+does both steps:
+
+```bash
+git clone https://github.com/yielab/tack.git
 cd tack
-
-# Start all services
-docker compose up -d
-
-# Verify deployment
-curl http://localhost:3210/api/health
-curl http://localhost:8080
-
-# View logs
-docker compose logs -f
+make build
+# → npm --prefix frontend ci && npm --prefix frontend run build
+#   cargo build -p tack-cli --release --features embed-spa
+# Produces target/release/tack  (~10 MB, SPA embedded)
 ```
 
-**Services:**
-- Backend API: http://localhost:3210
-- Frontend: http://localhost:8080
-- Data: Persisted in Docker volume `tack-data`
+For a fully static Linux binary (no glibc dependency — ideal for minimal hosts
+and containers):
+
+```bash
+rustup target add x86_64-unknown-linux-musl
+sudo apt-get install -y musl-tools
+npm --prefix frontend ci && npm --prefix frontend run build
+cargo build --release --target x86_64-unknown-linux-musl -p tack-cli --features embed-spa
+# → target/x86_64-unknown-linux-musl/release/tack
+```
 
 ---
 
-## Production Deployment
-
-### Option 1: Docker Compose (Recommended)
-
-**1. Prepare the server:**
+## Run it
 
 ```bash
-# Install Docker and Docker Compose
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
+# Bare `tack` (or `tack serve`) starts the server + web UI.
+./tack
+
+# Open http://127.0.0.1:3210 — the SPA loads and talks to /api same-origin.
 ```
 
-**2. Clone and configure:**
+By default Tack binds `127.0.0.1:3210`, writes `tack.db` in the current directory,
+and stores attachments in `./storage`. Point those anywhere with env vars:
 
 ```bash
-git clone <repo-url> /opt/tack
-cd /opt/tack
-
-# Create production environment file
-cat > .env.production <<EOF
-TACK_HOST=0.0.0.0
-TACK_PORT=3210
-TACK_LOG_LEVEL=warn
-TACK_LOG_JSON=true
-TACK_LOG_FILE=/data/logs/tack.log
-TACK_STORAGE_DIR=/data/storage
-EOF
-```
-
-**3. Update docker-compose.yml for production:**
-
-```yaml
-version: '3.8'
-
-services:
-  tack:
-    build: .
-    container_name: tack
-    restart: unless-stopped
-    ports:
-      - "3210:3210"
-    volumes:
-      - tack-data:/data
-    environment:
-      - TACK_HOST=0.0.0.0
-      - TACK_PORT=3210
-      - TACK_LOG_LEVEL=warn
-      - TACK_LOG_JSON=true
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3210/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - tack-network
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: tack-frontend
-    restart: unless-stopped
-    ports:
-      - "8080:80"
-    depends_on:
-      - tack
-    networks:
-      - tack-network
-
-  caddy:
-    image: caddy:2-alpine
-    container_name: tack-caddy
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy-data:/data
-      - caddy-config:/config
-    depends_on:
-      - tack
-      - frontend
-    networks:
-      - tack-network
-
-volumes:
-  tack-data:
-    driver: local
-  caddy-data:
-    driver: local
-  caddy-config:
-    driver: local
-
-networks:
-  tack-network:
-    driver: bridge
-```
-
-**4. Deploy:**
-
-```bash
-# Build and start
-docker compose -f docker-compose.yml up -d --build
-
-# Verify
-docker compose ps
-docker compose logs -f
-```
-
-### Option 2: Native Deployment
-
-**1. Build from source:**
-
-```bash
-# Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Build backend
-cd /opt/tack
-cargo build --release
-
-# Build frontend
-cd frontend
-npm ci
-npm run build
-```
-
-### Option 3: Single binary (embedded SPA)
-
-For the simplest deployment, embed the built SPA into the single `tack` binary
-so one process serves both the API (`/api/*`) and the UI (same-origin — no CORS,
-no separate static host). From a clean checkout, one command does everything:
-
-```bash
-make build
-# → builds frontend/dist, then:
-#   cargo build -p tack-cli --release --features embed-spa
-# Produces the single binary: target/release/tack  (~10 MB)
-```
-
-Run it anywhere — it needs only the SQLite database path:
-
-```bash
+TACK_HOST=127.0.0.1 \
+TACK_PORT=3210 \
 TACK_DATABASE_URL="sqlite:/var/lib/tack/tack.db?mode=rwc" \
-  ./target/release/tack
-# Open http://<host>:3210/  → the SPA loads and talks to /api same-origin.
+TACK_STORAGE_DIR="/var/lib/tack/storage" \
+  ./tack
 ```
 
-The frontend client defaults to a **relative** `/api` base
-(`.env.production` → `VITE_API_URL=/api`), which is what makes same-origin work.
-CI builds the SPA once and the `embed-spa` job consumes that `dist/` to compile
-and test the feature-gated binary (`.github/workflows/ci.yml`).
+The same binary is also the CLI client (`./tack --help`, `./tack add`,
+`./tack list`, …) — it talks to a running server over HTTP, never the DB directly.
 
-**2. Install as systemd service:**
+> **Security note:** bind to `127.0.0.1` and put a reverse proxy in front. If you
+> must bind a non-loopback address (`TACK_HOST=0.0.0.0`), set `TACK_API_TOKEN` —
+> otherwise the API (including the "download the whole database" endpoint) is open
+> to anyone who can reach the port. In this exact configuration (non-loopback bind
+> **and** no `TACK_API_TOKEN`), the server prints a loud multi-line security
+> warning at startup; set `TACK_INSECURE_NO_AUTH=1` to acknowledge it when the
+> exposure is intentional (e.g. behind a trusted authenticating proxy). The
+> warning is informational — the server still boots either way.
+
+---
+
+## Systemd service (recommended)
+
+For a native Linux host, run Tack as a hardened systemd unit bound to loopback,
+with a reverse proxy terminating TLS.
 
 ```bash
-# Create systemd service file
-sudo tee /etc/systemd/system/tack.service <<EOF
+# 1. Install the binary and create a service user + data dirs
+sudo install -m 0755 tack /usr/local/bin/tack
+sudo useradd --system --home /var/lib/tack --shell /usr/sbin/nologin tack
+sudo mkdir -p /var/lib/tack/storage
+sudo chown -R tack:tack /var/lib/tack
+
+# 2. Write the unit
+sudo tee /etc/systemd/system/tack.service >/dev/null <<'EOF'
 [Unit]
-Description=Tack Project Management API
-After=network.target
+Description=Tack project management
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=tack
 Group=tack
-WorkingDirectory=/opt/tack
-Environment="TACK_HOST=127.0.0.1"
-Environment="TACK_PORT=3210"
-Environment="TACK_DATABASE_URL=sqlite:/var/lib/tack/tack.db?mode=rwc"
-Environment="TACK_LOG_LEVEL=warn"
-Environment="TACK_LOG_FILE=/var/log/tack/tack.log"
-Environment="TACK_STORAGE_DIR=/var/lib/tack/storage"
-ExecStart=/opt/tack/target/release/tack
+WorkingDirectory=/var/lib/tack
+Environment=TACK_HOST=127.0.0.1
+Environment=TACK_PORT=3210
+Environment=TACK_DATABASE_URL=sqlite:/var/lib/tack/tack.db?mode=rwc
+Environment=TACK_STORAGE_DIR=/var/lib/tack/storage
+Environment=TACK_LOG_LEVEL=info
+Environment=TACK_LOG_JSON=true
+# Uncomment to require a bearer token on every API request:
+# Environment=TACK_API_TOKEN=change-me-to-a-long-random-secret
+ExecStart=/usr/local/bin/tack serve
 Restart=always
-RestartSec=10
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/tack
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# Create user and directories
-sudo useradd -r -s /bin/false tack
-sudo mkdir -p /var/lib/tack/storage
-sudo mkdir -p /var/log/tack
-sudo chown -R tack:tack /var/lib/tack /var/log/tack
-
-# Enable and start
+# 3. Enable and start
 sudo systemctl daemon-reload
-sudo systemctl enable tack
-sudo systemctl start tack
+sudo systemctl enable --now tack
 sudo systemctl status tack
 ```
 
-**3. Configure nginx for frontend:**
+Logs go to the journal: `sudo journalctl -u tack -f`.
 
-```bash
-sudo tee /etc/nginx/sites-available/tack <<EOF
+---
+
+## Reverse proxy + HTTPS (Caddy)
+
+Caddy terminates TLS (automatic Let's Encrypt), forwards everything to the single
+Tack process, and transparently upgrades the WebSocket — no special block needed
+in modern Caddy, `reverse_proxy` handles the upgrade automatically.
+
+```caddyfile
+tack.example.com {
+    encode gzip
+
+    # One upstream serves the API, the WebSocket, and the SPA.
+    reverse_proxy 127.0.0.1:3210
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "SAMEORIGIN"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+    }
+
+    log {
+        output file /var/log/caddy/tack.log
+    }
+}
+```
+
+Reload Caddy after editing (`sudo systemctl reload caddy`). This project's own
+local dev setup uses exactly this pattern — a single upstream behind a
+systemd-managed Caddy (see `Caddyfile.local` and `/home/ox/Sites/LOCAL-DOMAINS.md`).
+
+---
+
+## Reverse proxy (nginx)
+
+```nginx
 server {
     listen 80;
     server_name tack.example.com;
 
-    # Frontend
     location / {
-        root /opt/tack/frontend/dist;
-        try_files \$uri \$uri/ /index.html;
-        expires 1h;
-        add_header Cache-Control "public, immutable";
-    }
-
-    # API proxy
-    location /api/ {
         proxy_pass http://127.0.0.1:3210;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
 
-        # WebSocket support
+        # WebSocket upgrade (board live-updates)
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
         proxy_read_timeout 86400;
     }
 }
-EOF
-
-sudo ln -s /etc/nginx/sites-available/tack /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
 ```
+
+Add TLS with Certbot: `sudo certbot --nginx -d tack.example.com`.
 
 ---
 
-## Environment Configuration
+## Docker
 
-### Production Environment Variables
-
-```bash
-# Server Configuration
-TACK_HOST=0.0.0.0                              # Bind to all interfaces
-TACK_PORT=3210                                 # API port
-
-# Database
-TACK_DATABASE_URL=sqlite:/data/tack.db?mode=rwc
-
-# Logging
-TACK_LOG_LEVEL=warn                            # Reduce verbosity
-TACK_LOG_JSON=true                             # Structured logging
-TACK_LOG_FILE=/data/logs/tack.log           # Persistent logs
-
-# Storage
-TACK_STORAGE_DIR=/data/storage                 # Attachments directory
-
-# Optional: CORS (restrict origins in production)
-# TACK_CORS_ORIGIN=https://tack.example.com
-```
-
-### Configuration File (tack.toml)
-
-```toml
-# Production configuration
-host = "0.0.0.0"
-port = 3210
-database_url = "sqlite:/data/tack.db?mode=rwc"
-log_level = "warn"
-log_json = true
-log_file = "/data/logs/tack.log"
-storage_dir = "/data/storage"
-
-# Optional: Set CORS origin
-# cors_origin = "https://tack.example.com"
-```
-
----
-
-## HTTPS Setup
-
-### Option 1: Caddy (Automatic HTTPS)
-
-**1. Create Caddyfile:**
-
-```caddyfile
-tack.example.com {
-    # Frontend
-    handle /* {
-        reverse_proxy frontend:80
-    }
-
-    # API
-    handle /api/* {
-        reverse_proxy tack:3210
-    }
-
-    # WebSocket
-    @websocket {
-        path /api/projects/*/boards/live
-    }
-    handle @websocket {
-        reverse_proxy tack:3210 {
-            header_up Upgrade {http.request.header.Upgrade}
-            header_up Connection {http.request.header.Connection}
-        }
-    }
-
-    # Security headers
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "SAMEORIGIN"
-        X-XSS-Protection "1; mode=block"
-    }
-
-    # Gzip compression
-    encode gzip
-
-    # Logging
-    log {
-        output file /var/log/caddy/tack.log
-        level INFO
-    }
-}
-```
-
-**2. Deploy with Caddy:**
+A `Dockerfile` and `docker-compose.yml` ship at the repo root. The image is a
+three-stage build (build SPA → compile a static musl binary that embeds it → copy
+onto a distroless base) producing a ~10 MB, shell-less image. There is a single
+service and a single volume for the database and attachments.
 
 ```bash
-docker compose up -d caddy
-```
-
-Caddy automatically obtains and renews Let's Encrypt certificates.
-
-### Option 2: nginx + Certbot
-
-```bash
-# Install Certbot
-sudo apt install certbot python3-certbot-nginx
-
-# Obtain certificate
-sudo certbot --nginx -d tack.example.com
-
-# Auto-renewal is configured automatically
-sudo systemctl status certbot.timer
-```
-
----
-
-## Database Backups
-
-### Manual Backup
-
-```bash
-# Using Docker
-docker compose exec tack sqlite3 /data/tack.db ".backup /data/backup-$(date +%Y%m%d).db"
-docker cp tack:/data/backup-20260316.db ./backups/
-
-# Using native installation
-sqlite3 /var/lib/tack/tack.db ".backup /var/backups/tack-$(date +%Y%m%d).db"
-```
-
-### Automated Backups (cron)
-
-```bash
-# Create backup script
-cat > /opt/tack/backup.sh <<'EOF'
-#!/bin/bash
-BACKUP_DIR="/var/backups/tack"
-DATE=$(date +%Y%m%d-%H%M%S)
-RETENTION_DAYS=30
-
-mkdir -p $BACKUP_DIR
-
-# Backup database
-docker compose exec -T tack sqlite3 /data/tack.db ".backup /data/backup-$DATE.db"
-docker cp tack:/data/backup-$DATE.db $BACKUP_DIR/
-docker compose exec tack rm /data/backup-$DATE.db
-
-# Backup attachments
-tar -czf $BACKUP_DIR/storage-$DATE.tar.gz -C /var/lib/docker/volumes/tack-data/_data storage
-
-# Delete old backups
-find $BACKUP_DIR -name "*.db" -mtime +$RETENTION_DAYS -delete
-find $BACKUP_DIR -name "*.tar.gz" -mtime +$RETENTION_DAYS -delete
-
-echo "Backup completed: $DATE"
-EOF
-
-chmod +x /opt/tack/backup.sh
-
-# Add to crontab (daily at 2 AM)
-(crontab -l 2>/dev/null; echo "0 2 * * * /opt/tack/backup.sh >> /var/log/tack-backup.log 2>&1") | crontab -
-```
-
-### Restore from Backup
-
-```bash
-# Stop the service
-docker compose stop tack
-
-# Restore database
-docker cp backups/backup-20260316.db tack:/data/tack.db
-
-# Restart
-docker compose start tack
-```
-
----
-
-## Monitoring & Logging
-
-### Health Check Endpoint
-
-```bash
-# Check API health
+# Build and run with compose
+docker compose up -d
 curl http://localhost:3210/api/health
-
-# Expected response:
-# {"status":"healthy","version":"1.0.0","uptime_seconds":86400}
-```
-
-### Log Aggregation
-
-**Using Docker logs:**
-
-```bash
-# View real-time logs
 docker compose logs -f
 
-# Export logs
-docker compose logs --since 24h > tack-logs-$(date +%Y%m%d).log
+# Or plain docker
+docker build -t tack:latest .
+docker run -d --name tack -p 3210:3210 -v tack-data:/data tack:latest
 ```
 
-**Using journalctl (systemd):**
+The container binds `0.0.0.0` internally and stores everything under `/data`
+(`/data/tack.db` + `/data/storage`), persisted by the named volume. If you
+publish the port beyond localhost, set `TACK_API_TOKEN` in `docker-compose.yml`
+(a commented example is included there). The distroless image has no shell, so
+health-check the container from the host (`curl .../api/health`) or via a proxy.
+
+---
+
+## Environment configuration
+
+Tack reads config from `tack.toml` (if present) or environment variables. The
+full table lives in [CLAUDE.md](../CLAUDE.md) and the
+[API reference](./API-REFERENCE.md); the deployment-relevant ones:
 
 ```bash
-# View logs
-sudo journalctl -u tack -f
+# Server
+TACK_HOST=127.0.0.1                                  # bind address (loopback by default)
+TACK_PORT=3210
+TACK_DATABASE_URL=sqlite:/var/lib/tack/tack.db?mode=rwc
+TACK_STORAGE_DIR=/var/lib/tack/storage               # attachments
 
-# Export logs
-sudo journalctl -u tack --since "24 hours ago" > tack-logs.txt
+# Auth & CORS
+TACK_API_TOKEN=<long-random-secret>                  # require Authorization: Bearer <token>
+TACK_ALLOWED_ORIGINS=https://tack.example.com        # comma-separated CORS allow-list
+
+# Logging
+TACK_LOG_LEVEL=info                                  # trace|debug|info|warn|error
+TACK_LOG_JSON=true                                   # structured logs for aggregators
+TACK_LOG_FILE=/var/log/tack/tack.log                 # optional file sink
+
+# Body limits
+TACK_MAX_BODY_SIZE=2097152                           # 2 MB default (upload endpoint is always 50 MB)
 ```
 
-### Application Metrics
+`TACK_ALLOWED_ORIGINS` is only relevant if you point a *separate-origin* browser
+client at the API. The bundled SPA is same-origin and needs no CORS config. There
+is **no** `TACK_CORS_ORIGIN` variable — the allow-list is `TACK_ALLOWED_ORIGINS`.
 
-**Debug endpoints (development only):**
+Optional integrations (Alexa, outbound webhooks, GitHub sync, and S3-compatible
+cloud backup) are configured with their own `TACK_*` variables — see CLAUDE.md.
 
-```bash
-# System info
-curl http://localhost:3210/api/debug/info
+### Configuration file (tack.toml)
 
-# Database stats
-curl http://localhost:3210/api/debug/db-stats
-```
-
-**Disable in production:** Comment out debug routes in `router.rs`.
-
-### External Monitoring
-
-**Example: Uptime Kuma**
-
-```bash
-# Monitor endpoints
-- https://tack.example.com (Frontend)
-- https://tack.example.com/api/health (Backend)
-
-# Alert conditions
-- HTTP status != 200
-- Response time > 5s
-- Downtime > 2 minutes
+```toml
+host = "127.0.0.1"
+port = 3210
+database_url = "sqlite:/var/lib/tack/tack.db?mode=rwc"
+storage_dir = "/var/lib/tack/storage"
+log_level = "info"
+log_json = true
+log_file = "/var/log/tack/tack.log"
+allowed_origins = "https://tack.example.com"
 ```
 
 ---
 
-## Scaling Considerations
+## Backups
 
-### Vertical Scaling
+Tack has **built-in** backup/restore — you do not need to reach into SQLite
+manually.
 
-**Increase resources:**
+### Built-in local backup
 
-```yaml
-# docker-compose.yml
-services:
-  tack:
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 2G
-        reservations:
-          cpus: '1.0'
-          memory: 512M
+```bash
+# Download a consistent snapshot (VACUUM INTO) over the API
+curl -s http://127.0.0.1:3210/api/backup -o tack-backup.db
+
+# Or via the CLI
+tack backup > tack-backup.db          # writes a snapshot
+tack restore tack-backup.db           # stages a restore (applied on next restart)
 ```
 
-### Horizontal Scaling
+Restore is **staged**: the uploaded DB is written next to the live one and swapped
+in atomically on the next server start. Restart the service after restoring.
 
-**Limitations:**
-- SQLite is single-writer (no horizontal scaling for writes)
-- Read replicas possible with WAL mode
+### File-level backup (systemd host)
 
-**For high-scale deployments:**
-1. Migrate to PostgreSQL
-2. Add read replicas
-3. Use Redis for session storage
-4. Add load balancer
-
-### Database Optimization
-
-**Enable WAL mode:**
-
-```sql
--- Faster writes, better concurrency
-PRAGMA journal_mode=WAL;
-PRAGMA synchronous=NORMAL;
-PRAGMA cache_size=-64000;  -- 64MB cache
-PRAGMA temp_store=memory;
+```bash
+# Stop-free snapshot of the live DB (WAL-safe)
+sqlite3 /var/lib/tack/tack.db ".backup /var/backups/tack/tack-$(date +%F).db"
+# Attachments live on disk, back them up too:
+tar czf /var/backups/tack/storage-$(date +%F).tar.gz -C /var/lib/tack storage
 ```
 
-**Add to startup:**
+Automate with cron or a systemd timer, and prune old files with
+`find /var/backups/tack -mtime +30 -delete`.
 
-```rust
-// In tack-db initialization
-sqlx::query("PRAGMA journal_mode=WAL").execute(&pool).await?;
-sqlx::query("PRAGMA synchronous=NORMAL").execute(&pool).await?;
+### Cloud backup (S3-compatible)
+
+Tack can back up the **database plus attachments** as one `.tar.zst` bundle to any
+S3-compatible store (Cloudflare R2, Backblaze B2, AWS S3, self-hosted MinIO). Set
+the `TACK_BACKUP_*` variables (see CLAUDE.md) or configure it at runtime under
+**Settings → Cloud Backup**, then:
+
+```bash
+tack backup --remote        # upload a bundle now
+tack backups                # list remote bundles (newest first)
+tack restore --remote       # stage the latest remote bundle, then restart
 ```
+
+Set `TACK_BACKUP_INTERVAL_SECS` to schedule automatic uploads. The secret key is
+never logged and is write-only over the API.
+
+Bundles carry a generation counter and an install ID: an upload that would
+overwrite newer work from a **different** install is rejected (pass `force` to
+override), and a restore that would clobber newer local work requires
+confirmation. Restores verify the bundle's SHA-256 and schema version before
+staging, snapshot the current state first, and roll back if the swap fails.
+
+> **Encryption at rest is not yet implemented.** Bundles are compressed but
+> unencrypted in the bucket. Until client-side encryption lands (tracked as
+> Phase 28.6), use a private bucket with encryption-at-rest enabled on the
+> provider side, and scope the access key to that one bucket.
 
 ---
 
-## Security Checklist
+## Monitoring & logging
 
-### Pre-Production
-
-- [ ] Change default ports (optional)
-- [ ] Enable HTTPS (Caddy or Certbot)
-- [ ] Set `TACK_LOG_LEVEL=warn` (reduce verbosity)
-- [ ] Enable `TACK_LOG_JSON=true` for log parsing
-- [ ] Disable debug endpoints in production
-- [ ] Set strict CORS origin (`TACK_CORS_ORIGIN`)
-- [ ] Configure firewall (allow 80, 443; block 3210, 8080)
-- [ ] Use strong database file permissions
-- [ ] Enable log rotation
-- [ ] Set up automated backups
-- [ ] Configure rate limiting (reverse proxy)
-
-### Firewall Configuration
+### Health check
 
 ```bash
-# Using UFW (Ubuntu)
+curl http://127.0.0.1:3210/api/health
+# {"status":"ok","version":"0.1.0-beta.7","migrations_applied":18}
+```
+
+Point uptime monitoring (Uptime Kuma, Healthchecks.io, a load-balancer probe) at
+`/api/health` and alert on non-200 or a stalled `migrations_applied` count.
+
+### Logs
+
+```bash
+sudo journalctl -u tack -f                       # systemd
+sudo journalctl -u tack --since "24 hours ago"   # export a window
+docker compose logs -f                            # Docker
+```
+
+Set `TACK_LOG_JSON=true` for structured logs an aggregator can parse.
+
+### Debug endpoints
+
+`/api/debug/info` and `/api/debug/db-stats` return build/config and per-table row
+counts. They sit behind the same bearer-token gate as the rest of the API when
+`TACK_API_TOKEN` is set — keep the token set on any exposed instance.
+
+---
+
+## Security checklist
+
+- [ ] Bind `TACK_HOST=127.0.0.1`; expose only through the reverse proxy.
+- [ ] If binding non-loopback, set a long random `TACK_API_TOKEN`.
+- [ ] Terminate TLS at Caddy/nginx (HSTS enabled).
+- [ ] Restrict `TACK_ALLOWED_ORIGINS` if a separate-origin client uses the API.
+- [ ] Run under a dedicated, unprivileged service user (the systemd unit above).
+- [ ] Firewall the raw app port so only the proxy can reach it.
+- [ ] Automate backups and test a restore.
+- [ ] Add rate limiting at the proxy if the instance is public.
+- [ ] Keep `TACK_LOG_LEVEL=info` or `warn` in production; `TACK_LOG_JSON=true`.
+
+### Firewall (UFW)
+
+```bash
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
-sudo ufw deny 3210/tcp  # Block direct API access
-sudo ufw deny 8080/tcp  # Block direct frontend access
+sudo ufw deny  3210/tcp    # block direct app access; only the proxy reaches it
 sudo ufw enable
 ```
 
-### Rate Limiting (Caddy)
+### Rate limiting (Caddy)
 
 ```caddyfile
 tack.example.com {
-    # Rate limit API requests
     rate_limit {
-        zone api {
-            key {remote_host}
+        zone tack {
+            key    {remote_host}
             events 100
             window 1m
         }
     }
-
-    # Apply to API routes
-    @api path /api/*
-    handle @api {
-        rate_limit api
-        reverse_proxy tack:3210
-    }
+    reverse_proxy 127.0.0.1:3210
 }
 ```
 
-### Database Encryption
+---
 
-**Encrypt SQLite database:**
+## Scaling considerations
 
-```bash
-# Using SQLCipher
-TACK_DATABASE_URL="sqlite:/data/tack.db?cipher=sqlcipher&key=your-encryption-key"
-```
+Tack is a single-writer SQLite application, designed for a solo developer or a
+small team. There is no horizontal write scaling — that is a deliberate design
+choice, not a gap. Practical guidance:
 
-Note: Requires recompiling with SQLCipher support.
+- **Vertical:** the binary is tiny (~12 MB idle RSS) and reads are sub-millisecond;
+  a modest VM handles a small team comfortably.
+- **Write throughput:** SQLite serializes writes. This is fine at small-team scale;
+  it is the first thing you would feel under heavy concurrent writes.
+- **Concurrency:** the DB runs in WAL mode for better read/write concurrency.
+- Multi-user auth, per-user identity, and Postgres are explicitly **out of scope**
+  for the current design (see the roadmap's "Future / Optional").
 
 ---
 
 ## Troubleshooting
 
-### Service Won't Start
-
-**Check logs:**
+**Service won't start** — check logs:
 
 ```bash
-docker compose logs tack
-# or
-sudo journalctl -u tack -n 50
+sudo journalctl -u tack -n 50      # systemd
+docker compose logs tack            # Docker
 ```
 
-**Common issues:**
-- Port already in use → Change `TACK_PORT`
-- Database locked → Check for multiple instances
-- Migrations failed → Check `_migrations` table
+Common causes: port already in use (change `TACK_PORT`), the data directory is not
+writable by the service user, or a migration failure (inspect the `_migrations`
+table).
 
-### High Memory Usage
+**Database locked** — SQLite allows one writer at a time. Make sure only one `tack`
+process points at the DB file. Keep `?mode=rwc` in the URL (the default).
 
-**Check memory:**
+**FTS5 not found** — search needs SQLite compiled with FTS5. The bundled/static
+builds include it; a system SQLite without FTS5 will fail migrations.
 
-```bash
-docker stats tack
-```
+**WebSocket not updating** — ensure the proxy forwards the `Upgrade`/`Connection`
+headers (Caddy does automatically; nginx needs the two `proxy_set_header` lines
+above) and does not time the connection out (`proxy_read_timeout 86400`).
 
-**Solutions:**
-- Increase Docker memory limit
-- Enable swap
-- Optimize database queries
-
-### Database Corruption
-
-**Verify integrity:**
-
-```bash
-sqlite3 tack.db "PRAGMA integrity_check;"
-```
-
-**Recovery:**
-1. Stop service
-2. Restore from backup
-3. Run integrity check
-4. Restart service
-
-### WebSocket Connection Issues
-
-**Check nginx/Caddy config:**
-- Ensure `Upgrade` and `Connection` headers are proxied
-- Increase `proxy_read_timeout` to 86400s (24 hours)
-- Verify firewall allows WebSocket connections
-
-**Test WebSocket:**
-
-```bash
-# Using websocat
-websocat ws://localhost:3210/api/projects/<project-id>/boards/live
-```
-
-### Performance Issues
-
-**Profile the database:**
-
-```sql
-EXPLAIN QUERY PLAN SELECT * FROM items WHERE project_id = ?;
-```
-
-**Add indexes:**
-
-```sql
-CREATE INDEX idx_items_status ON items(status);
-CREATE INDEX idx_items_priority ON items(priority);
-```
+**Database corruption** — `sqlite3 tack.db "PRAGMA integrity_check;"`, then restore
+from a backup if needed.
 
 ---
 
 ## Maintenance
 
-### Update Procedure
+### Update procedure
 
 ```bash
-# 1. Backup
-/opt/tack/backup.sh
+# 1. Back up first
+tack backup > /var/backups/tack/pre-upgrade-$(date +%F).db
 
-# 2. Pull latest code
-cd /opt/tack
-git pull
+# 2. Replace the binary (download a new release or rebuild)
+sudo install -m 0755 tack /usr/local/bin/tack
 
-# 3. Rebuild and restart
-docker compose up -d --build
-
-# 4. Verify
-curl http://localhost:3210/api/health
-docker compose logs -f
+# 3. Restart — migrations run forward automatically on startup
+sudo systemctl restart tack
+curl http://127.0.0.1:3210/api/health
 ```
 
-### Database Vacuum
+### Database vacuum
 
 ```bash
-# Reclaim space and optimize
-docker compose exec tack sqlite3 /data/tack.db "VACUUM;"
+sqlite3 /var/lib/tack/tack.db "VACUUM;"    # reclaim space; run occasionally
 ```
 
-Run monthly or when database size is large.
-
-### Log Rotation
+### Log rotation (systemd host with a file sink)
 
 ```bash
-# Create logrotate config
-sudo tee /etc/logrotate.d/tack <<EOF
+sudo tee /etc/logrotate.d/tack >/dev/null <<'EOF'
 /var/log/tack/*.log {
     daily
     rotate 14
     compress
     delaycompress
     notifempty
-    create 0644 tack tack
-    sharedscripts
+    create 0640 tack tack
     postrotate
         systemctl reload tack
     endscript
@@ -759,40 +515,12 @@ sudo tee /etc/logrotate.d/tack <<EOF
 EOF
 ```
 
----
-
-## Production Checklist
-
-### Before Go-Live
-
-- [ ] DNS configured (A record for tack.example.com)
-- [ ] HTTPS enabled and tested
-- [ ] Backups automated and tested (restore test)
-- [ ] Monitoring configured (health checks)
-- [ ] Log aggregation configured
-- [ ] Security checklist completed
-- [ ] Performance tested (load testing)
-- [ ] Documentation reviewed
-- [ ] Team trained on basic operations
-
-### After Go-Live
-
-- [ ] Monitor logs for errors (first 24 hours)
-- [ ] Verify backups running successfully
-- [ ] Check disk space
-- [ ] Review performance metrics
-- [ ] Collect user feedback
-- [ ] Document any issues
+If you use `journalctl` (no `TACK_LOG_FILE`), systemd already rotates the journal.
 
 ---
 
 ## Support
 
-**Resources:**
 - [GitHub Issues](https://github.com/yielab/tack/issues)
-- [Documentation](../README.md)
 - [API Reference](./API-REFERENCE.md)
-
-**Community:**
-- Discord: (coming soon)
-- Forum: (coming soon)
+- [Security Policy](../SECURITY.md)

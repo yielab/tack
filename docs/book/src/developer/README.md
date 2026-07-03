@@ -110,7 +110,7 @@ Because it is a business rule, not a storage rule. The database does not know wh
 
 By living in `tack-core`, the validation is:
 
-- Testable with zero dependencies (67 unit tests, none of which touch a database).
+- Testable with zero dependencies (73 unit tests, none of which touch a database).
 - Reusable by any layer that loads a `WorkflowConfig`.
 - Independent of how the config was persisted.
 

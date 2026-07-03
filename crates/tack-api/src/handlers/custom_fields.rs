@@ -14,6 +14,19 @@ use crate::AppState;
 
 /// POST /api/projects/:id/custom-fields - Create a custom field for a project
 #[instrument(skip(state))]
+#[utoipa::path(
+    post,
+    path = "/api/projects/{project_id}/custom-fields",
+    tag = "custom-fields",
+    params(
+        ("project_id" = Uuid, Path, description = "Project ID"),
+    ),
+    request_body = tack_core::models::CreateCustomField,
+    responses(
+        (status = 200, description = "Field created", body = tack_core::models::CustomFieldDefinition),
+        (status = 404, description = "Project not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn create_field(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
@@ -38,6 +51,17 @@ pub async fn create_field(
 
 /// GET /api/projects/:id/custom-fields - List all custom fields for a project
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project_id}/custom-fields",
+    tag = "custom-fields",
+    params(
+        ("project_id" = Uuid, Path, description = "Project ID"),
+    ),
+    responses(
+        (status = 200, description = "Custom field definitions", body = Vec<tack_core::models::CustomFieldDefinition>),
+    ),
+)]
 pub async fn list_fields(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
@@ -53,6 +77,18 @@ pub async fn list_fields(
 
 /// GET /api/custom-fields/:id - Get a specific custom field
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/custom-fields/{id}",
+    tag = "custom-fields",
+    params(
+        ("id" = Uuid, Path, description = "Custom field ID"),
+    ),
+    responses(
+        (status = 200, description = "The field definition", body = tack_core::models::CustomFieldDefinition),
+        (status = 404, description = "Field not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn get_field(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -68,6 +104,19 @@ pub async fn get_field(
 
 /// PATCH /api/custom-fields/:id - Update a custom field
 #[instrument(skip(state))]
+#[utoipa::path(
+    patch,
+    path = "/api/custom-fields/{id}",
+    tag = "custom-fields",
+    params(
+        ("id" = Uuid, Path, description = "Custom field ID"),
+    ),
+    request_body = tack_core::models::UpdateCustomField,
+    responses(
+        (status = 200, description = "Updated field", body = tack_core::models::CustomFieldDefinition),
+        (status = 500, description = "Update failed", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn update_field(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -84,6 +133,17 @@ pub async fn update_field(
 
 /// DELETE /api/custom-fields/:id - Delete a custom field
 #[instrument(skip(state))]
+#[utoipa::path(
+    delete,
+    path = "/api/custom-fields/{id}",
+    tag = "custom-fields",
+    params(
+        ("id" = Uuid, Path, description = "Custom field ID"),
+    ),
+    responses(
+        (status = 204, description = "Field deleted"),
+    ),
+)]
 pub async fn delete_field(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -101,6 +161,21 @@ pub async fn delete_field(
 
 /// PUT /api/items/:item_id/custom-fields/:field_id - Set a custom field value for an item
 #[instrument(skip(state))]
+#[utoipa::path(
+    put,
+    path = "/api/items/{item_id}/custom-fields/{field_id}",
+    tag = "custom-fields",
+    params(
+        ("item_id" = Uuid, Path, description = "Item ID"),
+        ("field_id" = Uuid, Path, description = "Custom field ID"),
+    ),
+    request_body = serde_json::Value,
+    responses(
+        (status = 200, description = "Value set", body = tack_core::models::CustomFieldValue),
+        (status = 404, description = "Item or field not found", body = crate::openapi::ErrorEnvelope),
+        (status = 422, description = "Value failed field validation", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn set_field_value(
     State(state): State<AppState>,
     Path((item_id, field_id)): Path<(Uuid, Uuid)>,
@@ -135,6 +210,17 @@ pub async fn set_field_value(
 
 /// GET /api/items/:id/custom-fields - Get all custom field values for an item
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/items/{item_id}/custom-fields",
+    tag = "custom-fields",
+    params(
+        ("item_id" = Uuid, Path, description = "Item ID"),
+    ),
+    responses(
+        (status = 200, description = "All custom field values for the item", body = Vec<tack_core::models::CustomFieldValue>),
+    ),
+)]
 pub async fn get_all_field_values(
     State(state): State<AppState>,
     Path(item_id): Path<Uuid>,
@@ -150,6 +236,19 @@ pub async fn get_all_field_values(
 
 /// GET /api/items/:item_id/custom-fields/:field_id - Get a specific custom field value
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/items/{item_id}/custom-fields/{field_id}",
+    tag = "custom-fields",
+    params(
+        ("item_id" = Uuid, Path, description = "Item ID"),
+        ("field_id" = Uuid, Path, description = "Custom field ID"),
+    ),
+    responses(
+        (status = 200, description = "The field value", body = tack_core::models::CustomFieldValue),
+        (status = 404, description = "Value not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn get_field_value(
     State(state): State<AppState>,
     Path((item_id, field_id)): Path<(Uuid, Uuid)>,
@@ -165,6 +264,18 @@ pub async fn get_field_value(
 
 /// DELETE /api/items/:item_id/custom-fields/:field_id - Delete a custom field value
 #[instrument(skip(state))]
+#[utoipa::path(
+    delete,
+    path = "/api/items/{item_id}/custom-fields/{field_id}",
+    tag = "custom-fields",
+    params(
+        ("item_id" = Uuid, Path, description = "Item ID"),
+        ("field_id" = Uuid, Path, description = "Custom field ID"),
+    ),
+    responses(
+        (status = 204, description = "Value deleted"),
+    ),
+)]
 pub async fn delete_field_value(
     State(state): State<AppState>,
     Path((item_id, field_id)): Path<(Uuid, Uuid)>,

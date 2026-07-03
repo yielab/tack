@@ -46,12 +46,16 @@ test('GET /api/items/:id returns the { item, roles, dependencies } envelope', as
 
   let items = await request
     .get(`${ORIGIN}/api/projects/${projectId}/items`)
-    .then((r) => r.json());
+    .then((r) => r.json())
+    .then((p) => p.data ?? []);
   if (!items.length) {
     await request.post(`${ORIGIN}/api/projects/${projectId}/items`, {
       data: { title: 'API test item', item_type: 'task' },
     });
-    items = await request.get(`${ORIGIN}/api/projects/${projectId}/items`).then((r) => r.json());
+    items = await request
+      .get(`${ORIGIN}/api/projects/${projectId}/items`)
+      .then((r) => r.json())
+      .then((p) => p.data ?? []);
   }
 
   const res = await request.get(`${ORIGIN}/api/items/${items[0].id}`);

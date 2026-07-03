@@ -3,15 +3,17 @@ use axum::extract::{Path, State};
 use serde::Deserialize;
 use tracing::instrument;
 use uuid::Uuid;
+use validator::Validate;
 
 use tack_core::models::{CreateItem, ItemType};
 
 use crate::error::{ApiError, ApiResult};
 use crate::router::AppState;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate, utoipa::ToSchema)]
 pub struct LinearImportRequest {
     /// Linear personal API key (create at https://linear.app/settings/api).
+    #[validate(length(min = 1, max = 500, message = "api_key must be 1–500 characters"))]
     pub api_key: String,
     /// Import only issues from this team (slug or ID). When omitted, all
     /// issues accessible to the key are fetched.
@@ -104,11 +106,28 @@ struct LinearLabel {
 /// Fetches issues from Linear's GraphQL API and creates Tack items.
 /// Pagination is cursor-based (50 issues per page).
 #[instrument(skip(state))]
+#[utoipa::path(
+    post,
+    path = "/api/projects/{id}/import-linear",
+    tag = "import",
+    params(
+        ("id" = Uuid, Path, description = "Project ID"),
+    ),
+    request_body = LinearImportRequest,
+    responses(
+        (status = 200, description = "Counts of created and skipped issues", body = serde_json::Value),
+        (status = 400, description = "Bad API key, filter, or rate limit", body = crate::openapi::ErrorEnvelope),
+        (status = 404, description = "Project not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn import_linear(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
     Json(input): Json<LinearImportRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    input
+        .validate()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     if input.api_key.trim().is_empty() {
         return Err(ApiError::BadRequest("api_key must not be empty.".into()));
     }
@@ -301,12 +320,18 @@ fn build_query(input: &LinearImportRequest, cursor: Option<&str>) -> String {
 }
 
 fn build_filter(input: &LinearImportRequest) -> String {
+    // Strip embedded double-quotes so a crafted id/key cannot break out of the
+    // GraphQL string literal (same sanitization applied to the cursor above).
+    let sanitize = |s: &str| s.replace('"', "");
+
     // Project filter takes precedence over team filter
     if let Some(ref pid) = input.project_id {
+        let pid = sanitize(pid);
         return format!(r#", filter: {{ project: {{ id: {{ eq: "{pid}" }} }} }}"#);
     }
     if let Some(ref tid) = input.team_id {
         // Accept both slug and ID — Linear allows filtering by team key or ID
+        let tid = sanitize(tid);
         return format!(r#", filter: {{ team: {{ key: {{ eq: "{tid}" }} }} }}"#);
     }
     String::new()
@@ -388,6 +413,22 @@ mod tests {
         assert_eq!(linear_priority_to_tack(Some(4)), Some(Priority::Low));
         assert_eq!(linear_priority_to_tack(Some(0)), None);
         assert_eq!(linear_priority_to_tack(None), None);
+    }
+
+    #[test]
+    fn team_id_injection_is_sanitised() {
+        // A team_id containing a quote/brace must not break out of the string.
+        let q = build_query(&make_input(Some(r#"ENG" } evil {"#), None), None);
+        // The injected quote is stripped, so the value stays inside the literal.
+        assert!(!q.contains(r#"ENG" }"#));
+        assert!(q.contains(r#"key: { eq: "ENG } evil {" }"#));
+    }
+
+    #[test]
+    fn project_id_injection_is_sanitised() {
+        let q = build_query(&make_input(None, Some(r#"p" } x {"#)), None);
+        assert!(!q.contains(r#"p" }"#));
+        assert!(q.contains(r#"id: { eq: "p } x {" }"#));
     }
 
     #[test]

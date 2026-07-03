@@ -9,16 +9,34 @@ use tack_core::workflow::WorkflowConfig;
 use tack_db::repo;
 use tracing::instrument;
 use uuid::Uuid;
+use validator::Validate;
 
 use crate::AppState;
 
 /// POST /api/projects/:id/boards - Create a new board for a project
 #[instrument(skip(state))]
+#[utoipa::path(
+    post,
+    path = "/api/projects/{project_id}/boards",
+    tag = "boards",
+    params(
+        ("project_id" = Uuid, Path, description = "Project ID"),
+    ),
+    request_body = tack_core::models::CreateBoard,
+    responses(
+        (status = 200, description = "Board created", body = tack_core::models::Board),
+        (status = 404, description = "Project not found", body = crate::openapi::ErrorEnvelope),
+        (status = 422, description = "Validation error", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn create_board(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
     Json(data): Json<CreateBoard>,
 ) -> Result<Json<Board>, StatusCode> {
+    data.validate()
+        .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+
     // Verify project exists
     state
         .repo
@@ -38,6 +56,17 @@ pub async fn create_board(
 
 /// GET /api/projects/:id/boards - List all boards for a project
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project_id}/boards",
+    tag = "boards",
+    params(
+        ("project_id" = Uuid, Path, description = "Project ID"),
+    ),
+    responses(
+        (status = 200, description = "Boards for the project", body = Vec<tack_core::models::Board>),
+    ),
+)]
 pub async fn list_boards(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
@@ -53,6 +82,18 @@ pub async fn list_boards(
 
 /// GET /api/boards/:id - Get a specific board
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/boards/{id}",
+    tag = "boards",
+    params(
+        ("id" = Uuid, Path, description = "Board ID"),
+    ),
+    responses(
+        (status = 200, description = "The board", body = tack_core::models::Board),
+        (status = 404, description = "Board not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn get_board(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -68,11 +109,27 @@ pub async fn get_board(
 
 /// PATCH /api/boards/:id - Update a board
 #[instrument(skip(state))]
+#[utoipa::path(
+    patch,
+    path = "/api/boards/{id}",
+    tag = "boards",
+    params(
+        ("id" = Uuid, Path, description = "Board ID"),
+    ),
+    request_body = tack_core::models::UpdateBoard,
+    responses(
+        (status = 200, description = "Updated board", body = tack_core::models::Board),
+        (status = 422, description = "Validation error", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn update_board(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(data): Json<UpdateBoard>,
 ) -> Result<Json<Board>, StatusCode> {
+    data.validate()
+        .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+
     repo::boards::update_board(state.pool(), id, data)
         .await
         .map(Json)
@@ -84,6 +141,17 @@ pub async fn update_board(
 
 /// DELETE /api/boards/:id - Delete a board
 #[instrument(skip(state))]
+#[utoipa::path(
+    delete,
+    path = "/api/boards/{id}",
+    tag = "boards",
+    params(
+        ("id" = Uuid, Path, description = "Board ID"),
+    ),
+    responses(
+        (status = 204, description = "Board deleted"),
+    ),
+)]
 pub async fn delete_board(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -97,13 +165,13 @@ pub async fn delete_board(
         })
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct BoardViewResponse {
     pub board: Board,
     pub columns: Vec<BoardColumnWithItems>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct BoardColumnWithItems {
     pub name: String,
     pub items: Vec<Item>,
@@ -113,6 +181,18 @@ pub struct BoardColumnWithItems {
 
 /// GET /api/boards/:id/view - Get board state with items grouped and filtered
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/boards/{id}/view",
+    tag = "boards",
+    params(
+        ("id" = Uuid, Path, description = "Board ID"),
+    ),
+    responses(
+        (status = 200, description = "Board with items grouped into columns", body = BoardViewResponse),
+        (status = 404, description = "Board not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn get_board_view(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,

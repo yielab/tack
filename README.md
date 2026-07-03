@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/yielab/tack/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/yielab/tack/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
 
 **Tack** is a self-hosted project management tool that runs entirely from a single binary. Drop it on any machine, run it, and you have a full-featured project manager — web UI, REST API, and database all in one file. No Docker, no database server, no cloud accounts, no subscriptions.
 
@@ -155,7 +155,7 @@ Tack is in **beta**. Core features are complete; a few constraints to know upfro
 | --- | --- |
 | Authentication | One shared optional Bearer token — no per-user accounts. Suited for solo use or a small trusted group on the same network. |
 | Multi-user | No per-user identities or permissions. All API clients share the same access level. |
-| Multi-device sync | Single server, single database. No replication between instances. |
+| Multi-device sync | Single server, single database. Cross-device use is **snapshot replication** via S3-compatible cloud backup — one active writer, last-upload-wins, with generation-counter conflict detection and integrity-checked restores. Not live/concurrent multi-writer sync. |
 | Mobile | Responsive web UI works on mobile browsers; no native app. |
 | Binary signing | Not code-signed yet. See first-run note above. Roadmap item. |
 | Offline | Browser UI requires the local server to be running. |
@@ -164,7 +164,7 @@ Tack is in **beta**. Core features are complete; a few constraints to know upfro
 
 ## Build from Source
 
-**Prerequisites:** [Rust 1.75+](https://rustup.rs/) · [Node.js 20+](https://nodejs.org/)
+**Prerequisites:** [Rust 1.85+](https://rustup.rs/) (the workspace uses the 2024 edition) · [Node.js 20+](https://nodejs.org/)
 
 ```bash
 git clone https://github.com/yielab/tack.git
@@ -182,7 +182,7 @@ make dev     # starts API + Vite dev server; open http://localhost:5173
 Other commands:
 
 ```bash
-make test         # all Rust tests (207 tests)
+make test         # all Rust tests (244 tests)
 make e2e          # Playwright end-to-end tests (auto-starts servers)
 make e2e-install  # one-time: download browser engines
 make audit        # CVE scan (cargo audit + npm audit)
@@ -241,7 +241,7 @@ mdbook serve docs/book   # opens http://localhost:3000
 | Guide | Description |
 | --- | --- |
 | [Quick Start](docs/book/src/user-guide/quick-start.md) | First-run walkthrough |
-| [API Reference](docs/book/src/developer/api-reference.md) | All 68 endpoints with request/response shapes |
+| [API Reference](docs/book/src/developer/api-reference.md) | Auth model + examples; the machine-generated [OpenAPI spec](docs/openapi.json) (served live at `/api/openapi.json`) is the source of truth |
 | [CLI Reference](docs/book/src/user-guide/cli.md) | Every `tack` subcommand |
 | [MCP Server](docs/MCP.md) | Wire Tack into Claude Code / AI agents via `tack mcp` |
 | [Configuration](docs/book/src/user-guide/configuration.md) | Full variable reference and `tack.toml` |

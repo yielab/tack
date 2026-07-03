@@ -301,18 +301,8 @@ async fn test_update_item_status() {
         .update_item(
             item.id,
             UpdateItem {
-                title: None,
-                description: None,
-                item_type: None,
                 status: Some("In Progress".into()),
-                priority: None,
-                estimate: None,
-                estimate_unit: None,
-                tags: None,
-                due_date: None,
-                sprint_id: None,
-                sort_order: None,
-                assignee: None,
+                ..Default::default()
             },
         )
         .await
@@ -1173,4 +1163,220 @@ async fn test_board_grouping_types() {
 
     let all_boards = boards::list_boards(repo.pool(), project.id).await.unwrap();
     assert_eq!(all_boards.len(), 4);
+}
+
+// ─── Phase 26 correctness hotfix regressions ─────────────────
+
+/// 26.1 — `update_item` must persist a sprint assignment and later clear it when
+/// the PATCH sends `null` (double-`Option` `Some(None)`), while an absent field
+/// (outer `None`) leaves the value untouched.
+#[tokio::test]
+async fn test_update_item_persists_and_clears_sprint_id() {
+    let repo = setup_test_db().await;
+    let ws = create_test_workspace(&repo).await;
+    let project = common::make_project(&repo, ws).await;
+    let item = common::make_item(&repo, &project).await;
+    assert_eq!(item.sprint_id, None);
+
+    let sprint = repo
+        .create_sprint(
+            project.id,
+            CreateSprint {
+                name: "Sprint 1".into(),
+                goal: None,
+                start_date: None,
+                end_date: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    // Assign the sprint, then re-fetch: it persists.
+    repo.update_item(
+        item.id,
+        UpdateItem {
+            sprint_id: Some(Some(sprint.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        repo.get_item(item.id).await.unwrap().unwrap().sprint_id,
+        Some(sprint.id),
+        "sprint assignment must survive a re-fetch"
+    );
+
+    // An unrelated update (absent sprint_id) must NOT disturb the assignment.
+    repo.update_item(
+        item.id,
+        UpdateItem {
+            title: Some("renamed".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        repo.get_item(item.id).await.unwrap().unwrap().sprint_id,
+        Some(sprint.id),
+        "absent sprint_id must leave the value untouched"
+    );
+
+    // A `null` clears it.
+    repo.update_item(
+        item.id,
+        UpdateItem {
+            sprint_id: Some(None),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        repo.get_item(item.id).await.unwrap().unwrap().sprint_id,
+        None,
+        "sprint_id: null must clear the assignment"
+    );
+}
+
+/// 26.1 — same absent/set/clear contract for `due_date`.
+#[tokio::test]
+async fn test_update_item_persists_and_clears_due_date() {
+    let repo = setup_test_db().await;
+    let ws = create_test_workspace(&repo).await;
+    let project = common::make_project(&repo, ws).await;
+    let item = common::make_item(&repo, &project).await;
+    assert_eq!(item.due_date, None);
+
+    let due = chrono::Utc::now();
+    repo.update_item(
+        item.id,
+        UpdateItem {
+            due_date: Some(Some(due)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        repo.get_item(item.id).await.unwrap().unwrap().due_date.is_some(),
+        "due_date must persist across a re-fetch"
+    );
+
+    repo.update_item(
+        item.id,
+        UpdateItem {
+            due_date: Some(None),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        repo.get_item(item.id).await.unwrap().unwrap().due_date,
+        None,
+        "due_date: null must clear it"
+    );
+}
+
+/// 26.2 — moving an item across status categories maintains started_at /
+/// completed_at: enter in-progress → stamp started_at; enter done → stamp
+/// completed_at; leave done → clear completed_at (keeping started_at).
+#[tokio::test]
+async fn test_status_transition_timestamps() {
+    use tack_core::workflow::StatusCategory;
+
+    let repo = setup_test_db().await;
+    let ws = create_test_workspace(&repo).await;
+    let project = common::make_project(&repo, ws).await;
+    let item = common::make_item(&repo, &project).await;
+    assert!(item.started_at.is_none());
+    assert!(item.completed_at.is_none());
+
+    // → In Progress: started_at stamped, completed_at still empty.
+    let updated = repo
+        .update_item(
+            item.id,
+            UpdateItem {
+                status: Some("In Progress".into()),
+                status_category: Some(StatusCategory::InProgress),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(updated.started_at.is_some(), "started_at must be set on in-progress");
+    assert!(updated.completed_at.is_none());
+    let started = updated.started_at;
+
+    // → Done: completed_at stamped, started_at preserved.
+    let updated = repo
+        .update_item(
+            item.id,
+            UpdateItem {
+                status: Some("Done".into()),
+                status_category: Some(StatusCategory::Done),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(updated.completed_at.is_some(), "completed_at must be set on done");
+    assert_eq!(updated.started_at, started, "started_at must be preserved");
+
+    // → back to a Todo column: completed_at cleared, started_at preserved.
+    let updated = repo
+        .update_item(
+            item.id,
+            UpdateItem {
+                status: Some("To Do".into()),
+                status_category: Some(StatusCategory::Todo),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        updated.completed_at.is_none(),
+        "completed_at must clear when leaving done"
+    );
+    assert_eq!(updated.started_at, started, "started_at must still be preserved");
+}
+
+/// 26.3 — foreign keys are enforced on every pooled connection, so an insert
+/// that references a non-existent project is rejected instead of orphaning.
+#[tokio::test]
+async fn test_foreign_key_rejects_orphan_item() {
+    let repo = setup_test_db().await;
+    let bogus_project = uuid::Uuid::new_v4();
+
+    let result = repo
+        .create_item(
+            bogus_project,
+            "Backlog",
+            CreateItem {
+                title: "orphan".into(),
+                description: None,
+                item_type: Some(ItemType::Task),
+                parent_id: None,
+                priority: None,
+                estimate: None,
+                estimate_unit: None,
+                tags: None,
+                due_date: None,
+                sprint_id: None,
+                assignee: None,
+            },
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "inserting an item with a dangling project_id must be rejected by the FK constraint"
+    );
 }

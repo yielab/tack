@@ -74,14 +74,33 @@ export const data = {
 
   /**
    * Restore from a cloud backup. Omit `key` to use the latest. Staged for the
-   * next restart (a restart is required to apply it).
+   * next restart (a restart is required to apply it). Pass `force` to override
+   * the "this device has newer work" guard.
    */
-  cloudRestore: (key?: string) =>
+  cloudRestore: (key?: string, force = false) =>
     request<{ staged: boolean; object_key: string; message: string }>(
       '/backup/remote/restore',
-      { method: 'POST', body: JSON.stringify(key ? { key } : {}) },
+      { method: 'POST', body: JSON.stringify({ ...(key ? { key } : {}), ...(force ? { force } : {}) }) },
     ),
+
+  /**
+   * Verify a cloud backup (download + checksum + schema check) WITHOUT staging
+   * it. Omit `key` to verify the latest. Returns an ok/mismatch verdict.
+   */
+  cloudVerify: (key?: string) =>
+    request<CloudVerifyResult>('/backup/remote/verify', {
+      method: 'POST',
+      body: JSON.stringify(key ? { key } : {}),
+    }),
 };
+
+/** Result of verifying a cloud backup without staging it. */
+export interface CloudVerifyResult {
+  ok: boolean;
+  object_key: string;
+  manifest: RemoteBackupManifest;
+  reason?: string;
+}
 
 /** Response from the project-import endpoint. */
 export interface ImportResult {

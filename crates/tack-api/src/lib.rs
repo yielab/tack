@@ -4,6 +4,7 @@ pub mod error;
 pub mod github_sync;
 pub mod handlers;
 pub mod middleware;
+pub mod openapi;
 pub mod remote_backup;
 pub mod router;
 pub mod server;

@@ -7,11 +7,12 @@ import { currentPalette, setPalette, PALETTES, type Palette } from '../state/pal
 import { isDarkActive, toggleTheme } from '../state/theme';
 import {
   BrandMark,
-  IconSearch, IconBoard, IconList, IconCalendar, IconTimeline, IconSprint,
+  IconSearch, IconBoard, IconList, IconTable, IconCalendar, IconTimeline, IconSprint,
   IconOverview, IconProjects, IconTemplates, IconSettings, IconSun, IconMoon,
   IconChevronDown, type IconProps,
 } from './icons';
 import KbdHint from './KbdHint';
+import { useVocab } from '../vocab/useVocab';
 
 type Glyph = Component<IconProps>;
 
@@ -81,6 +82,7 @@ const PaletteSwatch: Component<{ value: Palette; color: string; title: string }>
 const Sidebar: Component = () => {
   const params = useParams();
   const navigate = useNavigate();
+  const { t } = useVocab();
   const [isOpen, setIsOpen] = createSignal(false);
   const close = () => setIsOpen(false);
 
@@ -164,9 +166,10 @@ const Sidebar: Component = () => {
 
           <NavButton href={`/projects/${currentProjectId()}/board`} icon={IconBoard} label="Board" onClick={close} />
           <NavButton href={`/projects/${currentProjectId()}/list`} icon={IconList} label="List" onClick={close} />
+          <NavButton href={`/projects/${currentProjectId()}/table`} icon={IconTable} label="Table" onClick={close} />
           <NavButton href={`/projects/${currentProjectId()}/calendar`} icon={IconCalendar} label="Calendar" onClick={close} />
           <NavButton href={`/projects/${currentProjectId()}/timeline`} icon={IconTimeline} label="Timeline" onClick={close} />
-          <NavButton href={`/projects/${currentProjectId()}/sprint`} icon={IconSprint} label="Sprints" onClick={close} />
+          <NavButton href={`/projects/${currentProjectId()}/sprint`} icon={IconSprint} label={t('sprint')} onClick={close} />
           <NavButton href={`/projects/${currentProjectId()}/overview`} icon={IconOverview} label="Overview" onClick={close} />
 
           <div style={{ height: '1px', background: 'var(--color-border-light)', margin: '10px 8px' }} />

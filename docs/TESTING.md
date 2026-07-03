@@ -204,7 +204,8 @@ Covers:
 
 ## Continuous integration
 
-The CI pipeline (`.github/workflows/ci.yml`) runs three jobs on every push to `develop`:
+The CI pipeline (`.github/workflows/ci.yml`) runs several jobs on every push to `develop`
+(see the full [CI gates](#ci-gates-githubworkflowsciyml) table below). The core ones:
 
 ### `rust` job
 
@@ -351,10 +352,12 @@ Known, justified Rust advisory exceptions live in
 [`.cargo/audit.toml`](../.cargo/audit.toml) with a documented reason each — the
 gate still fails on any **new** advisory. Re-review that list on every dep bump.
 
-> **Known a11y debt:** `color-contrast` (palette-wide, needs a design-token
-> contrast pass) and `select-name` (board project selector lacks an `aria-label`)
-> are recorded in `e2e/a11y.spec.ts` `KNOWN_ISSUES`. They keep the suite green
-> while still blocking *new* a11y regressions — fix and remove them when able.
+> **Known a11y debt:** none currently. The `KNOWN_ISSUES` list in
+> `e2e/a11y.spec.ts` is empty — the earlier `color-contrast` and `select-name`
+> suppressions have been fixed and removed, so the axe scan gates on a fully
+> clean baseline. If a justified, hard-to-fix violation ever needs suppressing,
+> add its axe rule id to `KNOWN_ISSUES` with a tracking note rather than deleting
+> the assertion, so the suite keeps blocking *new* classes of regression.
 
 ---
 
@@ -381,8 +384,15 @@ model shows up first. See [`tests/load/README.md`](../tests/load/README.md).
 | Job | Gate |
 | --- | --- |
 | `rust` | fmt + clippy + `cargo test --workspace` |
+| `msrv` | build on the documented MSRV (Rust 1.85, the edition-2024 floor) |
+| `coverage` | `cargo-llvm-cov` line floors (core ≥85%, db/api ≥70%) + Vitest coverage thresholds |
+| `deny` | `cargo-deny` license allow-list + duplicate-dependency (multiple-versions) check |
 | `frontend` | type-check + token lint + build + bundle-size budget |
 | `docs` | mdBook build + broken-link check |
 | `embed-spa` | single-binary packaging + release build |
 | `security` | cargo audit + npm audit (high+) |
 | `e2e` | Playwright across chromium/firefox/webkit + a11y + API contract |
+
+A separate scheduled workflow (`.github/workflows/scheduled-audit.yml`) re-runs
+`cargo audit` + `npm audit` weekly so newly disclosed advisories are caught even
+when the code hasn't changed.

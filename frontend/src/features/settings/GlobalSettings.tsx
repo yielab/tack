@@ -6,7 +6,7 @@ import {
   For,
   Show,
 } from 'solid-js';
-import { FiUploadCloud, FiDownloadCloud, FiRefreshCw } from 'solid-icons/fi';
+import { FiUploadCloud, FiDownloadCloud, FiRefreshCw, FiCheckCircle } from 'solid-icons/fi';
 import { api } from '../../shared/api';
 import type { CloudBackupConfigInput } from '../../shared/api/data';
 import { toast } from '../../shared/ui/toast';
@@ -97,6 +97,7 @@ const GlobalSettings: Component = () => {
   const [savingCloud, setSavingCloud] = createSignal(false);
   const [cloudBackingUp, setCloudBackingUp] = createSignal(false);
   const [cloudRestoring, setCloudRestoring] = createSignal(false);
+  const [cloudVerifying, setCloudVerifying] = createSignal(false);
 
   // Populate the form whenever the saved config (re)loads.
   createEffect(() => {
@@ -170,6 +171,24 @@ const GlobalSettings: Component = () => {
       toast.error(err instanceof Error ? err.message : 'Cloud restore failed');
     } finally {
       setCloudRestoring(false);
+    }
+  };
+
+  const verifyCloud = async (key?: string) => {
+    setCloudVerifying(true);
+    try {
+      const res = await api.data.cloudVerify(key);
+      if (res.ok) {
+        toast.success(
+          `Backup verified: ${res.manifest.item_count} items, checksum and schema OK.`,
+        );
+      } else {
+        toast.error(`Backup FAILED verification: ${res.reason ?? 'unknown reason'}`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Cloud verify failed');
+    } finally {
+      setCloudVerifying(false);
     }
   };
 
@@ -335,6 +354,15 @@ const GlobalSettings: Component = () => {
           >
             <FiDownloadCloud size={16} class="mr-1.5" /> Restore latest
           </Button>
+          <Button
+            variant="secondary"
+            onClick={() => void verifyCloud()}
+            loading={cloudVerifying()}
+            disabled={!configured() || cloudVerifying()}
+            title="Download and validate the latest cloud backup without restoring it"
+          >
+            <FiCheckCircle size={16} class="mr-1.5" /> Verify latest
+          </Button>
           <Show when={configured()}>
             <Button
               variant="ghost"
@@ -378,14 +406,24 @@ const GlobalSettings: Component = () => {
                           {b.item_count} items · {formatBytes(b.bundle_size_bytes)}
                         </div>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={cloudRestoring()}
-                        onClick={() => void restoreFromCloud(b.object_key)}
-                      >
-                        Restore
-                      </Button>
+                      <div class="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={cloudVerifying()}
+                          onClick={() => void verifyCloud(b.object_key)}
+                        >
+                          Verify
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={cloudRestoring()}
+                          onClick={() => void restoreFromCloud(b.object_key)}
+                        >
+                          Restore
+                        </Button>
+                      </div>
                     </li>
                   )}
                 </For>

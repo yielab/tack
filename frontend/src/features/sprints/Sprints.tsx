@@ -6,6 +6,7 @@ import { Button, Field, FieldShell, Badge, Modal } from '../../shared/ui';
 import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
+import { priorityColor } from '../../shared/ui/PriorityDot';
 import type { Sprint, Item } from '../../shared/types';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -30,14 +31,7 @@ const STATUS_TONE = {
   closed: 'neutral',
 } as const;
 
-const PRIORITY_DOT: Record<string, string> = {
-  critical: '#ef4444',
-  high: '#f97316',
-  medium: '#eab308',
-  low: '#22c55e',
-};
-
-function formatDate(d?: string) {
+function formatDate(d?: string | null) {
   if (!d) return null;
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
@@ -133,15 +127,15 @@ export default function Sprints() {
       };
       if (editingSprint()) {
         await api.sprints.update(editingSprint()!.id, body);
-        toast.success('Sprint updated');
+        toast.success(`${t('sprint')} updated`);
       } else {
         await api.sprints.create(projectId, body);
-        toast.success('Sprint created');
+        toast.success(`${t('sprint')} created`);
       }
       setShowModal(false);
       await refetchSprints();
     } catch {
-      toast.error('Failed to save sprint');
+      toast.error(`Failed to save ${t('sprint').toLowerCase()}`);
     } finally {
       setSaving(false);
     }
@@ -150,10 +144,10 @@ export default function Sprints() {
   const updateStatus = async (sprintId: string, status: string) => {
     try {
       await api.sprints.setStatus(sprintId, status);
-      toast.success(`Sprint ${status}`);
+      toast.success(`${t('sprint')} ${status}`);
       await refetchSprints();
     } catch {
-      toast.error('Failed to update sprint');
+      toast.error(`Failed to update ${t('sprint').toLowerCase()}`);
     }
   };
 
@@ -182,7 +176,7 @@ export default function Sprints() {
     if (sprintId !== null) {
       const sprint = (sprints() ?? []).find(s => s.id === sprintId);
       if (sprint && sprint.status !== 'planning' && sprint.status !== 'active') {
-        toast.error(`Cannot add items to a ${sprint.status} sprint`);
+        toast.error(`Cannot add items to a ${sprint.status} ${t('sprint').toLowerCase()}`);
         return;
       }
     }
@@ -208,10 +202,10 @@ export default function Sprints() {
       >
         <div>
           <h1 class="text-xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
-            Sprint Planning
+            {t('sprint')} Planning
           </h1>
           <p class="text-xs mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>
-            Drag items from the backlog into a sprint, or between sprints.
+            Drag items from the {t('backlog').toLowerCase()} into a {t('sprint').toLowerCase()}, or between {t('sprint').toLowerCase()}s.
           </p>
         </div>
         <Button size="sm" onClick={openCreate}>+ New {t('sprint')}</Button>
@@ -238,7 +232,7 @@ export default function Sprints() {
         >
           <div class="px-4 py-3 border-b" style={{ 'border-color': 'var(--color-border-light)' }}>
             <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-              Backlog
+              {t('backlog')}
             </span>
             <span
               class="ml-2 text-xs px-1.5 py-0.5 rounded-full"
@@ -254,7 +248,7 @@ export default function Sprints() {
               fallback={
                 <div class="flex items-center justify-center h-32 text-center">
                   <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                    All items are assigned to sprints.
+                    All items are assigned to {t('sprint').toLowerCase()}s.
                   </p>
                 </div>
               }
@@ -275,7 +269,7 @@ export default function Sprints() {
                 <div class="text-center">
                   <p class="text-3xl mb-4">🏃</p>
                   <p class="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
-                    No active sprints yet
+                    No active {t('sprint').toLowerCase()}s yet
                   </p>
                   <Button onClick={openCreate}>Create your first {t('sprint')}</Button>
                 </div>
@@ -391,7 +385,7 @@ export default function Sprints() {
                                 color: 'var(--color-text-tertiary)',
                               }}
                             >
-                              {canAccept ? 'Drop items here' : 'Sprint is closed'}
+                              {canAccept ? 'Drop items here' : `${t('sprint')} is closed`}
                             </div>
                           }
                         >
@@ -422,7 +416,7 @@ export default function Sprints() {
             required
             value={formName()}
             onInput={(e) => setFormName(e.currentTarget.value)}
-            placeholder="Sprint 1"
+            placeholder={`${t('sprint')} 1`}
             disabled={saving()}
           />
           <FieldShell label="Goal" for="sprint-goal">
@@ -480,7 +474,7 @@ function ItemCard(props: {
       <div class="flex items-start gap-2">
         <div
           class="mt-1 w-2 h-2 rounded-full shrink-0"
-          style={{ 'background-color': PRIORITY_DOT[props.item.priority] ?? '#9ca3af' }}
+          style={{ 'background-color': priorityColor(props.item.priority) }}
           title={props.item.priority}
         />
         <div class="flex-1 min-w-0">

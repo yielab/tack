@@ -10,6 +10,19 @@ use crate::error::{ApiError, ApiResult};
 use crate::router::AppState;
 
 #[instrument(skip(state))]
+#[utoipa::path(
+    post,
+    path = "/api/projects/{project_id}/roles",
+    tag = "roles",
+    params(
+        ("project_id" = Uuid, Path, description = "Project ID"),
+    ),
+    request_body = tack_core::models::CreateRole,
+    responses(
+        (status = 200, description = "Role created", body = tack_core::models::Role),
+        (status = 400, description = "Validation error", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn create_role(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
@@ -23,6 +36,17 @@ pub async fn create_role(
 }
 
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/projects/{project_id}/roles",
+    tag = "roles",
+    params(
+        ("project_id" = Uuid, Path, description = "Project ID"),
+    ),
+    responses(
+        (status = 200, description = "Roles for the project", body = Vec<tack_core::models::Role>),
+    ),
+)]
 pub async fn list_roles(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
@@ -32,6 +56,18 @@ pub async fn list_roles(
 }
 
 #[instrument(skip(state))]
+#[utoipa::path(
+    put,
+    path = "/api/items/{item_id}/roles/{role_id}",
+    tag = "roles",
+    params(
+        ("item_id" = Uuid, Path, description = "Item ID"),
+        ("role_id" = Uuid, Path, description = "Role ID"),
+    ),
+    responses(
+        (status = 200, description = "Role assigned to item", body = serde_json::Value),
+    ),
+)]
 pub async fn assign_role(
     State(state): State<AppState>,
     Path((item_id, role_id)): Path<(Uuid, Uuid)>,
@@ -41,6 +77,18 @@ pub async fn assign_role(
 }
 
 #[instrument(skip(state))]
+#[utoipa::path(
+    delete,
+    path = "/api/items/{item_id}/roles/{role_id}",
+    tag = "roles",
+    params(
+        ("item_id" = Uuid, Path, description = "Item ID"),
+        ("role_id" = Uuid, Path, description = "Role ID"),
+    ),
+    responses(
+        (status = 200, description = "Role removed from item", body = serde_json::Value),
+    ),
+)]
 pub async fn remove_role(
     State(state): State<AppState>,
     Path((item_id, role_id)): Path<(Uuid, Uuid)>,
@@ -50,6 +98,18 @@ pub async fn remove_role(
 }
 
 #[instrument(skip(state))]
+#[utoipa::path(
+    delete,
+    path = "/api/roles/{id}",
+    tag = "roles",
+    params(
+        ("id" = Uuid, Path, description = "Role ID"),
+    ),
+    responses(
+        (status = 200, description = "Deleted", body = serde_json::Value),
+        (status = 404, description = "Role not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn delete_role(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,

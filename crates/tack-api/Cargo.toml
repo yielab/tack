@@ -12,9 +12,10 @@ embed-spa = ["dep:rust-embed"]
 [dependencies]
 # Optional: embed frontend/dist/ into the binary at compile time
 rust-embed = { version = "8", optional = true }
-tack-core = { path = "../tack-core" }
+tack-core = { path = "../tack-core", features = ["openapi"] }
 tack-db = { path = "../tack-db" }
 axum = { workspace = true }
+utoipa = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
 tokio = { workspace = true }

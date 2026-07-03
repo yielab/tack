@@ -808,12 +808,15 @@ fn cmd_list(
         format!("?{}", params.join("&"))
     };
     let resp = client.get(&format!("/projects/{project}/items{qs}"))?;
+    // The list endpoint returns a `{ data, total, page, per_page }` envelope;
+    // unwrap the `data` array (tolerating a bare array for forward/back compat).
+    let items_val = resp.get("data").cloned().unwrap_or(resp);
     if as_json {
-        println!("{}", serde_json::to_string_pretty(&resp)?);
+        println!("{}", serde_json::to_string_pretty(&items_val)?);
         return Ok(());
     }
     let empty = vec![];
-    let items = resp.as_array().unwrap_or(&empty);
+    let items = items_val.as_array().unwrap_or(&empty);
     if items.is_empty() {
         println!("No items found.");
         return Ok(());

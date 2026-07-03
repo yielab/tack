@@ -1,19 +1,23 @@
 import { For } from 'solid-js';
 import { A, useParams, useLocation } from '@solidjs/router';
 import { setLastLens, type Lens } from '../state/lastView';
+import { useVocab } from '../vocab/useVocab';
 
-const TABS: { lens: Lens; label: string; icon: string }[] = [
+// `vocab` marks lenses whose label is resolved from the project vocabulary
+// (e.g. `sprint` → "Phase" for a construction project).
+const TABS: { lens: Lens; label: string; icon: string; vocab?: string }[] = [
   { lens: 'board',    label: 'Board',    icon: '⬛' },
   { lens: 'list',     label: 'List',     icon: '☰'  },
   { lens: 'table',    label: 'Table',    icon: '▦'  },
   { lens: 'calendar', label: 'Calendar', icon: '📅' },
   { lens: 'timeline', label: 'Timeline', icon: '📊' },
-  { lens: 'sprint',   label: 'Sprint',   icon: '🏃' },
+  { lens: 'sprint',   label: 'Sprint',   icon: '🏃', vocab: 'sprint' },
 ];
 
 export default function WorkTabs() {
   const params = useParams();
   const location = useLocation();
+  const { t } = useVocab();
   const projectId = () => params.id;
 
   const activeLens = (): Lens => {
@@ -48,7 +52,7 @@ export default function WorkTabs() {
                 }}
           >
             <span class="text-xs">{tab.icon}</span>
-            {tab.label}
+            {tab.vocab ? t(tab.vocab) : tab.label}
           </A>
         )}
       </For>

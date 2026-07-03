@@ -9,7 +9,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> **Audit-driven cycle (Phases 26–32, July 2026).** A full-repo audit produced a
+> correctness/security/quality cycle, now implemented and verified (244 Rust tests,
+> 169 Vitest, clippy clean). Grouped below under Fixed / Security / Added / Changed.
+
+### Fixed
+
+- **Item updates no longer silently drop data** — `update_item` now persists
+  `sprint_id`, `due_date`, and `estimate_unit` (previously ignored, so drag-to-sprint
+  and due-date edits vanished on refresh); null clears them. `started_at`/
+  `completed_at` are now stamped on ordinary status transitions, so due-soon
+  webhooks stop firing for completed items. (Phase 26.)
+- **Foreign keys enforced on every connection** — `foreign_keys=ON` is now a
+  per-connection option instead of running on one pooled connection. (Phase 26.)
+- **Item lists no longer truncate at 100 in the UI** — the list endpoint returns a
+  `{data,total,page,per_page}` envelope and the client pages through all items.
+  (Phase 29.)
+- **Navigation** — breadcrumbs render for the Table and Sprints views; the Table
+  lens is reachable from the sidebar. (Phase 26.)
+
+### Security
+
+- **Alexa endpoint hardened** — an optional mandatory shared secret
+  (`TACK_ALEXA_SHARED_SECRET`, constant-time compared) gates the endpoint; the old
+  skill-ID-only check was forgeable. (Phase 27.1; see [docs/ALEXA.md](docs/ALEXA.md).)
+- **Backup restore integrity** — bundles are rejected on tar path traversal, SHA-256
+  mismatch, or unsupported format version before anything is staged; the S3 secret
+  and install ID are scrubbed from every snapshot so they no longer ride inside
+  backup bundles. (Phase 27.3/27.4/27.6.)
+- **Exposed-bind warning** — binding a non-loopback host with no `TACK_API_TOKEN`
+  now logs a loud startup warning; `/api/debug/info` no longer returns the database
+  URL. (Phase 27.2.)
+- **Injection + validation** — Linear import escapes `team_id`/`project_id` in the
+  GraphQL query; GitHub/Linear import, board, sprint-status, template-instantiation,
+  and backup-settings DTOs are now validated (`retention` ≥ 1, interval ≥ 60).
+  (Phase 27.5/27.7.)
+
 ### Added
+
+- **OpenAPI 3.1 contract** — the API is now described by a machine-generated spec
+  (`utoipa`), served at `GET /api/openapi.json` and committed to
+  [docs/openapi.json](docs/openapi.json) (68 operations / 43 paths, no bundled
+  Swagger UI). Two CI drift gates keep handlers → `docs/openapi.json` →
+  `frontend/src/shared/api/schema.gen.ts` in lockstep, and both API-reference docs
+  now point at the spec as the source of truth. (Phase 29.3–29.6.)
+- **Backup → safe multi-device sync** — a generation counter with upload/restore
+  conflict detection (`force` to override), fail-safe restore swaps (stale WAL
+  cleanup, rollback-on-failure, backup-before-restore), sidecar-first + multipart
+  uploads with orphan reconciliation, and a `POST /api/backup/remote/verify`
+  preview wired into Settings → Cloud Backup. (Phase 28.)
+- **Construction build-system presets** — three seeded templates (Wood Frame, Steel
+  Frame, SIP Panel) with tailored workflows and build-specific custom fields; the
+  New Project dialog is now template-first with a workflow + vocabulary preview.
+  (Phase 31.)
+- **Enterprise OSS scaffolding** — `Dockerfile` + `docker-compose.yml`, release
+  integrity (SHA256SUMS, build provenance, CycloneDX SBOMs), `CODE_OF_CONDUCT.md`,
+  `GOVERNANCE.md`, GitHub Security Advisories disclosure, and CI gates for MSRV
+  (Rust 1.85), coverage, and `cargo-deny`. (Phase 32.)
+
+### Changed
+
+- **Per-project vocabulary now covers every surface** — the "+ New" modal, Sprints
+  view, tabs, command palette, and first-run guide resolve project terms, so a
+  construction project reads "Phase"/"Work Order" everywhere. Error responses share
+  one `{"error":{"status","message"}}` envelope; priority colors are tokenized for
+  dark-mode/palette correctness. (Phases 29.1/30.)
 
 - **GitHub push sync (v1, push-only)** — items imported from GitHub are now linked
   to their issue (new `github_links` table). When `TACK_GITHUB_TOKEN` is set,
@@ -58,6 +122,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Prints the `git checkout -b …` command by default, creates and switches with
   `--checkout`, overrides the type-derived prefix with `--prefix`, and supports
   `--json`. (Phase 22, Task 1.)
+
+### Changed
+
+- **UI redesign — teal multi-palette design system.** The frontend was rebuilt on
+  a two-axis design-token system: mode (light/dark) × palette (Teal / Clay /
+  Graphite), switchable from the sidebar footer. Every color now flows from
+  `--color-*` tokens in `index.css` — components no longer use raw hex — and the
+  type stack moved to self-hosted Hanken Grotesk + JetBrains Mono. This is the
+  largest user-facing change since beta.6.
+
+### Fixed
+
+- **WCAG AA contrast across the redesigned palette.** Adjusted token values so
+  text and interactive elements meet WCAG AA contrast in all three palettes in
+  both light and dark mode; the axe accessibility scan gates on a clean baseline
+  in CI.
 
 ---
 

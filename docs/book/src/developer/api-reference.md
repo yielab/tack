@@ -20,138 +20,31 @@ Authorization: Bearer <token>
 
 ---
 
-## Endpoints by Group
+## Endpoints — the OpenAPI spec is the source of truth
 
-### Projects (5 endpoints)
+The complete, always-current endpoint surface (paths, methods, parameters,
+request/response schemas, and error shapes) is the machine-generated OpenAPI 3.1
+contract, **not a hand-maintained list**:
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/projects` | List all projects |
-| `POST` | `/projects` | Create project |
-| `GET` | `/projects/{id}` | Get project |
-| `PATCH` | `/projects/{id}` | Update project (workflow, vocabulary, name, etc.) |
-| `DELETE` | `/projects/{id}` | Delete project |
+- **Live:** `GET /api/openapi.json` from a running server.
+- **In-repo:** [`docs/openapi.json`](../../../openapi.json), regenerated from the
+  handler annotations and checked in.
 
-### Boards (4 endpoints + WebSocket)
+Both are gated in CI: the Rust *OpenAPI contract drift gate* fails the build if the
+committed spec falls out of sync with the code, and the frontend *OpenAPI TS types
+drift gate* fails if the generated client types (`schema.gen.ts`) drift from the
+spec. That chain — handlers → `docs/openapi.json` → `schema.gen.ts` — is why this
+page no longer enumerates endpoints by hand: any such list would silently rot, which
+is exactly the failure this contract eliminates.
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/projects/{id}/boards` | List boards for project |
-| `POST` | `/projects/{id}/boards` | Create board |
-| `GET` | `/projects/{id}/boards/{board_id}` | Get board with items grouped by column |
-| `PATCH` | `/projects/{id}/boards/{board_id}` | Update board config |
-| `GET` | `/projects/{id}/boards/live` | **WebSocket** — real-time board events |
-
-### Items (6 endpoints)
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/projects/{id}/items` | List items (filters: status, priority, type, assignee, sprint) |
-| `POST` | `/projects/{id}/items` | Create item |
-| `GET` | `/items/{id}` | Get item |
-| `PATCH` | `/items/{id}` | Update item (status change validated by workflow) |
-| `DELETE` | `/items/{id}` | Delete item |
-| `GET` | `/items/{id}/history` | Item activity log |
-
-### Dependencies (3 endpoints)
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/items/{id}/dependencies` | List dependencies |
-| `POST` | `/items/{id}/dependencies` | Add dependency (cycle detection applied) |
-| `DELETE` | `/items/{id}/dependencies/{dep_id}` | Remove dependency |
-
-### Attachments (4 endpoints)
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/items/{id}/attachments` | List attachments |
-| `POST` | `/items/{id}/attachments` | Upload file (multipart/form-data, max 50 MB) |
-| `GET` | `/attachments/{id}` | Download attachment |
-| `DELETE` | `/attachments/{id}` | Delete attachment |
-
-### Sprints (4 endpoints)
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/projects/{id}/sprints` | List sprints |
-| `POST` | `/projects/{id}/sprints` | Create sprint |
-| `PATCH` | `/sprints/{id}` | Update sprint (advance lifecycle state) |
-| `DELETE` | `/sprints/{id}` | Delete sprint |
-
-### Roles (5 endpoints)
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/projects/{id}/roles` | List roles |
-| `POST` | `/projects/{id}/roles` | Create role |
-| `GET` | `/roles/{id}` | Get role |
-| `PATCH` | `/roles/{id}` | Update role |
-| `DELETE` | `/roles/{id}` | Delete role |
-
-### Comments (2 endpoints)
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/items/{id}/comments` | List comments |
-| `POST` | `/items/{id}/comments` | Add comment |
-
-### Search (2 endpoints)
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/projects/{id}/search?q=term` | FTS5 search within project |
-| `GET` | `/search?q=term` | Global FTS5 search across all projects |
-
-### Export / Import (3 endpoints)
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/projects/{id}/export?format=json\|csv` | Export project |
-| `POST` | `/projects/import` | Import project from JSON |
-| `GET` | `/backup` | Download full database backup |
-| `POST` | `/restore` | Stage a database restore |
-
-### Templates (3 endpoints)
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/templates` | List project templates |
-| `POST` | `/templates` | Save project as template |
-| `POST` | `/templates/{id}/create` | Create project from template |
-
-### Custom Fields (4 endpoints)
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/projects/{id}/fields` | List custom field definitions |
-| `POST` | `/projects/{id}/fields` | Create custom field (9 types) |
-| `PATCH` | `/fields/{id}` | Update field definition |
-| `DELETE` | `/fields/{id}` | Delete field |
-
-### Debug / Health (3 endpoints)
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/health` | `{"status":"ok","version":"…","migrations_applied":N}` |
-| `GET` | `/debug/info` | Build info, config summary |
-| `GET` | `/debug/db-stats` | Table row counts |
-
-### Integrations & operations
-
-Import, export, backup, settings, and the Alexa endpoint round out the surface to
-**68 REST endpoints + 1 WebSocket**. They are documented with full request/response
-schemas in the canonical [API Reference](../../../API-REFERENCE.md):
-
-| Group | Paths |
-|---|---|
-| Import | `POST /projects/{id}/import-github`, `POST /projects/{id}/import-linear`, `POST /projects/import` |
-| Export | `GET /projects/{id}/export?format=json\|yaml\|csv` |
-| Backup | `GET /backup`, `POST /restore`, `POST/GET /backup/remote`, `POST /backup/remote/restore` |
-| Settings | `GET/PUT /settings/backup` |
-| Voice | `POST /alexa` |
+To browse the spec interactively, load `docs/openapi.json` into any OpenAPI viewer
+(Redocly, Scalar, Swagger Editor, or `npx @redocly/cli preview-docs docs/openapi.json`).
+The current surface is **68 REST operations across 43 paths, plus 1 WebSocket**
+(`/api/projects/{id}/boards/live`, which — like the multipart upload and the Alexa
+webhook — is documented in prose below rather than in the spec).
 
 ---
+
 
 ## WebSocket Events
 

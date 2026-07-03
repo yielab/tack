@@ -7,6 +7,12 @@ use tracing::{info, instrument};
 use crate::router::AppState;
 
 /// GET /api/health — Liveness + readiness check
+#[utoipa::path(
+    get,
+    path = "/api/health",
+    tag = "system",
+    responses((status = 200, description = "Service is live; reports version and applied migration count", body = serde_json::Value)),
+)]
 #[instrument(skip(state))]
 pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
     let migrations_applied: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _migrations")
@@ -22,6 +28,12 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 /// GET /api/debug/info — System info (only in debug builds)
+#[utoipa::path(
+    get,
+    path = "/api/debug/info",
+    tag = "system",
+    responses((status = 200, description = "Build, version, database size, and non-sensitive config", body = serde_json::Value)),
+)]
 #[instrument(skip(state))]
 pub async fn debug_info(State(state): State<AppState>) -> impl IntoResponse {
     info!("Debug info requested");
@@ -33,7 +45,8 @@ pub async fn debug_info(State(state): State<AppState>) -> impl IntoResponse {
         "build": if cfg!(debug_assertions) { "debug" } else { "release" },
         "database": {
             "size_bytes": db_size,
-            "url": state.config.database_url,
+            // `url` deliberately omitted — it can embed a filesystem path or
+            // credentials and must not leak from an unauthenticated debug route.
         },
         "config": {
             "host": state.config.host,
@@ -44,6 +57,12 @@ pub async fn debug_info(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 /// GET /api/debug/db-stats — Database statistics
+#[utoipa::path(
+    get,
+    path = "/api/debug/db-stats",
+    tag = "system",
+    responses((status = 200, description = "Per-table row counts", body = serde_json::Value)),
+)]
 #[instrument(skip(state))]
 pub async fn db_stats(State(state): State<AppState>) -> impl IntoResponse {
     let counts = get_table_counts(&state).await;

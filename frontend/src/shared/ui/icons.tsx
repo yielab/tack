@@ -69,6 +69,14 @@ export const IconList = stroke(
   <path d="M5 4h9M5 8h9M5 12h9M2 4h.01M2 8h.01M2 12h.01" stroke-linecap="round" />,
 );
 
+export const IconTable = stroke(
+  <>
+    <rect x="2.2" y="3" width="11.6" height="10" rx="1.5" />
+    <path d="M2.2 6.4h11.6M2.2 9.7h11.6M6.2 6.4V13" stroke-linecap="round" />
+  </>,
+  { width: 1.5 },
+);
+
 export const IconCalendar = stroke(
   <>
     <rect x="2.2" y="3" width="11.6" height="11" rx="2" />

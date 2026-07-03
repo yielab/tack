@@ -6,6 +6,16 @@
 //! Alexa embeds in every request envelope (constant-time comparison) and by
 //! rejecting timestamps outside Alexa's ±150 second tolerance window.
 //!
+//! The skill ID alone is *not* a secret — it is visible to anyone who can read
+//! the skill manifest — so it is forgeable. When `alexa_shared_secret`
+//! (`TACK_ALEXA_SHARED_SECRET`) is configured, every request must also carry a
+//! matching `?token=<secret>` query parameter (compared in constant time). The
+//! operator embeds the secret in the skill's HTTPS endpoint URL, which is the
+//! only channel Alexa lets you attach a secret to (custom request headers are
+//! not configurable). See `docs/ALEXA.md`. This is the mandatory auth mechanism
+//! chosen in place of full X.509 cert-chain verification, which was judged too
+//! heavy for the single-binary size budget.
+//!
 //! Responses are localised from the request's `locale` field: any `es-*`
 //! locale gets Spanish speech, everything else falls back to English.
 //!
@@ -16,11 +26,12 @@
 use std::collections::HashMap;
 
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{RawQuery, State};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tracing::{info, instrument};
+use tracing::{info, instrument, warn};
+use validator::Validate;
 
 use tack_core::models::{CreateItem, Item, ItemFilter, Project, UpdateItem};
 
@@ -239,6 +250,13 @@ fn msg_project_not_found(lang: Lang, name: &str) -> String {
     }
 }
 
+fn msg_invalid_task(lang: Lang) -> String {
+    match lang {
+        Lang::En => "Sorry, that task title isn't valid. Try a shorter name.".into(),
+        Lang::Es => "Lo siento, ese nombre de tarea no es válido. Usa un nombre más corto.".into(),
+    }
+}
+
 fn msg_added(lang: Lang, term: &str, title: &str, project: &str) -> String {
     match lang {
         Lang::En => format!("Added {term} {title} to {project}."),
@@ -354,9 +372,10 @@ fn prompt(text: &str, reprompt: &str) -> Json<Value> {
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
-#[instrument(skip(state, payload))]
+#[instrument(skip(state, raw_query, payload))]
 pub async fn handle_request(
     State(state): State<AppState>,
+    RawQuery(raw_query): RawQuery,
     Json(payload): Json<AlexaRequest>,
 ) -> ApiResult<Json<Value>> {
     let Some(ref expected_skill_id) = state.config.alexa_skill_id else {
@@ -364,6 +383,23 @@ pub async fn handle_request(
             "Alexa integration is not enabled".into(),
         ));
     };
+
+    // Mandatory-when-configured shared-secret gate. The skill ID below is not a
+    // secret and is therefore forgeable on its own; the shared secret is what
+    // actually authenticates the caller. Enforced whenever configured.
+    if let Some(ref expected_secret) = state.config.alexa_shared_secret {
+        let provided = raw_query
+            .as_deref()
+            .and_then(|q| query_param(q, "token"));
+        let ok = provided
+            .map(|t| constant_time_eq(t.as_bytes(), expected_secret.as_bytes()))
+            .unwrap_or(false);
+        if !ok {
+            return Err(ApiError::Forbidden(
+                "Invalid or missing Alexa shared secret".into(),
+            ));
+        }
+    }
 
     let app_id = payload
         .application_id()
@@ -422,16 +458,22 @@ async fn add_task(state: &AppState, req: &AlexaRequest, lang: Lang) -> ApiResult
     };
 
     let initial_status = project.workflow.initial_status().map_err(ApiError::Core)?;
+
+    // Same input validation the REST create path enforces — this was the only
+    // mutation path that skipped it. A validation failure is a user-level
+    // problem, so speak it rather than returning an HTTP error.
+    let new_item = CreateItem {
+        title: title.to_string(),
+        ..Default::default()
+    };
+    if let Err(e) = new_item.validate() {
+        warn!(error = %e, "Alexa add_task rejected by validation");
+        return Ok(speech(&msg_invalid_task(lang), true));
+    }
+
     let item = state
         .repo
-        .create_item(
-            project.id,
-            &initial_status,
-            CreateItem {
-                title: title.to_string(),
-                ..Default::default()
-            },
-        )
+        .create_item(project.id, &initial_status, new_item)
         .await?;
 
     websocket::broadcast_event(
@@ -548,6 +590,16 @@ async fn complete_task(state: &AppState, req: &AlexaRequest, lang: Lang) -> ApiR
         return Ok(speech(&msg_wip_limit(lang, done_status), true));
     }
 
+    // Resolve the target status category so the repo stamps `completed_at`,
+    // exactly as the REST update handler now does. Without this, Alexa-completed
+    // items never recorded a completion time.
+    let done_category = project
+        .workflow
+        .statuses
+        .iter()
+        .find(|s| s.name.as_str() == done_status)
+        .map(|s| s.category.clone());
+
     let old_status = target.status.clone();
     let item = state
         .repo
@@ -555,6 +607,7 @@ async fn complete_task(state: &AppState, req: &AlexaRequest, lang: Lang) -> ApiR
             target.id,
             UpdateItem {
                 status: Some(done_status.to_string()),
+                status_category: done_category,
                 ..Default::default()
             },
         )
@@ -621,6 +674,16 @@ async fn resolve_project(
 
     projects.sort_by_key(|p| std::cmp::Reverse(p.updated_at));
     Ok(Ok(projects.remove(0)))
+}
+
+/// Find the first value of `key` in a raw `a=b&c=d` query string. No percent
+/// decoding — shared secrets are expected to be URL-safe (recommended in the
+/// docs), so a literal byte-for-byte comparison is exactly what we want.
+fn query_param<'a>(raw: &'a str, key: &str) -> Option<&'a str> {
+    raw.split('&').find_map(|pair| {
+        let (k, v) = pair.split_once('=')?;
+        (k == key).then_some(v)
+    })
 }
 
 /// Project-specific vocabulary term (e.g. "Work Order" for construction).

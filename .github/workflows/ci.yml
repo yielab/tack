@@ -25,6 +25,126 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace
+      # Regenerate the committed OpenAPI contract from the code and fail if it
+      # drifted. A handler/DTO change without a spec regen (UPDATE_OPENAPI=1
+      # cargo test -p tack-api --test openapi_contract) is caught here.
+      - name: OpenAPI contract drift gate
+        run: |
+          UPDATE_OPENAPI=1 cargo test -p tack-api --test openapi_contract openapi_spec_matches_committed_file
+          git diff --exit-code docs/openapi.json
+
+  msrv:
+    name: MSRV (Rust 1.85 — edition 2024 floor)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # The workspace uses edition 2024, which requires Rust >= 1.85. This job
+      # enforces that documented MSRV so an accidental use of a newer-only
+      # feature fails CI. Bump policy: the MSRV may be raised in a minor release
+      # when a dependency or language feature requires it; update this pin, the
+      # README/CONTRIBUTING badges, and `rust-version` in Cargo.toml together.
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: msrv
+      - name: Build on MSRV
+        run: cargo build --workspace --locked
+
+  coverage:
+    name: Coverage (llvm-cov + Vitest thresholds)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: coverage
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      # Per-crate line-coverage floors mirror the targets documented in
+      # docs/TESTING.md (tack-core >= 85%, tack-db/tack-api >= 70%).
+      - name: Rust coverage — tack-core (>= 85%)
+        run: cargo llvm-cov -p tack-core --fail-under-lines 85
+      - name: Rust coverage — tack-db (>= 70%)
+        run: cargo llvm-cov -p tack-db --fail-under-lines 70
+      - name: Rust coverage — tack-api (>= 70%)
+        run: cargo llvm-cov -p tack-api --fail-under-lines 70
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend deps + coverage provider
+        working-directory: frontend
+        # --no-save keeps package.json untouched; the provider is CI-only.
+        run: |
+          npm ci
+          npm install --no-save @vitest/coverage-v8@^4
+      - name: Frontend Vitest coverage thresholds
+        working-directory: frontend
+        run: >-
+          npx vitest run --coverage
+          --coverage.provider=v8
+          --coverage.thresholds.lines=70
+          --coverage.thresholds.functions=70
+          --coverage.thresholds.statements=70
+          --coverage.thresholds.branches=60
+
+  deny:
+    name: cargo-deny (licenses + duplicate deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: deny
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      # Generated at CI time (not committed) so the policy lives with the
+      # workflow. Advisories are covered by the `security` job's cargo-audit,
+      # so this run checks licenses + bans only.
+      - name: Generate deny policy
+        run: |
+          cat > deny.toml <<'EOF'
+          [graph]
+          all-features = true
+
+          [bans]
+          # Duplicate (multiple-version) dependencies are reported as an
+          # advisory (warning), not a hard failure.
+          multiple-versions = "warn"
+          wildcards = "allow"
+
+          [licenses]
+          version = 2
+          confidence-threshold = 0.8
+          allow = [
+            "MIT",
+            "Apache-2.0",
+            "Apache-2.0 WITH LLVM-exception",
+            "BSD-2-Clause",
+            "BSD-3-Clause",
+            "ISC",
+            "Zlib",
+            "MPL-2.0",
+            "Unicode-3.0",
+            "Unicode-DFS-2016",
+            "CC0-1.0",
+            "Unlicense",
+            "0BSD",
+            "BSL-1.0",
+            "OpenSSL",
+          ]
+          EOF
+      - name: cargo deny check
+        run: cargo deny check licenses bans
 
   frontend:
     name: Frontend (typecheck + build)
@@ -41,6 +161,14 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: OpenAPI TS types drift gate
+        # Regenerate the typed API schema from the committed spec and fail if the
+        # checked-in schema.gen.ts is stale. Together with the Rust "OpenAPI
+        # contract drift gate", this makes the spec → server → frontend chain
+        # impossible to silently diverge.
+        run: |
+          npm run gen:api
+          git diff --exit-code src/shared/api/schema.gen.ts
       - name: Type check
         run: npm run type-check
       - name: Design token gate (no new raw color literals)

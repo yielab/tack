@@ -3,15 +3,17 @@ use axum::extract::{Path, State};
 use serde::Deserialize;
 use tracing::instrument;
 use uuid::Uuid;
+use validator::Validate;
 
 use tack_core::models::{CreateItem, ItemType};
 
 use crate::error::{ApiError, ApiResult};
 use crate::router::AppState;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate, utoipa::ToSchema)]
 pub struct GitHubImportRequest {
     /// Repository as "owner/repo" or a full GitHub URL.
+    #[validate(length(min = 1, max = 300, message = "repo must be 1–300 characters"))]
     pub repo: String,
     /// Personal access token. Optional — unauthenticated calls are allowed
     /// but are rate-limited to 60 requests/hour.
@@ -61,11 +63,29 @@ struct GhUser {
 /// Rate-limit note: unauthenticated calls are limited to 60 requests/hour by
 /// GitHub; supplying a `token` raises this to 5 000 req/hour.
 #[instrument(skip(state))]
+#[utoipa::path(
+    post,
+    path = "/api/projects/{id}/import-github",
+    tag = "import",
+    params(
+        ("id" = Uuid, Path, description = "Project ID"),
+    ),
+    request_body = GitHubImportRequest,
+    responses(
+        (status = 200, description = "Counts of created/skipped issues and rate-limit remaining", body = serde_json::Value),
+        (status = 400, description = "Bad repo, token, or rate limit", body = crate::openapi::ErrorEnvelope),
+        (status = 404, description = "Project or repo not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn import_github(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
     Json(input): Json<GitHubImportRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    input
+        .validate()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+
     let project = state
         .repo
         .get_project(project_id)

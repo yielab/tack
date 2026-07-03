@@ -32,8 +32,14 @@ beforeEach(() => {
     if (url.endsWith('/api/items/i1/dependencies') && method === 'GET') {
       return Promise.resolve(new Response(JSON.stringify(deps), { status: 200 }));
     }
-    if (url.endsWith('/api/projects/p1/items') && method === 'GET') {
-      return Promise.resolve(new Response(JSON.stringify(projectItems), { status: 200 }));
+    if (url.includes('/api/projects/p1/items') && method === 'GET') {
+      // Paginated envelope: { data, total, page, per_page }.
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ data: projectItems, total: projectItems.length, page: 1, per_page: 200 }),
+          { status: 200 },
+        ),
+      );
     }
     if (method === 'DELETE') {
       deps = deps.filter((d) => !url.endsWith((d as { id: string }).id));

@@ -1,0 +1,46 @@
+# Tack — single-service deployment.
+#
+# One container, one binary (API + WebSocket + embedded SPA), one volume for
+# the SQLite database and uploaded attachments. There is no separate frontend
+# service: the SPA is embedded in the binary and served same-origin.
+#
+#   docker compose up -d        # build + start
+#   docker compose logs -f      # follow logs
+#   docker compose down         # stop (data survives in the tack-data volume)
+
+services:
+  tack:
+    build: .
+    image: tack:latest
+    container_name: tack
+    restart: unless-stopped
+    ports:
+      # Host:container. Publish only to loopback unless you set TACK_API_TOKEN.
+      - "3210:3210"
+    volumes:
+      # Persists /data/tack.db (+ -wal/-shm) and /data/storage attachments.
+      - tack-data:/data
+    environment:
+      TACK_HOST: "0.0.0.0"
+      TACK_PORT: "3210"
+      TACK_DATABASE_URL: "sqlite:/data/tack.db?mode=rwc"
+      TACK_STORAGE_DIR: "/data/storage"
+      TACK_LOG_LEVEL: "info"
+      # ── Recommended when reachable beyond localhost ──────────────────────
+      # Require a bearer token on every API request. Without it, anyone who can
+      # reach the port has full read/write access and can download the DB.
+      # TACK_API_TOKEN: "change-me-to-a-long-random-secret"
+      #
+      # Comma-separated CORS allow-list (only needed for cross-origin browser
+      # clients; the embedded SPA is same-origin and does not need this).
+      # TACK_ALLOWED_ORIGINS: "https://tack.example.com"
+      #
+      # ── Optional S3-compatible cloud backup (see docs/DEPLOYMENT-GUIDE.md) ─
+      # TACK_BACKUP_ENDPOINT: "https://<acct>.r2.cloudflarestorage.com"
+      # TACK_BACKUP_BUCKET: "tack-backups"
+      # TACK_BACKUP_ACCESS_KEY: "..."
+      # TACK_BACKUP_SECRET_KEY: "..."
+      # TACK_BACKUP_INTERVAL_SECS: "3600"
+
+volumes:
+  tack-data:

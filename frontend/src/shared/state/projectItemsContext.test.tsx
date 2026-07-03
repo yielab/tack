@@ -17,7 +17,8 @@ let fetchMock: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-    new Response(JSON.stringify(ITEMS), {
+    // The list endpoint returns the paginated envelope, not a bare array.
+    new Response(JSON.stringify({ data: ITEMS, total: ITEMS.length, page: 1, per_page: 200 }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     }),
@@ -59,7 +60,7 @@ describe('ProjectItemsProvider', () => {
     const { dispose } = mount(() => <Consumer />);
     await flush();
     expect(
-      fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/api/projects/test-proj/items')),
+      fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/projects/test-proj/items')),
     ).toBe(true);
     dispose();
   });

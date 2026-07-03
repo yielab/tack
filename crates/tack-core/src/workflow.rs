@@ -6,6 +6,7 @@ use crate::models::ProjectType;
 
 /// Full workflow configuration for a project.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct WorkflowConfig {
     pub workflow_type: WorkflowType,
     pub statuses: Vec<StatusDef>,
@@ -14,6 +15,7 @@ pub struct WorkflowConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum WorkflowType {
     Scrum,
     Kanban,
@@ -27,6 +29,7 @@ pub enum WorkflowType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct StatusDef {
     pub name: String,
     pub category: StatusCategory,
@@ -36,6 +39,7 @@ pub struct StatusDef {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum StatusCategory {
     Todo,
     InProgress,
@@ -43,6 +47,7 @@ pub enum StatusCategory {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Transition {
     pub from: String,
     pub to: String,
@@ -362,6 +367,113 @@ pub fn construction_workflow() -> WorkflowConfig {
     }
 }
 
+/// Build a linear, phase-based workflow from an ordered list of
+/// `(status_name, category)` stages. Consecutive stages get a forward
+/// transition; the optional `rework` pair adds one backward transition
+/// (typically `Inspect → <earlier build phase>`), mirroring the
+/// `construction_workflow` Inspect→Build rework pattern.
+///
+/// Used by the construction sub-preset builders (wood-frame, steel-frame,
+/// SIP-panel) which all reuse `WorkflowType::Construction`.
+fn linear_phase_workflow(
+    workflow_type: WorkflowType,
+    stages: &[(&str, StatusCategory)],
+    rework: Option<(&str, &str)>,
+) -> WorkflowConfig {
+    let statuses = stages
+        .iter()
+        .enumerate()
+        .map(|(i, (name, category))| StatusDef {
+            name: (*name).into(),
+            category: category.clone(),
+            wip_limit: None,
+            order: i as i32,
+        })
+        .collect();
+
+    let mut transitions: Vec<Transition> = stages
+        .windows(2)
+        .map(|w| Transition {
+            from: w[0].0.into(),
+            to: w[1].0.into(),
+        })
+        .collect();
+
+    if let Some((from, to)) = rework {
+        transitions.push(Transition {
+            from: from.into(),
+            to: to.into(),
+        });
+    }
+
+    WorkflowConfig {
+        workflow_type,
+        statuses,
+        transitions: Some(transitions),
+    }
+}
+
+/// Wood-frame construction sub-preset. Linear stick-frame sequence with a
+/// rework loop from Inspect back to Finish.
+pub fn wood_frame_workflow() -> WorkflowConfig {
+    use StatusCategory::*;
+    linear_phase_workflow(
+        WorkflowType::Construction,
+        &[
+            ("Permit", Todo),
+            ("Foundation", InProgress),
+            ("Framing", InProgress),
+            ("Rough-In (MEP)", InProgress),
+            ("Insulation & Drywall", InProgress),
+            ("Finish", InProgress),
+            ("Inspect", InProgress),
+            ("Handover", Done),
+        ],
+        Some(("Inspect", "Finish")),
+    )
+}
+
+/// Steel-frame construction sub-preset. Linear structural-steel sequence with
+/// a rework loop from Inspect back to Fireproofing.
+pub fn steel_frame_workflow() -> WorkflowConfig {
+    use StatusCategory::*;
+    linear_phase_workflow(
+        WorkflowType::Construction,
+        &[
+            ("Permit", Todo),
+            ("Engineering", Todo),
+            ("Fabrication", InProgress),
+            ("Erection", InProgress),
+            ("Decking/MEP", InProgress),
+            ("Fireproofing", InProgress),
+            ("Inspect", InProgress),
+            ("Handover", Done),
+        ],
+        Some(("Inspect", "Fireproofing")),
+    )
+}
+
+/// SIP (structural insulated panel) construction sub-preset. Panelized build
+/// sequence with a rework loop from Inspect back to MEP Chases.
+pub fn sip_panel_workflow() -> WorkflowConfig {
+    use StatusCategory::*;
+    linear_phase_workflow(
+        WorkflowType::Construction,
+        &[
+            ("Design/Shop Drawings", Todo),
+            ("Panel Fabrication", Todo),
+            ("Delivery", InProgress),
+            ("Foundation", InProgress),
+            ("Panel Set", InProgress),
+            ("Seal & Penetrations", InProgress),
+            ("MEP Chases", InProgress),
+            ("Inspect", InProgress),
+            ("Handover", Done),
+        ],
+        Some(("Inspect", "MEP Chases")),
+    )
+}
+
 /// Legal case management: a staged matter lifecycle from intake to close.
 /// Linear with a review→drafting rework loop, mirroring the construction model.
 pub fn legal_workflow() -> WorkflowConfig {
@@ -544,6 +656,55 @@ mod tests {
     #[test]
     fn initial_status_event_is_ideas() {
         assert_eq!(event_workflow().initial_status().unwrap(), "Ideas");
+    }
+
+    // ── construction sub-presets ─────────────────────────────
+
+    #[test]
+    fn construction_subpresets_are_construction_type_and_start_correctly() {
+        assert_eq!(wood_frame_workflow().workflow_type, WorkflowType::Construction);
+        assert_eq!(steel_frame_workflow().workflow_type, WorkflowType::Construction);
+        assert_eq!(sip_panel_workflow().workflow_type, WorkflowType::Construction);
+
+        assert_eq!(wood_frame_workflow().initial_status().unwrap(), "Permit");
+        assert_eq!(steel_frame_workflow().initial_status().unwrap(), "Permit");
+        assert_eq!(
+            sip_panel_workflow().initial_status().unwrap(),
+            "Design/Shop Drawings"
+        );
+    }
+
+    #[test]
+    fn wood_frame_linear_transitions_and_rework() {
+        let wf = wood_frame_workflow();
+        // Legal linear step
+        assert!(wf.validate_transition("Framing", "Rough-In (MEP)").is_ok());
+        // Rework loop back from Inspect
+        assert!(wf.validate_transition("Inspect", "Finish").is_ok());
+        // Forward from Inspect to Handover
+        assert!(wf.validate_transition("Inspect", "Handover").is_ok());
+        // Illegal skip (Permit → Handover) is rejected
+        assert!(wf.validate_transition("Permit", "Handover").is_err());
+    }
+
+    #[test]
+    fn steel_frame_linear_transitions_and_rework() {
+        let wf = steel_frame_workflow();
+        assert!(wf.validate_transition("Erection", "Decking/MEP").is_ok());
+        assert!(wf.validate_transition("Inspect", "Fireproofing").is_ok());
+        // Illegal backward jump not defined as rework
+        assert!(wf.validate_transition("Fireproofing", "Permit").is_err());
+    }
+
+    #[test]
+    fn sip_panel_linear_transitions_and_rework() {
+        let wf = sip_panel_workflow();
+        assert!(wf.validate_transition("Panel Set", "Seal & Penetrations").is_ok());
+        assert!(wf.validate_transition("Inspect", "MEP Chases").is_ok());
+        // Illegal skip is rejected
+        assert!(wf
+            .validate_transition("Design/Shop Drawings", "Handover")
+            .is_err());
     }
 
     #[test]

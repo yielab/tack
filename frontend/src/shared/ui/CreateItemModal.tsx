@@ -6,7 +6,7 @@ import Field from './Field';
 import { api } from '../api';
 import type { CreateItem, Item } from '../types';
 import { toast } from './toast';
-import { getItemTypeMap } from '../vocab/vocab';
+import { getItemTypeMap, resolveLabel } from '../vocab/vocab';
 import { FiPlus, FiX, FiTrash2 } from 'solid-icons/fi';
 
 export interface CreateItemModalProps {
@@ -329,7 +329,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
         {/* Story Points - Compact */}
         <div>
           <label class="block text-sm font-semibold mb-2" style={{ color: "var(--color-text-primary)" }}>
-            Story Points
+            {resolveLabel(props.vocabulary, 'story_points')}
           </label>
           <div class="flex flex-wrap gap-1.5">
             <For each={estimateOptions}>

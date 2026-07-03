@@ -73,6 +73,8 @@ pub fn build_router(state: AppState) -> Router {
 
     // ── API routes ───────────────────────────────────────────────────────────
     let api = Router::new()
+        // ─── OpenAPI contract (public — no auth to read the schema) ──────
+        .route("/openapi.json", get(crate::openapi::openapi_json))
         // ─── Health & Debug (always public) ──────────────────────────────
         .route("/health", get(debug::health))
         .route("/debug/info", get(debug::debug_info))
@@ -87,6 +89,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/backup/remote", post(backup::post_remote_backup))
         .route("/backup/remote", get(backup::get_remote_backups))
         .route("/backup/remote/restore", post(backup::post_remote_restore))
+        .route("/backup/remote/verify", post(backup::post_remote_verify))
         // ─── Cloud backup settings (UI-editable) ──────────────────────────
         .route(
             "/settings/backup",

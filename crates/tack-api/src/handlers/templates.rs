@@ -8,16 +8,28 @@ use tack_core::models::*;
 use tack_db::repo;
 use tracing::instrument;
 use uuid::Uuid;
+use validator::Validate;
 
 use crate::AppState;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ListTemplatesQuery {
     pub project_type: Option<ProjectType>,
 }
 
 /// POST /api/templates - Create a new project template
 #[instrument(skip(state))]
+#[utoipa::path(
+    post,
+    path = "/api/templates",
+    tag = "templates",
+    request_body = tack_core::models::CreateProjectTemplate,
+    responses(
+        (status = 200, description = "Template created", body = tack_core::models::ProjectTemplate),
+        (status = 422, description = "Validation error", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn create_template(
     State(state): State<AppState>,
     Json(data): Json<CreateProjectTemplate>,
@@ -57,6 +69,17 @@ pub async fn create_template(
 
 /// GET /api/templates - List all project templates
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/templates",
+    tag = "templates",
+    params(
+        ListTemplatesQuery,
+    ),
+    responses(
+        (status = 200, description = "Templates (optionally filtered by project type)", body = Vec<tack_core::models::ProjectTemplate>),
+    ),
+)]
 pub async fn list_templates(
     State(state): State<AppState>,
     Query(params): Query<ListTemplatesQuery>,
@@ -72,6 +95,18 @@ pub async fn list_templates(
 
 /// GET /api/templates/:id - Get a specific template
 #[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/templates/{id}",
+    tag = "templates",
+    params(
+        ("id" = Uuid, Path, description = "Template ID"),
+    ),
+    responses(
+        (status = 200, description = "The template", body = tack_core::models::ProjectTemplate),
+        (status = 404, description = "Template not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn get_template(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -87,6 +122,17 @@ pub async fn get_template(
 
 /// DELETE /api/templates/:id - Delete a template (user-created only)
 #[instrument(skip(state))]
+#[utoipa::path(
+    delete,
+    path = "/api/templates/{id}",
+    tag = "templates",
+    params(
+        ("id" = Uuid, Path, description = "Template ID"),
+    ),
+    responses(
+        (status = 204, description = "Template deleted"),
+    ),
+)]
 pub async fn delete_template(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -100,19 +146,37 @@ pub async fn delete_template(
         })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate, utoipa::ToSchema)]
 pub struct CreateProjectFromTemplate {
+    #[validate(length(min = 1, max = 200, message = "name must be 1–200 characters"))]
     pub name: String,
+    #[validate(length(max = 2_000, message = "description too long (max 2 000 chars)"))]
     pub description: Option<String>,
 }
 
 /// POST /api/projects/from-template/:id - Create a project from a template
 #[instrument(skip(state))]
+#[utoipa::path(
+    post,
+    path = "/api/projects/from-template/{id}",
+    tag = "templates",
+    params(
+        ("id" = Uuid, Path, description = "Template ID"),
+    ),
+    request_body = CreateProjectFromTemplate,
+    responses(
+        (status = 200, description = "Project created from template", body = tack_core::models::Project),
+        (status = 404, description = "Template not found", body = crate::openapi::ErrorEnvelope),
+        (status = 422, description = "Validation error", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn create_project_from_template(
     State(state): State<AppState>,
     Path(template_id): Path<Uuid>,
     Json(data): Json<CreateProjectFromTemplate>,
 ) -> Result<Json<Project>, StatusCode> {
+    data.validate().map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+
     // Get the template
     let template = repo::templates::get_template(state.pool(), template_id)
         .await
@@ -228,7 +292,7 @@ pub async fn create_project_from_template(
 
 // ─── Save project as template ────────────────────────────────────────────────
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct SaveAsTemplateRequest {
     pub name: String,
     pub description: Option<String>,
@@ -236,6 +300,19 @@ pub struct SaveAsTemplateRequest {
 
 /// POST /api/projects/:id/save-as-template — Snapshot a project's configuration as a reusable template
 #[instrument(skip(state))]
+#[utoipa::path(
+    post,
+    path = "/api/projects/{project_id}/save-as-template",
+    tag = "templates",
+    params(
+        ("project_id" = Uuid, Path, description = "Project ID"),
+    ),
+    request_body = SaveAsTemplateRequest,
+    responses(
+        (status = 200, description = "Template snapshot created", body = tack_core::models::ProjectTemplate),
+        (status = 404, description = "Project not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn save_project_as_template(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
