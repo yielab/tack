@@ -1261,7 +1261,12 @@ async fn test_update_item_persists_and_clears_due_date() {
     .await
     .unwrap();
     assert!(
-        repo.get_item(item.id).await.unwrap().unwrap().due_date.is_some(),
+        repo.get_item(item.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .due_date
+            .is_some(),
         "due_date must persist across a re-fetch"
     );
 
@@ -1308,7 +1313,10 @@ async fn test_status_transition_timestamps() {
         .await
         .unwrap()
         .unwrap();
-    assert!(updated.started_at.is_some(), "started_at must be set on in-progress");
+    assert!(
+        updated.started_at.is_some(),
+        "started_at must be set on in-progress"
+    );
     assert!(updated.completed_at.is_none());
     let started = updated.started_at;
 
@@ -1325,7 +1333,10 @@ async fn test_status_transition_timestamps() {
         .await
         .unwrap()
         .unwrap();
-    assert!(updated.completed_at.is_some(), "completed_at must be set on done");
+    assert!(
+        updated.completed_at.is_some(),
+        "completed_at must be set on done"
+    );
     assert_eq!(updated.started_at, started, "started_at must be preserved");
 
     // → back to a Todo column: completed_at cleared, started_at preserved.
@@ -1345,7 +1356,10 @@ async fn test_status_transition_timestamps() {
         updated.completed_at.is_none(),
         "completed_at must clear when leaving done"
     );
-    assert_eq!(updated.started_at, started, "started_at must still be preserved");
+    assert_eq!(
+        updated.started_at, started,
+        "started_at must still be preserved"
+    );
 }
 
 /// 26.3 — foreign keys are enforced on every pooled connection, so an insert

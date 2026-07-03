@@ -155,16 +155,12 @@ fn security_preflight(config: &AppConfig) {
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
 
-        warn!(
-            "═══════════════════════════════════════════════════════════════════════"
-        );
+        warn!("═══════════════════════════════════════════════════════════════════════");
         warn!(
             host = %host,
             "SECURITY: Tack is bound to a NON-LOOPBACK address with NO API token."
         );
-        warn!(
-            "Every project, item and attachment is reachable by anyone who can reach"
-        );
+        warn!("Every project, item and attachment is reachable by anyone who can reach");
         warn!("this host. Set TACK_API_TOKEN to require a Bearer token on all requests,");
         warn!("or bind to 127.0.0.1 for local-only use.");
         if opted_in {
@@ -174,9 +170,7 @@ fn security_preflight(config: &AppConfig) {
                 "Proceeding anyway. Set TACK_INSECURE_NO_AUTH=1 to acknowledge and silence-flag this."
             );
         }
-        warn!(
-            "═══════════════════════════════════════════════════════════════════════"
-        );
+        warn!("═══════════════════════════════════════════════════════════════════════");
     }
 
     // The Alexa endpoint is only skill-ID-authenticated (forgeable) unless a
@@ -283,9 +277,9 @@ fn apply_staged_restore(config: &AppConfig) {
                 prune_old_baks(Path::new(&config.storage_dir), storage_bak);
             }
         }
-        Err(e) => warn!(
-            "Staged restore failed and was rolled back; the original database is intact: {e}"
-        ),
+        Err(e) => {
+            warn!("Staged restore failed and was rolled back; the original database is intact: {e}")
+        }
     }
 }
 
@@ -375,13 +369,17 @@ fn prune_old_baks(base: &std::path::Path, keep: &str) {
         return;
     };
     let prefix = format!("{name}.bak-");
-    let keep_name = std::path::Path::new(keep).file_name().and_then(|n| n.to_str());
+    let keep_name = std::path::Path::new(keep)
+        .file_name()
+        .and_then(|n| n.to_str());
     let Ok(entries) = std::fs::read_dir(parent) else {
         return;
     };
     for entry in entries.flatten() {
         let fname = entry.file_name();
-        let Some(fname) = fname.to_str() else { continue };
+        let Some(fname) = fname.to_str() else {
+            continue;
+        };
         if fname.starts_with(&prefix) && Some(fname) != keep_name {
             let path = entry.path();
             if path.is_dir() {
@@ -424,7 +422,9 @@ async fn run_scheduled_backup(state: &AppState) {
     // so we skip and let the user restore/resolve.
     match remote_backup::perform_backup(state.pool(), &cfg, store.as_ref(), false).await {
         Ok(manifest) => info!(key = %manifest.object_key, "Scheduled backup complete"),
-        Err(remote_backup::BackupError::GenerationConflict { remote_generation, .. }) => {
+        Err(remote_backup::BackupError::GenerationConflict {
+            remote_generation, ..
+        }) => {
             warn!(
                 remote_generation,
                 "Scheduled backup skipped: another device has newer work (restore to resolve)"
@@ -553,8 +553,14 @@ mod tests {
 
         apply_restore_swap(&db_path, &restore_db, &storage_dir, &storage_restore, "TS").unwrap();
 
-        assert!(!dir.join("tack.db-wal").exists(), "stale -wal must be deleted");
-        assert!(!dir.join("tack.db-shm").exists(), "stale -shm must be deleted");
+        assert!(
+            !dir.join("tack.db-wal").exists(),
+            "stale -wal must be deleted"
+        );
+        assert!(
+            !dir.join("tack.db-shm").exists(),
+            "stale -shm must be deleted"
+        );
         assert_eq!(fs::read(&db_path).unwrap(), b"RESTORED");
 
         fs::remove_dir_all(&dir).ok();

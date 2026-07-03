@@ -175,7 +175,8 @@ pub async fn create_project_from_template(
     Path(template_id): Path<Uuid>,
     Json(data): Json<CreateProjectFromTemplate>,
 ) -> Result<Json<Project>, StatusCode> {
-    data.validate().map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+    data.validate()
+        .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
 
     // Get the template
     let template = repo::templates::get_template(state.pool(), template_id)
