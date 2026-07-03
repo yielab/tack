@@ -268,8 +268,7 @@ impl Repository {
         }
         if let Some(estimate_unit) = input.estimate_unit {
             // `estimate_unit` is stored as a JSON string; `None` clears it to SQL NULL.
-            let value = estimate_unit
-                .map(|u| serde_json::to_string(&u).unwrap());
+            let value = estimate_unit.map(|u| serde_json::to_string(&u).unwrap());
             sqlx::query("UPDATE items SET estimate_unit = ?, updated_at = ? WHERE id = ?")
                 .bind(value)
                 .bind(&now)

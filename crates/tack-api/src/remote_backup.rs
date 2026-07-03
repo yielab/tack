@@ -221,9 +221,11 @@ pub async fn remote_head(
     prefix: &str,
 ) -> Result<Option<BackupManifest>, BackupError> {
     let manifests = list(store, prefix).await?;
-    Ok(manifests
-        .into_iter()
-        .max_by(|a, b| a.generation.cmp(&b.generation).then(a.created_at.cmp(&b.created_at))))
+    Ok(manifests.into_iter().max_by(|a, b| {
+        a.generation
+            .cmp(&b.generation)
+            .then(a.created_at.cmp(&b.created_at))
+    }))
 }
 
 /// Conflict guard for uploads. Returns `Some(remote_head)` when uploading at
@@ -237,9 +239,7 @@ pub async fn upload_conflict(
     local_install: &str,
 ) -> Result<Option<BackupManifest>, BackupError> {
     let head = remote_head(store, prefix).await?;
-    Ok(head.filter(|h| {
-        h.generation >= prospective_generation && h.install_id != local_install
-    }))
+    Ok(head.filter(|h| h.generation >= prospective_generation && h.install_id != local_install))
 }
 
 /// Whether restoring a snapshot at `snapshot_generation` onto a device at
@@ -623,10 +623,7 @@ pub async fn prune(
 
 /// List bundle object keys (`*.tar.zst`) that have no `*.tar.zst.manifest.json`
 /// sidecar — the leftover of a bundle upload whose sidecar PUT never landed.
-async fn orphan_bundles(
-    store: &dyn ObjectStore,
-    prefix: &str,
-) -> Result<Vec<String>, BackupError> {
+async fn orphan_bundles(store: &dyn ObjectStore, prefix: &str) -> Result<Vec<String>, BackupError> {
     use futures::StreamExt;
     use std::collections::HashSet;
 
@@ -993,7 +990,8 @@ mod tests {
         h.set_size(db.len() as u64);
         h.set_mode(0o644);
         h.set_cksum();
-        ar.append_data(&mut h, "database.db", Cursor::new(db)).unwrap();
+        ar.append_data(&mut h, "database.db", Cursor::new(db))
+            .unwrap();
 
         // A malicious entry that tries to escape the staging directory. The tar
         // writer refuses `..` via set_path, so write the raw name into the header
@@ -1210,21 +1208,31 @@ mod tests {
     async fn upload_conflict_only_for_other_device_that_is_ahead() {
         let store = make_store();
         // Remote head from another device at generation 5.
-        upload(store.as_ref(), &manifest_at(5, "device-a", "tack/a.tar.zst"), b"x".to_vec())
-            .await
-            .unwrap();
+        upload(
+            store.as_ref(),
+            &manifest_at(5, "device-a", "tack/a.tar.zst"),
+            b"x".to_vec(),
+        )
+        .await
+        .unwrap();
 
         // We are "device-b" about to write generation 5 → conflict (other device ≥ us).
         let c = upload_conflict(store.as_ref(), "tack", 5, "device-b")
             .await
             .unwrap();
-        assert!(c.is_some(), "expected a conflict when another device is ≥ our generation");
+        assert!(
+            c.is_some(),
+            "expected a conflict when another device is ≥ our generation"
+        );
 
         // If we are strictly ahead (prospective 6 > remote 5) → no conflict.
         let c = upload_conflict(store.as_ref(), "tack", 6, "device-b")
             .await
             .unwrap();
-        assert!(c.is_none(), "no conflict when we are ahead of the remote head");
+        assert!(
+            c.is_none(),
+            "no conflict when we are ahead of the remote head"
+        );
 
         // Same install id → our own older backup, never a conflict.
         let c = upload_conflict(store.as_ref(), "tack", 5, "device-a")
@@ -1270,19 +1278,33 @@ mod tests {
         assert_eq!(m2.generation, 2);
 
         // Simulate another device uploading newer work at generation 5.
-        upload(store.as_ref(), &manifest_at(5, "other-device", "tack/other.tar.zst"), b"x".to_vec())
-            .await
-            .unwrap();
+        upload(
+            store.as_ref(),
+            &manifest_at(5, "other-device", "tack/other.tar.zst"),
+            b"x".to_vec(),
+        )
+        .await
+        .unwrap();
 
         // Non-forced backup must be rejected and must NOT advance our generation.
         let err = perform_backup(&pool, &cfg, store.as_ref(), false)
             .await
             .unwrap_err();
         assert!(
-            matches!(err, BackupError::GenerationConflict { remote_generation: 5, .. }),
+            matches!(
+                err,
+                BackupError::GenerationConflict {
+                    remote_generation: 5,
+                    ..
+                }
+            ),
             "expected GenerationConflict, got {err:?}"
         );
-        assert_eq!(generation(&pool).await.unwrap(), 2, "conflict must not bump generation");
+        assert_eq!(
+            generation(&pool).await.unwrap(),
+            2,
+            "conflict must not bump generation"
+        );
 
         // Forcing overrides the conflict and proceeds.
         let forced = perform_backup(&pool, &cfg, store.as_ref(), true)
@@ -1301,9 +1323,17 @@ mod tests {
     async fn verify_bundle_accepts_valid_and_rejects_tampered() {
         let db = b"SQLite format 3\x00 verify payload";
         let real_sha = hex::encode(Sha256::digest(db));
-        let tar_bytes =
-            build_tar(db, "/nonexistent", "2026-06-12T00:00:00+00:00", 1, 0, "id", &real_sha, 7)
-                .unwrap();
+        let tar_bytes = build_tar(
+            db,
+            "/nonexistent",
+            "2026-06-12T00:00:00+00:00",
+            1,
+            0,
+            "id",
+            &real_sha,
+            7,
+        )
+        .unwrap();
         let bundle = zstd::encode_all(Cursor::new(&tar_bytes), 3).unwrap();
 
         let mut manifest = manifest_at(7, "id", "key");
@@ -1337,13 +1367,20 @@ mod tests {
         let store = make_store();
 
         // A healthy backup (bundle + sidecar).
-        upload(store.as_ref(), &manifest_at(1, "id", "tack/good.tar.zst"), b"x".to_vec())
-            .await
-            .unwrap();
+        upload(
+            store.as_ref(),
+            &manifest_at(1, "id", "tack/good.tar.zst"),
+            b"x".to_vec(),
+        )
+        .await
+        .unwrap();
 
         // An orphan: a bundle object with NO sidecar (a failed sidecar PUT).
         store
-            .put(&OsPath::from("tack/orphan.tar.zst"), object_store::PutPayload::from(b"junk".to_vec()))
+            .put(
+                &OsPath::from("tack/orphan.tar.zst"),
+                object_store::PutPayload::from(b"junk".to_vec()),
+            )
             .await
             .unwrap();
 
@@ -1351,7 +1388,12 @@ mod tests {
         assert_eq!(deleted, 1, "the orphan bundle should be reconciled/deleted");
 
         // The orphan is gone; the healthy backup remains.
-        assert!(orphan_bundles(store.as_ref(), "tack").await.unwrap().is_empty());
+        assert!(
+            orphan_bundles(store.as_ref(), "tack")
+                .await
+                .unwrap()
+                .is_empty()
+        );
         let remaining = list(store.as_ref(), "tack").await.unwrap();
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].object_key, "tack/good.tar.zst");
@@ -1366,9 +1408,14 @@ mod tests {
         let big = vec![0xABu8; MULTIPART_THRESHOLD + 1024];
         let manifest = manifest_at(1, "id", "tack/big.tar.zst");
 
-        upload(store.as_ref(), &manifest, big.clone()).await.unwrap();
+        upload(store.as_ref(), &manifest, big.clone())
+            .await
+            .unwrap();
 
         let got = download(store.as_ref(), "tack/big.tar.zst").await.unwrap();
-        assert_eq!(got, big, "multipart-uploaded bundle must round-trip byte-for-byte");
+        assert_eq!(
+            got, big,
+            "multipart-uploaded bundle must round-trip byte-for-byte"
+        );
     }
 }

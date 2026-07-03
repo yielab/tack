@@ -1066,8 +1066,7 @@ mod tests {
 
         // Concrete value → Some(Some(_)).
         let id = Uuid::new_v4();
-        let set: UpdateItem =
-            serde_json::from_value(json!({"sprint_id": id.to_string()})).unwrap();
+        let set: UpdateItem = serde_json::from_value(json!({"sprint_id": id.to_string()})).unwrap();
         assert_eq!(set.sprint_id, Some(Some(id)));
 
         // status_category is server-only: never populated from client JSON.

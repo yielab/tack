@@ -388,9 +388,7 @@ pub async fn handle_request(
     // secret and is therefore forgeable on its own; the shared secret is what
     // actually authenticates the caller. Enforced whenever configured.
     if let Some(ref expected_secret) = state.config.alexa_shared_secret {
-        let provided = raw_query
-            .as_deref()
-            .and_then(|q| query_param(q, "token"));
+        let provided = raw_query.as_deref().and_then(|q| query_param(q, "token"));
         let ok = provided
             .map(|t| constant_time_eq(t.as_bytes(), expected_secret.as_bytes()))
             .unwrap_or(false);

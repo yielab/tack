@@ -662,9 +662,18 @@ mod tests {
 
     #[test]
     fn construction_subpresets_are_construction_type_and_start_correctly() {
-        assert_eq!(wood_frame_workflow().workflow_type, WorkflowType::Construction);
-        assert_eq!(steel_frame_workflow().workflow_type, WorkflowType::Construction);
-        assert_eq!(sip_panel_workflow().workflow_type, WorkflowType::Construction);
+        assert_eq!(
+            wood_frame_workflow().workflow_type,
+            WorkflowType::Construction
+        );
+        assert_eq!(
+            steel_frame_workflow().workflow_type,
+            WorkflowType::Construction
+        );
+        assert_eq!(
+            sip_panel_workflow().workflow_type,
+            WorkflowType::Construction
+        );
 
         assert_eq!(wood_frame_workflow().initial_status().unwrap(), "Permit");
         assert_eq!(steel_frame_workflow().initial_status().unwrap(), "Permit");
@@ -699,12 +708,16 @@ mod tests {
     #[test]
     fn sip_panel_linear_transitions_and_rework() {
         let wf = sip_panel_workflow();
-        assert!(wf.validate_transition("Panel Set", "Seal & Penetrations").is_ok());
+        assert!(
+            wf.validate_transition("Panel Set", "Seal & Penetrations")
+                .is_ok()
+        );
         assert!(wf.validate_transition("Inspect", "MEP Chases").is_ok());
         // Illegal skip is rejected
-        assert!(wf
-            .validate_transition("Design/Shop Drawings", "Handover")
-            .is_err());
+        assert!(
+            wf.validate_transition("Design/Shop Drawings", "Handover")
+                .is_err()
+        );
     }
 
     #[test]

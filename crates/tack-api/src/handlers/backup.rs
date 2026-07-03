@@ -125,7 +125,8 @@ pub async fn post_restore(
     let cfg = crate::handlers::settings::effective_backup_config(&state).await;
     if cfg.remote_backup_enabled()
         && let Ok(store) = remote_backup::store_from_config(&cfg)
-        && let Err(e) = remote_backup::perform_backup(state.pool(), &cfg, store.as_ref(), true).await
+        && let Err(e) =
+            remote_backup::perform_backup(state.pool(), &cfg, store.as_ref(), true).await
     {
         tracing::warn!(error = %e, "backup-before-restore failed; continuing with local restore");
     }

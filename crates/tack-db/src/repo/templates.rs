@@ -246,7 +246,9 @@ fn builtin_field(
 pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     use tack_core::{
         vocabulary::vocabulary_for_type,
-        workflow::{sip_panel_workflow, steel_frame_workflow, wood_frame_workflow, workflow_for_type},
+        workflow::{
+            sip_panel_workflow, steel_frame_workflow, wood_frame_workflow, workflow_for_type,
+        },
     };
 
     let specs: Vec<BuiltinSpec> = vec![
@@ -439,10 +441,9 @@ mod tests {
         // Re-running is idempotent (per-name dedup).
         seed_builtin_templates(&pool).await.expect("re-seed");
 
-        let construction =
-            list_templates(&pool, Some(ProjectType::Construction))
-                .await
-                .expect("list");
+        let construction = list_templates(&pool, Some(ProjectType::Construction))
+            .await
+            .expect("list");
 
         // Base + three verticals, all ProjectType::Construction.
         for name in [
@@ -473,8 +474,14 @@ mod tests {
             .find(|t| t.name == "Wood Frame Build")
             .unwrap();
         // Construction vocabulary base is preserved.
-        assert_eq!(wood.vocabulary.get("task").map(String::as_str), Some("Work Order"));
-        assert_eq!(wood.vocabulary.get("sprint").map(String::as_str), Some("Phase"));
+        assert_eq!(
+            wood.vocabulary.get("task").map(String::as_str),
+            Some("Work Order")
+        );
+        assert_eq!(
+            wood.vocabulary.get("sprint").map(String::as_str),
+            Some("Phase")
+        );
         // Build-system-specific custom fields present, incl. the select options.
         assert_eq!(wood.custom_fields.len(), 4);
         let stud = wood
@@ -516,19 +523,25 @@ mod tests {
             .unwrap();
 
         // Linear step is allowed.
-        assert!(steel
-            .workflow
-            .validate_transition("Erection", "Decking/MEP")
-            .is_ok());
+        assert!(
+            steel
+                .workflow
+                .validate_transition("Erection", "Decking/MEP")
+                .is_ok()
+        );
         // Rework loop back from Inspect is allowed.
-        assert!(steel
-            .workflow
-            .validate_transition("Inspect", "Fireproofing")
-            .is_ok());
+        assert!(
+            steel
+                .workflow
+                .validate_transition("Inspect", "Fireproofing")
+                .is_ok()
+        );
         // Illegal skip is rejected.
-        assert!(steel
-            .workflow
-            .validate_transition("Permit", "Handover")
-            .is_err());
+        assert!(
+            steel
+                .workflow
+                .validate_transition("Permit", "Handover")
+                .is_err()
+        );
     }
 }
