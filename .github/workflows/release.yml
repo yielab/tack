@@ -51,7 +51,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-cyclonedx
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.85.4
         with:
           tool: cargo-cyclonedx
       - name: Generate Rust SBOM (workspace dependencies)
@@ -132,7 +132,7 @@ jobs:
       # cargo-auditable embeds the dependency list into the binary so it can be
       # audited after the fact (`cargo audit bin tack`).
       - name: Install cargo-auditable
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.85.4
         with:
           tool: cargo-auditable
 
