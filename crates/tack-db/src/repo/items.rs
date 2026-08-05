@@ -433,11 +433,12 @@ impl Repository {
     /// proceeding as if uncontended and one of them hitting a deferred
     /// transaction's read-to-write lock upgrade conflict later.
     ///
+    /// Card R3 (2026-08-05) closed the gap this doc comment used to flag:
     /// `handlers::items::update_item` (the human/board-drag path) and
-    /// `handlers::alexa` (the voice "mark done" path) both still do the
-    /// unguarded two-step `count_items_by_status` + `update_item` — same
-    /// race, not fixed by this method, since those handlers are outside
-    /// this card's file ownership. See TODO.md's R2 handoff.
+    /// `handlers::alexa` (the voice "mark done" path) used to do the same
+    /// unguarded two-step `count_items_by_status` + `update_item` — the
+    /// identical race, on the two call sites hit far more often than
+    /// dispatch. Both now call this method too. See TODO.md's R3 handoff.
     ///
     /// Only touches the fields `dispatcher::apply_mapped_status` needs
     /// (status, and the status-category-derived started_at/completed_at) —

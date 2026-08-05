@@ -6,6 +6,7 @@ use uuid::Uuid;
 use validator::Validate;
 
 use tack_core::models::{CreateItem, Item, ItemFilter, UpdateItem};
+use tack_db::repo::items::StatusUpdateOutcome;
 use tack_db::repo::orch::NewOrchEvent;
 
 use crate::dispatcher::{self, DispatchOutcome};
@@ -171,7 +172,20 @@ pub async fn update_item(
 
     let old_status = old_item.status.clone();
 
-    // If status is being changed, validate the transition
+    // If status is being changed, validate the transition and apply the
+    // status write through the WIP-check-and-write path (Repository::
+    // update_item_status_checked). Card R2 (2026-08-05) fixed the identical
+    // race on the dispatch path — a separate `count_items_by_status` read
+    // followed by an unguarded `update_item` write let two concurrent movers
+    // into the same WIP-limited column each observe "under the limit" and
+    // both commit. This is the everyday board-drag/API path, so it carries
+    // the same race; see `crates/tack-api/tests/board_drag_wip_race_test.rs`
+    // for the repro. `update_item_status_checked` only touches the status
+    // column and its started_at/completed_at bookkeeping, so any other
+    // fields in this same request (title, description, ...) are still
+    // applied afterwards via the ordinary `repo.update_item` call below —
+    // with `input.status`/`input.status_category` cleared so that call
+    // doesn't redundantly (and unguarded-ly) re-write status.
     if let Some(ref new_status) = input.status {
         let project = state
             .repo
@@ -179,26 +193,43 @@ pub async fn update_item(
             .await?
             .ok_or_else(|| ApiError::NotFound("Project not found".into()))?;
 
-        // Validate transition
+        // Validate transition (unguarded — depends only on the project's
+        // static workflow config, not a row count, so it isn't racy).
         project
             .workflow
             .validate_transition(&old_item.status, new_status)?;
 
-        // Check WIP limit for target column
-        let count = state
-            .repo
-            .count_items_by_status(old_item.project_id, new_status)
-            .await? as usize;
-        project.workflow.check_wip_limit(new_status, count)?;
-
         // Resolve the target status category so the repo can maintain
         // started_at / completed_at as the item crosses category boundaries.
-        input.status_category = project
+        let status_category = project
             .workflow
             .statuses
             .iter()
             .find(|s| &s.name == new_status)
             .map(|s| s.category.clone());
+
+        let outcome = state
+            .repo
+            .update_item_status_checked(
+                id,
+                old_item.project_id,
+                new_status,
+                status_category,
+                &project.workflow,
+            )
+            .await?
+            .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
+
+        match outcome {
+            StatusUpdateOutcome::Rejected(e) => return Err(e.into()),
+            StatusUpdateOutcome::Applied(_) => {}
+        }
+
+        // Status (and its started_at/completed_at side effects) is already
+        // applied and committed above — don't let the field-by-field
+        // `update_item` call below touch it again.
+        input.status = None;
+        input.status_category = None;
     }
 
     let item = state
