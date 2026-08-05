@@ -185,12 +185,11 @@ async fn upgrade_in_place_backfills_pre_migration_items_to_untrusted() {
     // Assert at the raw SQL level first: the column exists and backfilled
     // to the literal 'unknown' value migration 029 writes, not NULL and not
     // 'manual'.
-    let raw_source: String =
-        sqlx::query_scalar("SELECT source FROM items WHERE id = ?")
-            .bind(item_id.to_string())
-            .fetch_one(&pool)
-            .await
-            .expect("select raw source column");
+    let raw_source: String = sqlx::query_scalar("SELECT source FROM items WHERE id = ?")
+        .bind(item_id.to_string())
+        .fetch_one(&pool)
+        .await
+        .expect("select raw source column");
     assert_eq!(raw_source, "unknown");
 
     // And through the repository layer, which is what every real caller

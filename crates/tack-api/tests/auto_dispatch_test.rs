@@ -18,8 +18,6 @@
 //! edited while it's already sitting in a `dispatch_from` status must not
 //! re-dispatch.
 
-mod common;
-
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
@@ -240,10 +238,7 @@ async fn wait_for_hits(server: &MockServer, path_suffix: &str, at_least: usize) 
 /// Poll `list_orch_tasks_for_item` for up to ~2s — used instead of
 /// `wait_for_hits` when a test needs to assert on the persisted task (e.g.
 /// its `trusted` column), not just that a request landed.
-async fn wait_for_orch_task(
-    state: &AppState,
-    item_id: Uuid,
-) -> Vec<tack_db::repo::orch::OrchTask> {
+async fn wait_for_orch_task(state: &AppState, item_id: Uuid) -> Vec<tack_db::repo::orch::OrchTask> {
     for _ in 0..40 {
         let tasks = state.repo.list_orch_tasks_for_item(item_id).await.unwrap();
         if !tasks.is_empty() {
@@ -269,9 +264,9 @@ async fn auto_dispatch_sends_trusted_false_on_the_wire_for_a_github_imported_ite
         .await;
     Mock::given(method("GET"))
         .and(path("/tasks/demo"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(mock_list_tasks_body(
-            "task-auto-untrusted",
-        )))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(mock_list_tasks_body("task-auto-untrusted")),
+        )
         .mount(&server)
         .await;
 
@@ -327,9 +322,9 @@ async fn auto_dispatch_sends_trusted_true_for_a_manually_created_item() {
         .await;
     Mock::given(method("GET"))
         .and(path("/tasks/demo"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(mock_list_tasks_body(
-            "task-auto-trusted",
-        )))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(mock_list_tasks_body("task-auto-trusted")),
+        )
         .mount(&server)
         .await;
 
@@ -358,7 +353,10 @@ async fn auto_dispatch_sends_trusted_true_for_a_manually_created_item() {
 
     let tasks = wait_for_orch_task(&state, item_id).await;
     assert_eq!(tasks.len(), 1);
-    assert!(tasks[0].trusted, "an operator-authored item must dispatch as trusted");
+    assert!(
+        tasks[0].trusted,
+        "an operator-authored item must dispatch as trusted"
+    );
 }
 
 // ─── Off by default (§0 rule 8) ────────────────────────────────────────────

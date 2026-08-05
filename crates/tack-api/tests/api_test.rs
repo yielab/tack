@@ -1400,6 +1400,10 @@ async fn export_yaml_round_trips_through_import() {
     );
     let parsed: serde_json::Value = serde_yaml::from_str(&yaml).unwrap();
     assert_eq!(parsed["items"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        parsed["items"][0]["source"], "manual",
+        "an ordinarily-created item's provenance marker (card C2) must round-trip through export"
+    );
 
     // Import the same YAML back: a new project is created with the item.
     let res = app
@@ -1439,6 +1443,170 @@ async fn export_yaml_round_trips_through_import() {
         items["data"].as_array().unwrap().len(),
         1,
         "imported items: {items}"
+    );
+    assert_eq!(
+        items["data"][0]["source"], "manual",
+        "the imported item must still be recorded as manual/trusted, not reset to unknown"
+    );
+}
+
+// ─── Item provenance / trust boundary (card C2) ────────────────────────────
+
+/// The acceptance bar TODO.md's C2 card names explicitly: an item imported
+/// from GitHub is marked untrusted at creation time, and that marker
+/// survives an export → import round trip rather than resetting to
+/// trusted. (The wire-level "docket sees trusted:false" assertion lives in
+/// `crates/tack-api/tests/auto_dispatch_test.rs` and `orch_dispatch_test.rs`
+/// — this test covers the provenance marker itself, end to end through the
+/// real HTTP import/export/import path.)
+#[tokio::test]
+async fn github_imported_item_source_is_untrusted_and_survives_export_import_round_trip() {
+    use axum::body::to_bytes;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let gh = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/widgets/issues"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            {
+                "number": 7, "title": "Untrusted issue", "body": "", "state": "open",
+                "labels": [], "assignee": null,
+                "html_url": "https://github.com/acme/widgets/issues/7"
+            }
+        ])))
+        .mount(&gh)
+        .await;
+
+    let config = AppConfig {
+        github_api_base: gh.uri(),
+        ..AppConfig::default()
+    };
+    let (app, _) = common::test_app_with_config(config).await;
+    let pid = make_project(&app).await;
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/projects/{pid}/import-github"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"repo":"acme/widgets"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/projects/{pid}/items"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(res.into_body(), 131072).await.unwrap();
+    let items: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        items["data"][0]["source"], "github",
+        "an item imported from GitHub must be recorded with source: github"
+    );
+
+    // Export the linked project, then re-import that snapshot into a fresh
+    // project — the item's `source` must survive, not reset to `manual`.
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/projects/{pid}/export?format=json"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let export_bytes = to_bytes(res.into_body(), 131072).await.unwrap();
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/projects/import")
+                .header("Content-Type", "application/json")
+                .body(Body::from(export_bytes))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), 131072).await.unwrap();
+    let out: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let new_pid = out["project"]["id"].as_str().unwrap();
+    assert_ne!(new_pid, pid);
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/projects/{new_pid}/items"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(res.into_body(), 131072).await.unwrap();
+    let reimported: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        reimported["data"][0]["source"], "github",
+        "the trust marker must survive an export -> import round trip, never reset to trusted"
+    );
+}
+
+#[tokio::test]
+async fn csv_import_marks_items_with_csv_import_source() {
+    use axum::body::to_bytes;
+
+    let (app, _) = common::test_app().await;
+    let pid = make_project(&app).await;
+
+    let csv = "title,description\nFrom a spreadsheet,could be anyone's data\n";
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/projects/{pid}/import-csv"))
+                .header("Content-Type", "text/csv")
+                .body(Body::from(csv))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/projects/{pid}/items"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = to_bytes(res.into_body(), 131072).await.unwrap();
+    let items: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        items["data"][0]["source"], "csv_import",
+        "a CSV-imported row must be recorded with source: csv_import (untrusted for dispatch)"
     );
 }
 
