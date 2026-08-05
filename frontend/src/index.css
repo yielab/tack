@@ -62,7 +62,9 @@
      pill clears AA 4.5:1 (was 4.42). */
   --color-success-600: #146c33;
   --color-success-100: #e6f4ec;
-  --color-warning-600: #b45309;
+  /* darkened from #b45309 (measured 4.30:1 on --color-warning-100, under AA)
+     to clear WCAG AA 4.5:1 — see Badge.tsx `tone="warning"`. */
+  --color-warning-600: #ac4f09;
   --color-warning-100: #f7ecdb;
   /* red-700: danger text on the light app bg (#f3f6f5) needs 4.5:1 — #dc2626
      only reaches 4.44. */
@@ -71,6 +73,17 @@
 
   --color-bg-overlay: rgb(10 16 14 / 0.42);
   --color-text-inverse: #ffffff;
+
+  /* Avatar.tsx's per-name background is `hsl(hue, 45%, 50%)` — hue varies by
+     identity, independent of the active palette/mode. These two are picked
+     per-avatar by computed luminance (Avatar.tsx `textColorForHue`) to
+     guarantee WCAG AA against that background, so — unlike every other token
+     above — they are deliberately defined ONCE, only here, and never
+     overridden in `.dark`/`[data-palette]` blocks below: they must stay
+     constant, not "invert with theme" like --color-text-inverse does. Don't
+     redefine these in a palette/mode block. */
+  --color-avatar-ink-white: #ffffff;
+  --color-avatar-ink-black: #000000;
 
   --shadow-sm: 0 1px 2px rgb(15 40 35 / 0.06);
   --shadow-md: 0 1px 2px rgb(15 40 35 / 0.06), 0 4px 12px rgb(15 40 35 / 0.04);
@@ -151,7 +164,11 @@
 
   --color-text-primary: #e7f0ed;
   --color-text-secondary: #94aaa4;
-  --color-text-tertiary: #67807a;
+  /* lightened from #67807a (3.52:1 on --color-bg-subtle, the worst-case dark
+     surface — under AA) to clear 4.5:1 against every dark surface, incl.
+     bg-subtle. This is a plain body-text tier, used directly on surfaces all
+     over the app, not just a component-specific pairing. */
+  --color-text-tertiary: #7b958e;
 
   --color-on-accent: #052824;
   --color-accent-soft: rgb(45 212 191 / 0.13);
@@ -200,14 +217,20 @@
   --color-accent-soft: #fbe8dd;
   --color-accent-line: #f1cdb6;
   --color-accent-ink: #9a3412;
-  --color-accent2: #2f7d6e;
+  /* darkened from #2f7d6e (4.22:1 on --color-accent2-soft, under AA) to clear
+     WCAG AA 4.5:1 — feeds Badge.tsx `tone="info"` plus PriorityDot/TypeBadge. */
+  --color-accent2: #2c7668;
   --color-accent2-soft: #e3f1ed;
 
   --color-primary-600: #c2410c;
 
-  --color-success-600: #15803d;
+  /* darkened from #15803d (4.40:1 on --color-success-100, under AA) to clear
+     WCAG AA 4.5:1 — see Badge.tsx `tone="success"`. */
+  --color-success-600: #147c3b;
   --color-success-100: #e7f3ea;
-  --color-warning-600: #a16207;
+  /* darkened from #a16207 (4.22:1 on --color-warning-100, under AA) to clear
+     WCAG AA 4.5:1 — see Badge.tsx `tone="warning"`. */
+  --color-warning-600: #985d07;
   --color-warning-100: #f6edd6;
   --color-danger-600: #c0392b;
   --color-danger-100: #f9e7e3;
@@ -242,7 +265,9 @@
 
   --color-success-600: #157a37;
   --color-success-100: #e7f5ec;
-  --color-warning-600: #d97706;
+  /* darkened from #d97706 (2.81:1 on --color-warning-100 — the worst offender
+     of the badge tones) to clear WCAG AA 4.5:1 — see Badge.tsx `tone="warning"`. */
+  --color-warning-600: #a35a05;
   --color-warning-100: #fcefdd;
   --color-danger-600: #b91c1c;
   --color-danger-100: #fbe9e9;
@@ -263,7 +288,9 @@
 
   --color-text-primary: #f1e8db;
   --color-text-secondary: #b29b83;
-  --color-text-tertiary: #81705c;
+  /* lightened from #81705c (3.54:1 on --color-bg-subtle) — see the Teal-dark
+     comment above; same systemic fix, all three dark palettes. */
+  --color-text-tertiary: #97846d;
 
   --color-on-accent: #2a1407;
   --color-accent-soft: rgb(251 146 60 / 0.13);
@@ -297,7 +324,9 @@
 
   --color-text-primary: #e8ebef;
   --color-text-secondary: #99a2ac;
-  --color-text-tertiary: #6a7480;
+  /* lightened from #6a7480 (3.41:1 on --color-bg-subtle) — see the Teal-dark
+     comment above; same systemic fix, all three dark palettes. */
+  --color-text-tertiary: #818b96;
 
   --color-on-accent: #15240a;
   --color-accent-soft: rgb(163 230 53 / 0.13);
@@ -412,7 +441,7 @@
     --color-border-subtle: #172622;
     --color-text-primary: #e7f0ed;
     --color-text-secondary: #94aaa4;
-    --color-text-tertiary: #67807a;
+    --color-text-tertiary: #7b958e; /* keep in sync with the .dark block above */
     --color-on-accent: #052824;
     --color-accent-soft: rgb(45 212 191 / 0.13);
     --color-accent-line: rgb(45 212 191 / 0.28);
@@ -443,7 +472,7 @@
     --color-border-subtle: #241a11;
     --color-text-primary: #f1e8db;
     --color-text-secondary: #b29b83;
-    --color-text-tertiary: #81705c;
+    --color-text-tertiary: #97846d; /* keep in sync with .dark[data-palette="clay"] above */
     --color-on-accent: #2a1407;
     --color-accent-soft: rgb(251 146 60 / 0.13);
     --color-accent-line: rgb(251 146 60 / 0.28);
@@ -468,7 +497,7 @@
     --color-border-subtle: #1b2026;
     --color-text-primary: #e8ebef;
     --color-text-secondary: #99a2ac;
-    --color-text-tertiary: #6a7480;
+    --color-text-tertiary: #818b96; /* keep in sync with .dark[data-palette="graphite"] above */
     --color-on-accent: #15240a;
     --color-accent-soft: rgb(163 230 53 / 0.13);
     --color-accent-line: rgb(163 230 53 / 0.28);

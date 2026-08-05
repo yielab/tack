@@ -258,12 +258,15 @@ export default function Timeline() {
 
   const getPriorityColor = (p: string) => priorityColor(p as Priority);
 
-  const getStatusOpacity = (status: string) => {
-    const s = project()?.workflow?.statuses?.find(s => s.name === status);
-    if (s?.category === 'done')        return '0.45';
-    if (s?.category === 'in_progress') return '0.85';
-    return '1';
-  };
+  // Done items are marked with a checkmark + strikethrough, not dimmed: the
+  // bar carries `--color-text-inverse` text over a solid priority-color
+  // fill, and CSS `opacity` fades an element's whole rendered subtree
+  // (fill *and* text) toward whatever's behind it — collapsing the
+  // fill/text contrast gap well under WCAG AA at any status opacity below
+  // ~1 (verified down to ~2:1 at the old 0.45 "done" value, across all
+  // priorities and all six palette×mode combos). See TODO.md §6, A11.
+  const isDone = (status: string) =>
+    project()?.workflow?.statuses?.find(s => s.name === status)?.category === 'done';
 
   // ── Render ─────────────────────────────────────────────────────────────
 
@@ -384,7 +387,6 @@ export default function Timeline() {
                           left:    `${pos().leftPercent}%`,
                           width:   `${pos().widthPercent}%`,
                           'background-color': getPriorityColor(item.priority),
-                          opacity: dragging() ? '0.8' : getStatusOpacity(item.status),
                           cursor:  dragState()
                             ? (dragState()!.mode === 'move' ? 'grabbing' : 'ew-resize')
                             : 'grab',
@@ -403,12 +405,25 @@ export default function Timeline() {
                           <div class="w-0.5 h-3 bg-white/70 rounded-full" />
                         </div>
 
-                        {/* Label */}
-                        <div class="px-3 py-1 h-full flex items-center gap-1 pointer-events-none overflow-hidden">
+                        {/* Label. Always full-opacity `--color-text-inverse` on the solid
+                            priority fill — never dimmed (see isDone() above for why). Done
+                            items get a checkmark + strikethrough instead of a fade. */}
+                        <div
+                          class="px-3 py-1 h-full flex items-center gap-1 pointer-events-none overflow-hidden"
+                          style={{ color: 'var(--color-text-inverse)' }}
+                        >
                           <Show when={isBlocked(item.id)}>
                             <span class="text-xs shrink-0" aria-label="blocked">⛔</span>
                           </Show>
-                          <span class="text-white text-xs font-medium truncate">{item.title}</span>
+                          <Show when={isDone(item.status)}>
+                            <span class="text-xs shrink-0" aria-label="done">✓</span>
+                          </Show>
+                          <span
+                            class="text-xs font-medium truncate"
+                            style={{ 'text-decoration': isDone(item.status) ? 'line-through' : 'none' }}
+                          >
+                            {item.title}
+                          </span>
                         </div>
 
                         {/* Right resize handle */}
@@ -460,7 +475,7 @@ export default function Timeline() {
               )}
             </For>
             <span class="text-xs ml-4" style={{ color: 'var(--color-text-tertiary)' }}>
-              Done items are faded. Blocked items have a red outline.
+              Done items show a ✓ and strikethrough. Blocked items have a red outline.
             </span>
           </div>
         </Show>

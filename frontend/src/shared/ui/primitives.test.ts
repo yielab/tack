@@ -55,8 +55,12 @@ describe('priorityColor / priorityLabel', () => {
     expect(priorityColor('critical')).toContain('danger');
     expect(priorityColor('high')).toContain('warning');
     expect(priorityColor('medium')).toContain('accent2');
-    expect(priorityColor('low')).toContain('tertiary');
-    expect(priorityColor('none')).toContain('tertiary');
+    // -secondary, not -tertiary: this value also gets used as a solid fill
+    // behind `--color-text-inverse` text (Calendar/Timeline priority chips),
+    // and -tertiary fails WCAG AA there in all three dark-mode palettes
+    // (see src/shared/ui/PriorityDot.tsx, TODO.md §6 A11).
+    expect(priorityColor('low')).toContain('secondary');
+    expect(priorityColor('none')).toContain('secondary');
   });
   it('capitalizes labels', () => {
     expect(priorityLabel('high')).toBe('High');
@@ -67,7 +71,8 @@ describe('wipChipStyle', () => {
   it('stays neutral within the limit', () => {
     const s = wipChipStyle(3, 4);
     expect(s['background-color']).toContain('chip');
-    expect(s.color).toContain('tertiary');
+    // -secondary, not -tertiary: see wipChipStyle's doc comment (WCAG AA).
+    expect(s.color).toContain('secondary');
   });
   it('turns danger when exceeded', () => {
     const s = wipChipStyle(5, 4);

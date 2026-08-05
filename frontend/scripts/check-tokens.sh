@@ -51,9 +51,8 @@ echo "✓ token gate passed"
 # palettes. Use tokens (var(--color-*)) or the shared priorityColor() helper.
 #
 # Same RATCHET rule as above. Test fixtures carry arbitrary color *data* (not
-# styling), so they're excluded. The lone remaining match is Avatar's white
-# initials over a computed hsl() chip — correct in both modes; keep at 1.
-STYLE_BASELINE=1
+# styling), so they're excluded.
+STYLE_BASELINE=0
 
 # A hex literal used as a CSS value: right after a property colon, a border/
 # outline shorthand keyword, or the else-branch of a style ternary.

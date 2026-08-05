@@ -81,6 +81,7 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
         </button>
         <div class="w-px h-6 bg-sunken mx-1" />
         <select
+          aria-label="Text style"
           onChange={(e) => execCommand('formatBlock', e.currentTarget.value)}
           class="text-sm px-2 py-1 rounded border-0 bg-transparent text-content-muted focus:ring-2 focus:ring-brand-500"
           disabled={props.disabled}
