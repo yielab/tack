@@ -70,3 +70,30 @@ export async function getOrCreateItem(
     .then((p) => p.data ?? []);
   return list[0].id;
 }
+
+/**
+ * Always create a fresh item carrying an `assignee`, so callers get a
+ * populated `<Avatar>` (Board.tsx only renders one when `item.assignee` is
+ * set) — unlike `getOrCreateItem`, this doesn't reuse an existing assignee-less
+ * item. Returns the item id.
+ */
+export async function createItemWithAssignee(
+  request: APIRequestContext,
+  projectId: string,
+  assignee: string,
+  title = 'E2E Item (assigned)',
+): Promise<string> {
+  const res = await request.post(`${API}/projects/${projectId}/items`, {
+    data: { title, item_type: 'task', assignee },
+  });
+  expect(res.ok(), `create item failed: ${res.status()}`).toBeTruthy();
+  const body = await res.json();
+  if (body?.id) return body.id;
+
+  const list = await request
+    .get(`${API}/projects/${projectId}/items`)
+    .then((r) => r.json())
+    .then((p) => p.data ?? []);
+  const match = list.find((it: { assignee?: string }) => it.assignee === assignee);
+  return (match ?? list[list.length - 1]).id;
+}

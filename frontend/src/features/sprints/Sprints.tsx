@@ -242,7 +242,11 @@ export default function Sprints() {
             </span>
           </div>
 
-          <div class="flex-1 overflow-y-auto p-3 space-y-2">
+          <div
+            class="flex-1 overflow-y-auto p-3 space-y-2"
+            tabindex="0"
+            aria-label={`${t('backlog')} items`}
+          >
             <Show
               when={backlogItems().length > 0}
               fallback={
@@ -261,7 +265,11 @@ export default function Sprints() {
         </div>
 
         {/* ── Right: Sprint lanes ───────────────────────────────────── */}
-        <div class="flex-1 flex overflow-x-auto overflow-y-hidden">
+        <div
+          class="flex-1 flex overflow-x-auto overflow-y-hidden"
+          tabindex="0"
+          aria-label={`${t('sprint')} lanes`}
+        >
           <Show
             when={(activeSprints()?.length ?? 0) > 0}
             fallback={
@@ -374,7 +382,11 @@ export default function Sprints() {
                       </div>
 
                       {/* Items */}
-                      <div class="flex-1 overflow-y-auto p-3 space-y-2">
+                      <div
+                        class="flex-1 overflow-y-auto p-3 space-y-2"
+                        tabindex="0"
+                        aria-label={`${sprint.name} items`}
+                      >
                         <Show
                           when={itemsForSprint(sprint.id).length > 0}
                           fallback={
