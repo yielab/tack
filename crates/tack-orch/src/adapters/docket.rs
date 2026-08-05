@@ -30,8 +30,9 @@
 //!
 //! # Write methods
 //!
-//! **`enqueue_task` (card C1, Wave 3) and `decide_approval` (card D1, Wave 4,
-//! 2026-08-05) are both implemented** — see below. [`ControlPlane::dispatch`]
+//! **`enqueue_task` (card C1, Wave 3), `decide_approval` (card D1, Wave 4,
+//! 2026-08-05), and `provision_pod` (card D4, Wave 4, 2026-08-05) are all
+//! implemented** — see below. [`ControlPlane::dispatch`]
 //! still returns [`OrchError::Disabled`] unconditionally — not because
 //! docket lacks the route (`POST /dispatch/{project}` is a real,
 //! live-verified endpoint too, card V1) but because it's a distinct
@@ -121,6 +122,23 @@
 //!   2026-08-05) follows that reading, not a live capture, for the 409/404
 //!   split. Flagging this as read-from-source, not live-verified, per this
 //!   module's own discipline.
+//! - **`POST /pods` — verified live by card D4 (2026-08-05), closing the one
+//!   gap V1's own handoff explicitly named ("out of this card's endpoint
+//!   list ... not exercised").** Against an isolated `docket serve`
+//!   (`DOCKET_HOME` pointed at a scratch dir, `~/.docket`'s mtime confirmed
+//!   unchanged before and after): a fresh `POST /pods` returns `201
+//!   {"ok": true, "project", "blueprint", "members": [{"id", "role",
+//!   "model"}]}` exactly as [`ProvisionedPod`]/[`ProvisionedPodMember`]
+//!   model it; a second call for the same `project` returns `409
+//!   {"ok": false, "error": "'<project>' already exists"}`; an unknown
+//!   blueprint, a missing `project`, and a `pod` value other than `"full"`
+//!   each return `400` with a plain `{"ok": false, "error": "..."}` body
+//!   (same shape [`ErrorBody`] already extracts for `enqueue_task`/
+//!   `decide_approval`); a request with no `Authorization` header returns
+//!   `401`. Ran this crate's own compiled [`DocketAdapter::provision_pod`]
+//!   against the live server (not just a hand-built `curl`), confirming the
+//!   happy path and the 409 both decode correctly end to end. See TODO.md
+//!   §6 "D4" for the full transcript.
 //!
 //! # `list_tasks` / `traces`
 //!
@@ -169,7 +187,8 @@ use tracing::warn;
 use crate::adapters::prometheus;
 use crate::{
     ApprovalState, ControlPlane, FleetStatus, Health, MetricSample, NewRemoteTask, OrchError,
-    RemoteApproval, RemoteEvent, RemoteRun, RemoteTask, TracesPage,
+    ProvisionPodParams, ProvisionedPod, RemoteApproval, RemoteEvent, RemoteRun, RemoteTask,
+    TracesPage,
 };
 
 /// The fixed `channel` docket records against every approval decision made
@@ -635,5 +654,61 @@ impl ControlPlane for DocketAdapter {
 
         let parsed: DecideApprovalResponse = Self::decode_json(resp).await?;
         Ok(ApprovalState::from(parsed.state))
+    }
+
+    async fn provision_pod(&self, params: ProvisionPodParams) -> Result<ProvisionedPod, OrchError> {
+        // POST /pods, Bearer-authed (card D4, TODO.md §1.4). Built by hand
+        // rather than through `get_authed`/`send` — those only ever GET, and
+        // this route needs 409 (`PodAlreadyExistsError`) classified
+        // distinctly from `send`'s generic non-2xx branch, same reason
+        // `enqueue_task`/`decide_approval` each build their own request.
+        let url = self.url("pods")?;
+        let mut req = self.client.post(url).json(&params);
+        if let Some(token) = &self.token {
+            req = req.bearer_auth(token);
+        }
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| OrchError::Http(format!("request failed: {e}")))?;
+        let status = resp.status();
+
+        if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+            return Err(OrchError::Auth);
+        }
+        if status == StatusCode::CONFLICT {
+            // PodAlreadyExistsError — raised before anything is touched (see
+            // ControlPlane::provision_pod's doc comment). Not a transport
+            // failure.
+            let text = resp.text().await.unwrap_or_default();
+            let message = serde_json::from_str::<ErrorBody>(&text)
+                .ok()
+                .and_then(|b| (!b.error.is_empty()).then_some(b.error))
+                .unwrap_or_else(|| text.trim().to_string());
+            return Err(OrchError::AlreadyExists(message));
+        }
+        if !status.is_success() {
+            // Covers docket's 400 (bad blueprint / bad verify_cmd / bad
+            // `pod` field / missing `project` — `BlueprintError`/
+            // `VerifyCmdError`, request-shaped) and its 500 (`PodProvisionError`
+            // — an operational failure *after* docket's own rollback already
+            // ran, per the module docstring on `core/pod_provisioning.py`).
+            // Either way nothing was created; this adapter doesn't need to
+            // distinguish "your input was bad" from "docket had trouble
+            // provisioning" any further than the message itself does — the
+            // caller (`tack-api::handlers::provisioning`) treats every
+            // non-409, non-Auth error identically: nothing to roll back on
+            // docket's side, only on Tack's own.
+            let text = resp.text().await.unwrap_or_default();
+            let message = serde_json::from_str::<ErrorBody>(&text)
+                .ok()
+                .and_then(|b| (!b.error.is_empty()).then_some(b.error))
+                .unwrap_or_else(|| text.trim().to_string());
+            return Err(OrchError::Http(format!(
+                "pod provisioning failed ({status}): {message}"
+            )));
+        }
+
+        Self::decode_json(resp).await
     }
 }

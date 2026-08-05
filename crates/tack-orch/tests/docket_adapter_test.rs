@@ -819,3 +819,197 @@ async fn decide_approval_unauthorized_maps_to_auth_error() {
         .expect_err("401 must not be Ok");
     assert!(matches!(err, OrchError::Auth));
 }
+
+// ---------------------------------------------------------------------------
+// provision_pod (card D4) — POST /pods
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn provision_pod_happy_path_returns_the_created_roster() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/pods"))
+        .and(header("Authorization", format!("Bearer {TOKEN}")))
+        .and(wiremock::matchers::body_partial_json(serde_json::json!({
+            "project": "blog-api", "blueprint": "software"
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "ok": true,
+            "project": "blog-api",
+            "blueprint": "software",
+            "members": [
+                {"id": "blog-api-lead", "role": "lead", "model": "anthropic/claude-opus-4-5"},
+                {"id": "blog-api-impl-1", "role": "implementer", "model": "anthropic/claude-sonnet-4-5"}
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let adapter = adapter_for(&server);
+    let result = adapter
+        .provision_pod(tack_orch::ProvisionPodParams {
+            project: "blog-api".into(),
+            path: String::new(),
+            blueprint: "software".into(),
+            pod: None,
+            budget: None,
+            verify_cmd: String::new(),
+        })
+        .await
+        .expect("a well-formed request must succeed");
+    assert_eq!(result.project, "blog-api");
+    assert_eq!(result.blueprint, "software");
+    assert_eq!(result.members.len(), 2);
+    assert_eq!(result.members[0].role, "lead");
+}
+
+#[tokio::test]
+async fn provision_pod_already_exists_maps_to_already_exists_not_a_generic_http_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/pods"))
+        .respond_with(ResponseTemplate::new(409).set_body_json(serde_json::json!({
+            "ok": false, "error": "'blog-api' already exists"
+        })))
+        .mount(&server)
+        .await;
+
+    let adapter = adapter_for(&server);
+    let err = adapter
+        .provision_pod(tack_orch::ProvisionPodParams {
+            project: "blog-api".into(),
+            path: String::new(),
+            blueprint: "software".into(),
+            pod: None,
+            budget: None,
+            verify_cmd: String::new(),
+        })
+        .await
+        .expect_err("409 must not be Ok");
+    match err {
+        OrchError::AlreadyExists(message) => {
+            assert!(message.contains("already exists"), "{message}");
+        }
+        other => panic!("expected AlreadyExists, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn provision_pod_bad_blueprint_surfaces_dockets_message() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/pods"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+            "ok": false, "error": "unknown blueprint 'made-up'"
+        })))
+        .mount(&server)
+        .await;
+
+    let adapter = adapter_for(&server);
+    let err = adapter
+        .provision_pod(tack_orch::ProvisionPodParams {
+            project: "blog-api".into(),
+            path: String::new(),
+            blueprint: "made-up".into(),
+            pod: None,
+            budget: None,
+            verify_cmd: String::new(),
+        })
+        .await
+        .expect_err("400 must not be Ok");
+    match err {
+        OrchError::Http(message) => {
+            assert!(message.contains("unknown blueprint"), "{message}");
+        }
+        other => panic!("expected Http, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn provision_pod_operational_failure_after_dockets_own_rollback_surfaces_as_http_error() {
+    // PodProvisionError — docket's own rollback has already run server-side
+    // by the time this response reaches the adapter (see
+    // `ControlPlane::provision_pod`'s doc comment).
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/pods"))
+        .respond_with(ResponseTemplate::new(500).set_body_json(serde_json::json!({
+            "ok": false, "error": "blog-api: provisioning failed: disk full"
+        })))
+        .mount(&server)
+        .await;
+
+    let adapter = adapter_for(&server);
+    let err = adapter
+        .provision_pod(tack_orch::ProvisionPodParams {
+            project: "blog-api".into(),
+            path: String::new(),
+            blueprint: "software".into(),
+            pod: None,
+            budget: None,
+            verify_cmd: String::new(),
+        })
+        .await
+        .expect_err("500 must not be Ok");
+    assert!(matches!(err, OrchError::Http(_)));
+}
+
+#[tokio::test]
+async fn provision_pod_unauthorized_maps_to_auth_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/pods"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+
+    let adapter = adapter_for(&server);
+    let err = adapter
+        .provision_pod(tack_orch::ProvisionPodParams {
+            project: "blog-api".into(),
+            path: String::new(),
+            blueprint: "software".into(),
+            pod: None,
+            budget: None,
+            verify_cmd: String::new(),
+        })
+        .await
+        .expect_err("401 must not be Ok");
+    assert!(matches!(err, OrchError::Auth));
+}
+
+#[tokio::test]
+async fn provision_pod_sends_the_full_request_shape_on_the_wire() {
+    // Every optional field, populated, to lock in the exact wire shape
+    // (`project, path, blueprint, pod, budget, verifyCmd`) against a
+    // regression that renames or drops one silently.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/pods"))
+        .and(wiremock::matchers::body_partial_json(serde_json::json!({
+            "project": "blog-api",
+            "path": "/home/ox/code/blog-api",
+            "blueprint": "software",
+            "pod": "full",
+            "budget": 25.0,
+            "verifyCmd": "cargo test --workspace"
+        })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "ok": true, "project": "blog-api", "blueprint": "software", "members": []
+        })))
+        .mount(&server)
+        .await;
+
+    let adapter = adapter_for(&server);
+    adapter
+        .provision_pod(tack_orch::ProvisionPodParams {
+            project: "blog-api".into(),
+            path: "/home/ox/code/blog-api".into(),
+            blueprint: "software".into(),
+            pod: Some("full".into()),
+            budget: Some(25.0),
+            verify_cmd: "cargo test --workspace".into(),
+        })
+        .await
+        .expect("wiremock only matches if every field reached the wire under its documented key");
+}

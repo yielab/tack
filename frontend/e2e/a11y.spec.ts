@@ -810,3 +810,59 @@ test('economics page (populated, below-min-sample and stale-rework states) has n
   const violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 });
+
+// Provisioning wizard (frontend/src/features/provisioning/**, TODO.md §6
+// "D4", tasks 37.2/37.4). Same orchestration-disabled-by-default reality as
+// the Fleet/dispatch scans above: this harness's webServer does not set
+// TACK_ORCH_ENABLE, so the disabled scan below is the real default. The
+// populated scan intercepts `GET /api/control-planes` and `GET /api/templates`
+// (the two reads the wizard's gate + step 1/2 pickers need) and walks all the
+// way to the confirmation `Modal` — the highest-risk state for focus
+// trapping/labelling, and the one state C4's dispatch-confirmation precedent
+// and D1's approval-decision precedent both flagged as worth scanning
+// explicitly rather than assuming a generic `Modal` pass elsewhere covers it.
+
+test('provisioning wizard (orchestration disabled) has no accessibility violations', async ({ page }) => {
+  await page.goto('/provision');
+  await waitForApp(page);
+  await expect(page.getByText('Orchestration is disabled')).toBeVisible();
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+test('provisioning wizard (confirmation modal open) has no accessibility violations', async ({ page }) => {
+  await page.route('**/api/control-planes', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([{ id: 'cp-1', name: 'docket-e2e', kind: 'docket', health: 'healthy' }]),
+    }),
+  );
+  await page.route('**/api/templates', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        { id: 'tmpl-1', name: 'Software starter', project_type: 'software', orchestration: null },
+      ]),
+    }),
+  );
+
+  await page.goto('/provision');
+  await waitForApp(page);
+  await expect(page.getByText('1. Project')).toBeVisible();
+
+  await page.getByLabel('Project name').fill('E2E Provisioned Project');
+  await page.getByLabel('Template').selectOption('tmpl-1');
+  await page.getByRole('button', { name: 'Next: Pod' }).click();
+
+  await page.getByLabel('Control plane').selectOption('cp-1');
+  await page.getByRole('button', { name: 'Next: Review' }).click();
+
+  await page.getByRole('button', { name: 'Provision…' }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByText('cannot be automatically undone')).toBeVisible();
+
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});

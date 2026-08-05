@@ -2045,6 +2045,13 @@ mod tests {
         ) -> Result<crate::ApprovalState, OrchError> {
             Err(OrchError::Disabled)
         }
+
+        async fn provision_pod(
+            &self,
+            _params: crate::ProvisionPodParams,
+        ) -> Result<crate::ProvisionedPod, OrchError> {
+            Err(OrchError::Disabled)
+        }
     }
 
     // Silence "unused" on ApprovalState/RunState/TaskStatus imports, which
