@@ -425,3 +425,113 @@ test('sprint dispatch results (mixed outcomes) has no accessibility violations',
   const violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 });
+
+// Approvals inbox (frontend/src/features/approvals/**, TODO.md §6 "D1",
+// tasks 36.1/36.2). Same `page.route()` interception technique as the Fleet
+// and dispatch scans above — this harness's webServer doesn't set
+// `TACK_ORCH_ENABLE`, so the disabled state below is the real default, and
+// there's no seeding UI for `orch_approvals` rows to populate the page
+// through the real API either.
+
+test('approvals inbox (orchestration disabled) has no accessibility violations', async ({ page }) => {
+  await page.goto('/approvals');
+  await waitForApp(page);
+  await expect(page.getByText('Agent-fleet orchestration is disabled')).toBeVisible();
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+const mockApprovalRows = [
+  {
+    token: 'apr-uncorrelated',
+    control_plane_id: 'cp-1',
+    control_plane_name: 'docket-prod',
+    item_id: null,
+    item_title: null,
+    item_status: null,
+    project_id: null,
+    project_name: null,
+    remote_task_id: null,
+    agent: 'cli-agent',
+    action: 'rm -rf /tmp/build',
+    requested_at: new Date(Date.now() - 3_600_000).toISOString(),
+  },
+  {
+    token: 'apr-correlated',
+    control_plane_id: 'cp-1',
+    control_plane_name: 'docket-prod',
+    item_id: 'e2e-approvals-item',
+    item_title: 'Deploy service',
+    item_status: 'In Progress',
+    project_id: 'e2e-approvals-project',
+    project_name: 'Backend',
+    remote_task_id: 'task-1',
+    agent: 'builder',
+    action: 'git push origin main',
+    requested_at: new Date().toISOString(),
+  },
+];
+
+test('approvals inbox (populated, decisions enabled) has no accessibility violations', async ({
+  page,
+}) => {
+  await page.route('**/api/approvals', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ rows: mockApprovalRows, grant_available: true }),
+    });
+  });
+
+  await page.goto('/approvals');
+  await waitForApp(page);
+  await expect(page.getByText('Deploy service')).toBeVisible();
+  // The uncorrelated approval — the one this whole inbox exists to surface —
+  // must actually render, not be silently dropped.
+  await expect(page.getByText(/Uncorrelated/)).toBeVisible();
+
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+test('approvals inbox confirmation modal has no accessibility violations', async ({ page }) => {
+  await page.route('**/api/approvals', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ rows: mockApprovalRows, grant_available: true }),
+    });
+  });
+
+  await page.goto('/approvals');
+  await waitForApp(page);
+  await page.getByRole('button', { name: 'Grant' }).first().click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByText('cannot be undone')).toBeVisible();
+
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+test('approvals inbox (decisions disabled — no TACK_ORCH_APPROVAL_TOKEN) has no accessibility violations', async ({
+  page,
+}) => {
+  await page.route('**/api/approvals', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ rows: mockApprovalRows, grant_available: false }),
+    });
+  });
+
+  await page.goto('/approvals');
+  await waitForApp(page);
+  await expect(page.getByText('Deploy service')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Grant' })).toHaveCount(0);
+
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});

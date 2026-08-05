@@ -17,13 +17,15 @@ const TemplateCreator = lazy(() => import('../features/templates/TemplateCreator
 const ProjectSettings = lazy(() => import('../features/settings/ProjectSettings'));
 const GlobalSettings  = lazy(() => import('../features/settings/GlobalSettings'));
 const Fleet         = lazy(() => import('../features/fleet/FleetPage'));
+const Approvals     = lazy(() => import('../features/approvals/ApprovalsPage'));
 
 export const routes: RouteDefinition[] = [
   { path: '/',         component: Projects },
   { path: '/projects', component: Projects },
   { path: '/templates',     component: Templates },
   { path: '/templates/new', component: TemplateCreator },
-  { path: '/fleet',    component: Fleet },
+  { path: '/fleet',      component: Fleet },
+  { path: '/approvals',  component: Approvals },
   { path: '/settings', component: GlobalSettings },
 
   // Project destinations

@@ -93,6 +93,20 @@ pub enum OrchError {
     /// docket's own text, kept verbatim for display.
     #[error("blocked by guardrail policy {policy_id:?}: {message}")]
     PolicyBlocked { policy_id: String, message: String },
+
+    /// docket already resolved this approval before our decision reached it —
+    /// `POST /approvals/{token}` returning HTTP 409, `approval.ApprovalNoop`
+    /// server-side (e.g. granted moments earlier from the CLI, or expired
+    /// past `APPROVAL_TIMEOUT`). Distinct from [`OrchError::NotFound`] (404 —
+    /// no such token at all, or docket's `approval.ApprovalError` for an
+    /// illegal state transition, which `serve.py` happens to report with the
+    /// same status) so a caller building an approvals inbox (card D1) can
+    /// render "someone already decided this" — a normal, expected race, not
+    /// a hard error — and simply drop the stale row rather than surface a
+    /// scary failure. `message` is docket's own text (e.g. `"Already
+    /// granted: apr-..."`), kept verbatim for display.
+    #[error("approval already decided: {0}")]
+    AlreadyDecided(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -539,7 +553,24 @@ pub trait ControlPlane: Send + Sync {
     // Phase 35+ — write side, gated behind TACK_ORCH_ENABLE.
     async fn enqueue_task(&self, project: &str, task: NewRemoteTask) -> Result<String, OrchError>;
     async fn dispatch(&self, project: &str, vars: serde_json::Value) -> Result<String, OrchError>;
-    async fn decide_approval(&self, token: &str, grant: bool) -> Result<(), OrchError>;
+    /// Grant (`grant: true`) or deny (`grant: false`) a pending approval —
+    /// `POST /approvals/{token}` (card D1, Wave 4, task 36.1). Success
+    /// carries docket's own resulting [`ApprovalState`] (`Granted`/`Denied`;
+    /// modeled as `Unknown` rather than assumed if docket's wording ever
+    /// changes) — mirrors the real response body, `{"ok":true,"token":...,
+    /// "state":...}` (card V1, verified live). The `channel` docket records
+    /// alongside the decision in its hash-chained audit log (its P22-4) is
+    /// **not** a parameter here — every caller of this trait is Tack itself,
+    /// so `adapters::docket`'s implementation sends the fixed value `"tack"`
+    /// (verified against `approval.APPROVAL_CHANNELS`, which already lists
+    /// it) rather than threading a value no caller would ever vary through
+    /// every layer above this trait.
+    ///
+    /// An already-decided token is [`OrchError::AlreadyDecided`], not a
+    /// panic-worthy failure — see that variant's doc comment. An unknown
+    /// token (or an illegal decision on one, which docket reports the same
+    /// way) is [`OrchError::NotFound`].
+    async fn decide_approval(&self, token: &str, grant: bool) -> Result<ApprovalState, OrchError>;
 }
 
 // ---------------------------------------------------------------------------
@@ -716,10 +747,17 @@ mod tests {
                 policy_id: "prompt-injection".into(),
                 message: "untrusted input matched a deny rule".into(),
             },
+            OrchError::AlreadyDecided("Already granted: apr-1".into()),
         ];
         for e in errors {
             assert!(!e.to_string().is_empty());
         }
+    }
+
+    #[test]
+    fn already_decided_display_names_the_docket_message() {
+        let e = OrchError::AlreadyDecided("Already granted: apr-1".into());
+        assert!(e.to_string().contains("Already granted: apr-1"));
     }
 
     #[test]

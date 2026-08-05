@@ -14,6 +14,110 @@
     "version": "0.1.0-beta.6"
   },
   "paths": {
+    "/api/approvals": {
+      "get": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`GET /api/approvals` — the fleet-wide pending-approval inbox, oldest\nfirst. Read-only; no `TACK_ORCH_APPROVAL_TOKEN` needed (see the\nmodule-doc section above on why reading and deciding are different\nprivilege levels).",
+        "operationId": "list_pending_approvals",
+        "responses": {
+          "200": {
+            "description": "Fleet-wide pending-approval inbox, oldest first — includes uncorrelated approvals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingApprovalListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Orchestration disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approvals/{token}": {
+      "post": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`POST /api/approvals/{token}` — grant or deny a pending approval,\nproxying to docket's own `POST /approvals/{token}` with `channel: \"tack\"`\nso the decision is honestly attributed in docket's hash-chained audit\nlog (its P22-4) rather than reading as an anonymous/CLI decision.",
+        "description": "**Not idempotent, not reversible** — see [`OrchError::AlreadyDecided`]'s\ndoc comment for what happens when the token was already resolved\nelsewhere (a normal race for an inbox like this, not a bug): this\nhandler reports it as `409`, not `500`, and the frontend treats it as\n\"remove this stale row,\" not as an error toast.",
+        "operationId": "decide_approval",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "docket approval token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideApprovalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Decision applied — docket's own resulting state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecideApprovalResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid X-Tack-Approval-Token header, or TACK_ORCH_APPROVAL_TOKEN not configured on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown token, orchestration disabled, or the control plane that issued it was deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The approval was already decided (granted/denied/expired) elsewhere",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/attachments/{id}": {
       "get": {
         "tags": [
@@ -3673,6 +3777,14 @@
           }
         }
       },
+      "ApprovalDecisionAction": {
+        "type": "string",
+        "description": "`POST /api/approvals/{token}` request body.",
+        "enum": [
+          "grant",
+          "deny"
+        ]
+      },
       "Attachment": {
         "type": "object",
         "required": [
@@ -4550,6 +4662,33 @@
             "format": "date-time"
           },
           "value": {}
+        }
+      },
+      "DecideApprovalRequest": {
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ApprovalDecisionAction"
+          }
+        }
+      },
+      "DecideApprovalResponse": {
+        "type": "object",
+        "description": "`POST /api/approvals/{token}` response — docket's own resulting state\n(`\"granted\"`/`\"denied\"`, or an unrecognised value shown as-is per this\nwhole cycle's \"never fail on an unknown remote value\" discipline).",
+        "required": [
+          "token",
+          "state"
+        ],
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
         }
       },
       "Dependency": {
@@ -5586,6 +5725,105 @@
           "total": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "PendingApprovalListResponse": {
+        "type": "object",
+        "description": "`GET /api/approvals` response envelope.",
+        "required": [
+          "rows",
+          "grant_available"
+        ],
+        "properties": {
+          "grant_available": {
+            "type": "boolean",
+            "description": "Whether `TACK_ORCH_APPROVAL_TOKEN` is configured on this server at\nall, **without ever exposing its value** — the same write-only-secret\ndiscipline as `ControlPlaneResponse.token_set` /\n`handlers::settings`'s `secret_key_set`. The frontend uses this to\ndecide whether to render Grant/Deny controls at all (a missing\nserver-side secret means nobody can act on this inbox today); the\nserver still enforces the real check independently on every\n`POST /api/approvals/{token}` call regardless of what this flag says,\nso a stale/cached `true` can never grant a privilege the header check\nwouldn't also grant."
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingApprovalResponse"
+            },
+            "description": "Oldest-requested first — docket approvals fail closed on timeout, so\nsurfacing the longest-waiting one first has a real cost (this\ncard's rationale)."
+          }
+        }
+      },
+      "PendingApprovalResponse": {
+        "type": "object",
+        "description": "One row of the fleet-wide approvals inbox — a pending `orch_approvals`\nrecord enriched with the correlated control plane / item / project, when\nknown. See the module-doc section above on why uncorrelated rows\n(`item_id: null`) are never filtered out.",
+        "required": [
+          "token",
+          "control_plane_id",
+          "control_plane_name",
+          "requested_at"
+        ],
+        "properties": {
+          "action": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The gated action's description, already redacted by docket before it\nreached Tack's mirror."
+          },
+          "agent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`orch_approvals.agent` — populated from docket's `role` field on\ningestion (B1's handoff, TODO.md §6: \"role is the closest field\")."
+          },
+          "control_plane_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "control_plane_name": {
+            "type": "string"
+          },
+          "item_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "item_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "item_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "project_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remote_task_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requested_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "token": {
+            "type": "string"
           }
         }
       },

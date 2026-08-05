@@ -665,27 +665,157 @@ async fn unauthenticated_routes_never_send_authorization_header() {
 }
 
 // ---------------------------------------------------------------------------
-// Write methods: `dispatch`/`decide_approval` disabled unconditionally
-// (Wave 4 / card D1 and, for `dispatch`, no consumer yet — see the module
-// doc's "Write methods" section). `enqueue_task` is implemented as of card
-// C1 (Wave 3, 2026-08-05) — its own outcomes are covered above, in the
-// "enqueue_task" section.
+// Write methods: `dispatch` disabled unconditionally — a real docket route
+// (V1, live-verified) with no Tack consumer yet, see the module doc's
+// "Write methods" section. `enqueue_task` (card C1, Wave 3) and
+// `decide_approval` (card D1, Wave 4) are both implemented — their outcomes
+// are covered above (`enqueue_task`) and below (`decide_approval`).
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn dispatch_and_decide_approval_are_still_disabled() {
+async fn dispatch_is_still_disabled() {
     let server = MockServer::start().await;
-    // No mocks registered at all — if either method actually made an HTTP
-    // call, this test would fail on the unmatched request, not just on a
-    // wrong return value.
+    // No mocks registered at all — if `dispatch` actually made an HTTP call,
+    // this test would fail on the unmatched request, not just on a wrong
+    // return value.
     let adapter = adapter_for(&server);
 
     assert!(matches!(
         adapter.dispatch("demo", serde_json::json!({})).await,
         Err(OrchError::Disabled)
     ));
-    assert!(matches!(
-        adapter.decide_approval("apr-1", true).await,
-        Err(OrchError::Disabled)
-    ));
+}
+
+// ---------------------------------------------------------------------------
+// decide_approval (card D1, Wave 4, task 36.1)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn decide_approval_grant_sends_channel_tack_and_returns_the_resulting_state() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/approvals/apr-1"))
+        .and(header("Authorization", format!("Bearer {TOKEN}").as_str()))
+        .and(wiremock::matchers::body_partial_json(serde_json::json!({
+            "action": "grant",
+            "channel": "tack"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": true, "token": "apr-1", "state": "granted"
+        })))
+        .mount(&server)
+        .await;
+
+    let adapter = adapter_for(&server);
+    let state = adapter
+        .decide_approval("apr-1", true)
+        .await
+        .expect("wiremock only matches if action:grant and channel:tack were really sent");
+    assert_eq!(state, ApprovalState::Granted);
+}
+
+#[tokio::test]
+async fn decide_approval_deny_sends_action_deny() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/approvals/apr-2"))
+        .and(wiremock::matchers::body_partial_json(serde_json::json!({
+            "action": "deny",
+            "channel": "tack"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": true, "token": "apr-2", "state": "denied"
+        })))
+        .mount(&server)
+        .await;
+
+    let adapter = adapter_for(&server);
+    let state = adapter
+        .decide_approval("apr-2", false)
+        .await
+        .expect("wiremock only matches if action:deny was really sent");
+    assert_eq!(state, ApprovalState::Denied);
+}
+
+#[tokio::test]
+async fn decide_approval_unknown_state_round_trips_as_unknown() {
+    // Same "never fail the caller on a value we don't recognise yet"
+    // discipline as every other remote enum in this crate.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/approvals/apr-3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ok": true, "token": "apr-3", "state": "expired"
+        })))
+        .mount(&server)
+        .await;
+
+    let adapter = adapter_for(&server);
+    let state = adapter.decide_approval("apr-3", true).await.unwrap();
+    assert_eq!(state, ApprovalState::Unknown("expired".to_string()));
+}
+
+#[tokio::test]
+async fn decide_approval_409_maps_to_already_decided_with_dockets_message() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/approvals/apr-4"))
+        .respond_with(ResponseTemplate::new(409).set_body_json(serde_json::json!({
+            "ok": false, "error": "Already granted: apr-4"
+        })))
+        .mount(&server)
+        .await;
+
+    let adapter = adapter_for(&server);
+    let err = adapter
+        .decide_approval("apr-4", true)
+        .await
+        .expect_err("409 must not be Ok");
+    match err {
+        OrchError::AlreadyDecided(message) => {
+            assert!(message.contains("Already granted"), "{message}");
+        }
+        other => panic!("expected AlreadyDecided, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn decide_approval_404_maps_to_not_found_with_dockets_message() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/approvals/apr-missing"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
+            "ok": false, "error": "Approval not found: apr-missing"
+        })))
+        .mount(&server)
+        .await;
+
+    let adapter = adapter_for(&server);
+    let err = adapter
+        .decide_approval("apr-missing", true)
+        .await
+        .expect_err("404 must not be Ok");
+    match err {
+        OrchError::NotFound(message) => {
+            assert!(message.contains("Approval not found"), "{message}");
+        }
+        other => panic!("expected NotFound, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn decide_approval_unauthorized_maps_to_auth_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/approvals/apr-5"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+
+    let adapter = adapter_for(&server);
+    let err = adapter
+        .decide_approval("apr-5", true)
+        .await
+        .expect_err("401 must not be Ok");
+    assert!(matches!(err, OrchError::Auth));
 }

@@ -2038,7 +2038,11 @@ mod tests {
             Err(OrchError::Disabled)
         }
 
-        async fn decide_approval(&self, _token: &str, _grant: bool) -> Result<(), OrchError> {
+        async fn decide_approval(
+            &self,
+            _token: &str,
+            _grant: bool,
+        ) -> Result<crate::ApprovalState, OrchError> {
             Err(OrchError::Disabled)
         }
     }

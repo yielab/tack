@@ -94,8 +94,9 @@ fn orch_routes(state: AppState) -> Router<AppState> {
             "/sprints/{id}/dispatch/dry-run",
             get(orch::dry_run_sprint_dispatch),
         ) // C3, 35.4
-        // ─── Wave 4 (Phases 36–38) — approvals + provisioning, add here: ───
-        // .route("/approvals/{token}", post(orch::decide_approval)) // D1, 36.1 — also gated on TACK_ORCH_APPROVAL_TOKEN
+        // ─── Wave 4 (Phases 36–38) — approvals + provisioning ──────────────
+        .route("/approvals", get(orch::list_pending_approvals)) // D1, 36.1 — fleet-wide inbox, read-only
+        .route("/approvals/{token}", post(orch::decide_approval)) // D1, 36.1 — also gated on TACK_ORCH_APPROVAL_TOKEN (checked inside the handler, not this layer)
         // .route("/projects/from-template/{id}", post(templates::create_project_from_template)) // D4, 37.2 — provision_pod:true extension of the existing endpoint, not a new route
         .layer(middleware::from_fn_with_state(
             state,

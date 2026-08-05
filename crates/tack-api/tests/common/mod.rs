@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 /// Build a fully wired Axum router backed by an in-memory SQLite database.
 /// Returns the router and the test workspace ID.
+#[allow(dead_code)] // not every test binary calls the no-config constructor directly
 pub async fn test_app() -> (Router, Uuid) {
     test_app_with_config(AppConfig::default()).await
 }

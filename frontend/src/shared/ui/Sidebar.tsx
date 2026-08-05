@@ -8,7 +8,7 @@ import { isDarkActive, toggleTheme } from '../state/theme';
 import {
   BrandMark,
   IconSearch, IconBoard, IconList, IconTable, IconCalendar, IconTimeline, IconSprint,
-  IconOverview, IconProjects, IconTemplates, IconFleet, IconSettings, IconSun, IconMoon,
+  IconOverview, IconProjects, IconTemplates, IconFleet, IconApprovals, IconSettings, IconSun, IconMoon,
   IconChevronDown, type IconProps,
 } from './icons';
 import KbdHint from './KbdHint';
@@ -179,6 +179,7 @@ const Sidebar: Component = () => {
         <NavButton href="/projects" end icon={IconProjects} label="All projects" onClick={close} />
         <NavButton href="/templates" icon={IconTemplates} label="Templates" onClick={close} />
         <NavButton href="/fleet" icon={IconFleet} label="Fleet" onClick={close} />
+        <NavButton href="/approvals" icon={IconApprovals} label="Approvals" onClick={close} />
         <NavButton href={currentProjectId() ? `/projects/${currentProjectId()}/settings` : '/settings'} icon={IconSettings} label="Settings" onClick={close} />
       </div>
 

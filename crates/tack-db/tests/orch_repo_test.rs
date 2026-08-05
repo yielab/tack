@@ -875,3 +875,141 @@ async fn test_orch_trace_cursor_is_deleted_when_its_control_plane_is_deleted() {
         "ON DELETE CASCADE from control_planes must remove its trace cursors too"
     );
 }
+
+// ════════════════════════════════════════════════════════════════════════════════════
+// list_pending_orch_approvals_with_context / mark_orch_approval_decided
+// (card D1, Wave 4, tasks 36.1/36.2)
+// ════════════════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn test_pending_approvals_with_context_enriches_correlated_and_still_surfaces_uncorrelated() {
+    let repo = setup_test_db().await;
+    let workspace_id = create_test_workspace(&repo).await;
+    let project = make_project(&repo, workspace_id).await;
+    let item = make_item(&repo, &project).await;
+    let plane_id = make_control_plane(&repo).await;
+
+    repo.upsert_orch_approvals(
+        plane_id,
+        &[
+            NewOrchApproval {
+                token: "uncorrelated".into(),
+                item_id: None,
+                remote_task_id: None,
+                agent: Some("cli-agent".into()),
+                action: Some("rm -rf /tmp/build".into()),
+                state: "pending".into(),
+                requested_at: Utc::now() - chrono::Duration::seconds(30),
+                decided_at: None,
+            },
+            NewOrchApproval {
+                token: "correlated".into(),
+                item_id: Some(item.id),
+                remote_task_id: Some("task-1".into()),
+                agent: Some("builder".into()),
+                action: Some("git push".into()),
+                state: "pending".into(),
+                requested_at: Utc::now(),
+                decided_at: None,
+            },
+        ],
+    )
+    .await
+    .expect("upsert both");
+
+    let rows = repo
+        .list_pending_orch_approvals_with_context()
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+
+    // Oldest first, same ordering guarantee as list_pending_orch_approvals.
+    let uncorrelated = &rows[0];
+    assert_eq!(uncorrelated.token, "uncorrelated");
+    assert!(
+        uncorrelated.item_id.is_none(),
+        "an uncorrelated approval must still surface here — it's the whole point of this query"
+    );
+    assert!(uncorrelated.item_title.is_none());
+    assert!(uncorrelated.project_id.is_none());
+    assert!(uncorrelated.project_name.is_none());
+    assert_eq!(uncorrelated.agent.as_deref(), Some("cli-agent"));
+    assert_eq!(uncorrelated.action.as_deref(), Some("rm -rf /tmp/build"));
+    // control_plane_name is still populated even when the item is unknown.
+    assert_eq!(uncorrelated.control_plane_name, "Plane");
+
+    let correlated = &rows[1];
+    assert_eq!(correlated.token, "correlated");
+    assert_eq!(correlated.item_id, Some(item.id));
+    assert_eq!(correlated.item_title.as_deref(), Some(item.title.as_str()));
+    assert_eq!(
+        correlated.item_status.as_deref(),
+        Some(item.status.as_str())
+    );
+    assert_eq!(correlated.project_id, Some(project.id));
+    assert_eq!(
+        correlated.project_name.as_deref(),
+        Some(project.name.as_str())
+    );
+}
+
+#[tokio::test]
+async fn test_mark_orch_approval_decided_removes_it_from_the_pending_inbox() {
+    let repo = setup_test_db().await;
+    let plane_id = make_control_plane(&repo).await;
+
+    repo.upsert_orch_approvals(
+        plane_id,
+        &[NewOrchApproval {
+            token: "apr-decide-1".into(),
+            item_id: None,
+            remote_task_id: None,
+            agent: Some("builder".into()),
+            action: Some("deploy".into()),
+            state: "pending".into(),
+            requested_at: Utc::now(),
+            decided_at: None,
+        }],
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        repo.list_pending_orch_approvals_with_context()
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let decided_at = Utc::now();
+    repo.mark_orch_approval_decided("apr-decide-1", "granted", decided_at)
+        .await
+        .expect("mark decided");
+
+    assert!(
+        repo.list_pending_orch_approvals_with_context()
+            .await
+            .unwrap()
+            .is_empty(),
+        "a decided approval must disappear from the pending inbox"
+    );
+
+    let row = repo
+        .get_orch_approval("apr-decide-1")
+        .await
+        .unwrap()
+        .expect("row still exists");
+    assert_eq!(row.state, "granted");
+    assert!(row.decided_at.is_some());
+}
+
+#[tokio::test]
+async fn test_mark_orch_approval_decided_on_an_unknown_token_is_a_no_op() {
+    let repo = setup_test_db().await;
+    // No row exists for this token at all — must not error (defensive path,
+    // see the function's own doc comment).
+    repo.mark_orch_approval_decided("does-not-exist", "granted", Utc::now())
+        .await
+        .expect("unknown token must be a no-op, not an error");
+}
