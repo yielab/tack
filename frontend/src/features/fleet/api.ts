@@ -30,7 +30,7 @@
 // best-guess snake_case projection — A4 should treat it as the reconciliation
 // target, not a spec to match blindly.
 
-import { request, ApiError } from '../../shared/api/client';
+import { request, isOrchestrationDisabledError } from '../../shared/api/client';
 
 /** Mirrors the reconciler's health state machine (TODO.md card A2):
  *  `healthy` → `degraded` (3 consecutive poll failures) → `unreachable` (10).
@@ -98,13 +98,15 @@ export interface FleetResponse {
   rows: FleetRow[];
 }
 
-/** True when the request failed because orchestration is disabled server-side
- *  (`TACK_ORCH_ENABLE` unset ⇒ every new route 404s, TODO.md §0 rule 8) —
- *  distinct from a 200 with an empty `rows` array (enabled, nothing
- *  registered yet) and from any other failure (network error, 500, ...). The
- *  Fleet page renders a different empty state for each case. */
+/** True when the request failed because orchestration is disabled
+ *  server-side — distinct from a 200 with an empty `rows` array (enabled,
+ *  nothing registered yet) and from any other failure (network error, 500,
+ *  ...). The Fleet page renders a different empty state for each case.
+ *  Delegates to `shared/api/client.ts#isOrchestrationDisabledError`, the one
+ *  place this check is actually defined (TODO.md card E2) — this export
+ *  stays so every existing caller (`FleetPage.tsx`) keeps working unchanged. */
 export function isOrchDisabled(err: unknown): boolean {
-  return err instanceof ApiError && err.status === 404;
+  return isOrchestrationDisabledError(err);
 }
 
 export const fleetApi = {

@@ -6,6 +6,7 @@ import {
   Show,
   onCleanup,
 } from 'solid-js';
+import { useNavigate } from '@solidjs/router';
 import { Badge, Button, EmptyState, Field, Modal, Skeleton } from '../../shared/ui';
 import { toast } from '../../shared/ui/toast';
 import {
@@ -47,15 +48,25 @@ const tdStyle = {
   'border-bottom': '1px solid var(--color-border-light)',
 };
 
-/** Shown on a 404 — the default state for every existing install, since
- *  orchestration is off unless an operator opts in (TODO.md §0 rule 8). */
-const OrchDisabledEmptyState: Component = () => (
-  <EmptyState
-    icon="🔌"
-    title="Agent-fleet orchestration is disabled"
-    description="This server has not enabled the Fleet feature. Set TACK_ORCH_ENABLE=true and restart the server to see approvals here."
-  />
-);
+/** Shown when orchestration is off — the default state for every existing
+ *  install, since orchestration is off unless an operator opts in (TODO.md
+ *  §0 rule 8). Links to the guided setup (card E2, Phase 39) instead of
+ *  naming an environment variable to set by hand. */
+const OrchDisabledEmptyState: Component = () => {
+  const navigate = useNavigate();
+  return (
+    <EmptyState
+      icon="🔌"
+      title="Agent-fleet orchestration is disabled"
+      description="Turn it on to see every approval currently blocking an agent fleet, across every linked project."
+      action={
+        <Button onClick={() => navigate('/settings?section=orchestration')}>
+          Set up orchestration
+        </Button>
+      }
+    />
+  );
+};
 
 const ErrorState: Component<{ onRetry: () => void }> = (props) => (
   <EmptyState

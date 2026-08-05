@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
+import { MemoryRouter, Route } from '@solidjs/router';
 import OrchestrationPanel from './OrchestrationPanel';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -12,7 +13,14 @@ afterEach(() => {
 function mount() {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  const dispose = render(() => <OrchestrationPanel projectId="proj-1" />, container);
+  const dispose = render(
+    () => (
+      <MemoryRouter>
+        <Route path="/" component={() => <OrchestrationPanel projectId="proj-1" />} />
+      </MemoryRouter>
+    ),
+    container,
+  );
   return { container, dispose };
 }
 

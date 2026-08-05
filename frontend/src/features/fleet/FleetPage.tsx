@@ -1,4 +1,5 @@
 import { type Component, createResource, For, Show } from 'solid-js';
+import { useNavigate } from '@solidjs/router';
 import { Button, EmptyState, Skeleton } from '../../shared/ui';
 import { fleetApi, isOrchDisabled, type FleetRow as FleetRowData } from './api';
 import FleetRow from './FleetRow';
@@ -59,18 +60,27 @@ const RegisterPlaneEmptyState: Component = () => (
   />
 );
 
-/** Shown on a 404 — the default state for every existing install, since
- *  orchestration is off unless an operator opts in (TODO.md §0 rule 8). */
-const OrchDisabledEmptyState: Component = () => (
-  <EmptyState
-    icon="🔌"
-    title="Agent-fleet orchestration is disabled"
-    description={
-      'This server has not enabled the Fleet feature. Set TACK_ORCH_ENABLE=true and restart the server, ' +
-      'then register a control plane to populate this view.'
-    }
-  />
-);
+/** Shown when orchestration is off — the default state for every existing
+ *  install, since orchestration is off unless an operator opts in (TODO.md
+ *  §0 rule 8). Previously this told the operator to set `TACK_ORCH_ENABLE`
+ *  and restart the server by hand — a dead end with no in-app next step.
+ *  Card E2 (Phase 39) makes the flag UI-toggleable, so this now links
+ *  straight to the guided setup instead. */
+const OrchDisabledEmptyState: Component = () => {
+  const navigate = useNavigate();
+  return (
+    <EmptyState
+      icon="🔌"
+      title="Agent-fleet orchestration is disabled"
+      description="Turn it on to see agent pods, health, and estimated burn here — Tack will poll a control plane you register and can dispatch work to it."
+      action={
+        <Button onClick={() => navigate('/settings?section=orchestration')}>
+          Set up orchestration
+        </Button>
+      }
+    />
+  );
+};
 
 const ErrorState: Component<{ onRetry: () => void }> = (props) => (
   <EmptyState

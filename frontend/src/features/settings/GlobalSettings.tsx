@@ -3,15 +3,18 @@ import {
   createSignal,
   createResource,
   createEffect,
+  onMount,
   For,
   Show,
 } from 'solid-js';
+import { useSearchParams } from '@solidjs/router';
 import { FiUploadCloud, FiDownloadCloud, FiRefreshCw, FiCheckCircle } from 'solid-icons/fi';
 import { api } from '../../shared/api';
 import type { CloudBackupConfigInput } from '../../shared/api/data';
 import { toast } from '../../shared/ui/toast';
 import { Button, Field, Badge } from '../../shared/ui';
 import { getStoredTheme, setTheme, type Theme } from '../../shared/state/theme';
+import OrchestrationSettingsSection from './orchestrationSettings/OrchestrationSettingsSection';
 
 const THEMES: { value: Theme; label: string }[] = [
   { value: 'light', label: '☀️ Light' },
@@ -37,6 +40,18 @@ function formatBytes(n: number): string {
 }
 
 const GlobalSettings: Component = () => {
+  const [searchParams] = useSearchParams();
+  // Deep-link support for empty-state "Set up orchestration" links elsewhere
+  // in the app (Fleet/Approvals/Economics/Provisioning), e.g.
+  // `/settings?section=orchestration` — scrolls the Orchestration section
+  // into view once it's mounted, the same `?tab=`-style deep-linking
+  // `ProjectSettings.tsx` already uses for its own tabs.
+  onMount(() => {
+    if (searchParams.section === 'orchestration') {
+      document.getElementById('orchestration-settings')?.scrollIntoView({ block: 'start' });
+    }
+  });
+
   const [theme, setThemeSig] = createSignal<Theme>(getStoredTheme());
   const [backingUp, setBackingUp] = createSignal(false);
   const [restoring, setRestoring] = createSignal(false);
@@ -230,6 +245,9 @@ const GlobalSettings: Component = () => {
           </For>
         </div>
       </section>
+
+      {/* Orchestration */}
+      <OrchestrationSettingsSection />
 
       {/* Data & Backup (local) */}
       <section class="space-y-3 border-t pt-6" style={{ 'border-color': 'var(--color-border-light)' }}>

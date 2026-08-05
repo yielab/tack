@@ -1,4 +1,5 @@
 import { type Component, createResource, createSignal, Show } from 'solid-js';
+import { useNavigate } from '@solidjs/router';
 import { Badge, Button, EmptyState, Skeleton } from '../../shared/ui';
 import { toast } from '../../shared/ui/toast';
 import { economicsApi, isOrchDisabled, type EconomicsSummaryResponse } from './api';
@@ -22,13 +23,23 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-const OrchDisabledEmptyState: Component = () => (
-  <EmptyState
-    icon="🔌"
-    title="Agent-fleet orchestration is disabled"
-    description="This server has not enabled the Fleet feature. Set TACK_ORCH_ENABLE=true and restart the server to see unit economics here."
-  />
-);
+/** Links to the guided setup (card E2, Phase 39) instead of naming an
+ *  environment variable to set by hand. */
+const OrchDisabledEmptyState: Component = () => {
+  const navigate = useNavigate();
+  return (
+    <EmptyState
+      icon="🔌"
+      title="Agent-fleet orchestration is disabled"
+      description="Turn it on to compare agent vs. human token cost, lead time, and rework across completed work."
+      action={
+        <Button onClick={() => navigate('/settings?section=orchestration')}>
+          Set up orchestration
+        </Button>
+      }
+    />
+  );
+};
 
 const ErrorState: Component<{ onRetry: () => void }> = (props) => (
   <EmptyState

@@ -1,4 +1,5 @@
 import { type Component, createResource, createSignal, For, Show } from 'solid-js';
+import { useNavigate } from '@solidjs/router';
 import { Button, Field, Select, EmptyState } from '../../../shared/ui';
 import { toast } from '../../../shared/ui/toast';
 import { orchestrationApi } from './api';
@@ -21,6 +22,7 @@ export interface LinkFormProps {
  * UI's territory, not this card's.
  */
 const LinkForm: Component<LinkFormProps> = (props) => {
+  const navigate = useNavigate();
   const [planes] = createResource(() => orchestrationApi.listControlPlanes());
   const [controlPlaneId, setControlPlaneId] = createSignal('');
   const [remoteProject, setRemoteProject] = createSignal('');
@@ -54,7 +56,12 @@ const LinkForm: Component<LinkFormProps> = (props) => {
           <EmptyState
             icon="🛰️"
             title="No control planes registered"
-            description="Register a control plane (e.g. a running docket instance) first — via POST /api/control-planes — then come back here to link this project to it."
+            description="Register a control plane (e.g. a running docket instance) first, then come back here to link this project to it."
+            action={
+              <Button onClick={() => navigate('/settings?section=orchestration')}>
+                Register a control plane
+              </Button>
+            }
           />
         </Show>
       }

@@ -80,7 +80,7 @@
 //    attempt wins" — confirmed against `list_latest_orch_task_status_for_project`
 //    in `crates/tack-db/src/repo/orch.rs` (card B6).
 
-import { request, ApiError } from '../api/client';
+import { request, isOrchestrationDisabledError } from '../api/client';
 
 /** One `orch_events` row, scoped to the attempt/run it belongs to. Always an
  *  empty array pre-B2 (trace ingestion) — see the header comment. `payload`
@@ -200,16 +200,14 @@ export interface AgentBadgeResponse {
 }
 
 /** True when the request failed because orchestration is disabled
- *  server-side (`TACK_ORCH_ENABLE` unset ⇒ every orch route 404s, TODO.md §0
- *  rule 8) — the default for every existing install. Callers treat this the
- *  same as "no agent activity" (fail open to a quiet UI, not an error
- *  state) since it's the overwhelmingly common case, not a bug. Mirrors
- *  `frontend/src/features/fleet/api.ts#isOrchDisabled` exactly; duplicated
- *  rather than imported because `features/fleet/**` and this module are in
- *  different ownership and `architecture.test.ts` forbids feature-to-feature
- *  imports regardless. */
+ *  server-side — the default for every existing install. Callers treat this
+ *  the same as "no agent activity" (fail open to a quiet UI, not an error
+ *  state) since it's the overwhelmingly common case, not a bug. Delegates to
+ *  `shared/api/client.ts#isOrchestrationDisabledError` (TODO.md card E2),
+ *  the one canonical place this check lives; kept as its own export so every
+ *  existing caller keeps working unchanged. */
 export function isOrchDisabled(err: unknown): boolean {
-  return err instanceof ApiError && err.status === 404;
+  return isOrchestrationDisabledError(err);
 }
 
 export const agentActivityApi = {

@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { request, requestBlob, requestForm, ApiError, tokenStore } from './client';
+import {
+  request,
+  requestBlob,
+  requestForm,
+  ApiError,
+  tokenStore,
+  isOrchestrationDisabledError,
+  ORCHESTRATION_DISABLED_CODE,
+} from './client';
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
@@ -87,6 +95,33 @@ describe('shared/api/client', () => {
     expect(err.message).toBe('remote is ahead');
   });
 
+  it('extracts an optional error.code from the structured envelope', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: { status: 409, message: 'Orchestration is disabled', code: 'orchestration_disabled' },
+        }),
+        { status: 409, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+
+    const err = (await request('/fleet').catch((e) => e)) as ApiError;
+    expect(err.status).toBe(409);
+    expect(err.code).toBe('orchestration_disabled');
+  });
+
+  it('leaves code undefined when the envelope has none', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: { status: 404, message: 'not found' } }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    const err = (await request('/items/1').catch((e) => e)) as ApiError;
+    expect(err.code).toBeUndefined();
+  });
+
   it('attaches a bearer token from the token store when present', async () => {
     vi.spyOn(tokenStore, 'get').mockReturnValue('secret');
     const fetchMock = vi
@@ -134,5 +169,31 @@ describe('shared/api/client', () => {
 
     const headers = fetchMock.mock.calls[0][1]!.headers as Headers;
     expect(headers.has('Content-Type')).toBe(false);
+  });
+});
+
+describe('isOrchestrationDisabledError', () => {
+  it('is true for the documented code, regardless of status (409 or 403)', () => {
+    expect(isOrchestrationDisabledError(new ApiError(409, 'x', ORCHESTRATION_DISABLED_CODE))).toBe(true);
+    expect(isOrchestrationDisabledError(new ApiError(403, 'x', ORCHESTRATION_DISABLED_CODE))).toBe(true);
+  });
+
+  it('is true for a legacy bare 404 with no code (pre-migration fallback)', () => {
+    expect(isOrchestrationDisabledError(new ApiError(404, 'not found'))).toBe(true);
+  });
+
+  it('is false for a 404 that carries a different, unrelated code', () => {
+    expect(isOrchestrationDisabledError(new ApiError(404, 'x', 'item_not_found'))).toBe(false);
+  });
+
+  it('is false for a 409/403 with no code — those keep their ordinary meaning elsewhere', () => {
+    expect(isOrchestrationDisabledError(new ApiError(409, 'already decided'))).toBe(false);
+    expect(isOrchestrationDisabledError(new ApiError(403, 'approval token rejected'))).toBe(false);
+  });
+
+  it('is false for any other status, a plain Error, or a non-Error value', () => {
+    expect(isOrchestrationDisabledError(new ApiError(500, 'boom'))).toBe(false);
+    expect(isOrchestrationDisabledError(new Error('network'))).toBe(false);
+    expect(isOrchestrationDisabledError(undefined)).toBe(false);
   });
 });

@@ -110,9 +110,20 @@ export async function createSprintWithItem(
   request: APIRequestContext,
   projectId: string,
   sprintName = 'E2E Sprint',
-): Promise<{ sprintId: string; itemId: string }> {
+): Promise<{ sprintId: string; itemId: string; sprintName: string }> {
+  // The caller's project is shared (`getOrCreateProject` reuses one per spec
+  // file) and `e2e.db` survives between runs, so a fixed name accumulates a
+  // fresh identically-named sprint on every run. Card F1 gave each button an
+  // accessible name including its sprint's name, which disambiguates two
+  // *differently* named sprints — but not six sprints that all share one name,
+  // which is what repeated runs actually produce. Suffixing here makes the name
+  // unique per invocation, so the accessible name is unique too and a
+  // `getByRole` locator resolves to exactly one button.
+  const uniqueName = `${sprintName} ${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 7)}`;
   const sprintRes = await request.post(`${API}/projects/${projectId}/sprints`, {
-    data: { name: sprintName },
+    data: { name: uniqueName },
   });
   expect(sprintRes.ok(), `create sprint failed: ${sprintRes.status()}`).toBeTruthy();
   const sprint = await sprintRes.json();
@@ -134,5 +145,5 @@ export async function createSprintWithItem(
   });
   expect(patchRes.ok(), `assign item to sprint failed: ${patchRes.status()}`).toBeTruthy();
 
-  return { sprintId: sprint.id, itemId };
+  return { sprintId: sprint.id, itemId, sprintName: uniqueName };
 }

@@ -124,8 +124,33 @@ Every agent, without exception:
 7. **Status changes go through the workflow engine**, never raw SQL — WIP limits,
    explicit transitions, `started_at`/`completed_at`, and parent auto-propagation must
    all still fire.
-8. **Everything is off by default.** `TACK_ORCH_ENABLE` unset ⇒ no reconciler task
-   spawned, no new route accepting traffic. Assert this in a test.
+8. **Orchestration is off by default, toggled from the UI, not hidden from it.**
+   ~~`TACK_ORCH_ENABLE` unset ⇒ no reconciler task spawned, no new route accepting
+   traffic.~~ **Rewritten 2026-08-05 (card E1) — every card before this one was
+   written against the old rule; re-read this before touching the gate.** The
+   enable flag now lives in `app_meta` (`handlers/settings.rs`, key
+   `orch_config`), editable at runtime via `GET`/`PUT
+   /api/settings/orchestration` — that route is registered **outside** the
+   orchestration gate and stays reachable even while the feature is off, the
+   same way `/api/settings/backup` always has (`handlers::settings::
+   effective_backup_config` is the precedent this follows exactly).
+   `TACK_ORCH_ENABLE` still exists, but only as the **deployment default**
+   consulted when no UI value has ever been stored
+   (`handlers::settings::effective_orch_enabled`); a stored value always wins.
+   Two behavioral changes fall out of this:
+   - **The gate no longer 404s.** With orchestration disabled, every route
+     under `orch_routes` (`router.rs`) returns `409 Conflict` with
+     `error.code: "orchestration_disabled"` and a message naming
+     `PUT /api/settings/orchestration` — a bare 404 made "disabled"
+     indistinguishable from "route doesn't exist," which hid the feature from
+     its own operator. Assert the 409 + code in a test, not a 404.
+   - **Toggling takes effect without a restart.** `AppState::orch_runtime`
+     (`orch_runtime.rs`) is a start/stop handle the settings `PUT` calls
+     directly — see that module's doc comment for the cooperative-cancellation
+     design (a `tokio::sync::watch` stop signal raced against each reconciler
+     task's poll-interval sleep). Assert this in a test too: flip the setting
+     on and off against a real (or fake) `ControlPlaneStore` and check the
+     task actually starts/stops, not just that the config value changed.
 9. **Design system:** frontend cards use `--color-*` tokens only (no raw hex), pass
    axe, and work in all six palette×mode combinations. See
    `docs/book/src/developer/frontend.md`.
@@ -6945,3 +6970,384 @@ call. `frontend/src/features/provisioning/api.ts` is the one file to edit
 if the wire shape ever changes. Nothing here blocks D5 (already done) or
 any future card — provisioning is a leaf feature, same as D1's approvals
 inbox and D2's budget panels were.
+
+### E1 — 2026-08-05
+
+**The design mistake this card fixes:** orchestration was gated entirely
+behind `TACK_ORCH_ENABLE` — invisible, un-toggleable without a restart, and
+404ing every route while off so the UI couldn't even tell "disabled" from
+"old server that never had this." §0 rule 8 is rewritten above; this note
+covers the implementation, and leads with the part that was actually hard —
+runtime start/stop of the reconciler without a restart.
+
+**Runtime start/stop design (read this before touching `orch_runtime.rs` or
+`reconciler.rs`'s `spawn_one`).** The reconciler already looped fetch →
+decide → persist → sleep, one `tokio` task per registered control plane
+(`reconciler::spawn_one`). Stopping it cleanly needed a signal each task
+could observe at a safe point — never mid-HTTP-call to docket, never while a
+SQLite write is open (§0 rule 5; unaffected either way, since persistence
+already happens strictly after the fetch phase and before the sleep). I used
+a `tokio::sync::watch::channel(bool)` rather than adding `tokio-util` for
+`CancellationToken`: `watch` is already part of `tokio`'s `full` feature
+(already a workspace dep), and a single boolean flag with N cloned receivers
+is all this needs. `stop()` flips it to `true`; every task holds a cloned
+`Receiver` and races it against its poll-interval sleep with `tokio::
+select!`, and separately checks it at the top of the next loop iteration
+before starting a new fetch — both are the same "between ticks" safe point
+the module's phase-separation doc already relied on, so I didn't have to
+invent a new one. A task mid-fetch when `stop()` is called finishes that one
+tick and exits at its very next safe point, bounded by however long the
+in-flight call to docket takes, never longer.
+
+To keep this from touching (or risking) any of the 12 existing call sites of
+`spawn_reconcilers`/`spawn_one` across `tack-orch` and `tack-api`'s test
+suites, I left both exactly as they were (`stop_rx: None` internally — the
+original uncancellable infinite loop, byte-for-byte) and added a parallel
+`spawn_reconcilers_cancellable(store, config, stop_rx)` that only
+`orch_runtime.rs` calls. Zero pre-existing tests needed to change for this
+part.
+
+`AppState::orch_runtime: OrchRuntime` (`crates/tack-api/src/orch_runtime.rs`)
+is the toggle handle: `start()` is a no-op if a generation is already
+running (never spawns a duplicate set — `PUT {"enabled": true}` sent twice,
+or an env-default `true` at boot followed by a UI `PUT`, must not double the
+task count); `stop()` takes the current generation out of the shared
+`tokio::sync::Mutex` before signalling it, so a `start()` racing a `stop()`
+can never observe half-torn-down state. `stop()` deliberately does not
+await the tasks' actual exit — a toggle-off HTTP request must not hang on
+whatever docket's response latency happens to be for an in-flight poll.
+
+**How I verified a toggle actually takes effect, not just that a config
+value changed.** Three layers, cheapest/most-isolated first:
+1. `tack-orch/src/reconciler.rs`'s own test module (reusing its existing
+   `FakeStore`/`FakeControlPlane`): `cancellable_spawn_stops_a_task_after_
+   stop_signal_without_aborting_it` spawns with a 60s poll interval (so the
+   test would time out, not pass by accident, if cancellation didn't work),
+   sends the stop signal after confirming the task is alive
+   (`!handle.is_finished()`), then asserts the `JoinHandle` completes within
+   2s via `tokio::time::timeout` — proving the *reconciler's own*
+   `select!`/top-of-loop check works, independent of anything in `tack-api`.
+   Plus a pre-signalled-before-spawn case and a 3-cycle repeated-toggle case
+   asserting exactly one task per cycle.
+2. `tack-api/src/orch_runtime.rs`'s own test module: a small in-file
+   `ControlPlaneStore`/`ControlPlane` fake (couldn't reuse `tack-orch`'s
+   fakes — they're private to that crate's test module) drives `OrchRuntime`
+   directly — `start` → `live_task_count() == 1` → `stop` → poll down to `0`;
+   idempotent double-`start`; a no-op `stop` with nothing running; three
+   repeated toggle cycles.
+3. `tack-api/tests/orch_settings_test.rs` — the one that actually proves the
+   HTTP contract, not just the Rust API: registers a real `control_planes`
+   row (unreachable `base_url`, `http://127.0.0.1:1` — connection refused is
+   instant, so the test isn't waiting on network timeouts) directly via the
+   repo, then drives the toggle **only through `PUT /api/settings/
+   orchestration`**, asserting `reconciler_running` in the `GET`/`PUT`
+   response — `put_true_starts_the_reconciler_for_an_already_registered_
+   plane`, `put_false_stops_the_reconciler_without_a_restart` (polls
+   `reconciler_running` down to `false` with a bounded 3s timeout, since stop
+   is cooperative, not synchronous with the `PUT` response — see that
+   helper's own comment on why), `repeated_toggles_never_leave_more_than_
+   one_task_per_plane` (3 full on/off cycles), and `put_true_while_already_
+   running_does_not_spawn_a_duplicate`. All nine tests in that file pass;
+   none use `.abort()` or any other escape hatch — every stop is the
+   production code path exiting on its own.
+
+**The 409, and why not 403.** `require_orch_enabled`
+(`handlers/orch.rs`) now returns `409 Conflict` with `error.code:
+"orchestration_disabled"` instead of `404`. I chose 409 over 403: the
+caller *is* authorized (the Bearer-token gate, layered on top in
+`router.rs`, is unchanged and unaffected) — what's wrong is the *server's
+current state* conflicting with the request, the same category `ApiError::
+Conflict` already covers elsewhere in this codebase (e.g. "project not
+linked to a control plane"). 403 would read as a permissions problem, which
+this isn't. The code lives on a new `ApiError::FeatureDisabled { message,
+code }` variant rather than a one-off response builder, so any *future*
+switched-off-feature (there's exactly one today) gets the same treatment for
+free; `error.rs`'s `IntoResponse` only adds the `code` key to the JSON body
+when that variant is present, so every other endpoint's envelope is
+byte-for-byte unchanged. `ErrorBody` in `openapi.rs` gained a matching
+optional `code` field for the generated docs.
+
+**Settings endpoint, mirroring Cloud Backup exactly.** `GET`/`PUT
+/api/settings/orchestration` (`handlers/settings.rs`) follow `handlers/
+settings.rs`'s existing Cloud Backup section field-for-field: an
+`app_meta`-stored value (key `orch_config`, `{"enabled": Option<bool>}` —
+`Option`, not a bare `bool`, so "never touched by the UI" and "explicitly
+set to `false`" are distinguishable, which a `#[serde(default)]` bool
+can't do) overrides the env default. The one place this setting's handler
+differs from Cloud Backup's: after persisting, `put_orch_settings` calls
+`state.orch_runtime.start`/`.stop` to make the running state agree
+immediately — Cloud Backup has no equivalent background task to reconcile.
+Both routes are registered in `router.rs` **outside** `orch_routes`'
+`require_orch_enabled` layer, right next to `/settings/backup` — that's the
+entire point: a UI on a server where orchestration has never been turned on
+must still be able to `GET` this and offer to turn it on.
+
+Response shape matches the contract E2 was given verbatim (I did not rename
+any field): `enabled`, `source` (`"database"` | `"env_default"`),
+`reconciler_running` (`orch_runtime.live_task_count() > 0` — `0` both when
+disabled *and* when enabled with zero registered control planes; it reports
+whether a task is actually polling something, not whether the feature
+switch is on), `control_plane_count` (`repo.list_control_planes().len()`),
+`linked_project_count` (new `repo::orch::count_orch_links` — a plain
+`SELECT COUNT(*) FROM orch_links`, no existing method already did this),
+`poll_secs`, `approval_token_set` (never the token value — same discipline
+`AppConfig::orch_approval_token`'s own doc comment already established),
+`env_default`.
+
+**Boot path.** `server.rs` now computes `effective_orch_enabled(&state)`
+(DB-then-env, the same precedence everywhere else) instead of reading
+`config.orch_enable` directly, and calls `state.orch_runtime.start(...)`
+instead of `reconciler::spawn_reconcilers(true, ...)` inline. This is
+*only* what makes the initial state agree with whatever was last saved (or
+the env default, on a first-ever boot) — the actual runtime toggle is
+`PUT /api/settings/orchestration`, exercised independently of a restart.
+
+**Tests changed and why each was right to change.** Nine pre-existing tests
+asserted `404` for the disabled-orchestration case; all nine now assert
+`409` + `error.code == "orchestration_disabled"` (renamed to match:
+`every_orch_route_404s_when_disabled` →
+`every_orch_route_409s_with_a_stable_code_when_disabled` in `orch_test.rs`,
+plus one each in `provisioning_test.rs`, `orch_approvals_test.rs` (two —
+`list_approvals`/`decide_approval`), `economics_test.rs`,
+`orch_agent_activity_test.rs`, `orch_budget_policy_test.rs`,
+`orch_dispatch_test.rs`, `sprint_dispatch_test.rs`). Each was asserting the
+literal old gate behavior (`StatusCode::NOT_FOUND` when
+`TACK_ORCH_ENABLE`/`orch_enable` was unset) as the acceptance criterion for
+"is orchestration off" — updating the status code and adding the `code`
+assertion is the correctness fix this card exists to make, not collateral
+damage. I left every *other* `NOT_FOUND` assertion in these same files
+untouched (e.g. `get_unknown_control_plane_is_404`,
+`unknown_control_plane_404s_before_creating_any_project`,
+`decide_approval_404s_for_a_token_unknown_to_tacks_own_mirror_before_
+calling_docket`) — those all run against `orch_config()`/an approval-token
+config with orchestration already enabled and assert a genuine "that
+specific resource doesn't exist," which this card doesn't touch.
+
+**`AppState` gained a field.** `orch_runtime: OrchRuntime` is now part of
+`AppState`, which meant updating every struct-literal construction site —
+16 of them (`server.rs`, `orch_store.rs`'s `as_app_state` reconstruction,
+`tests/common/mod.rs` ×2, and 11 other test files that build `AppState`
+locally rather than through `common::test_app`). `orch_store.rs`'s
+`as_app_state()` — used only to reassemble an `AppState` for `dispatcher::
+apply_mapped_status` when a mirrored run reaches a terminal state — gets a
+**fresh, inert** `OrchRuntime::new()`, documented as such: that code path
+never starts or stops the reconciler, so wiring the *real* shared handle
+through `with_app_context` would be plumbing with no caller that needs it.
+
+**Files touched (Rust tree only — I own `tack-api`/`tack-orch`/`tack-db`,
+touched zero frontend files including `schema.gen.ts`, which the OpenAPI
+regen did not rewrite since E2's own concurrent frontend work doesn't
+consume it during this run):**
+`crates/tack-api/src/error.rs` (new `ApiError::FeatureDisabled` variant),
+`crates/tack-api/src/openapi.rs` (`code` field on `ErrorBody`; new paths +
+`UpdateOrchSettings` schema), `crates/tack-api/src/handlers/settings.rs`
+(new orchestration-settings section), `crates/tack-api/src/handlers/orch.rs`
+(`require_orch_enabled` rewritten), `crates/tack-api/src/router.rs`
+(`AppState.orch_runtime` field; new route registration), `crates/tack-api/
+src/server.rs` (boot path), `crates/tack-api/src/orch_store.rs` (new
+`build_control_plane_store` helper; `as_app_state` field), `crates/tack-api/
+src/orch_runtime.rs` (new), `crates/tack-api/src/lib.rs` (module
+registration), `crates/tack-db/src/repo/orch.rs` (new `count_orch_links`),
+`crates/tack-orch/src/reconciler.rs` (new `spawn_reconcilers_cancellable` +
+`wait_until_stopped`, existing `spawn_one`/`spawn_reconcilers` behavior
+preserved), `crates/tack-api/tests/orch_settings_test.rs` (new, 9 tests),
+and the 13 test files listed above for the `AppState` field / 404→409
+updates. `docs/openapi.json` regenerated
+(`UPDATE_OPENAPI=1 cargo test -p tack-api --test openapi_contract`).
+
+**Verification.** `cargo test --workspace`: 598 passed, 0 failed (baseline
+was 581; net +17 — 3 in `reconciler.rs`, 4 in `orch_runtime.rs`, 9 in the
+new `orch_settings_test.rs`, 1 in `orch_test.rs`
+(`settings_orchestration_is_reachable_when_disabled`); the nine 404→409
+renames are not net-new tests). `cargo clippy --workspace --all-targets --
+-D warnings`: clean. `cargo fmt --all -- --check`: clean. `UPDATE_OPENAPI=1
+cargo test -p tack-api --test openapi_contract`: regenerated, drift gate
+green — a 70-line diff in `docs/openapi.json`, exactly the two new paths,
+the `UpdateOrchSettings` schema, and the optional `code` field on
+`ErrorBody`, nothing else moved.
+
+**For E2 (frontend, concurrent):** the contract is live at `/api/settings/
+orchestration` exactly as specified — I did not rename any field. Your
+`frontend/src/features/settings/orchestration/api.ts` (already present in
+the working tree as of this note, so we're aligned) is the only file that
+should need to know the shape. One thing worth double-checking on your side:
+`reconciler_running` can be `true` while `control_plane_count` is `0` is
+*not* a state you'll see (a task only exists per registered plane), but
+`enabled: true` with `reconciler_running: false` **is** normal and expected
+whenever `control_plane_count` is `0` — don't treat that combination as a
+bug to surface loudly.
+
+### E2 — 2026-08-05
+
+**The setup flow, in the order an operator actually hits it.** Settings →
+Orchestration (a new section on the existing app-level `/settings` page,
+right under Appearance — not a new route) opens with a permanent, unmissable
+paragraph naming the real consequence of the toggle below it ("Tack begins
+**polling** the control planes you register... agents can be **dispatched**
+to work its items — which can spend money") before any control that flips
+it — the operator's own framing ("not a bare unlabelled switch") taken
+literally. Two labeled buttons, On/Off (`aria-pressed`, no color-only
+signal), not a bare switch glyph. Below that: three numbered steps, each
+with a status pip (locked/active/done) —
+
+1. **Turn orchestration on** — always unlocked; `PUT /api/settings/
+   orchestration`, then a live status grid (reconciler running, control
+   plane count, linked project count, poll interval, approval-token-set)
+   refetched from the same `GET` E1's card returns.
+2. **Register a control plane** — `ControlPlanesManager.tsx`, genuinely new
+   UI (Fleet's own pre-E2 empty state literally told operators to `curl
+   POST /api/control-planes`; A4 built the endpoint in Wave 1, D2's
+   `LinkForm.tsx` only ever *read* the list). Visually locked until step 1
+   is on, not just suggested in order — `/control-planes` is still gated
+   behind the same `TACK_ORCH_ENABLE`-or-database-override check every
+   other orchestration route uses, so rendering it earlier would just
+   produce a wall of `orchestration_disabled` errors.
+3. **Link a project** — `ProjectLinker.tsx`, a project picker that, once a
+   project is chosen, renders card D2's `LinkForm.tsx` unmodified. This was
+   the operator's explicit instruction ("reuse it rather than building a
+   second") and it worked cleanly: `LinkForm` already took a bare
+   `projectId` prop and handled its own "no control planes yet" state, so
+   the only genuinely new piece was the project-selection step upstream of
+   it. `features/settings/orchestration/**` (D2's directory) and my new
+   `features/settings/orchestrationSettings/**` are both under the single
+   `features/settings/**` `architecture.test.ts` feature, so this is a
+   same-feature import, not a cross-feature reach.
+
+**No synchronous "test connection" endpoint exists — I checked before
+building one.** docket's HTTP surface has nothing that lets Tack probe a
+URL+token pair on demand (same absence card D2's handoff already documented
+for pause/policy). So "test connection" here is honest rather than a faked
+instant checkmark: right after registering a plane, its row polls `GET
+/control-planes/{id}` every few seconds (capped at `poll_secs`, 5 attempts)
+until `health` moves off `"unknown"` — a real background result, not a
+synchronous one — plus a manual "Check now" per row. Both are new frontend
+calls against A4's existing, unchanged endpoint.
+
+**What I decided about nav visibility when the feature is off.** Fleet,
+Approvals, and Economics were already permanent sidebar links before this
+card (not conditionally hidden) — so "vanish" in the card brief turned out
+to describe the *dead end* each one led to (raw `TACK_ORCH_ENABLE`-and-
+restart instructions with no in-app next step), not literal disappearance
+from the nav. I left the links live and rewrote every one of their disabled
+empty states (`FleetPage.tsx`, `ApprovalsPage.tsx`, `EconomicsPage.tsx`,
+`ProvisioningWizard.tsx`, and D2's per-project `OrchestrationPanel.tsx` /
+`LinkForm.tsx`) to name the real consequence of turning the feature on and
+link straight to `/settings?section=orchestration` (`GlobalSettings.tsx`
+scrolls the section into view on mount when that query param is present —
+the same `?tab=`-deep-link idiom `ProjectSettings.tsx` already uses, just
+via `useSearchParams` + `scrollIntoView` since the app-level page isn't
+tabbed). On top of that I added one small, deliberately singular nav
+hint: `Sidebar.tsx` now fetches `GET /api/settings/orchestration` once
+(the sidebar isn't remounted on navigation, so this is one request for the
+whole session, not one per page) and shows a neutral "Off" badge next to
+**Fleet only** — not Approvals/Economics/Provision too — since Fleet reads
+as the umbrella term for the capability and three badges felt like clutter
+for one underlying signal. Judgment call; reasonable to revisit.
+
+**The wire contract held exactly as frozen — verified against the real
+backend, not just my own mocks.** E1's card landed in the same session
+(`crates/tack-api/src/handlers/settings.rs`), so I built a debug binary and
+curled it directly rather than trusting the contract on paper: `GET/PUT
+/api/settings/orchestration` returns exactly the eight documented fields,
+disabled routes answer `409` with `{"error":{"code":
+"orchestration_disabled", ...}}` (never `403` in practice, though the
+frontend's classifier accepts either per the original contract text), and
+`POST /api/control-planes` returns `token_set` and never the token — all
+matching `features/settings/orchestrationSettings/api.ts`'s types field for
+field with no reconciliation needed. Killed the debug server afterward;
+never touched the user's own running `./target/release/tack serve`
+instance.
+
+**The `code` field meant fixing the actual root cause, not just the two
+routes in my contract.** Every one of the seven pre-existing
+`isOrchDisabled` copies across the frontend (`features/fleet/api.ts`,
+`features/approvals/api.ts`, `features/economics/api.ts`,
+`features/provisioning/api.ts`, `features/settings/orchestration/api.ts`,
+`shared/agentActivity/api.ts`, and `shared/dispatch/api.ts`'s re-export)
+only ever checked `err.status === 404`. E1's routes now answer `409` with a
+`code`, so all seven would have silently stopped detecting "disabled" the
+moment E1's change shipped — a correctness bug, not a style one. Fixed at
+the root: `ApiError` (`shared/api/client.ts`) gained an optional `code`
+parsed from `error.code` in the envelope, plus one canonical
+`isOrchestrationDisabledError()` — true when `code ===
+"orchestration_disabled"` (any status), **or** a bare 404 with no code at
+all (kept only as a legacy fallback, not because 404 means "disabled" going
+forward). Every one of the seven `isOrchDisabled` exports now delegates to
+it in one line, keeping every existing call site (`FleetPage.tsx`,
+`ApprovalsPage.tsx`, `DispatchSprintModal.tsx`, ...) unchanged. Verified
+against `approvalsApi.decide()`'s own 403 ("token rejected") and 409
+("already decided") — neither carries the code, so neither is
+misclassified; added a test asserting exactly that
+(`features/approvals/api.test.ts`).
+
+**Rule 9 / a11y.** No raw hex anywhere new — `lint:tokens` stayed 0/0. Two
+new live-executed a11y scans in `e2e/a11y.spec.ts` ("settings orchestration
+section (disabled, env default)" against the real dev server — this route
+is reachable regardless of the flag, so no mocking needed for that one; and
+"(enabled, populated)", mocking `GET /api/settings/orchestration` +
+`/api/control-planes` + `/api/projects` the same way the pre-existing
+"fleet page (populated)" scan intercepts `GET /api/fleet`), plus every
+pre-existing orchestration-related a11y scan (fleet/approvals/economics/
+provisioning disabled states, all three project-settings-orchestration-tab
+scans) re-run and confirmed still green after the copy changes — 0
+violations on all of them, run against real Chromium. The two-button On/Off
+control uses `role="group"` + `aria-pressed` rather than a color-only
+switch. Re-confirmed the same pre-existing duplicate-"Run sprint"-button
+failure D1's and D2's handoffs already flagged
+(`e2e/a11y.spec.ts:403`/`:462`) while running the full a11y suite to check
+for regressions — untouched by this card, still someone else's pickup.
+
+**What I deliberately did not build.** No confirmation modal on enabling
+(the permanent explanatory paragraph is the friction, not a one-time dialog
+an operator dismisses once and never reads again); no pause control
+anywhere (D2's card already established why — no HTTP surface exists); no
+second link form (reused D2's verbatim); no attempt to make `/control-
+planes`/`/projects/{id}/orch-link` reachable before step 1 — they're
+correctly still gated server-side and step 2/3 are visually locked to match,
+not just cosmetically deferred.
+
+**Testing.** 38 new Vitest tests (`shared/api/client.test.ts` +8;
+`features/settings/orchestrationSettings/{api,format,
+ControlPlanesManager,ProjectLinker,OrchestrationSettingsSection}.test.{ts,tsx}`
++30, new files) plus targeted updates to every pre-existing
+`isOrchDisabled`/`isOrchestrationDisabledError` assertion across
+`features/{fleet,approvals,economics,provisioning}/api.test.ts`,
+`shared/agentActivity/api.test.ts`, and `features/settings/orchestration/
+api.test.ts` (extended, not replaced — the original bare-404 case still
+passes since it's the documented legacy fallback), plus router-context
+fixes to `GlobalSettings.test.tsx` and `OrchestrationPanel.test.tsx` (both
+now use `useNavigate`, so both now mount inside a `MemoryRouter` — a test
+infrastructure fix, not a behavior change) and copy-assertion updates in
+`FleetPage.test.tsx`/`EconomicsPage.test.tsx` (no longer assert the literal
+string `TACK_ORCH_ENABLE`, since the empty state no longer names it).
+
+**Verification.** `npm run type-check`: clean. `npm run lint:tokens`: 0/0,
+unchanged. `npx vitest run`: 447 total, 444 passed, the same 3 pre-existing
+`requestBlob`/`createObjectURL` failures named in this card's own baseline
+(`client.test.ts`, `GlobalSettings.test.tsx`, `panels/panels.test.tsx`) —
+confirmed unrelated to this card (none of the three touch orchestration)
+and left exactly as instructed. Net +38 tests over the 409-total baseline
+(406 passing + 3 known failures). `npm run build`: clean, `GlobalSettings`
+chunk grew to 26.56 kB (gzip 8.16 kB) to include the new section — still one
+lazy-loaded chunk. `npx playwright test e2e/a11y.spec.ts --project=chromium`:
+27 of 29 passed; the 2 failures are the pre-existing sprint dry-run/dispatch
+duplicate-button bug above, not mine.
+
+**Files touched:** `frontend/src/shared/api/client.ts` (+`code` on
+`ApiError`, +`ORCHESTRATION_DISABLED_CODE`, +`isOrchestrationDisabledError`)
+and its test; `frontend/src/features/settings/orchestrationSettings/**`
+(new: `api.ts`, `format.ts`, `ControlPlanesManager.tsx`, `ProjectLinker.tsx`,
+`OrchestrationSettingsSection.tsx`, five `.test.ts(x)` files);
+`frontend/src/features/settings/GlobalSettings.tsx` (+section, +`?section=`
+deep-link) and its test; `frontend/src/features/settings/orchestration/
+{api.ts,OrchestrationPanel.tsx,LinkForm.tsx}` (disabled-copy + `isOrchDisabled`
+delegation) and `OrchestrationPanel.test.tsx`/`api.test.ts`;
+`frontend/src/features/{fleet,approvals,economics,provisioning}/api.ts`
+(`isOrchDisabled` delegation) and their four `.tsx` pages (disabled-copy +
+"Set up orchestration" action) and `FleetPage.test.tsx`/
+`EconomicsPage.test.tsx`; `frontend/src/shared/agentActivity/api.ts`
+(`isOrchDisabled` delegation) and its test; `frontend/src/shared/ui/
+Sidebar.tsx` (+"Off" hint on Fleet); `frontend/e2e/a11y.spec.ts` (+2 scans).
+Did not touch `schema.gen.ts` — it wasn't regenerated during this session's
+frontend work, matching E1's own note. Own `frontend/**` entirely per the
+card; touched zero files under `crates/**`.

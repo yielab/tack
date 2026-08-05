@@ -99,10 +99,23 @@ describe('approvalTokenStore', () => {
 });
 
 describe('error classifiers', () => {
-  it('isOrchDisabled is true only for a 404 ApiError', () => {
+  it('isOrchDisabled is true for the documented code (409/403) or a legacy bare 404', () => {
+    expect(isOrchDisabled(new ApiError(409, 'disabled', 'orchestration_disabled'))).toBe(true);
+    expect(isOrchDisabled(new ApiError(403, 'disabled', 'orchestration_disabled'))).toBe(true);
     expect(isOrchDisabled(new ApiError(404, 'not found'))).toBe(true);
     expect(isOrchDisabled(new ApiError(500, 'boom'))).toBe(false);
     expect(isOrchDisabled(new Error('plain'))).toBe(false);
+  });
+
+  it('isOrchDisabled never fires on the decide endpoint\'s own 403/409 — neither carries the code', () => {
+    // approvalsApi.decide()'s "token rejected" (403) and "already decided"
+    // (409) come from a different call site than approvalsApi.list()'s
+    // isOrchDisabled check, and neither response carries
+    // `orchestration_disabled` — so there is no ambiguity even though the
+    // raw status codes overlap with isApprovalTokenRejected/
+    // isApprovalAlreadyDecided below.
+    expect(isOrchDisabled(new ApiError(403, 'approval token rejected'))).toBe(false);
+    expect(isOrchDisabled(new ApiError(409, 'already decided'))).toBe(false);
   });
 
   it('isApprovalTokenRejected is true only for a 403 ApiError', () => {

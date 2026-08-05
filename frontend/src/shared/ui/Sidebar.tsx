@@ -1,10 +1,12 @@
 import { A, useParams, useLocation, useNavigate } from '@solidjs/router';
 import { createSignal, Show, For, createResource, type Component, type JSX } from 'solid-js';
 import { api } from '../api';
+import { request } from '../api/client';
 import { getLastLens } from '../state/lastView';
 import { openPalette } from '../state/commandPalette';
 import { currentPalette, setPalette, PALETTES, type Palette } from '../state/palette';
 import { isDarkActive, toggleTheme } from '../state/theme';
+import Badge from './Badge';
 import {
   BrandMark,
   IconSearch, IconBoard, IconList, IconTable, IconCalendar, IconTimeline, IconSprint,
@@ -13,6 +15,18 @@ import {
 } from './icons';
 import KbdHint from './KbdHint';
 import { useVocab } from '../vocab/useVocab';
+
+/** Just the one field the sidebar needs from `GET /api/settings/orchestration`
+ *  (TODO.md Phase 39, card E2) — reachable even when orchestration is OFF, by
+ *  contract. A dedicated minimal shape rather than importing
+ *  `features/settings/orchestrationSettings/api.ts`'s full `OrchestrationSettings`
+ *  type: `shared/ui/**` is infrastructure every feature depends on, so it
+ *  deliberately never reaches into a `features/**` file — the inverse of
+ *  `architecture.test.ts`'s features-can't-import-features rule, just not
+ *  one that rule enforces mechanically. */
+interface OrchestrationStatusForNav {
+  enabled: boolean;
+}
 
 type Glyph = Component<IconProps>;
 
@@ -89,6 +103,20 @@ const Sidebar: Component = () => {
   const currentProjectId = () => params.id as string | undefined;
   const [projects] = createResource(() => api.projects.list());
   const [health] = createResource(() => api.system.health());
+
+  // Fetched once for the lifetime of the app shell (Sidebar isn't remounted
+  // on navigation) — a single small request, not one per page. `undefined`
+  // (still loading, or the request itself failed) renders no badge at all
+  // rather than guessing; `false` is the only state that shows one, so a
+  // healthy/misbehaving-but-on server never gets a spurious "Off" label.
+  const [orchStatus] = createResource(async () => {
+    try {
+      return await request<OrchestrationStatusForNav>('/settings/orchestration');
+    } catch {
+      return undefined;
+    }
+  });
+  const orchOff = () => orchStatus()?.enabled === false;
 
   const handleProjectSwitch = (id: string) => {
     navigate(`/projects/${id}/${getLastLens()}`);
@@ -178,7 +206,17 @@ const Sidebar: Component = () => {
         <SectionLabel label="Workspace" />
         <NavButton href="/projects" end icon={IconProjects} label="All projects" onClick={close} />
         <NavButton href="/templates" icon={IconTemplates} label="Templates" onClick={close} />
-        <NavButton href="/fleet" icon={IconFleet} label="Fleet" onClick={close} />
+        <NavButton
+          href="/fleet"
+          icon={IconFleet}
+          label="Fleet"
+          onClick={close}
+          badge={
+            <Show when={orchOff()}>
+              <Badge tone="neutral" class="text-[10px]">Off</Badge>
+            </Show>
+          }
+        />
         <NavButton href="/approvals" icon={IconApprovals} label="Approvals" onClick={close} />
         <NavButton href="/economics" icon={IconEconomics} label="Economics" onClick={close} />
         <NavButton href="/provision" icon={IconProvision} label="Provision" onClick={close} />

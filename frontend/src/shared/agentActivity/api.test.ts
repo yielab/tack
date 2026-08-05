@@ -7,7 +7,12 @@ afterEach(() => {
 });
 
 describe('isOrchDisabled', () => {
-  it('is true for a 404 ApiError (TACK_ORCH_ENABLE unset — the default install state)', () => {
+  it('is true for the documented "orchestration_disabled" code, on a 409 or 403', () => {
+    expect(isOrchDisabled(new ApiError(409, 'disabled', 'orchestration_disabled'))).toBe(true);
+    expect(isOrchDisabled(new ApiError(403, 'disabled', 'orchestration_disabled'))).toBe(true);
+  });
+
+  it('is true for a legacy bare 404 with no code (TACK_ORCH_ENABLE unset — the default install state pre-migration)', () => {
     expect(isOrchDisabled(new ApiError(404, 'not found'))).toBe(true);
   });
 

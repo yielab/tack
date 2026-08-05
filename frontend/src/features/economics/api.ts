@@ -8,7 +8,7 @@
 // drifts, this is the one file to fix — no other file in `features/economics/**`
 // reads the wire response directly.
 
-import { request, requestBlob, ApiError } from '../../shared/api/client';
+import { request, requestBlob, isOrchestrationDisabledError } from '../../shared/api/client';
 
 // ─── Summary ────────────────────────────────────────────────────────────────
 
@@ -111,14 +111,14 @@ function itemsQueryString(query: EconomicsItemsQuery & { format?: 'json' | 'csv'
   return qs ? `?${qs}` : '';
 }
 
-/** True when the request failed because orchestration is disabled server-side
- *  (`TACK_ORCH_ENABLE` unset ⇒ every economics route 404s, TODO.md §0 rule 8) —
- *  distinct from a 200 with zero completed items (enabled, nothing to show yet) and
- *  from any other failure. Mirrors `features/fleet/api.ts#isOrchDisabled` exactly
- *  (duplicated rather than imported — this directory doesn't reach into
- *  `features/fleet/**`, the same boundary `shared/agentActivity/api.ts` documents). */
+/** True when the request failed because orchestration is disabled
+ *  server-side — distinct from a 200 with zero completed items (enabled,
+ *  nothing to show yet) and from any other failure. Delegates to
+ *  `shared/api/client.ts#isOrchestrationDisabledError` (TODO.md card E2);
+ *  kept as its own export so every existing caller (`EconomicsPage.tsx`)
+ *  keeps working unchanged. */
 export function isOrchDisabled(err: unknown): boolean {
-  return err instanceof ApiError && err.status === 404;
+  return isOrchestrationDisabledError(err);
 }
 
 export const economicsApi = {
