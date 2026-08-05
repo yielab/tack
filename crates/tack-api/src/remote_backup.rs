@@ -252,14 +252,37 @@ pub fn restore_conflicts(local_generation: u64, snapshot_generation: u64, force:
 /// `app_meta` keys that must never leave the machine inside a backup: the S3
 /// secret key is stored (JSON-encoded) under `backup_config`, and `install_id`
 /// is this install's identity — restoring it elsewhere would clone the identity.
+///
+/// This list only covers `app_meta`. **This is not the only thing
+/// [`scrub_snapshot_secrets`] scrubs** — any other table that grows a
+/// secret-bearing column (like `control_planes.token`, migration 019) needs its
+/// own dedicated block in that function, following the same
+/// null-before-VACUUM shape. Read that function's doc comment before adding a
+/// new secret column anywhere in the schema.
 const SENSITIVE_META_KEYS: &[&str] = &["backup_config", "install_id"];
 
 /// Strip machine-local secrets/identity from a freshly-created snapshot DB file
 /// so they never ship inside a downloadable or uploadable bundle.
 ///
+/// This is the single chokepoint for scrubbing secrets out of a backup
+/// snapshot — every table with a secret-bearing column must be handled here.
+/// Currently that's:
+/// - `app_meta`: the keys in [`SENSITIVE_META_KEYS`] (S3 backup secret key,
+///   install identity) are deleted outright.
+/// - `control_planes.token` (migration 019, the docket Bearer credential): set
+///   to `NULL` rather than deleting the row, so a restored backup still knows
+///   which control planes were registered — the operator just re-enters the
+///   token afterwards. See `crates/tack-db/src/repo/orch.rs` for why the token
+///   never leaves the DB layer in a read DTO either.
+///
 /// Because `install_id` is removed, a restored database has no identity row and
 /// [`install_id`] regenerates a fresh UUID on first use — restores no longer
 /// adopt the source install's identity.
+///
+/// **Add new secret columns here, not just to this doc comment** — this
+/// function is the chokepoint, and it must run before the trailing `VACUUM`
+/// (below) so the freed bytes are actually dropped from the file, not just
+/// unreferenced in the freelist.
 pub async fn scrub_snapshot_secrets(db_file: &Path) -> Result<(), BackupError> {
     use sqlx::ConnectOptions;
     use sqlx::sqlite::SqliteConnectOptions;
@@ -285,9 +308,26 @@ pub async fn scrub_snapshot_secrets(db_file: &Path) -> Result<(), BackupError> {
             .await?;
     }
 
-    // A plain DELETE leaves the secret bytes in freed pages (the SQLite
-    // freelist), so a hex-dump of the snapshot would still reveal them. VACUUM
-    // rewrites the file and physically drops that content.
+    // control_planes (migration 019) may not exist in a snapshot taken from a
+    // pre-019 database — guard with sqlite_master rather than assuming the
+    // table is there, same defensive posture as the app_meta CREATE above.
+    // Null the token only; the row itself (name, base_url, health, …) must
+    // survive so a restore still shows which planes were registered.
+    let has_control_planes: Option<String> = sqlx::query_scalar(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'control_planes'",
+    )
+    .fetch_optional(&mut conn)
+    .await?;
+    if has_control_planes.is_some() {
+        sqlx::query("UPDATE control_planes SET token = NULL WHERE token IS NOT NULL")
+            .execute(&mut conn)
+            .await?;
+    }
+
+    // A plain DELETE/UPDATE leaves the secret bytes in freed/overwritten pages
+    // (the SQLite freelist), so a hex-dump of the snapshot would still reveal
+    // them. VACUUM rewrites the file and physically drops that content — it
+    // must run after every scrub step above, not before.
     sqlx::query("VACUUM").execute(&mut conn).await?;
 
     use sqlx::Connection;
@@ -1155,6 +1195,80 @@ mod tests {
         );
 
         std::fs::remove_file(&path).ok();
+    }
+
+    // ── A9: control_planes.token must be scrubbed too (repeat of July audit
+    // finding #7, the S3 secret key leak, but for migration 019's new table).
+    // Goes through the *real* backup path — create_bundle end-to-end (snapshot,
+    // scrub, tar, zstd) — then extracts database.db back out exactly as a
+    // restore would, and checks the raw extracted bytes. Mirrors
+    // `scrub_removes_secrets_from_snapshot` above, which is the existing
+    // raw-bytes regression test for the S3 secret key (`app_meta.backup_config`).
+    #[tokio::test]
+    async fn scrub_removes_control_plane_token_from_snapshot() {
+        use sqlx::ConnectOptions;
+        use sqlx::Connection;
+        use sqlx::sqlite::SqliteConnectOptions;
+
+        let (pool, cfg, dir) = file_backed().await;
+        let repo = tack_db::repo::Repository::new(pool.clone());
+
+        let secret_token = "DOCKET-BEARER-TOKEN-9f8e7d6c5b4a3f2e1d0c";
+        let plane = repo
+            .create_control_plane(tack_db::repo::orch::CreateControlPlane {
+                name: "prod-docket".into(),
+                kind: None,
+                base_url: "https://docket.example.com".into(),
+                token: Some(secret_token.to_string()),
+            })
+            .await
+            .unwrap();
+
+        let (bundle, _manifest) = create_bundle(&pool, &cfg).await.unwrap();
+
+        // Decompress + extract database.db exactly as a restore would.
+        let (db_bytes, _attachments) = tokio::task::spawn_blocking(move || {
+            parse_bundle(&bundle, Path::new("/nonexistent-cp-scrub-test"))
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert!(
+            !db_bytes
+                .windows(secret_token.len())
+                .any(|w| w == secret_token.as_bytes()),
+            "control plane token still present in snapshot bytes"
+        );
+
+        // The row itself must still exist (scrubbing nulls the token, it must
+        // not delete the row — a restored backup should still know which
+        // planes were registered, just forget their credentials).
+        let extracted_path = dir.join("extracted-check.db");
+        tokio::fs::write(&extracted_path, &db_bytes).await.unwrap();
+        let mut conn = SqliteConnectOptions::new()
+            .filename(&extracted_path)
+            .connect()
+            .await
+            .unwrap();
+        let (row_count, token_null_count): (i64, i64) = sqlx::query_as(
+            "SELECT COUNT(*), SUM(CASE WHEN token IS NULL THEN 1 ELSE 0 END) \
+             FROM control_planes WHERE id = ?",
+        )
+        .bind(plane.id.to_string())
+        .fetch_one(&mut conn)
+        .await
+        .unwrap();
+        conn.close().await.unwrap();
+
+        assert_eq!(row_count, 1, "control_planes row must survive the scrub");
+        assert_eq!(
+            token_null_count, 1,
+            "control_planes.token must be nulled by the scrub"
+        );
+
+        pool.close().await;
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     // ── prune is a no-op when below retention ─────────────────────────────────
