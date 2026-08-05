@@ -307,7 +307,18 @@ test('item detail drawer after a blocked dispatch outcome has no accessibility v
 
 test('sprint "Run sprint" dry-run preview has no accessibility violations', async ({ page, request }) => {
   const projectId = await getOrCreateProject(request);
-  const { sprintId } = await createSprintWithItem(request, projectId);
+  // `getOrCreateProject` reuses one shared project across this whole spec
+  // file (and across the two sprint-dispatch tests specifically), and
+  // `createSprintWithItem` always creates a fresh sprint rather than
+  // reusing one — so a sprint left over from another test can still be
+  // "active" (non-closed) with items assigned, and would render its own,
+  // equally legitimate "Run sprint" button (Sprints.tsx renders one button
+  // per eligible sprint, by design — see TODO.md §6 "F1"). A unique sprint
+  // name plus an accessible name that includes it (`Run sprint: <name>`,
+  // also added by F1) is what disambiguates the two real buttons instead of
+  // relying on there being exactly one sprint in the project.
+  const sprintName = 'E2E Sprint (dry-run preview)';
+  const { sprintId } = await createSprintWithItem(request, projectId, sprintName);
 
   // `useAgentActivityMap`'s bulk fetch is Sprints.tsx's own "is orchestration
   // enabled" gate for the "Run sprint" button (reusing the same probe Board.tsx
@@ -345,7 +356,7 @@ test('sprint "Run sprint" dry-run preview has no accessibility violations', asyn
 
   await page.goto(`/projects/${projectId}/sprint`);
   await waitForApp(page);
-  await page.getByRole('button', { name: 'Run sprint' }).click();
+  await page.getByRole('button', { name: `Run sprint: ${sprintName}` }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByText('Design schema')).toBeVisible();
 
@@ -355,7 +366,12 @@ test('sprint "Run sprint" dry-run preview has no accessibility violations', asyn
 
 test('sprint dispatch results (mixed outcomes) has no accessibility violations', async ({ page, request }) => {
   const projectId = await getOrCreateProject(request);
-  const { sprintId } = await createSprintWithItem(request, projectId);
+  // See the sibling "dry-run preview" test above for why this needs its own
+  // unique sprint name: the project is shared across this spec file, so a
+  // sprint from another test can still be eligible for its own, distinct
+  // "Run sprint" button.
+  const sprintName = 'E2E Sprint (dispatch results)';
+  const { sprintId } = await createSprintWithItem(request, projectId, sprintName);
 
   await page.route(`**/api/projects/${projectId}/agent-activity`, (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ rows: [] }) }),
@@ -386,7 +402,18 @@ test('sprint dispatch results (mixed outcomes) has no accessibility violations',
       }),
     }),
   );
-  await page.route(`**/api/sprints/${sprintId}/dispatch`, (route) => {
+  // Trailing `*` (not `**`) is required: `DispatchSprintModal`'s "Confirm
+  // dispatch" pre-fills the in-flight cap from the dry-run response and
+  // always sends it as a query param (card C4's fix #1 — `?max_in_flight=N`,
+  // never a JSON body), so the real POST URL is
+  // `.../dispatch?max_in_flight=2`, not the bare path. Playwright glob
+  // routes are anchored (`^...$`), so an unqualified `.../dispatch` pattern
+  // never matches a URL with a query string and this route silently never
+  // fires, falling through to the real (orchestration-disabled) backend. A
+  // single `*` is enough since query strings never contain `/`, so this
+  // still can't accidentally swallow the sibling `.../dispatch/dry-run`
+  // route registered above.
+  await page.route(`**/api/sprints/${sprintId}/dispatch*`, (route) => {
     if (route.request().method() !== 'POST') return route.fallback();
     return route.fulfill({
       status: 200,
@@ -416,7 +443,7 @@ test('sprint dispatch results (mixed outcomes) has no accessibility violations',
 
   await page.goto(`/projects/${projectId}/sprint`);
   await waitForApp(page);
-  await page.getByRole('button', { name: 'Run sprint' }).click();
+  await page.getByRole('button', { name: `Run sprint: ${sprintName}` }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: /Confirm dispatch/ }).click();
   // Never a merged "2 dispatched" — the two outcomes stay in separate, named counts.
