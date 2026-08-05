@@ -1206,11 +1206,11 @@ handoff note is in that file's §6.
 | 33 — Control-Plane Link (read-only) | ✅ **done** | Reconciler polls a live docket; Fleet view ships |
 | 34 — Run Mirroring & Telemetry | ✅ **done** | Runs, approvals, traces, metrics, retention, realtime, Agent Activity UI |
 | 35 — Dispatch | ✅ **done** | Item + DAG-ordered sprint dispatch, trust boundary, dispatch UI |
-| 36 — Governance Surface | 🟡 **partial** | Approvals inbox done (D1). Budget/pause/policy panels (D2) not started |
-| 37 — Factory Provisioning | 🔴 **blocked** | Needs docket `POST /pods`, which does not exist. The only genuinely blocked phase |
-| 38 — Unit Economics | ⬜ **not started** | D5 |
+| 36 — Governance Surface | ✅ **done** | Approvals inbox + budget/policy panels. **No pause control** — docket exposes no pause/resume over HTTP, in either direction |
+| 37 — Factory Provisioning | ✅ **done** | `POST /pods` had already shipped; the block was wrong. Provisioning wizard, rollback before the pod exists, never after |
+| 38 — Unit Economics | ✅ **done** | Tokens, estimated cost, lead time, rework rate — with the comparisons the data cannot support deliberately not computed |
 
-Also outstanding: **D3** (template `orchestration` block + pipeline library).
+**Every card in this cycle is built.** Nothing is blocked.
 
 **Corrections made during the run, worth carrying forward:**
 
@@ -1468,7 +1468,7 @@ construction project with a linear workflow refuses an illegal auto-move and sho
 `GET /api/backup` contains no control-plane token; with `TACK_ORCH_ENABLE` unset, every
 dispatch route 404s.
 
-### Phase 36 — Governance Surface 🟡 _partial — approvals inbox done; budget/pause/policy panels not started_
+### Phase 36 — Governance Surface ✅ _done 2026-08-05 — no pause control: docket exposes none over HTTP_
 
 **Goal:** Approve, pause, and audit the fleet from the board.
 
@@ -1507,7 +1507,7 @@ stays honest instead of every board decision masquerading as `http`.
 one poll interval, granting it from Tack resumes the pipeline, and
 `docket audit verify` shows the entry tagged `channel="tack"`.
 
-### Phase 37 — Factory Provisioning 🔴 _blocked — docket has no `POST /pods`; verified against `serve.py`, not its roadmap_
+### Phase 37 — Factory Provisioning ✅ _done 2026-08-05 — the block was incorrect; `POST /pods` had shipped_
 
 **Goal:** One click creates a product: a Tack project **and** its governed pod,
 pipeline, verify command, and budget. This is what makes it a factory rather than a
@@ -1550,7 +1550,7 @@ vocabulary **and** a `docket list` entry with the right roles, models, budget, a
 verify command; a forced failure mid-provision leaves neither a stray project nor a
 stray pod.
 
-### Phase 38 — Unit Economics & Optimization ⬜ _not started_
+### Phase 38 — Unit Economics & Optimization ✅ _done 2026-08-05_
 
 **Goal:** Answer "which product lines are economical to build with agents?" — the
 question a factory operator actually has, and one nobody can currently answer.
