@@ -33,7 +33,8 @@ use serde_json::{Value, json};
 use tracing::{info, instrument, warn};
 use validator::Validate;
 
-use tack_core::models::{CreateItem, Item, ItemFilter, Project, UpdateItem};
+use tack_core::models::{CreateItem, Item, ItemFilter, Project};
+use tack_db::repo::items::StatusUpdateOutcome;
 
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::items::propagate_parent_completion;
@@ -576,20 +577,9 @@ async fn complete_task(state: &AppState, req: &AlexaRequest, lang: Lang) -> ApiR
             true,
         ));
     }
-    let count = state
-        .repo
-        .count_items_by_status(project.id, done_status)
-        .await? as usize;
-    if project
-        .workflow
-        .check_wip_limit(done_status, count)
-        .is_err()
-    {
-        return Ok(speech(&msg_wip_limit(lang, done_status), true));
-    }
 
     // Resolve the target status category so the repo stamps `completed_at`,
-    // exactly as the REST update handler now does. Without this, Alexa-completed
+    // exactly as the REST update handler does. Without this, Alexa-completed
     // items never recorded a completion time.
     let done_category = project
         .workflow
@@ -598,19 +588,33 @@ async fn complete_task(state: &AppState, req: &AlexaRequest, lang: Lang) -> ApiR
         .find(|s| s.name.as_str() == done_status)
         .map(|s| s.category.clone());
 
+    // WIP check + status write happen in one SQLite transaction
+    // (`Repository::update_item_status_checked`), not as two separate
+    // steps. This voice path used to do a plain `count_items_by_status`
+    // read followed by an unguarded `update_item` write — the identical
+    // race card R2 (2026-08-05) fixed on the dispatch path: two concurrent
+    // completions (two Alexa requests, or an Alexa completion racing a
+    // board drag) into the same WIP-limited column could each observe
+    // "under the limit" and both commit. See that method's doc comment.
     let old_status = target.status.clone();
-    let item = state
+    let outcome = state
         .repo
-        .update_item(
+        .update_item_status_checked(
             target.id,
-            UpdateItem {
-                status: Some(done_status.to_string()),
-                status_category: done_category,
-                ..Default::default()
-            },
+            project.id,
+            done_status,
+            done_category,
+            &project.workflow,
         )
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Item {} not found", target.id)))?;
+
+    let item = match outcome {
+        StatusUpdateOutcome::Rejected(_) => {
+            return Ok(speech(&msg_wip_limit(lang, done_status), true));
+        }
+        StatusUpdateOutcome::Applied(item) => *item,
+    };
 
     websocket::broadcast_event(
         state,

@@ -5137,3 +5137,606 @@ backend (both routes) — no further guessing needed. If C3's schema changes
 again, this file plus `format.ts` are still the only two that need editing;
 every component consumes `SprintDispatchItemResponse`/`SprintDispatchSummary`
 via `format.ts`'s helpers, never a raw field.
+
+### R2 — 2026-08-05
+
+**Yes, I reproduced the race before fixing it — reliably, not marginally.**
+Before touching `dispatcher.rs`, I wrote
+`crates/tack-api/tests/wip_limit_race_test.rs` and ran it against the
+unmodified code: 12 items, all eligible, dispatched via 12 genuinely
+concurrent `POST /api/items/{id}/dispatch` requests (`tokio::spawn` on a
+`multi_thread` runtime, into a scrum project's "In Progress" column, WIP
+limit 5). **All 12 landed in the column** — not "6 or 7," all twelve, every
+single run. I reran it five times before writing any fix; same result every
+time (full output/counts in the "What I tested" section below). After the
+fix, the same test passes consistently across repeated runs (checked 5x
+manually beyond the one in the permanent suite). This is the strongest form
+of evidence this handoff format asks for: not "I believe it would race" but
+"I watched it race, 12-for-12, until I fixed it."
+
+**The bug, exactly.** `dispatcher::apply_mapped_status` did:
+
+```rust
+let count = state.repo.count_items_by_status(item.project_id, target_status).await? as usize;
+if let Err(e) = project.workflow.check_wip_limit(target_status, count) { /* reject */ }
+// ... separately, later, on its own connection:
+state.repo.update_item(item.id, update).await?;
+```
+
+Two `.await` points, no lock spanning them. C3's own handoff (§6, above)
+flagged this by name and correctly declined to fix it — out of that card's
+scope, and C3's sprint dispatch (`max_in_flight` items dispatched
+concurrently from one `POST /api/sprints/{id}/dispatch` call) is exactly
+what turns this from "needs two humans to collide within milliseconds" into
+"happens by construction every time a sprint with more ready items than
+`max_in_flight`'s headroom in a WIP-limited column gets dispatched."
+
+**The fix: push the check-and-write into one `BEGIN IMMEDIATE` SQLite
+transaction, in `tack-db`, not `tack-api`.** New method,
+`Repository::update_item_status_checked` (`crates/tack-db/src/repo/
+items.rs`), returns a new `Option<StatusUpdateOutcome>`
+(`Applied(Box<Item>)` / `Rejected(CoreError)`, `None` only if the item
+vanished between call and final reload — mirrors `update_item`'s own
+`Option` convention for "not found"). Inside one transaction:
+
+1. `BEGIN IMMEDIATE` — acquires SQLite's write lock **up front**, at the
+   count read, not on the first write. This is the one detail that actually
+   matters: the existing convention in this codebase
+   (`Repository::upsert_orch_tasks` and five other spots in `repo/orch.rs`)
+   uses a plain `self.pool().begin()` (deferred `BEGIN`), which only takes
+   the write lock the moment the *first write statement* runs. If I'd
+   followed that convention literally here, two concurrent transactions
+   could both start deferred (read-only so far, no lock), both do their
+   `SELECT COUNT`, and then both try to upgrade to a write lock at the same
+   moment — one of them gets `SQLITE_BUSY`/a lock-upgrade error instead of
+   a clean queue-and-wait. `begin_with("BEGIN IMMEDIATE")` (sqlx 0.8's
+   `Pool::begin_with`, confirmed present via `sqlx-core-0.8.6`'s
+   `connection.rs`/`pool/mod.rs`) sidesteps this: the second concurrent
+   caller's own `BEGIN IMMEDIATE` simply blocks (SQLite's busy-timeout
+   handles the wait) until the first transaction commits or rolls back, so
+   by the time it actually reads the count, it's reading post-commit state.
+   This is *new* to this codebase — I did not find `begin_with`/`BEGIN
+   IMMEDIATE` used anywhere else in `tack-db` — but it's the minimal
+   deviation from the existing `self.pool().begin()` convention needed to
+   actually close the race, not a new pattern invented for its own sake.
+2. `SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ?` (same
+   query `count_items_by_status` runs, just now inside the locked
+   transaction).
+3. `workflow.check_wip_limit(target_status, count)` — the **exact same**
+   `tack-core` function `apply_mapped_status` already called; I did not
+   duplicate or re-derive the `>=` comparison. `tack-db` already depends on
+   `tack-core` (it already imports `StatusCategory` for `update_item`'s
+   started_at/completed_at bookkeeping), so passing `&WorkflowConfig` in and
+   getting the real `CoreError::WipLimitExceeded` back out was a direct
+   reuse, not new coupling.
+4. On `Err`: `tx.rollback().await?`, return `Rejected(e)` — nothing written.
+5. On `Ok`: the same `UPDATE items SET status = ...` plus the
+   started_at/completed_at-by-category logic `update_item` already had,
+   now run against `&mut *tx` instead of `self.pool()`, then `tx.commit()`.
+
+`dispatcher::apply_mapped_status` now calls this once instead of
+`count_items_by_status` + `update_item`, matches on the outcome, and does
+exactly what it did before for each branch (record `status_map_rejected` /
+broadcast + propagate + GitHub push-back). `validate_transition` (the
+explicit-transitions check) stays where it was, *outside* the transaction —
+it only reads the project's static workflow config, not a row count, so
+it was never racy and doesn't need the lock.
+
+**Why not a single self-contained `UPDATE ... WHERE (subquery)` statement
+instead of an explicit transaction?** I considered it — SQLite guarantees a
+lone statement's atomicity on its own, no explicit `BEGIN` required, which
+would have been less code. Rejected it because `update_item_status_checked`
+also has to conditionally write started_at/completed_at based on
+`status_category` (three different `UPDATE`s depending on
+`InProgress`/`Done`/`Todo`), and folding that into one correlated-subquery
+statement would have been far harder to read and to keep in sync with
+`update_item`'s own (already-established) per-category logic. An explicit
+`BEGIN IMMEDIATE` transaction wrapping the same straightforward statements
+`update_item` already uses was the smaller, more legible change — and it's
+what the card brief itself pointed at.
+
+**`DispatchLocks` (C1's per-item `static` mutex) and this fix are
+deliberately not unified.** I looked at this seriously, since the brief
+explicitly raised it and said I was free to restructure. They solve
+different problems: `DispatchLocks` serializes two requests for the *same*
+item (idempotency — don't double-dispatch one item to docket).
+This race is between *different* items competing for space in the *same
+column* — a per-item key buys nothing here, since the two racing requests
+never share an item id. A Rust-level lock that *did* address this would
+need to be keyed by `(project_id, target_status)` and would only protect
+against races between requests inside this one process — which is exactly
+what SQLite's own write-serialization already gives for free, and more
+generally: it also protects the human/board-drag path and the Alexa path
+(see below) *if* they're ever switched to call the same repo method,
+without those call sites needing to know about a Rust-level lock at all.
+Pushing the invariant into the database, where the single-writer guarantee
+already lives, is strictly more general than a second, parallel,
+process-local locking scheme. I did not move `DISPATCH_LOCKS` onto
+`AppState` — nothing about this fix touches or depends on it, and the
+brief's own reasoning for why C1 chose a `static` (dozens of pre-existing
+`AppState { .. }` struct literals in test files this card doesn't own)
+still applies unchanged.
+
+**Real, unfixed gap, flagged loudly rather than silently left for someone
+to discover:** `handlers::items::update_item` (`crates/tack-api/src/
+handlers/items.rs`, ~line 188 — the human/board-drag HTTP path,
+**owned by C2 this wave, not me**) and `handlers::alexa` (`crates/tack-api/
+src/handlers/alexa.rs`, ~line 579 — the voice "mark done" path, unowned but
+outside my brief's file list) both still do the exact same unguarded
+`count_items_by_status` + `update_item` two-step. They have the identical
+race — a human dragging a card and a concurrent dispatch (or two humans, or
+two Alexa requests) into the same WIP-limited column can still both get
+through. I did not touch either file (§0 rule 1 — not mine to edit), but
+the fix is a one-line swap at each call site: replace the
+`count_items_by_status` + `check_wip_limit` + `update_item` sequence with a
+single call to `Repository::update_item_status_checked`, matching on
+`Applied`/`Rejected` the same way `apply_mapped_status` now does. Whoever
+owns either file next should make this change — the race is real, it is
+strictly more likely under sprint dispatch's own new concurrency (a human
+dragging a card while a sprint dispatch is mid-flight is now a realistic
+overlap, not a coincidence), and the fix is now sitting right there in
+`tack-db` ready to be called.
+
+**What I tested, beyond the one required repro/fix test:**
+
+- `crates/tack-api/tests/wip_limit_race_test.rs` (new,
+  `#[tokio::test(flavor = "multi_thread", worker_threads = 16)]`) — the
+  deliverable. 12 distinct items, all `dispatch_from`-eligible, dispatched
+  genuinely concurrently through the real HTTP `POST /api/items/{id}/
+  dispatch` path (not calling `apply_mapped_status` directly — going
+  through the full flow, including a `wiremock`-mocked docket with a 120ms
+  `set_delay` on `POST /tasks/demo`, mirroring C1's/C3's own technique for
+  bunching concurrent requests' arrival at the racy step). Asserts the
+  final "In Progress" count never exceeds the configured limit of 5, and
+  that every item ended up in exactly one of Backlog/In Progress (nothing
+  lost or duplicated). Ran it 5x post-fix with no failures; ran it
+  (uncommitted, obviously) against pre-fix code 5x with 12/12 exceeding the
+  limit every time before writing the fix.
+- `crates/tack-db/tests/status_update_checked_test.rs` (new, 5 tests,
+  sequential/deterministic) — `update_item_status_checked`'s own
+  correctness in isolation: applies when under the limit; rejects with the
+  exact `CoreError::WipLimitExceeded { column, limit, current }` and leaves
+  the item and the column count untouched when the column is exactly full;
+  a status with no configured `wip_limit` always applies (tested with 50
+  items, well past any plausible limit); started_at/completed_at bookkeeping
+  matches `update_item`'s existing per-category behavior exactly
+  (In Progress stamps started_at, Done stamps completed_at and keeps
+  started_at); an unknown item id returns `None` rather than an error or a
+  panic.
+
+**Verification.** `cargo test --workspace`: 520 passed, 0 failed (baseline
+493 + other Wave-3/Wave-4 agents' concurrent landings in this same window,
+per the by-now-familiar pattern C5/R1 both noted — D1's approvals-inbox
+tests were compiling and landing while I worked; not my arithmetic to
+reconcile, but 0 failures throughout every run I did, both before and after
+my fix, so nothing I touched destabilized anything else). `cargo clippy
+--workspace --all-targets -- -D warnings`: clean (fixed one
+`clippy::large_enum_variant` myself — `StatusUpdateOutcome::Applied` boxes
+`Item`, same fix C3 applied to `sprint_dispatch::ItemResult::Outcome` for
+the same reason). `cargo fmt --all -- --check`: **not** run tree-wide —
+per A3's stated convention (repeated by every Wave-3 card since), ran
+`rustfmt --edition 2024 --check` directly on only the four files I touched
+or created (`tack-db/src/repo/items.rs`, `tack-api/src/dispatcher.rs`,
+`tack-api/tests/wip_limit_race_test.rs`, `tack-db/tests/
+status_update_checked_test.rs`); clean. `cargo fmt --all -- --check` across
+the whole tree currently shows drift in files I don't own and never opened
+(`handlers/orch.rs`, `orch_approvals_test.rs`, `tack-db/src/repo/orch.rs`,
+`tack-db/tests/orch_repo_test.rs`) — confirmed via `git diff --stat` scoped
+to my own files showing nothing there, and via `git log` that I made zero
+edits to any of them. That's D1's concurrent approvals-inbox card, still
+settling in the same shared tree while I worked (I also hit two transient
+`cargo build`/`cargo clippy` failures mid-session from D1's/another agent's
+in-flight edits to `tack-orch/src/lib.rs` and `handlers/orch.rs` —
+diagnosed via `git status` showing only those files as dirty at the time,
+waited for them to stabilize, not mine to fix).
+
+**Files touched, all disclosed, all in scope:** `crates/tack-db/src/repo/
+items.rs` (new `StatusUpdateOutcome` enum + `update_item_status_checked`,
+added; nothing existing removed — `count_items_by_status` is untouched and
+still used by the two unfixed call sites above), `crates/tack-api/src/
+dispatcher.rs` (`apply_mapped_status` rewired to the new atomic call; net
+removal of the now-dead `UpdateItem` import), `crates/tack-api/tests/
+wip_limit_race_test.rs` (new), `crates/tack-db/tests/
+status_update_checked_test.rs` (new). Did not touch `sprint_dispatch.rs`
+(no change needed — it already delegates every write through
+`dispatcher::dispatch_item` → `apply_mapped_status`, so it inherits this
+fix automatically, no call-site change required) or `server.rs` (no lock
+moved to `AppState` — see the `DispatchLocks` reasoning above).
+
+### D1 — 2026-08-05
+
+**How the decision endpoint is gated, and what happens when the approval
+token is unset — leading with this since it's why the card exists.**
+`POST /api/approvals/{token}` sits behind the ordinary two layers every orch
+route gets (`require_token`'s Bearer gate, then `require_orch_enabled`'s
+404-when-disabled), **plus a third check inside the handler itself**,
+`require_approval_token` (`crates/tack-api/src/handlers/orch.rs`): it reads
+a new header, `X-Tack-Approval-Token`, and compares it byte-wise
+(`middleware::constant_time_eq`, reused, not reinvented) against
+`config.orch_approval_token`. **With `TACK_ORCH_APPROVAL_TOKEN` unset, the
+check always returns `403` — unconditionally, for every request, no matter
+what header is presented (including no header at all).** There is
+deliberately no "no secret configured, allow everything" branch the way
+`require_token`'s own ordinary Bearer gate has for an unset `TACK_API_TOKEN`
+— that gate's safe default is "trust the network boundary," which is
+reversible and intentional; this gate's safe default has to be "nothing on
+this server can release a gated agent action today," because the failure
+mode of getting it backwards is a stranger with only the ordinary API token
+resuming a paused agent. Tested explicitly:
+`decide_approval_403s_when_no_approval_token_is_configured_even_with_a_header`
+sends a real header value with no server-side secret configured and still
+gets `403` — the case that would silently break the "always reject" default
+if a future refactor added an `Option::unwrap_or(true)`-shaped shortcut.
+**`GET /api/approvals` (reading the inbox) needs none of this** — only the
+ordinary orch gate — per the card's own instruction that reading and acting
+are different privilege levels; its response carries a `grant_available:
+bool` (server-config-presence only, never the secret) so the frontend can
+hide decision controls without a second probe.
+
+**Correctness requirements, one by one.**
+
+- **Uncorrelated approvals surface here, verified live in two places.**
+  `tack-db::repo::orch::list_pending_orch_approvals_with_context` (new,
+  additive) `LEFT JOIN`s `items`/`projects` onto the existing
+  `list_pending_orch_approvals` query so an `item_id IS NULL` row still
+  returns every field, just with `item_*`/`project_*` all `null` rather than
+  being dropped by an inner join. Covered at the repo layer
+  (`test_pending_approvals_with_context_enriches_correlated_and_still_surfaces_uncorrelated`),
+  the HTTP layer (`inbox_is_oldest_first_and_includes_uncorrelated_approvals_with_context`),
+  and the frontend (`ApprovalsPage.test.tsx`'s populated-inbox test asserts
+  the uncorrelated row renders with the literal string "Uncorrelated" — not
+  just that the API returns it) — plus a live-rendered a11y scan
+  (`approvals inbox (populated, decisions enabled)`, Chromium, 0 violations)
+  that specifically waits on `getByText(/Uncorrelated/)` before scanning, so
+  a regression that silently dropped the row would fail that test on the
+  `waitFor` before ever reaching axe.
+- **Oldest first.** Both the repo query (`ORDER BY a.requested_at ASC`) and
+  the existing `list_pending_orch_approvals` it's built alongside share this
+  ordering; nothing in the handler or frontend re-sorts.
+- **`channel: "tack"` on every decision.** Verified the exact parameter name
+  and accepted vocabulary against `~/Sites/rack-cli/src/docket/serve.py`
+  (`do_POST`'s `/approvals/` branch) and `core/approval.py`
+  (`APPROVAL_CHANNELS = frozenset({"cli", "http", "mcp", "telegram",
+  "timeout", "tack"})` — `"tack"` is already a first-class member, not
+  something I had to add upstream). `DocketAdapter::decide_approval`
+  (`crates/tack-orch/src/adapters/docket.rs`) sends it as a fixed constant,
+  never a parameter threaded up through `tack-api` — every caller of this
+  trait method *is* Tack, so there's no second value it would ever send;
+  threading an unused parameter through the handler → dispatcher →
+  trait → adapter chain for a value that never varies would be the kind of
+  workaround §2.1 tells this cycle to stop building. Wire-verified with
+  `wiremock`'s `body_partial_json` (`decide_approval_grant_sends_channel_tack_and_returns_the_resulting_state`
+  in `tack-orch`, and the same shape again at the HTTP boundary in
+  `orch_approvals_test.rs`) — the mock only matches, and thus the test only
+  passes, if `channel: "tack"` genuinely reached the request body, not
+  merely appears in application code that might not run.
+- **Not reversible, not a single click.** `ApprovalsPage.tsx` never calls
+  `approvalsApi.decide` directly from a row button — Grant/Deny only open a
+  confirmation `Modal` naming the agent, the action text verbatim, the
+  correlated item (or the explicit "uncorrelated" label), and how long it's
+  been waiting, with the literal words "This cannot be undone." Tested
+  end-to-end in Vitest (`clicking Grant opens a confirmation modal ... before
+  any decide call fires` asserts the fetch mock was called exactly once —
+  the initial list — until the modal's own confirm button is clicked) and
+  scanned for a11y as its own state (`approvals inbox confirmation modal`,
+  0 violations against a real Chromium render, not a jsdom approximation).
+- **A stale/already-decided token is a normal state, not an error.** V1
+  could only live-verify docket's `grant` and unknown-token-404 paths, not
+  `deny` or the 409/`ApprovalNoop` path — I read `core/approval.py` directly
+  instead: `approval_grant`/`approval_deny` raise `ApprovalNoop` (→ HTTP 409)
+  only for "already granted"/"already denied-or-expired" respectively; any
+  *other* non-`pending` state (e.g. denying an already-*granted* token)
+  raises the plain `ApprovalError` that `serve.py` maps to the same 404 a
+  genuinely unknown token gets. `OrchError` gained a new typed variant,
+  `AlreadyDecided(String)`, for the 409 case (409 → `ApiError::Conflict`);
+  the 404 case reuses the existing `OrchError::NotFound` → `ApiError::NotFound`
+  mapping docket's own text flows through either way. The frontend's
+  `isApprovalAlreadyDecided`/`isApprovalGone` classifiers both resolve to
+  the same UX — toast a plain explanation, refetch the inbox, no red error
+  banner — while staying distinguishable in the wire boundary for whoever
+  next needs to tell them apart. None of this is live-verified against a
+  real docket (V1's own gap, not mine to close retroactively) — flagging
+  that the 404-for-illegal-transition classification is read-from-source,
+  same as `adapters::docket`'s module doc now says explicitly.
+- **§0 rule 5.** `decide_approval`'s handler does exactly one DB read
+  (`get_orch_approval`, to resolve which control plane issued the token) —
+  no write — then the HTTP call to docket, then one short `UPDATE` afterward
+  (`mark_orch_approval_decided`, new, additive) to keep the local mirror out
+  of the next inbox fetch. No transaction spans the HTTP call.
+- **§0 rule 8.** `every_orch_route_404s_when_disabled`-style coverage for
+  both new routes lives in `orch_approvals_test.rs` directly
+  (`list_approvals_404s_when_orch_disabled`,
+  `decide_approval_404s_when_orch_disabled`) rather than extending A4's
+  original `every_orch_route_404s_when_disabled` cases list in
+  `orch_test.rs` — that list already predates several other waves' routes
+  (metrics, dispatch, sprint dispatch) without any of them extending it
+  either, so I matched the pattern already established rather than being
+  the first to grow a list every later card would then also need to touch.
+- **§0 rule 9.** No new color pairing: `Badge`'s existing tones, `Modal`,
+  `Field`, `Button`'s existing variants. `npm run lint:tokens` stayed at
+  0/0. Four new a11y scans (disabled / populated-with-uncorrelated / the
+  confirmation modal / decisions-disabled-no-token) all run live against
+  Chromium in this session — 0 violations each, not just "written," actually
+  executed (`npx playwright test e2e/a11y.spec.ts --project=chromium -g
+  approvals`).
+
+**The interface change.** `crates/tack-orch/src/lib.rs`'s Wave-0 freeze is
+already lifted (§2.1/R1); I used that room rather than working around a
+frozen shape. `ControlPlane::decide_approval`'s return type changed from
+`Result<(), OrchError>` to `Result<ApprovalState, OrchError>` (docket's own
+resulting state, so a caller doesn't have to assume the request it sent is
+the state that landed) and `OrchError` gained `AlreadyDecided(String)`.
+Every implementor/caller updated in the same change (the production
+`DocketAdapter`, `reconciler.rs`'s test-only `FakeControlPlane`) — `cargo
+build --workspace` catching both required updates via type errors is exactly
+the mechanism this refactor discipline is supposed to lean on.
+
+**A repo-layer duplication, disclosed.** `handlers::orch::
+build_control_plane_for_decision` (resolve a `control_plane_id` into a live
+`DocketAdapter`) is ~15 lines copy-pasted from `dispatcher::
+build_control_plane`, a private fn in a file owned by the concurrent
+WIP-race-fix agent this wave (`crates/tack-api/src/dispatcher.rs`, R2's card
+above). Exporting and sharing it would have meant editing a file outside
+my ownership mid-cycle for a one-fn convenience; duplicating ~15 lines was
+the smaller footprint. If a third caller ever needs this, that's the point
+to actually factor it out.
+
+**What I deliberately did not build.** No new `BoardEvent`/WebSocket
+broadcast on a grant/deny decision — `handlers/websocket.rs` is B4's file,
+not mine this wave, and B4's own handoff already noted `ApprovalPending`
+never fires for an uncorrelated approval in the first place (no project to
+filter into), which is exactly the case this inbox exists to surface. Since
+a per-project socket can't be the primary freshness mechanism for the row
+this page cares most about, `ApprovalsPage.tsx` polls `GET /api/approvals`
+every 10s instead (cleared via Solid's `onCleanup`, verified not to leak
+across Vitest tests via explicit `dispose()` calls in every test) — this
+covers correlated and uncorrelated rows identically, at the cost of not
+being instant. A future card wiring a real-time removal-on-decision event
+would still need `handlers/websocket.rs`, not just this module.
+
+**A pre-existing e2e finding, unrelated to this card, flagged not fixed.**
+While running the full `a11y.spec.ts` suite live (Chromium) to confirm my
+own new scans didn't regress anything, two pre-existing tests failed on a
+freshly-reset `frontend/e2e.db` (not an accumulation artifact from repeated
+runs — confirmed by deleting the throwaway DB and rerunning once):
+`sprint "Run sprint" dry-run preview` and `sprint dispatch results (mixed
+outcomes)` both fail on `getByRole('button', { name: 'Run sprint' })`
+resolving to 2 elements instead of 1. `git status`/`git diff` confirm zero
+uncommitted changes anywhere under `frontend/src/features/sprints/` or
+`frontend/e2e/helpers.ts` this session — this is either a bug that shipped
+with card C4 and was never caught (C4's own handoff says it "did not run
+the Playwright e2e suite live — no backend available in this environment")
+or something a later, unrelated change introduced without touching those
+files directly (e.g. a shared layout component rendering an extra "Run
+sprint" affordance). Not investigated further — out of this card's scope
+(approvals, not sprint dispatch) — but real, live-reproduced, and worth a
+follow-up card picking it up before it's mistaken for flake.
+
+**Testing.** Rust: 9 new tests in `crates/tack-orch/tests/
+docket_adapter_test.rs` (decide_approval's grant/deny/unknown-state/409/404/401
+outcomes, replacing the old blanket "both still disabled" test since only
+`dispatch` still is), 2 new unit tests in `lib.rs`, 3 new repo-layer tests in
+`crates/tack-db/tests/orch_repo_test.rs`, 11 new HTTP-boundary tests in the
+new `crates/tack-api/tests/orch_approvals_test.rs`. Frontend: 28 new Vitest
+tests across `features/approvals/{api,format,ApprovalsPage}.test.ts(x)`,
+plus 4 new live-executed Playwright a11y scans.
+
+**Verification.** `cargo test --workspace`: 523 passed, 0 failed (moving
+baseline — R2's WIP-race fix and other concurrent Wave-4 work landed in the
+same window; my own net-new count is the 25 tests listed above). `cargo
+clippy --workspace --all-targets -- -D warnings`: clean. `cargo fmt --all --
+--check`: clean for every file I touched (confirmed via `cargo fmt -p
+tack-orch -p tack-db -p tack-api -- --check` showing drift only in
+`alexa_wip_race_test.rs`, R2's new file, never opened by me). `UPDATE_OPENAPI=1
+cargo test -p tack-api --test openapi_contract`: regenerated `docs/
+openapi.json` (two new paths, five new schemas), drift gate green. Frontend:
+`npm run type-check` clean; `npm run lint:tokens` 0/0 unchanged; `npm run
+test` — 332 passed, the same 3 pre-existing `requestBlob`/`createObjectURL`
+failures called out in the card brief (304 baseline + 28 new, arithmetic
+exact); `npm run build` clean, `ApprovalsPage` code-splits into its own
+chunk. Did not verify against a live docket this round — V1/R1 already
+live-verified `POST /approvals/{token}` grant + unknown-404, and this card's
+own live-verification effort went into confirming `channel`'s exact
+parameter name/vocabulary against docket's source directly instead (see
+above) since standing up an isolated `docket serve` for grant/deny alone
+would have re-covered ground V1 already walked.
+
+**Files touched:** `crates/tack-orch/src/lib.rs` (trait signature +
+`AlreadyDecided`), `crates/tack-orch/src/adapters/docket.rs`
+(`decide_approval` implemented), `crates/tack-orch/src/reconciler.rs`
+(`FakeControlPlane`'s signature, mechanical), `crates/tack-orch/tests/
+docket_adapter_test.rs`, `crates/tack-db/src/repo/orch.rs` (additive:
+`list_pending_orch_approvals_with_context`, `mark_orch_approval_decided`,
+`PendingOrchApproval`), `crates/tack-db/tests/orch_repo_test.rs`,
+`crates/tack-api/src/handlers/orch.rs` (new section: DTOs, both handlers,
+the approval-token gate, the duplicated control-plane resolver),
+`crates/tack-api/src/router.rs` (two routes, at A4's marked insertion
+point), `crates/tack-api/src/openapi.rs`, `docs/openapi.json`, new
+`crates/tack-api/tests/orch_approvals_test.rs`, and everything under
+`frontend/src/features/approvals/` (new: `api.ts`, `format.ts`,
+`ApprovalsPage.tsx`, three `.test.ts(x)` files), plus small additive edits
+to `frontend/src/app/routes.tsx` (route), `frontend/src/shared/ui/
+Sidebar.tsx` + `icons.tsx` (nav link + `IconApprovals`), and
+`frontend/e2e/a11y.spec.ts` (four new scans). Did not touch `dispatcher.rs`,
+`sprint_dispatch.rs`, `handlers/websocket.rs`, or any `tack-core`/`tack-db`
+file beyond the additive `repo/orch.rs` functions, per scope.
+
+**For D2–D5 and beyond.** Nothing in this card blocks any of them —
+approvals are a leaf feature. If a future card wants real-time
+removal-on-decision (not just new-approval broadcast), it needs
+`handlers/websocket.rs` (B4's territory) and a new `BoardEvent` variant;
+I deliberately didn't build that here (see above). The Sprints-view
+duplicate-button finding above is worth a dedicated look before the next
+wave's e2e run trips over it and burns time re-diagnosing what this note
+already narrowed down.
+
+### R3 — 2026-08-05
+
+**Yes, I reproduced the race on the board-drag path before fixing it —
+reliably, not marginally, and with no artificial delay needed.** Before
+touching `handlers/items.rs`, I wrote
+`crates/tack-api/tests/board_drag_wip_race_test.rs` against the unmodified
+code: 12 distinct items sitting in "Backlog" (scrum workflow, "In Progress"
+WIP limit 5), all `PATCH`ed to "In Progress" via 12 genuinely concurrent
+`PATCH /api/items/{id}` requests (`tokio::spawn` on a `multi_thread`
+runtime). **All 12 landed in the column, every one of 3 runs** — unlike
+R2's dispatch-path repro, this needed no `wiremock` delay to bunch the
+requests: contention over the in-memory SQLite pool's five connections
+across 12 concurrent in-process requests was enough on its own. I did the
+same for the Alexa path with a new
+`crates/tack-api/tests/alexa_wip_race_test.rs` (a custom two-status workflow
+with `wip_limit: 5` on "Done" — no preset workflow ships a WIP limit on
+Done, but `handlers::alexa` has its own `msg_wip_limit` spoken response for
+exactly this case, so the path clearly anticipated it): 12 concurrent
+`CompleteTaskIntent` requests, **11 of 12 landed in the WIP-5 "Done" column,
+consistently across 3 runs.** After the fix, both tests pass consistently —
+checked 5x manually beyond the one run each gets in the permanent suite.
+
+**The bug, exactly as R2's handoff predicted.** Both `handlers::items::
+update_item` and `handlers::alexa::complete_task` did the identical
+two-step R2 found and fixed on the dispatch path:
+
+```rust
+let count = state.repo.count_items_by_status(project_id, new_status).await? as usize;
+project.workflow.check_wip_limit(new_status, count)?;
+// ... separately, later, on its own connection:
+state.repo.update_item(id, update).await?;
+```
+
+Two `.await` points, no lock spanning them — R2 named both call sites in
+its handoff and correctly declined to fix them (outside that card's file
+ownership), flagging the fix as "a one-line swap at each call site" to
+`Repository::update_item_status_checked`. I verified that claim rather than
+assuming it, per the brief — it held for both, with one wrinkle at each
+site (below).
+
+**The fix: the same one-line swap R2 predicted, plus the surrounding
+plumbing partial updates need.**
+
+**`handlers::items::update_item`** — not literally one line, because this
+handler does considerably more than change a status: it's the single entry
+point for partial updates to title, description, priority, tags,
+sprint_id, due_date, etc., all in one `PATCH`. `update_item_status_checked`
+only touches the status column and its started_at/completed_at bookkeeping
+— it doesn't know about the other fields. So the status branch now: (1)
+validates the transition (unguarded, same as before — it's a pure
+workflow-config check, not a row count, so R2's reasoning that it isn't
+racy applies here too); (2) resolves `status_category`; (3) calls
+`update_item_status_checked` and matches `Applied`/`Rejected`, returning
+`ApiError::Core(e)` on rejection (mapped via `CoreError`'s existing `From`
+impl, same HTTP 400 the old `check_wip_limit(...)?` produced); (4) on
+success, clears `input.status`/`input.status_category` to `None` so the
+unconditional `repo.update_item(id, input)` call right after — which still
+handles every *other* field exactly as before — doesn't redundantly
+(and unguardedly) re-write status. A request that never touched status in
+the first place skips this whole branch and hits the ordinary
+`repo.update_item` path unchanged: no transaction, no WIP check, no
+behavior change — covered by the new
+`patch_without_a_status_change_is_unaffected` test, per the brief's
+explicit ask. Everything downstream of the `let item = ...` line
+(WebSocket broadcast, webhook, `propagate_parent_completion`,
+`maybe_sync_github`, C2's `maybe_auto_dispatch`) is untouched — none of
+those functions take `input`, only `item` and `old_status`, so splitting
+the status write out of the single `repo.update_item` call doesn't change
+what they see.
+
+**`handlers::alexa::complete_task`** — closer to the literal one-line swap:
+this handler was already building a throwaway `UpdateItem { status, status_
+category, ..Default::default() }` just to call `repo.update_item` with it,
+so replacing that whole block with `update_item_status_checked` actually
+*removed* code (and the now-unused `UpdateItem` import). The one behavioral
+nuance: Alexa's contract is "user-level problems get HTTP 200 + spoken
+text, not an HTTP error" (this file's own module doc). A WIP-limit
+rejection previously produced `speech(&msg_wip_limit(...), true)` via an
+`if check_wip_limit(...).is_err()` branch *before* any write; now it's a
+`StatusUpdateOutcome::Rejected(_)` arm reached *after* the atomic
+check-and-maybe-write, matched the same way `dispatcher::apply_mapped_
+status` matches it — same spoken response, same 200, just decided inside
+the transaction instead of before it. Confirmed unchanged behavior via the
+pre-existing `alexa_test.rs` suite (21 tests, including
+`complete_task_moves_item_to_done`), all still green.
+
+**Why `update_item_status_checked` rather than inventing a second atomic
+method.** R2's method already does exactly what both call sites need
+(status + started_at/completed_at, inside one `BEGIN IMMEDIATE`
+transaction) and already returns the right shape
+(`Option<StatusUpdateOutcome>`) for "not found" vs. "rejected" vs.
+"applied." Reusing it verbatim — no signature change, no new `tack-db`
+method — was both the smaller diff and exactly what R2's own handoff
+pointed at.
+
+**§0 rule 5 (no SQLite write transaction across an HTTP call).** Neither
+call site was at risk of this to begin with — `update_item_status_checked`
+is a single `tack-db` call with no HTTP inside it, and everything that
+*does* make an outbound call (`maybe_sync_github`, C2's
+`maybe_auto_dispatch`, both `tokio::spawn`ed) already ran, and still runs,
+strictly after the item write is committed and the transaction closed. I
+didn't restructure that ordering — R2's fix and C2's hook were already
+correct on this point; I only changed *how* the status write itself
+happens, not when the post-write side effects fire.
+
+**§0 rule 7 (status changes go through the workflow engine).** Unchanged:
+`validate_transition` still runs before any write on both paths, and
+`update_item_status_checked` calls the same `WorkflowConfig::
+check_wip_limit` the old unguarded code called — same function, same
+`CoreError::WipLimitExceeded`, now just evaluated inside the locked
+transaction instead of before it. WIP limits, explicit transitions, and
+started_at/completed_at bookkeeping all still fire; parent
+auto-propagation (`propagate_parent_completion`) is untouched on both call
+sites.
+
+**What I tested:**
+
+- `crates/tack-api/tests/board_drag_wip_race_test.rs` (new) —
+  `concurrent_board_drags_into_the_same_wip_limited_column_never_exceed_the_
+  limit` (12 items, 12 concurrent `PATCH /api/items/{id}` requests, WIP
+  limit 5, asserts the "In Progress" count never exceeds 5 and that
+  Backlog + In Progress always sums to 12 — nothing lost or duplicated) and
+  `patch_without_a_status_change_is_unaffected` (a title-only `PATCH`
+  behaves exactly as before, status untouched).
+- `crates/tack-api/tests/alexa_wip_race_test.rs` (new) —
+  `concurrent_alexa_completions_into_the_same_wip_limited_column_never_
+  exceed_the_limit` (12 items, 12 concurrent `POST /api/alexa`
+  `CompleteTaskIntent` requests each resolving a distinct title, custom
+  workflow with `wip_limit: 5` on "Done", asserts the same invariants).
+  Needed a one-line addition to `crates/tack-api/tests/common/mod.rs`:
+  `#[allow(dead_code)]` on `test_app()`, mirroring the pre-existing
+  attribute on `test_app_with_file_db` — this new test binary only calls
+  `test_app_with_config`, and each integration-test binary recompiles
+  `mod common` as its own unit, so `test_app` alone read as dead code under
+  `-D warnings` for this binary specifically (a pre-existing sharp edge in
+  how the shared test helper is structured, not something I changed the
+  shape of).
+- Reran the pre-existing `alexa_test.rs` (21 tests) and the full workspace
+  suite after the fix to confirm no regressions in GitHub sync, parent
+  propagation, or auto-dispatch — all of which share `update_item`'s
+  downstream side-effect calls.
+- Updated the stale doc comment on `Repository::update_item_status_checked`
+  (`crates/tack-db/src/repo/items.rs`) that named both call sites as "not
+  fixed by this method" — that sentence was accurate when R2 wrote it and
+  is not anymore; not in my file-ownership list, but not owned by anyone
+  else either (only `repo/orch.rs` is listed under `tack-db`), and leaving
+  a doc comment that actively asserts something false felt worse than a
+  two-line correction.
+
+**Verification.** `cargo test --workspace`: 523 passed, 0 failed (baseline
+520 + my 3 new tests). `cargo clippy --workspace --all-targets -- -D
+warnings`: clean. `cargo fmt --all -- --check`: **not** run tree-wide, per
+the by-now-established convention (D1 has unformatted in-flight work in
+`handlers/orch.rs`, `router.rs`, `frontend/**`) — ran `rustfmt --edition
+2024 --check` on every file I touched or created (`handlers/items.rs`,
+`handlers/alexa.rs`, `tests/board_drag_wip_race_test.rs`,
+`tests/alexa_wip_race_test.rs`, `tests/common/mod.rs`,
+`tack-db/src/repo/items.rs`); clean (one formatting fixup needed in the new
+Alexa test file, applied and reconfirmed).
+
+**Files touched, all disclosed, all in scope:** `crates/tack-api/src/
+handlers/items.rs` (the `update_item` status branch), `crates/tack-api/src/
+handlers/alexa.rs` (`complete_task`'s completion write), `crates/tack-api/
+tests/board_drag_wip_race_test.rs` (new), `crates/tack-api/tests/
+alexa_wip_race_test.rs` (new), `crates/tack-api/tests/common/mod.rs`
+(one `#[allow(dead_code)]` line), `crates/tack-db/src/repo/items.rs` (doc
+comment only — no behavior change). Did not touch `dispatcher.rs`,
+`sprint_dispatch.rs`, `handlers/orch.rs`, `router.rs`, `openapi.rs`,
+`docs/openapi.json`, `crates/tack-db/src/repo/orch.rs`, or `frontend/**`,
+per scope — those are D1's and other agents' concurrent territory.
