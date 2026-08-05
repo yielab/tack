@@ -115,6 +115,10 @@ The API server loads configuration from `tack.toml` (if present) or environment 
 | `TACK_BACKUP_PREFIX` | `tack` | Object key prefix inside the bucket |
 | `TACK_BACKUP_INTERVAL_SECS` | _(none)_ | Auto-backup interval in seconds; omit for manual-only |
 | `TACK_BACKUP_RETENTION` | `10` | Number of remote backups to keep after each upload |
+| `TACK_ORCH_ENABLE` | `false` | Enables the orchestration reconciler and the `/api/control-planes`, `/api/projects/{id}/orch-link`, `/api/fleet` routes (and their later-wave successors). Unset ⇒ no reconciler task spawned, every orch route 404s |
+| `TACK_ORCH_POLL_SECS` | `10` | Reconciler base poll interval in seconds (before per-plane backoff + jitter) |
+| `TACK_ORCH_EVENT_RETENTION_DAYS` | `90` | Days of `orch_events` (and, once ingested, `orch_metrics`) history kept before the retention sweep rolls old rows into per-day aggregates and deletes them |
+| `TACK_ORCH_APPROVAL_TOKEN` | _(none)_ | Separate shared secret required to grant/deny a docket approval via `POST /api/approvals/{token}` (Wave 4). Deliberately distinct from `TACK_API_TOKEN` — granting an approval is higher-privilege than editing a card. Never logged |
 
 The `TACK_BACKUP_*` values are **defaults**. Cloud-backup settings (endpoint, bucket, region, access/secret key, prefix, retention) can also be edited at runtime from the UI (**Settings → Cloud Backup**) and are stored in the `app_meta` table; UI values override the env defaults. `TACK_BACKUP_INTERVAL_SECS` (automatic scheduling) remains env-only and takes effect at startup. The secret key is write-only over the API — never returned to clients.
 
@@ -138,6 +142,7 @@ TACK_LOG_JSON=true cargo run -p tack-cli -- serve
 crates/
 ├── tack-core/     Pure business logic (no I/O)
 ├── tack-db/       SQLite persistence layer
+├── tack-orch/     Agent-fleet orchestration client (ControlPlane trait, reconciler)
 ├── tack-api/      Axum HTTP server + WebSocket (library; pub fn serve)
 └── tack-cli/      The single `tack` binary — runs the server (tack serve) and the CLI client
 
@@ -173,8 +178,16 @@ docs/                Documentation
 - Auto-runs migrations on startup
 - Database is created automatically if missing
 
+**tack-orch** (agent-fleet orchestration client — off by default, gated behind `TACK_ORCH_ENABLE`):
+- Defines the `ControlPlane` trait (`health`, `status`, `metrics`, `list_runs`, `list_approvals`, `list_tasks`, `traces`, plus write methods gated behind Phase 35 dispatch) — the seam that makes Tack a factory control center rather than a docket-specific dashboard. `docket` (`adapters::docket::DocketAdapter`) is the only implementor today.
+- Depends only on `tack-core` and `tack-db`; must never depend on `tack-api` — the dependency points inward, `tack-api` depends on this crate to spawn the reconciler and expose the orchestration routes
+- `reconciler.rs`: one `tokio` task per registered control plane, polling `/health` + `/status.json` on a jittered interval and driving a `healthy` → `degraded` (3 consecutive failures) → `unreachable` (10) health state machine, persisted to `control_planes`
+- Remote enums (`RunState`, `RunSource`, `TaskStatus`, `ApprovalState`) all carry an `Unknown(String)` fallback so a docket upgrade degrades gracefully instead of failing a poll
+- `adapters::prometheus`: dependency-free `/metrics` text-exposition parser, reused by any future metrics ingestion
+- Every dollar-valued field is named `*_usd_estimated` — token counts are the primary, trustworthy measure; docket reports no real spend, so any cost figure downstream is a derived estimate. See `docs/book/src/developer/orchestration.md`
+
 **tack-api** (library — does not build its own binary):
-- Axum HTTP server with 68 REST endpoints + 1 WebSocket (100% complete)
+- Axum HTTP server with 76 REST endpoints + 1 WebSocket (100% complete; includes the 8 orchestration endpoints, gated behind `TACK_ORCH_ENABLE`)
 - Server entry point exposed as `tack_api::serve()` (in `server.rs`)
 - WebSocket support for real-time board updates
 - Request handlers in `handlers/` (per entity)
@@ -183,6 +196,7 @@ docs/                Documentation
 - Debug endpoints: `/api/health`, `/api/debug/info`, `/api/debug/db-stats`
 - File upload support: multipart/form-data (max 50MB)
 - Export functionality: JSON and CSV formats
+- `orch_store.rs`: wires `tack-orch`'s `ControlPlaneStore` trait to the real `Repository` + a `kind`-dispatched adapter constructor; spawns the reconciler from `server.rs` behind `config.orch_enable`
 
 **tack-cli** (the single `tack` binary):
 - `tack` with no subcommand (or `tack serve`) starts the server + web UI via `tack_api::serve()` — the primary, UI-first entry point
@@ -259,6 +273,7 @@ All routes follow RESTful conventions:
 - `/api/backup`, `/api/restore` — Local DB backup download / staged restore (2 endpoints)
 - `/api/backup/remote` (POST/GET), `/api/backup/remote/restore` — Cloud (S3-compatible) backup, list, and staged restore (3 endpoints)
 - `/api/settings/backup` (GET/PUT) — Read/update the UI-editable cloud-backup config; secret key is write-only (returned as a `secret_key_set` boolean)
+- `/api/control-planes` (GET/POST), `/api/control-planes/{id}` (GET/PATCH/DELETE), `/api/projects/{id}/orch-link` (GET/PUT), `/api/fleet` (GET) — Agent-fleet orchestration (8 endpoints; all gated behind `TACK_ORCH_ENABLE`, 404 when unset). Control-plane token is write-only (`token_set` boolean). See `docs/book/src/developer/orchestration.md` and `docs/book/src/user-guide/orchestration.md`
 
 Query parameters support filtering, pagination, and search.
 

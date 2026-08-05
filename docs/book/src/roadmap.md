@@ -8,6 +8,15 @@ Phases 26–32**, which are now **implemented and verified green** (244 Rust tes
 169 Vitest, clippy clean, frontend builds) — see the status board below. The work
 is staged for release as `v0.1.0-beta.7`.
 
+**Next cycle (added August 2026): Phases 33–38 — the Agent-Factory Control Center.**
+Tack becomes the control panel for a factory of products built by
+[docket](https://github.com/yielab/docket) agent fleets: a new `tack-orch` crate with
+a `ControlPlane` trait and a pull-based reconciler, six new tables, dispatch from the
+board, a fleet-wide approvals inbox, one-click product+pod provisioning, and
+per-product unit economics. Executable task cards for parallel agents are in
+[TODO.md](../../../TODO.md); the reciprocal docket-side work is Phase 22 of that
+project's `ROADMAP.md`.
+
 ## Audit-driven cycle (Phases 26–32) — status board
 
 | Phase | Title | Status | Deferred within phase |
@@ -1099,6 +1108,468 @@ fixes; a SIP-panel construction project creatable in two clicks with correct
 vocabulary end-to-end; two devices sharing a bucket cannot clobber each other;
 `openapi.json` gates CI and generates the frontend types and the API docs; release
 assets are signed and SBOM'd.
+
+---
+
+## Next — Agent-Factory Control Center (Phases 33–38, August 2026)
+
+**Thesis:** Tack becomes the **control center for a factory of products** built by
+governed agent fleets. [docket](https://github.com/yielab/docket) (folder
+`~/Sites/rack-cli`) already runs the fleets — pods of Lead/Implementer/Reviewer/Tester
+agents, per-project isolation, a policy chokepoint on every tool call, budgets, and a
+hash-chained audit log. What it does not have is a plan of record, a roadmap, a board,
+or a place to see cost-per-outcome. Tack is exactly that, and already carries the
+primitives: a universal item model, a DAG, per-project workflows and vocabulary,
+real-time `BoardEvent` push, and an external-link precedent (`github_links` +
+`maybe_sync_github`) that this cycle copies wholesale.
+
+**The architecture in one line:** _Tack holds desired state, docket executes, and a
+reconciler in a new `tack-orch` crate closes the loop._ Intent flows **push** (Tack →
+docket, synchronous, returns a run id); progress flows **pull** (a jittered poll loop,
+Kubernetes-style). Pull is not a compromise — docket has no outbound webhook, and a
+reconciler survives docket restarts, missed deliveries, and Tack downtime with no
+queue and no replay logic.
+
+```text
+┌──────────────────────── Tack (control center) ───────────────────────┐
+│  Fleet · Approvals inbox · Board/Timeline · Item agent-activity      │
+│  tack-api    POST /api/items/{id}/dispatch                           │
+│              POST /api/sprints/{id}/dispatch      (DAG-ordered)      │
+│              POST /api/approvals/{token}                             │
+│  tack-orch   ControlPlane trait ──► DocketAdapter                    │
+│    dispatcher   item → task → run       (intent, synchronous)        │
+│    reconciler   poll: /health /status.json /runs /approvals /metrics │
+│                 → orch_* tables → workflow engine → BoardEvent       │
+└────────────────────────────────┬─────────────────────────────────────┘
+                                 │ HTTP + Bearer
+┌────────────────────────────────▼─────────────────────────────────────┐
+│  docket serve --dispatch    Lead → Implementer → Reviewer → Tester   │
+│  gated turn loop · approval store · budgets · audit chain            │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### What docket exposes today (verified against `~/Sites/rack-cli/src/docket/serve.py`)
+
+| Surface | Auth | Payload |
+|---|---|---|
+| `GET /status.json` | none | `{apiVersion, gateway, channels, agents[{id,name,kind,scope,model,lastActivity,costUsd,budgetUsd}], totalCostUsd}` |
+| `GET /metrics` | none | Prometheus: `docket_agent_turns_total`, `docket_tool_calls_total`, `docket_approvals_total`, `docket_policy_hits_total`, `docket_turn_duration_seconds`, `docket_gateway_up` |
+| `GET /health` | none | liveness |
+| `GET /runs?project=`, `GET /runs/{id}` | Bearer | run registry — `source` (cli/webhook/schedule/sweep/mcp), `state` (queued/running/succeeded/failed/cancelled), hops, pids |
+| `GET /approvals` | Bearer | pending records **including `context: {taskId, pipelineIndex}`** — this is what correlates an approval back to a Tack item |
+| `POST /dispatch/{project}` | Bearer | binds pipeline `variables` from the JSON body, creates the run record **before** work starts, returns `{ok, run, project}` |
+| `POST /approvals/{token}` | Bearer | `{action: grant\|deny}`, audit-logged with `channel="http"` |
+
+### Two blocking gaps found in docket (fix upstream first)
+
+1. **There is no HTTP endpoint to enqueue a task.** `POST /dispatch/{project}` dispatches
+   an _existing_ queue (`effective_pipeline` → `resolve_variables` → `dispatch_pod`).
+   Task creation lives only in `core/dispatch.py::enqueue_task`, reachable via the CLI
+   or the `delegate` MCP tool. **Phase 35 cannot start until docket ships
+   `POST /tasks/{project}`.** Likewise `docket add` (pod provisioning) is CLI-only,
+   which blocks Phase 37.
+2. **docket's turn loop builds its tool registry from built-ins only** — its agents
+   _cannot_ call Tack's MCP server from inside a turn. So agents cannot self-report
+   progress, and this cycle must not depend on it: reporting comes from the dispatch
+   lifecycle (runs + traces), not from the agents. The `orch_tasks` link table makes
+   agent self-reporting a drop-in addition the day docket closes that wire.
+
+Both are tracked as a docket-side work package in `~/Sites/rack-cli/ROADMAP.md`
+(Phase 20 — "Tack control-plane integration").
+
+### Non-negotiable design rules for this cycle
+
+- **Status transitions go through the workflow engine, never raw SQL.** The reconciler
+  calls the same update path as a user drag, so WIP limits, explicit transitions
+  (construction is linear!), `started_at`/`completed_at`, and parent auto-propagation
+  all still fire. A rejected transition records an `orch_events` row of type
+  `status_map_rejected` and **leaves the item alone** — it never forces the move.
+- **Never hold a SQLite write transaction across an HTTP call to docket.** Tack is
+  single-writer; "database locked" is already in the troubleshooting guide. Fetch →
+  parse → short write txn.
+- **Preserve docket's cost honesty.** docket reports _measured tokens_ and a
+  _clearly labelled estimate_, and refuses to call an estimate spend. Tokens are the
+  primary stored metric; the money column is named `cost_usd_estimated`, carries the
+  pricing-snapshot date, and renders as "estimated" in the UI. Silently relabelling it
+  as spend would be this cycle's worst failure mode.
+- **A control-plane failure never fails a user request.** The reconciler is a background
+  task with its own backoff, exactly like the existing due-soon and backup schedulers
+  in [server.rs](../../../crates/tack-api/src/server.rs).
+
+### Schema added this cycle (migrations 019–024, all landed by one owner in Task 33.2)
+
+| Migration | Table | Purpose |
+|---|---|---|
+| 019 | `control_planes` | `id, name, kind, base_url, token` (write-only over the API), `api_version, health, last_seen_at, consecutive_failures` |
+| 020 | `orch_links` | Tack project ↔ docket pod: `project_id, control_plane_id, remote_project, pipeline_file, blueprint, auto_dispatch, budget_usd, status_map` (JSON) |
+| 021 | `orch_tasks` | item ↔ docket task, **PK `(item_id, remote_task_id)`** — 1:N, an item can be redispatched. `remote_run_id, remote_status, attempt, tokens_in, tokens_out, cost_usd_estimated, dispatched_at, trusted` |
+| 022 | `orch_runs` | mirror of `/runs` — `run_id` PK, `control_plane_id, remote_project, source, state, started_at, ended_at, error, item_id` |
+| 023 | `orch_events` | append-only telemetry (hops, verdicts, rework, tool calls, `status_map_rejected`); index `(item_id, occurred_at)` |
+| 024 | `orch_approvals` | mirror of `/approvals`, correlated to items via `context.taskId`; `token` PK |
+
+Agent state is **not** denormalized onto `items` — the board query LEFT JOINs the latest
+`orch_tasks` row. Revisit only if profiling says so.
+
+### Phase 33 — Control-Plane Link (read-only) 🟡 _planned-next_
+
+**Goal:** See the whole agent fleet from inside Tack, with **zero write path** to
+docket. Independently shippable and safe to run against a live fleet.
+
+#### Task 33.1 — `crates/tack-orch` crate skeleton
+
+New workspace member. Defines the `ControlPlane` **trait** (`health`, `status`,
+`metrics`, `list_runs`, `get_run`, `list_approvals`, `list_tasks`) plus `OrchError`
+(`thiserror`) and the shared DTOs every other task consumes. The trait is what makes
+this a factory control center rather than a docket-specific dashboard — a future
+GitHub-Actions or Temporal adapter drops in beside `DocketAdapter`. Register in the
+workspace `Cargo.toml`; `tack-orch` may depend on `tack-core` and `tack-db`, never on
+`tack-api`.
+
+#### Task 33.2 — Migrations 019–024
+
+Land all six tables in [migrations.rs](../../../crates/tack-db/src/migrations.rs) in one
+change (single owner — this file is the cycle's biggest merge chokepoint). Follow the
+`018_github_links` precedent. Every FK `ON DELETE CASCADE` from `items`/`projects`.
+
+#### Task 33.3 — `DocketAdapter`
+
+`crates/tack-orch/src/adapters/docket.rs`: async `reqwest` client implementing
+`ControlPlane` against the table above. Bearer token on the authenticated routes only.
+Per-request timeout (default 5s), typed deserialization, and a **Prometheus text
+parser** for `/metrics` (no new dependency — the format is trivial; parse
+`name{labels} value`). Tests run against a `wiremock` fixture server built from real
+captured payloads.
+
+#### Task 33.4 — `orch` repository module
+
+`crates/tack-db/src/repo/orch.rs`: CRUD for `control_planes` and `orch_links`, plus
+upsert helpers for the mirror tables (used from Phase 34). Register in
+[repo.rs](../../../crates/tack-db/src/repo.rs).
+
+#### Task 33.5 — Config + control-plane CRUD API
+
+`TACK_ORCH_ENABLE` (default **false** — nothing in this cycle runs until it is on),
+`TACK_ORCH_POLL_SECS` (default 10), `TACK_ORCH_EVENT_RETENTION_DAYS` (default 90) in
+[config.rs](../../../crates/tack-api/src/config.rs) and `tack.toml`. New handler
+`handlers/orch.rs` + routes `GET/POST /api/control-planes`, `GET/PATCH/DELETE
+/api/control-planes/{id}`, `GET/PUT /api/projects/{id}/orch-link`. The docket token is
+**write-only** over the API — returned as a `token_set: bool`, exactly like the S3
+secret key in [settings.rs](../../../crates/tack-api/src/handlers/settings.rs).
+
+#### Task 33.6 — Reconciler skeleton
+
+`crates/tack-orch/src/reconciler.rs`: a `tokio` task per registered control plane,
+jittered interval, exponential backoff, and a health state machine
+(`healthy → degraded` after 3 consecutive failures `→ unreachable` after 10). Spawned
+from [server.rs](../../../crates/tack-api/src/server.rs) alongside the existing
+schedulers, and **only** when `TACK_ORCH_ENABLE=true`. This task polls `/health` and
+`/status.json` only; Phase 34 adds the rest.
+
+#### Task 33.7 — Fleet view (frontend, read-only)
+
+`frontend/src/features/fleet/`: one row per product — Tack project, pod health, roster
+(roles + models), last activity, burn vs budget, gateway state. Sourced from
+`GET /api/control-planes` + `GET /api/fleet`. Empty state explains how to register a
+control plane. Tokens only, WCAG AA, axe-clean — the design-system rules in
+[frontend.md](developer/frontend.md) apply unchanged.
+
+#### Task 33.8 — docket-side read endpoints
+
+Upstream in `~/Sites/rack-cli`: `GET /tasks/{project}` (the pod's `TASK_LIST.json` as
+JSON) and `GET /traces/{project}?since=` (trace events). See that repo's ROADMAP
+Phase 20. Tack can ship 33.1–33.7 without these; 34.4 needs them.
+
+#### Task 33.9 — Docs + OpenAPI
+
+New `docs/book/src/user-guide/orchestration.md` and
+`docs/book/src/developer/orchestration.md`; register both in `SUMMARY.md`. All new
+endpoints annotated with `utoipa` so the Phase 29.3 CI drift gate covers them.
+
+**Acceptance:** with `TACK_ORCH_ENABLE=true` and a live `docket serve`, the Fleet view
+lists every pod with correct roles, models, and budget state; killing `docket serve`
+flips the control plane to `degraded` then `unreachable` without a single failed Tack
+request or a `database is locked` error; with the flag off, no reconciler task is
+spawned and no new route accepts traffic.
+
+### Phase 34 — Run Mirroring & Telemetry 🟡 _planned_
+
+**Goal:** Every run, hop, verdict, approval, and token is visible in Tack, live, and
+attributable to an item.
+
+#### Task 34.1 — `/runs` ingestion
+
+Extend the reconciler: for each linked project, `GET /runs?project=` → upsert
+`orch_runs`. State transitions emit an `orch_events` row and a `BoardEvent`. Runs are
+correlated to items through `orch_tasks.remote_run_id` (populated in Phase 35; until
+then runs mirror unattributed, which is fine and must not error).
+
+#### Task 34.2 — `/approvals` ingestion
+
+`GET /approvals` → upsert `orch_approvals`. Correlate to an item by reading
+`record.context.taskId` and joining `orch_tasks.remote_task_id`. Records that don't
+correlate are stored with `item_id = NULL` and still shown in the fleet-level inbox.
+
+#### Task 34.3 — `/metrics` ingestion + rollup
+
+Parse the Prometheus text into `orch_metrics` (one row per scrape per metric per label
+set). Reuse the parser from 33.3 — do not write a second one.
+
+#### Task 34.4 — Trace ingestion
+
+`GET /traces/{project}?since=<cursor>` → `orch_events`. Map docket's event types
+(`tool_call`, `approval_*`, `cost_charged`, `budget_exceeded`, `verification_failed`,
+`tester_verdict_failed`, `rework_started`, `review_rejected`, `session_end`, …) to a
+Tack-side taxonomy; store unknown types verbatim rather than dropping them, so a docket
+upgrade that adds an event type degrades to "shown as-is".
+
+#### Task 34.5 — Broadcast agent state
+
+Add `BoardEvent::AgentRunUpdated { project_id, item_id, run_id, state }` and
+`BoardEvent::ApprovalPending { … }` in
+[websocket.rs](../../../crates/tack-api/src/handlers/websocket.rs). Frontend
+`shared/realtime` handles both. This is what makes the board move by itself while a
+fleet works.
+
+#### Task 34.6 — Retention + daily rollup
+
+`orch_events` and `orch_metrics` grow unbounded (docket has the identical open gap).
+A daily task rolls raw rows into per-day aggregates **before** deleting anything older
+than `TACK_ORCH_EVENT_RETENTION_DAYS`, so the Phase 38 unit-economics history outlives
+the raw events. Retention is not optional and not a follow-up.
+
+#### Task 34.7 — Tack's own `GET /api/metrics`
+
+Prometheus text merging Tack's work-tracking metrics (items by status, cycle time,
+throughput) with the mirrored docket ones, so one Grafana scrape covers the factory.
+Unauthenticated like docket's, but bound by the same CORS/bind warnings as Phase 27.2.
+
+#### Task 34.8 — Item "Agent Activity" tab
+
+In `frontend/src/features/item-detail/`: a timeline of hops, tool calls, verdicts,
+rework cycles, approvals, and tokens/estimated cost for the item's `orch_tasks`. This
+is where "running / finished / any progress" actually lives for a single work item.
+
+#### Task 34.9 — Agent badges on Board, List, Table
+
+A compact state chip (queued / running / waiting-approval / failed) driven by the
+`orch_tasks` LEFT JOIN. One shared component; no per-view reimplementation.
+
+**Acceptance:** dispatching a pod from the docket CLI (no Tack involvement) surfaces
+the run in Tack within one poll interval; the item timeline shows every hop with token
+counts; every money figure in the UI reads "estimated"; a 90-day-old event is gone but
+its day's aggregate survives.
+
+### Phase 35 — Dispatch: Tack drives the factory 🟡 _planned — blocked on docket `POST /tasks`_
+
+**Goal:** Moving a card dispatches a governed agent pipeline.
+
+#### Task 35.1 — docket-side `POST /tasks/{project}`
+
+Upstream. Body `{description, priority, trusted}` → `dispatch.enqueue_task` → returns
+`{taskId}`. Same Bearer auth, same audit logging, and it must honour the `pre_input`
+policy gate (a `block` verdict returns 4xx with the policy id).
+
+#### Task 35.2 — `status_map` schema + validation
+
+`orch_links.status_map` shape:
+
+```json
+{ "dispatch_from": ["Ready"], "on_running": "In Progress",
+  "on_waiting_approval": "Blocked", "on_succeeded": "Done",
+  "on_failed": "Blocked", "on_cancelled": "Ready" }
+```
+
+Validated **at save time** against the project's `WorkflowConfig` — every named status
+must exist. Hardcoding "running → In Progress" would break the construction, personal,
+and homework presets, which is the whole point of Tack's vocabulary system.
+
+#### Task 35.3 — `POST /api/items/{id}/dispatch`
+
+Resolve the link → enqueue the task on docket → `POST /dispatch/{project}` with the
+item's fields bound as pipeline `variables` → persist `orch_tasks` (task id + run id)
+→ apply `on_running`. Idempotent per `(item_id, attempt)`.
+
+#### Task 35.4 — `POST /api/sprints/{id}/dispatch` (DAG-ordered)
+
+**The highest-value primitive in this cycle** — this is what "run a product line" means,
+and it has no precedent in either codebase, so it gets the most design attention.
+Topologically sort the sprint's items using
+[dependency.rs](../../../crates/tack-core/src/dependency.rs), enqueue in order, and hold
+an item until its dependencies reach a `done`-category status. Respect the pod's WIP by
+capping in-flight dispatches per project. A cycle in the graph is already impossible
+(the DAG validator prevents it) — assert it anyway and fail loudly.
+
+#### Task 35.5 — Auto-dispatch hook
+
+In [items.rs](../../../crates/tack-api/src/handlers/items.rs), beside the existing
+`maybe_sync_github` call: when an item enters a `dispatch_from` status and
+`orch_links.auto_dispatch` is true, fire the dispatcher. Best-effort like the GitHub
+hook — a dispatch failure logs and records an event, never fails the user's PATCH.
+
+#### Task 35.6 — Reconciler applies `status_map`
+
+Terminal run states drive the item's status **through the workflow engine**. On
+rejection, record `status_map_rejected` with the workflow's reason and surface it in
+the UI. See the non-negotiables above.
+
+#### Task 35.7 — Untrusted-source flag
+
+GitHub/Linear-imported item titles and descriptions are **attacker-authored text that
+becomes agent input**. Mark imported items `source: imported` at import time and pass
+`trusted: false` on enqueue so docket's `pre_input` policy hook treats them as
+untrusted. This is a real prompt-injection boundary, not a formality.
+
+#### Task 35.8 — Dispatch UI
+
+"Dispatch to agents" on the item detail and the board card menu; "Run sprint" on the
+Sprints view with a dependency-order preview and an in-flight cap control.
+
+#### Task 35.9 — Security gating + backup exclusion
+
+Every dispatch route is gated behind `TACK_ORCH_ENABLE` **and** a configured control
+plane token; off by default. The docket token must be **excluded from backup bundles**
+— the S3 secret key already leaked this way once (finding #7 of the July audit). Ship
+the exclusion and its regression test in the same commit.
+
+**Acceptance:** dragging a card to Ready enqueues a docket task, the pipeline runs
+Lead → Implementer → Reviewer → Tester, and the card lands in Done by itself; a
+construction project with a linear workflow refuses an illegal auto-move and shows why;
+`GET /api/backup` contains no control-plane token; with `TACK_ORCH_ENABLE` unset, every
+dispatch route 404s.
+
+### Phase 36 — Governance Surface 🟡 _planned_
+
+**Goal:** Approve, pause, and audit the fleet from the board.
+
+#### Task 36.1 — Approvals proxy
+
+`POST /api/approvals/{token}` `{action}` → docket's `POST /approvals/{token}`. Requires
+a **separate** `TACK_ORCH_APPROVAL_TOKEN`; with only `TACK_API_TOKEN` set, the
+approvals surface is read-only. Rationale: the Tack token is a single shared secret,
+and granting a docket approval is a genuinely higher-privilege action than editing a
+card.
+
+#### Task 36.2 — Approvals inbox
+
+A fleet-wide page: every pending approval across every pod, with the requesting agent,
+the action text, the correlated item, and grant/deny. Ordered oldest-first — docket's
+approvals **fail closed on timeout**, so latency here has a real cost.
+
+#### Task 36.3 — Budget & pause visibility
+
+Per-pod burn vs cap from `/status.json`, a warning band, and a clear "this pod is
+budget-paused; its queue is refusing tasks" state with the `docket profile <id>
+--resume` remedy spelled out. Tack does not clear the pause itself in this phase.
+
+#### Task 36.4 — Policy & audit panel
+
+Denial rate, policy hits by id, approvals by channel, tool-call volume — all from
+`/metrics`. Link out to `docket audit verify` rather than reimplementing chain
+verification in Rust.
+
+#### Task 36.5 — docket-side `channel="tack"`
+
+Upstream: accept and record a `tack` approval channel so the audit chain's provenance
+stays honest instead of every board decision masquerading as `http`.
+
+**Acceptance:** a gated `git push` from an Implementer appears in the Tack inbox within
+one poll interval, granting it from Tack resumes the pipeline, and
+`docket audit verify` shows the entry tagged `channel="tack"`.
+
+### Phase 37 — Factory Provisioning 🟡 _planned — blocked on docket pod-provisioning endpoint_
+
+**Goal:** One click creates a product: a Tack project **and** its governed pod,
+pipeline, verify command, and budget. This is what makes it a factory rather than a
+very good dashboard.
+
+#### Task 37.1 — `orchestration` block on templates
+
+Extend the template payload
+([templates.rs](../../../crates/tack-db/src/repo/templates.rs)) with an optional
+`orchestration` object: docket blueprint (`software` / `research` / `content` / `ops` /
+`agentic-product`), pipeline YAML reference, `verifyCmd`, budget cap, default
+`status_map`, pod shape (`--pod full` / `--with`). Backwards compatible — templates
+without it behave exactly as today.
+
+#### Task 37.2 — Provisioning flow
+
+`POST /api/projects/from-template/{id}` gains `provision_pod: true` → create the Tack
+project, then the docket pod, pipeline, budget, and `orch_link`, in that order, with
+**rollback on partial failure** (a Tack project with a half-created pod is worse than
+no project). Requires the upstream provisioning endpoint from 37.5.
+
+#### Task 37.3 — Pipeline library
+
+Store validated docket pipeline YAML in Tack (`pipelines` table or a template field),
+validated by round-tripping through docket's own `pipeline validate` rather than
+reimplementing the schema in Rust — a second validator would drift.
+
+#### Task 37.4 — New-product wizard
+
+Product type → template → pod shape → budget → verify command → create. Reuses the
+Phase 31 template-first onboarding surface.
+
+#### Task 37.5 — docket-side pod provisioning over HTTP
+
+Upstream: `docket add` is CLI-only. Needs `POST /pods` `{project, path, blueprint,
+pod, budget, verifyCmd}` returning the pod roster.
+
+**Acceptance:** from an empty install, one wizard pass yields a board with the right
+vocabulary **and** a `docket list` entry with the right roles, models, budget, and
+verify command; a forced failure mid-provision leaves neither a stray project nor a
+stray pod.
+
+### Phase 38 — Unit Economics & Optimization 🟡 _planned_
+
+**Goal:** Answer "which product lines are economical to build with agents?" — the
+question a factory operator actually has, and one nobody can currently answer.
+
+#### Task 38.1 — Core metrics
+
+Per completed item: tokens in/out, estimated cost, **agent lead time**
+(`dispatched_at → completed_at`) versus Tack's existing human `started_at →
+completed_at`, and **rework rate** (`rework_started` + `verification_failed` +
+`tester_verdict_failed` events per task). Rework rate is the agent-fleet equivalent of
+a defect escape rate and is the earliest regression signal available.
+
+#### Task 38.2 — Product-line comparison
+
+Slice every metric by `project_type` and `item_type`. Cost-per-completed-item by
+product line is the headline number of the whole cycle.
+
+#### Task 38.3 — Model right-sizing feedback
+
+Export per-role outcome quality (rework rate, verdict pass rate) against the model
+docket used, in a shape docket's role→model policy can consume. This closes the
+optimization loop: Tack observes outcomes, docket adjusts models. Export only in this
+phase — Tack does not mutate docket's model policy.
+
+#### Task 38.4 — Analytics export
+
+CSV/JSON export of the factory analytics, reusing the existing export machinery in
+[export.rs](../../../crates/tack-api/src/handlers/export.rs).
+
+**Acceptance:** a dashboard answers "what did each product line cost, in tokens and
+estimated dollars, per shipped item, and how often did agents need rework?" — with
+every dollar figure labelled an estimate and carrying its pricing-snapshot date.
+
+### Multi-Agent Dispatch Plan (Phases 33–38)
+
+The full wave plan, per-agent task cards, file-ownership map, and rules of engagement
+live in **[TODO.md](../../../TODO.md)** at the repo root — written to be picked up cold
+by parallel Sonnet agents.
+
+**Sequencing at a glance:** Task 33.1 + 33.2 are a blocking Wave 0 (they define the
+crate, the trait, and every table the rest of the cycle writes to). Phase 33's
+remaining tasks fan out in Wave 1. Phase 34 is the widest parallel wave. Phase 35 is
+blocked on the upstream docket endpoint and is the only phase with real cross-task
+coupling. Phases 36–38 are largely independent tracks.
+
+**Definition of done for the whole cycle:** from a single Tack install, an operator can
+provision a new product with its governed agent pod in one action, watch its roadmap
+execute itself on the board in real time, approve gated actions from the approvals
+inbox, and answer what the product line cost per shipped item — with every cost figure
+honestly labelled an estimate.
 
 ### Future / Optional
 

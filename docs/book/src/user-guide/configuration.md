@@ -19,6 +19,10 @@ override TOML values. Both are optional — all settings have built-in defaults.
 | `TACK_API_TOKEN` | `api_token` | _(none)_ | When set, all `/api/*` requests need `Authorization: Bearer <token>` |
 | `TACK_ALLOWED_ORIGINS` | `allowed_origins` | `localhost:8080,127.0.0.1:8080` | Comma-separated CORS allow-list |
 | `TACK_MAX_BODY_SIZE` | `max_body_size` | `2097152` | Global request body limit in bytes (2 MB). File upload endpoints are always 50 MB. |
+| `TACK_ORCH_ENABLE` | `orch_enable` | `false` | Enables the Agent-Factory Control Center: the orchestration reconciler background task and the `/api/control-planes`, `/api/projects/{id}/orch-link`, `/api/fleet` routes. Unset ⇒ no reconciler task is spawned and every one of those routes returns `404` |
+| `TACK_ORCH_POLL_SECS` | `orch_poll_secs` | `10` | Reconciler base poll interval in seconds, before per-plane exponential backoff and jitter |
+| `TACK_ORCH_EVENT_RETENTION_DAYS` | `orch_event_retention_days` | `90` | Days of mirrored orchestration event/metric history kept before the retention sweep rolls old rows into per-day aggregates and deletes them |
+| `TACK_ORCH_APPROVAL_TOKEN` | `orch_approval_token` | _(none)_ | Separate shared secret for granting/denying a docket approval. Distinct from `TACK_API_TOKEN` on purpose — never logged |
 
 ---
 

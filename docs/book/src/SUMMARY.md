@@ -18,6 +18,7 @@
 - [CLI](user-guide/cli.md)
 - [Configuration](user-guide/configuration.md)
 - [Administration & Security](user-guide/administration.md)
+- [Orchestration & the Fleet View](user-guide/orchestration.md)
 - [Troubleshooting & FAQ](user-guide/troubleshooting.md)
 
 ---
@@ -27,6 +28,7 @@
 - [Architecture Overview](developer/README.md)
 - [Crate Tour](developer/crate-tour.md)
 - [Frontend & Design System](developer/frontend.md)
+- [Orchestration Architecture](developer/orchestration.md)
 - [Adding Features](developer/adding-features.md)
 - [API Reference](developer/api-reference.md)
 - [Testing](developer/testing.md)
