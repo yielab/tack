@@ -7,9 +7,17 @@ four non-negotiable design rules. **This file holds the dispatch plan** — writ
 picked up cold by parallel Sonnet agents.
 
 Reciprocal upstream work lives in `~/Sites/rack-cli/ROADMAP.md` → **PHASE 22 — Control-plane
-write API for an external plan-of-record (Tack)**, cards P22-1…P22-7. ~~Two Tack phases are
+write API for an external plan-of-record (Tack)**, cards P22-1…P22-8. ~~Two Tack phases are
 hard-blocked on it (35 needs P22-1, 37 needs P22-5).~~ **Corrected 2026-08-05: docket shipped
-P22-1…P22-4 and P22-6. Only Phase 37 is still blocked (needs P22-5, `POST /pods`).**
+P22-1…P22-4 and P22-6.** ~~Only Phase 37 is still blocked (needs P22-5, `POST /pods`).~~
+**Corrected again 2026-08-05 (card D3, found while investigating `pipeline validate`):
+`POST /pods` (P22-5) has also shipped — `serve.py::_handle_post_pods` +
+`core/pod_provisioning.py`, commit `0d84f47`. docket's own ROADMAP.md still marks it
+`TODO` (a real staleness bug over there, not a timing artifact — its last commit
+postdates 0d84f47). D4 is very likely unblocked; re-verify against `serve.py` directly
+before starting, same discipline the first correction established. D3 also added
+**P22-8 — `pipeline validate` over HTTP**, a genuine new gap: no HTTP route exists for
+docket's own pipeline schema validator, CLI-only as of this writing.**
 
 ---
 
@@ -35,10 +43,10 @@ Every card below has a handoff note in §6 with its full reasoning.
 | R2 · R3 | WIP-limit race — dispatch path, then board-drag and voice paths | ✅ done |
 | D1 | approvals inbox + proxy, behind a separate decision credential | ✅ done |
 | F1 | per-sprint accessible names on the Run sprint control | ✅ done |
-| **D2** | budget, pause, and policy panels | ⬜ **not started** — first task is to establish what docket exposes over HTTP; do not build a pause control that cannot work |
-| **D3** | template `orchestration` block + pipeline library | ⬜ **not started** |
+| D2 | budget + policy panels | ✅ done — **no pause control/indicator built**: docket has zero HTTP surface for it, in either direction (see §1.4 note and §6) |
+| D3 | template `orchestration` block + pipeline library | ✅ done — backend + validation; UI editor deliberately deferred (see §6) |
 | **D5** | unit economics (tokens, estimated cost, lead time, rework rate) | ⬜ **not started** |
-| **D4** | provisioning flow + wizard | 🔴 **blocked** — needs docket `POST /pods`, which does not exist |
+| **D4** | provisioning flow + wizard | 🟡 **likely unblocked** — `POST /pods` (P22-5) shipped upstream (found by D3, 2026-08-05); re-verify against `serve.py` before starting. Still needs its own design for rollback-on-partial-failure |
 
 **Known gaps, carried deliberately** (each is written up in the §6 note of the card that found it):
 
@@ -51,6 +59,18 @@ Every card below has a handoff note in §6 with its full reasoning.
 - Board/List/Table each open their own WebSocket per project (B4).
 - 3 pre-existing frontend unit-test failures (`requestBlob`/`createObjectURL`),
   independently confirmed to predate this cycle.
+- `docket pipeline validate` has no HTTP route (CLI-only), so a template's
+  `orchestration.pipeline_yaml` is only checked for being parseable YAML, not for
+  being a valid docket pipeline. Upstream gap recorded as `rack-cli/ROADMAP.md`
+  P22-8 (D3).
+- docket's budget auto-pause has no HTTP surface at all — not to clear it (CLI-only,
+  `docket profile <id> --resume`), and not even to reliably *read* it per Tack project
+  (`orch_events` has no `remote_project` column, so the one proxy event that exists,
+  `paused_refused`, can't be attributed to a specific linked project). D2 built the
+  budget/policy panels without any pause indicator rather than guess. Two upstream/
+  ingestion fixes would close this: docket exposing `paused`/`pausedReason` on
+  `/status.json`, and Tack persisting `RemoteEvent.project`/a `remote_project` column
+  on mirrored trace events.
 
 ---
 
@@ -155,7 +175,7 @@ item's status on that transition".
 
 | Route | Auth | Notes |
 |---|---|---|
-| `GET /status.json`, `GET /metrics`, `GET /health` | none | |
+| `GET /status.json`, `GET /metrics`, `GET /health` | none | **no pause/resume surface at all** — see the D2 note below |
 | `GET /runs?project=`, `GET /runs/{id}` | Bearer | |
 | `GET /approvals` | Bearer | records carry `context: {taskId, pipelineIndex}` |
 | `POST /dispatch/{project}` | Bearer | body = pipeline `variables`; returns `{ok, run, project}` |
@@ -164,6 +184,23 @@ item's status on that transition".
 | `GET /traces/{project}?since=` | Bearer | **shipped** (docket P22-3) — cursor paging; events are **snake_case** |
 | `POST /tasks/{project}` | Bearer | **shipped** (docket P22-1) — body `{description, priority, trusted}` → `{ok, task, project, status, approvalToken?}` |
 | `POST /pods` ⚠️ | Bearer | **does not exist yet** — blocks Tack Phase 37 (D4) |
+
+> **Added 2026-08-05 (card D2).** docket's budget auto-pause
+> (`core/dispatch.py::_pause_lead_for_budget`, sets a Lead agent's
+> `paused`/`pausedReason`) has **zero HTTP surface, in either direction**.
+> Read `serve.py`'s full `do_GET`/`do_POST` route table directly before
+> assuming otherwise — there is no `/profile`, no pause, and no resume route
+> anywhere in it; `docket profile <id> --resume` is CLI-only. And the read
+> side isn't reachable either: `_agent_record()` (backs `/status.json`) and
+> `render_metrics()` (backs `/metrics`) both omit `paused`/`pausedReason`
+> from their output entirely — verified by reading each function's exact
+> return value, not inferred. The only proxy is a `paused_refused` trace
+> event, and even that can't be attributed to a single linked Tack project
+> with today's ingestion (`orch_events` has no `remote_project` column). See
+> TODO.md §6 (card D2) for the full write-up. **Do not build a pause
+> read-or-write control against this table without first re-reading
+> `serve.py` yourself** — this note describes what's missing, not a promise
+> it'll stay missing forever.
 
 > **Corrected 2026-08-04.** This table previously marked the first three as unbuilt and
 > used them to block B2 and all of Wave 3. **That was wrong** — docket shipped Phase 22
@@ -5782,3 +5819,246 @@ comment only — no behavior change). Did not touch `dispatcher.rs`,
 `sprint_dispatch.rs`, `handlers/orch.rs`, `router.rs`, `openapi.rs`,
 `docs/openapi.json`, `crates/tack-db/src/repo/orch.rs`, or `frontend/**`,
 per scope — those are D1's and other agents' concurrent territory.
+
+### D3 — 2026-08-05
+
+**`pipeline validate`'s reachability, first, since it decided the shape of
+everything else.** Read `~/Sites/rack-cli/src/docket/cli/_pipeline.py` and
+`core/pipeline.py` directly. `docket pipeline validate <file>` is a thin CLI
+wrapper (`cli/_pipeline.py::_validate`) over `core.pipeline.validate_pipeline
+(text: str) -> list[str]` — a pure function, already UI-free, already the
+single source of truth for "is this a valid docket pipeline" (duplicate step
+ids, rework edges pointing at unknown/later steps, bad variable names, the
+works — `PipelineSpec`'s pydantic `model_validator`). I checked every
+`do_GET`/`do_POST` branch in `serve.py` by hand: **there is no HTTP route
+for it.** The closest thing, `POST /dispatch/<project>`, *runs* a pipeline
+against a real pod; it doesn't just check one, and it isn't a substitute.
+
+**Decision: don't shell out, don't reimplement, do the one honest check
+Tack can make, and record the gap upstream.** Shelling out to a local
+`docket` binary from `tack-api` (the server) was the option I ruled out
+hardest: every other control-plane interaction in this codebase goes
+through `tack-orch::ControlPlane` over HTTP precisely because a docket
+instance is not assumed to be on the same host as the Tack server — adding
+one code path that assumes a local CLI binary would be a real architectural
+regression, not a shortcut, and `tack-api` shells out to nothing today
+(only `tack-cli`'s `tack branch` does, and that runs on the operator's own
+machine by design). Reimplementing `PipelineSpec`'s schema in Rust is
+exactly the mistake this cycle already paid down once (B2's client-side
+cursor reimplementation of `serve.py`'s trace-paging algorithm, undone by
+R1) — a second copy of docket's pipeline schema would drift the first time
+docket adds a step kind or gate variant, with no compiler error to catch it.
+
+So: `handlers::templates::validate_template_orchestration` (new,
+`crates/tack-api/src/handlers/templates.rs`) does exactly one check on
+`orchestration.pipeline_yaml` when it's set — `serde_yaml::from_str` parses
+it — and says so plainly in both the doc comment and the 400 error message
+it produces on failure ("this only checks it parses as YAML, not that it is
+a valid docket pipeline"). No stored field claims a stronger guarantee than
+that. I recorded the actual gap upstream: `~/Sites/rack-cli/ROADMAP.md`
+Phase 22, new card **P22-8 — `pipeline validate` over HTTP** (isolated
+diff — that repo has *other* uncommitted work in flight, `core/
+pod_provisioning.py` and a new test file, neither of which I touched).
+P22-8 proposes `POST /pipeline/validate`, body = raw YAML, `{ok, errors}` —
+a `do_POST` branch and nothing else, since `validate_pipeline` already
+exists and already takes exactly the argument this needs. The day that
+route ships, `validate_template_orchestration` should call it instead of
+the bare `serde_yaml` parse — flagged in both files.
+
+**Second finding, not mine to act on but too load-bearing to sit on: `POST
+/pods` already shipped.** Reading `serve.py` for the pipeline-validate route
+turned up `elif path == "/pods": self._handle_post_pods()` — a full,
+working implementation (`core/pod_provisioning.py`, commit `0d84f47`,
+"Feat: POST /pods -- provisioning over HTTP (P22-5)", 2026-08-04). The
+status board above and `rack-cli/ROADMAP.md`'s own P22-5 entry both still
+say "does not exist" / "TODO" — the same staleness pattern the 2026-08-04
+correction at the top of this file already found for P22-1/2/3 (docket's
+ROADMAP.md lags its own source; `ROADMAP.md`'s last commit there is
+2026-08-05 10:42, *after* 0d84f47, so it isn't even a timing artifact — the
+card just wasn't marked done). **D4 (provisioning) is very likely
+unblocked.** I did not touch D4's files or ROADMAP.md's P22-5 marker myself
+— correcting a status line I merely verified in passing, on a card that
+isn't mine, felt like overreach the same way editing `router.rs` beyond a
+disclosed one-liner would be. Whoever picks up D4 should re-verify against
+`serve.py::_handle_post_pods` directly (its docstring documents the full
+`{project, path, blueprint, pod, budget, verifyCmd}` contract and rollback
+behavior) before starting, not trust either roadmap's status marker.
+
+**What I built.** An `orchestration` block on project templates (Phase 37,
+tasks 37.1 + 37.3):
+
+- `crates/tack-core/src/models.rs` — `TemplateOrchestration` (blueprint,
+  `pipeline_yaml`, `pipeline_file`, `verify_cmd`, `budget_usd`, `status_map`,
+  `auto_dispatch`, `pod_shape`), `TemplateStatusMap` (field-for-field
+  identical to `handlers::orch::StatusMap` — kept as two types because
+  `tack-core` cannot depend on `tack-api`, but never validated separately,
+  see below), `OrchBlueprint` (the five real docket blueprint names,
+  `rename_all = "kebab-case"` so `AgenticProduct` → `"agentic-product"` on
+  the wire — verified against `core/blueprints.py`, no `Unknown` fallback
+  since this is a value Tack *sends*, not one it decodes from docket, so
+  TODO.md §1.2's `Unknown(String)` rule doesn't apply here by its own
+  scoping). `ProjectTemplate.orchestration` / `CreateProjectTemplate.
+  orchestration: Option<TemplateOrchestration>`, both `#[serde(default)]` —
+  absent means nothing, the same rule migration 029 established for
+  `items.source`.
+- `crates/tack-db/src/migrations.rs` — migration 030, `ALTER TABLE
+  project_templates ADD COLUMN orchestration TEXT` (nullable, no default —
+  `NULL` is "no block," distinct from `Some("{}")`). No `NOT NULL`, so every
+  existing INSERT path, including `seed_builtin_templates`'s (which I did
+  **not** need to touch), keeps working unchanged — an unlisted column with
+  no default just becomes `NULL`.
+- `crates/tack-db/src/repo/templates.rs` — `TemplateRow.orchestration:
+  Option<String>`, threaded through `create_template`/`get_template`/
+  `list_templates`; a malformed JSON blob degrades to `None` (`parse_
+  orchestration`) rather than failing the whole template read, matching this
+  file's existing "corrupt JSON → safe default" convention for `vocabulary`/
+  `workflow`.
+- `crates/tack-api/src/handlers/templates.rs` — `validate_template_
+  orchestration(orch, workflow) -> ApiResult<()>`, called from
+  `create_template` before the repo write, against `data.workflow.clone().
+  unwrap_or_else(simple_workflow)` — the **exact same fallback** `repo::
+  templates::create_template` applies internally, so "the workflow this
+  template will actually create" can never diverge between the validator and
+  the write (TODO.md §6's explicit instruction: validate against the
+  template's own future workflow, not a live project's). `create_template`
+  itself changed from `Result<Json<T>, StatusCode>` (a bare status, no body —
+  its own `#[utoipa::path]` already documented a `422` `ErrorEnvelope` body
+  that the old code never actually produced) to `ApiResult<Json<T>>`, which
+  is what makes "400 naming the bad key" possible at all; `list_templates`/
+  `get_template`/`delete_template` untouched. `create_project_from_template`
+  and `save_project_as_template` got doc comments recording two deliberate
+  non-decisions, not code changes:
+  - `create_project_from_template` never reads `template.orchestration` —
+    turning it into a live `orch_links` row needs a `control_plane_id`
+    pointing at one specific, already-registered docket instance, which
+    can't exist yet at this point (no pod provisioned). That's D4's
+    `provision_pod: true` extension of this same endpoint (task 37.2), not
+    mine — nothing here is gated on `TACK_ORCH_ENABLE` because nothing here
+    does anything orchestration-shaped yet.
+  - `save_project_as_template` never derives `orchestration` from the source
+    project's live `orch_link`, unlike vocabulary/workflow/boards, which it
+    does copy. This is a considered call, not a shortcut:
+    `orch_links.control_plane_id`/`remote_project` point at one specific
+    docket instance and one specific remote project string — copying them
+    into a template would make every *future* project created from that
+    template silently point at someone else's pod. A template's
+    orchestration block can only be set explicitly via `POST /api/templates`
+    in this cycle.
+
+**Reused, not duplicated, the `status_map` validator.** `handlers::orch::
+validate_status_map` (card A4) went from a private `fn` to `pub(crate) fn`
+— the only change to that function; the visibility bump is disclosed since
+`handlers/orch.rs` is D2's file this wave, and I re-read the file
+immediately before making it (D2 was mid-edit on `router.rs`/`openapi.rs`
+concurrently — confirmed by the live-file notices the harness surfaced
+while I worked, so I re-read both files fresh right before touching either).
+`validate_template_orchestration` builds a `handlers::orch::StatusMap` from
+`TemplateStatusMap`'s five fields (a plain conversion, not a validator) and
+calls `validate_status_map` directly — one validator, two Rust types feeding
+it, exactly the instruction in TODO.md §6.
+
+**`openapi.rs` — also D2's file, also disclosed, also additive-only.** Added
+`OrchBlueprint`, `TemplateOrchestration`, `TemplateStatusMap` to the
+existing `use tack_core::models::{...}` import list and the `components(
+schemas(...))` list, next to `ProjectTemplate`/`CreateProjectTemplate` —
+three identifiers in two places, nothing restructured. No `router.rs`
+change was needed at all: this card added zero new routes (all the new
+behavior lives inside the existing `POST /api/templates` handler), so the
+chokepoint-file conflict the card's instructions warned about never
+actually materialized. Regenerated `docs/openapi.json` via
+`UPDATE_OPENAPI=1 cargo test -p tack-api --test openapi_contract` — the
+regenerated file necessarily also reflects D2's already-landed routes
+(`/metrics`, `/items/{id}/dispatch`, `/approvals`, etc.), since it's a
+single generated artifact for the whole API, not something scoped per-card.
+
+**Trust — items created from a template.** There aren't any, in this
+codebase, today. I read `create_project_from_template` closely before
+concluding this: it creates exactly one Tack project and applies workflow /
+vocabulary / custom fields / boards from the template — no `Item` rows.
+`save_project_as_template` doesn't snapshot items either (only board
+*structure* — columns derived from workflow statuses — not the items sitting
+in them). So "what `ItemSource` should a template-authored item get" has no
+live call site to decide for in this cycle; I looked for one deliberately
+rather than assuming. If a future card adds seed items to templates, the
+precedent is already unambiguous from C2's work: template-authored text is
+not the operator's own words typed in the moment, so it should default to
+whatever `ItemSource` variant `is_trusted() == false` for — never `Manual`,
+same "unsafe state is never the accidental default" rule migration 029
+applies everywhere else. Recording this explicitly so nobody has to re-derive
+it: it is not this card's gap, but it also isn't nothing.
+
+**Frontend.** Added `orchestration` to the generated TS types via `npm run
+gen:api` (`frontend/src/shared/api/schema.gen.ts`, machine-generated from
+`docs/openapi.json` — picks up `ProjectTemplate.orchestration` and the three
+new schemas automatically, plus D2's already-landed endpoints in the same
+regeneration, same reasoning as the `docs/openapi.json` regen above). I did
+**not** build a UI panel for authoring/editing a template's orchestration
+block — `features/templates/TemplateCreator.tsx` is unchanged. This is a
+scope call, not an oversight: the card's hard requirements (validate,
+don't trust) are both save-time/API-layer concerns and are fully delivered
+without one; a template-orchestration editor is materially new UI surface
+that risks colliding with D2's concurrent, in-flight work under `frontend/
+src/features/settings/orchestration/` (visible as untracked files in `git
+status` while I worked) rather than genuinely being blocked by it. Left for
+a follow-up card once D2's panels establish the visual vocabulary for
+orchestration-shaped settings UI, so this doesn't end up a second,
+inconsistent design.
+
+**What I tested.**
+
+- `crates/tack-core/src/models.rs` (6 new `#[cfg(test)]` cases): missing-key
+  → `None` for both `ProjectTemplate` and `CreateProjectTemplate`
+  (backward-compat, mirrors `item_deserialization_defaults_missing_source_
+  to_unknown`); `TemplateOrchestration::default()` round-trips;
+  `OrchBlueprint` serializes to docket's exact five wire strings including
+  the kebab-case hyphen; `TemplateStatusMap` round-trips every field.
+- `crates/tack-db/src/repo/templates.rs` (3 new `#[tokio::test]` cases):
+  every built-in template has `orchestration: None` after seeding; a
+  template created with `orchestration: None` round-trips through
+  `create_template`/`get_template` as `None`; a fully populated
+  `TemplateOrchestration` round-trips byte-for-byte through `create_
+  template` → `get_template` → `list_templates`.
+- `crates/tack-api/tests/templates_orchestration_test.rs` (new, 7 tests):
+  no-`orchestration`-key and explicit-`null` both still create the template
+  (backward compat); unknown `status_map` name → `400` naming the bad
+  status (`"Ready"` appears in the error message, not just a bare status
+  code); **status_map is validated against a custom `workflow` supplied in
+  the *same* request, not `simple_workflow()`'s default names** — the test
+  that most directly proves the "validate against the workflow the template
+  will actually create" instruction, using a custom two-status-category
+  workflow where a `simple_workflow()` name ("To Do") is rejected and the
+  template's own name ("Backlog") is accepted; unparseable `pipeline_yaml`
+  → `400`; a fully populated valid block round-trips through create + get,
+  including the blueprint's wire name; a rejected orchestration block leaves
+  no template behind at all (checked via a follow-up `GET /api/templates`
+  list, not just the failing response code).
+- Updated 4 pre-existing `CreateProjectTemplate` struct literals in
+  `crates/tack-db/tests/integration_test.rs` with `orchestration: None` —
+  these predate this field and needed the new required struct field added
+  to compile; no behavior change.
+
+**Verification.** `cargo build --workspace`: clean. `cargo test
+--workspace --no-fail-fast`: 547 passed, 0 failed (my 16 new tests — 6
+tack-core + 3 tack-db + 7 tack-api — on top of whatever C-and-D-wave tests
+had already landed concurrently; I don't have a clean pre-D3 baseline number
+to diff against since other agents were actively landing work in parallel,
+but nothing failed). `cargo clippy --workspace --all-targets -- -D
+warnings`: clean. `cargo fmt --all -- --check`: clean (one `rustfmt` pass
+needed on `migrations.rs`, applied). Frontend: `npm run type-check` clean;
+`npm run lint:tokens` 0/0 both gates; `npm run test -- --run`: 363 passed,
+3 failed — the same three pre-existing `requestBlob`/`createObjectURL`
+failures named in this card's baseline, confirmed unrelated (I touched zero
+frontend `.ts`/`.tsx` source, only regenerated `schema.gen.ts`).
+
+**Files touched, all disclosed:** `crates/tack-core/src/models.rs`,
+`crates/tack-db/src/migrations.rs`, `crates/tack-db/src/repo/templates.rs`,
+`crates/tack-db/tests/integration_test.rs`, `crates/tack-api/src/handlers/
+templates.rs`, `crates/tack-api/src/handlers/orch.rs` (one visibility
+keyword — D2's file, disclosed), `crates/tack-api/src/openapi.rs` (three
+schema identifiers in two lists — D2's file, disclosed), `crates/tack-api/
+tests/templates_orchestration_test.rs` (new), `docs/openapi.json`
+(regenerated), `frontend/src/shared/api/schema.gen.ts` (regenerated,
+frontend source untouched), `~/Sites/rack-cli/ROADMAP.md` (new P22-8 card,
+isolated diff, that repo's other in-flight uncommitted work left alone). Did
+not touch `router.rs` (no new routes), `frontend/src/features/templates/**`
+(UI deferred, see above), or any `D2`/`D4`/`D5` file.

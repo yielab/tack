@@ -5,17 +5,88 @@ use axum::{
 };
 use serde::Deserialize;
 use tack_core::models::*;
+use tack_core::workflow::WorkflowConfig;
 use tack_db::repo;
 use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
 
 use crate::AppState;
+use crate::error::{ApiError, ApiResult};
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct ListTemplatesQuery {
     pub project_type: Option<ProjectType>,
+}
+
+/// Validate a template's `orchestration` block before it's stored (Phase 37,
+/// card D3, task 37.1 — TODO.md's "validate, don't trust" requirement).
+/// `workflow` must be the workflow *this template will actually create*
+/// (`create_template` resolves the same `data.workflow` /
+/// `simple_workflow()` fallback `repo::templates::create_template` uses,
+/// before calling here — see that call site), not any live project's
+/// workflow: a template's `status_map` describes transitions for boards this
+/// template will produce in the future, which may not exist yet.
+///
+/// Two checks, deliberately not three:
+///
+/// 1. **`status_map`** — every named status must exist in `workflow`. Reuses
+///    `handlers::orch::validate_status_map` (card A4's `orch-link` validator,
+///    TODO.md §1.3) via a field-for-field conversion into `orch::StatusMap`,
+///    rather than a second copy of the same three lines of logic — TODO.md's
+///    explicit instruction for this card, precedent: A4 built exactly this
+///    for `PUT /orch-link` already.
+/// 2. **`pipeline_yaml`**, if inline text is supplied, must at least parse as
+///    YAML. This is deliberately *not* a check against docket's pipeline
+///    schema (step ids, gate/rework edges, variable-name rules, duplicate-id
+///    detection, …) — that real validator is `docket pipeline validate`
+///    (`core.pipeline.validate_pipeline` in
+///    `~/Sites/rack-cli/src/docket/core/pipeline.py`), reachable only as a
+///    local CLI subcommand as of 2026-08-05: `serve.py` has no HTTP route
+///    for it (verified by reading every `do_GET`/`do_POST` branch), and
+///    shelling out to a local `docket` binary from `tack-api` would be
+///    wrong even if one were installed — Tack's server talks to every
+///    control plane over HTTP (`tack-orch::ControlPlane`), never a local
+///    process, and a control plane is not necessarily on the same host as
+///    the API server. Reimplementing docket's schema in Rust instead is
+///    exactly the class of mistake TODO.md already paid down once (B2's
+///    client-side cursor reimplementation, undone by R1) — a second,
+///    hand-maintained copy of docket's `PipelineSpec` would drift the first
+///    time docket adds a step kind or a gate variant.
+///
+///    So this is the one check Tack *can* make honestly without drifting:
+///    "is this text YAML at all" — not "is this a valid docket pipeline."
+///    The gap is recorded upstream: `~/Sites/rack-cli/ROADMAP.md` Phase 22,
+///    new card **P22-8 — `pipeline validate` over HTTP** (see TODO.md §6
+///    "D3" for the full writeup). Once that route exists, this function
+///    should call it instead of `serde_yaml`'s bare parse.
+fn validate_template_orchestration(
+    orch: &TemplateOrchestration,
+    workflow: &WorkflowConfig,
+) -> ApiResult<()> {
+    let status_map = crate::handlers::orch::StatusMap {
+        dispatch_from: orch.status_map.dispatch_from.clone(),
+        on_running: orch.status_map.on_running.clone(),
+        on_waiting_approval: orch.status_map.on_waiting_approval.clone(),
+        on_succeeded: orch.status_map.on_succeeded.clone(),
+        on_failed: orch.status_map.on_failed.clone(),
+        on_cancelled: orch.status_map.on_cancelled.clone(),
+    };
+    crate::handlers::orch::validate_status_map(&status_map, workflow)?;
+
+    if let Some(yaml) = &orch.pipeline_yaml {
+        serde_yaml::from_str::<serde_yaml::Value>(yaml).map_err(|e| {
+            ApiError::BadRequest(format!(
+                "orchestration.pipeline_yaml is not valid YAML: {e} \
+                 (note: this only checks it parses as YAML, not that it is a \
+                 valid docket pipeline — docket has no HTTP endpoint for that \
+                 check yet; see TODO.md §6 \"D3\")"
+            ))
+        })?;
+    }
+
+    Ok(())
 }
 
 /// POST /api/templates - Create a new project template
@@ -27,18 +98,19 @@ pub struct ListTemplatesQuery {
     request_body = tack_core::models::CreateProjectTemplate,
     responses(
         (status = 200, description = "Template created", body = tack_core::models::ProjectTemplate),
-        (status = 422, description = "Validation error", body = crate::openapi::ErrorEnvelope),
+        (status = 400, description = "orchestration validation error (unknown status_map name, or invalid pipeline_yaml)", body = crate::openapi::ErrorEnvelope),
+        (status = 422, description = "Validation error (workflow shape, custom field options)", body = crate::openapi::ErrorEnvelope),
     ),
 )]
 pub async fn create_template(
     State(state): State<AppState>,
     Json(data): Json<CreateProjectTemplate>,
-) -> Result<Json<ProjectTemplate>, StatusCode> {
+) -> ApiResult<Json<ProjectTemplate>> {
     // Validate workflow shape if provided
     if let Some(ref wf) = data.workflow {
         wf.validate().map_err(|e| {
             tracing::warn!(error = %e, "Template workflow validation failed");
-            StatusCode::UNPROCESSABLE_ENTITY
+            ApiError::Unprocessable(format!("workflow: {e}"))
         })?;
     }
 
@@ -52,19 +124,33 @@ pub async fn create_template(
                 let has_options = f.options.as_ref().map(|o| !o.is_empty()).unwrap_or(false);
                 if !has_options {
                     tracing::warn!(field_name = %f.name, "Select field missing options");
-                    return Err(StatusCode::UNPROCESSABLE_ENTITY);
+                    return Err(ApiError::Unprocessable(format!(
+                        "custom_fields: {:?} is a select field but has no options",
+                        f.name
+                    )));
                 }
             }
         }
     }
 
-    repo::templates::create_template(state.pool(), data)
-        .await
-        .map(Json)
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to create template");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })
+    // Validate the orchestration block, if present, against the workflow
+    // *this template will actually create* — mirroring
+    // `repo::templates::create_template`'s own `data.workflow.unwrap_or_else
+    // (simple_workflow)` fallback so the two never resolve to a different
+    // "effective" workflow (TODO.md §6 "D3": "validate the map against the
+    // workflow the template will actually create, not against whatever
+    // project happens to be applying it").
+    if let Some(ref orch) = data.orchestration {
+        let effective_workflow = data
+            .workflow
+            .clone()
+            .unwrap_or_else(tack_core::workflow::simple_workflow);
+        validate_template_orchestration(orch, &effective_workflow)?;
+    }
+
+    Ok(Json(
+        repo::templates::create_template(state.pool(), data).await?,
+    ))
 }
 
 /// GET /api/templates - List all project templates
@@ -155,6 +241,19 @@ pub struct CreateProjectFromTemplate {
 }
 
 /// POST /api/projects/from-template/:id - Create a project from a template
+///
+/// **Card D3 note (Phase 37, TODO.md §6):** `template.orchestration`, when
+/// present, is deliberately inert here — this handler still only creates the
+/// Tack project (workflow/vocabulary/custom fields/boards), exactly as
+/// before this cycle. Turning the block into a live `orch_links` row needs a
+/// `control_plane_id` pointing at one specific, already-registered docket
+/// instance, which does not exist at this point (no pod has been
+/// provisioned) — that wiring is card D4's `provision_pod: true` extension
+/// of this same endpoint (TODO.md task 37.2), blocked on docket
+/// provisioning becoming reachable in a rollback-safe way, not this card's
+/// to build. This keeps TODO.md §0 rule 8 (off by default) trivially true
+/// for this path: nothing here reads `TACK_ORCH_ENABLE`, because nothing
+/// here does anything orchestration-shaped yet.
 #[instrument(skip(state))]
 #[utoipa::path(
     post,
@@ -398,6 +497,18 @@ pub async fn save_project_as_template(
         } else {
             Some(default_boards)
         },
+        // Deliberately not derived from the source project's live
+        // `orch_link` (card D3, TODO.md §6). Unlike vocabulary/workflow —
+        // which describe *this* project's shape and transfer cleanly to any
+        // future project created from the resulting template —
+        // `orch_links.control_plane_id`/`remote_project` point at one
+        // specific, already-registered docket instance and one specific
+        // remote project string. Copying them into a template would make
+        // every *future* project created from it silently point at
+        // someone else's docket pod the moment orchestration is wired up.
+        // A template's orchestration block can only be set explicitly, via
+        // `POST /api/templates`.
+        orchestration: None,
     };
 
     repo::templates::create_template(state.pool(), template_data)

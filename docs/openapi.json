@@ -1865,6 +1865,7 @@
           "templates"
         ],
         "summary": "POST /api/projects/from-template/:id - Create a project from a template",
+        "description": "**Card D3 note (Phase 37, TODO.md §6):** `template.orchestration`, when\npresent, is deliberately inert here — this handler still only creates the\nTack project (workflow/vocabulary/custom fields/boards), exactly as\nbefore this cycle. Turning the block into a live `orch_links` row needs a\n`control_plane_id` pointing at one specific, already-registered docket\ninstance, which does not exist at this point (no pod has been\nprovisioned) — that wiring is card D4's `provision_pod: true` extension\nof this same endpoint (TODO.md task 37.2), blocked on docket\nprovisioning becoming reachable in a rollback-safe way, not this card's\nto build. This keeps TODO.md §0 rule 8 (off by default) trivially true\nfor this path: nothing here reads `TACK_ORCH_ENABLE`, because nothing\nhere does anything orchestration-shaped yet.",
         "operationId": "create_project_from_template",
         "parameters": [
           {
@@ -2378,6 +2379,42 @@
         }
       }
     },
+    "/api/projects/{id}/orch-budget": {
+      "get": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`GET /api/projects/{id}/orch-budget`.",
+        "operationId": "get_orch_budget",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "This project's budget cap vs. estimated spend to date",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrchBudgetResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Orchestration disabled (TACK_ORCH_ENABLE unset)"
+          }
+        }
+      }
+    },
     "/api/projects/{id}/orch-link": {
       "get": {
         "tags": [
@@ -2471,6 +2508,42 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/orch-policy": {
+      "get": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`GET /api/projects/{id}/orch-policy`.",
+        "operationId": "get_orch_policy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Guardrail/tool-call/approval metrics for this project's linked control plane (control-plane-wide — see scoped_to_control_plane_only)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrchPolicyResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Orchestration disabled (TACK_ORCH_ENABLE unset)"
           }
         }
       }
@@ -3652,8 +3725,18 @@
               }
             }
           },
+          "400": {
+            "description": "orchestration validation error (unknown status_map name, or invalid pipeline_yaml)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "422": {
-            "description": "Validation error",
+            "description": "Validation error (workflow shape, custom field options)",
             "content": {
               "application/json": {
                 "schema": {
@@ -3774,6 +3857,29 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "ApprovalChannelEntry": {
+        "type": "object",
+        "description": "One `docket_approvals_total{channel=...,outcome=...}` sample.",
+        "required": [
+          "channel",
+          "outcome",
+          "count"
+        ],
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "`\"cli\"` | `\"http\"` | `\"mcp\"` | `\"telegram\"` | `\"tack\"` | `\"timeout\"`."
+          },
+          "count": {
+            "type": "number",
+            "format": "double"
+          },
+          "outcome": {
+            "type": "string",
+            "description": "`\"granted\"` | `\"denied\"` — a `\"timeout\"` channel always resolves\n`\"denied\"` (a fail-closed expiry, never a human decision; see\n`core/approval.py`)."
           }
         }
       },
@@ -4478,6 +4584,17 @@
           },
           "name": {
             "type": "string"
+          },
+          "orchestration": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TemplateOrchestration",
+                "description": "See [`ProjectTemplate::orchestration`]. Validated at save time by\n`tack-api`'s `handlers::templates::create_template` — this type is\npure data (tack-core has zero I/O), so the validation itself lives\none layer up, reusing `handlers::orch::validate_status_map` (card\nA4's `status_map` validator) rather than duplicating it."
+              }
+            ]
           },
           "project_type": {
             "$ref": "#/components/schemas/ProjectType"
@@ -5614,6 +5731,83 @@
           }
         }
       },
+      "OrchBlueprint": {
+        "type": "string",
+        "description": "docket pod blueprint names (`core/blueprints.py`, verified 2026-08-05).",
+        "enum": [
+          "software",
+          "research",
+          "content",
+          "ops",
+          "agentic-product"
+        ]
+      },
+      "OrchBudgetResponse": {
+        "type": "object",
+        "description": "`GET /api/projects/{id}/orch-budget` response.",
+        "required": [
+          "linked",
+          "tokens_in",
+          "tokens_out"
+        ],
+        "properties": {
+          "budget_usd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "User-set cap (`orch_links.budget_usd`) — `None` if unlinked or unset.\nDeliberately unsuffixed, same convention as `FleetEntry::budget_usd`."
+          },
+          "control_plane_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "control_plane_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cost_usd_estimated": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "`None` when unlinked, when the linked plane is `unreachable`, or when\nits health can't be resolved — never coerced to a confident-looking\nzero. `Some(0.0)` means the plane is reachable and genuinely has no\nmirrored cost yet."
+          },
+          "health": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`\"unknown\"` | `\"healthy\"` | `\"degraded\"` | `\"unreachable\"`. `None` only\nwhen `linked` is `false`."
+          },
+          "linked": {
+            "type": "boolean"
+          },
+          "pricing_snapshot_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Always `None` today — no pricing-snapshot mechanism exists yet\n(TODO.md §0 rule 6)."
+          },
+          "tokens_in": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Summed from `orch_tasks` for this project's items. Real, historical\ndata — always present (never null) regardless of `linked`, since a\nproject can accumulate mirrored dispatch history and later be\nunlinked without that history becoming false."
+          },
+          "tokens_out": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "OrchLinkResponse": {
         "type": "object",
         "description": "Client-facing view of a project's control-plane link.",
@@ -5693,6 +5887,80 @@
           },
           "linked": {
             "type": "boolean"
+          }
+        }
+      },
+      "OrchPolicyResponse": {
+        "type": "object",
+        "description": "`GET /api/projects/{id}/orch-policy` response.",
+        "required": [
+          "linked",
+          "scoped_to_control_plane_only",
+          "tool_calls",
+          "policy_hits",
+          "approvals_by_channel"
+        ],
+        "properties": {
+          "approvals_by_channel": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApprovalChannelEntry"
+            }
+          },
+          "control_plane_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "control_plane_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "denial_rate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "`deny / (allow + ask + deny)`. `None` when no tool-gate decisions have\nbeen observed at all — deliberately not `0.0`, since zero would claim\na clean, evaluated history rather than \"no data yet\"."
+          },
+          "health": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`\"unknown\"` | `\"healthy\"` | `\"degraded\"` | `\"unreachable\"`. `None` only\nwhen `linked` is `false`."
+          },
+          "linked": {
+            "type": "boolean"
+          },
+          "policy_hits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PolicyHitEntry"
+            }
+          },
+          "scoped_to_control_plane_only": {
+            "type": "boolean",
+            "description": "Always `true` — see the module doc above. Present on the wire so a\ncaller can't mistake this response for per-project data just because a\n`project_id` is in the URL."
+          },
+          "scraped_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Latest scrape time across every sample folded into this response, or\n`None` if the plane has never reported guardrail metrics."
+          },
+          "tool_calls": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ToolCallEntry"
+            }
           }
         }
       },
@@ -5827,6 +6095,33 @@
           }
         }
       },
+      "PolicyHitEntry": {
+        "type": "object",
+        "description": "One `docket_policy_hits_total{policy_id=...,hook=...,action=...}` sample.",
+        "required": [
+          "policy_id",
+          "hook",
+          "action",
+          "count"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "`\"block\"` | `\"require_approval\"` | `\"ask\"` | `\"warn\"` | `\"redact\"` — docket's\nown vocabulary, shown verbatim."
+          },
+          "count": {
+            "type": "number",
+            "format": "double"
+          },
+          "hook": {
+            "type": "string",
+            "description": "`\"pre_input\"` | `\"pre_output\"` | `\"pre_tool_call\"`."
+          },
+          "policy_id": {
+            "type": "string"
+          }
+        }
+      },
       "Priority": {
         "type": "string",
         "enum": [
@@ -5936,6 +6231,17 @@
           },
           "name": {
             "type": "string"
+          },
+          "orchestration": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TemplateOrchestration",
+                "description": "Optional agent-fleet defaults for a project created from this\ntemplate (Phase 37, card D3). `#[serde(default)]` — absent means\n\"this template does not touch orchestration,\" the same\nabsent-means-nothing rule `Item::source` (migration 029, card C2)\nestablished for backward compatibility. `None` is the value every\ntemplate had before this field existed and every built-in has today;\nnothing reads this field unless it is `Some`, so a template with no\n`orchestration` block behaves exactly as it did before this cycle."
+              }
+            ]
           },
           "project_type": {
             "$ref": "#/components/schemas/ProjectType"
@@ -6380,6 +6686,117 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "TemplateOrchestration": {
+        "type": "object",
+        "description": "Agent-fleet defaults captured on a template (Phase 37 / card D3, tasks\n37.1 + 37.3). Nothing in this struct is applied automatically anywhere —\n`create_project_from_template` stores it and moves on. Turning it into a\nlive `orch_links` row needs a `control_plane_id` pointing at an\nalready-registered, specific docket instance, which cannot exist yet at\ntemplate-apply time; that wiring is card D4's (blocked on docket\nprovisioning), not this one's. This block is the *offer* a future\nprovisioning flow reads defaults from — inert data until then, which is\nwhat keeps it correct under TODO.md §0 rule 8 (off by default) without\nneeding `TACK_ORCH_ENABLE` to gate anything here: there is no route, no\nreconciler, no dispatch — just a JSON blob riding along with the template.",
+        "properties": {
+          "auto_dispatch": {
+            "type": "boolean"
+          },
+          "blueprint": {
+            "$ref": "#/components/schemas/OrchBlueprint",
+            "description": "docket pod blueprint. Verified against `core/blueprints.py`\n(2026-08-05): exactly these five values exist server-side today.\nUnlike the remote-state enums in `tack-orch` (`RunState` etc.),\nthis is a value Tack *sends*, not one it decodes from docket's\noutput, so — per TODO.md §1.2's own scoping of the `Unknown(String)`\nrule to remote-emitted state — no `Unknown` fallback here: an\nunrecognised blueprint name is a real authoring mistake worth\nrejecting, not a forward-compat case to shrug off."
+          },
+          "budget_usd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Default budget *cap* for a project created from this template — an\noperator-set ceiling, not a derived spend figure, so it stays\nunsuffixed exactly like `orch_links.budget_usd` (card A4's\nprecedent, TODO.md §6 \"A4\" point 4). TODO.md §0 rule 6 governs\n*estimated spend* fields (`cost_usd_estimated`); a cap the operator\nchooses is a different thing and was never in scope for that rule."
+          },
+          "pipeline_file": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A pipeline docket already knows about by name/path, for a template\nthat would rather point at one than ship inline YAML. Mirrors\n`orch_links.pipeline_file`. Not mutually exclusive with\n`pipeline_yaml`; which one wins if both are set is D4's call at\nprovisioning time, not this card's."
+          },
+          "pipeline_yaml": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Inline docket pipeline YAML — the \"pipeline library\" entry (task\n37.3). Stored as a template field rather than a new `pipelines`\ntable: the roadmap names both as acceptable, and a template is\nalready a named, reusable, save-time-validated bundle, so a second\nstorage concept alongside it would just be a template under another\nname. See `handlers::templates::validate_template_orchestration`\nfor what \"validated\" means here — deliberately narrower than\ndocket's own schema; see that function's doc comment."
+          },
+          "pod_shape": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Mirrors docket's `POST /pods` `pod` field, which as of 2026-08-05\n(`serve.py::_handle_post_pods`) accepts only `\"full\"` or absent.\nStored permissively here (no enum, no validation) — enforcing that\nexact constraint is D4's job at provisioning time, when it builds\nthe real `POST /pods` body; guessing at it here would just be a\nsecond, driftable copy of a one-value check."
+          },
+          "status_map": {
+            "$ref": "#/components/schemas/TemplateStatusMap"
+          },
+          "verify_cmd": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TemplateStatusMap": {
+        "type": "object",
+        "description": "A template's default `status_map` (TODO.md §1.3). Field-for-field\nidentical to `tack_api::handlers::orch::StatusMap` by design — the two\nare kept in lockstep deliberately (a template's map becomes a project's\n`orch_links.status_map` verbatim once something applies it) — but they\nstay two distinct Rust types because `tack-core` cannot depend on\n`tack-api` (crate boundary in `crates/tack-orch/src/lib.rs`'s comment\napplies here too: dependencies point inward, tack-core has zero I/O and\nzero knowledge of the HTTP layer). Validation is not duplicated: the\nhandler converts this into an `orch::StatusMap` and calls\n`orch::validate_status_map` directly — see\n`handlers::templates::validate_template_orchestration`.",
+        "properties": {
+          "dispatch_from": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "on_cancelled": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "on_failed": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "on_running": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "on_succeeded": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "on_waiting_approval": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ToolCallEntry": {
+        "type": "object",
+        "description": "One `docket_tool_calls_total{decision=...}` sample.",
+        "required": [
+          "decision",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "number",
+            "format": "double"
+          },
+          "decision": {
+            "type": "string",
+            "description": "`\"allow\"` | `\"ask\"` | `\"deny\"` — docket's own closed vocabulary\n(`core/tools.py`'s tool-gate decisions), shown verbatim so an\nunrecognised future value still renders rather than being dropped."
           }
         }
       },

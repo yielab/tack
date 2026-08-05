@@ -35,6 +35,7 @@ fn all_migrations() -> Vec<(&'static str, &'static [&'static str])> {
         ("027_orch_metrics_daily", &MIGRATION_027[..]),
         ("028_orch_trace_cursors", &MIGRATION_028[..]),
         ("029_item_source", &MIGRATION_029[..]),
+        ("030_template_orchestration", &MIGRATION_030[..]),
     ]
 }
 
@@ -650,3 +651,14 @@ const MIGRATION_028: [&str; 1] = ["CREATE TABLE IF NOT EXISTS orch_trace_cursors
 // "do not trust this text with operator privileges," not the reverse.
 const MIGRATION_029: [&str; 1] =
     ["ALTER TABLE items ADD COLUMN source TEXT NOT NULL DEFAULT 'unknown'"];
+
+// Phase 37 / card D3, task 37.1: `TemplateOrchestration` (tack-core). A
+// nullable column, not `NOT NULL DEFAULT '{}'` — `NULL` means "this template
+// has no orchestration block," distinct from `'{}'` ("an orchestration block
+// with every field at its default"). Every row that predates this migration
+// backfills to `NULL`, so `repo::templates::get_template`/`list_templates`
+// deserialize it to `orchestration: None`, matching `ProjectTemplate`'s own
+// `#[serde(default)]` — the same "absent means nothing, existing templates
+// are untouched" rule migration 029 established for `items.source`, applied
+// here to a column instead of a JSON payload key.
+const MIGRATION_030: [&str; 1] = ["ALTER TABLE project_templates ADD COLUMN orchestration TEXT"];
