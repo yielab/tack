@@ -5,7 +5,7 @@ use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
 
-use tack_core::models::{CreateItem, ItemType};
+use tack_core::models::{CreateItem, ItemSource, ItemType};
 
 use crate::error::{ApiError, ApiResult};
 use crate::router::AppState;
@@ -258,7 +258,14 @@ pub async fn import_linear(
                 assignee: issue.assignee.as_ref().map(|u| u.name.clone()),
             };
 
-            match state.repo.create_item(project_id, &status, data).await {
+            // `ItemSource::Linear` — untrusted for dispatch purposes, same
+            // reasoning as GitHub import: this text is written by whoever
+            // has access to the linked Linear team, not by Tack's operator.
+            match state
+                .repo
+                .create_item_with_source(project_id, &status, data, ItemSource::Linear)
+                .await
+            {
                 Ok(_) => created += 1,
                 Err(e) => {
                     tracing::warn!(

@@ -34,7 +34,8 @@ use tack_core::models::{
     Attachment, Board, BoardColumn, BoardGrouping, BoardView, Comment, CommentType, CreateBoard,
     CreateComment, CreateCustomField, CreateDependency, CreateItem, CreateProject,
     CreateProjectTemplate, CreateRole, CreateSprint, CustomFieldDefinition, CustomFieldType,
-    CustomFieldValue, Dependency, DependencyType, EstimateUnit, Item, ItemRole, ItemType, Priority,
+    CustomFieldValue, Dependency, DependencyType, EstimateUnit, Item, ItemRole, ItemSource,
+    ItemType, Priority,
     Project, ProjectTemplate, ProjectType, Role, SetCustomFieldValue, Sprint, SprintStatus,
     UpdateBoard, UpdateCustomField, UpdateItem, UpdateProject, Workspace,
 };
@@ -173,6 +174,19 @@ pub struct ItemDetail {
         // ── Settings ──────────────────────────────────────────────────────
         handlers::settings::get_backup_settings,
         handlers::settings::put_backup_settings,
+        // ── Orchestration (Agent-Factory Control Center, Phase 33+) ────────
+        handlers::orch::create_control_plane,
+        handlers::orch::list_control_planes,
+        handlers::orch::get_control_plane,
+        handlers::orch::update_control_plane,
+        handlers::orch::delete_control_plane,
+        handlers::orch::get_orch_link,
+        handlers::orch::put_orch_link,
+        handlers::orch::get_fleet,
+        handlers::orch::get_metrics,
+        handlers::orch::get_item_agent_activity,
+        handlers::orch::get_project_agent_activity,
+        handlers::orch::dispatch_item,
     ),
     components(schemas(
         // Local response/request envelopes
@@ -189,12 +203,32 @@ pub struct ItemDetail {
         handlers::import_linear::LinearImportRequest,
         handlers::backup::RestoreRemoteRequest,
         handlers::settings::UpdateBackupSettings,
+        handlers::orch::ControlPlaneResponse,
+        handlers::orch::CreateControlPlaneRequest,
+        handlers::orch::UpdateControlPlaneRequest,
+        handlers::orch::OrchLinkResponse,
+        handlers::orch::OrchLinkView,
+        handlers::orch::UpsertOrchLinkRequest,
+        handlers::orch::StatusMap,
+        handlers::orch::FleetEntry,
+        handlers::orch::FleetListResponse,
+        handlers::orch::FleetRosterMember,
+        handlers::orch::ItemAgentEventResponse,
+        handlers::orch::ItemAgentRunResponse,
+        handlers::orch::ItemAgentAttemptResponse,
+        handlers::orch::ItemAgentApprovalResponse,
+        handlers::orch::ItemAgentActivityResponse,
+        handlers::orch::AgentBadgeRowResponse,
+        handlers::orch::AgentBadgeResponse,
+        handlers::orch::DispatchedTaskResponse,
+        handlers::orch::DispatchItemResponse,
         // Core domain models + DTOs
         Workspace,
         Project,
         ProjectType,
         Item,
         ItemType,
+        ItemSource,
         Priority,
         EstimateUnit,
         Dependency,
@@ -251,6 +285,9 @@ pub struct ItemDetail {
         (name = "search", description = "Full-text search within a project or globally."),
         (name = "backup", description = "Local and S3-compatible cloud backup / restore."),
         (name = "settings", description = "Runtime-editable server settings (cloud backup)."),
+        (name = "orchestration", description = "Agent-Factory Control Center: control-plane registration, \
+            per-project links, and the Fleet view aggregate. Every route is disabled — 404 — unless \
+            TACK_ORCH_ENABLE is set."),
     ),
 )]
 pub struct ApiDoc;

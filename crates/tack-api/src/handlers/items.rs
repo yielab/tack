@@ -6,7 +6,9 @@ use uuid::Uuid;
 use validator::Validate;
 
 use tack_core::models::{CreateItem, Item, ItemFilter, UpdateItem};
+use tack_db::repo::orch::NewOrchEvent;
 
+use crate::dispatcher::{self, DispatchOutcome};
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::websocket::{self, BoardEvent};
 use crate::router::AppState;
@@ -234,6 +236,11 @@ pub async fn update_item(
     // Push the open/closed state back to a linked GitHub issue.
     maybe_sync_github(&state, &item, &old_status).await;
 
+    // Auto-dispatch to the linked control plane, if configured (card C2 /
+    // task 35.5). Off unless TACK_ORCH_ENABLE is set and the project's
+    // orch_link has auto_dispatch on (§0 rules 5 and 8).
+    maybe_auto_dispatch(&state, &item, &old_status).await;
+
     Ok(Json(serde_json::to_value(item).unwrap()))
 }
 
@@ -285,6 +292,132 @@ pub(crate) async fn propagate_parent_completion(state: &AppState, item: &Item, o
             .repo
             .check_and_update_parent_status(parent_id, done_status)
             .await;
+    }
+}
+
+/// Best-effort: when `orch_links.auto_dispatch` is on and `item` just
+/// entered one of the link's `status_map.dispatch_from` statuses, dispatch
+/// it automatically via `dispatcher::dispatch_item` (card C1), passing the
+/// item's own **persisted** trust value (`item.source.is_trusted()` —
+/// `tack_core::models::ItemSource`, migration 029) rather than inferring
+/// anything at dispatch time (TODO.md's C2 card is explicit that inference
+/// is the failure mode to avoid: a deleted `github_links` row or a
+/// forgotten future import path would silently flip an item back to
+/// trusted).
+///
+/// **Fires at most once per status entry, not on every edit.** Runs off the
+/// request path (`tokio::spawn`, the same shape `maybe_sync_github` already
+/// uses) so a slow or unreachable control plane can never turn a card move
+/// into a slow or failing PATCH — TODO.md's card text: "a dispatch failure
+/// logs, records an event, and never fails the user's PATCH." Two
+/// independent guards make "don't dispatch on every update" hold:
+///
+/// 1. **`item.status == old_status` short-circuits before any DB or HTTP
+///    call.** An item edited while it is already sitting in a
+///    `dispatch_from` status (title tweak, priority change, etc.) never
+///    reaches `dispatch_item` at all, because its status didn't change.
+/// 2. **`dispatch_item`'s own idempotency guard** (a process-wide per-item
+///    lock plus an `orch_tasks` "already in flight" check — see that
+///    module's doc comment) is the second, belt-and-suspenders layer: two
+///    genuine status changes into the same `dispatch_from` status in quick
+///    succession (or a concurrent manual dispatch) still produce exactly
+///    one task, not two.
+///
+/// **Visibility on failure.** A transport/config error (`Err`) or a
+/// `pre_input` policy block (`DispatchOutcome::Blocked`) is not silently
+/// swallowed: both are logged via `tracing::warn!` *and* recorded as an
+/// `orch_events` row (`auto_dispatch_failed` / `auto_dispatch_blocked`) on
+/// the item, the same table `dispatcher::apply_mapped_status` already uses
+/// for `status_map_rejected` — so a failed auto-dispatch shows up wherever
+/// that event history is surfaced (the item's Agent Activity tab, card B5),
+/// not just in server logs nobody is watching. Every other outcome
+/// (`NoDispatchPolicy`, `NotEligible`, `AlreadyInFlight`, `Success`) is
+/// expected, uninteresting background behavior and is not separately
+/// recorded here — `Success` already gets its own `orch_tasks` row and, for
+/// `on_running`/`on_waiting_approval`, its own status_map bookkeeping
+/// inside `dispatch_item` itself.
+pub(crate) async fn maybe_auto_dispatch(state: &AppState, item: &Item, old_status: &str) {
+    if !state.config.orch_enable {
+        return;
+    }
+    if item.status == old_status {
+        return;
+    }
+    let Ok(Some(link)) = state.repo.get_orch_link(item.project_id).await else {
+        return;
+    };
+    if !link.auto_dispatch {
+        return;
+    }
+
+    let state = state.clone();
+    let item_id = item.id;
+    let trusted = item.source.is_trusted();
+    let control_plane_id = link.control_plane_id;
+
+    tokio::spawn(async move {
+        match dispatcher::dispatch_item(&state, item_id, trusted).await {
+            Ok(DispatchOutcome::Blocked { message }) => {
+                tracing::warn!(
+                    item_id = %item_id,
+                    message = %message,
+                    "auto-dispatch blocked by control-plane policy"
+                );
+                record_auto_dispatch_event(
+                    &state,
+                    item_id,
+                    control_plane_id,
+                    "auto_dispatch_blocked",
+                    &message,
+                )
+                .await;
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(item_id = %item_id, error = %e, "auto-dispatch failed");
+                record_auto_dispatch_event(
+                    &state,
+                    item_id,
+                    control_plane_id,
+                    "auto_dispatch_failed",
+                    &e.to_string(),
+                )
+                .await;
+            }
+        }
+    });
+}
+
+/// Best-effort: record an `auto_dispatch_failed`/`auto_dispatch_blocked`
+/// `orch_events` row so a failed auto-dispatch is visible somewhere a human
+/// (or card B5's Agent Activity UI) can find it, not just in server logs.
+/// Never panics or propagates — an audit-trail write failing must not turn
+/// an already-logged background failure into a crashed background task.
+async fn record_auto_dispatch_event(
+    state: &AppState,
+    item_id: Uuid,
+    control_plane_id: Uuid,
+    event_type: &str,
+    message: &str,
+) {
+    let event = NewOrchEvent {
+        id: Uuid::new_v4(),
+        item_id: Some(item_id),
+        run_id: None,
+        event_type: event_type.to_string(),
+        payload: serde_json::json!({ "message": message }),
+        occurred_at: Utc::now(),
+    };
+    if let Err(e) = state
+        .repo
+        .upsert_orch_events(control_plane_id, std::slice::from_ref(&event))
+        .await
+    {
+        tracing::warn!(
+            item_id = %item_id,
+            error = %e,
+            "failed to record auto-dispatch event"
+        );
     }
 }
 

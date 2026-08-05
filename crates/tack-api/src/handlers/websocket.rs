@@ -35,6 +35,30 @@ pub enum BoardEvent {
     BoardConfigUpdated { project_id: Uuid },
     /// Sprint changed
     SprintUpdated { project_id: Uuid, sprint_id: Uuid },
+    /// An orchestrated agent run mirrored from a control plane (docket) changed
+    /// state, or was newly attributed to this item (card B4 / TODO.md §Wave 2,
+    /// task 34.5). Emitted from `orch_store::RepoControlPlaneStore::upsert_runs`
+    /// — never from the reconciler itself, which has no WebSocket dependency.
+    AgentRunUpdated {
+        project_id: Uuid,
+        item_id: Uuid,
+        run_id: String,
+        /// Raw `RunState` string (`queued` / `running` / `succeeded` / `failed` /
+        /// `cancelled`, or an unrecognised value) — stored and forwarded as-is,
+        /// same convention as `orch_runs.state`.
+        state: String,
+    },
+    /// A mirrored approval became (newly) pending on an item this project can
+    /// see. Deliberately narrower than a generic "approval updated" event: it
+    /// only fires on the transition into `pending`, not on every re-poll or on
+    /// a grant/deny decision (Wave 3's write side owns that). Emitted from
+    /// `orch_store::RepoControlPlaneStore::upsert_approvals`.
+    ApprovalPending {
+        project_id: Uuid,
+        item_id: Uuid,
+        token: String,
+        action: Option<String>,
+    },
     /// Keepalive ping
     Ping,
 }
@@ -130,6 +154,12 @@ fn event_matches_project(event: &BoardEvent, project_id: Uuid) -> bool {
         BoardEvent::SprintUpdated {
             project_id: pid, ..
         } => *pid == project_id,
+        BoardEvent::AgentRunUpdated {
+            project_id: pid, ..
+        } => *pid == project_id,
+        BoardEvent::ApprovalPending {
+            project_id: pid, ..
+        } => *pid == project_id,
         BoardEvent::Ping => true,
     }
 }
@@ -138,4 +168,79 @@ fn event_matches_project(event: &BoardEvent, project_id: Uuid) -> bool {
 pub fn broadcast_event(state: &AppState, event: BoardEvent) {
     // Ignore errors - no subscribers is fine
     let _ = state.broadcast_tx.send(event);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_run_updated_serializes_with_snake_case_tag() {
+        let event = BoardEvent::AgentRunUpdated {
+            project_id: Uuid::nil(),
+            item_id: Uuid::nil(),
+            run_id: "run-1".into(),
+            state: "running".into(),
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "agent_run_updated");
+        assert_eq!(json["run_id"], "run-1");
+        assert_eq!(json["state"], "running");
+    }
+
+    #[test]
+    fn approval_pending_serializes_with_snake_case_tag_and_optional_action() {
+        let event = BoardEvent::ApprovalPending {
+            project_id: Uuid::nil(),
+            item_id: Uuid::nil(),
+            token: "tok-1".into(),
+            action: None,
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "approval_pending");
+        assert_eq!(json["token"], "tok-1");
+        assert!(json["action"].is_null());
+    }
+
+    #[test]
+    fn agent_run_updated_is_filtered_by_project_id_like_every_other_event() {
+        let project_a = Uuid::new_v4();
+        let project_b = Uuid::new_v4();
+        let event = BoardEvent::AgentRunUpdated {
+            project_id: project_a,
+            item_id: Uuid::new_v4(),
+            run_id: "run-1".into(),
+            state: "succeeded".into(),
+        };
+        assert!(event_matches_project(&event, project_a));
+        assert!(!event_matches_project(&event, project_b));
+    }
+
+    #[test]
+    fn approval_pending_is_filtered_by_project_id_like_every_other_event() {
+        let project_a = Uuid::new_v4();
+        let project_b = Uuid::new_v4();
+        let event = BoardEvent::ApprovalPending {
+            project_id: project_a,
+            item_id: Uuid::new_v4(),
+            token: "tok-1".into(),
+            action: Some("merge".into()),
+        };
+        assert!(event_matches_project(&event, project_a));
+        assert!(!event_matches_project(&event, project_b));
+    }
+
+    /// The client-side acceptance bar (TODO.md B4 card): an unknown event
+    /// variant on the wire must be ignored, not thrown. On the Rust side the
+    /// analogous guarantee is that decoding never panics on a *future* tag —
+    /// `#[serde(tag = "type", rename_all = "snake_case")]` on a closed enum
+    /// means an unrecognised `type` fails deserialization with an `Err`
+    /// rather than a panic, so callers (like the frontend, and any future
+    /// Rust WebSocket client) always get a recoverable `Result`.
+    #[test]
+    fn an_unrecognised_event_type_fails_to_deserialize_without_panicking() {
+        let raw = serde_json::json!({"type": "some_future_event", "project_id": Uuid::nil()});
+        let result: Result<BoardEvent, _> = serde_json::from_value(raw);
+        assert!(result.is_err());
+    }
 }

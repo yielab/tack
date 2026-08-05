@@ -2,6 +2,7 @@
 //! binary (in the `tack-cli` crate) can start the HTTP server in-process.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
@@ -9,10 +10,12 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::config::AppConfig;
+use crate::orch_store::RepoControlPlaneStore;
 use crate::remote_backup;
 use crate::router::{AppState, build_router};
 use crate::webhook::WebhookClient;
 use tack_db::{Repository, init_pool, migrations, repo};
+use tack_orch::reconciler;
 
 /// Boot the Tack HTTP server: load config, run migrations, start background
 /// tasks, and serve until a shutdown signal is received.
@@ -108,6 +111,49 @@ pub async fn serve() -> anyhow::Result<()> {
                 check_due_soon(&bg_state).await;
             }
         });
+    }
+
+    // Spawn background tasks: the orchestration reconciler, one per
+    // registered control plane, polling `/health` + `/status.json`
+    // (TODO.md §Wave 1, card A2 / task 33.6). Off by default — TODO.md §0
+    // rule 8 / §4 cross-cutting acceptance: `TACK_ORCH_ENABLE` unset ⇒ no
+    // task spawned, no new route accepting traffic.
+    if config.orch_enable {
+        // Card B4 (Wave 2, realtime broadcast): the store gets a clone of the
+        // same broadcast sender every WebSocket subscriber shares, so it can
+        // emit `BoardEvent::AgentRunUpdated`/`ApprovalPending` straight from
+        // its `upsert_runs`/`upsert_approvals` — see orch_store.rs's module
+        // doc for why the emit lives there and not in the reconciler.
+        //
+        // Card C5 (Wave 3, second half of task 35.6): `with_app_context`
+        // hands the store the rest of what `AppState` carries, so
+        // `upsert_runs` can run `dispatcher::apply_mapped_status` — the
+        // workflow engine — when a run reaches a terminal state, exactly
+        // like a human-driven PATCH. See orch_store.rs's own doc comments
+        // for the "human wins" design and why it's optional everywhere else.
+        let store: Arc<dyn reconciler::ControlPlaneStore> = Arc::new(
+            RepoControlPlaneStore::new(state.repo.clone(), state.broadcast_tx.clone())
+                .with_app_context(config.clone(), workspace_id, state.webhook.clone()),
+        );
+        let handles = reconciler::spawn_reconcilers(
+            true,
+            store,
+            reconciler::ReconcilerConfig {
+                poll_secs: config.orch_poll_secs,
+                // Card B2 (trace ingestion): must be the same cutoff
+                // `spawn_retention_sweep` uses (config.orch_event_retention_days
+                // both places) — persist_events' retention-composition guard
+                // depends on the two agreeing. See reconciler.rs's
+                // `ReconcilerConfig` doc comment.
+                event_retention_days: config.orch_event_retention_days,
+            },
+        )
+        .await;
+        info!(
+            control_planes = handles.len(),
+            poll_secs = config.orch_poll_secs,
+            "Orchestration reconciler enabled"
+        );
     }
 
     // Build router
