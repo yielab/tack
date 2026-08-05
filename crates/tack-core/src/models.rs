@@ -94,8 +94,109 @@ pub struct Item {
     pub due_date: Option<DateTime<Utc>>,
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
+    /// Sticky provenance marker (Phase 35, card C2 — the prompt-injection
+    /// trust boundary): set once at creation time by whichever handler
+    /// created the item, and never mutated afterward — `UpdateItem` has no
+    /// `source` field, and the repository's `update_item` has no code path
+    /// that writes this column, so an item's source can never change once
+    /// set. `#[serde(default)]` matters here: any JSON that predates this
+    /// field (an old export, or a hand-built import payload) deserializes
+    /// to [`ItemSource::default()`] (`Unknown`), which [`ItemSource::is_trusted`]
+    /// treats as untrusted — the same "unverifiable provenance resolves to
+    /// untrusted" rule migration 029 applies to pre-existing database rows.
+    #[serde(default)]
+    pub source: ItemSource,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// Where an item's title/description text came from. Backend for the
+/// prompt-injection trust boundary (Phase 35, card C2): text imported from
+/// GitHub Issues, Linear, or any bulk import is written by parties Tack
+/// cannot vouch for, and becomes literal instructions to an autonomous
+/// agent the moment the item is dispatched. [`is_trusted`](ItemSource::is_trusted)
+/// is the single place that rule is encoded — nothing else in this codebase
+/// should independently decide whether a `source` counts as trusted.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum ItemSource {
+    /// Created directly through the normal create-item API (the UI, the
+    /// CLI's `tack add`, the MCP `create_item` tool, or the Alexa voice
+    /// skill acting on the project owner's own speech) — the operator's own
+    /// words, not third-party text.
+    Manual,
+    /// `POST /api/projects/{id}/import-github` — GitHub Issues, filed by
+    /// anyone who can open an issue on the linked repo.
+    Github,
+    /// `POST /api/projects/{id}/import-linear` — Linear issues.
+    Linear,
+    /// `POST /api/projects/import` — a full project snapshot (JSON/YAML).
+    /// Used both for legitimate backup/restore of a project this Tack
+    /// instance already trusted (in which case the original item's own
+    /// `source` rides through the export and is preserved — see
+    /// `handlers::export::run_import`) and for an arbitrary externally
+    /// supplied payload with no such provenance, which is why *this*
+    /// variant itself (assigned when a payload item carries no `source` of
+    /// its own) is untrusted, same as every non-`Manual` value.
+    JsonImport,
+    /// `POST /api/projects/{id}/import-csv` — a bare CSV has no concept of
+    /// provenance at all, so every row lands here.
+    CsvImport,
+    /// The backfilled value for every item that existed before migration
+    /// 029 added this column — including items imported from GitHub or
+    /// Linear before this trust boundary existed (GitHub import predates
+    /// this cycle; migration 018 shipped it). We cannot recover which,
+    /// so — per the "unsafe state is never the accidental default" rule —
+    /// every pre-migration item resolves to untrusted rather than assuming
+    /// the safe-looking but unverifiable `Manual`. No code path should ever
+    /// write this value for a newly created item; it exists purely as the
+    /// migration's backfill and the serde default for old payloads.
+    #[default]
+    Unknown,
+}
+
+impl ItemSource {
+    /// The single source of truth for "does this item's text get to skip
+    /// docket's `pre_input` untrusted-content policy". Only `Manual` is
+    /// trusted; everything else — including `Unknown` — is not.
+    pub fn is_trusted(&self) -> bool {
+        matches!(self, ItemSource::Manual)
+    }
+}
+
+impl std::fmt::Display for ItemSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Manual => write!(f, "manual"),
+            Self::Github => write!(f, "github"),
+            Self::Linear => write!(f, "linear"),
+            Self::JsonImport => write!(f, "json_import"),
+            Self::CsvImport => write!(f, "csv_import"),
+            Self::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
+impl std::str::FromStr for ItemSource {
+    type Err = std::convert::Infallible;
+
+    /// Never fails — an unrecognised string (a future Tack version's new
+    /// source value read by an older binary, or plain DB corruption)
+    /// degrades to `Unknown`, i.e. untrusted, rather than a parse error
+    /// that would take down an unrelated read. This mirrors
+    /// `parse_priority`'s existing fallback pattern in
+    /// `tack-db::repo::items`.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "manual" => Self::Manual,
+            "github" => Self::Github,
+            "linear" => Self::Linear,
+            "json_import" => Self::JsonImport,
+            "csv_import" => Self::CsvImport,
+            _ => Self::Unknown,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1073,5 +1174,100 @@ mod tests {
         let with_cat: UpdateItem =
             serde_json::from_value(json!({"status_category": "done"})).unwrap();
         assert_eq!(with_cat.status_category, None);
+    }
+
+    // ─── ItemSource — the C2 prompt-injection trust boundary ──────────────
+
+    #[test]
+    fn item_source_only_manual_is_trusted() {
+        assert!(ItemSource::Manual.is_trusted());
+        assert!(!ItemSource::Github.is_trusted());
+        assert!(!ItemSource::Linear.is_trusted());
+        assert!(!ItemSource::JsonImport.is_trusted());
+        assert!(!ItemSource::CsvImport.is_trusted());
+        assert!(!ItemSource::Unknown.is_trusted());
+    }
+
+    #[test]
+    fn item_source_default_is_unknown_and_untrusted() {
+        // The Rust-level default matters wherever `#[serde(default)]` or
+        // `Default::default()` is used to backfill a missing value (an old
+        // export payload, a `FromStr` fallback) — it must be the *safe*
+        // value, not `Manual`.
+        assert_eq!(ItemSource::default(), ItemSource::Unknown);
+        assert!(!ItemSource::default().is_trusted());
+    }
+
+    #[test]
+    fn item_source_display_and_fromstr_round_trip() {
+        use std::str::FromStr;
+        for source in [
+            ItemSource::Manual,
+            ItemSource::Github,
+            ItemSource::Linear,
+            ItemSource::JsonImport,
+            ItemSource::CsvImport,
+            ItemSource::Unknown,
+        ] {
+            let s = source.to_string();
+            assert_eq!(ItemSource::from_str(&s).unwrap(), source);
+        }
+    }
+
+    #[test]
+    fn item_source_fromstr_never_fails_and_unrecognised_text_is_untrusted() {
+        use std::str::FromStr;
+        // A future Tack version's new source value, read by this binary, or
+        // outright corruption — either way this must degrade to Unknown
+        // (untrusted), never a parse error and never a variant that
+        // silently ends up trusted.
+        let parsed = ItemSource::from_str("some_future_source_this_binary_has_never_heard_of")
+            .expect("FromStr for ItemSource is infallible");
+        assert_eq!(parsed, ItemSource::Unknown);
+        assert!(!parsed.is_trusted());
+    }
+
+    #[test]
+    fn item_source_serde_rename_all_snake_case() {
+        assert_eq!(serde_json::to_value(ItemSource::Manual).unwrap(), "manual");
+        assert_eq!(serde_json::to_value(ItemSource::Github).unwrap(), "github");
+        assert_eq!(
+            serde_json::to_value(ItemSource::JsonImport).unwrap(),
+            "json_import"
+        );
+    }
+
+    /// The exact scenario `handlers::export::run_import` relies on to make
+    /// the trust marker survive an export → import round-trip: an `Item`
+    /// deserialized from JSON that predates this field (or from a
+    /// hand-built payload that never had it) must resolve to `Unknown`
+    /// (untrusted), never silently to `Manual`.
+    #[test]
+    fn item_deserialization_defaults_missing_source_to_unknown() {
+        let value = json!({
+            "id": Uuid::new_v4(),
+            "project_id": Uuid::new_v4(),
+            "parent_id": null,
+            "title": "Pre-existing export without a source field",
+            "description": null,
+            "item_type": "task",
+            "status": "To Do",
+            "priority": "medium",
+            "estimate": null,
+            "estimate_unit": "story_points",
+            "tags": [],
+            "sort_order": 1,
+            "sprint_id": null,
+            "assignee": null,
+            "due_date": null,
+            "started_at": null,
+            "completed_at": null,
+            // "source" deliberately omitted.
+            "created_at": chrono::Utc::now().to_rfc3339(),
+            "updated_at": chrono::Utc::now().to_rfc3339(),
+        });
+        let item: Item = serde_json::from_value(value).expect("deserialize legacy item JSON");
+        assert_eq!(item.source, ItemSource::Unknown);
+        assert!(!item.source.is_trusted());
     }
 }
