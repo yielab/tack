@@ -153,7 +153,7 @@ One owner per file per wave. Anything not listed is free to create.
 |---|---|---|
 | `Cargo.toml` (workspace members + deps) | **W0-A** | 0 — nobody else touches it all cycle; batch requests through W0-A |
 | `crates/tack-db/src/migrations.rs` | **W0-B** | 0 — all six migrations land in one change |
-| `crates/tack-orch/src/lib.rs` (trait + DTOs) | **W0-A** | 0 — frozen after Wave 0 |
+| `crates/tack-orch/src/lib.rs` (trait + DTOs) | **W0-A** | 0 — ~~frozen after Wave 0~~ **unfrozen 2026-08-05, see below** |
 | `crates/tack-orch/src/adapters/docket.rs` | A1 | 1 |
 | `crates/tack-orch/src/reconciler.rs` | A2 | 1 → B1, B2, B3 extend it in **separate `poll_*` fns** |
 | `crates/tack-db/src/repo/orch.rs` | A3 | 1 (owner) → B-wave adds fns, one agent at a time |
@@ -171,6 +171,40 @@ One owner per file per wave. Anything not listed is free to create.
 
 **Merge order within a wave:** whoever finishes first merges first; the rest rebase.
 Cards were scoped so that only the four chokepoint files above can genuinely conflict.
+
+### 2.1 The Wave 0 freeze is lifted — card R1
+
+**`crates/tack-orch/src/lib.rs` is no longer frozen.** Freezing the `ControlPlane`
+trait and `OrchError` after Wave 0 was meant to stop concurrent agents from churning a
+shared interface. It worked for that, and then it started producing designs that are
+worse than the change it was avoiding. **This is a structural refactor — there is no
+legacy behaviour to preserve here, and no compatibility promise to keep.** Where the
+interface blocks the right design, change the interface.
+
+Two workarounds exist *solely* because of the freeze, and both are now technical debt
+with a silent failure mode:
+
+1. **B2 reimplemented docket's cursor algorithm client-side.** `ControlPlane::traces`
+   can't return docket's own `next` cursor, so `next_trace_cursor`/`decode_trace_cursor`
+   in `reconciler.rs` mirror `serve.py`'s exact anchor/count logic. It is correct today
+   (V1 verified it against live cursors, including same-second boundaries) and it will
+   drift the moment docket changes that algorithm — with no compile error and no test
+   failure, just quietly wrong resumption. **Fix:** let `traces` return an opaque cursor
+   from the remote, and delete the client-side reconstruction.
+2. **C1 matches on error message text.** `OrchError` has no variant for "docket's
+   `pre_input` policy deliberately blocked this", so C1 added a `POLICY_BLOCK_PREFIX`
+   constant and string-matches to tell a deliberate refusal from a transport failure.
+   A reworded docket message silently turns a policy block into a generic error.
+   **Fix:** a typed variant carrying the policy id.
+
+**Card R1** does both. It is a cross-cutting change (trait + adapter + reconciler +
+`dispatcher.rs` + `orch_store.rs`), so it must run **alone** — no concurrent agents in
+`crates/tack-orch/**` or `crates/tack-api/**` while it runs.
+
+**General rule going forward:** a frozen interface, a red gate, a generated artifact, or
+an over-specified test is not a reason to build a workaround. Change the constraint and
+record why. Reserve caution for what's genuinely irreversible — secrets escaping,
+destructive git operations on the shared tree, a half-applied security boundary.
 
 ---
 
@@ -4048,3 +4082,210 @@ card needed (`get_orch_link`, `get_control_plane`/`get_control_plane_token`,
   resurfaces.
 - I did not attempt `POST /pods` (still doesn't exist per V1) or anything
   in Wave 4's scope (approvals, budgets, provisioning).
+
+### C5 — 2026-08-05
+
+**The design question, answered up front: human wins.** If a run reaches a
+terminal state (`succeeded`/`failed`/`cancelled`) and the item's status has
+drifted from where our own automation last parked it — a human dragged the
+card, or anything else changed it — the mapped terminal status is **not**
+applied. Docket's state is still fully mirrored into `orch_runs` regardless
+(nothing is lost), but the board-visible item status is left alone, and the
+skip is recorded as a `status_map_skipped_human_override` `orch_events` row
+so the gap is visible rather than silent.
+
+**Why.** An agent finishing its work is a real, useful signal — but a human
+who deliberately dragged a card to e.g. "Blocked" made an explicit decision.
+Silently reverting it the moment a run happens to succeed is exactly the
+kind of thing that makes people stop trusting the board (TODO.md's own
+framing of the tradeoff). "Docket wins" was the other real option — it's
+simpler and never leaves a run's outcome unreflected — but it fails the
+"make sure the human can tell" bar the card set: once overwritten, the
+human's action leaves no trace at all. "Human wins" plus an audit event
+satisfies both halves: nothing is silently reverted, and nothing is silently
+lost either (docket's own state is still there in `orch_runs`, and the
+`orch_events` row names exactly what was skipped and why).
+
+**What I built.** The other half of task 35.6, closing the gap C1's handoff
+flagged explicitly: `crates/tack-api/src/orch_store.rs`'s
+`RepoControlPlaneStore::upsert_runs` (card B4's territory — I extended it,
+not `reconciler.rs`, per the file-ownership boundary and B4's own "the emit
+lives here, not in tack-orch" precedent) now calls a new
+`reconcile_terminal_status_map` right after resolving `item` and before the
+`AgentRunUpdated` broadcast, reusing B4's own `is_new`/`state_changed`/
+`newly_attributed` gate rather than computing a second "did anything change"
+determination. Three new private methods, all in a plain (non-trait)
+`impl RepoControlPlaneStore` block placed after the `ControlPlaneStore` impl
+(they're internal helpers, not trait members — first compile attempt caught
+this, E0407):
+
+1. **`reconcile_terminal_status_map`** — maps `run.state` (`"succeeded"` /
+   `"failed"` / `"cancelled"`; `"queued"`/`"running"` return immediately —
+   see below for why those have no reconciler-driven trigger at all) to the
+   matching `status_map` key, no-ops on an absent key or an already-matching
+   status, then either applies the transition or records the skip.
+2. **`card_has_diverged`** — the human-detection check, explained below.
+3. **`record_status_map_skipped`** — same free-form-`event_type` convention
+   as C1's `status_map_rejected` (migration 023's own doc comment already
+   names this as the intended pattern for a locally-generated event).
+
+**`on_running`/`on_waiting_approval` are not reconciler-driven, and that's
+correct, not a gap.** C1's handoff phrased the missing half as "reacting to
+`on_running`/`on_waiting_approval`/`on_succeeded`/`on_failed`/`on_cancelled`
+as the reconciler polls docket" — but I confirmed (grepped `reconciler.rs`)
+that the reconciler never polls docket's `/tasks` endpoint at all, only
+`/runs` and `/approvals`. `on_running`/`on_waiting_approval` correspond to
+`TaskStatus` (the `/tasks` shape), which C1 already applies once,
+synchronously, at dispatch time — there is no live signal for the reconciler
+to react to for those two keys. Only `on_succeeded`/`on_failed`/
+`on_cancelled` map to `RunState` (the `/runs` shape B1 actually mirrors), so
+that's the entire scope of what this card wires up. Worth flagging
+explicitly since it reads like a smaller scope than the brief implied — it
+isn't; it's the complete set of what's observable.
+
+**How "has a human moved it" is determined, without a schema change or
+touching `dispatcher.rs` beyond nothing at all.** Turned out
+`apply_mapped_status` was already `pub` and the module already `pub mod
+dispatcher` — no visibility change was needed, contra what my brief
+predicted. I did not touch `dispatcher.rs`.
+
+There's no persisted "who/what last set this item's status" column, and this
+card was scoped to avoid a new migration (`migrations.rs` is frozen — see
+§2) and any non-visibility change to `dispatcher.rs` (C2's file this round).
+So `card_has_diverged` compares `item.status` against the **one**
+`status_map` key the item's latest `orch_tasks` attempt actually used:
+`on_waiting_approval`'s value if that attempt's `remote_status` is
+`"waiting_approval"` (and the key is configured), else `on_running`'s value.
+With neither available, it falls back to "is the item still in one of
+`dispatch_from`" — the only marker such a `status_map` claims at all.
+
+**This has to be exactly one key, not a union — I hit this bug in my own
+first draft and a test caught it.** My first instinct was "safe if
+`item.status` is in `{dispatch_from ∪ on_running ∪ on_waiting_approval}`."
+That's wrong, and TODO.md's own worked example in §1.3 proves it: that
+`status_map` has `on_waiting_approval` and `on_failed` **both** set to
+`"Blocked"`. Under the union check, a human dragging a card to "Blocked"
+(the brief's own scenario) would be misread as "unchanged, still parked at
+`on_waiting_approval`'s value" — and the terminal transition would fire
+anyway, silently overwriting the human's decision, exactly the failure mode
+this whole card exists to prevent. The fix is resolving to a single expected
+value from the attempt's own last known `remote_status` rather than a set of
+every plausible marker. `crates/tack-api/tests/orch_terminal_status_test.rs`
+has a test built around this precise collision
+(`a_human_move_since_dispatch_blocks_on_succeeded_even_when_the_value_
+collides_with_on_waiting_approval`) — it failed against the union version
+and passes against the current one.
+
+**Accepted limit, stated plainly:** this cannot detect a human re-choosing
+the *exact* status the automation already believed the item was in (e.g. the
+human also drags it to "In Progress" for their own reason while `on_running`
+already put it there). No value-based check can, without a change-log of
+who-set-what-when. Not fixed here; would need the schema change this card
+was scoped to avoid.
+
+**How the store gets what `apply_mapped_status` needs.** `apply_mapped_status`
+takes `&AppState`, and `RepoControlPlaneStore` only held `repo` +
+`broadcast_tx` (B4's fields) — not `config`/`workspace_id`/`webhook`, the
+rest of what `AppState` carries (`config.github_token` is what
+`maybe_sync_github` inside `apply_mapped_status` needs, so this isn't
+optional plumbing). Rather than changing `RepoControlPlaneStore::new`'s
+arity again (which would have rippled into all 12 existing call sites across
+`orch_reconciler_wiring_test.rs` and `orch_broadcast_test.rs`, on top of B4's
+own precedent of doing exactly that for `broadcast_tx`), I added an optional
+builder: `with_app_context(config, workspace_id, webhook)`, stored as
+`Option<AppContext>`. Every pre-existing call site (`new()` alone) keeps
+compiling and behaving identically — the feature is simply inert without it,
+confirmed by `without_app_context_a_terminal_run_is_a_silent_no_op`.
+`server.rs`'s production wiring (the only call site I changed outside
+`orch_store.rs` and my own test file) now chains
+`.with_app_context(config.clone(), workspace_id, state.webhook.clone())`
+onto the existing `RepoControlPlaneStore::new(...)` call, both variables
+already in scope there.
+
+**Idempotency and ordering.** No new idempotency mechanism was needed:
+placement after B4's `is_new || state_changed || newly_attributed` guard
+means this only runs on a genuine transition, and `apply_mapped_status`'s
+own `item.status == target_status` early-return (plus my own identical
+check just above it, to skip the divergence computation entirely when
+there's nothing to do) makes a second call for an unchanged terminal state a
+safe no-op regardless. No SQLite write transaction is ever held across an
+HTTP call here — `upsert_runs` makes no HTTP calls at all (§0 rule 5 holds
+trivially).
+
+**Testing.** New file, `crates/tack-api/tests/orch_terminal_status_test.rs`
+(+8 tests), calling `RepoControlPlaneStore::upsert_runs` directly (not
+through the HTTP router — mirrors B4's own `orch_broadcast_test.rs`, since
+the surface under test is the store, not an endpoint). Covers: a clean
+`on_succeeded` application when nothing has touched the item since dispatch;
+a legitimate `waiting_approval`-then-`failed` path correctly resolving to
+`on_waiting_approval`'s marker rather than `on_running`'s; the human-move
+collision case above (the load-bearing test); a human move to a status
+`status_map` never mentions at all; an absent key doing nothing and logging
+nothing; `queued`/`running` never triggering anything; a workflow-engine
+rejection still recording C1's `status_map_rejected` (not this card's
+`status_map_skipped_human_override` — proving the two paths stay distinct);
+and the no-`app_context` inert case. All 8 pass; the collision test is the
+one that would have caught my own first-draft bug.
+
+**Verification.** `cargo test --workspace --no-fail-fast`: 473 passed, 0
+failed at the snapshot I verified against (up from the 449 baseline by more
+than my own 8 — other Wave 3 agents landed tests concurrently in the same
+window; arithmetic not exact for that reason, but 0 failures throughout).
+`cargo clippy -p tack-api --lib --tests -- -D warnings` and
+`cargo clippy --workspace --all-targets -- -D warnings`: clean at the
+snapshot verified (workspace-wide clippy intermittently broke on
+`auto_dispatch_test.rs`/`tests/common/mod.rs` mid-session — confirmed via
+`git status`/mtimes to be C2's concurrent in-progress edit, not mine; gone
+by my final run). `cargo fmt --all -- --check`: clean for every file I
+touched; the only remaining diffs (`openapi.rs`, `auto_dispatch_test.rs`,
+`item_source_migration_test.rs`) are all files I never opened for writing —
+confirmed via `git diff --stat` scoped to my own files showing empty. Ran
+`rustfmt` directly on just `orch_store.rs`/`server.rs`/my test file rather
+than `cargo fmt --all`, per A3's stated convention of not reformatting
+files mid-cycle in someone else's terminal.
+
+**Files touched, all disclosed, all in-scope:** `crates/tack-api/src/
+orch_store.rs` (owned, per my brief), `crates/tack-api/tests/
+orch_terminal_status_test.rs` (new, my test file), and
+`crates/tack-api/src/server.rs` (one call site — chaining
+`.with_app_context(...)` onto the existing `RepoControlPlaneStore::new(...)`
+call B4 already wrote there; `server.rs` isn't in my brief's file list, but
+it's the only place `RepoControlPlaneStore` is constructed for real, and the
+change is additive to an existing statement, not a restructure). Did not
+touch `crates/tack-orch/src/reconciler.rs`, `handlers/items.rs`, any import
+handler, `dispatcher.rs`, or the frontend, per scope.
+
+**Heads-up for whoever reads this next.** While I was finishing up, TODO.md
+picked up a new §2.1 ("Card R1") announcing that `crates/tack-orch/src/
+lib.rs`'s Wave-0 freeze is lifted and a cross-cutting refactor is coming
+that explicitly touches `dispatcher.rs` **and** `orch_store.rs`, and that it
+needs to run **alone** (no concurrent agents in `tack-orch/**` or
+`tack-api/**`). I did not coordinate with R1 — this note is timed to land
+before it starts, not after. `reconcile_terminal_status_map`'s call into
+`dispatcher::apply_mapped_status` is a real, live dependency on that
+function's current signature (`&AppState`, plain `&str` target/trigger); if
+R1 changes it (e.g. to carry a typed `OrchError` policy variant, per its own
+stated motivation), `orch_store.rs`'s three new methods are the other call
+site that needs updating alongside `dispatcher.rs` itself.
+
+**What's still open, for whoever picks up C2/C3/C4 or Wave 4:**
+
+- **The accepted limit above** (can't detect a human re-choosing the exact
+  status the automation already set) — real, not a bug, would need a schema
+  change to close.
+- **`on_running`/`on_waiting_approval` are still only ever applied once, at
+  dispatch time.** If a task sits in `waiting_approval` and gets approved
+  entirely on docket's side, nothing in Tack ever moves the item to
+  `on_running`'s target while it's actually running — the item stays parked
+  at `on_waiting_approval`'s value until a terminal `RunState` arrives. This
+  was already true before this card (C1's own scope) and isn't something I
+  introduced or fixed; noting it because my `card_has_diverged` logic
+  depends on knowing which of the two was last applied, and this gap is
+  exactly why that lookup has to go through `orch_tasks.remote_status`
+  rather than something simpler.
+- **Performance:** `reconcile_terminal_status_map` adds up to three extra
+  reads per terminal run per poll (`get_orch_link`, `list_orch_tasks_for_item`,
+  `get_project`) on top of B4's existing per-row read. Fine at today's scale
+  (terminal transitions are rare relative to poll ticks, same reasoning B4
+  gave for its own extra reads); a batch-get would be the first place to
+  optimize if that stops being true.
