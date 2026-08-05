@@ -5,6 +5,7 @@ members = [
     "crates/tack-db",
     "crates/tack-api",
     "crates/tack-cli",
+    "crates/tack-orch",
 ]
 
 [workspace.package]
@@ -50,6 +51,11 @@ tracing-appender = "0.2"
 thiserror = "2"
 anyhow = "1"
 
+# Async trait methods on object-safe traits (async fn in traits still can't
+# return a dyn-compatible future on its own) — used by tack-orch's
+# ControlPlane trait.
+async-trait = "0.1"
+
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -73,6 +79,9 @@ hex = "0.4"
 
 # Testing
 assert_matches = "1.5"
+# Mock HTTP server for adapter tests (tack-orch's DocketAdapter, docket.rs —
+# same crate tack-api's github_sync push tests already use).
+wiremock = "0.6"
 
 [profile.release]
 lto = true
