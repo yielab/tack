@@ -14,6 +14,14 @@ embed-spa = ["dep:rust-embed"]
 rust-embed = { version = "8", optional = true }
 tack-core = { path = "../tack-core", features = ["openapi"] }
 tack-db = { path = "../tack-db" }
+# Orchestration reconciler spawn (card A2, 33.6) — see server.rs. Also used
+# by router.rs/config.rs/handlers/orch.rs (card A4, control-plane API) and
+# orch_store.rs (card A7, the real ControlPlaneStore backed by tack-db).
+tack-orch = { path = "../tack-orch" }
+# For the `ControlPlaneStore` impl in orch_store.rs — `tack-orch`'s
+# `ControlPlaneStore` trait is `#[async_trait]`, so implementors need the
+# same macro.
+async-trait = { workspace = true }
 axum = { workspace = true }
 utoipa = { workspace = true }
 tower = { workspace = true }
