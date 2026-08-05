@@ -3294,6 +3294,140 @@
         }
       }
     },
+    "/api/sprints/{id}/dispatch": {
+      "post": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`POST /api/sprints/{id}/dispatch` — dispatch every dependency-ready item\nin the sprint, in topological order, bounded by `max_in_flight`\nconcurrent control-plane calls. Each item's own `ItemSource` decides its\n`trusted` flag (never a blanket value for the batch — TODO.md's\nnon-negotiable). A failure dispatching one item never aborts the rest;\nsee `sprint_dispatch`'s module doc, decision 1.",
+        "operationId": "dispatch_sprint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Sprint ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "max_in_flight",
+            "in": "path",
+            "description": "Bound on concurrent HTTP calls to the control plane for this run.\nOmit to use `sprint_dispatch::DEFAULT_MAX_IN_FLIGHT`; any value is\nclamped to `[1, sprint_dispatch::MAX_MAX_IN_FLIGHT]`. The dry-run\nresponse's own `max_in_flight` field reports the clamped value, so\nthe UI can show exactly what a real run with this input would use.",
+            "required": true,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sprint dispatch report — one row per item, in dependency order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SprintDispatchResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Sprint not found, or orchestration disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Project not linked to a control plane",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sprints/{id}/dispatch/dry-run": {
+      "get": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`GET /api/sprints/{id}/dispatch/dry-run` — the exact plan a real\n`POST .../dispatch` call would execute (same order, same\ndependency-readiness skips), with zero database writes and zero HTTP\ncalls to the control plane. See `sprint_dispatch::dry_run_sprint_dispatch`.",
+        "operationId": "dry_run_sprint_dispatch",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Sprint ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "max_in_flight",
+            "in": "path",
+            "description": "Bound on concurrent HTTP calls to the control plane for this run.\nOmit to use `sprint_dispatch::DEFAULT_MAX_IN_FLIGHT`; any value is\nclamped to `[1, sprint_dispatch::MAX_MAX_IN_FLIGHT]`. The dry-run\nresponse's own `max_in_flight` field reports the clamped value, so\nthe UI can show exactly what a real run with this input would use.",
+            "required": true,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dependency-ordered dispatch plan — zero side effects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DryRunSprintDispatchResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Sprint not found, or orchestration disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Project not linked to a control plane",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sprints/{id}/status": {
       "patch": {
         "tags": [
@@ -4562,6 +4696,36 @@
           }
         }
       },
+      "DryRunSprintDispatchResponse": {
+        "type": "object",
+        "description": "`GET /api/sprints/{id}/dispatch/dry-run` response. Zero side effects —\nsee `sprint_dispatch`'s module doc, decision 5.",
+        "required": [
+          "sprint_id",
+          "max_in_flight",
+          "summary",
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SprintDispatchItemResponse"
+            }
+          },
+          "max_in_flight": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "sprint_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/SprintDispatchSummary"
+          }
+        }
+      },
       "ErrorBody": {
         "type": "object",
         "required": [
@@ -5701,6 +5865,197 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "SprintDispatchItemResponse": {
+        "type": "object",
+        "description": "One item's place in a sprint-dispatch plan or report — shared shape for\nboth the dry-run preview and the real run's per-item result, so the two\nresponses read the same way side by side. `decision` is one of:\n`\"waiting_on_dependencies\"`, `\"no_dispatch_policy\"`, `\"not_eligible\"`,\n`\"already_in_flight\"`, `\"blocked\"`, `\"waiting_approval\"`, `\"dispatched\"`,\n`\"would_dispatch\"` (dry-run only — a real run would have called docket\nand resolved to one of the outcomes above instead), or `\"error\"`\n(real run only — this item's own dispatch failed or its worker task\npanicked; every other item in the sprint still ran).",
+        "required": [
+          "item_id",
+          "title",
+          "status",
+          "order",
+          "decision"
+        ],
+        "properties": {
+          "approval_token": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blocked_by": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Present only when `decision == \"waiting_on_dependencies\"` — every\ndirect dependency that hasn't reached a Done-category status yet."
+          },
+          "current_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decision": {
+            "type": "string"
+          },
+          "dispatch_from": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Present only when `decision == \"error\"` (real run only)."
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "order": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "policy_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "status_applied": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status_map_rejected": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "task": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DispatchedTaskResponse"
+              }
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "SprintDispatchResponse": {
+        "type": "object",
+        "description": "`POST /api/sprints/{id}/dispatch` response.",
+        "required": [
+          "sprint_id",
+          "max_in_flight",
+          "summary",
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SprintDispatchItemResponse"
+            }
+          },
+          "max_in_flight": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "sprint_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/SprintDispatchSummary"
+          }
+        }
+      },
+      "SprintDispatchSummary": {
+        "type": "object",
+        "description": "Summary counts over a real dispatch run's per-item `decision` values —\nthe UI's headline \"8 dispatched, 2 waiting on dependencies\" line without\nre-deriving it client-side from the row list.",
+        "required": [
+          "total",
+          "dispatched",
+          "waiting_approval",
+          "blocked",
+          "already_in_flight",
+          "waiting_on_dependencies",
+          "not_eligible",
+          "no_dispatch_policy",
+          "would_dispatch",
+          "errored"
+        ],
+        "properties": {
+          "already_in_flight": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "blocked": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "dispatched": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "errored": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "no_dispatch_policy": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "not_eligible": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "waiting_approval": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "waiting_on_dependencies": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "would_dispatch": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },

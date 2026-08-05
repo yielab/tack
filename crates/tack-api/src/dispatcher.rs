@@ -119,7 +119,27 @@ use crate::router::AppState;
 /// redispatch): this errs toward allowing a redispatch rather than wedging
 /// an item that can never be retried because of a status string this
 /// version of Tack doesn't understand.
-const ACTIVE_TASK_STATUSES: &[&str] = &["pending", "running", "waiting_approval"];
+///
+/// `pub(crate)`, not private: card C3's sprint-dispatch dry-run reads this
+/// directly (via [`is_active_task_status`]) to preview whether a real run
+/// would report an item `already_in_flight`, without duplicating the
+/// definition of "active."
+pub(crate) const ACTIVE_TASK_STATUSES: &[&str] = &["pending", "running", "waiting_approval"];
+
+/// `true` iff `remote_status` means "docket is still working on this" — see
+/// [`ACTIVE_TASK_STATUSES`].
+pub(crate) fn is_active_task_status(remote_status: &str) -> bool {
+    ACTIVE_TASK_STATUSES.contains(&remote_status)
+}
+
+/// `true` iff `current_status` is one of `status_map.dispatch_from` — the
+/// single place this check is expressed. [`dispatch_item`] and card C3's
+/// sprint-dispatch preview both call this rather than each writing their own
+/// membership check, so the two can never quietly disagree about what
+/// "eligible" means.
+pub(crate) fn is_dispatch_eligible(status_map: &StatusMap, current_status: &str) -> bool {
+    status_map.dispatch_from.iter().any(|s| s == current_status)
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // Per-item dispatch lock — process-wide, not part of AppState
@@ -269,7 +289,7 @@ pub async fn dispatch_item(
     if status_map.dispatch_from.is_empty() {
         return Ok(DispatchOutcome::NoDispatchPolicy);
     }
-    if !status_map.dispatch_from.iter().any(|s| s == &item.status) {
+    if !is_dispatch_eligible(&status_map, &item.status) {
         return Ok(DispatchOutcome::NotEligible {
             current_status: item.status.clone(),
             dispatch_from: status_map.dispatch_from.clone(),
@@ -288,7 +308,7 @@ pub async fn dispatch_item(
 
     let existing = state.repo.list_orch_tasks_for_item(item_id).await?; // attempt DESC
     if let Some(latest) = existing.first()
-        && ACTIVE_TASK_STATUSES.contains(&latest.remote_status.as_str())
+        && is_active_task_status(&latest.remote_status)
     {
         return Ok(DispatchOutcome::AlreadyInFlight {
             task: latest.clone(),

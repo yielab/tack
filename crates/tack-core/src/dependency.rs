@@ -1,4 +1,5 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 
 use tracing::{debug, instrument};
 use uuid::Uuid;
@@ -116,6 +117,84 @@ impl DependencyGraph {
         }
         Ok(())
     }
+
+    /// Topologically sort `nodes` (Kahn's algorithm), considering only edges
+    /// whose **both** endpoints are in `nodes` — an edge to a node outside the
+    /// given set contributes nothing to the ordering of the given set (the
+    /// caller — [`crate::dependency`]'s sprint-dispatch consumer, at the time
+    /// of writing — is expected to check readiness against out-of-set
+    /// dependencies separately, since "is my blocker done" and "in what order
+    /// do I sort the nodes I'm about to act on" are different questions).
+    ///
+    /// **Deterministic**, not just "a" valid order: among nodes that become
+    /// ready to emit at the same time, the one that appears earliest in the
+    /// input `nodes` slice is emitted first. This matters because a caller —
+    /// like a dry-run preview that must match a real run's order exactly —
+    /// calls this twice for the same input and needs the same answer both
+    /// times, and `HashMap`/`HashSet` iteration order is randomized per
+    /// instance in this codebase's default hasher, so it cannot be the
+    /// tie-breaker.
+    ///
+    /// Returns `Err(CoreError::DependencyCycle(node))` if `nodes` cannot be
+    /// fully ordered. This should be structurally unreachable — every edge is
+    /// validated against [`Self::validate_new_edge`] before insertion — so a
+    /// caller reaching this branch has a real invariant violation and should
+    /// fail loudly (a 500, an assertion) rather than silently truncate the
+    /// order or hang waiting on a dependency that can never be satisfied.
+    pub fn topological_order(&self, nodes: &[Uuid]) -> Result<Vec<Uuid>, CoreError> {
+        let node_set: HashSet<Uuid> = nodes.iter().copied().collect();
+        let node_index: HashMap<Uuid, usize> =
+            nodes.iter().enumerate().map(|(i, &n)| (n, i)).collect();
+
+        let mut in_degree: HashMap<Uuid, usize> = node_set.iter().map(|&n| (n, 0)).collect();
+        let mut adjacency: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+        for &n in &node_set {
+            let Some(targets) = self.edges.get(&n) else {
+                continue;
+            };
+            for (target, _) in targets {
+                if node_set.contains(target) {
+                    adjacency.entry(n).or_default().push(*target);
+                    *in_degree.entry(*target).or_insert(0) += 1;
+                }
+            }
+        }
+
+        // Min-heap keyed by each node's position in the original `nodes`
+        // slice — the deterministic tie-breaker described above.
+        let mut ready: BinaryHeap<Reverse<(usize, Uuid)>> = nodes
+            .iter()
+            .filter(|n| in_degree.get(n).copied().unwrap_or(0) == 0)
+            .map(|&n| Reverse((node_index[&n], n)))
+            .collect();
+
+        let mut order = Vec::with_capacity(node_set.len());
+        while let Some(Reverse((_, n))) = ready.pop() {
+            order.push(n);
+            if let Some(targets) = adjacency.get(&n) {
+                for &t in targets {
+                    let deg = in_degree
+                        .get_mut(&t)
+                        .expect("target has an in-degree entry");
+                    *deg -= 1;
+                    if *deg == 0 {
+                        ready.push(Reverse((node_index[&t], t)));
+                    }
+                }
+            }
+        }
+
+        if order.len() != node_set.len() {
+            let stuck = nodes
+                .iter()
+                .find(|n| !order.contains(n))
+                .copied()
+                .unwrap_or(nodes[0]);
+            return Err(CoreError::DependencyCycle(stuck));
+        }
+
+        Ok(order)
+    }
 }
 
 #[cfg(test)]
@@ -194,5 +273,109 @@ mod tests {
         let graph = DependencyGraph::from_edges(&edges);
         assert!(!graph.would_create_cycle(id(3), id(4)));
         assert!(graph.would_create_cycle(id(3), id(1)));
+    }
+
+    // ─── topological_order (card C3, sprint DAG dispatch) ─────────────────
+
+    #[test]
+    fn topo_order_simple_chain() {
+        let mut graph = DependencyGraph::new();
+        graph.add_edge(id(1), id(2), DependencyType::Blocks);
+        graph.add_edge(id(2), id(3), DependencyType::Blocks);
+
+        let order = graph.topological_order(&[id(3), id(2), id(1)]).unwrap();
+        assert_eq!(order, vec![id(1), id(2), id(3)]);
+    }
+
+    #[test]
+    fn topo_order_diamond() {
+        // 1 -> 2 -> 4
+        // 1 -> 3 -> 4
+        let mut graph = DependencyGraph::new();
+        graph.add_edge(id(1), id(2), DependencyType::Blocks);
+        graph.add_edge(id(1), id(3), DependencyType::Blocks);
+        graph.add_edge(id(2), id(4), DependencyType::Blocks);
+        graph.add_edge(id(3), id(4), DependencyType::Blocks);
+
+        let order = graph
+            .topological_order(&[id(4), id(3), id(2), id(1)])
+            .unwrap();
+        // 1 must come before 2 and 3; 4 must come after both.
+        let pos = |n: Uuid| order.iter().position(|&x| x == n).unwrap();
+        assert!(pos(id(1)) < pos(id(2)));
+        assert!(pos(id(1)) < pos(id(3)));
+        assert!(pos(id(2)) < pos(id(4)));
+        assert!(pos(id(3)) < pos(id(4)));
+    }
+
+    #[test]
+    fn topo_order_is_deterministic_across_repeated_calls() {
+        let mut graph = DependencyGraph::new();
+        graph.add_edge(id(1), id(4), DependencyType::Blocks);
+        graph.add_edge(id(2), id(4), DependencyType::Blocks);
+        graph.add_edge(id(3), id(4), DependencyType::Blocks);
+
+        let nodes = [id(4), id(3), id(2), id(1)];
+        let first = graph.topological_order(&nodes).unwrap();
+        for _ in 0..20 {
+            assert_eq!(graph.topological_order(&nodes).unwrap(), first);
+        }
+        // Ties (1, 2, 3 all have in-degree 0) break by input-slice position,
+        // not by hash iteration order — so the order is exactly this, not
+        // merely "some" valid order.
+        assert_eq!(first, vec![id(3), id(2), id(1), id(4)]);
+    }
+
+    #[test]
+    fn topo_order_ignores_edges_to_nodes_outside_the_set() {
+        // 1 -> 2, but only 2 is in the requested node set — 1's absence must
+        // not affect 2's position or cause an error.
+        let mut graph = DependencyGraph::new();
+        graph.add_edge(id(1), id(2), DependencyType::Blocks);
+        graph.add_edge(id(2), id(3), DependencyType::Blocks);
+
+        let order = graph.topological_order(&[id(2), id(3)]).unwrap();
+        assert_eq!(order, vec![id(2), id(3)]);
+    }
+
+    #[test]
+    fn topo_order_handles_disjoint_components() {
+        let mut graph = DependencyGraph::new();
+        graph.add_edge(id(1), id(2), DependencyType::Blocks);
+        graph.add_edge(id(3), id(4), DependencyType::Blocks);
+
+        let order = graph
+            .topological_order(&[id(4), id(3), id(2), id(1)])
+            .unwrap();
+        assert_eq!(order.len(), 4);
+        let pos = |n: Uuid| order.iter().position(|&x| x == n).unwrap();
+        assert!(pos(id(1)) < pos(id(2)));
+        assert!(pos(id(3)) < pos(id(4)));
+    }
+
+    #[test]
+    fn topo_order_fails_loudly_rather_than_hanging_on_an_impossible_cycle() {
+        // Bypasses `validate_new_edge` (which is supposed to make this
+        // structurally unreachable in production) to prove the function
+        // detects the impossible case and returns an error instead of
+        // looping forever or silently dropping the stuck nodes.
+        let mut graph = DependencyGraph::new();
+        graph.add_edge(id(1), id(2), DependencyType::Blocks);
+        graph.add_edge(id(2), id(1), DependencyType::Blocks);
+
+        let result = graph.topological_order(&[id(1), id(2)]);
+        assert!(matches!(result, Err(CoreError::DependencyCycle(_))));
+    }
+
+    #[test]
+    fn topo_order_single_node_no_edges() {
+        let graph = DependencyGraph::new();
+        assert_eq!(graph.topological_order(&[id(1)]).unwrap(), vec![id(1)]);
+    }
+
+    #[test]
+    fn topo_order_empty_input() {
+        let graph = DependencyGraph::new();
+        assert_eq!(graph.topological_order(&[]).unwrap(), Vec::<Uuid>::new());
     }
 }

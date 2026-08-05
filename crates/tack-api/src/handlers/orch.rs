@@ -42,6 +42,7 @@ use crate::dispatcher::{self, DispatchOutcome};
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::ErrorEnvelope;
 use crate::router::AppState;
+use crate::sprint_dispatch::{self, ItemResult, PreviewDecision};
 
 // ════════════════════════════════════════════════════════════════════════════
 // Gate — TACK_ORCH_ENABLE
@@ -1400,4 +1401,297 @@ pub async fn dispatch_item(
     let trusted = dispatcher::resolve_default_trust(&state, item_id).await?;
     let outcome = dispatcher::dispatch_item(&state, item_id, trusted).await?;
     Ok(Json(outcome.into()))
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// POST /api/sprints/{id}/dispatch, GET /api/sprints/{id}/dispatch/dry-run
+// (card C3, Wave 3, task 35.4 — DAG-ordered sprint dispatch)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// The planning (dependency order + readiness gating) and execution
+// (bounded-concurrency dispatch) logic lives in `crate::sprint_dispatch` —
+// see that module's doc comment for the five design decisions TODO.md
+// called out (partial failure, dependency readiness, concurrency, the
+// no-write-txn-across-HTTP rule, and dry-run honesty). This section is just
+// the HTTP↔domain-type translation, the same split C1 used for the
+// single-item dispatch endpoint above.
+
+/// Query params shared by both sprint-dispatch routes. A bare query param
+/// rather than a request body — `POST /dispatch` has nothing else to say,
+/// and using the same shape for both routes keeps the dry-run preview and
+/// the real run trivially comparable (same input, same knob).
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct SprintDispatchQuery {
+    /// Bound on concurrent HTTP calls to the control plane for this run.
+    /// Omit to use `sprint_dispatch::DEFAULT_MAX_IN_FLIGHT`; any value is
+    /// clamped to `[1, sprint_dispatch::MAX_MAX_IN_FLIGHT]`. The dry-run
+    /// response's own `max_in_flight` field reports the clamped value, so
+    /// the UI can show exactly what a real run with this input would use.
+    #[serde(default)]
+    pub max_in_flight: Option<u32>,
+}
+
+/// One item's place in a sprint-dispatch plan or report — shared shape for
+/// both the dry-run preview and the real run's per-item result, so the two
+/// responses read the same way side by side. `decision` is one of:
+/// `"waiting_on_dependencies"`, `"no_dispatch_policy"`, `"not_eligible"`,
+/// `"already_in_flight"`, `"blocked"`, `"waiting_approval"`, `"dispatched"`,
+/// `"would_dispatch"` (dry-run only — a real run would have called docket
+/// and resolved to one of the outcomes above instead), or `"error"`
+/// (real run only — this item's own dispatch failed or its worker task
+/// panicked; every other item in the sprint still ran).
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct SprintDispatchItemResponse {
+    pub item_id: Uuid,
+    pub title: String,
+    pub status: String,
+    pub order: usize,
+    pub decision: String,
+    /// Present only when `decision == "waiting_on_dependencies"` — every
+    /// direct dependency that hasn't reached a Done-category status yet.
+    pub blocked_by: Option<Vec<Uuid>>,
+    /// Present only when `decision == "error"` (real run only).
+    pub error: Option<String>,
+    pub task: Option<DispatchedTaskResponse>,
+    pub approval_token: Option<String>,
+    pub current_status: Option<String>,
+    pub dispatch_from: Option<Vec<String>>,
+    pub policy_id: Option<String>,
+    pub message: Option<String>,
+    pub status_applied: Option<String>,
+    pub status_map_rejected: Option<String>,
+}
+
+impl SprintDispatchItemResponse {
+    fn empty(item_id: Uuid, title: String, status: String, order: usize, decision: &str) -> Self {
+        Self {
+            item_id,
+            title,
+            status,
+            order,
+            decision: decision.to_string(),
+            blocked_by: None,
+            error: None,
+            task: None,
+            approval_token: None,
+            current_status: None,
+            dispatch_from: None,
+            policy_id: None,
+            message: None,
+            status_applied: None,
+            status_map_rejected: None,
+        }
+    }
+
+    /// Overlay `DispatchItemResponse`'s fields (produced from a real
+    /// `DispatchOutcome` via C1's own `From` impl — reused verbatim, not
+    /// reimplemented) onto this row.
+    fn with_dispatch_outcome(mut self, mapped: DispatchItemResponse) -> Self {
+        self.decision = mapped.outcome;
+        self.task = mapped.task;
+        self.approval_token = mapped.approval_token;
+        self.current_status = mapped.current_status;
+        self.dispatch_from = mapped.dispatch_from;
+        self.policy_id = mapped.policy_id;
+        self.message = mapped.message;
+        self.status_applied = mapped.status_applied;
+        self.status_map_rejected = mapped.status_map_rejected;
+        self
+    }
+}
+
+impl From<sprint_dispatch::DryRunItem> for SprintDispatchItemResponse {
+    fn from(i: sprint_dispatch::DryRunItem) -> Self {
+        let base = |decision: &str| {
+            Self::empty(
+                i.item_id,
+                i.title.clone(),
+                i.status.clone(),
+                i.order,
+                decision,
+            )
+        };
+        match i.decision {
+            PreviewDecision::WaitingOnDependencies { blocked_by } => Self {
+                blocked_by: Some(blocked_by),
+                ..base("waiting_on_dependencies")
+            },
+            PreviewDecision::NoDispatchPolicy => base("no_dispatch_policy"),
+            PreviewDecision::NotEligible {
+                current_status,
+                dispatch_from,
+            } => Self {
+                current_status: Some(current_status),
+                dispatch_from: Some(dispatch_from),
+                ..base("not_eligible")
+            },
+            PreviewDecision::AlreadyInFlight { task } => Self {
+                task: Some(task.into()),
+                ..base("already_in_flight")
+            },
+            PreviewDecision::WouldDispatch => base("would_dispatch"),
+        }
+    }
+}
+
+impl From<sprint_dispatch::SprintDispatchItem> for SprintDispatchItemResponse {
+    fn from(i: sprint_dispatch::SprintDispatchItem) -> Self {
+        let (title, status, order, item_id) =
+            (i.title.clone(), i.status.clone(), i.order, i.item_id);
+        match i.result {
+            ItemResult::WaitingOnDependencies { blocked_by } => Self {
+                blocked_by: Some(blocked_by),
+                ..Self::empty(item_id, title, status, order, "waiting_on_dependencies")
+            },
+            ItemResult::Error(error) => Self {
+                error: Some(error),
+                ..Self::empty(item_id, title, status, order, "error")
+            },
+            ItemResult::Outcome(outcome) => {
+                let mapped: DispatchItemResponse = (*outcome).into();
+                Self::empty(item_id, title, status, order, "").with_dispatch_outcome(mapped)
+            }
+        }
+    }
+}
+
+/// Summary counts over a real dispatch run's per-item `decision` values —
+/// the UI's headline "8 dispatched, 2 waiting on dependencies" line without
+/// re-deriving it client-side from the row list.
+#[derive(Debug, Default, Serialize, utoipa::ToSchema)]
+pub struct SprintDispatchSummary {
+    pub total: usize,
+    pub dispatched: usize,
+    pub waiting_approval: usize,
+    pub blocked: usize,
+    pub already_in_flight: usize,
+    pub waiting_on_dependencies: usize,
+    pub not_eligible: usize,
+    pub no_dispatch_policy: usize,
+    pub would_dispatch: usize,
+    pub errored: usize,
+}
+
+impl SprintDispatchSummary {
+    fn tally(items: &[SprintDispatchItemResponse]) -> Self {
+        let mut s = Self {
+            total: items.len(),
+            ..Self::default()
+        };
+        for item in items {
+            match item.decision.as_str() {
+                "dispatched" => s.dispatched += 1,
+                "waiting_approval" => s.waiting_approval += 1,
+                "blocked" => s.blocked += 1,
+                "already_in_flight" => s.already_in_flight += 1,
+                "waiting_on_dependencies" => s.waiting_on_dependencies += 1,
+                "not_eligible" => s.not_eligible += 1,
+                "no_dispatch_policy" => s.no_dispatch_policy += 1,
+                "would_dispatch" => s.would_dispatch += 1,
+                "error" => s.errored += 1,
+                _ => {}
+            }
+        }
+        s
+    }
+}
+
+/// `GET /api/sprints/{id}/dispatch/dry-run` response. Zero side effects —
+/// see `sprint_dispatch`'s module doc, decision 5.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct DryRunSprintDispatchResponse {
+    pub sprint_id: Uuid,
+    pub max_in_flight: u32,
+    pub summary: SprintDispatchSummary,
+    pub items: Vec<SprintDispatchItemResponse>,
+}
+
+impl From<sprint_dispatch::DryRunPlan> for DryRunSprintDispatchResponse {
+    fn from(plan: sprint_dispatch::DryRunPlan) -> Self {
+        let items: Vec<SprintDispatchItemResponse> =
+            plan.items.into_iter().map(Into::into).collect();
+        let summary = SprintDispatchSummary::tally(&items);
+        Self {
+            sprint_id: plan.sprint_id,
+            max_in_flight: plan.max_in_flight,
+            summary,
+            items,
+        }
+    }
+}
+
+/// `POST /api/sprints/{id}/dispatch` response.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct SprintDispatchResponse {
+    pub sprint_id: Uuid,
+    pub max_in_flight: u32,
+    pub summary: SprintDispatchSummary,
+    pub items: Vec<SprintDispatchItemResponse>,
+}
+
+impl From<sprint_dispatch::SprintDispatchReport> for SprintDispatchResponse {
+    fn from(report: sprint_dispatch::SprintDispatchReport) -> Self {
+        let items: Vec<SprintDispatchItemResponse> =
+            report.items.into_iter().map(Into::into).collect();
+        let summary = SprintDispatchSummary::tally(&items);
+        Self {
+            sprint_id: report.sprint_id,
+            max_in_flight: report.max_in_flight,
+            summary,
+            items,
+        }
+    }
+}
+
+/// `GET /api/sprints/{id}/dispatch/dry-run` — the exact plan a real
+/// `POST .../dispatch` call would execute (same order, same
+/// dependency-readiness skips), with zero database writes and zero HTTP
+/// calls to the control plane. See `sprint_dispatch::dry_run_sprint_dispatch`.
+#[utoipa::path(
+    get,
+    path = "/api/sprints/{id}/dispatch/dry-run",
+    tag = "orchestration",
+    params(("id" = Uuid, Path, description = "Sprint ID"), SprintDispatchQuery),
+    responses(
+        (status = 200, description = "Dependency-ordered dispatch plan — zero side effects", body = DryRunSprintDispatchResponse),
+        (status = 404, description = "Sprint not found, or orchestration disabled", body = ErrorEnvelope),
+        (status = 409, description = "Project not linked to a control plane", body = ErrorEnvelope),
+    ),
+)]
+#[instrument(skip(state))]
+pub async fn dry_run_sprint_dispatch(
+    State(state): State<AppState>,
+    Path(sprint_id): Path<Uuid>,
+    axum::extract::Query(query): axum::extract::Query<SprintDispatchQuery>,
+) -> ApiResult<Json<DryRunSprintDispatchResponse>> {
+    let plan =
+        sprint_dispatch::dry_run_sprint_dispatch(&state, sprint_id, query.max_in_flight).await?;
+    Ok(Json(plan.into()))
+}
+
+/// `POST /api/sprints/{id}/dispatch` — dispatch every dependency-ready item
+/// in the sprint, in topological order, bounded by `max_in_flight`
+/// concurrent control-plane calls. Each item's own `ItemSource` decides its
+/// `trusted` flag (never a blanket value for the batch — TODO.md's
+/// non-negotiable). A failure dispatching one item never aborts the rest;
+/// see `sprint_dispatch`'s module doc, decision 1.
+#[utoipa::path(
+    post,
+    path = "/api/sprints/{id}/dispatch",
+    tag = "orchestration",
+    params(("id" = Uuid, Path, description = "Sprint ID"), SprintDispatchQuery),
+    responses(
+        (status = 200, description = "Sprint dispatch report — one row per item, in dependency order", body = SprintDispatchResponse),
+        (status = 404, description = "Sprint not found, or orchestration disabled", body = ErrorEnvelope),
+        (status = 409, description = "Project not linked to a control plane", body = ErrorEnvelope),
+    ),
+)]
+#[instrument(skip(state))]
+pub async fn dispatch_sprint(
+    State(state): State<AppState>,
+    Path(sprint_id): Path<Uuid>,
+    axum::extract::Query(query): axum::extract::Query<SprintDispatchQuery>,
+) -> ApiResult<Json<SprintDispatchResponse>> {
+    let report = sprint_dispatch::dispatch_sprint(&state, sprint_id, query.max_in_flight).await?;
+    Ok(Json(report.into()))
 }

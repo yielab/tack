@@ -108,6 +108,40 @@ impl Repository {
         Ok(rows.into_iter().map(|r| r.into_dependency()).collect())
     }
 
+    /// Every dependency row that touches **any** of `item_ids`, as either
+    /// endpoint — deliberately not scoped to one project. Card C3 (sprint DAG
+    /// dispatch) uses this to discover a sprint item's blockers even when the
+    /// blocker lives outside the sprint (an ordinary case — a sprint is a
+    /// subset of a project's items — or, since nothing in this schema
+    /// actually forecloses it, a different project entirely). Returns `[]`
+    /// for an empty `item_ids` rather than issuing a query with an empty `IN
+    /// ()`, which is invalid SQL.
+    #[instrument(skip(self))]
+    pub async fn list_dependencies_for_items(
+        &self,
+        item_ids: &[Uuid],
+    ) -> Result<Vec<Dependency>, sqlx::Error> {
+        if item_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = item_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let query = format!(
+            "SELECT id, source_item_id, target_item_id, dependency_type, created_at
+             FROM dependencies
+             WHERE source_item_id IN ({placeholders}) OR target_item_id IN ({placeholders})
+             ORDER BY created_at"
+        );
+        let mut q = sqlx::query_as::<_, DepRow>(&query);
+        for id in item_ids {
+            q = q.bind(id.to_string());
+        }
+        for id in item_ids {
+            q = q.bind(id.to_string());
+        }
+        let rows = q.fetch_all(self.pool()).await?;
+        Ok(rows.into_iter().map(|r| r.into_dependency()).collect())
+    }
+
     /// Load all dependency edges from the same project as the given item.
     async fn load_dependency_edges(
         &self,

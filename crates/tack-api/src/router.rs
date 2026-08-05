@@ -89,8 +89,11 @@ fn orch_routes(state: AppState) -> Router<AppState> {
         ) // B6, 34.8/34.9
         // ─── Wave 3 (Phase 35) — dispatch ───────────────────────────────────
         .route("/items/{id}/dispatch", post(orch::dispatch_item)) // C1, 35.2/35.3/35.6
-        // .route("/sprints/{id}/dispatch", post(orch::dispatch_sprint)) // C3, 35.4
-        // .route("/sprints/{id}/dispatch/dry-run", get(orch::dry_run_sprint_dispatch)) // C3, 35.4
+        .route("/sprints/{id}/dispatch", post(orch::dispatch_sprint)) // C3, 35.4
+        .route(
+            "/sprints/{id}/dispatch/dry-run",
+            get(orch::dry_run_sprint_dispatch),
+        ) // C3, 35.4
         // ─── Wave 4 (Phases 36–38) — approvals + provisioning, add here: ───
         // .route("/approvals/{token}", post(orch::decide_approval)) // D1, 36.1 — also gated on TACK_ORCH_APPROVAL_TOKEN
         // .route("/projects/from-template/{id}", post(templates::create_project_from_template)) // D4, 37.2 — provision_pod:true extension of the existing endpoint, not a new route
