@@ -36,6 +36,7 @@ fn all_migrations() -> Vec<(&'static str, &'static [&'static str])> {
         ("028_orch_trace_cursors", &MIGRATION_028[..]),
         ("029_item_source", &MIGRATION_029[..]),
         ("030_template_orchestration", &MIGRATION_030[..]),
+        ("031_items_completed_at_index", &MIGRATION_031[..]),
     ]
 }
 
@@ -662,3 +663,16 @@ const MIGRATION_029: [&str; 1] =
 // are untouched" rule migration 029 established for `items.source`, applied
 // here to a column instead of a JSON payload key.
 const MIGRATION_030: [&str; 1] = ["ALTER TABLE project_templates ADD COLUMN orchestration TEXT"];
+
+// Phase 38 / card D5, task 38.1: unit economics. `GET /api/economics/summary` and
+// `GET /api/economics/items` both start from "every item where completed_at IS NOT
+// NULL" — a query the existing indexes don't cover: `idx_items_status` and friends are
+// all `(project_id, ...)` composites, but this scan is deliberately NOT scoped to one
+// project (it slices by `project_type`/`item_type` across the whole instance), so
+// there is no leading `project_id` predicate for those indexes to serve. Partial
+// (`WHERE completed_at IS NOT NULL`) because most items in a healthy board are not yet
+// done, so the index only needs to cover the minority that are.
+const MIGRATION_031: [&str; 1] = [
+    "CREATE INDEX IF NOT EXISTS idx_items_completed_at ON items(completed_at) \
+     WHERE completed_at IS NOT NULL",
+];

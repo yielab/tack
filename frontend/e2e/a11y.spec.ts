@@ -692,3 +692,121 @@ test('project settings — orchestration tab (linked, budget + policy populated)
   const violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 });
+
+// Unit economics dashboard (frontend/src/features/economics/**, TODO.md §6
+// "D5", tasks 38.1-38.4). Same `page.route()` interception technique as the
+// Fleet/Approvals/Orchestration-tab scans above — this harness's webServer
+// doesn't set `TACK_ORCH_ENABLE`, so the disabled state below is the real,
+// unmodified default. The populated scan mocks `GET /api/economics/summary`
+// with a shape matching `frontend/src/features/economics/api.ts`'s
+// `EconomicsSummaryResponse` — including a below-min-sample slice (raw hours,
+// not an average) and a slice with excluded-stale rework attempts, since
+// those are the two states most likely to introduce an a11y issue (extra
+// badges/caveat text next to a number) that an all-populated fixture would
+// never exercise.
+
+test('economics page (orchestration disabled) has no accessibility violations', async ({ page }) => {
+  await page.goto('/economics');
+  await waitForApp(page);
+  await expect(page.getByText('Agent-fleet orchestration is disabled')).toBeVisible();
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+test('economics page (no completed items yet) has no accessibility violations', async ({ page }) => {
+  await page.route('**/api/economics/summary', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        generated_at: new Date().toISOString(),
+        min_sample_size: 5,
+        events_retention_days: 90,
+        overall: {
+          key: 'overall',
+          completed_item_count: 0,
+          agent_completed_count: 0,
+          human_completed_count: 0,
+          tokens_in: 0,
+          tokens_out: 0,
+          cost_usd_estimated: null,
+          pricing_snapshot_at: null,
+          cost_usd_estimated_per_item: null,
+          agent_lead_time: { sample_count: 0, below_min_sample: true, avg_hours: null, raw_hours: null },
+          human_lead_time: { sample_count: 0, below_min_sample: true, avg_hours: null, raw_hours: null },
+          lead_time_selection_bias_note: 'Items dispatched to agents are not a random sample of all work.',
+          rework: {
+            attempts_total: 0,
+            attempts_excluded_stale: 0,
+            attempts_with_rework_signal: 0,
+            below_min_sample: true,
+            rate: null,
+            definition: 'Share of dispatched items with a qualifying rework event.',
+            truncation_note: 'Rework signals age out after the configured retention window.',
+          },
+        },
+        by_project_type: [],
+        by_item_type: [],
+      }),
+    }),
+  );
+  await page.goto('/economics');
+  await waitForApp(page);
+  await expect(page.getByText('No completed items yet')).toBeVisible();
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+test('economics page (populated, below-min-sample and stale-rework states) has no accessibility violations', async ({
+  page,
+}) => {
+  const belowMinSlice = (key: string) => ({
+    key,
+    completed_item_count: 3,
+    agent_completed_count: 2,
+    human_completed_count: 1,
+    tokens_in: 4_200,
+    tokens_out: 1_800,
+    cost_usd_estimated: 0.42,
+    pricing_snapshot_at: null,
+    cost_usd_estimated_per_item: null,
+    agent_lead_time: { sample_count: 2, below_min_sample: true, avg_hours: null, raw_hours: [3.5, 8.1] },
+    human_lead_time: { sample_count: 1, below_min_sample: true, avg_hours: null, raw_hours: [12.0] },
+    lead_time_selection_bias_note:
+      'Items dispatched to agents are not a random sample of all work — auto-dispatch fires only on specific statuses.',
+    rework: {
+      attempts_total: 2,
+      attempts_excluded_stale: 1,
+      attempts_with_rework_signal: 1,
+      below_min_sample: true,
+      rate: null,
+      definition:
+        'Share of dispatched items (completed, with at least one docket dispatch) that have at least one rework_started, verification_failed, or tester_verdict_failed event recorded against them.',
+      truncation_note:
+        'Rework signals come from mirrored docket events, which age out after the configured retention window.',
+    },
+  });
+
+  await page.route('**/api/economics/summary', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        generated_at: new Date().toISOString(),
+        min_sample_size: 5,
+        events_retention_days: 90,
+        overall: belowMinSlice('overall'),
+        by_project_type: [belowMinSlice('software'), belowMinSlice('construction')],
+        by_item_type: [belowMinSlice('task'), belowMinSlice('bug')],
+      }),
+    }),
+  );
+
+  await page.goto('/economics');
+  await waitForApp(page);
+  await expect(page.getByRole('heading', { name: 'By project type' })).toBeVisible();
+  await expect(page.getByText('too few').first()).toBeVisible();
+  await expect(page.getByText(/excluded/).first()).toBeVisible();
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});

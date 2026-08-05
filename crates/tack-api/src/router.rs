@@ -19,8 +19,8 @@ use crate::debug;
 use crate::handlers::spa;
 use crate::handlers::{
     alexa, attachments, backup, boards_multi, comments, custom_fields, dependencies, export,
-    import_github, import_linear, items, orch, projects, roles, settings, sprints, templates,
-    websocket,
+    import_github, import_linear, items, orch, projects, provisioning, roles, settings, sprints,
+    templates, websocket,
 };
 use crate::middleware::require_token;
 use crate::webhook::WebhookClient;
@@ -99,7 +99,11 @@ fn orch_routes(state: AppState) -> Router<AppState> {
         .route("/approvals/{token}", post(orch::decide_approval)) // D1, 36.1 — also gated on TACK_ORCH_APPROVAL_TOKEN (checked inside the handler, not this layer)
         .route("/projects/{id}/orch-budget", get(orch::get_orch_budget)) // D2, 36.3 — budget cap vs. mirrored spend
         .route("/projects/{id}/orch-policy", get(orch::get_orch_policy)) // D2, 36.4 — guardrail/tool-call/approval metrics (control-plane-wide)
-        // .route("/projects/from-template/{id}", post(templates::create_project_from_template)) // D4, 37.2 — provision_pod:true extension of the existing endpoint, not a new route
+        .route(
+            "/templates/{id}/provision",
+            post(provisioning::create_project_with_pod),
+        ) // D4, 37.2 — provision a pod + create/link a Tack project from a template, rollback-on-failure (see handlers/provisioning.rs's module doc for why this is a separate route rather than a `provision_pod:true` extension of the existing endpoint)
+        .merge(crate::handlers::economics::economics_routes()) // D5, 38.1-38.4 — unit economics summary + per-item export; see handlers/economics.rs
         .layer(middleware::from_fn_with_state(
             state,
             orch::require_orch_enabled,

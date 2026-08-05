@@ -283,6 +283,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/economics/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/economics/items` — per-completed-item economics (task 38.1's raw
+         *     population) plus CSV/JSON export (task 38.4), reusing `export.rs`'s
+         *     `?format=` + `Content-Disposition: attachment` convention rather than a second
+         *     export route.
+         */
+        get: operations["get_economics_items"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/economics/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/economics/summary`. */
+        get: operations["get_economics_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/fleet": {
         parameters: {
             query?: never;
@@ -554,21 +593,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * POST /api/projects/from-template/:id - Create a project from a template
-         * @description **Card D3 note (Phase 37, TODO.md §6):** `template.orchestration`, when
-         *     present, is deliberately inert here — this handler still only creates the
-         *     Tack project (workflow/vocabulary/custom fields/boards), exactly as
-         *     before this cycle. Turning the block into a live `orch_links` row needs a
-         *     `control_plane_id` pointing at one specific, already-registered docket
-         *     instance, which does not exist at this point (no pod has been
-         *     provisioned) — that wiring is card D4's `provision_pod: true` extension
-         *     of this same endpoint (TODO.md task 37.2), blocked on docket
-         *     provisioning becoming reachable in a rollback-safe way, not this card's
-         *     to build. This keeps TODO.md §0 rule 8 (off by default) trivially true
-         *     for this path: nothing here reads `TACK_ORCH_ENABLE`, because nothing
-         *     here does anything orchestration-shaped yet.
-         */
+        /** POST /api/projects/from-template/:id - Create a project from a template */
         post: operations["create_project_from_template"];
         delete?: never;
         options?: never;
@@ -1097,6 +1122,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/templates/{id}/provision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/templates/{id}/provision` — create a Tack project from a
+         *     template, provision a docket pod for it, and link the two. See the
+         *     module doc for the full rollback design.
+         */
+        post: operations["create_project_with_pod"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1325,6 +1371,16 @@ export interface components {
             vocabulary?: null | components["schemas"]["HashMap"];
             workflow?: null | components["schemas"]["WorkflowConfig"];
         };
+        /** @description `POST /api/templates/{id}/provision` body. */
+        CreateProjectWithPodRequest: {
+            description?: string | null;
+            name: string;
+            provision_pod: components["schemas"]["ProvisionPodRequest"];
+        };
+        CreateProjectWithPodResponse: {
+            project: components["schemas"]["Project"];
+            provisioning: components["schemas"]["ProvisioningOutcome"];
+        };
         CreateRole: {
             color?: string | null;
             icon?: string | null;
@@ -1467,6 +1523,129 @@ export interface components {
             /** Format: uuid */
             sprint_id: string;
             summary: components["schemas"]["SprintDispatchSummary"];
+        };
+        /**
+         * @description One completed item's economics — the row shape behind both the dashboard's
+         *     drill-down list and the CSV/JSON export (task 38.4).
+         */
+        EconomicsItemResponse: {
+            /** Format: int64 */
+            attempt_count: number;
+            /** Format: date-time */
+            completed_at?: string | null;
+            /** Format: double */
+            cost_usd_estimated?: number | null;
+            /** Format: date-time */
+            first_dispatched_at?: string | null;
+            /** Format: uuid */
+            item_id: string;
+            item_type: string;
+            /**
+             * Format: double
+             * @description `dispatched_at → completed_at` for an agent item, `started_at → completed_at`
+             *     for a human item; `None` if the required timestamp is missing or the computed
+             *     duration is negative (a data anomaly, e.g. a redispatch after completion —
+             *     excluded rather than shown as a nonsensical negative duration).
+             */
+            lead_time_hours?: number | null;
+            population: components["schemas"]["EconomicsPopulation"];
+            pricing_snapshot_at?: string | null;
+            /** Format: uuid */
+            project_id: string;
+            project_type: string;
+            /** @description Only meaningful when `population == Agent`; always `false` for a human item. */
+            rework_applicable: boolean;
+            /**
+             * @description Whether this item's rework-signal data is trustworthy — `false` when its only
+             *     dispatch predates the retention cutoff (see the module doc).
+             */
+            rework_data_reliable: boolean;
+            /**
+             * @description Raw signal presence; only trust this when `rework_applicable &&
+             *     rework_data_reliable` both hold.
+             */
+            rework_signal: boolean;
+            /** Format: date-time */
+            started_at?: string | null;
+            status: string;
+            title: string;
+            /** Format: int64 */
+            tokens_in: number;
+            /** Format: int64 */
+            tokens_out: number;
+        };
+        EconomicsItemsResponse: {
+            rows: components["schemas"]["EconomicsItemResponse"][];
+            /**
+             * Format: int64
+             * @description Total matching rows before `limit`/`offset` — never truncated silently (see
+             *     the query docs below).
+             */
+            total: number;
+        };
+        /**
+         * @description Which population a `GET /api/economics/items` row belongs to (see the module doc's
+         *     definition: "dispatched at least once" vs. "never dispatched").
+         * @enum {string}
+         */
+        EconomicsPopulation: "agent" | "human";
+        /** @description One row of the summary: "overall", one `project_type`, or one `item_type`. */
+        EconomicsSlice: {
+            /**
+             * Format: int64
+             * @description Completed items with at least one `orch_tasks` row (dispatched to an agent at
+             *     least once — regardless of who ultimately finished it).
+             */
+            agent_completed_count: number;
+            agent_lead_time: components["schemas"]["LeadTimeStat"];
+            /** Format: int64 */
+            completed_item_count: number;
+            /**
+             * Format: double
+             * @description Summed `orch_tasks.cost_usd_estimated` for this slice's agent-dispatched
+             *     items. `None` only when `agent_completed_count == 0` (nothing to sum);
+             *     `Some(0.0)` means agent items exist but none report a cost yet.
+             */
+            cost_usd_estimated?: number | null;
+            /**
+             * Format: double
+             * @description `cost_usd_estimated / agent_completed_count`. `None` whenever
+             *     `agent_completed_count < MIN_SAMPLE_SIZE` — the headline "cost per shipped
+             *     item" figure is exactly the kind of small-sample-noise ratio TODO.md's card
+             *     warns about, so it is withheld below the stated minimum rather than shown
+             *     from a handful of items.
+             */
+            cost_usd_estimated_per_item?: number | null;
+            /**
+             * Format: int64
+             * @description Completed items with zero `orch_tasks` rows — never dispatched.
+             */
+            human_completed_count: number;
+            human_lead_time: components["schemas"]["LeadTimeStat"];
+            /**
+             * @description `"overall"`, a `project_type` value, or an `item_type` value — see the
+             *     containing response's `by_project_type`/`by_item_type` field it came from.
+             */
+            key: string;
+            lead_time_selection_bias_note: string;
+            /** @description Always `None` today — no pricing-snapshot mechanism exists yet (rule 6). */
+            pricing_snapshot_at?: string | null;
+            rework: components["schemas"]["ReworkStat"];
+            /** Format: int64 */
+            tokens_in: number;
+            /** Format: int64 */
+            tokens_out: number;
+        };
+        EconomicsSummaryResponse: {
+            by_item_type: components["schemas"]["EconomicsSlice"][];
+            by_project_type: components["schemas"]["EconomicsSlice"][];
+            /** Format: int32 */
+            events_retention_days: number;
+            /** Format: date-time */
+            generated_at: string;
+            /** Format: int64 */
+            min_sample_size: number;
+            overall: components["schemas"]["EconomicsSlice"];
         };
         ErrorBody: {
             /**
@@ -1777,6 +1956,27 @@ export interface components {
         ItemType: "epic" | "feature" | "task" | "subtask" | "bug" | "requirement" | {
             custom: string;
         };
+        /**
+         * @description Average-or-raw duration figure. `avg_hours` and `raw_hours` are mutually
+         *     exclusive: exactly one is populated (or, at `sample_count == 0`, neither).
+         */
+        LeadTimeStat: {
+            /**
+             * Format: double
+             * @description `None` whenever `below_min_sample` is true (including `sample_count == 0`) —
+             *     see `raw_hours`.
+             */
+            avg_hours?: number | null;
+            below_min_sample: boolean;
+            /**
+             * @description Populated only when `below_min_sample` is true and `sample_count > 0`: the
+             *     individual durations, so a small sample is shown honestly rather than averaged
+             *     into a number that looks more precise than it is.
+             */
+            raw_hours?: number[] | null;
+            /** Format: int64 */
+            sample_count: number;
+        };
         LinearImportRequest: {
             /** @description Linear personal API key (create at https://linear.app/settings/api). */
             api_key: string;
@@ -2027,11 +2227,127 @@ export interface components {
         };
         /** @enum {string} */
         ProjectType: "software" | "web" | "mobile" | "construction" | "personal" | "homework" | "maintenance" | "legal" | "research" | "event" | "custom";
+        /**
+         * @description The pod-provisioning half of the request body. Every field mirrors
+         *     docket's real `POST /pods` body (see the module doc) except
+         *     `control_plane_id` (Tack's own reference, never sent to docket) and
+         *     `status_map`/`auto_dispatch`/`pipeline_file`, which configure the
+         *     `orch_links` row written *after* the pod exists, not the `POST /pods`
+         *     call itself. Any field left `None` falls back to the chosen template's
+         *     `orchestration` block, if it has one; if neither supplies a value,
+         *     docket's own blueprint default applies (for `blueprint`, `budget`,
+         *     `verify_cmd`) or the field is simply omitted from the link.
+         */
+        ProvisionPodRequest: {
+            auto_dispatch?: boolean | null;
+            blueprint?: null | components["schemas"]["OrchBlueprint"];
+            /** Format: double */
+            budget_usd?: number | null;
+            /** Format: uuid */
+            control_plane_id: string;
+            /**
+             * @description Codebase path (`software`-kind blueprints) or shared work directory
+             *     (`workdir`-kind blueprints — `research`/`content`/`ops`/
+             *     `agentic-product`). Empty/omitted lets docket auto-provision a work
+             *     directory for `workdir`-kind blueprints; meaningless to omit for
+             *     `software`, which then gets an empty codebase.
+             */
+            path?: string | null;
+            /**
+             * @description A pipeline docket already knows about by name/path — stored on the
+             *     `orch_links` row (`pipeline_file`). Inline `pipeline_yaml` on a
+             *     template has no delivery mechanism to docket yet (`POST /pods` has
+             *     no pipeline field at all) — see the response's `warnings`.
+             */
+            pipeline_file?: string | null;
+            /**
+             * @description Mirrors docket's `pod` field. Only the literal string `"full"` is
+             *     meaningful (docket's own `software`-only roster override); any
+             *     other non-empty value is rejected before docket is ever called.
+             */
+            pod_shape?: string | null;
+            /**
+             * @description The docket-side pod identifier. Required — never derived from the
+             *     Tack project name — so a retry after a partial failure can be typed
+             *     back in verbatim instead of risking a second, differently-named pod
+             *     for the same intent (see the module doc's rollback design).
+             */
+            remote_project: string;
+            status_map?: null | components["schemas"]["StatusMap"];
+            verify_cmd?: string | null;
+        };
+        ProvisionedPodMemberResponse: {
+            id: string;
+            model: string;
+            role: string;
+        };
+        /**
+         * @description The outcome of the provisioning half of the request, once the Tack
+         *     project itself exists. See the module doc's rollback design for exactly
+         *     when each variant is produced — both are a `200`, never an error
+         *     response, because in both cases the project *and* the pod are real and
+         *     valid; `PodCreatedLinkFailed` just means one more step (linking) needs
+         *     finishing, manually, via the existing Settings → Orchestration UI.
+         */
+        ProvisioningOutcome: {
+            blueprint: string;
+            /** Format: uuid */
+            control_plane_id: string;
+            members: components["schemas"]["ProvisionedPodMemberResponse"][];
+            remote_project: string;
+            /** @enum {string} */
+            status: "linked";
+            /**
+             * @description Non-fatal notices — e.g. a template's inline `pipeline_yaml`
+             *     that could not be delivered anywhere. Empty in the common case.
+             */
+            warnings: string[];
+        } | {
+            blueprint: string;
+            /** Format: uuid */
+            control_plane_id: string;
+            members: components["schemas"]["ProvisionedPodMemberResponse"][];
+            remote_project: string;
+            /** @enum {string} */
+            status: "pod_created_link_failed";
+            warnings: string[];
+        };
         RestoreRemoteRequest: {
             /** @description Override the "this device has newer work" guard. */
             force?: boolean;
             /** @description Object key to restore. Defaults to the latest backup when omitted. */
             key?: string | null;
+        };
+        /**
+         * @description Rework-rate figure for one slice, plus the exact definition and truncation
+         *     caveat that produced it (TODO.md: "make sure the number matches the words").
+         */
+        ReworkStat: {
+            /**
+             * Format: int64
+             * @description Excluded because their only dispatch predates the retention cutoff — their
+             *     event history may already be gone (see `REWORK_TRUNCATION_NOTE`).
+             */
+            attempts_excluded_stale: number;
+            /**
+             * Format: int64
+             * @description Every dispatched item in scope, including ones excluded from the rate below.
+             */
+            attempts_total: number;
+            /**
+             * Format: int64
+             * @description Of the *eligible* (`attempts_total - attempts_excluded_stale`) items, how many
+             *     carry at least one qualifying event.
+             */
+            attempts_with_rework_signal: number;
+            below_min_sample: boolean;
+            definition: string;
+            /**
+             * Format: double
+             * @description `None` when the eligible sample is `0` or below `MIN_SAMPLE_SIZE`.
+             */
+            rate?: number | null;
+            truncation_note: string;
         };
         Role: {
             color: string;
@@ -3112,6 +3428,72 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+        };
+    };
+    get_economics_items: {
+        parameters: {
+            query?: {
+                /** @description Filter to one `project_type` (e.g. `"software"`). Omit for all. */
+                project_type?: string;
+                /** @description Filter to one `item_type` (e.g. `"bug"`). Omit for all. */
+                item_type?: string;
+                /**
+                 * @description `"json"` (default, paginated) or `"csv"` (an attachment; ignores
+                 *     `limit`/`offset`, capped at `EXPORT_MAX_ROWS`).
+                 */
+                format?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-completed-item economics (JSON, paginated) or a CSV export attachment, per the format query */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EconomicsItemsResponse"];
+                };
+            };
+            /** @description Orchestration disabled (TACK_ORCH_ENABLE unset) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_economics_summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unit economics (tokens, estimated cost, agent-vs-human lead time, rework rate) sliced by project_type and item_type */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EconomicsSummaryResponse"];
+                };
+            };
+            /** @description Orchestration disabled (TACK_ORCH_ENABLE unset) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -5207,6 +5589,69 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    create_project_with_pod: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Template ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProjectWithPodRequest"];
+            };
+        };
+        responses: {
+            /** @description Project created; pod provisioned. `provisioning.status` distinguishes a fully-linked result from one where the pod exists but the link write failed (both are real, neither was rolled back) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateProjectWithPodResponse"];
+                };
+            };
+            /** @description Validation error, or docket refused the provisioning request — the project (if one had been created for this attempt) was rolled back */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Template or control plane not found, or orchestration disabled (TACK_ORCH_ENABLE unset) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description A pod already exists on this control plane under that remote project name — the project created for this attempt was rolled back */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description name/description validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
             };
         };
     };
