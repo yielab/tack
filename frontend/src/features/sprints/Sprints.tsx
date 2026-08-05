@@ -7,6 +7,8 @@ import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { priorityColor } from '../../shared/ui/PriorityDot';
+import { useAgentActivityMap } from '../../shared/agentActivity/useAgentActivityMap';
+import DispatchSprintModal from './DispatchSprintModal';
 import type { Sprint, Item } from '../../shared/types';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -50,6 +52,13 @@ export default function Sprints() {
     api.sprints.list(projectId),
   );
   const { items, refetch: refetchItems } = useProjectItems();
+
+  // Dispatch-to-agents gate (TODO.md Wave 3, card C4, task 35.8/35.9): reuses
+  // the same bulk agent-activity fetch Board.tsx already relies on for its
+  // own dispatch gating, rather than adding a second "is orchestration
+  // enabled" probe — see `useAgentActivityMap`'s `orchAvailable` doc comment.
+  const agentActivity = useAgentActivityMap(() => projectId);
+  const [dispatchTarget, setDispatchTarget] = createSignal<Sprint | null>(null);
 
   // Sprint form
   const [showModal, setShowModal] = createSignal(false);
@@ -378,6 +387,20 @@ export default function Sprints() {
                               Close
                             </button>
                           </Show>
+                          {/* Dispatch is privileged and outward-facing (spends
+                              money, starts autonomous agents), so it never
+                              renders when orchestration isn't positively
+                              confirmed enabled (TODO.md §0 rule 8) — no
+                              control that's just going to 404 or error. */}
+                          <Show when={agentActivity.orchAvailable() && itemsForSprint(sprint.id).length > 0}>
+                            <button
+                              class="text-xs px-2 py-1 rounded"
+                              style={{ 'background-color': 'var(--color-primary-100)', color: 'var(--color-primary-700)' }}
+                              onClick={() => setDispatchTarget(sprint)}
+                            >
+                              Run sprint
+                            </button>
+                          </Show>
                         </div>
                       </div>
 
@@ -461,6 +484,16 @@ export default function Sprints() {
           </div>
         </form>
       </Modal>
+
+      {/* Run sprint — dry-run preview + confirm (TODO.md Wave 3, card C4). */}
+      <DispatchSprintModal
+        sprint={dispatchTarget()}
+        onClose={() => setDispatchTarget(null)}
+        onDispatched={() => {
+          void refetchItems();
+          agentActivity.refetch();
+        }}
+      />
     </div>
   );
 }
