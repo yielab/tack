@@ -1,4 +1,4 @@
-import { type Component, createResource, createSignal, Show } from 'solid-js';
+import { type Component, createResource, createSignal, createMemo, createEffect, onCleanup, Show } from 'solid-js';
 import { useSearchParams } from '@solidjs/router';
 import Drawer from '../../shared/ui/Drawer';
 import Tabs, { type TabItem } from '../../shared/ui/Tabs';
@@ -6,14 +6,17 @@ import { api } from '../../shared/api';
 import { toast } from '../../shared/ui/toast';
 import type { Item, UpdateItem } from '../../shared/types';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
+import { agentActivityApi } from '../../shared/agentActivity/api';
+import { createBoardSocket } from '../../shared/realtime/boardSocket';
 import ItemHeader from './ItemHeader';
 import DetailsTab from './tabs/DetailsTab';
 import ActivityTab from './tabs/ActivityTab';
 import DependenciesTab from './tabs/DependenciesTab';
 import FilesTab from './tabs/FilesTab';
 import FieldsTab from './tabs/FieldsTab';
+import AgentActivityTab from './tabs/AgentActivityTab';
 
-const TABS: TabItem[] = [
+const BASE_TABS: TabItem[] = [
   { id: 'details', label: 'Details' },
   { id: 'activity', label: 'Activity' },
   { id: 'dependencies', label: 'Dependencies' },
@@ -37,6 +40,56 @@ const ItemDetailDrawer: Component = () => {
   );
 
   const [activeTab, setActiveTab] = createSignal('details');
+
+  // Agent activity is fetched once here — not inside `AgentActivityTab`, unlike
+  // every other tab — because the drawer needs to know whether the item HAS
+  // any agent activity before deciding whether to show the tab at all
+  // (TODO.md card B5: "an item with no agent activity shows no chip and no
+  // empty tab"). A 404 (`TACK_ORCH_ENABLE` unset — the default install state,
+  // TODO.md §0 rule 8) or any other fetch failure is treated the same as "no
+  // activity": the tab quietly doesn't appear rather than surfacing an error
+  // for a feature most installs haven't turned on.
+  const [agentActivity, { refetch: refetchAgentActivity }] = createResource(itemId, (id) =>
+    id ? agentActivityApi.getForItem(id) : null,
+  );
+
+  // Card B4 (Wave 2, realtime broadcast, task 34.5): a mirrored agent run or
+  // approval change for the item currently open in this drawer should update
+  // the "Agent Activity" tab without a manual reopen. The socket needs the
+  // item's *project*, not just its id, and that's only known once `item()`
+  // has loaded — so this waits on the item resource rather than opening a
+  // socket the instant the drawer does.
+  createEffect(() => {
+    const projectId = item()?.project_id;
+    const id = itemId();
+    if (!projectId || !id) return;
+    const s = createBoardSocket(projectId);
+    const off = s.onEvent((event) => {
+      if (
+        (event.type === 'agent_run_updated' || event.type === 'approval_pending') &&
+        event.item_id === id
+      ) {
+        void refetchAgentActivity();
+      }
+    });
+    onCleanup(() => { off(); s.close(); });
+  });
+
+  const hasAgentActivity = () => {
+    const a = agentActivity();
+    return !!a && ((a.attempts?.length ?? 0) > 0 || (a.approvals?.length ?? 0) > 0);
+  };
+  const tabs = createMemo((): TabItem[] => {
+    if (!hasAgentActivity()) return BASE_TABS;
+    // Placed right after "Activity" — agent activity is a variant of the
+    // item's activity history, not an unrelated concern.
+    const idx = BASE_TABS.findIndex((t) => t.id === 'activity');
+    return [
+      ...BASE_TABS.slice(0, idx + 1),
+      { id: 'agent', label: 'Agent Activity' },
+      ...BASE_TABS.slice(idx + 1),
+    ];
+  });
 
   const close = () => setSearchParams({ item: undefined });
 
@@ -75,12 +128,15 @@ const ItemDetailDrawer: Component = () => {
         {(it) => (
           <div class="space-y-6">
             <ItemHeader item={it()} onPatch={patch} />
-            <Tabs tabs={TABS} active={activeTab()} onChange={setActiveTab}>
+            <Tabs tabs={tabs()} active={activeTab()} onChange={setActiveTab}>
               <Show when={activeTab() === 'details'}>
                 <DetailsTab item={it()} onDescriptionChange={onDescriptionChange} />
               </Show>
               <Show when={activeTab() === 'activity'}>
                 <ActivityTab itemId={it().id} />
+              </Show>
+              <Show when={activeTab() === 'agent'}>
+                <AgentActivityTab activity={agentActivity()} loading={agentActivity.loading} />
               </Show>
               <Show when={activeTab() === 'dependencies'}>
                 <DependenciesTab item={it()} />

@@ -42,6 +42,9 @@ export type { PriorityDotProps } from './PriorityDot';
 export { default as WipChip, wipChipStyle } from './WipChip';
 export type { WipChipProps } from './WipChip';
 
+export { default as AgentStateChip, AGENT_STATE_LABEL, AGENT_STATE_TONE } from './AgentStateChip';
+export type { AgentStateChipProps, AgentChipState } from './AgentStateChip';
+
 export { default as KbdHint } from './KbdHint';
 export type { KbdHintProps } from './KbdHint';
 

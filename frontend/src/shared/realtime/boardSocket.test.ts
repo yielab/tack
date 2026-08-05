@@ -96,6 +96,20 @@ describe('createBoardSocket', () => {
     latest().emit({ type: 'item_deleted', project_id: 'p1', item_id: 'i' });
     latest().emit({ type: 'board_config_updated', project_id: 'p1' });
     latest().emit({ type: 'sprint_updated', project_id: 'p1', sprint_id: 's' });
+    latest().emit({
+      type: 'agent_run_updated',
+      project_id: 'p1',
+      item_id: 'i',
+      run_id: 'run-1',
+      state: 'running',
+    });
+    latest().emit({
+      type: 'approval_pending',
+      project_id: 'p1',
+      item_id: 'i',
+      token: 'tok-1',
+      action: 'merge',
+    });
 
     expect(seen).toEqual([
       'item_created',
@@ -103,7 +117,66 @@ describe('createBoardSocket', () => {
       'item_deleted',
       'board_config_updated',
       'sprint_updated',
+      'agent_run_updated',
+      'approval_pending',
     ]);
+    sock.close();
+  });
+
+  it('dispatches agent_run_updated and approval_pending only for the matching project', () => {
+    const sock = createBoardSocket('p1', { WebSocketImpl: WS });
+    latest().open();
+    const seen: BoardEvent[] = [];
+    sock.onEvent((e) => seen.push(e));
+
+    latest().emit({
+      type: 'agent_run_updated',
+      project_id: 'p1',
+      item_id: 'i1',
+      run_id: 'run-1',
+      state: 'succeeded',
+    });
+    latest().emit({
+      type: 'agent_run_updated',
+      project_id: 'OTHER',
+      item_id: 'i9',
+      run_id: 'run-2',
+      state: 'succeeded',
+    });
+    latest().emit({
+      type: 'approval_pending',
+      project_id: 'p1',
+      item_id: 'i1',
+      token: 'tok-1',
+      action: null,
+    });
+    latest().emit({
+      type: 'approval_pending',
+      project_id: 'OTHER',
+      item_id: 'i9',
+      token: 'tok-2',
+      action: null,
+    });
+
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toMatchObject({ type: 'agent_run_updated', run_id: 'run-1' });
+    expect(seen[1]).toMatchObject({ type: 'approval_pending', token: 'tok-1' });
+    sock.close();
+  });
+
+  it('acceptance bar: an unrecognised event type on the wire is forwarded, not thrown', () => {
+    const sock = createBoardSocket('p1', { WebSocketImpl: WS });
+    latest().open();
+    const seen: unknown[] = [];
+    sock.onEvent((e) => seen.push(e));
+
+    // A future BoardEvent variant this client build doesn't know about yet.
+    expect(() =>
+      latest().emit({ type: 'some_future_event', project_id: 'p1' } as unknown as BoardEvent)
+    ).not.toThrow();
+
+    expect(seen).toHaveLength(1);
+    expect((seen[0] as { type: string }).type).toBe('some_future_event');
     sock.close();
   });
 
