@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Tack API",
-    "description": "REST + WebSocket API for Tack, a lightweight, workflow-agnostic project-management tool. This contract is generated from the Rust handlers and domain models; it is the single source of truth for the wire format. All failing responses share the `{ \"error\": { \"status\", \"message\" } }` envelope.",
+    "description": "REST + WebSocket API for Tack, a lightweight, workflow-agnostic project-management tool. This contract is generated from the Rust handlers and domain models; it is the single source of truth for the wire format. All failing responses share the `{ \"error\": { \"status\", \"message\" } }` envelope, with an additional `code` field on a narrow set of responses (e.g. `orchestration_disabled`) where a caller needs to branch on the reason without parsing `message`.",
     "contact": {
       "name": "Tack",
       "email": "info@yielab.com"
@@ -3525,6 +3525,54 @@
         }
       }
     },
+    "/api/settings/orchestration": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "GET /api/settings/orchestration — current orchestration settings.",
+        "description": "Deliberately reachable regardless of whether orchestration is enabled\n(registered outside `orch_routes`' gate in `router.rs`) — a UI on a\nserver where orchestration has never been turned on must still be able\nto read this and offer to turn it on. See `router.rs`'s route comment.",
+        "operationId": "get_orch_settings",
+        "responses": {
+          "200": {
+            "description": "Orchestration settings: effective enabled flag, where it came from, and reconciler/link counts",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "PUT /api/settings/orchestration — save the orchestration enable flag and\nstart/stop the reconciler to match, immediately, without a restart.",
+        "description": "Order matters: persist first, then reconcile the runtime. If the process\nrestarts between the two (crash, deploy), the stored value is already\ncorrect and the next boot's `server.rs` picks it up — the only thing lost\nis this one instant's runtime state, not the setting itself.",
+        "operationId": "put_orch_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOrchSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated orchestration settings (same shape as GET)",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sprints/{id}": {
       "get": {
         "tags": [
@@ -5463,6 +5511,14 @@
           "message"
         ],
         "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Stable, machine-readable error code. Present on a narrow set of\nresponses where a caller needs to branch on *why* without parsing\n`message` — e.g. `orchestration_disabled` on the 409 every\norchestration route returns while the feature is switched off (see\n`handlers::orch::require_orch_enabled`). Absent on ordinary errors.",
+            "example": "orchestration_disabled"
+          },
           "message": {
             "type": "string",
             "description": "Human-readable, end-user-facing message.",
@@ -7794,6 +7850,18 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "UpdateOrchSettings": {
+        "type": "object",
+        "description": "Incoming update — just the one field the contract defines. No tri-state\n\"unset back to env default\" path exists yet (nothing in this cycle needs\nit); once stored, `source` stays `\"database\"` until a future card adds\none, mirroring how Cloud Backup's string fields already behave for their\nown overrides.",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
           }
         }
       },

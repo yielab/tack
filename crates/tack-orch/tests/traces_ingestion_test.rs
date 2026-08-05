@@ -529,6 +529,7 @@ async fn retention_composition_re_ingesting_a_purged_event_does_not_double_count
         ReconcilerConfig {
             poll_secs: 1,
             event_retention_days: 36_500, // ~100 years — never filters this fixture
+            ..Default::default()
         },
     )
     .await;
@@ -584,6 +585,7 @@ async fn retention_composition_re_ingesting_a_purged_event_does_not_double_count
         ReconcilerConfig {
             poll_secs: 1,
             event_retention_days: 90, // realistic default — the 2020 event is well past this
+            ..Default::default()
         },
     )
     .await;

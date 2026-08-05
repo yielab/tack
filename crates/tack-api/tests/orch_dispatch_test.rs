@@ -19,6 +19,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
+use tack_api::orch_runtime::OrchRuntime;
 use tack_api::router::{AppState, build_router};
 use tack_db::{Repository, init_pool, migrations};
 use tokio::sync::broadcast;
@@ -60,6 +61,7 @@ async fn app_with_state(config: AppConfig) -> (Router, AppState) {
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
+        orch_runtime: OrchRuntime::new(),
     };
 
     (build_router(state.clone()), state)
@@ -186,13 +188,15 @@ async fn mock_list_tasks(server: &MockServer, task_id: &str, status: &str, token
         .await;
 }
 
-// ─── Off by default / not found ────────────────────────────────────────────
+// ─── Off by default / actionable refusal ───────────────────────────────────
 
 #[tokio::test]
-async fn dispatch_404s_when_orch_disabled() {
+async fn dispatch_409s_when_orch_disabled() {
     let (app, _) = common::test_app().await; // orch_enable defaults to false
     let res = dispatch(&app, Uuid::new_v4()).await;
-    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+    let body = body_json(res).await;
+    assert_eq!(body["error"]["code"], "orchestration_disabled");
 }
 
 #[tokio::test]

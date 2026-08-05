@@ -23,6 +23,7 @@ use axum::http::{Method, Request, StatusCode};
 use chrono::Utc;
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
+use tack_api::orch_runtime::OrchRuntime;
 use tack_api::router::{AppState, build_router};
 use tack_db::repo::orch::NewOrchMetric;
 use tack_db::repo::orch::NewOrchTask;
@@ -64,6 +65,7 @@ async fn app_with_state(config: AppConfig) -> (Router, AppState) {
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
+        orch_runtime: OrchRuntime::new(),
     };
 
     (build_router(state.clone()), state)
@@ -184,7 +186,7 @@ fn metric(name: &str, labels: &[(&str, &str)], value: f64) -> NewOrchMetric {
 // ─── Off by default (TODO.md §0 rule 8) ────────────────────────────────────
 
 #[tokio::test]
-async fn both_new_routes_404_when_orch_disabled() {
+async fn both_new_routes_409_when_orch_disabled() {
     let (app, _) = common::test_app().await; // orch_enable defaults to false
     let fake = Uuid::new_v4();
 
@@ -195,7 +197,9 @@ async fn both_new_routes_404_when_orch_disabled() {
         None,
     )
     .await;
-    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+    let body = body_json(res).await;
+    assert_eq!(body["error"]["code"], "orchestration_disabled");
 
     let res = req(
         &app,
@@ -204,7 +208,9 @@ async fn both_new_routes_404_when_orch_disabled() {
         None,
     )
     .await;
-    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+    let body = body_json(res).await;
+    assert_eq!(body["error"]["code"], "orchestration_disabled");
 }
 
 // ─── Budget ─────────────────────────────────────────────────────────────────

@@ -1,7 +1,10 @@
 //! Tests for the orchestration control-plane API (card A4, task 33.5).
 //!
-//! Covers: everything 404s with `TACK_ORCH_ENABLE` unset (TODO.md §0 rule 8);
-//! the docket token never appears in a response body, in any shape (create,
+//! Covers: every route returns a 409 with `error.code: "orchestration_disabled"`
+//! while the effective orchestration setting is off (TODO.md §0 rule 8,
+//! rewritten 2026-08-05 — card E1), and `/api/settings/orchestration` itself
+//! stays reachable throughout; the docket token never appears in a response
+//! body, in any shape (create,
 //! list, get, patch); the tri-state PATCH semantics for `token`
 //! (absent/null/value); `orch-link` save-time validation against the
 //! project's workflow; and the `/api/fleet` unreachable-vs-zero distinction.
@@ -13,6 +16,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
+use tack_api::orch_runtime::OrchRuntime;
 use tack_api::router::{AppState, build_router};
 use tack_db::{Repository, init_pool, migrations};
 use tokio::sync::broadcast;
@@ -55,6 +59,7 @@ async fn app_with_state(config: AppConfig) -> (Router, AppState, Uuid) {
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
+        orch_runtime: OrchRuntime::new(),
     };
 
     (build_router(state.clone()), state, workspace_id)
@@ -126,7 +131,7 @@ fn assert_no_token_leak(v: &Value, secret: &str) {
 // ─── Off by default (TODO.md §0 rule 8) ────────────────────────────────────
 
 #[tokio::test]
-async fn every_orch_route_404s_when_disabled() {
+async fn every_orch_route_409s_with_a_stable_code_when_disabled() {
     let (app, _) = common::test_app().await; // orch_enable defaults to false
     let project_id = create_project(&app).await;
     let fake_id = Uuid::new_v4();
@@ -146,10 +151,33 @@ async fn every_orch_route_404s_when_disabled() {
         let res = req(&app, method.clone(), &uri, None).await;
         assert_eq!(
             res.status(),
-            StatusCode::NOT_FOUND,
-            "{method} {uri} should 404 when TACK_ORCH_ENABLE is unset"
+            StatusCode::CONFLICT,
+            "{method} {uri} should 409 (actionable, not a bare 404) while orchestration is disabled"
+        );
+        let body = body_json(res).await;
+        assert_eq!(
+            body["error"]["code"], "orchestration_disabled",
+            "{method} {uri} response must carry the stable machine-readable code"
+        );
+        let message = body["error"]["message"].as_str().unwrap_or_default();
+        assert!(
+            message.contains("/api/settings/orchestration"),
+            "{method} {uri} message should name where to enable orchestration: {message}"
         );
     }
+}
+
+/// `/api/settings/orchestration` itself is the one orchestration-adjacent
+/// route that must stay reachable while the feature is off — see
+/// `router.rs`'s comment on that route registration.
+#[tokio::test]
+async fn settings_orchestration_is_reachable_when_disabled() {
+    let (app, _) = common::test_app().await; // orch_enable defaults to false
+    let res = req(&app, Method::GET, "/api/settings/orchestration", None).await;
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = body_json(res).await;
+    assert_eq!(body["enabled"], false);
+    assert_eq!(body["source"], "env_default");
 }
 
 #[tokio::test]

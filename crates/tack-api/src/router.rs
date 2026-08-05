@@ -23,6 +23,7 @@ use crate::handlers::{
     templates, websocket,
 };
 use crate::middleware::require_token;
+use crate::orch_runtime::OrchRuntime;
 use crate::webhook::WebhookClient;
 
 /// Shared application state passed to all handlers.
@@ -35,6 +36,11 @@ pub struct AppState {
     pub broadcast_tx: broadcast::Sender<websocket::BoardEvent>,
     /// Optional outbound webhook client (None when TACK_WEBHOOK_URL is unset)
     pub webhook: Option<WebhookClient>,
+    /// Toggleable handle to the orchestration reconciler (card E1). Cheap to
+    /// clone (`Arc` underneath) — every handler gets the same live runtime,
+    /// so `PUT /api/settings/orchestration` starts/stops the exact tasks
+    /// `server.rs` spawned (or didn't) at boot.
+    pub orch_runtime: OrchRuntime,
 }
 
 impl AppState {
@@ -51,11 +57,17 @@ const ATTACH_LIMIT: usize = 50 * 1024 * 1024; // 50 MB for file uploads
 /// the appropriate section below and update `crate::openapi::ApiDoc` rather
 /// than restructuring this function or `build_router`.
 ///
-/// The whole sub-router is gated behind `TACK_ORCH_ENABLE` via
-/// [`orch::require_orch_enabled`] — with the flag unset every route here
-/// 404s, same as if it didn't exist (TODO.md §0 rule 8 / §4 cross-cutting
-/// acceptance). The auth token gate (`require_token`) is layered on top of
-/// this in `build_router`, so it still applies as usual.
+/// The whole sub-router is gated behind the *effective* orchestration
+/// setting (`app_meta`-stored value, falling back to `TACK_ORCH_ENABLE`) via
+/// [`orch::require_orch_enabled`] — with orchestration disabled, every route
+/// here returns `409 Conflict` with `error.code: "orchestration_disabled"`,
+/// naming where to enable it (`PUT /api/settings/orchestration`), rather
+/// than a bare 404 (TODO.md §0 rule 8, rewritten 2026-08-05 — card E1). The
+/// auth token gate (`require_token`) is layered on top of this in
+/// `build_router`, so it still applies as usual. `/api/settings/orchestration`
+/// itself lives outside this sub-router (registered directly in
+/// `build_router`, beside `/settings/backup`) precisely so it stays
+/// reachable while the feature is off — see that route's own comment.
 fn orch_routes(state: AppState) -> Router<AppState> {
     Router::new()
         // ─── Control planes (Wave 1 / A4, 33.5) ───────────────────────────
@@ -160,6 +172,16 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/settings/backup",
             get(settings::get_backup_settings).put(settings::put_backup_settings),
+        )
+        // ─── Orchestration settings (UI-editable; card E1) ─────────────────
+        // Deliberately **outside** `orch_routes`'/`require_orch_enabled`'s
+        // gate: this is the one orchestration-adjacent endpoint that must
+        // stay reachable while orchestration is off — it's how an operator
+        // discovers the feature exists and turns it on. See this file's
+        // `orch_routes` doc comment and TODO.md §0 rule 8.
+        .route(
+            "/settings/orchestration",
+            get(settings::get_orch_settings).put(settings::put_orch_settings),
         )
         // ─── Projects ────────────────────────────────────────────────────
         .route("/projects", post(projects::create_project))
@@ -293,8 +315,9 @@ pub fn build_router(state: AppState) -> Router {
         // Every route this cycle needs is batched into this one sub-router so
         // router.rs is structurally touched once (TODO.md §2's chokepoint
         // note); later waves add their route to `orch_routes` below rather
-        // than restructuring this file. `require_orch_enabled` 404s every
-        // route here when TACK_ORCH_ENABLE is unset (TODO.md §0 rule 8).
+        // than restructuring this file. `require_orch_enabled` returns a 409
+        // with `error.code: "orchestration_disabled"` for every route here
+        // while orchestration is off (TODO.md §0 rule 8, card E1).
         .merge(orch_routes(state.clone()))
         // ─── Auth token gate ──────────────────────────────────────
         .layer(middleware::from_fn_with_state(state.clone(), require_token));

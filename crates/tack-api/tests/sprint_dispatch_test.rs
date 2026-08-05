@@ -22,6 +22,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
+use tack_api::orch_runtime::OrchRuntime;
 use tack_api::router::{AppState, build_router};
 use tack_core::models::{CreateItem, ItemSource};
 use tack_db::{Repository, init_pool, migrations};
@@ -64,6 +65,7 @@ async fn app_with_state(config: AppConfig) -> (Router, AppState) {
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
+        orch_runtime: OrchRuntime::new(),
     };
 
     (build_router(state.clone()), state)
@@ -271,7 +273,7 @@ fn item_by_title<'a>(items: &'a [Value], title: &str) -> &'a Value {
 // ─── Off by default / not found / not linked ───────────────────────────────
 
 #[tokio::test]
-async fn dispatch_sprint_404s_when_orch_disabled() {
+async fn dispatch_sprint_409s_when_orch_disabled() {
     let (app, _) = common::test_app().await; // orch_enable defaults to false
     let res = req(
         &app,
@@ -280,7 +282,9 @@ async fn dispatch_sprint_404s_when_orch_disabled() {
         None,
     )
     .await;
-    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+    let body = body_json(res).await;
+    assert_eq!(body["error"]["code"], "orchestration_disabled");
 
     let res = req(
         &app,
@@ -289,7 +293,9 @@ async fn dispatch_sprint_404s_when_orch_disabled() {
         None,
     )
     .await;
-    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+    let body = body_json(res).await;
+    assert_eq!(body["error"]["code"], "orchestration_disabled");
 }
 
 #[tokio::test]

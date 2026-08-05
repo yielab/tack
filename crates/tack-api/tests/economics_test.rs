@@ -18,6 +18,7 @@ use axum::http::{Method, Request, StatusCode};
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
+use tack_api::orch_runtime::OrchRuntime;
 use tack_api::router::{AppState, build_router};
 use tack_db::repo::orch::{NewOrchEvent, NewOrchTask};
 use tack_db::{Repository, init_pool, migrations};
@@ -56,6 +57,7 @@ async fn app_with_state(config: AppConfig) -> (Router, AppState) {
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
+        orch_runtime: OrchRuntime::new(),
     };
 
     (build_router(state.clone()), state)
@@ -212,14 +214,18 @@ async fn create_control_plane(app: &Router, name: &str) -> Uuid {
 // ─── Off by default (TODO.md §0 rule 8) ────────────────────────────────────
 
 #[tokio::test]
-async fn both_routes_404_when_orch_disabled() {
+async fn both_routes_409_when_orch_disabled() {
     let (app, _) = common::test_app().await; // orch_enable defaults to false
 
     let res = req(&app, Method::GET, "/api/economics/summary", None).await;
-    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+    let body = body_json(res).await;
+    assert_eq!(body["error"]["code"], "orchestration_disabled");
 
     let res = req(&app, Method::GET, "/api/economics/items", None).await;
-    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+    let body = body_json(res).await;
+    assert_eq!(body["error"]["code"], "orchestration_disabled");
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────

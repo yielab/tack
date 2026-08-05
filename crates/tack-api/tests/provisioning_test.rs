@@ -3,7 +3,7 @@
 //! a docket pod, link the two" flow, and its rollback behavior on partial
 //! failure.
 //!
-//! Covers: 404 with `TACK_ORCH_ENABLE` unset; a full happy-path run that
+//! Covers: 409 `orchestration_disabled` while orchestration is off; a full happy-path run that
 //! creates the project, calls `POST /pods`, and writes `orch_links`; an
 //! unknown `control_plane_id` 404ing before any project is created; a bad
 //! `status_map` name rolling the project back *without* ever calling
@@ -22,6 +22,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
+use tack_api::orch_runtime::OrchRuntime;
 use tack_api::router::{AppState, build_router};
 use tack_db::{Repository, init_pool, migrations};
 use tokio::sync::broadcast;
@@ -63,6 +64,7 @@ async fn app_with_state(config: AppConfig) -> (Router, AppState) {
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
+        orch_runtime: OrchRuntime::new(),
     };
 
     (build_router(state.clone()), state)
@@ -148,7 +150,7 @@ fn provision_body(template_ok: bool, control_plane_id: Uuid, remote_project: &st
 // ─── Gating ────────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn create_project_with_pod_404s_when_orch_disabled() {
+async fn create_project_with_pod_409s_when_orch_disabled() {
     let (app, _state) = app_with_state(AppConfig::default()).await;
     let template_id = create_template(&app).await;
 
@@ -159,7 +161,9 @@ async fn create_project_with_pod_404s_when_orch_disabled() {
         Some(provision_body(true, Uuid::new_v4(), "blog-api")),
     )
     .await;
-    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+    let body = body_json(res).await;
+    assert_eq!(body["error"]["code"], "orchestration_disabled");
 }
 
 // ─── Happy path ──────────────────────────────────────────────────────────

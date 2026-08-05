@@ -7351,3 +7351,184 @@ Sidebar.tsx` (+"Off" hint on Fleet); `frontend/e2e/a11y.spec.ts` (+2 scans).
 Did not touch `schema.gen.ts` — it wasn't regenerated during this session's
 frontend work, matching E1's own note. Own `frontend/**` entirely per the
 card; touched zero files under `crates/**`.
+
+### E3 — 2026-08-05
+
+**Reproduced first, then fixed.** Before touching any production code I
+added `orch_runtime::tests::a_plane_registered_after_start_gets_polled`
+(`crates/tack-api/src/orch_runtime.rs`) against the *unmodified* codebase:
+enable orchestration with a store that starts with zero planes, `start()`,
+register one plane on the fake store, then poll `live_task_count()` for up
+to 5s. Ran it with `cargo test -p tack-api --lib orch_runtime::tests::
+a_plane_registered_after_start_gets_polled` and watched it fail —
+`panicked ... a control plane registered after start() was never picked up
+for polling` — confirming the bug exactly as described: `OrchRuntime::
+start` called `reconciler::spawn_reconcilers_cancellable`, which read
+`store.list_registered()` exactly once and never again. Only after that did
+I implement the fix and re-run the same test to green. I did not separately
+verify the equivalent crate-internal test I added at the `tack-orch` layer
+(`a_plane_registered_after_the_supervisor_starts_gets_polled`) against the
+pre-fix code — it was written alongside the fix, in the same edit that
+removed `spawn_reconcilers_cancellable` — but it exercises the identical
+"list read once, never again" defect via the same code path, so I'm
+confident it would have failed identically; I just didn't run that specific
+experiment twice.
+
+**Design chosen: the supervisor loop, not handler notification.** The
+operator's brief laid out both shapes and leaned toward the supervisor; I
+agree and built that one, for a reason the brief didn't fully spell out —
+**the event-driven alternative was never fully wired even for the cases
+that exist today.** I checked: `delete_control_plane`
+(`crates/tack-api/src/handlers/orch.rs:332`) calls
+`state.repo.delete_control_plane(id)` and returns — it never touched
+`state.orch_runtime` before this card, so a deleted control plane's poller
+task wasn't just theoretically vulnerable to an event-driven scheme's
+"forgot to signal" failure mode, it was **already leaking forever** under
+the old one-shot design, with nobody having written the signal in the first
+place. An event-driven fix would have meant finding and instrumenting that
+call site (and auditing every other write path that can change
+`control_planes` — bulk import, restore-from-backup, a future admin
+endpoint) and getting every one of them right forever. The supervisor gets
+the delete case right *for free*, with no handler changes at all, because
+it never assumed any handler would tell it anything — it just keeps asking
+the table what's true. That is the whole argument for self-healing over
+notification here: this codebase's own history is the demonstration that
+"remember to signal" doesn't reliably happen.
+
+**What changed, mechanically.** `crates/tack-orch/src/reconciler.rs`:
+
+- Removed `spawn_reconcilers_cancellable` (the snapshot-once cancellable
+  path) entirely — nothing outside this file called it except
+  `orch_runtime.rs`, and its own defect is exactly what this card fixes, so
+  keeping it around as a working-but-wrong alternative seemed worse than
+  deleting it. `spawn_reconcilers` (the plain, non-cancellable one-shot
+  function `spawn_one`'s ingestion/wiring tests all call directly, to run
+  exactly one tick and inspect the result) is **unchanged** — it's a test
+  utility for the fetch → decide → persist tick logic, not part of any
+  production path since E1's card, and 13 pre-existing call sites across
+  `tack-orch`'s and `tack-api`'s own test suites (`ingestion_test.rs`,
+  `traces_ingestion_test.rs`, `orch_reconciler_wiring_test.rs`, plus this
+  file's own unit tests) depend on its one-shot-and-return contract. Left
+  alone on purpose.
+- New: `spawn_reconcilers_supervised(store, config, stop_rx) ->
+  SupervisedReconciler`. Does one `reconcile_tick` synchronously before
+  returning (so a caller checking `SupervisedReconciler::live_task_count`
+  immediately after `.await` still sees every plane registered *as of
+  now*, preserving the exact contract `spawn_reconcilers_cancellable` used
+  to offer and that `server.rs`'s boot-time `info!(control_planes =
+  state.orch_runtime.live_task_count().await, ...)` log line depends on),
+  then spawns a detached `supervisor_loop` task that keeps re-running
+  `reconcile_tick` every `config.supervisor_scan_secs` until the global
+  `stop_rx` fires.
+- `reconcile_tick` is the diff: list `store.list_registered()`, compute the
+  current id set, `HashMap::retain` to drop (and stop) any tracked plane no
+  longer in that set, then `spawn_one` a fresh poller — with its **own**
+  `watch` channel, not shared across planes — for anything newly present.
+  A `list_registered` failure logs and skips the pass entirely, leaving
+  every currently-running poller untouched (same tolerance
+  `spawn_reconcilers` already had for this exact error, just applied
+  per-scan instead of once).
+- Per-plane pollers are still exactly `spawn_one`, byte-for-byte — the
+  fetch → decide → persist → sleep shape, the panic isolation, the
+  `evaluate()`-reads-only-`.health`/`.status` rule, all untouched. The
+  `watch`-channel stop signal E1 built is *reused*, just minted once per
+  plane by the supervisor instead of once for the whole fleet shared by
+  `spawn_reconcilers_cancellable` — same primitive, multiplied, not a
+  second cancellation mechanism. Stopping (global toggle-off, or a single
+  plane's deletion) is non-blocking, matching `OrchRuntime::stop`'s
+  existing discipline: `stop_all_plane_tasks` sends every stop signal and
+  returns without awaiting a single task's actual exit.
+- `ReconcilerConfig` gained `supervisor_scan_secs: u64` (default
+  `DEFAULT_SUPERVISOR_SCAN_SECS = 2`) — deliberately decoupled from
+  `poll_secs` (a plane's own cadence, which an operator might set much
+  higher): the wizard's "register → see it come alive" moment needs this
+  small regardless of the configured poll interval. Five existing struct
+  literals that listed every `ReconcilerConfig` field explicitly (no
+  `..Default::default()`) needed one line added each to keep compiling —
+  `crates/tack-api/src/{server.rs,handlers/settings.rs}`,
+  `crates/tack-orch/tests/traces_ingestion_test.rs` (×2),
+  `crates/tack-orch/src/reconciler.rs`'s own test module (×1) — no
+  behavior change at any of those sites, all still pass their own
+  explicitly-set fields through.
+
+`crates/tack-api/src/orch_runtime.rs`: `Running` now holds a
+`SupervisedReconciler` instead of `Vec<JoinHandle>`; `start`/`stop`/
+`live_task_count`'s signatures and the at-most-one-generation /
+never-blocks-on-stop invariants are byte-for-byte unchanged — this module's
+job stays exactly "own the single global on/off signal", per-plane
+lifecycle moved entirely into `tack-orch`.
+
+**§0 rule 5, unaffected.** `reconcile_tick`'s own `list_registered()` read
+is a single short DB call with no HTTP anywhere near it — the exact same
+shape `spawn_one`'s pre-existing `list_linked_projects`/`list_trace_cursors`
+reads already have, and the fetch/decide/persist split inside `spawn_one`
+itself is completely untouched. `evaluate()` still reads only `.health`/
+`.status`.
+
+**For E2 — `reconciler_running` semantics, one real behavior change worth
+knowing about.** Field name and JSON shape are unchanged
+(`live_task_count() > 0`, computed the same way, same field on `GET`/`PUT
+/api/settings/orchestration`). What changed is that it's now driven by a
+self-healing set instead of a static one, which fixes the delete-leak bug
+above but introduces a small, bounded staleness window in the *other*
+direction: after a control plane is deleted, `control_plane_count` drops to
+`0` immediately (a straight `repo.list_control_planes().len()`), but that
+plane's poller isn't told to stop until the *next* supervisor scan — up to
+`supervisor_scan_secs` (2s by default) later. So `enabled: true`,
+`control_plane_count: 0`, `reconciler_running: true` **can** now appear
+transiently, for at most ~2s, immediately after a delete. This is strictly
+better than before this card (the old code never stopped that poller at
+all — the window was infinite, not 2 seconds), so I don't think it needs UI
+handling, but it's a real, if narrow, exception to the invariant your
+handoff note described ("a task only exists per registered plane") and I'd
+rather name it than have you discover it from a flaky-looking a11y/E2E
+assertion later.
+
+**Tests.** `crates/tack-orch/src/reconciler.rs`: replaced the three
+`cancellable_spawn_*`/`repeated_start_stop_cycles_leave_no_task_running`
+tests (which exercised the now-deleted function) with
+`supervised_spawn_starts_one_task_per_already_registered_plane`,
+`supervised_spawn_stops_every_task_after_the_global_stop_signal`,
+`supervised_spawn_already_stopped_never_starts_a_tick`,
+`repeated_global_start_stop_cycles_leave_no_task_running` (same coverage,
+against the new function), plus three new ones for the actual bug class:
+`a_plane_registered_after_the_supervisor_starts_gets_polled` (the
+reproduction, at this layer), `a_deleted_plane_stops_being_polled_without_a
+_global_stop_signal`, and `repeated_register_delete_cycles_leak_no_tasks`
+(three churn cycles, asserting the tracked-task map is empty between each).
+A new `MutableStore` fake (`planes: Mutex<Vec<RegisteredPlane>>` with
+`register`/`delete`) makes these possible — the pre-existing `FakeStore` has
+a fixed plane list, correct for testing a single tick but unable to express
+"the registered set changes while the reconciler is running", which is
+exactly what this bug is about. `crates/tack-api/src/orch_runtime.rs`: one
+new test, `a_plane_registered_after_start_gets_polled` (the reproduction,
+one layer up, against `OrchRuntime` itself, using an analogous
+`MutableFakeStore`). All pre-existing `orch_runtime.rs` and
+`orch_settings_test.rs` tests (the HTTP-level `PUT`/`GET
+/api/settings/orchestration` suite, including the 3s-bounded-poll
+`wait_for_reconciler_running` helper and the duplicate-`start()`
+idempotency test) pass unmodified — `OrchRuntime`'s public contract didn't
+change.
+
+**Verification.** `cargo test --workspace`: 603 passed, 0 failed (baseline
+598; net +5 — reconciler.rs went from 3 removed to 7 added, +4, plus +1 in
+orch_runtime.rs). `cargo clippy --workspace --all-targets -- -D warnings`:
+clean. `cargo fmt --all -- --check`: clean (ran `cargo fmt --all` once after
+the edits to fix line-wrapping in `orch_runtime.rs` and `reconciler.rs`,
+then re-verified `--check`). `cargo test -p tack-api --test
+openapi_contract`: all 4 pass, including `openapi_spec_matches_committed_
+file` — no regeneration needed, since nothing in this card touches a route,
+DTO, or response shape. Note for whoever commits next: `docs/openapi.json`
+already shows as modified in `git status` — that's E1's own prior
+regeneration sitting uncommitted in the shared tree (confirmed via `git diff
+docs/openapi.json`: the diff is exactly the new `/api/settings/orchestration`
+path, the `UpdateOrchSettings` schema, and the `code` field, all E1's, none
+of it touched by this card), not something I introduced.
+
+**Files touched:** `crates/tack-orch/src/reconciler.rs` (supervisor +
+tests, described above), `crates/tack-api/src/orch_runtime.rs`
+(`SupervisedReconciler` wiring + one new test), `crates/tack-api/src/
+server.rs` and `crates/tack-api/src/handlers/settings.rs` (one
+`..Default::default()` line each, `ReconcilerConfig`'s new field),
+`crates/tack-orch/tests/traces_ingestion_test.rs` (same, ×2, no behavior
+change). Did not touch `frontend/**` or any file not already listed.

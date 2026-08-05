@@ -1,5 +1,6 @@
 use axum::Router;
 use tack_api::handlers::websocket::BoardEvent;
+use tack_api::orch_runtime::OrchRuntime;
 use tack_api::{AppState, config::AppConfig, router::build_router};
 use tack_db::{Repository, init_pool, migrations};
 use tokio::sync::broadcast;
@@ -39,6 +40,7 @@ pub async fn test_app_with_config(config: AppConfig) -> (Router, Uuid) {
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
+        orch_runtime: OrchRuntime::new(),
     };
 
     (build_router(state), workspace_id)
@@ -73,6 +75,7 @@ pub async fn test_app_with_file_db(db_url: &str) -> (Router, Uuid) {
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
+        orch_runtime: OrchRuntime::new(),
     };
 
     (build_router(state), workspace_id)
