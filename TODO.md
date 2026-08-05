@@ -4289,3 +4289,260 @@ site that needs updating alongside `dispatcher.rs` itself.
   (terminal transitions are rare relative to poll ticks, same reasoning B4
   gave for its own extra reads); a batch-get would be the first place to
   optimize if that stops being true.
+
+### C2 — 2026-08-05
+
+**The card.** Task 35.5/35.7 — the other half of the prompt-injection
+boundary V1 verified live and C1's `dispatch_item(state, item_id, trusted:
+bool)` was built to require: make sure the *right* value of `trusted`
+actually gets passed, for every path that creates items from outside Tack,
+and for the auto-dispatch hook that fires without a human in the loop at
+all.
+
+**1. Trust is now persisted on the item, not inferred at dispatch time.**
+New migration **029** (`crates/tack-db/src/migrations.rs`, 019–028 were
+taken): `ALTER TABLE items ADD COLUMN source TEXT NOT NULL DEFAULT
+'unknown'`. Backing Rust type: `tack_core::models::ItemSource` (`Manual` /
+`Github` / `Linear` / `JsonImport` / `CsvImport` / `Unknown`), with
+`is_trusted()` — `true` iff `Manual` — as the **single** place the trust
+rule is encoded. Added `pub source: ItemSource` to `Item`
+(`#[serde(default)]`, so any JSON predating this field deserializes to
+`Unknown`/untrusted, never `Manual`).
+
+**Default-value reasoning (the card's explicit ask).** Two different
+defaults, deliberately not the same value:
+
+- **The column's SQL `DEFAULT` (`'unknown'`) is a backfill-only value.** It
+  exists purely for rows that existed before this migration ran — on *any*
+  existing install, including ones where an item was imported from GitHub
+  before this whole Phase 35 cycle existed (migration 018/`github_links`
+  predates Phase 33). We have no record of which pre-migration rows were
+  manually typed versus imported, so — per "the unsafe state must not be
+  the accidental default" — every one of them resolves to untrusted, not to
+  the safer-looking-but-unverifiable `manual`. No code path ever writes
+  `'unknown'`/`Unknown` for a *new* item; every creation path names its
+  source explicitly (see below). Verified live in
+  `crates/tack-db/tests/item_source_migration_test.rs`'s
+  `upgrade_in_place_backfills_pre_migration_items_to_untrusted` — a hand-
+  inserted pre-029 row upgraded in place resolves to `Unknown` at both the
+  raw-SQL and repository layers.
+- **`Item`'s `#[serde(default)]` also resolves to `Unknown`,** for the same
+  reason applied to JSON instead of SQL: an old export, or a hand-built
+  import payload, that omits `source` must not be able to claim trust it
+  never had just by leaving the field out (`export.rs::run_import` reads
+  `item.source` straight off the parsed payload — see below).
+
+**Sticky, by construction, not by convention.** `source` is written exactly
+once, in `Repository::create_item_with_source` (the new function every
+import path calls), and `UpdateItem`/`Repository::update_item` have **no**
+`source` field and **no** code path that touches the `source` column at
+all — not merely "we chose not to wire it," the column name doesn't appear
+anywhere in `update_item`'s SQL. Confirmed by
+`update_item_never_changes_source`, which edits an untrusted item's title
+*and* description (the actual injection surface) through `update_item` and
+asserts `source` is unchanged.
+
+**2. Every import path found, and how each is handled:**
+
+| Path | Handler | `ItemSource` |
+|---|---|---|
+| `POST /api/projects/{id}/items` (UI, `tack add`, MCP tool) | `handlers::items::create_item` | `Manual` (the new default body of `Repository::create_item`, unchanged signature) |
+| Alexa voice skill | `handlers::alexa` | `Manual` — unchanged call site, still hits the same `create_item`. The project owner's own speech to their own skill, not third-party text — deliberately *not* treated like GitHub/Linear |
+| `POST /api/projects/{id}/import-github` | `handlers::import_github` | `Github` |
+| `POST /api/projects/{id}/import-linear` | `handlers::import_linear` | `Linear` |
+| `POST /api/projects/import` (JSON/YAML project snapshot) | `handlers::export::run_import` | **preserves `item.source` from the parsed payload**, not hardcoded — see below |
+| `POST /api/projects/{id}/import-csv` | `handlers::export::import_csv` | `CsvImport` |
+
+`Repository::create_item` (existing signature, every pre-existing caller —
+`alexa.rs`, `handlers/items.rs`, and every test fixture across `tack-db`/
+`tack-api`/`tack-orch` — untouched) now just calls the new
+`create_item_with_source(..., ItemSource::Manual)`. This was the deliberate
+alternative to changing `create_item`'s signature: a signature change would
+have rippled into test files I don't own, across crates whose owners are
+mid-session concurrently (§0 rule 1). `create_item_with_source` is
+additive; nothing else changed shape.
+
+**JSON/YAML project import (`run_import`) preserves rather than hardcodes.**
+Considered hardcoding this path to `JsonImport` (always untrusted,
+matching CSV) but rejected it: `POST /api/projects/import` is a full
+project snapshot restore, and anyone with access to call it already has
+privilege equivalent to calling `POST /api/projects/{id}/items` directly
+and getting `Manual`/trusted for free — preserving the original item's
+`source` through export→import doesn't grant any privilege a caller
+couldn't already get through the ordinary create-item endpoint, and it's
+what makes a genuine backup/restore round-trip not silently downgrade every
+item to a stricter docket policy on re-import. The safety net is the
+`#[serde(default)]` above: a payload that never had a `source` (an old
+export, or one built by hand) still resolves to `Unknown`/untrusted, so a
+crafted payload can't just omit the field to fake `Manual`.
+
+**No import path found that I could not cover.** I looked for every
+handler that calls (or could call) item creation with data whose author
+Tack can't vouch for: the MCP server (`tack-cli/src/mcp.rs`) proxies over
+HTTP to the same `create_item` endpoint as the UI — no separate DB access,
+so no separate path to wire. Project templates (`handlers::templates`)
+create boards/workflow config, never items. There is no path that writes
+directly to the `items` table outside `tack-db::repo::items`.
+
+**3. `dispatcher::resolve_default_trust` — replaced its body, kept its
+signature.** C1's handoff was explicit that this function (in
+`dispatcher.rs`, which I own) was a `github_links`-sniffing stopgap to
+replace, not build on — and that it was blind to Linear imports (no
+`linear_links` table exists). It's now a two-line read: `state.repo
+.get_item(item_id)?.source.is_trusted()`. Same signature
+(`&AppState, Uuid) -> Result<bool, ApiError>`), so `handlers::orch::
+dispatch_item` (C1's manual-dispatch HTTP handler, which I do not own)
+needed zero changes. **One disclosed loose end:** that handler's own doc
+comment (around line 1370 of `handlers/orch.rs`) still describes the old
+`github_links`-based stopgap by name — I didn't edit prose in a file I
+don't own for a body change in a file I do; whoever next touches
+`orch.rs` should update that comment to match.
+
+**4. The auto-dispatch hook — `handlers::items::maybe_auto_dispatch`,**
+called from `update_item` right after `propagate_parent_completion`/
+`maybe_sync_github`, same best-effort shape. Fires
+`dispatcher::dispatch_item(state, item.id, item.source.is_trusted())` on a
+`tokio::spawn` when **all** of: `config.orch_enable` (§0 rule 8),
+`item.status != old_status` (a real transition happened), a linked
+`orch_link` exists, and `link.auto_dispatch` is true.
+
+**Hazards from the brief, and exactly how each is closed:**
+
+- **"Don't dispatch on every update."** Two independent layers: (a) the
+  hook itself short-circuits on `item.status == old_status` before any DB
+  or HTTP call — an edit that doesn't touch status never reaches
+  `dispatch_item`; (b) `dispatch_item`'s own idempotency guard (C1's
+  process-wide per-item lock + `orch_tasks` "already in flight" check) is
+  the belt-and-suspenders layer for two genuine status changes in quick
+  succession. Tested directly:
+  `auto_dispatch_does_not_refire_on_an_edit_that_does_not_change_status`
+  moves an item into `dispatch_from`, then edits its title three times, and
+  asserts (via a wiremock `.expect(1)` that would fail the whole test on a
+  second hit, plus a direct `orch_tasks` row count) exactly one dispatch.
+- **§0 rule 5 (no SQLite write txn across an HTTP call).** The hook itself
+  makes no DB writes before spawning — it reads (`get_orch_link`) then
+  hands off entirely to the spawned task, which is `dispatch_item`'s own
+  problem (already solved by C1: fetch → HTTP → short write, never both in
+  one transaction).
+- **A dispatch failure must not fail the PATCH, and must not be silent.**
+  The hook runs off the request path (`tokio::spawn`, so the PATCH response
+  is already sent before docket is even called) — that alone satisfies
+  "never fails the user's PATCH." For visibility: an `Err` from
+  `dispatch_item` (transport/config failure) or a `DispatchOutcome::Blocked`
+  (docket's `pre_input` policy) is logged via `tracing::warn!` **and**
+  recorded as an `orch_events` row (`auto_dispatch_failed` /
+  `auto_dispatch_blocked`), the same table and free-form-`event_type`
+  convention C1's `status_map_rejected` and C5's
+  `status_map_skipped_human_override` already use — so a failed
+  auto-dispatch surfaces wherever that event history is read (the item's
+  Agent Activity tab, per B5/C5), not only in server logs. `Success` is not
+  separately logged — it already gets its own `orch_tasks` row.
+- **§0 rule 8 (off by default).**
+  `auto_dispatch_does_not_fire_when_orch_disabled` asserts zero requests
+  reach a mock control plane with `TACK_ORCH_ENABLE` unset even though the
+  link has `auto_dispatch: true` and the item enters the right status — the
+  PATCH itself still succeeds normally.
+  `auto_dispatch_does_not_fire_when_link_auto_dispatch_is_off` covers the
+  second gate (orch enabled, but this project's link opted out).
+
+**5. The headline acceptance test — asserted at the HTTP boundary,
+not a function call.**
+`crates/tack-api/tests/auto_dispatch_test.rs::
+auto_dispatch_sends_trusted_false_on_the_wire_for_a_github_imported_item`:
+seeds an item via `create_item_with_source(..., ItemSource::Github)`, links
+the project with `auto_dispatch: true`, `PATCH`es the item's status into
+`dispatch_from`, and lets the hook fire. The wiremock `POST /tasks/demo`
+mock is registered with `.and(body_partial_json(json!({"trusted":
+false})))` — it only returns 200 (letting the dispatcher proceed to persist
+an `orch_tasks` row at all) if `trusted: false` was genuinely on the wire;
+a wrong value means the mock never matches and the test times out waiting
+for the `orch_tasks` row instead of failing on a value mismatch, which is a
+harder failure to fake than a body assertion after the fact. Sibling test
+`auto_dispatch_sends_trusted_true_for_a_manually_created_item` proves the
+same for an ordinary item.
+
+**6. Also tested:** the manual-dispatch HTTP handler
+(`orch_dispatch_test.rs::dispatch_sends_trusted_false_for_a_github_imported_
+item`) — updated in place, since `resolve_default_trust`'s mechanism
+changed: it now seeds the item via `create_item_with_source` instead of the
+old `set_github_link`-only setup, and still passes, proving the manual
+"Dispatch" button path picks up the same persisted trust value the
+auto-dispatch hook does. Export → import round-trip:
+`api_test.rs::github_imported_item_source_is_untrusted_and_survives_
+export_import_round_trip` (GitHub-import → export JSON → re-import into a
+fresh project → still `source: "github"`) and a same-shape addition to the
+pre-existing `export_yaml_round_trips_through_import` asserting a manual
+item's `source: "manual"` round-trips too.
+`api_test.rs::csv_import_marks_items_with_csv_import_source` covers CSV.
+`tack-core`'s `models.rs` test module gained six unit tests for `ItemSource`
+itself (`is_trusted`, the `Default`/`FromStr` "always resolves to `Unknown`,
+never panics, never silently trusts" guarantees, serde `rename_all =
+"snake_case"`, and a legacy-JSON-without-`source` deserialization case).
+
+**What I could not verify.** The Linear import path (`ItemSource::Linear`)
+is correct by code inspection and by the generic
+`create_item_with_source_persists_and_only_manual_is_trusted` repo-layer
+test (which parametrizes over every `ItemSource` variant including
+`Linear`), but I did **not** write an HTTP-level test exercising
+`handlers::import_linear` the way `github_imported_item_source_is_untrusted
+_and_survives_export_import_round_trip` does for GitHub. Reason: Linear's
+GraphQL endpoint is hardcoded to `https://api.linear.app/graphql` in
+`import_linear.rs` (no `TACK_GITHUB_API_BASE`-style override exists for
+it), so it isn't mockable with wiremock without adding a configurable base
+URL — a change to that file's shape I judged out of scope for this card,
+and no pre-existing test for the Linear HTTP path exists to extend either.
+**Flagging this explicitly rather than silently calling Linear import
+fully covered**: the persistence mechanism is tested, the exact call site
+in `import_linear.rs` is a one-line, code-reviewed change identical in
+shape to the GitHub one, but it has no end-to-end test of its own.
+
+**Heads-up on card R1, seen while finishing up.** TODO.md's new §2.1
+("Card R1") lifts the Wave-0 freeze on `crates/tack-orch/src/lib.rs` and
+describes a cross-cutting refactor touching `dispatcher.rs` and
+`orch_store.rs`, to run with no concurrent agents in `tack-orch/**` or
+`tack-api/**`. I did not coordinate with R1 either — like C5, this note is
+timed to land before R1 starts. Two live dependencies on `dispatcher.rs`'s
+current shape that R1 should know about on top of C5's
+`orch_store.rs`/`apply_mapped_status` one: (1) `resolve_default_trust`'s
+new body calls `state.repo.get_item(item_id)` — unremarkable, but it's a
+real read added to a function R1 may be restructuring; (2)
+`handlers::items::maybe_auto_dispatch` calls `dispatcher::dispatch_item`
+and matches on `DispatchOutcome::Blocked` by name — if R1's typed
+`OrchError` policy variant (§2.1's own stated motivation) changes
+`DispatchOutcome`'s shape, this match arm in `items.rs` is a second call
+site (besides `handlers/orch.rs`) that needs updating alongside it.
+
+**Verification.** `cargo test --workspace`: 509 tests run across the
+workspace at my final snapshot, 0 failed (baseline moved past 449 during
+this session — the operator committed several other agents' completed
+cards mid-session, and C5 landed concurrently at 473; I re-ran the full
+suite after both landed in the shared tree and it's still all green — not
+attempting exact arithmetic against a moving baseline for the same reason
+C5's own note gives). `cargo clippy --workspace --all-targets -- -D
+warnings`: clean. `cargo fmt --all -- --check`: clean (ran `cargo fmt
+-p tack-api -p tack-db -p tack-core` first, per A3's stated convention of
+not reformatting the whole tree mid-cycle, then confirmed with the `--all
+-- --check` gate). `UPDATE_OPENAPI=1 cargo test -p tack-api --test
+openapi_contract`: regenerated `docs/openapi.json` to register the new
+`ItemSource` schema; drift gate green.
+
+**Files touched, all in my brief's list or explicitly additive within it:**
+`crates/tack-core/src/models.rs` (`ItemSource` + `Item.source` + tests),
+`crates/tack-db/src/migrations.rs` (migration 029),
+`crates/tack-db/src/repo/items.rs` (`create_item_with_source`, row mapping,
+every `SELECT`), `crates/tack-api/src/dispatcher.rs`
+(`resolve_default_trust` body only — no signature change),
+`crates/tack-api/src/handlers/items.rs` (`maybe_auto_dispatch` +
+`record_auto_dispatch_event`), `crates/tack-api/src/handlers/import_github.rs`,
+`crates/tack-api/src/handlers/import_linear.rs`,
+`crates/tack-api/src/handlers/export.rs` (both `run_import` and
+`import_csv`), `crates/tack-api/src/openapi.rs` (registered `ItemSource` —
+not in my brief's file list, same "required by the drift gate, not owned by
+anyone else this wave" reasoning A4/C1 used for the same file),
+`docs/openapi.json` (regenerated), and my test files (`crates/tack-db/
+tests/item_source_migration_test.rs`, `crates/tack-api/tests/
+auto_dispatch_test.rs`, plus additions to the pre-existing
+`crates/tack-api/tests/orch_dispatch_test.rs` and `crates/tack-api/tests/
+api_test.rs`). Did not touch `crates/tack-api/src/orch_store.rs`,
+`crates/tack-orch/**`, `handlers/orch.rs`, `router.rs`, or the frontend, per
+scope.
