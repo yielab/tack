@@ -648,6 +648,7 @@ async fn test_create_and_get_template() {
         workflow: None,
         custom_fields: None,
         default_boards: None,
+        orchestration: None,
     };
 
     let template = templates::create_template(repo.pool(), template_data)
@@ -682,6 +683,7 @@ async fn test_list_templates_with_filter() {
             workflow: None,
             custom_fields: None,
             default_boards: None,
+            orchestration: None,
         },
     )
     .await
@@ -697,6 +699,7 @@ async fn test_list_templates_with_filter() {
             workflow: None,
             custom_fields: None,
             default_boards: None,
+            orchestration: None,
         },
     )
     .await
@@ -731,6 +734,7 @@ async fn test_delete_template_not_builtin() {
             workflow: None,
             custom_fields: None,
             default_boards: None,
+            orchestration: None,
         },
     )
     .await

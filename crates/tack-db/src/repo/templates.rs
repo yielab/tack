@@ -14,9 +14,23 @@ struct TemplateRow {
     workflow: String,
     custom_fields: String,
     default_boards: String,
+    /// NULL means "no orchestration block" (migration 030) — distinct from
+    /// `Some("{}")`, an explicit-but-empty block. See
+    /// `ProjectTemplate::orchestration`'s doc comment.
+    orchestration: Option<String>,
     is_builtin: i32,
     created_at: String,
     updated_at: String,
+}
+
+/// `TemplateRow.orchestration` → `ProjectTemplate.orchestration`. A `NULL`
+/// column or an unparsable payload both resolve to `None` — a template with
+/// a broken orchestration blob still loads and is still usable as a template
+/// (workflow/vocabulary/boards untouched), matching the rest of this file's
+/// "corrupt JSON degrades to a safe default rather than failing the whole
+/// read" convention (see `vocabulary`/`workflow` above, which do the same).
+fn parse_orchestration(raw: Option<String>) -> Option<TemplateOrchestration> {
+    raw.and_then(|s| serde_json::from_str(&s).ok())
 }
 
 /// Create a new project template
@@ -44,12 +58,21 @@ pub async fn create_template(
     let default_boards = serde_json::to_string(&data.default_boards.unwrap_or_default())
         .unwrap_or_else(|_| "[]".to_string());
 
+    // `None` stays `NULL` (not `"null"`/`"{}"`) — the save-time validation
+    // that keeps a stored orchestration block honest happens one layer up,
+    // in `tack-api`'s `handlers::templates::create_template`; this function
+    // just persists whatever it's handed.
+    let orchestration: Option<String> = data
+        .orchestration
+        .as_ref()
+        .map(|o| serde_json::to_string(o).unwrap_or_else(|_| "{}".to_string()));
+
     let project_type_str = data.project_type.to_string();
 
     sqlx::query(
         "INSERT INTO project_templates
-         (id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)"
+         (id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, orchestration, is_builtin, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)"
     )
     .bind(id.to_string())
     .bind(&data.name)
@@ -59,6 +82,7 @@ pub async fn create_template(
     .bind(&workflow)
     .bind(&custom_fields)
     .bind(&default_boards)
+    .bind(&orchestration)
     .bind(now.to_rfc3339())
     .bind(now.to_rfc3339())
     .execute(pool)
@@ -71,7 +95,7 @@ pub async fn create_template(
 #[instrument(skip(pool))]
 pub async fn get_template(pool: &SqlitePool, id: Uuid) -> Result<ProjectTemplate, sqlx::Error> {
     let row = sqlx::query_as::<_, TemplateRow>(
-        "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at
+        "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, orchestration, is_builtin, created_at, updated_at
          FROM project_templates
          WHERE id = ?"
     )
@@ -91,6 +115,8 @@ pub async fn get_template(pool: &SqlitePool, id: Uuid) -> Result<ProjectTemplate
     let default_boards: Vec<BoardTemplate> =
         serde_json::from_str(&row.default_boards).unwrap_or_default();
 
+    let orchestration = parse_orchestration(row.orchestration);
+
     Ok(ProjectTemplate {
         id: Uuid::parse_str(&row.id).unwrap(),
         name: row.name,
@@ -100,6 +126,7 @@ pub async fn get_template(pool: &SqlitePool, id: Uuid) -> Result<ProjectTemplate
         workflow: serde_json::from_value(workflow).unwrap(),
         custom_fields,
         default_boards,
+        orchestration,
         is_builtin: row.is_builtin != 0,
         created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
             .unwrap()
@@ -120,7 +147,7 @@ pub async fn list_templates(
         let type_str = ptype.to_string();
 
         sqlx::query_as::<_, TemplateRow>(
-            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at
+            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, orchestration, is_builtin, created_at, updated_at
              FROM project_templates
              WHERE project_type = ?
              ORDER BY is_builtin DESC, name ASC"
@@ -130,7 +157,7 @@ pub async fn list_templates(
         .await?
     } else {
         sqlx::query_as::<_, TemplateRow>(
-            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, is_builtin, created_at, updated_at
+            "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, orchestration, is_builtin, created_at, updated_at
              FROM project_templates
              ORDER BY is_builtin DESC, name ASC"
         )
@@ -153,6 +180,8 @@ pub async fn list_templates(
             let default_boards: Vec<BoardTemplate> =
                 serde_json::from_str(&row.default_boards).unwrap_or_default();
 
+            let orchestration = parse_orchestration(row.orchestration);
+
             ProjectTemplate {
                 id: Uuid::parse_str(&row.id).unwrap(),
                 name: row.name,
@@ -163,6 +192,7 @@ pub async fn list_templates(
                 workflow: serde_json::from_value(workflow).unwrap(),
                 custom_fields,
                 default_boards,
+                orchestration,
                 is_builtin: row.is_builtin != 0,
                 created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
                     .unwrap()
@@ -543,5 +573,105 @@ mod tests {
                 .validate_transition("Permit", "Handover")
                 .is_err()
         );
+    }
+
+    // ─── Card D3 — orchestration block (TODO.md §6 "D3") ─────────────────────
+
+    #[tokio::test]
+    async fn builtin_templates_have_no_orchestration_block() {
+        // Backward compatibility: every built-in predates this field and
+        // seeds through a code path that never sets it — the column stays
+        // NULL, and NULL must deserialize to `None`, not a default-valued
+        // `Some(TemplateOrchestration::default())`.
+        let pool = test_pool().await;
+        seed_builtin_templates(&pool).await.expect("seed");
+
+        let all = list_templates(&pool, None).await.expect("list");
+        assert!(!all.is_empty());
+        for t in &all {
+            assert!(
+                t.orchestration.is_none(),
+                "built-in template {:?} should have no orchestration block",
+                t.name
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn create_template_without_orchestration_round_trips_to_none() {
+        let pool = test_pool().await;
+        let created = create_template(
+            &pool,
+            CreateProjectTemplate {
+                name: "Plain Template".to_string(),
+                description: None,
+                project_type: ProjectType::Software,
+                vocabulary: None,
+                workflow: None,
+                custom_fields: None,
+                default_boards: None,
+                orchestration: None,
+            },
+        )
+        .await
+        .expect("create");
+        assert!(created.orchestration.is_none());
+
+        // Re-fetch by id — exercises the SELECT/parse path, not just the
+        // value handed back from the INSERT's own read-after-write.
+        let fetched = get_template(&pool, created.id).await.expect("get");
+        assert!(fetched.orchestration.is_none());
+    }
+
+    #[tokio::test]
+    async fn create_template_with_orchestration_round_trips_through_get_and_list() {
+        let pool = test_pool().await;
+        let orch = TemplateOrchestration {
+            blueprint: OrchBlueprint::AgenticProduct,
+            pipeline_yaml: Some("name: demo\nsteps:\n  - id: lead\n".to_string()),
+            pipeline_file: None,
+            verify_cmd: Some("cargo test --workspace".to_string()),
+            budget_usd: Some(25.0),
+            status_map: TemplateStatusMap {
+                dispatch_from: vec!["To Do".to_string()],
+                on_running: Some("In Progress".to_string()),
+                on_waiting_approval: None,
+                on_succeeded: Some("Done".to_string()),
+                on_failed: None,
+                on_cancelled: None,
+            },
+            auto_dispatch: true,
+            pod_shape: Some("full".to_string()),
+        };
+
+        let created = create_template(
+            &pool,
+            CreateProjectTemplate {
+                name: "Agentic Product Template".to_string(),
+                description: None,
+                project_type: ProjectType::Software,
+                vocabulary: None,
+                workflow: None,
+                custom_fields: None,
+                default_boards: None,
+                orchestration: Some(orch.clone()),
+            },
+        )
+        .await
+        .expect("create");
+
+        assert_eq!(created.orchestration.as_ref(), Some(&orch));
+
+        let fetched = get_template(&pool, created.id).await.expect("get");
+        assert_eq!(fetched.orchestration.as_ref(), Some(&orch));
+
+        let listed = list_templates(&pool, Some(ProjectType::Software))
+            .await
+            .expect("list");
+        let found = listed
+            .iter()
+            .find(|t| t.id == created.id)
+            .expect("template present in list");
+        assert_eq!(found.orchestration.as_ref(), Some(&orch));
     }
 }

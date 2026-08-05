@@ -577,6 +577,16 @@ pub struct ProjectTemplate {
     pub workflow: WorkflowConfig,
     pub custom_fields: Vec<CustomFieldDefinition>,
     pub default_boards: Vec<BoardTemplate>,
+    /// Optional agent-fleet defaults for a project created from this
+    /// template (Phase 37, card D3). `#[serde(default)]` — absent means
+    /// "this template does not touch orchestration," the same
+    /// absent-means-nothing rule `Item::source` (migration 029, card C2)
+    /// established for backward compatibility. `None` is the value every
+    /// template had before this field existed and every built-in has today;
+    /// nothing reads this field unless it is `Some`, so a template with no
+    /// `orchestration` block behaves exactly as it did before this cycle.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orchestration: Option<TemplateOrchestration>,
     pub is_builtin: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -604,6 +614,119 @@ pub struct CreateProjectTemplate {
     pub workflow: Option<WorkflowConfig>,
     pub custom_fields: Option<Vec<CustomFieldDefinition>>,
     pub default_boards: Option<Vec<BoardTemplate>>,
+    /// See [`ProjectTemplate::orchestration`]. Validated at save time by
+    /// `tack-api`'s `handlers::templates::create_template` — this type is
+    /// pure data (tack-core has zero I/O), so the validation itself lives
+    /// one layer up, reusing `handlers::orch::validate_status_map` (card
+    /// A4's `status_map` validator) rather than duplicating it.
+    #[serde(default)]
+    pub orchestration: Option<TemplateOrchestration>,
+}
+
+/// Agent-fleet defaults captured on a template (Phase 37 / card D3, tasks
+/// 37.1 + 37.3). Nothing in this struct is applied automatically anywhere —
+/// `create_project_from_template` stores it and moves on. Turning it into a
+/// live `orch_links` row needs a `control_plane_id` pointing at an
+/// already-registered, specific docket instance, which cannot exist yet at
+/// template-apply time; that wiring is card D4's (blocked on docket
+/// provisioning), not this one's. This block is the *offer* a future
+/// provisioning flow reads defaults from — inert data until then, which is
+/// what keeps it correct under TODO.md §0 rule 8 (off by default) without
+/// needing `TACK_ORCH_ENABLE` to gate anything here: there is no route, no
+/// reconciler, no dispatch — just a JSON blob riding along with the template.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TemplateOrchestration {
+    /// docket pod blueprint. Verified against `core/blueprints.py`
+    /// (2026-08-05): exactly these five values exist server-side today.
+    /// Unlike the remote-state enums in `tack-orch` (`RunState` etc.),
+    /// this is a value Tack *sends*, not one it decodes from docket's
+    /// output, so — per TODO.md §1.2's own scoping of the `Unknown(String)`
+    /// rule to remote-emitted state — no `Unknown` fallback here: an
+    /// unrecognised blueprint name is a real authoring mistake worth
+    /// rejecting, not a forward-compat case to shrug off.
+    #[serde(default)]
+    pub blueprint: OrchBlueprint,
+    /// Inline docket pipeline YAML — the "pipeline library" entry (task
+    /// 37.3). Stored as a template field rather than a new `pipelines`
+    /// table: the roadmap names both as acceptable, and a template is
+    /// already a named, reusable, save-time-validated bundle, so a second
+    /// storage concept alongside it would just be a template under another
+    /// name. See `handlers::templates::validate_template_orchestration`
+    /// for what "validated" means here — deliberately narrower than
+    /// docket's own schema; see that function's doc comment.
+    #[serde(default)]
+    pub pipeline_yaml: Option<String>,
+    /// A pipeline docket already knows about by name/path, for a template
+    /// that would rather point at one than ship inline YAML. Mirrors
+    /// `orch_links.pipeline_file`. Not mutually exclusive with
+    /// `pipeline_yaml`; which one wins if both are set is D4's call at
+    /// provisioning time, not this card's.
+    #[serde(default)]
+    pub pipeline_file: Option<String>,
+    #[serde(default)]
+    pub verify_cmd: Option<String>,
+    /// Default budget *cap* for a project created from this template — an
+    /// operator-set ceiling, not a derived spend figure, so it stays
+    /// unsuffixed exactly like `orch_links.budget_usd` (card A4's
+    /// precedent, TODO.md §6 "A4" point 4). TODO.md §0 rule 6 governs
+    /// *estimated spend* fields (`cost_usd_estimated`); a cap the operator
+    /// chooses is a different thing and was never in scope for that rule.
+    #[serde(default)]
+    pub budget_usd: Option<f64>,
+    #[serde(default)]
+    pub status_map: TemplateStatusMap,
+    #[serde(default)]
+    pub auto_dispatch: bool,
+    /// Mirrors docket's `POST /pods` `pod` field, which as of 2026-08-05
+    /// (`serve.py::_handle_post_pods`) accepts only `"full"` or absent.
+    /// Stored permissively here (no enum, no validation) — enforcing that
+    /// exact constraint is D4's job at provisioning time, when it builds
+    /// the real `POST /pods` body; guessing at it here would just be a
+    /// second, driftable copy of a one-value check.
+    #[serde(default)]
+    pub pod_shape: Option<String>,
+}
+
+/// docket pod blueprint names (`core/blueprints.py`, verified 2026-08-05).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum OrchBlueprint {
+    #[default]
+    Software,
+    Research,
+    Content,
+    Ops,
+    AgenticProduct,
+}
+
+/// A template's default `status_map` (TODO.md §1.3). Field-for-field
+/// identical to `tack_api::handlers::orch::StatusMap` by design — the two
+/// are kept in lockstep deliberately (a template's map becomes a project's
+/// `orch_links.status_map` verbatim once something applies it) — but they
+/// stay two distinct Rust types because `tack-core` cannot depend on
+/// `tack-api` (crate boundary in `crates/tack-orch/src/lib.rs`'s comment
+/// applies here too: dependencies point inward, tack-core has zero I/O and
+/// zero knowledge of the HTTP layer). Validation is not duplicated: the
+/// handler converts this into an `orch::StatusMap` and calls
+/// `orch::validate_status_map` directly — see
+/// `handlers::templates::validate_template_orchestration`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TemplateStatusMap {
+    #[serde(default)]
+    pub dispatch_from: Vec<String>,
+    #[serde(default)]
+    pub on_running: Option<String>,
+    #[serde(default)]
+    pub on_waiting_approval: Option<String>,
+    #[serde(default)]
+    pub on_succeeded: Option<String>,
+    #[serde(default)]
+    pub on_failed: Option<String>,
+    #[serde(default)]
+    pub on_cancelled: Option<String>,
 }
 
 // ─── Custom Fields ───────────────────────────────────────────
@@ -1269,5 +1392,106 @@ mod tests {
         let item: Item = serde_json::from_value(value).expect("deserialize legacy item JSON");
         assert_eq!(item.source, ItemSource::Unknown);
         assert!(!item.source.is_trusted());
+    }
+
+    // ─── Card D3 — template `orchestration` block ─────────────────────────
+
+    /// TODO.md §0 rule 8 / D3's backward-compatibility requirement: a
+    /// `ProjectTemplate` payload that predates this field (every built-in
+    /// seed, every template saved before this cycle) has no `orchestration`
+    /// key at all — it must deserialize to `None`, not fail or default to
+    /// `Some(TemplateOrchestration::default())`.
+    #[test]
+    fn project_template_deserialization_defaults_missing_orchestration_to_none() {
+        let value = json!({
+            "id": Uuid::new_v4(),
+            "name": "Pre-existing template without an orchestration field",
+            "description": null,
+            "project_type": "software",
+            "vocabulary": {},
+            "workflow": { "statuses": [], "workflow_type": "kanban", "transitions": null },
+            "custom_fields": [],
+            "default_boards": [],
+            // "orchestration" deliberately omitted.
+            "is_builtin": false,
+            "created_at": chrono::Utc::now().to_rfc3339(),
+            "updated_at": chrono::Utc::now().to_rfc3339(),
+        });
+        let template: ProjectTemplate =
+            serde_json::from_value(value).expect("deserialize legacy template JSON");
+        assert!(template.orchestration.is_none());
+    }
+
+    /// Same rule for `CreateProjectTemplate` — a hand-built or pre-cycle
+    /// create payload with no `orchestration` key must not fail validation
+    /// or deserialization.
+    #[test]
+    fn create_project_template_deserialization_defaults_missing_orchestration_to_none() {
+        let value = json!({
+            "name": "New template, old client",
+            "description": null,
+            "project_type": "software",
+        });
+        let create: CreateProjectTemplate =
+            serde_json::from_value(value).expect("deserialize legacy create payload");
+        assert!(create.orchestration.is_none());
+    }
+
+    /// A `TemplateOrchestration` with every field left at its default must
+    /// itself round-trip — this is the "explicit-but-empty" state a client
+    /// gets from `TemplateOrchestration::default()`, distinct from the
+    /// `None` case above at the `Option` layer.
+    #[test]
+    fn template_orchestration_default_round_trips() {
+        let orch = TemplateOrchestration::default();
+        assert_eq!(orch.blueprint, OrchBlueprint::Software);
+        assert!(orch.pipeline_yaml.is_none());
+        assert!(!orch.auto_dispatch);
+        assert!(orch.status_map.dispatch_from.is_empty());
+
+        let json = serde_json::to_value(&orch).unwrap();
+        let round_tripped: TemplateOrchestration = serde_json::from_value(json).unwrap();
+        assert_eq!(orch, round_tripped);
+    }
+
+    /// docket's five real blueprint names (`core/blueprints.py`, verified
+    /// 2026-08-05), including the one with a hyphen — `serde`'s
+    /// `rename_all = "kebab-case"` must actually produce `"agentic-product"`,
+    /// not `"agentic_product"` or `"AgenticProduct"`.
+    #[test]
+    fn orch_blueprint_serializes_to_dockets_exact_names() {
+        let cases = [
+            (OrchBlueprint::Software, "software"),
+            (OrchBlueprint::Research, "research"),
+            (OrchBlueprint::Content, "content"),
+            (OrchBlueprint::Ops, "ops"),
+            (OrchBlueprint::AgenticProduct, "agentic-product"),
+        ];
+        for (variant, expected) in cases {
+            assert_eq!(serde_json::to_value(variant).unwrap(), json!(expected));
+            let parsed: OrchBlueprint = serde_json::from_value(json!(expected)).unwrap();
+            assert_eq!(parsed, variant);
+        }
+    }
+
+    /// An orchestration block with a populated `status_map` round-trips
+    /// exactly — this is the shape `handlers::templates::create_template`
+    /// converts into `orch::StatusMap` before calling
+    /// `orch::validate_status_map`; a field getting dropped or renamed here
+    /// would silently break that conversion without a type error (both
+    /// structs use plain field names, not a shared type).
+    #[test]
+    fn template_status_map_round_trips_every_field() {
+        let sm = TemplateStatusMap {
+            dispatch_from: vec!["To Do".to_string(), "Ready".to_string()],
+            on_running: Some("In Progress".to_string()),
+            on_waiting_approval: Some("Blocked".to_string()),
+            on_succeeded: Some("Done".to_string()),
+            on_failed: Some("Blocked".to_string()),
+            on_cancelled: Some("Ready".to_string()),
+        };
+        let json = serde_json::to_value(&sm).unwrap();
+        let round_tripped: TemplateStatusMap = serde_json::from_value(json).unwrap();
+        assert_eq!(sm, round_tripped);
     }
 }
