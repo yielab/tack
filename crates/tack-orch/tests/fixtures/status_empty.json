@@ -1,0 +1,19 @@
+// PROVENANCE: captured live. `docket serve --port 18337` run against the
+// pre-existing default DOCKET_HOME (~/.docket) — see the caveat in
+// `health.json`'s header; NOT an isolated sandbox. `agents` is genuinely
+// empty because that installation has zero registered project-agent
+// *workspaces* (`docket list` independently reported "No project agents
+// found" at the time) even though it has unrelated approval/audit history —
+// response body of `curl http://127.0.0.1:18337/status.json`, 2026-08-04.
+// Unauthenticated route. Represents the "no agents registered" empty-fleet
+// case.
+{
+  "apiVersion": "2",
+  "timestamp": "2026-08-04T19:47:54Z",
+  "gateway": "inactive",
+  "channels": [
+    "telegram"
+  ],
+  "agents": [],
+  "totalCostUsd": 0.0
+}

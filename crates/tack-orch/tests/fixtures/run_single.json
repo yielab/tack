@@ -1,0 +1,18 @@
+// PROVENANCE: captured live. Same isolated `DOCKET_HOME`/seeding as
+// `runs_list.json`; response body of
+// `curl -H "Authorization: Bearer <token>" http://127.0.0.1:18340/runs/run-25d46fd9-04d4-4257-8b82-1d2cf5167cbb`,
+// 2026-08-04. Authenticated route (Bearer). Unlike `/runs`, the single-run
+// body is the run object directly, not wrapped in `{"runs": [...]}`.
+{
+  "id": "run-25d46fd9-04d4-4257-8b82-1d2cf5167cbb",
+  "source": "cli",
+  "project": "demo-lead",
+  "state": "succeeded",
+  "taskIds": [],
+  "error": "",
+  "created": "2026-08-04T19:50:43.129083+00:00",
+  "startedAt": "2026-08-04T19:50:43.129674+00:00",
+  "finishedAt": "2026-08-04T19:50:43.130194+00:00",
+  "pids": [],
+  "variables": {}
+}

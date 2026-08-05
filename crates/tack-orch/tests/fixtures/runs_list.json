@@ -1,0 +1,45 @@
+// PROVENANCE: captured live. Isolated `DOCKET_HOME`, seeded via
+// `docket.core.runs.create_run()`/`execute()` called directly (real docket
+// code, real on-disk `docket-runs.json`) — one `cli`-sourced run driven to
+// `succeeded`, one `webhook`-sourced run with resolved `variables` left in
+// `queued` (never finished, exercising `startedAt`/`finishedAt: null`).
+// Response body of
+// `curl -H "Authorization: Bearer <token>" http://127.0.0.1:18339/runs`,
+// 2026-08-04. Authenticated route (Bearer). Note: this project id
+// ("demo-lead") differs from the "demo" project id used in
+// `task_single.json`/`traces_list.json` — an artifact of two separate
+// seeding passes in this same fixture-capture session, not a real docket
+// naming rule; see TODO.md §6's A1 handoff note.
+{
+  "runs": [
+    {
+      "id": "run-397462ac-64d1-4a1e-9772-ef1482552d46",
+      "source": "webhook",
+      "project": "demo-lead",
+      "state": "queued",
+      "taskIds": [],
+      "error": "",
+      "created": "2026-08-04T19:50:43.130460+00:00",
+      "startedAt": null,
+      "finishedAt": null,
+      "pids": [],
+      "variables": {
+        "branch": "main",
+        "retries": 2
+      }
+    },
+    {
+      "id": "run-25d46fd9-04d4-4257-8b82-1d2cf5167cbb",
+      "source": "cli",
+      "project": "demo-lead",
+      "state": "succeeded",
+      "taskIds": [],
+      "error": "",
+      "created": "2026-08-04T19:50:43.129083+00:00",
+      "startedAt": "2026-08-04T19:50:43.129674+00:00",
+      "finishedAt": "2026-08-04T19:50:43.130194+00:00",
+      "pids": [],
+      "variables": {}
+    }
+  ]
+}

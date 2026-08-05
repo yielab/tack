@@ -1,0 +1,8 @@
+// PROVENANCE: captured live. Same isolated `DOCKET_HOME` as `run_single.json`;
+// response body (HTTP 404) of
+// `curl -H "Authorization: Bearer <token>" http://127.0.0.1:18340/runs/run-does-not-exist`,
+// 2026-08-04. `serve.py`'s `do_GET` returns this exact
+// `{"ok": false, "error": "Unknown run: <id>"}` shape (status 404) for any
+// run id `core.runs.get_run()` can't find — the adapter must map this to
+// `OrchError::NotFound`.
+{"ok": false, "error": "Unknown run: run-does-not-exist"}

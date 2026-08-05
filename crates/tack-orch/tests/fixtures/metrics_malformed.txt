@@ -1,0 +1,23 @@
+# PROVENANCE: constructed, not captured. Deliberately malformed/edge-case
+# Prometheus text-exposition input for the parser's robustness tests — every
+# line here is either something the parser must tolerate without panicking
+# (skip and move on) or a value it must still accept per TODO.md step 3
+# (NaN/+Inf/-Inf, escaped quotes, missing labels, extra whitespace). Real
+# docket never emits several of these lines (docket's own `render_metrics`
+# always produces well-formed output) — this file exists purely to stress
+# the parser beyond what `render_metrics` itself would ever send.
+# HELP a_gauge a normal metric with no labels
+# TYPE a_gauge gauge
+a_gauge 1
+this line has no braces and no trailing number and must not panic
+docket_bad_no_value{label="x"}
+docket_bad_unterminated_brace{label="x" 5
+docket_weird_label{label=} 5
+docket_extra_whitespace{  label = "x"  ,  other="y"  }    12.5
+docket_escaped_quote{label="a \"quoted\" value"} 3
+docket_nan_value{label="x"} NaN
+docket_pos_inf{label="x"} +Inf
+docket_neg_inf{label="x"} -Inf
+bare_metric_no_labels 42
+
+docket_trailing_comment_ok 7 # a trailing comment-ish thing some exporters emit

@@ -1,0 +1,39 @@
+// PROVENANCE: captured live 2026-08-05 (card V1) — corrects the prior
+// fixture, which predated docket's Phase 22 and had to guess. This is a real
+// HTTP capture: isolated `DOCKET_HOME`/`docket serve --port 18401`, task
+// enqueued via `docket.core.dispatch.enqueue_task('demo2', 'Fix the flaky
+// retry test in tack-orch adapter', 'high')` (real docket code, real
+// on-disk TASK_LIST.json), then
+// `curl -H "Authorization: Bearer <token>" http://127.0.0.1:18401/tasks/demo2`.
+// Authenticated route (Bearer).
+//
+// Both things the prior fixture had to guess at are now confirmed exactly:
+// (1) the wrapper key really is `{"tasks": [...]}`, matching `/runs`'s
+// `{"runs": [...]}` and `/approvals`'s `{"pending": [...]}` convention, and
+// (2) the field shape really does match `read_tasks`'s normalized output —
+// `RemoteTask` in `lib.rs` needs no changes. `hops`/`gateOverridePipelineIndex`
+// are still present (docket's internal record carries them; `RemoteTask`
+// doesn't model them) and are left in deliberately, proving the adapter
+// tolerates and ignores unknown fields.
+{
+  "tasks": [
+    {
+      "id": "task-7bf4553c-c7f9-40fb-b6a9-b29332155d94",
+      "description": "Fix the flaky retry test in tack-orch adapter",
+      "priority": "high",
+      "status": "pending",
+      "created": "2026-08-05T11:07:59.520734+00:00",
+      "startedAt": null,
+      "completedAt": null,
+      "source": "operator",
+      "hops": [],
+      "reason": "",
+      "costUsd": 0.0,
+      "claimId": null,
+      "claimedAt": null,
+      "approvalToken": null,
+      "pendingApprovalIndex": null,
+      "gateOverridePipelineIndex": null
+    }
+  ]
+}

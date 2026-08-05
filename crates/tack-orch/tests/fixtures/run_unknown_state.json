@@ -1,0 +1,20 @@
+// PROVENANCE: constructed, not captured — derived from `run_single.json`
+// (itself a real live capture) with `state` hand-edited from `"succeeded"`
+// to `"paused"`, a value outside today's `RunState` literal
+// (`core/runs.py`) entirely invented for this test. Exercises the
+// `Unknown(String)` fallback (TODO.md §1.2 / §0 rule "unknown enum value
+// never fails a poll") end-to-end through the real adapter + wiremock, not
+// just the unit-level round-trip test already covered in `lib.rs`.
+{
+  "id": "run-25d46fd9-04d4-4257-8b82-1d2cf5167cbb",
+  "source": "cli",
+  "project": "demo-lead",
+  "state": "paused",
+  "taskIds": [],
+  "error": "",
+  "created": "2026-08-04T19:50:43.129083+00:00",
+  "startedAt": "2026-08-04T19:50:43.129674+00:00",
+  "finishedAt": null,
+  "pids": [],
+  "variables": {}
+}

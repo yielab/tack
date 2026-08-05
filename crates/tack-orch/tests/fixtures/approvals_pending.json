@@ -1,0 +1,28 @@
+// PROVENANCE: captured live. Isolated `DOCKET_HOME`, seeded via
+// `docket.core.approval.approval_create()` called directly (real docket
+// code, real on-disk `approvals/*.json`) with a `context` shape matching
+// `core/dispatch.py`'s documented `require_approval` gate consumer
+// (`{"taskId": ..., "pipelineIndex": ...}`). Response body of
+// `curl -H "Authorization: Bearer <token>" http://127.0.0.1:18339/approvals`,
+// 2026-08-04. Authenticated route (Bearer). `action` carries a real em dash
+// from docket's own `f"pod dispatch — task enqueue for..."` template
+// (`core/dispatch.py`) — the live response escapes it as `—`
+// (`json.dumps`'s default `ensure_ascii=True`); written here as the literal
+// character instead since both decode to the identical string, but a real
+// client must handle non-ASCII in `action` either way.
+{
+  "pending": [
+    {
+      "token": "apr-59c355ad-38e3-4e98-b71b-bf970bf9ccbf",
+      "project": "demo-lead",
+      "role": "implementer",
+      "action": "pod dispatch — task enqueue for 'demo-lead': run rm -rf build/ during cleanup hop",
+      "state": "pending",
+      "created": "2026-08-04T19:50:50Z",
+      "context": {
+        "taskId": "task-1",
+        "pipelineIndex": 2
+      }
+    }
+  ]
+}

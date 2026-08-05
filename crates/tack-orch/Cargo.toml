@@ -1,0 +1,45 @@
+[package]
+name = "tack-orch"
+description = "Control-plane orchestration client for Tack — the ControlPlane trait, shared DTOs, and (from Wave 1 on) adapters/reconciler for docket-style agent-fleet runtimes."
+version.workspace = true
+edition.workspace = true
+
+# Dependency direction is INWARD ONLY: tack-orch may depend on tack-core and
+# tack-db, but must NEVER depend on tack-api. tack-api depends on tack-orch
+# (to spawn the reconciler and expose the /api/control-planes,
+# /api/fleet, etc. routes), not the other way around. If you are adding a
+# `tack-api = { path = "../tack-api" }` line here, stop — you have the
+# dependency arrow backwards; see docs/book/src/developer/orchestration.md
+# and TODO.md §1.1 for the intended layering.
+[dependencies]
+tack-core = { path = "../tack-core" }
+tack-db = { path = "../tack-db" }
+tokio = { workspace = true }
+# Reused, not duplicated: reqwest is already a workspace dependency (used by
+# the webhook delivery code in tack-api). Adapters in this crate (from Wave 1
+# on) must use this same client, never a second HTTP client crate.
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+# The workspace-level `uuid` dependency only enables "v4"/"serde" (root
+# Cargo.toml, W0-A's file — not touched here). Card B2 (trace ingestion)
+# additively requests "v5" for this crate only, via Cargo's normal
+# per-dependent feature unification — this does not edit or widen the
+# workspace's own declaration. Used by `reconciler.rs`'s `derive_event_id`:
+# `orch_events.id` must be a deterministic function of the source docket
+# trace event (no server-assigned id exists — see that function's doc
+# comment), and `Uuid::new_v5` (namespace + name, no randomness) is exactly
+# that, standard-library-adjacent rather than a bespoke hash-to-UUID scheme.
+uuid = { workspace = true, features = ["v5"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+wiremock = { workspace = true }
+# Card B1's `tests/ingestion_test.rs` asserts idempotency with a direct
+# `SELECT COUNT(*)` against the in-memory test DB — not a second SQLite
+# driver, the same `sqlx` already used throughout the workspace (tack-db).
+sqlx = { workspace = true }

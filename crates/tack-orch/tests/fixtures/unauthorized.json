@@ -1,0 +1,7 @@
+// PROVENANCE: captured live. Isolated `DOCKET_HOME`;
+// `curl http://127.0.0.1:18339/runs` (no `Authorization` header), 2026-08-04.
+// HTTP 401. `_DocketHandler._check_auth`/`_send_json_error` in `serve.py`
+// produce this exact shape for every authenticated route
+// (`/runs`, `/runs/{id}`, `/approvals`, `/dispatch/{project}`,
+// `/approvals/{token}`) when the Bearer token is missing or wrong.
+{"ok": false, "error": "Unauthorized"}

@@ -1,0 +1,14 @@
+// PROVENANCE: constructed, not captured. A deliberately truncated
+// `/status.json` body (valid-looking prefix, cut mid-object) used to prove
+// the adapter maps a decode failure to `OrchError::Decode` instead of
+// panicking. Not something real docket would ever actually send — the point
+// is to simulate a wire-corruption / partial-read case.
+{
+  "apiVersion": "2",
+  "timestamp": "2026-08-04T19:47:54Z",
+  "gateway": "inactive",
+  "channels": [
+    "telegram"
+  ],
+  "agents": [
+    { "id": "demo", "name": "demo", "kind": "proj

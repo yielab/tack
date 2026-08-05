@@ -1,0 +1,10 @@
+PROVENANCE: captured live. Isolated `DOCKET_HOME`;
+`curl http://127.0.0.1:18339/tasks/demo-lead`, 2026-08-04. HTTP 404,
+`text/plain`, exact body `not found\n` — `serve.py`'s `do_GET`'s final
+`else` branch, hit by any path that isn't one of the six routes it
+recognises. This is the literal response `list_tasks`/`traces` get today
+against real docket (those routes don't exist yet — docket Phase 22, see
+TODO.md §1.4) and must map to `OrchError::NotFound`, distinct from a 401 or
+a malformed-body `Decode` error.
+---
+not found
