@@ -429,6 +429,17 @@ impl Repository {
         Ok(rows.into_iter().map(|r| r.into_orch_link()).collect())
     }
 
+    /// Total number of project ↔ control-plane links, across every plane.
+    /// Used by `GET /api/settings/orchestration`'s `linked_project_count`
+    /// (card E1) — a cheap health signal for the settings UI ("orchestration
+    /// is on, but nothing is linked yet" vs. "N projects are linked").
+    #[instrument(skip(self))]
+    pub async fn count_orch_links(&self) -> Result<i64, sqlx::Error> {
+        sqlx::query_scalar("SELECT COUNT(*) FROM orch_links")
+            .fetch_one(self.pool())
+            .await
+    }
+
     #[instrument(skip(self))]
     pub async fn delete_orch_link(&self, project_id: Uuid) -> Result<bool, sqlx::Error> {
         let result = sqlx::query("DELETE FROM orch_links WHERE project_id = ?")

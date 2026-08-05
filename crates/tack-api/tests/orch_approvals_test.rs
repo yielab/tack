@@ -20,6 +20,7 @@ use axum::http::{Method, Request, StatusCode};
 use chrono::Utc;
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
+use tack_api::orch_runtime::OrchRuntime;
 use tack_api::router::{AppState, build_router};
 use tack_db::repo::orch::NewOrchApproval;
 use tack_db::{Repository, init_pool, migrations};
@@ -71,6 +72,7 @@ async fn app_with_state(config: AppConfig) -> (Router, AppState) {
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
+        orch_runtime: OrchRuntime::new(),
     };
 
     (build_router(state.clone()), state)
@@ -168,20 +170,24 @@ async fn decide(
     .await
 }
 
-// ─── Off by default / not found ────────────────────────────────────────────
+// ─── Off by default / actionable refusal ───────────────────────────────────
 
 #[tokio::test]
-async fn list_approvals_404s_when_orch_disabled() {
+async fn list_approvals_409s_when_orch_disabled() {
     let (app, _) = common::test_app().await; // orch_enable defaults to false
     let res = list_approvals(&app).await;
-    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+    let body = body_json(res).await;
+    assert_eq!(body["error"]["code"], "orchestration_disabled");
 }
 
 #[tokio::test]
-async fn decide_approval_404s_when_orch_disabled() {
+async fn decide_approval_409s_when_orch_disabled() {
     let (app, _) = common::test_app().await;
     let res = decide(&app, "apr-1", "grant", Some("whatever")).await;
-    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+    let body = body_json(res).await;
+    assert_eq!(body["error"]["code"], "orchestration_disabled");
 }
 
 // ─── GET /api/approvals — inbox contents ───────────────────────────────────

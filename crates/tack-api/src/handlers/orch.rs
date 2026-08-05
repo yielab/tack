@@ -2,11 +2,22 @@
 //! control planes, link a Tack project to one, and read the Fleet view's
 //! aggregate.
 //!
-//! **Off by default.** Every route in this module is gated behind
-//! `TACK_ORCH_ENABLE` via [`require_orch_enabled`], applied once as a layer on
-//! the orch sub-router in `router.rs` rather than repeated per-handler — with
-//! the flag unset, every route here 404s (TODO.md §0 rule 8 / §4 cross-cutting
-//! acceptance).
+//! **Off by default, toggleable from the UI.** Every route in this module is
+//! gated behind the *effective* orchestration setting via
+//! [`require_orch_enabled`], applied once as a layer on the orch sub-router
+//! in `router.rs` rather than repeated per-handler. The effective value is
+//! an `app_meta`-stored flag (editable at runtime via
+//! `GET`/`PUT /api/settings/orchestration`, `handlers/settings.rs`'s
+//! [`effective_orch_enabled`](crate::handlers::settings::effective_orch_enabled)),
+//! falling back to `TACK_ORCH_ENABLE` as a deployment default when the UI has
+//! never set one — mirrors the Cloud Backup precedent exactly (TODO.md §0
+//! rule 8, rewritten 2026-08-05 — card E1). With orchestration disabled, every
+//! route here returns `409 Conflict` with a stable `error.code:
+//! "orchestration_disabled"` and a message naming where to enable it — not a
+//! 404. A 404 made "disabled" indistinguishable from "route doesn't exist",
+//! which hid the feature from its own operator; that was the bug this card
+//! fixes, not a security boundary being removed (the Bearer-token gate and
+//! the separate `TACK_ORCH_APPROVAL_TOKEN` check are unchanged).
 //!
 //! **Token discipline** mirrors the S3 backup secret precedent
 //! (`handlers/settings.rs`'s `secret_key_set`): the docket Bearer token is
@@ -25,7 +36,7 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Path, Request, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::HeaderMap;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
@@ -48,22 +59,43 @@ use crate::router::AppState;
 use crate::sprint_dispatch::{self, ItemResult, PreviewDecision};
 
 // ════════════════════════════════════════════════════════════════════════════
-// Gate — TACK_ORCH_ENABLE
+// Gate — the effective orchestration setting
 // ════════════════════════════════════════════════════════════════════════════
 
-/// Gate every route in this module behind `TACK_ORCH_ENABLE`. Applied once as a
-/// layer on the orch sub-router (`router.rs`) so no individual handler needs to
-/// repeat the check. With the flag unset the route 404s — indistinguishable from
-/// the route not existing, which is the point (TODO.md §0 rule 8).
+/// Machine-readable `error.code` on the 409 every orch route returns while
+/// orchestration is disabled. Exported so tests (and, if it's ever useful,
+/// other handlers) can match on it without hardcoding the string twice.
+pub const ORCHESTRATION_DISABLED_CODE: &str = "orchestration_disabled";
+
+/// Gate every route in this module behind the effective orchestration
+/// setting (`handlers::settings::effective_orch_enabled` — `app_meta`
+/// override, falling back to `TACK_ORCH_ENABLE`). Applied once as a layer on
+/// the orch sub-router (`router.rs`) so no individual handler needs to
+/// repeat the check.
+///
+/// With orchestration disabled, returns `409 Conflict` (not `404`): the
+/// route genuinely exists, and the operator — the only audience for a
+/// self-hosted tool — needs a response they can act on, not one that reads
+/// as "this version of Tack doesn't have this." `error.code` is the stable
+/// [`ORCHESTRATION_DISABLED_CODE`] so a caller (the settings UI, in
+/// particular) can distinguish "disabled" from any other conflict
+/// programmatically, without parsing `message`.
 pub async fn require_orch_enabled(
     State(state): State<AppState>,
     req: Request,
     next: Next,
-) -> Result<Response, StatusCode> {
-    if !state.config.orch_enable {
-        return Err(StatusCode::NOT_FOUND);
+) -> Response {
+    if !crate::handlers::settings::effective_orch_enabled(&state).await {
+        return ApiError::FeatureDisabled {
+            message: "Orchestration is disabled. Enable it from Settings → Orchestration \
+                      (PUT /api/settings/orchestration), or set TACK_ORCH_ENABLE for a \
+                      deployment default."
+                .to_string(),
+            code: ORCHESTRATION_DISABLED_CODE,
+        }
+        .into_response();
     }
-    Ok(next.run(req).await)
+    next.run(req).await
 }
 
 /// Standard trick for a JSON tri-state field: with `#[serde(default)]` on the

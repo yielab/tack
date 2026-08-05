@@ -58,6 +58,14 @@ pub struct ErrorBody {
     /// Human-readable, end-user-facing message.
     #[schema(example = "Item not found")]
     pub message: String,
+    /// Stable, machine-readable error code. Present on a narrow set of
+    /// responses where a caller needs to branch on *why* without parsing
+    /// `message` — e.g. `orchestration_disabled` on the 409 every
+    /// orchestration route returns while the feature is switched off (see
+    /// `handlers::orch::require_orch_enabled`). Absent on ordinary errors.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "orchestration_disabled")]
+    pub code: Option<String>,
 }
 
 /// Pagination envelope for the item-list endpoint (Phase 29.1). `total` is the
@@ -87,7 +95,9 @@ pub struct ItemDetail {
             project-management tool. This contract is generated from the Rust handlers \
             and domain models; it is the single source of truth for the wire format. \
             All failing responses share the `{ \"error\": { \"status\", \"message\" } }` \
-            envelope.",
+            envelope, with an additional `code` field on a narrow set of responses \
+            (e.g. `orchestration_disabled`) where a caller needs to branch on the \
+            reason without parsing `message`.",
         license(name = "MIT", identifier = "MIT"),
         contact(name = "Tack", email = "info@yielab.com"),
     ),
@@ -174,6 +184,8 @@ pub struct ItemDetail {
         // ── Settings ──────────────────────────────────────────────────────
         handlers::settings::get_backup_settings,
         handlers::settings::put_backup_settings,
+        handlers::settings::get_orch_settings,
+        handlers::settings::put_orch_settings,
         // ── Orchestration (Agent-Factory Control Center, Phase 33+) ────────
         handlers::orch::create_control_plane,
         handlers::orch::list_control_planes,
@@ -212,6 +224,7 @@ pub struct ItemDetail {
         handlers::import_linear::LinearImportRequest,
         handlers::backup::RestoreRemoteRequest,
         handlers::settings::UpdateBackupSettings,
+        handlers::settings::UpdateOrchSettings,
         handlers::orch::ControlPlaneResponse,
         handlers::orch::CreateControlPlaneRequest,
         handlers::orch::UpdateControlPlaneRequest,

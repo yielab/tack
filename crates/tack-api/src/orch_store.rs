@@ -89,6 +89,23 @@ struct AppContext {
     webhook: Option<WebhookClient>,
 }
 
+/// Build the [`ControlPlaneStore`] the reconciler needs, from an
+/// already-built `AppState` — the exact wiring `server.rs`'s boot path
+/// used inline before card E1 (runtime enable/disable). Now shared between
+/// that boot path and `PUT /api/settings/orchestration`
+/// (`handlers/settings.rs`), which needs to start the same kind of store
+/// when an operator flips the setting on without a restart.
+pub fn build_control_plane_store(state: &AppState) -> Arc<dyn ControlPlaneStore> {
+    Arc::new(
+        RepoControlPlaneStore::new(state.repo.clone(), state.broadcast_tx.clone())
+            .with_app_context(
+                state.config.clone(),
+                state.workspace_id,
+                state.webhook.clone(),
+            ),
+    )
+}
+
 impl RepoControlPlaneStore {
     pub fn new(repo: Repository, broadcast_tx: broadcast::Sender<BoardEvent>) -> Self {
         Self {
@@ -120,6 +137,14 @@ impl RepoControlPlaneStore {
     /// optional [`AppContext`] — `None` when [`with_app_context`] was never
     /// called.
     ///
+    /// `orch_runtime` is a **fresh, inert** [`OrchRuntime`] (card E1), not
+    /// the live one `server.rs`/the settings handlers share — this
+    /// reconstructed `AppState` only ever reaches
+    /// `dispatcher::apply_mapped_status` (a workflow-engine status
+    /// transition), which never starts or stops the reconciler. Wiring the
+    /// real handle through here would need threading it into
+    /// [`with_app_context`] for no caller that needs it.
+    ///
     /// [`with_app_context`]: RepoControlPlaneStore::with_app_context
     fn as_app_state(&self) -> Option<AppState> {
         self.app_context.as_ref().map(|ctx| AppState {
@@ -128,6 +153,7 @@ impl RepoControlPlaneStore {
             workspace_id: ctx.workspace_id,
             broadcast_tx: self.broadcast_tx.clone(),
             webhook: ctx.webhook.clone(),
+            orch_runtime: crate::orch_runtime::OrchRuntime::new(),
         })
     }
 

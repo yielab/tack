@@ -2,7 +2,6 @@
 //! binary (in the `tack-cli` crate) can start the HTTP server in-process.
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
@@ -10,7 +9,8 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::config::AppConfig;
-use crate::orch_store::RepoControlPlaneStore;
+use crate::handlers::settings::effective_orch_enabled;
+use crate::orch_store::build_control_plane_store;
 use crate::remote_backup;
 use crate::router::{AppState, build_router};
 use crate::webhook::WebhookClient;
@@ -65,6 +65,7 @@ pub async fn serve() -> anyhow::Result<()> {
         workspace_id,
         broadcast_tx,
         webhook,
+        orch_runtime: crate::orch_runtime::OrchRuntime::new(),
     };
 
     // Spawn background task: automatic remote backup on configured interval.
@@ -113,12 +114,19 @@ pub async fn serve() -> anyhow::Result<()> {
         });
     }
 
-    // Spawn background tasks: the orchestration reconciler, one per
-    // registered control plane, polling `/health` + `/status.json`
-    // (TODO.md §Wave 1, card A2 / task 33.6). Off by default — TODO.md §0
-    // rule 8 / §4 cross-cutting acceptance: `TACK_ORCH_ENABLE` unset ⇒ no
-    // task spawned, no new route accepting traffic.
-    if config.orch_enable {
+    // Start the orchestration reconciler, one task per registered control
+    // plane, polling `/health` + `/status.json` (TODO.md §Wave 1, card A2 /
+    // task 33.6) — if the *effective* setting says to. Off by default
+    // (TODO.md §0 rule 8, rewritten 2026-08-05 — card E1): the effective
+    // value is the `app_meta`-stored flag if the UI has ever set one, else
+    // `TACK_ORCH_ENABLE`'s startup value — same precedence Cloud Backup
+    // already uses for its own settings. Unlike Cloud Backup, this one also
+    // has a runtime toggle: `PUT /api/settings/orchestration`
+    // (`handlers/settings.rs`) calls `state.orch_runtime.start`/`.stop`
+    // directly, so an operator can turn this on or off without a restart —
+    // this boot-time call is just what makes the *initial* state agree with
+    // whatever was last saved (or the env default, on a first-ever boot).
+    if effective_orch_enabled(&state).await {
         // Card B4 (Wave 2, realtime broadcast): the store gets a clone of the
         // same broadcast sender every WebSocket subscriber shares, so it can
         // emit `BoardEvent::AgentRunUpdated`/`ApprovalPending` straight from
@@ -131,26 +139,25 @@ pub async fn serve() -> anyhow::Result<()> {
         // workflow engine — when a run reaches a terminal state, exactly
         // like a human-driven PATCH. See orch_store.rs's own doc comments
         // for the "human wins" design and why it's optional everywhere else.
-        let store: Arc<dyn reconciler::ControlPlaneStore> = Arc::new(
-            RepoControlPlaneStore::new(state.repo.clone(), state.broadcast_tx.clone())
-                .with_app_context(config.clone(), workspace_id, state.webhook.clone()),
-        );
-        let handles = reconciler::spawn_reconcilers(
-            true,
-            store,
-            reconciler::ReconcilerConfig {
-                poll_secs: config.orch_poll_secs,
-                // Card B2 (trace ingestion): must be the same cutoff
-                // `spawn_retention_sweep` uses (config.orch_event_retention_days
-                // both places) — persist_events' retention-composition guard
-                // depends on the two agreeing. See reconciler.rs's
-                // `ReconcilerConfig` doc comment.
-                event_retention_days: config.orch_event_retention_days,
-            },
-        )
-        .await;
+        let store = build_control_plane_store(&state);
+        state
+            .orch_runtime
+            .start(
+                store,
+                reconciler::ReconcilerConfig {
+                    poll_secs: config.orch_poll_secs,
+                    // Card B2 (trace ingestion): must be the same cutoff
+                    // `spawn_retention_sweep` uses (config.orch_event_retention_days
+                    // both places) — persist_events' retention-composition guard
+                    // depends on the two agreeing. See reconciler.rs's
+                    // `ReconcilerConfig` doc comment.
+                    event_retention_days: config.orch_event_retention_days,
+                    ..Default::default()
+                },
+            )
+            .await;
         info!(
-            control_planes = handles.len(),
+            control_planes = state.orch_runtime.live_task_count().await,
             poll_secs = config.orch_poll_secs,
             "Orchestration reconciler enabled"
         );

@@ -220,6 +220,7 @@
 //! left to wire.
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -227,6 +228,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use tack_db::repo::orch::{NewOrchApproval, NewOrchEvent, NewOrchMetric, NewOrchRun};
+use tokio::sync::{Mutex as AsyncMutex, watch};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -1349,11 +1351,13 @@ pub fn spawn_retention_sweep(
 /// retention-composition guard, which needs the *same* cutoff
 /// [`spawn_retention_sweep`] uses, not an independently-configured one (a
 /// mismatch here would either resurrect purged rows or drop events the
-/// sweep hasn't purged yet).
+/// sweep hasn't purged yet). `supervisor_scan_secs` (card E3) is unrelated
+/// to any single plane's poll cadence — see [`spawn_reconcilers_supervised`].
 #[derive(Debug, Clone, Copy)]
 pub struct ReconcilerConfig {
     pub poll_secs: u64,
     pub event_retention_days: u32,
+    pub supervisor_scan_secs: u64,
 }
 
 impl Default for ReconcilerConfig {
@@ -1361,9 +1365,19 @@ impl Default for ReconcilerConfig {
         Self {
             poll_secs: 10,
             event_retention_days: DEFAULT_RETENTION_DAYS,
+            supervisor_scan_secs: DEFAULT_SUPERVISOR_SCAN_SECS,
         }
     }
 }
+
+/// How often [`spawn_reconcilers_supervised`]'s background loop re-reads
+/// `store.list_registered()` and starts/stops per-plane pollers to match.
+/// Deliberately small and decoupled from `poll_secs` (a plane's own poll
+/// cadence, which can be much larger): the setup wizard's "enable ->
+/// register -> link" flow (TODO.md §6, card E3) needs a newly-registered
+/// plane to start showing health within a couple of seconds, not wait for
+/// whatever poll interval an operator configured.
+pub const DEFAULT_SUPERVISOR_SCAN_SECS: u64 = 2;
 
 /// Spawn one reconciler task per registered control plane, or none at all.
 ///
@@ -1397,17 +1411,45 @@ pub async fn spawn_reconcilers(
 
     planes
         .into_iter()
-        .map(|plane| spawn_one(plane, Arc::clone(&store), config))
+        .map(|plane| spawn_one(plane, Arc::clone(&store), config, None))
         .collect()
+}
+
+/// Resolves once `stop_rx` carries `true` — either because it already did
+/// when called, or because a later `send(true)` changes it. Resolves
+/// (rather than hanging forever) if the sender is dropped without ever
+/// sending `true`, so a task can never be stranded by a stop channel whose
+/// other end went away.
+async fn wait_until_stopped(rx: &mut watch::Receiver<bool>) {
+    loop {
+        if *rx.borrow() {
+            return;
+        }
+        if rx.changed().await.is_err() {
+            return;
+        }
+    }
 }
 
 /// One `tokio` task per plane, looping: fetch → decide → persist → sleep.
 /// See the module doc for the panic-isolation and phase-separation
 /// rationale.
+///
+/// `stop_rx`, when present (card E1's runtime toggle, now driven per-plane
+/// by the supervisor — see [`spawn_reconcilers_supervised`]), is checked at
+/// the top of every loop iteration and raced against the end-of-tick sleep
+/// via `tokio::select!`.
+/// Both are safe points: nothing here ever awaits an HTTP call or holds a
+/// SQLite write transaction across a check, so a task can only ever stop
+/// between ticks, never mid-fetch or mid-persist (TODO.md §0 rule 5).
+/// `None` (the plain [`spawn_reconcilers`] path) preserves the original,
+/// uncancellable infinite loop exactly — existing callers/tests are
+/// unaffected.
 fn spawn_one(
     plane: RegisteredPlane,
     store: Arc<dyn ControlPlaneStore>,
     config: ReconcilerConfig,
+    mut stop_rx: Option<watch::Receiver<bool>>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let RegisteredPlane { id, control_plane } = plane;
@@ -1415,6 +1457,13 @@ fn spawn_one(
         let mut tick: u64 = 0;
 
         loop {
+            if let Some(rx) = stop_rx.as_ref()
+                && *rx.borrow()
+            {
+                info!(control_plane_id = %id, "reconciler stopping (orchestration disabled)");
+                return;
+            }
+
             tick += 1;
 
             // Which projects to poll /runs?project= for this tick. A single
@@ -1552,9 +1601,245 @@ fn spawn_one(
                 config.poll_secs
             };
             let sleep_for = jittered_secs(&id, tick, base);
-            tokio::time::sleep(Duration::from_secs(sleep_for)).await;
+            match stop_rx.as_mut() {
+                Some(rx) => {
+                    tokio::select! {
+                        _ = tokio::time::sleep(Duration::from_secs(sleep_for)) => {}
+                        _ = wait_until_stopped(rx) => {
+                            info!(control_plane_id = %id, "reconciler stopping (orchestration disabled)");
+                            return;
+                        }
+                    }
+                }
+                None => tokio::time::sleep(Duration::from_secs(sleep_for)).await,
+            }
         }
     })
+}
+
+// ---------------------------------------------------------------------------
+// Supervisor (card E3, 2026-08-05) — keeps the running set of per-plane
+// pollers in sync with `control_planes`, rather than reading it once.
+// ---------------------------------------------------------------------------
+//
+// **The bug this replaces.** `spawn_reconcilers`/the old
+// `spawn_reconcilers_cancellable` each called `store.list_registered()`
+// exactly once and spawned one `spawn_one` task per plane found at that
+// instant — the list was never re-read. A control plane registered *after*
+// the reconciler started was therefore never polled: no task, no health
+// updates, no run/approval/trace/metric mirroring, and no error anywhere,
+// because nothing failed — the snapshot was simply stale forever. This
+// mattered in practice because "enable orchestration -> register a control
+// plane -> link a project" is the natural setup order (and exactly what the
+// guided setup wizard walks a user through), so the bug landed squarely in
+// the first-run path. See TODO.md §6's E3 handoff for the full writeup and
+// the in-process reproduction.
+//
+// **Why a supervisor loop, not an event from the create/delete handlers.**
+// Two shapes were on the table: (a) a background loop that periodically
+// re-reads `list_registered()` and diffs it against the currently-running
+// task set, or (b) the control-plane create/delete handlers notifying the
+// runtime directly. (b) is lower-latency in the common case, but every
+// future write path that can change `control_planes` (a bulk import, a
+// direct DB edit, a restore from backup) has to remember to signal it, and
+// any path that doesn't is a silent repeat of this exact bug. (a)
+// self-heals regardless of *how* the table changed — including a row
+// deleted directly in the database, which no handler-notification scheme
+// can observe by construction — at the cost of a bounded polling delay
+// ([`DEFAULT_SUPERVISOR_SCAN_SECS`], deliberately small: a few seconds, not
+// the per-plane `poll_secs`). Given the acceptance bar is "self-healing
+// regardless of how the table changed" and the delay is small enough not to
+// hurt the wizard's "register -> see it come alive" moment, (a) is what's
+// implemented. Nothing here rules out adding an event-driven nudge later
+// (e.g. the create-control-plane handler could shrink the *next* scan's
+// wait by writing to a `Notify`) if the scan interval ever needs to be
+// larger than a few seconds; it isn't needed today and would be a second
+// cancellation-adjacent mechanism for no observable benefit yet.
+//
+// **What's reused, what's new.** Every per-plane poller is still exactly
+// [`spawn_one`], with exactly the same fetch -> decide -> persist -> sleep
+// shape and the same `watch`-channel stop signal E1 built — the supervisor
+// just gives each plane its *own* channel and sender instead of one shared
+// broadcast for the whole fleet, so it can stop a single plane's poller
+// (deleted) without touching the others. This is the same primitive
+// multiplied per-plane, not a second cancellation mechanism.
+
+/// One currently-running per-plane poller, as tracked by the supervisor:
+/// its `spawn_one` handle, plus the sender half of *that plane's own* stop
+/// channel (not shared with any other plane — see the module doc above).
+struct PlaneTask {
+    handle: tokio::task::JoinHandle<()>,
+    stop_tx: watch::Sender<bool>,
+}
+
+/// Supervisor state shared with [`SupervisedReconciler`]'s `live_task_count`
+/// — written only by [`supervisor_loop`]/[`reconcile_tick`], read (for a
+/// live count, filtering out anything that already exited on its own) by
+/// anything holding a clone.
+type PlaneTasks = Arc<AsyncMutex<HashMap<Uuid, PlaneTask>>>;
+
+/// Handle to a live supervised reconciler run. Returned by
+/// [`spawn_reconcilers_supervised`]; the caller (`tack-api`'s
+/// `orch_runtime.rs`) keeps this around only to query
+/// [`Self::live_task_count`] — stopping the whole run is done via the
+/// `stop_rx` passed into `spawn_reconcilers_supervised`, not through this
+/// handle (mirrors `OrchRuntime::stop`'s existing non-blocking-stop
+/// discipline: nothing here needs to be awaited to shut down cleanly).
+pub struct SupervisedReconciler {
+    tasks: PlaneTasks,
+}
+
+impl SupervisedReconciler {
+    /// Count of per-plane pollers currently alive (spawned and not yet
+    /// observed to have exited). Same semantics `OrchRuntime::
+    /// live_task_count` documented before this card: `0` both when nothing
+    /// is registered and when the whole run has been stopped.
+    pub async fn live_task_count(&self) -> usize {
+        let guard = self.tasks.lock().await;
+        guard.values().filter(|t| !t.handle.is_finished()).count()
+    }
+}
+
+/// Send a stop signal to every currently-tracked plane poller and forget
+/// them. Does not await their actual exit — same non-blocking-stop
+/// discipline `OrchRuntime::stop` already established (card E1): a toggle-
+/// off must not hang on however long a plane's in-flight poll takes.
+async fn stop_all_plane_tasks(tasks: &PlaneTasks) {
+    let mut guard = tasks.lock().await;
+    for (_, task) in guard.drain() {
+        let _ = task.stop_tx.send(true);
+    }
+}
+
+/// One diff-and-converge pass: list currently-registered planes, start a
+/// poller (a fresh [`spawn_one`] with its own stop channel) for any that
+/// don't have one yet, and stop the poller for any tracked plane that no
+/// longer appears in the list — deleted through the API, or a row that
+/// vanished by any other means (a direct DB edit, a restore). A poller
+/// found already finished on its own (defensive: [`spawn_one`]'s loop only
+/// ever exits via its own stop signal today, but this keeps the map/count
+/// honest even if that ever changes) is pruned the same way.
+///
+/// A `list_registered` failure (e.g. a transient DB error) is logged and
+/// this pass is skipped entirely, leaving every currently-running poller
+/// untouched — the next scan retries. This mirrors [`spawn_reconcilers`]'s
+/// own handling of the same error, and means a blip in listing planes never
+/// tears down pollers that were working fine.
+async fn reconcile_tick(
+    store: &Arc<dyn ControlPlaneStore>,
+    config: &ReconcilerConfig,
+    tasks: &PlaneTasks,
+) {
+    let planes = match store.list_registered().await {
+        Ok(planes) => planes,
+        Err(e) => {
+            warn!(error = %e, "supervisor: failed to list registered control planes this scan; leaving currently-running pollers as-is");
+            return;
+        }
+    };
+
+    let current_ids: HashSet<Uuid> = planes.iter().map(|p| p.id).collect();
+    let mut guard = tasks.lock().await;
+
+    guard.retain(|id, task| {
+        if task.handle.is_finished() {
+            return false;
+        }
+        if !current_ids.contains(id) {
+            info!(control_plane_id = %id, "control plane no longer registered; stopping its poller");
+            let _ = task.stop_tx.send(true);
+            return false;
+        }
+        true
+    });
+
+    for plane in planes {
+        if let std::collections::hash_map::Entry::Vacant(entry) = guard.entry(plane.id) {
+            let id = plane.id;
+            let (stop_tx, stop_rx) = watch::channel(false);
+            let handle = spawn_one(plane, Arc::clone(store), *config, Some(stop_rx));
+            info!(control_plane_id = %id, "control plane registered; starting its poller");
+            entry.insert(PlaneTask { handle, stop_tx });
+        }
+    }
+}
+
+/// The supervisor's own loop: reconcile immediately, then sleep
+/// `scan_secs` (racing the global `stop_rx`) and reconcile again, forever —
+/// until `stop_rx` fires, at which point every currently-tracked plane
+/// poller is stopped ([`stop_all_plane_tasks`]) and this task exits. Spawned
+/// detached by [`spawn_reconcilers_supervised`] (its `JoinHandle` isn't kept
+/// anywhere): correctness is fully observable through
+/// [`SupervisedReconciler::live_task_count`] converging to `0`, so nothing
+/// needs to join this task to prove a clean shutdown, the same reasoning
+/// `OrchRuntime::stop` already relies on for the per-plane tasks themselves.
+async fn supervisor_loop(
+    store: Arc<dyn ControlPlaneStore>,
+    config: ReconcilerConfig,
+    mut stop_rx: watch::Receiver<bool>,
+    tasks: PlaneTasks,
+) {
+    let scan_secs = config.supervisor_scan_secs.max(1);
+    loop {
+        if *stop_rx.borrow() {
+            stop_all_plane_tasks(&tasks).await;
+            return;
+        }
+
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(scan_secs)) => {}
+            _ = wait_until_stopped(&mut stop_rx) => {
+                stop_all_plane_tasks(&tasks).await;
+                return;
+            }
+        }
+
+        if *stop_rx.borrow() {
+            stop_all_plane_tasks(&tasks).await;
+            return;
+        }
+
+        reconcile_tick(&store, &config, &tasks).await;
+    }
+}
+
+/// Start a self-healing reconciler run: one poller per currently-registered
+/// control plane, kept in sync with `control_planes` for as long as
+/// `stop_rx` stays `false` — see the module doc above for the full
+/// design/alternatives writeup (card E3, 2026-08-05, replacing the old
+/// snapshot-once `spawn_reconcilers_cancellable`).
+///
+/// Does an initial [`reconcile_tick`] synchronously, before returning —
+/// exactly like the old `spawn_reconcilers_cancellable`'s single
+/// `list_registered()` call — so a caller that checks
+/// [`SupervisedReconciler::live_task_count`] immediately after this
+/// `.await` resolves already sees a poller for every plane registered *as
+/// of now*. Everything registered *later* is the supervisor loop's job,
+/// picked up within `config.supervisor_scan_secs`.
+///
+/// Unlike [`spawn_reconcilers`] this has no `enabled` gate of its own: the
+/// caller only calls this function when it has already decided to run, so
+/// "off" is simply "never call this" rather than a second flag that could
+/// disagree with `stop_rx`.
+pub async fn spawn_reconcilers_supervised(
+    store: Arc<dyn ControlPlaneStore>,
+    config: ReconcilerConfig,
+    stop_rx: watch::Receiver<bool>,
+) -> SupervisedReconciler {
+    let tasks: PlaneTasks = Arc::new(AsyncMutex::new(HashMap::new()));
+
+    // Mirrors spawn_one's own top-of-loop check: a `stop_rx` that's already
+    // `true` when this is called (defensive — `OrchRuntime` never actually
+    // does this, it always hands over a fresh `watch::channel(false)`) means
+    // no poller should ever start, not even for an already-registered
+    // plane.
+    if !*stop_rx.borrow() {
+        reconcile_tick(&store, &config, &tasks).await;
+    }
+
+    tokio::spawn(supervisor_loop(store, config, stop_rx, Arc::clone(&tasks)));
+
+    SupervisedReconciler { tasks }
 }
 
 // ---------------------------------------------------------------------------
@@ -2276,6 +2561,338 @@ mod tests {
         }
     }
 
+    // -- Supervised spawn (card E1's runtime enable/disable; card E3 made it
+    //    self-healing instead of a one-time snapshot — see the module doc
+    //    above `spawn_reconcilers_supervised` for the full design writeup)
+
+    /// A store whose registered-plane list can change after construction —
+    /// unlike `FakeStore`'s fixed `Vec`, this lets a test simulate a control
+    /// plane being registered or deleted *while the supervisor is already
+    /// running*, which is exactly the scenario `spawn_reconcilers`/the old
+    /// `spawn_reconcilers_cancellable` got wrong (card E3's bug).
+    struct MutableStore {
+        planes: Mutex<Vec<RegisteredPlane>>,
+    }
+
+    impl MutableStore {
+        fn new(planes: Vec<RegisteredPlane>) -> Self {
+            Self {
+                planes: Mutex::new(planes),
+            }
+        }
+
+        fn register(&self, plane: RegisteredPlane) {
+            self.planes.lock().unwrap().push(plane);
+        }
+
+        fn delete(&self, id: Uuid) {
+            self.planes.lock().unwrap().retain(|p| p.id != id);
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ControlPlaneStore for MutableStore {
+        async fn list_registered(&self) -> Result<Vec<RegisteredPlane>, OrchError> {
+            Ok(self.planes.lock().unwrap().clone())
+        }
+        async fn record_health(
+            &self,
+            _control_plane_id: Uuid,
+            _record: &HealthRecord,
+        ) -> Result<(), OrchError> {
+            Ok(())
+        }
+        async fn list_linked_projects(
+            &self,
+            _control_plane_id: Uuid,
+        ) -> Result<Vec<String>, OrchError> {
+            Ok(Vec::new())
+        }
+        async fn find_item_for_remote_task(
+            &self,
+            _remote_task_id: &str,
+        ) -> Result<Option<Uuid>, OrchError> {
+            Ok(None)
+        }
+        async fn upsert_runs(
+            &self,
+            _control_plane_id: Uuid,
+            _runs: &[NewOrchRun],
+        ) -> Result<(), OrchError> {
+            Ok(())
+        }
+        async fn upsert_approvals(
+            &self,
+            _control_plane_id: Uuid,
+            _approvals: &[NewOrchApproval],
+        ) -> Result<(), OrchError> {
+            Ok(())
+        }
+        async fn upsert_metrics(
+            &self,
+            _control_plane_id: Uuid,
+            _metrics: &[NewOrchMetric],
+        ) -> Result<(), OrchError> {
+            Ok(())
+        }
+        async fn list_trace_cursors(
+            &self,
+            _control_plane_id: Uuid,
+        ) -> Result<HashMap<String, String>, OrchError> {
+            Ok(HashMap::new())
+        }
+        async fn set_trace_cursor(
+            &self,
+            _control_plane_id: Uuid,
+            _remote_project: &str,
+            _cursor: &str,
+        ) -> Result<(), OrchError> {
+            Ok(())
+        }
+        async fn upsert_events(
+            &self,
+            _control_plane_id: Uuid,
+            _events: &[NewOrchEvent],
+        ) -> Result<(), OrchError> {
+            Ok(())
+        }
+    }
+
+    /// A `poll_secs` long enough that, absent cancellation, a test relying
+    /// on it would time out rather than pass by accident, paired with a
+    /// `supervisor_scan_secs` fast enough to keep tests quick (the field's
+    /// unit is whole seconds — 1 is the floor `supervisor_loop` enforces).
+    fn fast_scan_config() -> ReconcilerConfig {
+        ReconcilerConfig {
+            poll_secs: 60,
+            supervisor_scan_secs: 1,
+            ..Default::default()
+        }
+    }
+
+    /// Polls `f` every 20ms until it returns `true` or `deadline` passes,
+    /// panicking with `msg` in the latter case — a bounded wait instead of a
+    /// fixed sleep, so these tests are fast when the supervisor behaves and
+    /// don't hang forever when it doesn't.
+    async fn wait_until(deadline: Duration, msg: &str, mut f: impl FnMut() -> bool) {
+        let start = tokio::time::Instant::now();
+        loop {
+            if f() {
+                return;
+            }
+            assert!(tokio::time::Instant::now() - start < deadline, "{msg}");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn supervised_spawn_starts_one_task_per_already_registered_plane() {
+        let store = Arc::new(FakeStore::new(vec![
+            healthy_plane(Uuid::new_v4()),
+            healthy_plane(Uuid::new_v4()),
+            healthy_plane(Uuid::new_v4()),
+        ]));
+        let (_stop_tx, stop_rx) = watch::channel(false);
+
+        let reconciler =
+            spawn_reconcilers_supervised(store.clone(), fast_scan_config(), stop_rx).await;
+
+        // The initial reconcile_tick inside spawn_reconcilers_supervised is
+        // synchronous, so all 3 are already up by the time `.await` above
+        // resolves — no polling wait needed here, unlike the tests below.
+        assert_eq!(reconciler.live_task_count().await, 3);
+    }
+
+    #[tokio::test]
+    async fn supervised_spawn_stops_every_task_after_the_global_stop_signal() {
+        let id = Uuid::new_v4();
+        let store = Arc::new(FakeStore::new(vec![healthy_plane(id)]));
+        let (stop_tx, stop_rx) = watch::channel(false);
+
+        let reconciler =
+            spawn_reconcilers_supervised(store.clone(), fast_scan_config(), stop_rx).await;
+        assert_eq!(reconciler.live_task_count().await, 1);
+
+        stop_tx.send(true).expect("receiver still alive");
+
+        wait_until(
+            Duration::from_secs(3),
+            "task should stop on its own within 3s of the global stop signal",
+            || {
+                // Synchronous best-effort check: `live_task_count` is async,
+                // so poll it via try_lock instead of blocking this closure.
+                reconciler
+                    .tasks
+                    .try_lock()
+                    .map(|g| g.values().all(|t| t.handle.is_finished()))
+                    .unwrap_or(false)
+            },
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn supervised_spawn_already_stopped_never_starts_a_tick() {
+        let id = Uuid::new_v4();
+        let store = Arc::new(FakeStore::new(vec![healthy_plane(id)]));
+        // Signalled *before* spawning — spawn_reconcilers_supervised's own
+        // check must skip the initial reconcile_tick entirely, and the
+        // supervisor loop's top-of-loop check must never let one through
+        // either.
+        let (stop_tx, stop_rx) = watch::channel(true);
+        drop(stop_tx);
+
+        let reconciler =
+            spawn_reconcilers_supervised(store.clone(), fast_scan_config(), stop_rx).await;
+        assert_eq!(
+            reconciler.live_task_count().await,
+            0,
+            "a pre-stopped supervisor must never start a poller, even for an \
+             already-registered plane"
+        );
+    }
+
+    #[tokio::test]
+    async fn repeated_global_start_stop_cycles_leave_no_task_running() {
+        let id = Uuid::new_v4();
+        let store = Arc::new(FakeStore::new(vec![healthy_plane(id)]));
+
+        for _ in 0..3 {
+            let (stop_tx, stop_rx) = watch::channel(false);
+            let reconciler =
+                spawn_reconcilers_supervised(store.clone(), fast_scan_config(), stop_rx).await;
+            assert_eq!(
+                reconciler.live_task_count().await,
+                1,
+                "one task per cycle, never accumulating"
+            );
+
+            stop_tx.send(true).expect("receiver still alive");
+            wait_until(
+                Duration::from_secs(3),
+                "each cycle's task must stop before the next starts",
+                || {
+                    reconciler
+                        .tasks
+                        .try_lock()
+                        .map(|g| g.values().all(|t| t.handle.is_finished()))
+                        .unwrap_or(false)
+                },
+            )
+            .await;
+        }
+    }
+
+    /// **The bug this card (E3) fixes, reproduced directly against the
+    /// reconciler crate (see `tack-api`'s `orch_runtime.rs` for the same
+    /// reproduction one layer up, against `OrchRuntime` itself).** Before
+    /// this card, `store.list_registered()` was read exactly once at spawn
+    /// time; a plane registered afterward was never polled, silently. This
+    /// starts the supervisor with zero planes registered, registers one
+    /// after it's already running, and asserts it gets picked up — this is
+    /// the "enable -> register -> link" sequence the setup wizard walks
+    /// users through.
+    #[tokio::test]
+    async fn a_plane_registered_after_the_supervisor_starts_gets_polled() {
+        let store = Arc::new(MutableStore::new(Vec::new()));
+        let (_stop_tx, stop_rx) = watch::channel(false);
+
+        let reconciler =
+            spawn_reconcilers_supervised(store.clone(), fast_scan_config(), stop_rx).await;
+        assert_eq!(
+            reconciler.live_task_count().await,
+            0,
+            "nothing registered yet"
+        );
+
+        let plane_id = Uuid::new_v4();
+        store.register(healthy_plane(plane_id));
+
+        wait_until(
+            Duration::from_secs(5),
+            "a control plane registered after the supervisor started was never picked up",
+            || {
+                reconciler
+                    .tasks
+                    .try_lock()
+                    .map(|g| g.len() == 1)
+                    .unwrap_or(false)
+            },
+        )
+        .await;
+    }
+
+    /// The other half of the diff: a plane removed from `control_planes`
+    /// (deleted through the API, or vanishing by any other means — this
+    /// fake doesn't distinguish) must have its poller stopped on the very
+    /// next scan, with no global stop signal involved at all.
+    #[tokio::test]
+    async fn a_deleted_plane_stops_being_polled_without_a_global_stop_signal() {
+        let plane_id = Uuid::new_v4();
+        let store = Arc::new(MutableStore::new(vec![healthy_plane(plane_id)]));
+        let (_stop_tx, stop_rx) = watch::channel(false);
+
+        let reconciler =
+            spawn_reconcilers_supervised(store.clone(), fast_scan_config(), stop_rx).await;
+        assert_eq!(reconciler.live_task_count().await, 1);
+
+        store.delete(plane_id);
+
+        wait_until(
+            Duration::from_secs(5),
+            "a plane deleted from the store kept being polled",
+            || {
+                reconciler
+                    .tasks
+                    .try_lock()
+                    .map(|g| g.is_empty())
+                    .unwrap_or(false)
+            },
+        )
+        .await;
+    }
+
+    /// No leaked tasks across repeated register/delete churn — the map
+    /// converges back to empty every time, not just eventually.
+    #[tokio::test]
+    async fn repeated_register_delete_cycles_leak_no_tasks() {
+        let store = Arc::new(MutableStore::new(Vec::new()));
+        let (_stop_tx, stop_rx) = watch::channel(false);
+        let reconciler =
+            spawn_reconcilers_supervised(store.clone(), fast_scan_config(), stop_rx).await;
+
+        for _ in 0..3 {
+            let plane_id = Uuid::new_v4();
+            store.register(healthy_plane(plane_id));
+            wait_until(
+                Duration::from_secs(5),
+                "registered plane was never picked up during a churn cycle",
+                || {
+                    reconciler
+                        .tasks
+                        .try_lock()
+                        .map(|g| g.len() == 1)
+                        .unwrap_or(false)
+                },
+            )
+            .await;
+
+            store.delete(plane_id);
+            wait_until(
+                Duration::from_secs(5),
+                "deleted plane's poller was never stopped during a churn cycle",
+                || {
+                    reconciler
+                        .tasks
+                        .try_lock()
+                        .map(|g| g.is_empty())
+                        .unwrap_or(false)
+                },
+            )
+            .await;
+        }
+    }
+
     #[tokio::test]
     async fn a_running_plane_task_persists_health_after_its_first_tick() {
         let id = Uuid::new_v4();
@@ -2974,6 +3591,7 @@ mod tests {
             ReconcilerConfig {
                 poll_secs: 60,
                 event_retention_days: 1,
+                ..Default::default()
             },
         )
         .await;
