@@ -78,7 +78,9 @@ describe('provisioningApi.provision', () => {
 });
 
 describe('isOrchDisabled', () => {
-  it('is true only for a 404 ApiError', () => {
+  it('is true for the documented code (409/403) or a legacy bare 404', () => {
+    expect(isOrchDisabled(new ApiError(409, 'disabled', 'orchestration_disabled'))).toBe(true);
+    expect(isOrchDisabled(new ApiError(403, 'disabled', 'orchestration_disabled'))).toBe(true);
     expect(isOrchDisabled(new ApiError(404, 'not found'))).toBe(true);
     expect(isOrchDisabled(new ApiError(500, 'boom'))).toBe(false);
     expect(isOrchDisabled(new Error('network'))).toBe(false);

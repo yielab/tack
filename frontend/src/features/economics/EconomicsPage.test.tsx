@@ -76,7 +76,9 @@ describe('EconomicsPage — orchestration disabled (404, the default for every e
     const { container } = mount();
     await flush();
     expect(container.textContent).toContain('Agent-fleet orchestration is disabled');
-    expect(container.textContent).toContain('TACK_ORCH_ENABLE');
+    // Card E2 (Phase 39): the flag is now UI-toggleable, so the empty state
+    // links to the guided setup instead of naming an env var to set by hand.
+    expect(container.textContent).toContain('Set up orchestration');
   });
 });
 

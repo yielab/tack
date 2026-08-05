@@ -23,7 +23,7 @@
 // exactly the "silently does nothing" control the card explicitly warns
 // against.
 
-import { request, ApiError } from '../../../shared/api/client';
+import { request, isOrchestrationDisabledError } from '../../../shared/api/client';
 
 /** `"unknown"` | `"healthy"` | `"degraded"` | `"unreachable"` — the
  *  reconciler's health state machine, persisted verbatim. `null` only when
@@ -137,13 +137,13 @@ export const orchestrationApi = {
   getPolicy: (projectId: string) => request<OrchPolicy>(`/projects/${projectId}/orch-policy`),
 };
 
-/** True when a request failed because orchestration is disabled server-side
- *  (`TACK_ORCH_ENABLE` unset ⇒ every orch route 404s, TODO.md §0 rule 8) —
- *  distinct from any other failure. Duplicated from `features/fleet/api.ts`
- *  rather than imported, matching the cross-feature-boundary precedent
- *  `shared/agentActivity/api.ts` already set (see that file's header
- *  comment) — this module lives in `features/settings/**`, not `shared/**`,
- *  so it shouldn't reach into another feature's file for a three-line check. */
+/** True when a request failed because orchestration is disabled server-side —
+ *  distinct from any other failure. Delegates to
+ *  `shared/api/client.ts#isOrchestrationDisabledError` (TODO.md card E2, the
+ *  same "409/403 + machine-readable code, 404 kept only as a legacy
+ *  fallback" contract `features/settings/orchestrationSettings/api.ts`
+ *  documents in full); kept as its own export so every existing caller
+ *  (`OrchestrationPanel.tsx`) keeps working unchanged. */
 export function isOrchDisabled(err: unknown): boolean {
-  return err instanceof ApiError && err.status === 404;
+  return isOrchestrationDisabledError(err);
 }

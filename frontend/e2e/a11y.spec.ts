@@ -75,6 +75,101 @@ test('global settings has no accessibility violations', async ({ page }) => {
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 });
 
+// Settings → Orchestration (frontend/src/features/settings/orchestrationSettings/**,
+// TODO.md §6 "E2", Phase 39: "make the agent-factory control center
+// discoverable"). `GET /api/settings/orchestration` is reachable even when
+// orchestration is off (by contract — this route sits outside the
+// `TACK_ORCH_ENABLE` gate every other orchestration route uses), so the
+// disabled-state scan below hits the real, unmodified dev server exactly
+// like the "global settings" scan above — no route interception needed for
+// that one. The populated scan intercepts `GET /api/control-planes` and
+// `GET /api/projects` the same way the Fleet "populated" scan above
+// intercepts `GET /api/fleet`, so axe scans the real guided-setup UI
+// (control-plane list with every health state, the project picker) rather
+// than just its absence.
+
+test('settings orchestration section (disabled, env default) has no accessibility violations', async ({
+  page,
+}) => {
+  await page.goto('/settings');
+  await waitForApp(page);
+  await expect(page.getByText('TACK_ORCH_ENABLE')).toBeVisible();
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+test('settings orchestration section (enabled, populated) has no accessibility violations', async ({
+  page,
+}) => {
+  await page.route('**/api/settings/orchestration', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        enabled: true,
+        source: 'database',
+        reconciler_running: true,
+        control_plane_count: 2,
+        linked_project_count: 1,
+        poll_secs: 10,
+        approval_token_set: true,
+        env_default: false,
+      }),
+    });
+  });
+  await page.route('**/api/control-planes', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: 'cp-1',
+          name: 'docket-prod',
+          kind: 'docket',
+          base_url: 'https://docket.internal.example.com',
+          api_version: '1',
+          health: 'healthy',
+          last_seen_at: new Date().toISOString(),
+          consecutive_failures: 0,
+          token_set: true,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-08-05T00:00:00Z',
+        },
+        {
+          id: 'cp-2',
+          name: 'docket-fresh',
+          kind: 'docket',
+          base_url: 'https://docket-fresh.internal.example.com',
+          api_version: null,
+          health: 'unknown',
+          last_seen_at: null,
+          consecutive_failures: 0,
+          token_set: false,
+          created_at: '2026-08-05T00:00:00Z',
+          updated_at: '2026-08-05T00:00:00Z',
+        },
+      ]),
+    });
+  });
+  await page.route('**/api/projects', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([{ id: 'proj-1', name: 'Website Revamp' }]),
+    });
+  });
+
+  await page.goto('/settings');
+  await waitForApp(page);
+  await expect(page.getByText('docket-prod', { exact: true })).toBeVisible();
+  await expect(page.getByText('docket-fresh', { exact: true })).toBeVisible();
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
 // Every work lens is a distinct surface with its own controls (drag handles,
 // grids, legends). Scan each so a regression in one view can't hide behind a
 // clean board scan.
@@ -318,7 +413,11 @@ test('sprint "Run sprint" dry-run preview has no accessibility violations', asyn
   // also added by F1) is what disambiguates the two real buttons instead of
   // relying on there being exactly one sprint in the project.
   const sprintName = 'E2E Sprint (dry-run preview)';
-  const { sprintId } = await createSprintWithItem(request, projectId, sprintName);
+  const { sprintId, sprintName: uniqueSprintName } = await createSprintWithItem(
+    request,
+    projectId,
+    sprintName,
+  );
 
   // `useAgentActivityMap`'s bulk fetch is Sprints.tsx's own "is orchestration
   // enabled" gate for the "Run sprint" button (reusing the same probe Board.tsx
@@ -356,7 +455,7 @@ test('sprint "Run sprint" dry-run preview has no accessibility violations', asyn
 
   await page.goto(`/projects/${projectId}/sprint`);
   await waitForApp(page);
-  await page.getByRole('button', { name: `Run sprint: ${sprintName}` }).click();
+  await page.getByRole('button', { name: `Run sprint: ${uniqueSprintName}` }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByText('Design schema')).toBeVisible();
 
@@ -371,7 +470,11 @@ test('sprint dispatch results (mixed outcomes) has no accessibility violations',
   // sprint from another test can still be eligible for its own, distinct
   // "Run sprint" button.
   const sprintName = 'E2E Sprint (dispatch results)';
-  const { sprintId } = await createSprintWithItem(request, projectId, sprintName);
+  const { sprintId, sprintName: uniqueSprintName } = await createSprintWithItem(
+    request,
+    projectId,
+    sprintName,
+  );
 
   await page.route(`**/api/projects/${projectId}/agent-activity`, (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ rows: [] }) }),
@@ -443,7 +546,7 @@ test('sprint dispatch results (mixed outcomes) has no accessibility violations',
 
   await page.goto(`/projects/${projectId}/sprint`);
   await waitForApp(page);
-  await page.getByRole('button', { name: `Run sprint: ${sprintName}` }).click();
+  await page.getByRole('button', { name: `Run sprint: ${uniqueSprintName}` }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: /Confirm dispatch/ }).click();
   // Never a merged "2 dispatched" — the two outcomes stay in separate, named counts.

@@ -1,4 +1,5 @@
 import { type Component, createResource, Show } from 'solid-js';
+import { useNavigate } from '@solidjs/router';
 import { Button, EmptyState, Skeleton } from '../../../shared/ui';
 import { orchestrationApi, isOrchDisabled, type OrchLink } from './api';
 import LinkForm from './LinkForm';
@@ -23,6 +24,7 @@ export interface OrchestrationPanelProps {
  * reasoning `useAgentActivityMap.orchAvailable` documents.
  */
 const OrchestrationPanel: Component<OrchestrationPanelProps> = (props) => {
+  const navigate = useNavigate();
   const [linkRes, { refetch }] = createResource(
     () => props.projectId,
     (id) => orchestrationApi.getLink(id)
@@ -47,7 +49,12 @@ const OrchestrationPanel: Component<OrchestrationPanelProps> = (props) => {
         <EmptyState
           icon="🔌"
           title="Agent-fleet orchestration is disabled"
-          description="This server has not enabled the Fleet feature. Set TACK_ORCH_ENABLE=true and restart the server to configure a budget or view policy activity here."
+          description="Turn it on from Settings to link this project to a control plane and configure a budget or view policy activity here."
+          action={
+            <Button onClick={() => navigate('/settings?section=orchestration')}>
+              Set up orchestration
+            </Button>
+          }
         />
       </Show>
 

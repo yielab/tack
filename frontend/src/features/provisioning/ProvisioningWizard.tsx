@@ -200,7 +200,12 @@ const ProvisioningWizard: Component = () => {
             <EmptyState
               icon="🛰️"
               title="Orchestration is disabled"
-              description="This server does not have TACK_ORCH_ENABLE set, so there is nothing to provision against. Ask whoever runs this Tack instance to enable it."
+              description="Turn it on to provision a new project with a docket pod already linked to it."
+              action={
+                <Button onClick={() => navigate('/settings?section=orchestration')}>
+                  Set up orchestration
+                </Button>
+              }
             />
           </div>
         </Match>

@@ -13,7 +13,7 @@
 // — not a guess (unlike A5's original Fleet draft, this file was written
 // after the backend landed in the same session).
 
-import { request, ApiError } from '../../shared/api/client';
+import { request, ApiError, isOrchestrationDisabledError } from '../../shared/api/client';
 
 /** One row of the fleet-wide approvals inbox, oldest-requested first.
  *  `item_id`/`item_title`/`item_status`/`project_id`/`project_name` are all
@@ -97,13 +97,18 @@ export const approvalTokenStore = {
 };
 
 /** True when the request failed because orchestration is disabled
- *  server-side (`TACK_ORCH_ENABLE` unset ⇒ every orch route 404s, TODO.md §0
- *  rule 8) — the default for every existing install. Mirrors
- *  `features/fleet/api.ts#isOrchDisabled` / `shared/agentActivity/api.ts`'s
- *  identically-named function (duplicated rather than imported — see those
- *  files' own notes on `architecture.test.ts`'s feature-isolation rule). */
+ *  server-side — the default for every existing install. Delegates to
+ *  `shared/api/client.ts#isOrchestrationDisabledError` (TODO.md card E2),
+ *  which now distinguishes this from an ordinary 404 by a machine-readable
+ *  `error.code`; kept as its own export so every existing caller
+ *  (`ApprovalsPage.tsx`) keeps working unchanged. Note this only ever
+ *  applies to `approvalsApi.list()`'s error — `approvalsApi.decide()`'s own
+ *  403/409 (see {@link isApprovalTokenRejected} / {@link
+ *  isApprovalAlreadyDecided} below) come from a different call site and
+ *  never carry the `orchestration_disabled` code, so there's no ambiguity
+ *  even though the raw status codes overlap. */
 export function isOrchDisabled(err: unknown): boolean {
-  return err instanceof ApiError && err.status === 404;
+  return isOrchestrationDisabledError(err);
 }
 
 /** True when a decision was rejected because `X-Tack-Approval-Token` was

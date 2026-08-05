@@ -13,7 +13,7 @@
 // backend landed in the same session (not a guess), and cross-checked
 // against the regenerated `shared/api/schema.gen.ts`.
 
-import { request, ApiError } from '../../shared/api/client';
+import { request, isOrchestrationDisabledError } from '../../shared/api/client';
 
 /** `"unknown"` | `"healthy"` | `"degraded"` | `"unreachable"` — the
  *  reconciler's health state machine, persisted verbatim. Duplicated from
@@ -149,10 +149,10 @@ export const provisioningApi = {
 };
 
 /** True when a request failed because orchestration is disabled
- *  server-side (`TACK_ORCH_ENABLE` unset ⇒ every orch route 404s, TODO.md
- *  §0 rule 8) — distinct from any other failure. Duplicated from
- *  `features/fleet/api.ts`/`features/settings/orchestration/api.ts` per
- *  their own established precedent (see that files' own header comments). */
+ *  server-side — distinct from any other failure. Delegates to
+ *  `shared/api/client.ts#isOrchestrationDisabledError` (TODO.md card E2);
+ *  kept as its own export so every existing caller (`ProvisioningWizard.tsx`)
+ *  keeps working unchanged. */
 export function isOrchDisabled(err: unknown): boolean {
-  return err instanceof ApiError && err.status === 404;
+  return isOrchestrationDisabledError(err);
 }

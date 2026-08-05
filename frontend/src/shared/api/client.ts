@@ -34,15 +34,64 @@ export const tokenStore = {
   },
 };
 
-/** Typed error carrying the HTTP status and the server's message text. */
+/** Typed error carrying the HTTP status, the server's message text, and — when
+ *  the server's error envelope includes one — a machine-readable `code`
+ *  (`error.code` in the `{ "error": { status, message, code? } }` envelope).
+ *  `code` is `undefined` for the large majority of errors, which still only
+ *  carry `status`/`message`; callers that need to distinguish two failures
+ *  sharing an HTTP status (e.g. "orchestration disabled" vs. an ordinary 404)
+ *  should check `code` first and fall back to `status` only when `code` is
+ *  absent. See {@link isOrchestrationDisabledError} for the canonical
+ *  example. */
 export class ApiError extends Error {
   readonly status: number;
+  readonly code?: string;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code?: string) {
     super(message || `HTTP ${status}`);
     this.name = 'ApiError';
     this.status = status;
+    this.code = code;
   }
+}
+
+/** The machine-readable `error.code` a feature route returns when
+ *  `TACK_ORCH_ENABLE`/the database override is off — TODO.md's E1/E2
+ *  contract (Phase 39, "make orchestration discoverable"). Routes migrated to
+ *  this contract answer with a 409 or 403 carrying this code instead of a
+ *  bare 404, so a real "not found" and "feature is off" are distinguishable
+ *  even when they'd otherwise share a status code on the same route. */
+export const ORCHESTRATION_DISABLED_CODE = 'orchestration_disabled';
+
+/**
+ * True when a request failed because agent-fleet orchestration is disabled
+ * server-side — the single canonical check every feature directory's own
+ * `isOrchDisabled` should delegate to (`features/fleet/api.ts`,
+ * `features/approvals/api.ts`, `features/economics/api.ts`,
+ * `features/provisioning/api.ts`, `features/settings/orchestration/api.ts`,
+ * `shared/agentActivity/api.ts`). Living here — the wire-boundary client
+ * every one of those files already imports `ApiError` from — means the
+ * check is defined once instead of copy-pasted with drift risk, while still
+ * respecting `architecture.test.ts`'s features-can't-import-features rule
+ * (this is `shared/api/`, not another feature).
+ *
+ * Two cases, in priority order:
+ *  1. `err.code === 'orchestration_disabled'` — the documented contract:
+ *     every migrated route answers 409 or 403 with this code, freeing up
+ *     404/403/409 to keep their ordinary meanings elsewhere on the same
+ *     route (e.g. `POST /api/approvals/{token}` still uses a plain 403 for
+ *     "approval token rejected" and 409 for "already decided" — neither
+ *     carries this code, so neither is misclassified as "disabled").
+ *  2. A bare 404 with no `code` at all — the legacy shape every one of
+ *     these routes used before this contract landed. Kept as a fallback so
+ *     the frontend keeps working against a server that hasn't deployed the
+ *     new envelope yet, not because 404 still means "disabled" going
+ *     forward.
+ */
+export function isOrchestrationDisabledError(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return false;
+  if (err.code === ORCHESTRATION_DISABLED_CODE) return true;
+  return err.code === undefined && err.status === 404;
 }
 
 /** Join the configured base with a leading-slash path. */
@@ -67,16 +116,20 @@ async function toApiError(res: Response): Promise<ApiError> {
     /* body already consumed or unavailable */
   }
 
-  // Preferred shape: the unified envelope `{ "error": { "status", "message" } }`.
-  // Fall back to the raw body text (or status text) for non-JSON error bodies so
-  // users never see raw JSON in a toast.
+  // Preferred shape: the unified envelope `{ "error": { "status", "message",
+  // "code"? } }`. `code` is optional — most errors don't carry one — and is
+  // only ever a machine-readable string (never surfaced to the user
+  // directly). Fall back to the raw body text (or status text) for non-JSON
+  // error bodies so users never see raw JSON in a toast.
   let message = raw;
+  let code: string | undefined;
   if (raw) {
     try {
       const parsed = JSON.parse(raw);
       const inner = parsed?.error;
       if (inner && typeof inner === 'object' && typeof inner.message === 'string') {
         message = inner.message;
+        if (typeof inner.code === 'string') code = inner.code;
       } else if (typeof inner === 'string') {
         message = inner;
       }
@@ -85,7 +138,7 @@ async function toApiError(res: Response): Promise<ApiError> {
     }
   }
 
-  return new ApiError(res.status, message || res.statusText);
+  return new ApiError(res.status, message || res.statusText, code);
 }
 
 /**
