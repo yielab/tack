@@ -46,7 +46,7 @@ Every card below has a handoff note in §6 with its full reasoning.
 | D2 | budget + policy panels | ✅ done — **no pause control/indicator built**: docket has zero HTTP surface for it, in either direction (see §1.4 note and §6) |
 | D3 | template `orchestration` block + pipeline library | ✅ done — backend + validation; UI editor deliberately deferred (see §6) |
 | **D5** | unit economics (tokens, estimated cost, lead time, rework rate) | ⬜ **not started** |
-| **D4** | provisioning flow + wizard | 🟡 **likely unblocked** — `POST /pods` (P22-5) shipped upstream (found by D3, 2026-08-05); re-verify against `serve.py` before starting. Still needs its own design for rollback-on-partial-failure |
+| **D4** | provisioning flow + wizard | ⬜ **not started — UNBLOCKED** · `POST /pods` verified present at `serve.py:1097` with `core/pod_provisioning.py` (coordinator, 2026-08-05). **Nothing in this cycle is blocked any more.** Still needs its own design for rollback-on-partial-failure |
 
 **Known gaps, carried deliberately** (each is written up in the §6 note of the card that found it):
 
@@ -6062,3 +6062,263 @@ frontend source untouched), `~/Sites/rack-cli/ROADMAP.md` (new P22-8 card,
 isolated diff, that repo's other in-flight uncommitted work left alone). Did
 not touch `router.rs` (no new routes), `frontend/src/features/templates/**`
 (UI deferred, see above), or any `D2`/`D4`/`D5` file.
+
+### D2 — 2026-08-05
+
+**What docket can and cannot do over HTTP — read this first, since it decided
+everything else this card built.** Read `serve.py`'s complete `do_GET`/
+`do_POST` route tables directly (not TODO.md §1.4, not docket's own
+ROADMAP.md — both have been wrong before this cycle) before trusting any
+summary of this, including mine below.
+
+- **Budget is real and reachable, but not the number this card ended up
+  using.** `GET /status.json`'s `_agent_record()` and the internal `/tasks`
+  cost payload both carry `budgetUsd`/`costUsd` per docket agent — already
+  modeled in `tack-orch::FleetAgent` (`cost_usd_estimated`/`budget_usd`,
+  Wave 0) and fetched every reconciler tick (`reconciler::poll_status`) —
+  **but never persisted.** `reconcile_once` calls `poll_status` only to
+  compute plane health/`api_version`; `FleetStatus.agents` is discarded
+  immediately after. So docket's own per-agent budget figure isn't actually
+  sitting in Tack's database anywhere today. Card A4 already built the
+  number this card's acceptance bar actually asks for — a **project's own
+  configured `orch_links.budget_usd` against Tack's token-based
+  `orch_tasks`-derived estimate** — for `GET /api/fleet`. This card's budget
+  panel is that same figure, reused (`project_task_usage`, unchanged) via a
+  new project-scoped endpoint, not docket's own `costUsd`. Both numbers are
+  estimates either way — docket's own driver-reported `cost_usd` is real
+  only when the runtime driver populates it (`core/utils.py::aggregate_cost`
+  docstring: "converting a token count into a dollar figure is exactly the
+  estimate-to-billing-claim conversion this codebase has a standing rule
+  against" — docket enforces the same discipline Tack's own Rule 6 does) and
+  is otherwise silently `0.0`, so it wouldn't have been a strictly better
+  number to surface even if it had been wired through.
+- **Pause has *no* HTTP surface at all, in either direction.** Not a
+  narrower gap than expected — a complete one. `serve.py`'s full route
+  tables have no `/profile`, no pause, no resume route anywhere: clearing a
+  pause is `docket profile <id> --resume`, CLI-only
+  (`core/dispatch.py::_pause_lead_for_budget` sets it,
+  `cli/__init__.py`'s `profile` command is the only code that ever clears
+  it). And *reading* the state isn't reachable either — I read
+  `_agent_record()` (backs `/status.json`) and `render_metrics()` (backs
+  `/metrics`) line by line: neither emits `paused`/`pausedReason` at all,
+  even though `core/models.py::AgentMeta` tracks both internally and a third
+  field, `docket_agent_paused` (or similar), simply doesn't exist in either
+  output. The one real proxy, a `paused_refused` trace event
+  (`core/dispatch.py::_claim_next_task`, payload `{"reason": "budget"}`),
+  already flows into Tack via B2's ingestion — but arrives useless for this
+  purpose: its `session_id` is the generic `"agent:<project>:dispatch"`
+  form, which B2's own `session_id_task_id` correlation deliberately doesn't
+  match (it isn't a task id), so it lands with `item_id = NULL`; and
+  `orch_events` has no `remote_project` column at all — only
+  `control_plane_id`, which `orch_links` makes many-to-one against Tack
+  projects. So even a control-plane-level "somebody on this plane got
+  refused for budget" signal can't be pinned to *which* linked project
+  without either guessing (wrong the moment two projects share a plane) or
+  a real ingestion change (persist `RemoteEvent.project`, add a
+  `remote_project` column, correlate `paused_refused` at the project level
+  instead of the item level). That's real scope, not a two-line fix, and
+  it's out of a budget/policy card. **Consequently: I built no pause
+  control and no pause indicator anywhere.** `BudgetPanel.tsx` names the
+  real remedy (`docket profile <pod-id> --resume`) in a static caption so an
+  operator who notices a project's spend has stalled knows what to check —
+  it never claims to know whether that's actually what happened. TODO.md
+  §1.4 gained a note documenting this (I own that correction per the card's
+  explicit instruction — see the table above, "Added 2026-08-05 (card D2)").
+- **Policy is real, reachable, and already ingested — but fleet-wide, not
+  per-project.** `render_metrics()`/`_collect_trace_loop_metrics` fold
+  *every* linked project's trace files together
+  (`traces_dir.glob("*/*.jsonl")`, no project filter) into
+  `docket_tool_calls_total`, `docket_policy_hits_total`,
+  `docket_approvals_total` — confirmed by reading the aggregation loop
+  directly. Card B3 already mirrors this shape verbatim into `orch_metrics`
+  (`(control_plane_id, name, labels)`, no `remote_project` label — because
+  docket never emits one to mirror). So a genuinely honest "policy panel for
+  project X" is structurally impossible without a docket-side change; the
+  best available real thing is "policy activity for the control plane
+  project X happens to be linked to." I built that, labeled unmissably as
+  such (`scoped_to_control_plane_only: true` on the wire, always present,
+  never `false`; `POLICY_SCOPE_CAVEAT` rendered above every number on the
+  panel, not as a footnote).
+
+**What I built, scoped to exactly the above.**
+
+1. **`GET /api/projects/{id}/orch-budget`** (`handlers/orch.rs`) — this
+   project's `orch_links.budget_usd` cap against `project_task_usage`'s real
+   token/cost sums (A4's existing private helper, reused verbatim, not
+   reimplemented). `linked: false` for an unlinked project still reports
+   real historical `tokens_in`/`tokens_out` (a project can carry dispatch
+   history after being unlinked) but `cost_usd_estimated: null` always —
+   there's no plane to attest freshness against. `cost_usd_estimated` is
+   `null` whenever the linked plane is `unreachable` or its health can't be
+   resolved, `Some(0.0)` for a reachable plane with nothing spent yet —
+   identical staleness rule to `GET /api/fleet` (tested:
+   `orch_budget_reports_zero_cost_distinctly_from_unreachable`, same shape
+   as A4's own `fleet_reports_zero_cost_distinctly_from_unreachable`).
+2. **`GET /api/projects/{id}/orch-policy`** (`handlers/orch.rs`) — filters
+   `list_latest_orch_metrics()` (B3) down to the linked `control_plane_id`,
+   groups into `tool_calls`/`policy_hits`/`approvals_by_channel`, and
+   computes `denial_rate = deny / (allow + ask + deny)`. **`denial_rate` is
+   `None`, never `0.0`, when no tool-call sample exists at all** — a `0.0`
+   would claim a clean, evaluated history rather than "nothing observed
+   yet" (tested:
+   `orch_policy_denial_rate_is_none_with_no_tool_call_data`). Chain
+   verification is not reimplemented — the panel links to `docket audit
+   verify` as a command to run, per the card's explicit instruction.
+3. **`frontend/src/features/settings/orchestration/`** (new) — `api.ts`
+   (wire boundary, one file, per the D1/C4/B5/A5 precedent),
+   `format.ts` (`formatBudgetCap`, `budgetProgress`, `formatDenialRate`,
+   `BUDGET_PROGRESS_CAVEAT`, `BUDGET_PAUSE_NOTE`, `POLICY_SCOPE_CAVEAT`;
+   reuses `shared/agentActivity/format.ts#formatEstimatedCost`/
+   `formatTokens` verbatim, per the card's explicit instruction — no second
+   cost formatter), `LinkForm.tsx`, `BudgetPanel.tsx`, `PolicyPanel.tsx`,
+   `OrchestrationPanel.tsx` — wired into `ProjectSettings.tsx` as a new
+   "Orchestration" tab.
+4. **`LinkForm.tsx` — the one piece of UI that didn't exist anywhere
+   before this card.** `PUT /api/projects/{id}/orch-link` has been callable
+   since card A4 (Wave 1), but no page ever rendered a form for it — Fleet's
+   own empty state (A5) literally tells operators to `curl
+   POST /api/control-planes` directly. A budget panel that can never be
+   populated because there's no way to create the link it reads would be
+   inert on every real install. Deliberately minimal: control plane picker,
+   remote project name, and an optional budget cap; `status_map`/
+   `auto_dispatch`/`blueprint` stay at defaults (no dispatch policy
+   configured here — that's the Wave 3 dispatch UI's territory).
+   `BudgetPanel.tsx` also lets the cap be edited in place afterward (a
+   labeled number field + Save, resending the full `PUT` — `orch-link` is an
+   upsert, not a patch).
+
+**Rule 6, applied everywhere on this page, not just where told to.**
+
+- Tokens render first and at least as prominent as any dollar figure
+  (`BudgetPanel.tsx`'s token line is `font-weight: 600` at 15px; the cost
+  line beneath it is smaller and secondary).
+- Every cost figure goes through `formatEstimatedCost` — "estimated" plus
+  the pricing-snapshot date, or an explicit "pricing snapshot date unknown"
+  (still always `null` today; nothing invented).
+- **The budget-vs-cap fraction gets the compounding caveat the card
+  explicitly demanded.** `budgetProgress()`'s doc comment and
+  `BUDGET_PROGRESS_CAVEAT` both say it plainly — "This is an estimate of a
+  fraction of an estimate" — and every render site couples the percentage
+  to that sentence; there is no code path that shows the bare number alone
+  (verified: `OrchestrationPanel.test.tsx`'s populated-panel test asserts
+  the literal phrase is present whenever the progress bar renders).
+  `budgetProgress` deliberately does **not** clamp the fraction at 100% —
+  an over-cap project (fraction > 1, `tone: 'danger'`) is exactly the state
+  an operator most needs to see, not one to hide by capping the bar visually
+  (the bar itself is width-clamped for layout; the underlying fraction and
+  percentage text are not).
+
+**Rule 8 / rule 9.** `OrchestrationPanel`'s own `GET .../orch-link` fetch is
+the availability probe — `orchAvailable = !loading && error === undefined`,
+false on ANY error not just 404, same conservative posture
+`useAgentActivityMap.orchAvailable` (C4) documents; I didn't import that
+hook (it's board-specific, a different resource) but followed its exact
+rule. A 404 renders the same "Agent-fleet orchestration is disabled" empty
+state Fleet uses; any other failure renders a distinct retry state (tested:
+`OrchestrationPanel.test.tsx`'s disabled-vs-failed tests). No new color
+pairing — `Badge`'s existing six tones, `EmptyState`/`Skeleton`/`Field`/
+`Select`/`Button` throughout; `npm run lint:tokens` stayed 0/0. Three new
+live-executed a11y scans added to `frontend/e2e/a11y.spec.ts` (disabled /
+unlinked-link-form / linked-with-populated-budget-and-policy), run against
+real Chromium (`npx playwright test e2e/a11y.spec.ts --project=chromium -g
+"orchestration tab"`) — 0 violations, not just written.
+
+**A pre-existing bug re-confirmed, not caused by this card.** Running the
+full `a11y.spec.ts` suite live to check my own scans didn't regress anything
+reproduced the exact duplicate-"Run sprint"-button failure D1's handoff
+already flagged (`sprint "Run sprint" dry-run preview` /
+`sprint dispatch results (mixed outcomes)`, both failing on
+`getByRole('button', {name: 'Run sprint: ...'})` resolving to 2 elements).
+I touched nothing under `frontend/src/features/sprints/**` or
+`frontend/e2e/helpers.ts` this session (outside my card's scope by explicit
+instruction) — confirmed via `git status` before and after. Still open,
+still someone else's pickup.
+
+**What I deliberately did not build.**
+
+- No pause control or indicator anywhere — see above. This is the headline
+  finding of the card, not an afterthought.
+- No live call to docket from any handler. Both new endpoints are plain DB
+  reads (§0 rule 5 — no transaction ever spans an HTTP call, because there
+  isn't one), matching A4's `GET /api/fleet` precedent exactly: "a docket
+  outage can only leave `health`/`last_seen_at` stale, never turn into a
+  500."
+- No attempt to wire docket's own per-agent `budgetUsd`/`costUsd` (from
+  `FleetStatus.agents`) into persistence — that's a real, disclosed gap
+  (see point 1 above), but closing it means changing `reconcile_once`'s
+  persistence phase and possibly a new column, which is `tack-orch`
+  reconciler-shape work belonging to whoever picks up the "docket's own
+  cost figure vs. Tack's token estimate" question next, not a budget-panel
+  card's job to redesign in passing.
+- No pipeline/chain verification reimplementation — `docket audit verify`
+  is linked to as a command, per the card's explicit instruction.
+- No changes to `dispatcher.rs`, `sprint_dispatch.rs`, `handlers/
+  websocket.rs`, `crates/tack-orch/**`, or any file under
+  `frontend/src/features/sprints/**` or `frontend/src/features/templates/**`
+  — out of scope, confirmed via `git status` before finishing.
+
+**Testing.** Rust: 9 new tests in `crates/tack-api/tests/
+orch_budget_policy_test.rs` — 404-when-disabled for both routes, unlinked
+project (`linked: false`, real token history, null cost), the
+unreachable-vs-zero staleness distinction, real token/cost sums from seeded
+`orch_tasks` rows, policy scoping to exactly the linked control plane
+(seeded a *second* plane's metrics and asserted they never leak in),
+denial-rate computation, denial-rate `None` with policy-hit-only data, and
+approval-channel grouping. Frontend: 29 new Vitest tests across
+`features/settings/orchestration/{api,format,OrchestrationPanel}.test.{ts,tsx}`
+(a real 404-vs-500 distinction, the compounding-caveat copy is asserted
+present by literal string match, `budgetProgress`'s clamp/tone thresholds at
+0/70/100/150%, the "no pause claim anywhere" assertion — the populated-panel
+test explicitly asserts the DOM never matches `/is (currently )?paused/i`
+while still naming the CLI remedy), plus 3 new live-executed Playwright a11y
+scans.
+
+**Verification.** `cargo test --workspace`: all green (baseline 523 + 9 new
+from this card; the observed workspace total moved further due to concurrent
+Wave-4 work — R2/R3/D3 — landing in the same window, same "moving baseline"
+caveat D1's handoff already called out). `cargo clippy --workspace
+--all-targets -- -D warnings`: clean. `cargo fmt -p tack-api -p tack-orch -p
+tack-db -- --check`: clean for every file this card touched (a pre-existing
+formatting diff in `crates/tack-db/src/migrations.rs`, D3's file mid-edit
+when checked, is not mine). `UPDATE_OPENAPI=1 cargo test -p tack-api --test
+openapi_contract`: regenerated `docs/openapi.json` (two new paths, five new
+schemas), drift gate green. Frontend: `npm run type-check` clean; `npm run
+lint:tokens` 0/0 unchanged; `npx vitest run` — 363 passed (334 baseline + 29
+new), same 3 pre-existing `requestBlob`/`createObjectURL` failures named in
+this card's own baseline, nothing else broken; `npm run build` clean,
+`ProjectSettings` chunk grew to include the new panel (still one lazy-loaded
+chunk, no new route-level split needed). `npx playwright test
+e2e/a11y.spec.ts --project=chromium`: 20 of 22 passed — the 2 failures are
+the pre-existing sprint-view bug above, not mine; the 3 new orchestration
+scans and all 17 other pre-existing scans passed clean. Did not verify
+against a live docket this round — the entire investigative value of this
+card was in confirming what docket's HTTP surface *doesn't* have, which
+reading `serve.py` directly settles definitively (a live server would only
+re-confirm the same absence, not add information); V1 already live-verified
+every route this card's endpoints actually build on (`GET /status.json`
+shape indirectly via `FleetAgent`, `GET /metrics` shape via B3's parser).
+
+**Files touched:** `crates/tack-api/src/handlers/orch.rs` (new: 2 handlers,
+7 DTOs, extensive doc comments), `crates/tack-api/src/router.rs` (2 routes,
+at A4's marked Wave-4 insertion point), `crates/tack-api/src/openapi.rs` (2
+paths + 5 schemas registered), `docs/openapi.json` (regenerated), new
+`crates/tack-api/tests/orch_budget_policy_test.rs`; everything under
+`frontend/src/features/settings/orchestration/` (new: `api.ts`, `format.ts`,
+`LinkForm.tsx`, `BudgetPanel.tsx`, `PolicyPanel.tsx`,
+`OrchestrationPanel.tsx`, three `.test.ts(x)` files), plus a small additive
+edit to `frontend/src/features/settings/ProjectSettings.tsx` (one new tab)
+and `frontend/e2e/a11y.spec.ts` (three new scans). TODO.md itself: §1.4 (the
+pause-surface note above), the "Known gaps" list, and this note. Did not
+touch `crates/tack-db/src/repo/orch.rs` — every query this card needed
+(`project_task_usage`, `list_latest_orch_metrics`, `get_orch_link`,
+`get_control_plane`) already existed.
+
+**For D5 (unit economics) and beyond.** `project_task_usage` is now used by
+three endpoints (`GET /api/fleet`, `GET /api/projects/{id}/agent-activity`'s
+item-level version, and this card's `GET /api/projects/{id}/orch-budget`) —
+if D5 needs the same project-level token/cost aggregate sliced differently
+(by `project_type`/`item_type`, per its own card text), extending this one
+function's shape is probably cheaper than a fourth reimplementation, though
+D5's slicing needs may not fit its existing signature unchanged. Nothing in
+this card blocks D5 or D4 — budget/policy are leaf reads, same as D1's
+approvals inbox was.

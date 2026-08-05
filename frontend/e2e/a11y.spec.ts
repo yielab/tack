@@ -562,3 +562,133 @@ test('approvals inbox (decisions disabled — no TACK_ORCH_APPROVAL_TOKEN) has n
   const violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 });
+
+// Project Settings → Orchestration tab (frontend/src/features/settings/
+// orchestration/**, TODO.md §6 "D2", tasks 36.3/36.4: budget + policy
+// panels). Same `page.route()` interception technique as the Fleet/
+// Approvals scans above — `GET /api/projects/{id}/orch-link`,
+// `GET /api/control-planes`, `GET /api/projects/{id}/orch-budget`, and
+// `GET /api/projects/{id}/orch-policy` are all mocked; the real project (via
+// `getOrCreateProject`) and the real `ProjectSettings`/`OrchestrationPanel`/
+// `LinkForm`/`BudgetPanel`/`PolicyPanel` components render and are scanned
+// against that mocked data. The disabled-state scan needs no interception —
+// `TACK_ORCH_ENABLE` is unset in this harness, same real default the Fleet
+// scan above relies on.
+
+test('project settings — orchestration tab (disabled) has no accessibility violations', async ({
+  page,
+  request,
+}) => {
+  const projectId = await getOrCreateProject(request);
+  await page.goto(`/projects/${projectId}/settings?tab=orchestration`);
+  await waitForApp(page);
+  await expect(page.getByText('Agent-fleet orchestration is disabled')).toBeVisible();
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+test('project settings — orchestration tab (unlinked, link form) has no accessibility violations', async ({
+  page,
+  request,
+}) => {
+  const projectId = await getOrCreateProject(request);
+
+  await page.route(`**/api/projects/${projectId}/orch-link`, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ linked: false, link: null }) }),
+  );
+  await page.route('**/api/control-planes', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([{ id: 'cp-1', name: 'docket-prod', kind: 'docket', health: 'healthy' }]),
+    });
+  });
+
+  await page.goto(`/projects/${projectId}/settings?tab=orchestration`);
+  await waitForApp(page);
+  await expect(page.getByText('Link this project to a control plane')).toBeVisible();
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+test('project settings — orchestration tab (linked, budget + policy populated) has no accessibility violations', async ({
+  page,
+  request,
+}) => {
+  const projectId = await getOrCreateProject(request);
+
+  await page.route(`**/api/projects/${projectId}/orch-link`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        linked: true,
+        link: {
+          project_id: projectId,
+          control_plane_id: 'cp-1',
+          remote_project: 'e2e-remote-project',
+          pipeline_file: null,
+          blueprint: null,
+          auto_dispatch: false,
+          budget_usd: 100,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      }),
+    }),
+  );
+  await page.route(`**/api/projects/${projectId}/orch-budget`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        linked: true,
+        control_plane_id: 'cp-1',
+        control_plane_name: 'docket-prod',
+        health: 'healthy',
+        budget_usd: 100,
+        tokens_in: 128_400,
+        tokens_out: 45_200,
+        cost_usd_estimated: 92.5,
+        pricing_snapshot_at: null,
+      }),
+    }),
+  );
+  await page.route(`**/api/projects/${projectId}/orch-policy`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        linked: true,
+        control_plane_id: 'cp-1',
+        control_plane_name: 'docket-prod',
+        health: 'healthy',
+        scoped_to_control_plane_only: true,
+        scraped_at: new Date().toISOString(),
+        tool_calls: [
+          { decision: 'allow', count: 42 },
+          { decision: 'ask', count: 5 },
+          { decision: 'deny', count: 3 },
+        ],
+        denial_rate: 0.06,
+        policy_hits: [
+          { policy_id: 'no-prod-secrets', hook: 'pre_tool_call', action: 'deny', count: 3 },
+        ],
+        approvals_by_channel: [
+          { channel: 'tack', outcome: 'granted', count: 4 },
+          { channel: 'timeout', outcome: 'denied', count: 1 },
+        ],
+      }),
+    }),
+  );
+
+  await page.goto(`/projects/${projectId}/settings?tab=orchestration`);
+  await waitForApp(page);
+  // Over-90%-of-cap state — asserts the warning-band progress bar rendered,
+  // not just that some text appeared.
+  await expect(page.getByText('no-prod-secrets')).toBeVisible();
+  await expect(page.getByRole('progressbar')).toBeVisible();
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
