@@ -174,6 +174,24 @@ impl Repository {
         q.fetch_one(self.pool()).await
     }
 
+    /// All items assigned to `sprint_id`, unpaginated, ordered by board
+    /// position (`sort_order`). Card C3 (sprint DAG dispatch) needs the
+    /// *complete* sprint, not one `ItemFilter::MAX_PER_PAGE`-sized page of
+    /// it — a sprint dispatch that silently dropped items past page 1 would
+    /// be exactly the kind of "looks like it worked" bug the dry-run mode
+    /// exists to prevent.
+    #[instrument(skip(self))]
+    pub async fn list_items_for_sprint(&self, sprint_id: Uuid) -> Result<Vec<Item>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, ItemRow>(
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at
+             FROM items WHERE sprint_id = ? ORDER BY sort_order ASC"
+        )
+        .bind(sprint_id.to_string())
+        .fetch_all(self.pool())
+        .await?;
+        Ok(rows.into_iter().map(|r| r.into_item()).collect())
+    }
+
     /// Return all incomplete items whose `due_date` falls in `[from, to)`.
     /// Used by the background webhook task to fire `item.due_soon` events.
     pub async fn list_items_due_soon(

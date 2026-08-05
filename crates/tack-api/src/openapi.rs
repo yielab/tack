@@ -186,6 +186,8 @@ pub struct ItemDetail {
         handlers::orch::get_item_agent_activity,
         handlers::orch::get_project_agent_activity,
         handlers::orch::dispatch_item,
+        handlers::orch::dispatch_sprint,
+        handlers::orch::dry_run_sprint_dispatch,
     ),
     components(schemas(
         // Local response/request envelopes
@@ -221,6 +223,10 @@ pub struct ItemDetail {
         handlers::orch::AgentBadgeResponse,
         handlers::orch::DispatchedTaskResponse,
         handlers::orch::DispatchItemResponse,
+        handlers::orch::SprintDispatchItemResponse,
+        handlers::orch::SprintDispatchSummary,
+        handlers::orch::DryRunSprintDispatchResponse,
+        handlers::orch::SprintDispatchResponse,
         // Core domain models + DTOs
         Workspace,
         Project,

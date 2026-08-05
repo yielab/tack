@@ -10,6 +10,7 @@ pub mod orch_store;
 pub mod remote_backup;
 pub mod router;
 pub mod server;
+pub mod sprint_dispatch;
 pub mod webhook;
 
 // Re-export commonly used items
