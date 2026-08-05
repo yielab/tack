@@ -13,6 +13,11 @@ pub async fn setup_test_db() -> Repository {
 }
 
 /// Insert a bare workspace row; returns its ID.
+///
+/// `allow(dead_code)` because each integration-test file compiles `common` into its own
+/// binary: `orch_metrics_test.rs` needs `setup_test_db` but never creates a workspace,
+/// so this is genuinely unused *there* while still used by every other test binary.
+#[allow(dead_code)]
 pub async fn create_test_workspace(repo: &Repository) -> Uuid {
     let id = Uuid::new_v4();
     let vocab = serde_json::to_string(&vocabulary::default_vocabulary()).unwrap();
