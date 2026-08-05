@@ -80,6 +80,19 @@ pub enum OrchError {
     /// implements the read side).
     #[error("control plane feature disabled")]
     Disabled,
+
+    /// docket's `pre_input` policy gate deliberately refused a dispatch —
+    /// a transport *success* carrying a considered "no", not a transport
+    /// failure. Card V1 verified live that a `block` verdict comes back as
+    /// HTTP 400 naming the policy id that fired
+    /// (`"task rejected by guardrail policy '<id>' at enqueue: <message>"`).
+    /// `policy_id` is that id, parsed out once here so every caller gets a
+    /// typed field instead of pattern-matching a prefix on a string (see
+    /// TODO.md §2.1, card R1 — this variant replaces `adapters::docket`'s
+    /// old `POLICY_BLOCK_PREFIX` string-matching workaround). `message` is
+    /// docket's own text, kept verbatim for display.
+    #[error("blocked by guardrail policy {policy_id:?}: {message}")]
+    PolicyBlocked { policy_id: String, message: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -433,6 +446,32 @@ pub struct NewRemoteTask {
     pub trusted: bool,
 }
 
+/// One page of `GET /traces/{project}?since=` — the events themselves, plus
+/// the remote's own resume cursor to send back as `since` on the next call.
+///
+/// **`next` is opaque.** Tack must never parse it, decode it, or reconstruct
+/// it client-side — it is whatever the control plane minted, persisted
+/// verbatim, and handed back unexamined. This DTO exists specifically so
+/// that discipline is structural rather than a convention someone has to
+/// remember: before this type existed, [`ControlPlane::traces`] had nowhere
+/// to carry a remote-minted cursor back out, and `tack-orch`'s reconciler
+/// reimplemented docket's own compound `"<ts>Z:<n>"` cursor algorithm
+/// client-side to work around that gap — correct, but one silent algorithm
+/// change away from quietly skipping or duplicating events (see TODO.md
+/// §2.1, card R1, and the git history for `reconciler.rs`'s deleted
+/// `next_trace_cursor`/`decode_trace_cursor`). That reconstruction is gone;
+/// this field is the fix.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct TracesPage {
+    pub events: Vec<RemoteEvent>,
+    /// `None` only if the remote genuinely didn't send one — defensive, not
+    /// expected: docket always mints `next` on `GET /traces/{project}`
+    /// (card V1, verified live). A caller with `next: None` should treat the
+    /// cursor as unchanged rather than erroring the poll.
+    #[serde(default)]
+    pub next: Option<String>,
+}
+
 /// One trace/event record. Mirrors `core/trace.py`'s JSONL record shape
 /// exactly, **including its snake_case field names** — trace events are the
 /// one docket surface that is not camelCase (contrast every other DTO in this
@@ -474,8 +513,14 @@ pub struct RemoteEvent {
 /// trait exists so a second backend never has to touch the reconciler,
 /// handlers, or frontend that consume it.
 ///
-/// Signatures are frozen exactly as specified in TODO.md §1.1 — every later
-/// wave consumes this verbatim.
+/// **No longer frozen.** TODO.md §1.1 specified these signatures exactly and
+/// every Wave 1–3 card built against them verbatim; §2.1 (card R1,
+/// 2026-08-05) lifted that freeze once it started forcing designs worse than
+/// the churn it was meant to prevent (see [`traces`](Self::traces)'s return
+/// type and [`OrchError::PolicyBlocked`] for the two concrete cases). Treat
+/// the shape below as current, not eternal — change it again if the next
+/// design genuinely needs to, and update every implementor/caller in the
+/// same change, the way R1 did.
 #[async_trait::async_trait]
 pub trait ControlPlane: Send + Sync {
     fn kind(&self) -> &'static str; // "docket"
@@ -486,11 +531,11 @@ pub trait ControlPlane: Send + Sync {
     async fn get_run(&self, run_id: &str) -> Result<RemoteRun, OrchError>;
     async fn list_approvals(&self) -> Result<Vec<RemoteApproval>, OrchError>;
     async fn list_tasks(&self, project: &str) -> Result<Vec<RemoteTask>, OrchError>;
-    async fn traces(
-        &self,
-        project: &str,
-        since: Option<&str>,
-    ) -> Result<Vec<RemoteEvent>, OrchError>;
+    /// `since` is the opaque cursor a previous call's [`TracesPage::next`]
+    /// returned (`None` to start from the beginning). The returned
+    /// [`TracesPage::next`] must be persisted and passed back verbatim next
+    /// time — never parsed, decoded, or recomputed by the caller.
+    async fn traces(&self, project: &str, since: Option<&str>) -> Result<TracesPage, OrchError>;
     // Phase 35+ — write side, gated behind TACK_ORCH_ENABLE.
     async fn enqueue_task(&self, project: &str, task: NewRemoteTask) -> Result<String, OrchError>;
     async fn dispatch(&self, project: &str, vars: serde_json::Value) -> Result<String, OrchError>;
@@ -667,9 +712,60 @@ mod tests {
             OrchError::NotFound("run-1".into()),
             OrchError::Unavailable("connection refused".into()),
             OrchError::Disabled,
+            OrchError::PolicyBlocked {
+                policy_id: "prompt-injection".into(),
+                message: "untrusted input matched a deny rule".into(),
+            },
         ];
         for e in errors {
             assert!(!e.to_string().is_empty());
         }
+    }
+
+    #[test]
+    fn policy_blocked_display_names_the_policy_id() {
+        let e = OrchError::PolicyBlocked {
+            policy_id: "prompt-injection".into(),
+            message: "untrusted input matched a deny rule".into(),
+        };
+        let text = e.to_string();
+        assert!(text.contains("prompt-injection"), "{text}");
+        assert!(
+            text.contains("untrusted input matched a deny rule"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn traces_page_round_trips_events_and_the_opaque_cursor() {
+        // TracesPage's own `events` field is already-decoded `RemoteEvent`s —
+        // the double-encoded-JSON-strings wire quirk is `adapters::docket`'s
+        // problem to unwrap before it ever builds a `TracesPage`, not this
+        // struct's. This test only exercises what this crate owns: the page
+        // envelope and the opaque cursor field.
+        let event = RemoteEvent {
+            ts: "2026-08-05T00:00:00Z".to_string(),
+            project: "demo".to_string(),
+            session_id: "agent:demo:task-1".to_string(),
+            agent_role: "lead".to_string(),
+            event_type: "tool_call".to_string(),
+            payload: serde_json::json!({}),
+            cost_usd_estimated: None,
+            duration_ms: None,
+        };
+        let page = TracesPage {
+            events: vec![event],
+            next: Some("2026-08-05T00:00:00Z:1".to_string()),
+        };
+        let json = serde_json::to_string(&page).unwrap();
+        let decoded: TracesPage = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded, page);
+    }
+
+    #[test]
+    fn traces_page_next_defaults_to_none_when_absent() {
+        let page: TracesPage = serde_json::from_str(r#"{"events":[]}"#).unwrap();
+        assert_eq!(page.next, None);
+        assert!(page.events.is_empty());
     }
 }

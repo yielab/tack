@@ -46,21 +46,26 @@
 //! `enqueue_task`'s implementation deliberately does **not** parse
 //! `status`/`approvalToken` off `POST /tasks/{project}`'s response body,
 //! even though both are present on the wire (see "Verified live" below) —
-//! [`ControlPlane::enqueue_task`]'s frozen signature
-//! (`Result<String, OrchError>`) has nowhere to carry them out. The
-//! Wave-3 dispatcher (`tack-api`'s `dispatcher` module) recovers that
+//! [`ControlPlane::enqueue_task`]'s signature (`Result<String, OrchError>`)
+//! has nowhere to carry them out, and widening it is a separate, larger
+//! change than this method needs (see the trait doc's own note on this).
+//! The Wave-3 dispatcher (`tack-api`'s `dispatcher` module) recovers that
 //! information with one follow-up call to the already-fully-implemented
 //! [`ControlPlane::list_tasks`], matching the just-created task by the id
 //! this method returns. See that module's doc comment for the full
 //! reasoning; this adapter only needs to get the id right.
 //!
 //! A `pre_input` policy **block** (HTTP 400) is mapped to
-//! [`OrchError::Http`] with the message prefixed by
-//! [`POLICY_BLOCK_PREFIX`] — `OrchError` has no dedicated variant for "the
-//! control plane refused this on purpose" (its variant set is part of
-//! TODO.md §1.1's Wave-0 freeze, a file this adapter doesn't own), so the
-//! prefix is the private, documented contract `dispatcher` uses to tell a
-//! deliberate policy refusal apart from every other `Http` failure.
+//! [`OrchError::PolicyBlocked`] (card R1, 2026-08-05) — the policy id is
+//! parsed out of docket's own error text
+//! (`"task rejected by guardrail policy '<id>' at enqueue: <message>"`) by
+//! [`parse_policy_block`]. This used to be [`OrchError::Http`] with the
+//! message prefixed by a private `POLICY_BLOCK_PREFIX` constant, back when
+//! `OrchError`'s variant set was frozen (TODO.md §1.1's original Wave-0
+//! freeze) and had no dedicated variant for "the control plane refused this
+//! on purpose" — that freeze is lifted (§2.1) and the workaround is gone;
+//! `dispatcher.rs` now matches on the typed variant instead of stripping a
+//! string prefix.
 //!
 //! # Verified live (card V1, 2026-08-05)
 //!
@@ -127,13 +132,12 @@
 //! `Vec<RemoteEvent>`). `next` is docket's own minted resume cursor
 //! (`serve.py`'s module comment above `_traces_page` documents the
 //! compound `"<ts>Z:<n>"` format and why a bare last-seen timestamp isn't
-//! enough) — the frozen [`ControlPlane::traces`] signature (§1.1) has
-//! nowhere to carry a second return value out, so it is intentionally not
-//! modeled on [`TracesResponse`] at all; `reconciler.rs` reconstructs the
-//! equivalent cursor client-side from the returned events instead (see
-//! that module's doc comment, "Trace cursor" section, for the mirrored
-//! algorithm and why it's provably equivalent to computing `next` here and
-//! throwing it away).
+//! enough) — **as of card R1 (2026-08-05), this adapter reads `next` and
+//! returns it verbatim** as [`TracesPage::next`], opaque to this crate.
+//! Earlier (A1/B2), [`ControlPlane::traces`]'s signature had nowhere to
+//! carry a second return value out, so `reconciler.rs` reimplemented
+//! docket's cursor algorithm client-side instead — that reconstruction is
+//! deleted; see the trait's own doc comment and TODO.md §2.1.
 
 use std::time::Duration;
 
@@ -146,7 +150,7 @@ use tracing::warn;
 use crate::adapters::prometheus;
 use crate::{
     ControlPlane, FleetStatus, Health, MetricSample, NewRemoteTask, OrchError, RemoteApproval,
-    RemoteEvent, RemoteRun, RemoteTask,
+    RemoteEvent, RemoteRun, RemoteTask, TracesPage,
 };
 
 /// Every request this adapter makes gets this timeout — docket runs on
@@ -160,14 +164,22 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 /// arbitrarily large or (in principle) sensitive body into `tracing` output.
 const ERROR_BODY_SNIPPET_LEN: usize = 500;
 
-/// Prefix on the [`OrchError::Http`] message [`DocketAdapter::enqueue_task`]
-/// returns when `POST /tasks/{project}` refuses the request with a
-/// `pre_input` guardrail-policy **block** (HTTP 400) — see the module doc's
-/// "Write methods" section for why this exists instead of a dedicated
-/// `OrchError` variant. The remainder of the message is docket's own
-/// `error` text verbatim, which names the policy id
-/// (`"task rejected by guardrail policy '<id>' at enqueue: <message>"`).
-pub const POLICY_BLOCK_PREFIX: &str = "dispatch blocked by guardrail policy: ";
+/// Extracts the policy id docket names in a `pre_input` **block** response's
+/// `error` text (`"task rejected by guardrail policy '<id>' at enqueue:
+/// <message>"`, verified live by card V1) and builds the typed
+/// [`OrchError::PolicyBlocked`]. Falls back to `policy_id: "unknown"` rather
+/// than panicking or discarding the message if docket's wording ever drifts
+/// — this must degrade the same way the `Unknown(String)` remote-enum
+/// variants do (module doc, "Unknown enum values never fail a poll"): a
+/// reworded message still surfaces as a block, just without a parsed id.
+fn parse_policy_block(message: String) -> OrchError {
+    let policy_id = message
+        .split_once("guardrail policy '")
+        .and_then(|(_, rest)| rest.split_once('\''))
+        .map(|(id, _)| id.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    OrchError::PolicyBlocked { policy_id, message }
+}
 
 /// [`ControlPlane`] for a single docket instance. See the module doc for
 /// the constructor, the auth split, and why the write methods and
@@ -343,14 +355,14 @@ struct TasksResponse {
 /// wire-format trap this struct exists to route around). `events` is
 /// **not** `Vec<RemoteEvent>`: each element is itself a raw JSON string
 /// that must be decoded a second time — see [`DocketAdapter::traces`].
-/// `next` (docket's own minted resume cursor) exists on the wire but is
-/// deliberately not modeled here; nothing reads it because the frozen
-/// `ControlPlane::traces` signature has nowhere to return it — an unknown
-/// JSON key is simply ignored by `serde_json`, so omitting the field costs
-/// nothing.
+/// `next` (docket's own minted resume cursor) is read and passed through
+/// verbatim as [`TracesPage::next`] — this adapter never inspects its
+/// contents, only forwards it.
 #[derive(Debug, Deserialize)]
 struct TracesResponse {
     events: Vec<String>,
+    #[serde(default)]
+    next: Option<String>,
 }
 
 #[async_trait]
@@ -420,11 +432,7 @@ impl ControlPlane for DocketAdapter {
         Ok(wrapper.tasks)
     }
 
-    async fn traces(
-        &self,
-        project: &str,
-        since: Option<&str>,
-    ) -> Result<Vec<RemoteEvent>, OrchError> {
+    async fn traces(&self, project: &str, since: Option<&str>) -> Result<TracesPage, OrchError> {
         let mut url = self.url(&format!("traces/{project}"))?;
         if let Some(since) = since {
             url.query_pairs_mut().append_pair("since", since);
@@ -456,7 +464,13 @@ impl ControlPlane for DocketAdapter {
                 }
             })
             .collect();
-        Ok(events)
+        // `wrapper.next` is forwarded exactly as received — opaque, never
+        // parsed or recomputed here (see the module doc and TracesPage's
+        // own doc comment).
+        Ok(TracesPage {
+            events,
+            next: wrapper.next,
+        })
     }
 
     async fn enqueue_task(&self, project: &str, task: NewRemoteTask) -> Result<String, OrchError> {
@@ -464,7 +478,7 @@ impl ControlPlane for DocketAdapter {
         // rather than through `get_authed`/`send` — those only ever GET, and
         // the `pre_input` policy **block** (HTTP 400) needs distinct
         // handling from `send`'s generic non-2xx branch (see the module doc
-        // and `POLICY_BLOCK_PREFIX`).
+        // and `parse_policy_block`).
         let url = self.url(&format!("tasks/{project}"))?;
         let mut req = self.client.post(url).json(&task);
         if let Some(token) = &self.token {
@@ -482,14 +496,14 @@ impl ControlPlane for DocketAdapter {
         if status == StatusCode::BAD_REQUEST {
             // A `pre_input` policy block — never a transport failure. Extract
             // docket's own `error` text (which names the policy id) the same
-            // way `send`'s 404 branch does, and prefix it so `dispatcher` can
-            // tell this apart from every other `Http` error.
+            // way `send`'s 404 branch does, and parse the id out of it into a
+            // typed `OrchError::PolicyBlocked`.
             let text = resp.text().await.unwrap_or_default();
             let message = serde_json::from_str::<ErrorBody>(&text)
                 .ok()
                 .and_then(|b| (!b.error.is_empty()).then_some(b.error))
                 .unwrap_or_else(|| text.trim().to_string());
-            return Err(OrchError::Http(format!("{POLICY_BLOCK_PREFIX}{message}")));
+            return Err(parse_policy_block(message));
         }
         if !status.is_success() {
             let text = resp.text().await.unwrap_or_default();

@@ -104,7 +104,7 @@ use uuid::Uuid;
 
 use tack_core::models::{Item, Priority, Project, UpdateItem};
 use tack_db::repo::orch::{NewOrchEvent, NewOrchTask, OrchTask};
-use tack_orch::adapters::docket::{DocketAdapter, POLICY_BLOCK_PREFIX};
+use tack_orch::adapters::docket::DocketAdapter;
 use tack_orch::{ControlPlane, NewRemoteTask, OrchError};
 
 use crate::error::ApiError;
@@ -216,9 +216,12 @@ pub enum DispatchOutcome {
     AlreadyInFlight {
         task: OrchTask,
     },
-    /// docket's `pre_input` policy refused the request. `message` is
-    /// docket's own text, which names the policy id.
+    /// docket's `pre_input` policy refused the request. `policy_id` is the
+    /// id of the guardrail that fired (parsed by `adapters::docket` out of
+    /// docket's own error text — see [`tack_orch::OrchError::PolicyBlocked`],
+    /// card R1); `message` is docket's own text, verbatim, for display.
     Blocked {
+        policy_id: String,
         message: String,
     },
     Success(DispatchSuccess),
@@ -306,15 +309,8 @@ pub async fn dispatch_item(
         .await
     {
         Ok(id) => id,
-        Err(OrchError::Http(msg)) => {
-            if let Some(detail) = msg.strip_prefix(POLICY_BLOCK_PREFIX) {
-                return Ok(DispatchOutcome::Blocked {
-                    message: detail.to_string(),
-                });
-            }
-            return Err(ApiError::Conflict(format!(
-                "control plane rejected the dispatch request: {msg}"
-            )));
+        Err(OrchError::PolicyBlocked { policy_id, message }) => {
+            return Ok(DispatchOutcome::Blocked { policy_id, message });
         }
         Err(e) => {
             return Err(ApiError::Conflict(format!(
@@ -324,8 +320,10 @@ pub async fn dispatch_item(
     };
 
     // Recover the real status + approval token (see adapters::docket's
-    // module doc for why enqueue_task's frozen return type can't carry
-    // them). A failure here is logged and treated as "pending" — the task
+    // module doc for why enqueue_task's `Result<String, OrchError>` return
+    // type can't carry them — widening it further is a separate change than
+    // this dispatcher needs). A failure here is logged and treated as
+    // "pending" — the task
     // genuinely was created on docket (we have its id), so this must not
     // be reported as a dispatch failure.
     let (remote_status, approval_token) = match control_plane.list_tasks(&link.remote_project).await

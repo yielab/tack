@@ -104,30 +104,35 @@
 //! fan-out — docket's `/metrics` is fleet-wide, one call per plane, exactly
 //! like `/health`/`/status.json`.
 //!
-//! # Trace cursor (card B2, task 34.4)
+//! # Trace cursor (card B2, task 34.4; opaque-cursor fix, card R1, 2026-08-05)
 //!
-//! **The cursor is compound, not a bare timestamp.** docket's
-//! `GET /traces/{project}?since=` (`serve.py`'s `_traces_page`) mints
-//! `"<ts>Z:<n>"`: `ts` is second-granularity and its filter is *inclusive*
-//! (`ts >= since`), so a bare "last event's ts" cursor would redeliver every
-//! event sharing that exact second on the next poll; `n` is how many of
-//! that second's events have already been delivered, letting docket skip
-//! exactly those on re-query. Verified by reading `serve.py`'s
-//! `_decode_trace_cursor`/`_traces_page` directly (not guessed, not read
-//! from docket's stale `ROADMAP.md`).
+//! **The cursor is opaque — this module does not parse it.** `ControlPlane
+//! ::traces` returns [`crate::TracesPage`], whose `next` field is docket's
+//! own minted resume cursor, forwarded verbatim by `adapters::docket`. This
+//! module stores it and passes it back as `since` on the next poll; nothing
+//! here decodes it, computes it, or knows its internal format.
 //!
-//! **The frozen `ControlPlane::traces` signature (§1.1) returns
-//! `Vec<RemoteEvent>` only — it has no way to carry docket's minted `next`
-//! cursor back out**, and this module cannot widen it (`lib.rs` is frozen
-//! after Wave 0, owned by W0-A). [`next_trace_cursor`] solves this by
-//! reimplementing docket's exact anchor/count algorithm client-side, over
-//! the ordered events a poll actually returned plus the cursor that was
-//! sent as `since` — both already in hand, no extra I/O. This is provably
-//! equivalent to reading docket's own `next` and discarding it: the events
-//! `traces()` returns are already `_traces_page`'s post-trim `lines`, so
-//! the same anchor/count computation over the same data produces the same
-//! answer. See [`next_trace_cursor`]'s doc comment for the mirrored steps
-//! and [`decode_trace_cursor`] for the compound-token parse.
+//! **That was not always true, and the history is worth keeping.** docket's
+//! `GET /traces/{project}?since=` (`serve.py`'s `_traces_page`) mints a
+//! compound `"<ts>Z:<n>"` token: `ts` is second-granularity and its filter
+//! is *inclusive* (`ts >= since`), so a bare "last event's ts" cursor would
+//! redeliver every event sharing that exact second on the next poll; `n` is
+//! how many of that second's events have already been delivered, letting
+//! docket skip exactly those on re-query. Cards A1/B2 built against an
+//! earlier `ControlPlane::traces` signature that returned `Vec<RemoteEvent>`
+//! only, with nowhere to carry docket's minted `next` cursor back out — so
+//! `reconciler.rs` reimplemented docket's exact anchor/count algorithm
+//! client-side (`next_trace_cursor`/`decode_trace_cursor`), verified against
+//! hand-computed cases and, later, a real docket server's minted cursors
+//! (card V1). It was correct, and it was still the wrong fix: it had to stay
+//! byte-for-byte in sync with `serve.py`'s algorithm forever, with no
+//! compiler check that it had, and a docket-side change would have drifted
+//! it silently — no compile error, no test failure, just quietly wrong
+//! resumption. Card R1 widened the trait to carry `next` directly instead
+//! and deleted the reconstruction entirely (see TODO.md §2.1 and
+//! `crate::TracesPage`'s doc comment). If you're looking for
+//! `next_trace_cursor`/`decode_trace_cursor`, they no longer exist — see git
+//! history if you need the old algorithm for reference.
 //!
 //! **`orch_events.id` has no natural key to upsert on.** A trace event is a
 //! position in a JSONL stream, not an entity with a stable id — docket's
@@ -227,7 +232,7 @@ use uuid::Uuid;
 
 use crate::{
     ControlPlane, FleetStatus, Health, MetricSample, OrchError, RemoteApproval, RemoteEvent,
-    RemoteRun,
+    RemoteRun, TracesPage,
 };
 
 // ---------------------------------------------------------------------------
@@ -497,8 +502,10 @@ async fn poll_metrics(
 /// (no stored row yet) — docket treats an absent/empty `since` as "from the
 /// beginning", so the very first poll for a newly-linked project mirrors
 /// its entire trace history, same as `poll_runs`'s first-poll behavior for
-/// CLI-dispatched runs.
-type TracesPollResult = (String, Option<String>, Result<Vec<RemoteEvent>, OrchError>);
+/// CLI-dispatched runs. The `Ok` payload is a [`TracesPage`] — events plus
+/// the remote's own opaque `next` cursor, which [`persist_events`] stores
+/// verbatim (see the module doc's "Trace cursor" section).
+type TracesPollResult = (String, Option<String>, Result<TracesPage, OrchError>);
 
 /// `GET /traces/{project}?since=`, one call per linked project — docket has
 /// no fleet-wide trace listing, same shape as [`poll_runs`] (card B2, task
@@ -725,10 +732,11 @@ pub trait ControlPlaneStore: Send + Sync {
     // ── Card B2 (Wave 2, trace ingestion, task 34.4) ──
     //
     // Same thin-pass-through discipline as every method above: no cursor
-    // arithmetic, no event-id derivation, no retention-age filtering here —
-    // all of that lives in `next_trace_cursor`/`derive_event_id`/
-    // `persist_events` in this module. An implementor's job is exactly
-    // "read/write these rows", nothing more.
+    // arithmetic (the cursor is opaque — see the module doc's "Trace
+    // cursor" section), no event-id derivation, no retention-age filtering
+    // here — all of that lives in `derive_event_id`/`persist_events` in
+    // this module. An implementor's job is exactly "read/write these
+    // rows", nothing more.
 
     /// Every stored resume cursor for this plane's linked projects, keyed by
     /// `remote_project` (`tack_db::repo::orch::list_trace_cursors`). A
@@ -1057,78 +1065,6 @@ fn derive_event_id(control_plane_id: Uuid, remote_project: &str, event: &RemoteE
     Uuid::new_v5(&ORCH_EVENT_ID_NAMESPACE, canonical.as_bytes())
 }
 
-/// Mirrors `serve.py`'s `_decode_trace_cursor` exactly: a compound
-/// `"<ts>Z:<n>"` token (ts ends in `Z`, tail is all digits) decodes to
-/// `(ts, n)`; anything else — a bare hand-typed timestamp, or an empty
-/// string — decodes to `(raw, 0)`. The trailing-`Z` requirement is
-/// load-bearing: a timestamp itself contains colons
-/// (`"...T12:34:56Z"`), so without it `"...T12:34:56"` would misparse as a
-/// compound token with a bogus count. Returns `("", 0)` for an empty input
-/// (the "never polled before" starting state).
-fn decode_trace_cursor(raw: &str) -> (&str, i64) {
-    if raw.is_empty() {
-        return ("", 0);
-    }
-    if let Some((ts, tail)) = raw.rsplit_once(':')
-        && ts.ends_with('Z')
-        && !tail.is_empty()
-        && tail.bytes().all(|b| b.is_ascii_digit())
-        && let Ok(n) = tail.parse::<i64>()
-    {
-        return (ts, n);
-    }
-    (raw, 0)
-}
-
-/// Reconstructs docket's own `next` cursor value purely from the ordered
-/// batch of events a poll actually returned, plus the cursor that was sent
-/// as `since` for that call — see the module doc's "Trace cursor" section
-/// for why this reimplements `serve.py`'s `_traces_page` algorithm
-/// client-side instead of reading docket's own `next` field. A pure
-/// function, safe to unit-test byte-for-byte against hand-computed cases.
-///
-/// Mirrors `_traces_page` exactly:
-/// - no events at all → the cursor doesn't move (`previous`, unchanged).
-/// - no event in the batch has a non-empty `ts` → doesn't move either
-///   (advancing past `previous` without a usable anchor risks a full
-///   replay on the next poll).
-/// - otherwise: the anchor is the last event (from the end) with a
-///   non-empty `ts`; the count is how many events, counting backward from
-///   the anchor, share that exact `ts` (a contiguous trailing same-second
-///   run); if the anchor's `ts` equals `previous`'s decoded ts, the
-///   previous count carries forward and adds to this run (the same-second
-///   boundary spans two polls) — otherwise the run starts fresh at 0.
-fn next_trace_cursor(previous: Option<&str>, events: &[RemoteEvent]) -> Option<String> {
-    let (prev_ts, prev_count) = decode_trace_cursor(previous.unwrap_or(""));
-
-    if events.is_empty() {
-        return previous.map(str::to_string);
-    }
-
-    let anchor = events
-        .iter()
-        .enumerate()
-        .rev()
-        .find(|(_, e)| !e.ts.is_empty());
-    let Some((anchor_idx, anchor_event)) = anchor else {
-        return previous.map(str::to_string);
-    };
-    let anchor_ts = anchor_event.ts.as_str();
-
-    let mut count_at_anchor = 0i64;
-    for event in events[..=anchor_idx].iter().rev() {
-        if event.ts != anchor_ts {
-            break;
-        }
-        count_at_anchor += 1;
-    }
-    if anchor_ts == prev_ts {
-        count_at_anchor += prev_count;
-    }
-
-    Some(format!("{anchor_ts}:{count_at_anchor}"))
-}
-
 /// Extracts the trailing `<suffix>` from docket's `session_id` convention
 /// `"agent:<project>:<suffix>"` (`core/dispatch.py`'s `enqueue_task`/hop
 /// execution, confirmed by reading the writer directly) as a candidate
@@ -1176,8 +1112,8 @@ async fn persist_events(
     let retention_cutoff = Utc::now() - chrono::Duration::days(retention_days as i64);
 
     for (project, since, result) in traces {
-        let events = match result {
-            Ok(events) => events,
+        let page = match result {
+            Ok(page) => page,
             Err(e) => {
                 debug!(
                     control_plane_id = %control_plane_id,
@@ -1188,8 +1124,13 @@ async fn persist_events(
                 continue;
             }
         };
+        let events = &page.events;
 
-        let next_cursor = next_trace_cursor(since.as_deref(), events);
+        // The remote's own cursor, forwarded verbatim — never recomputed
+        // here (see the module doc's "Trace cursor" section). `None` means
+        // the remote didn't mint one this poll; treated as "unchanged",
+        // same as the old reconstruction's "no usable anchor" case.
+        let next_cursor = page.next.clone();
 
         let mut new_events = Vec::with_capacity(events.len());
         let mut dropped_stale = 0u32;
@@ -1887,6 +1828,11 @@ mod tests {
 
     // -- Fake ControlPlane, for reconcile_once / spawn tests ---------------
 
+    /// `(events, next)` scripted for one `(project, since)` pair — `next` is
+    /// scripted explicitly (not derived) since the real cursor is opaque and
+    /// remote-minted.
+    type ScriptedTracesResponse = (Vec<RemoteEvent>, Option<String>);
+
     /// A `ControlPlane` whose `health`/`status`/`list_runs`/`list_approvals`
     /// responses are scripted; every other method (unused this wave)
     /// returns `Disabled`. Used to drive `reconcile_once`/`spawn_reconcilers`
@@ -1902,8 +1848,10 @@ mod tests {
         metrics_should_fail: bool,
         /// Keyed by the `project`/`since` pair `traces()` was called with —
         /// lets a single test script different responses per project without
-        /// needing per-project fakes.
-        traces: std::collections::HashMap<(String, Option<String>), Vec<RemoteEvent>>,
+        /// needing per-project fakes. Most tests don't care about `next` and
+        /// leave it `None` via [`Self::with_traces`]; [`Self::with_traces_next`]
+        /// is there for the ones that do.
+        traces: std::collections::HashMap<(String, Option<String>), ScriptedTracesResponse>,
         traces_should_fail: bool,
     }
 
@@ -1965,16 +1913,38 @@ mod tests {
             }
         }
 
-        /// `traces()` for `(project, since)` returns `events`. Call multiple
-        /// times to script more than one project/cursor combination.
+        /// `traces()` for `(project, since)` returns `events` with no `next`
+        /// cursor (`None`) — for tests that only care about the events
+        /// themselves. Call multiple times to script more than one
+        /// project/cursor combination.
         fn with_traces(
             mut self,
             project: &str,
             since: Option<&str>,
             events: Vec<RemoteEvent>,
         ) -> Self {
-            self.traces
-                .insert((project.to_string(), since.map(str::to_string)), events);
+            self.traces.insert(
+                (project.to_string(), since.map(str::to_string)),
+                (events, None),
+            );
+            self
+        }
+
+        /// Same as [`Self::with_traces`], but also scripts the exact `next`
+        /// cursor the remote "minted" for this response — for tests that
+        /// assert on the persisted cursor value (the opaque cursor is
+        /// remote-minted and scripted, not computed by the fake).
+        fn with_traces_next(
+            mut self,
+            project: &str,
+            since: Option<&str>,
+            events: Vec<RemoteEvent>,
+            next: Option<&str>,
+        ) -> Self {
+            self.traces.insert(
+                (project.to_string(), since.map(str::to_string)),
+                (events, next.map(str::to_string)),
+            );
             self
         }
 
@@ -2043,12 +2013,13 @@ mod tests {
             &self,
             project: &str,
             since: Option<&str>,
-        ) -> Result<Vec<RemoteEvent>, OrchError> {
+        ) -> Result<TracesPage, OrchError> {
             if self.traces_should_fail {
                 return Err(OrchError::Unavailable("traces endpoint down".into()));
             }
             let key = (project.to_string(), since.map(str::to_string));
-            Ok(self.traces.get(&key).cloned().unwrap_or_default())
+            let (events, next) = self.traces.get(&key).cloned().unwrap_or_default();
+            Ok(TracesPage { events, next })
         }
 
         async fn enqueue_task(
@@ -2761,158 +2732,6 @@ mod tests {
     }
 
     #[test]
-    fn decode_trace_cursor_parses_compound_and_bare_forms() {
-        assert_eq!(decode_trace_cursor(""), ("", 0));
-        assert_eq!(
-            decode_trace_cursor("2026-08-04T19:52:27Z:3"),
-            ("2026-08-04T19:52:27Z", 3)
-        );
-        // A bare, hand-typed ISO timestamp with no trailing Z:<n> — count
-        // defaults to 0, and critically the *whole* input is treated as the
-        // ts (not misparsed by splitting on one of the timestamp's own
-        // colons).
-        assert_eq!(
-            decode_trace_cursor("2026-08-04T19:52:27"),
-            ("2026-08-04T19:52:27", 0)
-        );
-        // Non-digit tail after the last colon: not a compound cursor.
-        assert_eq!(
-            decode_trace_cursor("2026-08-04T19:52:27Z:abc"),
-            ("2026-08-04T19:52:27Z:abc", 0)
-        );
-    }
-
-    #[test]
-    fn next_trace_cursor_does_not_move_when_there_are_no_events() {
-        assert_eq!(
-            next_trace_cursor(Some("2026-08-04T19:52:27Z:1"), &[]),
-            Some("2026-08-04T19:52:27Z:1".to_string())
-        );
-        assert_eq!(next_trace_cursor(None, &[]), None);
-    }
-
-    #[test]
-    fn next_trace_cursor_does_not_move_when_no_event_has_a_usable_ts() {
-        let event = sample_event("agent:demo:task-1", "", "tool_call");
-        assert_eq!(
-            next_trace_cursor(Some("2026-08-04T19:52:27Z:1"), &[event]),
-            Some("2026-08-04T19:52:27Z:1".to_string())
-        );
-    }
-
-    #[test]
-    fn next_trace_cursor_counts_the_trailing_same_second_run() {
-        let events = vec![
-            sample_event("agent:demo:task-1", "2026-08-04T19:52:27Z", "tool_call"),
-            sample_event("agent:demo:task-1", "2026-08-04T19:52:40Z", "session_start"),
-            sample_event("agent:demo:task-1", "2026-08-04T19:52:40Z", "tool_result"),
-        ];
-        // Two events share the last (anchor) second; the first event's
-        // different second doesn't extend that run.
-        assert_eq!(
-            next_trace_cursor(None, &events),
-            Some("2026-08-04T19:52:40Z:2".to_string())
-        );
-    }
-
-    #[test]
-    fn next_trace_cursor_carries_the_previous_count_forward_across_the_same_second_boundary() {
-        // The previous poll already delivered 2 events at :40Z (encoded in
-        // `previous`); this poll's page starts mid-way through that same
-        // second and delivers 1 more before rolling into a new second.
-        let events = vec![
-            sample_event("agent:demo:task-1", "2026-08-04T19:52:40Z", "tool_result"),
-            sample_event("agent:demo:task-1", "2026-08-04T19:52:41Z", "session_end"),
-        ];
-        assert_eq!(
-            next_trace_cursor(Some("2026-08-04T19:52:40Z:2"), &events),
-            Some("2026-08-04T19:52:41Z:1".to_string()),
-            "the anchor second changed, so the run resets — the :2 from the \
-             previous poll must not leak into the new second"
-        );
-
-        // Same starting cursor, but this page never leaves the :40Z second —
-        // the previous count must carry forward and keep growing.
-        let events_same_second = vec![sample_event(
-            "agent:demo:task-1",
-            "2026-08-04T19:52:40Z",
-            "tool_result",
-        )];
-        assert_eq!(
-            next_trace_cursor(Some("2026-08-04T19:52:40Z:2"), &events_same_second),
-            Some("2026-08-04T19:52:40Z:3".to_string())
-        );
-    }
-
-    #[test]
-    fn next_trace_cursor_matches_a_real_docket_servers_minted_cursor() {
-        // Captured live 2026-08-05 (card V1) against an isolated `docket serve`
-        // instance (see TODO.md §6, V1 handoff) — a project with exactly one
-        // trace session file, 3 events at :00Z then 2 at :01Z, polled four
-        // times with docket's real `next` cursor fed back in as the next
-        // poll's `since`. Every `next` value below is docket's own
-        // `_traces_page`-minted string, read verbatim off the wire
-        // (`curl .../traces/curstest?since=...`), not hand-computed — this is
-        // the first time this reconstruction has been checked against a real
-        // server rather than only unit-tested against hand-built cases
-        // (B2's "still open" item in TODO.md §6).
-        fn ev(n: i64, ts: &str) -> RemoteEvent {
-            RemoteEvent {
-                ts: ts.to_string(),
-                project: "curstest".to_string(),
-                session_id: "agent:curstest:only-session".to_string(),
-                agent_role: "lead".to_string(),
-                event_type: "tool_call".to_string(),
-                payload: serde_json::json!({"n": n}),
-                cost_usd_estimated: None,
-                duration_ms: None,
-            }
-        }
-
-        // Poll 1: since="" -> docket returned all 5 events (3 at :00Z, 2 at
-        // :01Z) and minted next="2026-08-05T12:00:01Z:2".
-        let poll1_events = vec![
-            ev(1, "2026-08-05T12:00:00Z"),
-            ev(2, "2026-08-05T12:00:00Z"),
-            ev(3, "2026-08-05T12:00:00Z"),
-            ev(4, "2026-08-05T12:00:01Z"),
-            ev(5, "2026-08-05T12:00:01Z"),
-        ];
-        assert_eq!(
-            next_trace_cursor(None, &poll1_events),
-            Some("2026-08-05T12:00:01Z:2".to_string())
-        );
-
-        // Poll 2: since="2026-08-05T12:00:01Z:2" -> docket returned no new
-        // events (nothing had been appended yet) and left next unchanged.
-        assert_eq!(
-            next_trace_cursor(Some("2026-08-05T12:00:01Z:2"), &[]),
-            Some("2026-08-05T12:00:01Z:2".to_string())
-        );
-
-        // Poll 3: 2 more events appended at the SAME second (:01Z) after
-        // poll 1 already advanced past it with count=2 — exactly the
-        // "off-by-one hides here" case the card called out. docket returned
-        // only the 2 new events (not the original 5) and minted
-        // next="2026-08-05T12:00:01Z:4" — the previous count (2) carried
-        // forward and added to this page's trailing run (2), not reset to 2.
-        let poll3_events = vec![ev(6, "2026-08-05T12:00:01Z"), ev(7, "2026-08-05T12:00:01Z")];
-        assert_eq!(
-            next_trace_cursor(Some("2026-08-05T12:00:01Z:2"), &poll3_events),
-            Some("2026-08-05T12:00:01Z:4".to_string())
-        );
-
-        // Poll 4: one more event at a new second (:02Z) -> the run resets;
-        // docket minted next="2026-08-05T12:00:02Z:1", not ":5" (the prior
-        // second's count must not leak across the boundary).
-        let poll4_events = vec![ev(8, "2026-08-05T12:00:02Z")];
-        assert_eq!(
-            next_trace_cursor(Some("2026-08-05T12:00:01Z:4"), &poll4_events),
-            Some("2026-08-05T12:00:02Z:1".to_string())
-        );
-    }
-
-    #[test]
     fn session_id_task_id_parses_the_agent_project_suffix_convention() {
         assert_eq!(
             session_id_task_id("agent:demo:task-90e465a8"),
@@ -3054,6 +2873,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_successful_traces_poll_advances_the_stored_cursor() {
+        // The cursor is opaque and remote-minted (card R1) — this fake
+        // scripts docket's "minted" next value explicitly via
+        // `with_traces_next` rather than computing one, and this test just
+        // proves that value is what actually gets persisted, verbatim.
         let id = Uuid::new_v4();
         let events = vec![
             sample_event("agent:demo:task-1", "2026-08-04T19:52:27Z", "tool_call"),
@@ -3061,7 +2884,12 @@ mod tests {
         ];
         let plane = RegisteredPlane {
             id,
-            control_plane: Arc::new(FakeControlPlane::healthy().with_traces("demo", None, events)),
+            control_plane: Arc::new(FakeControlPlane::healthy().with_traces_next(
+                "demo",
+                None,
+                events,
+                Some("2026-08-04T19:52:40Z:1"),
+            )),
         };
         let store =
             Arc::new(FakeStore::new(vec![plane]).with_linked_projects(vec!["demo".to_string()]));

@@ -357,9 +357,10 @@ pub(crate) async fn maybe_auto_dispatch(state: &AppState, item: &Item, old_statu
 
     tokio::spawn(async move {
         match dispatcher::dispatch_item(&state, item_id, trusted).await {
-            Ok(DispatchOutcome::Blocked { message }) => {
+            Ok(DispatchOutcome::Blocked { policy_id, message }) => {
                 tracing::warn!(
                     item_id = %item_id,
+                    policy_id = %policy_id,
                     message = %message,
                     "auto-dispatch blocked by control-plane policy"
                 );
@@ -369,6 +370,7 @@ pub(crate) async fn maybe_auto_dispatch(state: &AppState, item: &Item, old_statu
                     control_plane_id,
                     "auto_dispatch_blocked",
                     &message,
+                    Some(&policy_id),
                 )
                 .await;
             }
@@ -381,6 +383,7 @@ pub(crate) async fn maybe_auto_dispatch(state: &AppState, item: &Item, old_statu
                     control_plane_id,
                     "auto_dispatch_failed",
                     &e.to_string(),
+                    None,
                 )
                 .await;
             }
@@ -393,19 +396,24 @@ pub(crate) async fn maybe_auto_dispatch(state: &AppState, item: &Item, old_statu
 /// (or card B5's Agent Activity UI) can find it, not just in server logs.
 /// Never panics or propagates — an audit-trail write failing must not turn
 /// an already-logged background failure into a crashed background task.
+///
+/// `policy_id` is `Some` only for `auto_dispatch_blocked` (a typed
+/// `OrchError::PolicyBlocked`, card R1) — `auto_dispatch_failed` covers
+/// every other, non-policy failure and has no policy id to carry.
 async fn record_auto_dispatch_event(
     state: &AppState,
     item_id: Uuid,
     control_plane_id: Uuid,
     event_type: &str,
     message: &str,
+    policy_id: Option<&str>,
 ) {
     let event = NewOrchEvent {
         id: Uuid::new_v4(),
         item_id: Some(item_id),
         run_id: None,
         event_type: event_type.to_string(),
-        payload: serde_json::json!({ "message": message }),
+        payload: serde_json::json!({ "message": message, "policy_id": policy_id }),
         occurred_at: Utc::now(),
     };
     if let Err(e) = state

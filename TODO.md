@@ -4546,3 +4546,163 @@ auto_dispatch_test.rs`, plus additions to the pre-existing
 api_test.rs`). Did not touch `crates/tack-api/src/orch_store.rs`,
 `crates/tack-orch/**`, `handlers/orch.rs`, `router.rs`, or the frontend, per
 scope.
+
+### R1 — 2026-08-05
+
+**The card.** §2.1 — remove the two workarounds the Wave-0 freeze on
+`crates/tack-orch/src/lib.rs` forced: B2's client-side trace-cursor
+reconstruction, and C1's string-prefix policy-block detection. Ran alone, as
+required, with no concurrent agent in `tack-orch/**` or `tack-api/**`.
+
+**Fix 1 — `ControlPlane::traces` now returns the remote's own cursor.** New
+DTO in `lib.rs`:
+
+```rust
+pub struct TracesPage {
+    pub events: Vec<RemoteEvent>,
+    pub next: Option<String>,   // opaque — never parsed by Tack
+}
+```
+
+`traces`'s signature is now `async fn traces(&self, project: &str, since:
+Option<&str>) -> Result<TracesPage, OrchError>`. `adapters::docket::
+DocketAdapter::traces` now reads `next` off `GET /traces/{project}`'s
+response (`TracesResponse` gained a `next: Option<String>` field) and
+forwards it verbatim — no parsing, no inspection, just pass-through.
+
+**Deleted, not deprecated:** `reconciler.rs`'s `next_trace_cursor` and
+`decode_trace_cursor` — the entire client-side anchor/count reimplementation
+of docket's `"<ts>Z:<n>"` cursor algorithm — are gone, along with the 6 tests
+that existed solely to check that reconstruction (`decode_trace_cursor_
+parses_compound_and_bare_forms` and five `next_trace_cursor_*` tests,
+including V1's live-captured regression `next_trace_cursor_matches_a_real_
+docket_servers_minted_cursor`). None of them tested anything else — the logic
+they covered no longer exists, so keeping them would have been noise, per
+the brief's own instruction. `persist_events` now reads `page.next` straight
+off the poll result instead of computing it; the "don't write the cursor if
+it didn't move" no-op guard (`Some(next) != since`) is unchanged, just fed by
+the remote's value instead of a derived one.
+
+**Migration 028 (`orch_trace_cursors`) needed no change.** The `cursor TEXT
+NOT NULL` column was already an opaque string as far as the schema is
+concerned — B2 just happened to be the one populating it with a client-
+computed value. `repo::orch::set_trace_cursor`/`list_trace_cursors` are
+untouched; they never cared what was inside the string.
+
+**Fix 2 — typed `OrchError::PolicyBlocked { policy_id, message }`.** Added to
+`lib.rs`. `adapters::docket`'s `POLICY_BLOCK_PREFIX` const is deleted;
+`enqueue_task`'s HTTP-400 branch now calls a new private `parse_policy_block`
+that extracts the id from docket's own error text (`"task rejected by
+guardrail policy '<id>' at enqueue: <message>"`) via a plain `split_once`,
+falling back to `policy_id: "unknown"` (never panicking) if docket's wording
+ever drifts — same "degrade, don't fail the poll" discipline this crate
+already applies to unrecognised remote enum values.
+
+**Callers updated:**
+
+- `crates/tack-api/src/dispatcher.rs` — `DispatchOutcome::Blocked` gained a
+  `policy_id: String` field alongside `message`. The `enqueue_task` match arm
+  is now `Err(OrchError::PolicyBlocked { policy_id, message }) => Ok(
+  DispatchOutcome::Blocked { policy_id, message })` — no more
+  `msg.strip_prefix(...)`.
+- `crates/tack-api/src/handlers/orch.rs` — `DispatchItemResponse` gained a
+  `policy_id: Option<String>` field (present only when `outcome ==
+  "blocked"`), populated in the `From<DispatchOutcome>` impl. This is a wire
+  shape change, so `docs/openapi.json` is regenerated (`UPDATE_OPENAPI=1
+  cargo test -p tack-api --test openapi_contract`) — a clean additive diff,
+  one new schema property.
+- `crates/tack-api/src/handlers/items.rs` — `maybe_auto_dispatch`'s match arm
+  now destructures `policy_id` too, logs it (`tracing::warn!(policy_id =
+  %policy_id, ...)`), and threads it into a new `Option<&str>` parameter on
+  `record_auto_dispatch_event`, stored in the `auto_dispatch_blocked`
+  `orch_events` row's payload alongside `message`.
+- `crates/tack-api/src/orch_store.rs` — **no change needed.** C5 flagged this
+  as a live dependency on `dispatcher::apply_mapped_status`'s signature
+  (`&AppState`, plain `&str` target/trigger); that function's signature is
+  untouched by this card, so `reconcile_terminal_status_map`'s call site
+  still compiles and behaves identically. Confirmed by reading it, not just
+  by the compiler being quiet — it doesn't touch `DispatchOutcome` or
+  `traces()` at all.
+
+**Tests.** `crates/tack-orch/tests/docket_adapter_test.rs`: the block test
+(renamed `enqueue_task_block_maps_to_policy_blocked_naming_the_policy`) now
+matches on `OrchError::PolicyBlocked { policy_id, message }` and asserts
+`policy_id == "prompt-injection"` (a genuinely parsed field, not a substring
+check); the traces happy-path test now asserts `page.next ==
+Some("2026-08-05T11:08:10Z:3")` — the fixture already had the real `next`
+value from V1's live capture, just previously unread by any test.
+`reconciler.rs`'s `FakeControlPlane` gained a `with_traces_next` builder (the
+opaque cursor is remote-minted, so the fake scripts it explicitly rather than
+computing one); only the one test that actually asserts on the persisted
+cursor value (`a_successful_traces_poll_advances_the_stored_cursor`) needed
+it — every other traces test keeps using the existing 3-arg `with_traces`
+with `next: None`, since they don't care about the cursor.
+`crates/tack-api/tests/orch_dispatch_test.rs`'s block test gained one more
+assertion, `v["policy_id"] == "prompt-injection"`, so the typed field is
+actually exercised at the HTTP boundary, not just in `tack-orch`.
+
+**Net test count: 475 → 472, and that's correct, not a regression.** −6
+(deleted cursor-reconstruction tests, covering code that no longer exists)
++3 (`lib.rs`: `policy_blocked_display_names_the_policy_id`,
+`traces_page_round_trips_events_and_the_opaque_cursor`,
+`traces_page_next_defaults_to_none_when_absent`) = −3, and 475 − 3 = 472
+exactly — the arithmetic reconciles precisely, not just directionally.
+`orch_dispatch_test.rs`'s strengthened assertion added no new test function.
+
+**Live-verified, isolated `DOCKET_HOME`.** Stood up `docket serve --port
+18402` with `DOCKET_HOME` pointed at a scratchpad directory for every
+invocation (confirmed via `~/.docket`'s mtime, unchanged across the whole
+session: before starting the server, after every request, and after
+teardown). Reused V1's already-provisioned `demo`/`demo2` projects and
+policy files rather than re-provisioning. Two throwaway `#[ignore]`d tests
+(deleted after the run — they need a live server, so they can't live in the
+permanent suite) proved, against the real server, not just wiremock:
+
+1. **The opaque cursor round-trips correctly end to end.** `traces("demo2",
+   None)` → 4 events, `next = Some("2026-08-05T12:31:00Z:1")`. Feeding that
+   value straight back as `since` → 0 events, `next` unchanged — exactly the
+   "nothing new since last poll" case, proving the adapter's forwarded
+   cursor is one docket itself accepts and re-mints identically, not a value
+   that merely looks plausible.
+2. **A live policy block deserializes to a correctly-parsed
+   `PolicyBlocked`.** A description matching the isolated `DOCKET_HOME`'s
+   real `block-cmd` policy (`rm -rf`) produced `OrchError::PolicyBlocked {
+   policy_id: "block-cmd", message: "task rejected by guardrail policy
+   'block-cmd' at enqueue: destructive shell command in task description"
+   }` — the id extracted by `parse_policy_block` matches docket's real,
+   live-minted text exactly, not a guess against a fixture.
+3. **A live allow verdict still returns `Ok(task_id)`** (sanity check that
+   the happy path wasn't disturbed).
+
+**What I did not verify live:** the reconciler's full poll loop
+(`spawn_reconcilers`) against this live server end-to-end — B2/V1 already
+covered that shape thoroughly (`crates/tack-orch/tests/
+traces_ingestion_test.rs` exercises the real reconciler against `wiremock`,
+and V1's fixtures are genuine captures), and this card's live check was
+scoped narrowly to the two things that actually changed: does the adapter
+forward `next` faithfully, and does the new error variant parse correctly.
+I did not re-verify `require_approval` or the other docket routes live —
+V1 already did, and nothing about their wire shape changed in this card.
+
+**Turned out smaller than expected, not larger.** The brief flagged this as
+possibly needing "a further interface change" beyond the two named fixes if
+updating callers revealed one was needed. It didn't: `apply_mapped_status`,
+`resolve_default_trust`, `DispatchLocks`, the idempotency/attempt logic, and
+every other piece of `dispatcher.rs`'s design were untouched. The blast
+radius was exactly the two DTOs/variant the brief named, plus the direct
+consumers of each.
+
+**Green:** `cargo test --workspace --no-fail-fast`: 472 passed, 0 failed.
+`cargo clippy --workspace --all-targets -- -D warnings`: clean (one
+`clippy::type_complexity` hit on `FakeControlPlane`'s traces map, fixed with
+a local `type ScriptedTracesResponse = (Vec<RemoteEvent>, Option<String>)`
+alias). `cargo fmt --all -- --check`: clean.
+
+**What's still open, for whoever's next.** `lib.rs` is no longer frozen, but
+nothing else about it needed to change for this card — `enqueue_task`'s
+`Result<String, OrchError>` return type still can't carry `status`/
+`approvalToken`, so `dispatcher::dispatch_item` still makes the one
+follow-up `list_tasks` call C1 designed; widening that is a real, separate
+future change if the extra round trip ever needs to go away, not something
+this card had reason to touch. `ControlPlane::dispatch`/`decide_approval`
+remain `Disabled`, unchanged — still Wave 4's territory.
