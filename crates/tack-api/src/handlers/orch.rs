@@ -404,7 +404,16 @@ pub struct UpsertOrchLinkRequest {
 /// auto-transitions are real (TODO.md §0 rule 7 is about the transition itself,
 /// applied later by the dispatcher/reconciler — this is the save-time guard
 /// that keeps a typo from silently becoming a no-op transition).
-fn validate_status_map(status_map: &StatusMap, workflow: &WorkflowConfig) -> ApiResult<()> {
+///
+/// `pub(crate)`, not private: card D3 (template `orchestration.status_map`,
+/// TODO.md §6) reuses this verbatim from `handlers::templates` rather than
+/// writing a second validator against the template's own workflow — see that
+/// module's `validate_template_orchestration`. Only the visibility changed;
+/// the logic below is untouched.
+pub(crate) fn validate_status_map(
+    status_map: &StatusMap,
+    workflow: &WorkflowConfig,
+) -> ApiResult<()> {
     let exists = |name: &str| workflow.statuses.iter().any(|s| s.name == name);
 
     for name in &status_map.dispatch_from {
@@ -749,6 +758,130 @@ async fn count_pending_approvals(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// GET /api/projects/{id}/orch-budget — budget cap vs. mirrored spend (card D2,
+// task 36.3)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Reuses `project_task_usage` and the exact unreachable-vs-zero staleness rule
+// `GET /api/fleet` already established (TODO.md §0 rule 6) — this endpoint
+// exists because a project detail panel (card D2) wants this data keyed by
+// `project_id` alone, without pulling every other linked project's row the way
+// `/fleet` does.
+//
+// **What this endpoint deliberately does NOT report: whether the pod is
+// budget-paused.** docket auto-pauses a pod's Lead once its own budget cap is
+// reached (`core/dispatch.py::_pause_lead_for_budget`, confirmed by reading
+// the source directly) and refuses every further task claim until an operator
+// runs `docket profile <lead-id> --resume` — there is no HTTP route to clear
+// this (`serve.py`'s full `do_GET`/`do_POST` route table has no `/profile`,
+// no pause/resume endpoint at all). Reading that state isn't reachable
+// either: `GET /status.json`'s per-agent record (`serve.py::_agent_record`)
+// and `GET /metrics` (`render_metrics`) both omit the `paused`/`pausedReason`
+// fields entirely — verified by reading both functions' exact output line by
+// line, not inferred — even though `core/models.py::AgentMeta` tracks them
+// internally. The one proxy that exists, a `paused_refused` trace event
+// (`core/dispatch.py::_claim_next_task`), already flows into Tack via card
+// B2's trace-event ingestion (`orch_events`) — but not attributably: that
+// event's `session_id` is the generic `"agent:<project>:dispatch"` form,
+// which B2's own per-item correlation (`reconciler::session_id_task_id`)
+// never matches (by design — it isn't a task id), so it lands with
+// `item_id = NULL`; and `orch_events` has no `remote_project` column at all,
+// only `control_plane_id`, which is many-to-one against Tack projects
+// (`orch_links`). So a `paused_refused` row cannot be resolved back to
+// *which* linked project's pod paused — showing a "paused" indicator here
+// would mean either guessing (wrong the moment a control plane has more than
+// one linked project) or a real ingestion change (persisting
+// `RemoteEvent.project`/a `remote_project` column and correlating
+// `paused_refused` at the project level, not the item level), which is out of
+// this card's scope. See TODO.md §6 (card D2) for the full write-up and the
+// proposed fix. This endpoint stays honest by omission rather than guessing.
+
+/// `GET /api/projects/{id}/orch-budget` response.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct OrchBudgetResponse {
+    pub linked: bool,
+    pub control_plane_id: Option<Uuid>,
+    pub control_plane_name: Option<String>,
+    /// `"unknown"` | `"healthy"` | `"degraded"` | `"unreachable"`. `None` only
+    /// when `linked` is `false`.
+    pub health: Option<String>,
+    /// User-set cap (`orch_links.budget_usd`) — `None` if unlinked or unset.
+    /// Deliberately unsuffixed, same convention as `FleetEntry::budget_usd`.
+    pub budget_usd: Option<f64>,
+    /// Summed from `orch_tasks` for this project's items. Real, historical
+    /// data — always present (never null) regardless of `linked`, since a
+    /// project can accumulate mirrored dispatch history and later be
+    /// unlinked without that history becoming false.
+    pub tokens_in: i64,
+    pub tokens_out: i64,
+    /// `None` when unlinked, when the linked plane is `unreachable`, or when
+    /// its health can't be resolved — never coerced to a confident-looking
+    /// zero. `Some(0.0)` means the plane is reachable and genuinely has no
+    /// mirrored cost yet.
+    pub cost_usd_estimated: Option<f64>,
+    /// Always `None` today — no pricing-snapshot mechanism exists yet
+    /// (TODO.md §0 rule 6).
+    pub pricing_snapshot_at: Option<String>,
+}
+
+/// `GET /api/projects/{id}/orch-budget`.
+#[utoipa::path(
+    get,
+    path = "/api/projects/{id}/orch-budget",
+    tag = "orchestration",
+    params(("id" = Uuid, Path, description = "Project ID")),
+    responses(
+        (status = 200, description = "This project's budget cap vs. estimated spend to date", body = OrchBudgetResponse),
+        (status = 404, description = "Orchestration disabled (TACK_ORCH_ENABLE unset)"),
+    ),
+)]
+#[instrument(skip(state))]
+pub async fn get_orch_budget(
+    State(state): State<AppState>,
+    Path(project_id): Path<Uuid>,
+) -> ApiResult<Json<OrchBudgetResponse>> {
+    let link = state.repo.get_orch_link(project_id).await?;
+    let usage = project_task_usage(state.pool(), project_id).await?;
+
+    let Some(link) = link else {
+        return Ok(Json(OrchBudgetResponse {
+            linked: false,
+            control_plane_id: None,
+            control_plane_name: None,
+            health: None,
+            budget_usd: None,
+            tokens_in: usage.tokens_in,
+            tokens_out: usage.tokens_out,
+            cost_usd_estimated: None,
+            pricing_snapshot_at: None,
+        }));
+    };
+
+    let plane = state
+        .repo
+        .get_control_plane(link.control_plane_id)
+        .await
+        .ok();
+    let health = plane.as_ref().map(|p| p.health.clone());
+    let cost_usd_estimated = match health.as_deref() {
+        Some("unreachable") | None => None,
+        Some(_) => Some(usage.cost_usd_estimated),
+    };
+
+    Ok(Json(OrchBudgetResponse {
+        linked: true,
+        control_plane_id: Some(link.control_plane_id),
+        control_plane_name: plane.map(|p| p.name),
+        health,
+        budget_usd: link.budget_usd,
+        tokens_in: usage.tokens_in,
+        tokens_out: usage.tokens_out,
+        cost_usd_estimated,
+        pricing_snapshot_at: None,
+    }))
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // GET /api/metrics — Tack's own work-tracking metrics merged with the latest
 // mirrored docket sample per metric/label set (card B3, task 34.7)
 // ════════════════════════════════════════════════════════════════════════════
@@ -952,6 +1085,198 @@ pub async fn get_metrics(State(state): State<AppState>) -> ApiResult<Response> {
         body,
     )
         .into_response())
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// GET /api/projects/{id}/orch-policy — guardrail/tool-call/approval metrics
+// for this project's linked control plane (card D2, task 36.4)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// **Control-plane-wide, not project-scoped — read this before trusting a
+// number here as "this project's" anything.** docket's own `/metrics`
+// (`serve.py::render_metrics`/`_collect_trace_loop_metrics`, confirmed by
+// reading the source) folds every linked project's trace files together
+// fleet-wide; there is no per-project breakdown anywhere in docket's
+// guardrail/approval/tool-call counters. Card B3's ingestion mirrors that same
+// fleet-wide shape into `orch_metrics`, keyed by `(control_plane_id, name,
+// labels)` — no `remote_project` label exists to filter on, because docket
+// never emits one. So every figure this endpoint returns describes *the whole
+// control plane this project is linked to*, not just this project's own
+// agents — on a control plane with more than one linked project, these
+// numbers are shared identically across every one of them. This is disclosed
+// on the wire (`scoped_to_control_plane_only: true`, always present, never
+// false) rather than left for a caller to assume, and the frontend panel
+// repeats the caveat in its own copy.
+//
+// Chain-verification of the audit log backing these counters (tamper
+// detection) is deliberately not reimplemented here — `docket audit verify`
+// (CLI-only) already does this against the pod's own `DOCKET_HOME`; the
+// frontend panel links out to it as a command to run, per the card's explicit
+// instruction not to build a second verifier in Rust.
+
+/// One `docket_tool_calls_total{decision=...}` sample.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct ToolCallEntry {
+    /// `"allow"` | `"ask"` | `"deny"` — docket's own closed vocabulary
+    /// (`core/tools.py`'s tool-gate decisions), shown verbatim so an
+    /// unrecognised future value still renders rather than being dropped.
+    pub decision: String,
+    pub count: f64,
+}
+
+/// One `docket_policy_hits_total{policy_id=...,hook=...,action=...}` sample.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct PolicyHitEntry {
+    pub policy_id: String,
+    /// `"pre_input"` | `"pre_output"` | `"pre_tool_call"`.
+    pub hook: String,
+    /// `"block"` | `"require_approval"` | `"ask"` | `"warn"` | `"redact"` — docket's
+    /// own vocabulary, shown verbatim.
+    pub action: String,
+    pub count: f64,
+}
+
+/// One `docket_approvals_total{channel=...,outcome=...}` sample.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct ApprovalChannelEntry {
+    /// `"cli"` | `"http"` | `"mcp"` | `"telegram"` | `"tack"` | `"timeout"`.
+    pub channel: String,
+    /// `"granted"` | `"denied"` — a `"timeout"` channel always resolves
+    /// `"denied"` (a fail-closed expiry, never a human decision; see
+    /// `core/approval.py`).
+    pub outcome: String,
+    pub count: f64,
+}
+
+/// `GET /api/projects/{id}/orch-policy` response.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct OrchPolicyResponse {
+    pub linked: bool,
+    pub control_plane_id: Option<Uuid>,
+    pub control_plane_name: Option<String>,
+    /// `"unknown"` | `"healthy"` | `"degraded"` | `"unreachable"`. `None` only
+    /// when `linked` is `false`.
+    pub health: Option<String>,
+    /// Always `true` — see the module doc above. Present on the wire so a
+    /// caller can't mistake this response for per-project data just because a
+    /// `project_id` is in the URL.
+    pub scoped_to_control_plane_only: bool,
+    /// Latest scrape time across every sample folded into this response, or
+    /// `None` if the plane has never reported guardrail metrics.
+    pub scraped_at: Option<DateTime<Utc>>,
+    pub tool_calls: Vec<ToolCallEntry>,
+    /// `deny / (allow + ask + deny)`. `None` when no tool-gate decisions have
+    /// been observed at all — deliberately not `0.0`, since zero would claim
+    /// a clean, evaluated history rather than "no data yet".
+    pub denial_rate: Option<f64>,
+    pub policy_hits: Vec<PolicyHitEntry>,
+    pub approvals_by_channel: Vec<ApprovalChannelEntry>,
+}
+
+/// `GET /api/projects/{id}/orch-policy`.
+#[utoipa::path(
+    get,
+    path = "/api/projects/{id}/orch-policy",
+    tag = "orchestration",
+    params(("id" = Uuid, Path, description = "Project ID")),
+    responses(
+        (status = 200, description = "Guardrail/tool-call/approval metrics for this project's linked control plane (control-plane-wide — see scoped_to_control_plane_only)", body = OrchPolicyResponse),
+        (status = 404, description = "Orchestration disabled (TACK_ORCH_ENABLE unset)"),
+    ),
+)]
+#[instrument(skip(state))]
+pub async fn get_orch_policy(
+    State(state): State<AppState>,
+    Path(project_id): Path<Uuid>,
+) -> ApiResult<Json<OrchPolicyResponse>> {
+    let link = state.repo.get_orch_link(project_id).await?;
+    let Some(link) = link else {
+        return Ok(Json(OrchPolicyResponse {
+            linked: false,
+            control_plane_id: None,
+            control_plane_name: None,
+            health: None,
+            scoped_to_control_plane_only: true,
+            scraped_at: None,
+            tool_calls: Vec::new(),
+            denial_rate: None,
+            policy_hits: Vec::new(),
+            approvals_by_channel: Vec::new(),
+        }));
+    };
+
+    let plane = state
+        .repo
+        .get_control_plane(link.control_plane_id)
+        .await
+        .ok();
+    let health = plane.as_ref().map(|p| p.health.clone());
+    let control_plane_name = plane.map(|p| p.name);
+
+    let samples = state.repo.list_latest_orch_metrics().await?;
+    let mine: Vec<&OrchMetricLatest> = samples
+        .iter()
+        .filter(|s| s.control_plane_id == link.control_plane_id)
+        .collect();
+
+    let scraped_at = mine.iter().map(|s| s.scraped_at).max();
+
+    let mut tool_calls = Vec::new();
+    let mut allow_total = 0.0;
+    let mut ask_total = 0.0;
+    let mut deny_total = 0.0;
+    let mut policy_hits = Vec::new();
+    let mut approvals_by_channel = Vec::new();
+
+    for s in &mine {
+        match s.name.as_str() {
+            "docket_tool_calls_total" => {
+                let decision = s.labels.get("decision").cloned().unwrap_or_default();
+                match decision.as_str() {
+                    "allow" => allow_total += s.value,
+                    "ask" => ask_total += s.value,
+                    "deny" => deny_total += s.value,
+                    _ => {}
+                }
+                tool_calls.push(ToolCallEntry {
+                    decision,
+                    count: s.value,
+                });
+            }
+            "docket_policy_hits_total" => {
+                policy_hits.push(PolicyHitEntry {
+                    policy_id: s.labels.get("policy_id").cloned().unwrap_or_default(),
+                    hook: s.labels.get("hook").cloned().unwrap_or_default(),
+                    action: s.labels.get("action").cloned().unwrap_or_default(),
+                    count: s.value,
+                });
+            }
+            "docket_approvals_total" => {
+                approvals_by_channel.push(ApprovalChannelEntry {
+                    channel: s.labels.get("channel").cloned().unwrap_or_default(),
+                    outcome: s.labels.get("outcome").cloned().unwrap_or_default(),
+                    count: s.value,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    let total_tool_calls = allow_total + ask_total + deny_total;
+    let denial_rate = (total_tool_calls > 0.0).then_some(deny_total / total_tool_calls);
+
+    Ok(Json(OrchPolicyResponse {
+        linked: true,
+        control_plane_id: Some(link.control_plane_id),
+        control_plane_name,
+        health,
+        scoped_to_control_plane_only: true,
+        scraped_at,
+        tool_calls,
+        denial_rate,
+        policy_hits,
+        approvals_by_channel,
+    }))
 }
 
 // ════════════════════════════════════════════════════════════════════════════

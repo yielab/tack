@@ -1,0 +1,149 @@
+// Wire-format boundary for the project-settings "Orchestration" panel (TODO.md
+// Wave 4, card D2, tasks 36.3/36.4: budget + policy panels). Every assumption
+// about `GET/PUT /api/projects/{id}/orch-link`, `GET /api/control-planes`,
+// `GET /api/projects/{id}/orch-budget`, and `GET /api/projects/{id}/orch-policy`
+// lives in this one file — `BudgetPanel.tsx`, `PolicyPanel.tsx`,
+// `LinkForm.tsx`, and `OrchestrationPanel.tsx` only ever import types and
+// functions from here, never construct a request body or read a raw wire
+// field themselves. Mirrors the pattern A5 set for `features/fleet/api.ts`
+// and D1/C4 repeated for `features/approvals/api.ts`/`shared/dispatch/api.ts`.
+//
+// Every field below is copied field-for-field from the real Rust handler
+// (`crates/tack-api/src/handlers/orch.rs` — `OrchLinkView`/`OrchLinkResponse`,
+// `ControlPlaneResponse`, `OrchBudgetResponse`, `OrchPolicyResponse`), written
+// after the backend landed in the same session (not a guess).
+//
+// **No "paused" field anywhere in here, deliberately.** `OrchBudgetResponse`'s
+// own doc comment (`handlers/orch.rs`) explains why: docket has no HTTP route
+// to clear a budget pause, and the one read-side proxy that exists (a
+// `paused_refused` trace event) can't be attributed to a single linked
+// project with Tack's current schema. See TODO.md §6 (card D2) for the full
+// write-up. Do not add a `paused`/`is_paused` field here without first
+// closing that gap server-side — a client-invented pause indicator would be
+// exactly the "silently does nothing" control the card explicitly warns
+// against.
+
+import { request, ApiError } from '../../../shared/api/client';
+
+/** `"unknown"` | `"healthy"` | `"degraded"` | `"unreachable"` — the
+ *  reconciler's health state machine, persisted verbatim. `null` only when
+ *  the project (or, for policy, no metrics have ever been scraped) has
+ *  nothing to report health for. */
+export type ControlPlaneHealth = 'healthy' | 'degraded' | 'unreachable' | 'unknown';
+
+/** One row of `GET /api/control-planes` — only the fields the link form's
+ *  picker needs. */
+export interface ControlPlaneOption {
+  id: string;
+  name: string;
+  kind: string;
+  health: ControlPlaneHealth;
+}
+
+export interface OrchLink {
+  project_id: string;
+  control_plane_id: string;
+  remote_project: string;
+  pipeline_file: string | null;
+  blueprint: string | null;
+  auto_dispatch: boolean;
+  budget_usd: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OrchLinkView {
+  linked: boolean;
+  link: OrchLink | null;
+}
+
+export interface UpsertOrchLinkBody {
+  control_plane_id: string;
+  remote_project: string;
+  budget_usd?: number | null;
+}
+
+/** `GET /api/projects/{id}/orch-budget` response. */
+export interface OrchBudget {
+  linked: boolean;
+  control_plane_id: string | null;
+  control_plane_name: string | null;
+  health: ControlPlaneHealth | null;
+  /** User-set cap — `null` if unlinked or never set. */
+  budget_usd: number | null;
+  /** Always a real, present number — never null, even when unlinked (a
+   *  project can carry real dispatch history after being unlinked). */
+  tokens_in: number;
+  tokens_out: number;
+  /** `null` = stale/unknown (unlinked, or the linked plane is unreachable).
+   *  `0` = a reachable plane that genuinely has nothing mirrored yet. */
+  cost_usd_estimated: number | null;
+  /** Always `null` today — no pricing-snapshot mechanism exists yet
+   *  (TODO.md §0 rule 6). */
+  pricing_snapshot_at: string | null;
+}
+
+export interface ToolCallEntry {
+  /** `"allow"` | `"ask"` | `"deny"` — shown verbatim for any other value. */
+  decision: string;
+  count: number;
+}
+
+export interface PolicyHitEntry {
+  policy_id: string;
+  hook: string;
+  action: string;
+  count: number;
+}
+
+export interface ApprovalChannelEntry {
+  channel: string;
+  outcome: string;
+  count: number;
+}
+
+/** `GET /api/projects/{id}/orch-policy` response. Every figure here is
+ *  **control-plane-wide**, not scoped to just this project — see
+ *  `scoped_to_control_plane_only` (always `true` when present) and this
+ *  file's exported `POLICY_SCOPE_CAVEAT` copy. docket's own `/metrics` has
+ *  no per-project breakdown at all (confirmed by reading `serve.py` — every
+ *  guardrail/tool-call/approval counter folds every linked project's trace
+ *  files together), so Tack's mirrored `orch_metrics` inherits the same
+ *  fleet-wide shape. */
+export interface OrchPolicy {
+  linked: boolean;
+  control_plane_id: string | null;
+  control_plane_name: string | null;
+  health: ControlPlaneHealth | null;
+  scoped_to_control_plane_only: boolean;
+  scraped_at: string | null;
+  tool_calls: ToolCallEntry[];
+  /** `deny / (allow + ask + deny)`. `null` — never `0` — when no tool-gate
+   *  decision has been observed at all. */
+  denial_rate: number | null;
+  policy_hits: PolicyHitEntry[];
+  approvals_by_channel: ApprovalChannelEntry[];
+}
+
+export const orchestrationApi = {
+  getLink: (projectId: string) => request<OrchLinkView>(`/projects/${projectId}/orch-link`),
+  putLink: (projectId: string, body: UpsertOrchLinkBody) =>
+    request<OrchLink>(`/projects/${projectId}/orch-link`, {
+      method: 'PUT',
+      body: JSON.stringify({ ...body, status_map: {} }),
+    }),
+  listControlPlanes: () => request<ControlPlaneOption[]>('/control-planes'),
+  getBudget: (projectId: string) => request<OrchBudget>(`/projects/${projectId}/orch-budget`),
+  getPolicy: (projectId: string) => request<OrchPolicy>(`/projects/${projectId}/orch-policy`),
+};
+
+/** True when a request failed because orchestration is disabled server-side
+ *  (`TACK_ORCH_ENABLE` unset ⇒ every orch route 404s, TODO.md §0 rule 8) —
+ *  distinct from any other failure. Duplicated from `features/fleet/api.ts`
+ *  rather than imported, matching the cross-feature-boundary precedent
+ *  `shared/agentActivity/api.ts` already set (see that file's header
+ *  comment) — this module lives in `features/settings/**`, not `shared/**`,
+ *  so it shouldn't reach into another feature's file for a three-line check. */
+export function isOrchDisabled(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 404;
+}
