@@ -7,8 +7,50 @@ four non-negotiable design rules. **This file holds the dispatch plan** — writ
 picked up cold by parallel Sonnet agents.
 
 Reciprocal upstream work lives in `~/Sites/rack-cli/ROADMAP.md` → **PHASE 22 — Control-plane
-write API for an external plan-of-record (Tack)**, cards P22-1…P22-7. Two Tack phases are
-hard-blocked on it (35 needs P22-1, 37 needs P22-5).
+write API for an external plan-of-record (Tack)**, cards P22-1…P22-7. ~~Two Tack phases are
+hard-blocked on it (35 needs P22-1, 37 needs P22-5).~~ **Corrected 2026-08-05: docket shipped
+P22-1…P22-4 and P22-6. Only Phase 37 is still blocked (needs P22-5, `POST /pods`).**
+
+---
+
+## Status board — updated 2026-08-05
+
+Every card below has a handoff note in §6 with its full reasoning.
+
+| Card | What it is | Status |
+|---|---|---|
+| W0-A · W0-B | tack-orch crate, trait + DTOs; migrations 019–024 | ✅ done |
+| A1 · A2 · A3 | docket adapter; reconciler + health machine; orch repository | ✅ done |
+| A4 · A5 · A6 | config + control-plane API + fleet endpoint; Fleet view; docs | ✅ done |
+| A7 | real `ControlPlaneStore` + adapter registry (closed a gap no card owned) | ✅ done |
+| A8 · A9 | `/fleet` a11y coverage; **backup token leak fix** (was mis-scheduled into C4) | ✅ done |
+| A10 · A11 · A12 | WCAG AA contrast audit and fixes across the design system | ✅ done |
+| B1 · B2 · B3 | runs + approvals ingestion; trace ingestion; metrics + retention | ✅ done |
+| B4 · B5 | realtime broadcast; Agent Activity tab + shared state chip | ✅ done |
+| B6 · B7 | agent-activity endpoints; retention-truncation disclosure in the UI | ✅ done |
+| V1 | live verification of the docket adapter against a running server | ✅ done |
+| C1 · C2 | dispatcher + `status_map`; auto-dispatch + **prompt-injection trust boundary** | ✅ done |
+| C3 · C4 · C5 | DAG-ordered sprint dispatch + dry-run; dispatch UI; terminal status mapping | ✅ done |
+| R1 | unfroze the trait: opaque trace cursor + typed policy-block error | ✅ done |
+| R2 · R3 | WIP-limit race — dispatch path, then board-drag and voice paths | ✅ done |
+| D1 | approvals inbox + proxy, behind a separate decision credential | ✅ done |
+| F1 | per-sprint accessible names on the Run sprint control | ✅ done |
+| **D2** | budget, pause, and policy panels | ⬜ **not started** — first task is to establish what docket exposes over HTTP; do not build a pause control that cannot work |
+| **D3** | template `orchestration` block + pipeline library | ⬜ **not started** |
+| **D5** | unit economics (tokens, estimated cost, lead time, rework rate) | ⬜ **not started** |
+| **D4** | provisioning flow + wizard | 🔴 **blocked** — needs docket `POST /pods`, which does not exist |
+
+**Known gaps, carried deliberately** (each is written up in the §6 note of the card that found it):
+
+- `orch_events_daily` drops `item_id` on rollup, so per-item history truncation is
+  reported by heuristic rather than fact (B6/B7).
+- The Linear import has no HTTP-level trust test, because its GraphQL endpoint is not
+  configurable for a mock server the way `TACK_GITHUB_API_BASE` is (C2).
+- `parse_policy_block` still reads the policy id out of docket's error *prose*; docket
+  has no structured field for it. A docket-side fix (R1).
+- Board/List/Table each open their own WebSocket per project (B4).
+- 3 pre-existing frontend unit-test failures (`requestBlob`/`createObjectURL`),
+  independently confirmed to predate this cycle.
 
 ---
 

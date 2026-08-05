@@ -1196,7 +1196,33 @@ Both are tracked as a docket-side work package in `~/Sites/rack-cli/ROADMAP.md`
   task with its own backoff, exactly like the existing due-soon and backup schedulers
   in [server.rs](../../../crates/tack-api/src/server.rs).
 
-### Schema added this cycle (migrations 019–024, all landed by one owner in Task 33.2)
+### Status of this cycle as of 2026-08-05
+
+Built by a multi-agent run tracked in [`TODO.md`](../../../TODO.md); every card's
+handoff note is in that file's §6.
+
+| Phase | Status | Notes |
+|---|---|---|
+| 33 — Control-Plane Link (read-only) | ✅ **done** | Reconciler polls a live docket; Fleet view ships |
+| 34 — Run Mirroring & Telemetry | ✅ **done** | Runs, approvals, traces, metrics, retention, realtime, Agent Activity UI |
+| 35 — Dispatch | ✅ **done** | Item + DAG-ordered sprint dispatch, trust boundary, dispatch UI |
+| 36 — Governance Surface | 🟡 **partial** | Approvals inbox done (D1). Budget/pause/policy panels (D2) not started |
+| 37 — Factory Provisioning | 🔴 **blocked** | Needs docket `POST /pods`, which does not exist. The only genuinely blocked phase |
+| 38 — Unit Economics | ⬜ **not started** | D5 |
+
+Also outstanding: **D3** (template `orchestration` block + pipeline library).
+
+**Corrections made during the run, worth carrying forward:**
+
+- Phases 34 and 35 were marked blocked on docket endpoints that **had already
+  shipped**. docket's own `ROADMAP.md` still lists them as `TODO` and is stale against
+  its source; `src/docket/serve.py` is the authority. Re-verify before trusting any
+  "blocked" marker.
+- The `POST /tasks/{project}` response shape documented in `TODO.md` §1.4 was wrong;
+  corrected after live verification.
+- Migrations run to **029**, not 024 — see the corrected table below.
+
+### Schema added this cycle (migrations 019–029)
 
 | Migration | Table | Purpose |
 |---|---|---|
@@ -1206,11 +1232,16 @@ Both are tracked as a docket-side work package in `~/Sites/rack-cli/ROADMAP.md`
 | 022 | `orch_runs` | mirror of `/runs` — `run_id` PK, `control_plane_id, remote_project, source, state, started_at, ended_at, error, item_id` |
 | 023 | `orch_events` | append-only telemetry (hops, verdicts, rework, tool calls, `status_map_rejected`); index `(item_id, occurred_at)` |
 | 024 | `orch_approvals` | mirror of `/approvals`, correlated to items via `context.taskId`; `token` PK |
+| 025 | `orch_metrics` | mirror of docket's Prometheus `/metrics` scrape |
+| 026 | `orch_events_daily` | per-day aggregate of purged `orch_events`. Keyed `(day, control_plane_id, event_type)` — **drops `item_id`**, so per-item history truncation is not recoverable from the aggregate |
+| 027 | `orch_metrics_daily` | per-day aggregate of purged `orch_metrics`; non-finite samples counted but excluded from sum/min/max |
+| 028 | `orch_trace_cursors` | resumption cursor per `(control_plane_id, remote_project)`, stored opaque |
+| 029 | `items.source` | sticky provenance for the prompt-injection trust boundary; defaults to `unknown`, which resolves to untrusted |
 
 Agent state is **not** denormalized onto `items` — the board query LEFT JOINs the latest
 `orch_tasks` row. Revisit only if profiling says so.
 
-### Phase 33 — Control-Plane Link (read-only) 🟡 _planned-next_
+### Phase 33 — Control-Plane Link (read-only) ✅ _done 2026-08-05_
 
 **Goal:** See the whole agent fleet from inside Tack, with **zero write path** to
 docket. Independently shippable and safe to run against a live fleet.
@@ -1291,7 +1322,7 @@ flips the control plane to `degraded` then `unreachable` without a single failed
 request or a `database is locked` error; with the flag off, no reconciler task is
 spawned and no new route accepts traffic.
 
-### Phase 34 — Run Mirroring & Telemetry 🟡 _planned_
+### Phase 34 — Run Mirroring & Telemetry ✅ _done 2026-08-05_
 
 **Goal:** Every run, hop, verdict, approval, and token is visible in Tack, live, and
 attributable to an item.
@@ -1359,7 +1390,7 @@ the run in Tack within one poll interval; the item timeline shows every hop with
 counts; every money figure in the UI reads "estimated"; a 90-day-old event is gone but
 its day's aggregate survives.
 
-### Phase 35 — Dispatch: Tack drives the factory 🟡 _planned — blocked on docket `POST /tasks`_
+### Phase 35 — Dispatch: Tack drives the factory ✅ _done 2026-08-05 — the `POST /tasks` block was incorrect; docket had already shipped it_
 
 **Goal:** Moving a card dispatches a governed agent pipeline.
 
@@ -1437,7 +1468,7 @@ construction project with a linear workflow refuses an illegal auto-move and sho
 `GET /api/backup` contains no control-plane token; with `TACK_ORCH_ENABLE` unset, every
 dispatch route 404s.
 
-### Phase 36 — Governance Surface 🟡 _planned_
+### Phase 36 — Governance Surface 🟡 _partial — approvals inbox done; budget/pause/policy panels not started_
 
 **Goal:** Approve, pause, and audit the fleet from the board.
 
@@ -1476,7 +1507,7 @@ stays honest instead of every board decision masquerading as `http`.
 one poll interval, granting it from Tack resumes the pipeline, and
 `docket audit verify` shows the entry tagged `channel="tack"`.
 
-### Phase 37 — Factory Provisioning 🟡 _planned — blocked on docket pod-provisioning endpoint_
+### Phase 37 — Factory Provisioning 🔴 _blocked — docket has no `POST /pods`; verified against `serve.py`, not its roadmap_
 
 **Goal:** One click creates a product: a Tack project **and** its governed pod,
 pipeline, verify command, and budget. This is what makes it a factory rather than a
@@ -1519,7 +1550,7 @@ vocabulary **and** a `docket list` entry with the right roles, models, budget, a
 verify command; a forced failure mid-provision leaves neither a stray project nor a
 stray pod.
 
-### Phase 38 — Unit Economics & Optimization 🟡 _planned_
+### Phase 38 — Unit Economics & Optimization ⬜ _not started_
 
 **Goal:** Answer "which product lines are economical to build with agents?" — the
 question a factory operator actually has, and one nobody can currently answer.
