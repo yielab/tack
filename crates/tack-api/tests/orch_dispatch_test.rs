@@ -367,6 +367,11 @@ async fn dispatch_blocked_surfaces_the_policy_and_creates_no_orch_task() {
     );
     let v = body_json(res).await;
     assert_eq!(v["outcome"], "blocked");
+    assert_eq!(
+        v["policy_id"], "prompt-injection",
+        "policy id must be a typed field (OrchError::PolicyBlocked, card R1), \
+         not something the caller parses out of message: {v}"
+    );
     assert!(
         v["message"].as_str().unwrap().contains("prompt-injection"),
         "must name the policy id: {v}"

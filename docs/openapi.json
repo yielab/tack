@@ -4494,10 +4494,17 @@
               "string",
               "null"
             ],
-            "description": "Present only when `outcome == \"blocked\"` — docket's own message,\nnaming the guardrail policy id."
+            "description": "Present only when `outcome == \"blocked\"` — docket's own message,\nverbatim, for display."
           },
           "outcome": {
             "type": "string"
+          },
+          "policy_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Present only when `outcome == \"blocked\"` — the id of the guardrail\npolicy that fired (`OrchError::PolicyBlocked::policy_id`, card R1),\nas a typed field rather than something a caller has to parse back out\nof `message`."
           },
           "status_applied": {
             "type": [

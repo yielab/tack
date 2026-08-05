@@ -238,11 +238,11 @@ async fn list_tasks_happy_path_against_a_live_captured_shape() {
 // enqueue_task — POST /tasks/{project} (card C1, Wave 3, 2026-08-05)
 //
 // All three of docket's real `pre_input` outcomes (card V1's live
-// verification): allow (200, task id), block (400, policy id in the error
-// text), require_approval (200, same shape as allow — `status`/
-// `approvalToken` are real but this method's frozen return type can't carry
-// them, see the module doc). Plus the `trusted` flag really reaching the
-// wire, since that's the prompt-injection boundary C2 builds on.
+// verification): allow (200, task id), block (400, typed `PolicyBlocked`
+// carrying the policy id), require_approval (200, same shape as allow —
+// `status`/`approvalToken` are real but this method's return type can't
+// carry them, see the module doc). Plus the `trusted` flag really reaching
+// the wire, since that's the prompt-injection boundary C2 builds on.
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -304,7 +304,7 @@ async fn enqueue_task_waiting_approval_still_returns_ok_with_the_task_id() {
 }
 
 #[tokio::test]
-async fn enqueue_task_block_maps_to_http_error_naming_the_policy() {
+async fn enqueue_task_block_maps_to_policy_blocked_naming_the_policy() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/tasks/demo"))
@@ -328,18 +328,17 @@ async fn enqueue_task_block_maps_to_http_error_naming_the_policy() {
         .await
         .expect_err("a block verdict must not be Ok");
     match err {
-        OrchError::Http(msg) => {
-            assert!(
-                msg.starts_with(tack_orch::adapters::docket::POLICY_BLOCK_PREFIX),
-                "message must carry the policy-block prefix so dispatcher can \
-                 distinguish a refusal from a generic failure: {msg}"
+        OrchError::PolicyBlocked { policy_id, message } => {
+            assert_eq!(
+                policy_id, "prompt-injection",
+                "policy id must be parsed out of docket's error text, not left in message only: {message}"
             );
             assert!(
-                msg.contains("prompt-injection"),
-                "message must name the policy id: {msg}"
+                message.contains("prompt-injection"),
+                "message must still name the policy id verbatim: {message}"
             );
         }
-        other => panic!("expected Http (block), got {other:?}"),
+        other => panic!("expected PolicyBlocked, got {other:?}"),
     }
 }
 
@@ -419,19 +418,22 @@ async fn traces_happy_path_decodes_the_double_encoded_events_array() {
         .await;
 
     let adapter = adapter_for(&server);
-    let events = adapter
+    let page = adapter
         .traces("demo", None)
         .await
         .expect("traces must succeed against the real (double-encoded) wire shape");
-    assert_eq!(events.len(), 3);
-    assert_eq!(events[0].event_type, "tool_call");
-    assert_eq!(events[0].session_id, "agent:demo2:task-7bf4553c");
-    assert_eq!(events[0].cost_usd_estimated, Some(0.0021));
+    assert_eq!(page.events.len(), 3);
+    assert_eq!(page.events[0].event_type, "tool_call");
+    assert_eq!(page.events[0].session_id, "agent:demo2:task-7bf4553c");
+    assert_eq!(page.events[0].cost_usd_estimated, Some(0.0021));
     // The third event is a made-up, not-yet-known event type — must round
     // trip as a plain string, never fail to deserialize (see
     // `traces_list.json`'s provenance comment and `lib.rs`'s
     // `RemoteEvent::event_type` doc).
-    assert_eq!(events[2].event_type, "some_future_event_type_v3");
+    assert_eq!(page.events[2].event_type, "some_future_event_type_v3");
+    // The remote's own cursor, forwarded verbatim (card R1) — this adapter
+    // never parses or recomputes it, just passes it through.
+    assert_eq!(page.next.as_deref(), Some("2026-08-05T11:08:10Z:3"));
 }
 
 #[tokio::test]

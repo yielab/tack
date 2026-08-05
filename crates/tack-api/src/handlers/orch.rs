@@ -1291,8 +1291,13 @@ pub struct DispatchItemResponse {
     pub current_status: Option<String>,
     /// Present only when `outcome == "not_eligible"`.
     pub dispatch_from: Option<Vec<String>>,
+    /// Present only when `outcome == "blocked"` — the id of the guardrail
+    /// policy that fired (`OrchError::PolicyBlocked::policy_id`, card R1),
+    /// as a typed field rather than something a caller has to parse back out
+    /// of `message`.
+    pub policy_id: Option<String>,
     /// Present only when `outcome == "blocked"` — docket's own message,
-    /// naming the guardrail policy id.
+    /// verbatim, for display.
     pub message: Option<String>,
     /// The Tack status `status_map` named for this trigger and actually
     /// applied. Absent when `status_map` named no target for this trigger,
@@ -1314,6 +1319,7 @@ impl DispatchItemResponse {
             approval_token: None,
             current_status: None,
             dispatch_from: None,
+            policy_id: None,
             message: None,
             status_applied: None,
             status_map_rejected: None,
@@ -1337,7 +1343,8 @@ impl From<DispatchOutcome> for DispatchItemResponse {
                 task: Some(task.into()),
                 ..Self::empty("already_in_flight")
             },
-            DispatchOutcome::Blocked { message } => Self {
+            DispatchOutcome::Blocked { policy_id, message } => Self {
+                policy_id: Some(policy_id),
                 message: Some(message),
                 ..Self::empty("blocked")
             },
