@@ -30,6 +30,21 @@ export interface AgentActivityMap {
    * `refetch` already does for the item list itself.
    */
   refetch: () => void;
+  /**
+   * `true` once this same bulk fetch has resolved successfully — i.e.
+   * orchestration is enabled on this server and the project is reachable.
+   * Added by card C4 (Wave 3, dispatch UI + security gating) as the cheap,
+   * already-in-flight signal for "should dispatch controls render at all,"
+   * reusing this hook's existing request instead of adding a second probe.
+   * `false` while loading and on ANY failure, not just a 404 — the same
+   * conservative "if we can't positively confirm it's on, don't show a
+   * privileged control" posture this card's brief calls for (TODO.md §0 rule
+   * 8: off by default). `stateFor`'s own fail-open behavior is unaffected —
+   * a missing badge is still never worth degrading the view over, but
+   * showing a dispatch button that's about to 404 is a different, worse
+   * failure mode than a missing chip.
+   */
+  orchAvailable: () => boolean;
 }
 
 /**
@@ -62,5 +77,6 @@ export function useAgentActivityMap(projectId: Accessor<string | undefined>): Ag
       };
     },
     refetch: () => void refetch(),
+    orchAvailable: () => !resource.loading && resource.error === undefined,
   };
 }

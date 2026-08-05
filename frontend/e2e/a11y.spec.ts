@@ -1,6 +1,12 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { getOrCreateProject, getOrCreateItem, createItemWithAssignee, waitForApp } from './helpers';
+import {
+  getOrCreateProject,
+  getOrCreateItem,
+  createItemWithAssignee,
+  createSprintWithItem,
+  waitForApp,
+} from './helpers';
 
 // Accessibility scans (WCAG 2.0/2.1 A & AA) on the key surfaces. axe-core finds
 // the machine-detectable ~40% of issues: contrast, missing labels, ARIA misuse,
@@ -221,6 +227,201 @@ test('fleet page (populated) has no accessibility violations', async ({ page }) 
   await waitForApp(page);
   await expect(page.getByRole('table')).toBeVisible();
   await expect(page.getByText('Fleet Row Unreachable')).toBeVisible();
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+// Dispatch UI (frontend/src/shared/dispatch/**, TODO.md §6 "C4", tasks
+// 35.8/35.9). Same technique as the Fleet scans above: `TACK_ORCH_ENABLE`
+// isn't set for this harness's webServer, so every dispatch route 404s by
+// default — exactly the "no dispatch controls" state every other scan in
+// this file already covers incidentally (none of them ever see a dispatch
+// button, since it only renders once its own orchestration probe succeeds).
+// These tests intercept the specific orch routes each surface depends on to
+// render its *enabled* state, so axe actually scans the dispatch button, the
+// per-outcome note, and the sprint dry-run/results modal — not just their
+// absence.
+
+test('item detail drawer with the dispatch control visible has no accessibility violations', async ({
+  page,
+  request,
+}) => {
+  const projectId = await getOrCreateProject(request);
+  const itemId = await getOrCreateItem(request, projectId);
+
+  await page.route(`**/api/items/${itemId}/agent-activity`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ attempts: [], approvals: [], events_truncated: false, events_retention_days: 90 }),
+    }),
+  );
+
+  await page.goto(`/projects/${projectId}/board?item=${itemId}`);
+  await waitForApp(page);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Dispatch to agents' })).toBeVisible();
+
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+test('item detail drawer after a blocked dispatch outcome has no accessibility violations', async ({
+  page,
+  request,
+}) => {
+  const projectId = await getOrCreateProject(request);
+  const itemId = await getOrCreateItem(request, projectId);
+
+  await page.route(`**/api/items/${itemId}/agent-activity`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ attempts: [], approvals: [], events_truncated: false, events_retention_days: 90 }),
+    }),
+  );
+  await page.route(`**/api/items/${itemId}/dispatch`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        outcome: 'blocked',
+        task: null,
+        policy_id: 'prompt-injection',
+        message: 'destructive shell command in task description',
+      }),
+    }),
+  );
+
+  await page.goto(`/projects/${projectId}/board?item=${itemId}`);
+  await waitForApp(page);
+  await page.getByRole('button', { name: 'Dispatch to agents' }).click();
+  // The blocked outcome names the policy — the card's own correctness bar
+  // ("show WHICH policy blocked it"), and a visible marker the note actually
+  // rendered before scanning.
+  await expect(page.getByText('prompt-injection')).toBeVisible();
+
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+test('sprint "Run sprint" dry-run preview has no accessibility violations', async ({ page, request }) => {
+  const projectId = await getOrCreateProject(request);
+  const { sprintId } = await createSprintWithItem(request, projectId);
+
+  // `useAgentActivityMap`'s bulk fetch is Sprints.tsx's own "is orchestration
+  // enabled" gate for the "Run sprint" button (reusing the same probe Board.tsx
+  // uses — see `TODO.md` §6 "C4").
+  await page.route(`**/api/projects/${projectId}/agent-activity`, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ rows: [] }) }),
+  );
+  await page.route(`**/api/sprints/${sprintId}/dispatch/dry-run`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        sprint_id: sprintId,
+        max_in_flight: 5,
+        summary: {
+          total: 3,
+          dispatched: 0,
+          waiting_approval: 0,
+          blocked: 0,
+          already_in_flight: 0,
+          waiting_on_dependencies: 1,
+          not_eligible: 0,
+          no_dispatch_policy: 0,
+          would_dispatch: 2,
+          errored: 0,
+        },
+        items: [
+          { item_id: 'a', title: 'Design schema', status: 'Ready', order: 0, decision: 'would_dispatch', blocked_by: null, policy_id: null, message: null, status_applied: null, status_map_rejected: null, approval_token: null, current_status: null, dispatch_from: null, error: null, task: null },
+          { item_id: 'b', title: 'Build API', status: 'Ready', order: 1, decision: 'would_dispatch', blocked_by: null, policy_id: null, message: null, status_applied: null, status_map_rejected: null, approval_token: null, current_status: null, dispatch_from: null, error: null, task: null },
+          { item_id: 'c', title: 'Write docs', status: 'Ready', order: 2, decision: 'waiting_on_dependencies', blocked_by: ['a'], policy_id: null, message: null, status_applied: null, status_map_rejected: null, approval_token: null, current_status: null, dispatch_from: null, error: null, task: null },
+        ],
+      }),
+    }),
+  );
+
+  await page.goto(`/projects/${projectId}/sprint`);
+  await waitForApp(page);
+  await page.getByRole('button', { name: 'Run sprint' }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByText('Design schema')).toBeVisible();
+
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+test('sprint dispatch results (mixed outcomes) has no accessibility violations', async ({ page, request }) => {
+  const projectId = await getOrCreateProject(request);
+  const { sprintId } = await createSprintWithItem(request, projectId);
+
+  await page.route(`**/api/projects/${projectId}/agent-activity`, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ rows: [] }) }),
+  );
+  await page.route(`**/api/sprints/${sprintId}/dispatch/dry-run`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        sprint_id: sprintId,
+        max_in_flight: 2,
+        summary: {
+          total: 2,
+          dispatched: 0,
+          waiting_approval: 0,
+          blocked: 0,
+          already_in_flight: 0,
+          waiting_on_dependencies: 0,
+          not_eligible: 0,
+          no_dispatch_policy: 0,
+          would_dispatch: 2,
+          errored: 0,
+        },
+        items: [
+          { item_id: 'a', title: 'Item A', status: 'Ready', order: 0, decision: 'would_dispatch', blocked_by: null, policy_id: null, message: null, status_applied: null, status_map_rejected: null, approval_token: null, current_status: null, dispatch_from: null, error: null, task: null },
+          { item_id: 'b', title: 'Item B', status: 'Ready', order: 1, decision: 'would_dispatch', blocked_by: null, policy_id: null, message: null, status_applied: null, status_map_rejected: null, approval_token: null, current_status: null, dispatch_from: null, error: null, task: null },
+        ],
+      }),
+    }),
+  );
+  await page.route(`**/api/sprints/${sprintId}/dispatch`, (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        sprint_id: sprintId,
+        max_in_flight: 2,
+        summary: {
+          total: 2,
+          dispatched: 1,
+          waiting_approval: 1,
+          blocked: 0,
+          already_in_flight: 0,
+          waiting_on_dependencies: 0,
+          not_eligible: 0,
+          no_dispatch_policy: 0,
+          would_dispatch: 0,
+          errored: 0,
+        },
+        items: [
+          { item_id: 'a', title: 'Item A', status: 'Ready', order: 0, decision: 'dispatched', blocked_by: null, policy_id: null, message: null, status_applied: 'In Progress', status_map_rejected: null, approval_token: null, current_status: null, dispatch_from: null, error: null, task: null },
+          { item_id: 'b', title: 'Item B', status: 'Ready', order: 1, decision: 'waiting_approval', blocked_by: null, policy_id: null, message: null, status_applied: null, status_map_rejected: null, approval_token: 'tok-1', current_status: null, dispatch_from: null, error: null, task: null },
+        ],
+      }),
+    });
+  });
+
+  await page.goto(`/projects/${projectId}/sprint`);
+  await waitForApp(page);
+  await page.getByRole('button', { name: 'Run sprint' }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByRole('button', { name: /Confirm dispatch/ }).click();
+  // Never a merged "2 dispatched" — the two outcomes stay in separate, named counts.
+  await expect(page.getByText('1 waiting on approval')).toBeVisible();
+
   const violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 });

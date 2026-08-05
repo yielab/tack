@@ -4706,3 +4706,434 @@ follow-up `list_tasks` call C1 designed; widening that is a real, separate
 future change if the extra round trip ever needs to go away, not something
 this card had reason to touch. `ControlPlane::dispatch`/`decide_approval`
 remain `Disabled`, unchanged — still Wave 4's territory.
+
+### C3 — 2026-08-05
+
+**The card.** Task 35.4 — `POST /api/sprints/{id}/dispatch` and
+`GET /api/sprints/{id}/dispatch/dry-run`, DAG-ordered. Ran with no other
+concurrent agent in `crates/tack-orch/**`/`crates/tack-api/**` per R1's
+"run alone" note having already cleared by the time this card started;
+a concurrent frontend agent (C4) was working in `frontend/**` the whole
+time — untouched, per scope, but see the reconciliation section below,
+since C4 built its API client against a guessed shape for these two
+routes before this card landed.
+
+**The five decisions, answered up front** (full reasoning lives in the new
+module's own doc comment, `crates/tack-api/src/sprint_dispatch.rs`, since
+that's where a future maintainer will actually look):
+
+1. **Partial failure: skip the one item, continue with the rest.** A
+   policy block, a transport error, or a worker-task panic on one item
+   never aborts the others. Deliberately *not* implemented as "also skip
+   everything downstream" — that behaviour **emerges for free** from
+   decision 2: a blocked/failed item never reaches a Done-category status,
+   so everything depending on it reports `waiting_on_dependencies` on its
+   own next time it's evaluated, with no separate bookkeeping. Tested:
+   `a_policy_block_on_one_item_does_not_abort_the_rest_of_the_sprint`
+   (two independent items, one policy-blocked, the other still dispatches).
+2. **Readiness = every direct dependency is in a Done-category status
+   right now** — not "dispatched," not "succeeded" (a `RunState`, which
+   this module never touches). Checked against the *live* item table at
+   plan time. A blocker outside the sprint (even outside the project —
+   nothing in the schema forecloses that) is resolved the same way: fetch
+   it, fetch *its own* project's `WorkflowConfig`, check the category.
+   Tested: the diamond-graph tests below, plus
+   `a_dependency_outside_the_sprint_gates_readiness_the_same_way` (a
+   same-project, different-sprint blocker) and its "now Done → unblocked"
+   follow-up. **One assumption worth flagging:** the control-plane link
+   and `status_map` are resolved **once**, from the sprint's own project
+   (`sprints.project_id`), not per item — correct as long as every item in
+   a sprint belongs to that sprint's project, which the API's own routing
+   (`POST /api/projects/{id}/sprints`) makes the normal case but the
+   schema doesn't hard-enforce (an item's `project_id` and its
+   `sprint_id`'s project could theoretically diverge). Not fixed — a
+   real, narrow edge case inherited from the existing schema, not
+   introduced by this card.
+3. **Concurrency: a bounded worker pool.** Every dependency-ready item's
+   `dispatcher::dispatch_item` call goes through a `tokio::sync::Semaphore`
+   capped at `max_in_flight` (caller-supplied via **query parameter**,
+   clamped to `[1, 20]`, default 5 — see `sprint_dispatch::
+   {DEFAULT_MAX_IN_FLIGHT, MAX_MAX_IN_FLIGHT, resolve_max_in_flight}`).
+   Submission follows topological order. Verified with wall-clock timing
+   tests (mirrors C1's own technique for its concurrent-double-dispatch
+   test): 4 independent items with a 150 ms mocked enqueue delay take
+   ≥260 ms at `max_in_flight=2` (two sequential batches) and <280 ms at
+   `max_in_flight=4` (one batch) —
+   `max_in_flight_actually_bounds_concurrent_dispatch_calls` /
+   `a_generous_cap_lets_independent_items_dispatch_concurrently`.
+4. **No SQLite write transaction is ever open across an HTTP call in this
+   module**, because this module doesn't open one at all —
+   `plan_sprint_dispatch` is pure reads, and every write happens one item
+   at a time inside `dispatcher::dispatch_item`'s own
+   fetch→HTTP→short-write-txn sequence (C1's design, reused verbatim, not
+   reimplemented).
+5. **Dry-run and the real run share one planning function**,
+   `sprint_dispatch::plan_sprint_dispatch` — the topological sort plus the
+   dependency-readiness gate. Both `dry_run_sprint_dispatch` and
+   `dispatch_sprint` call it and nothing else decides ordering or the
+   `waiting_on_dependencies` skip. Zero DB writes and zero HTTP calls to
+   docket in the dry-run path — verified by construction (the dry-run
+   function never touches `dispatcher::dispatch_item`) and by
+   `real_dispatch_matches_the_dry_run_order_and_skips_exactly_as_previewed`,
+   which asserts a dry-run call and a real call immediately after produce
+   the same `order` and the same skip decisions for every item, item by
+   item. The one thing that **can't** be fully shared: per-item
+   *eligibility* (`dispatch_from` membership, already-in-flight) is
+   necessarily evaluated twice — once read-only for the dry-run preview,
+   once for real inside `dispatch_item`. To stop those two evaluations
+   from silently drifting apart, I extracted `dispatcher::
+   is_dispatch_eligible`/`dispatcher::is_active_task_status` (both
+   `pub(crate)`, previously inline logic in `dispatch_item`) and the
+   preview calls the same two functions rather than re-deriving the rule.
+   `dispatch_item` itself now calls them too — refactor only, zero
+   behavioural change, confirmed by the full existing `orch_dispatch_test.rs`
+   / `auto_dispatch_test.rs` suites staying green untouched.
+
+**What I built.**
+
+- **`crates/tack-core/src/dependency.rs`** — `DependencyGraph::
+  topological_order(&self, nodes: &[Uuid]) -> Result<Vec<Uuid>, CoreError>`.
+  Kahn's algorithm restricted to the induced subgraph on `nodes` (an edge
+  to a node outside the set is ignored — the caller checks cross-set
+  dependency readiness separately, which is exactly what
+  `plan_sprint_dispatch` does). **Deterministic**, not merely "a valid
+  order": ties break by each node's position in the input slice via a
+  `BinaryHeap<Reverse<(usize, Uuid)>>`, specifically because this
+  codebase's default `HashMap`/`HashSet` hasher is randomized per
+  instance — without this, two calls to the same function with the same
+  input could legally return two different (both valid) orders, which
+  would have made "dry-run matches the real run exactly" a coincidence
+  rather than a guarantee. On an impossible cycle (bypassing
+  `validate_new_edge`, which should make this unreachable in production)
+  it returns `Err(CoreError::DependencyCycle(_))` rather than looping or
+  truncating — TODO.md's explicit "assert anyway and fail loudly" ask.
+  8 new unit tests, including one that constructs a cycle by hand to prove
+  the fail-loud path actually fires.
+- **`crates/tack-db/src/repo/items.rs`** —
+  `list_items_for_sprint(sprint_id) -> Vec<Item>`, unpaginated (a sprint
+  dispatch that silently truncated at `ItemFilter::MAX_PER_PAGE` would be
+  exactly the kind of "looks like it worked" bug this card's dry-run mode
+  exists to prevent).
+- **`crates/tack-db/src/repo/dependencies.rs`** —
+  `list_dependencies_for_items(item_ids: &[Uuid]) -> Vec<Dependency>`, one
+  query, every dependency touching **any** of `item_ids` as either
+  endpoint, deliberately not scoped to one project (decision 2's
+  cross-project case).
+- **`crates/tack-api/src/dispatcher.rs`** — no behavioural change, a pure
+  extraction: `ACTIVE_TASK_STATUSES` is now `pub(crate)`, plus two new
+  `pub(crate)` helpers (`is_active_task_status`, `is_dispatch_eligible`)
+  that `dispatch_item` now calls instead of its old inline checks. See
+  decision 5.
+- **`crates/tack-api/src/sprint_dispatch.rs`** (new) — `plan_sprint_dispatch`
+  (the shared plan), `dry_run_sprint_dispatch`, `dispatch_sprint`. Full
+  design rationale in the module doc.
+- **`crates/tack-api/src/handlers/orch.rs`** — `dispatch_sprint`/
+  `dry_run_sprint_dispatch` HTTP handlers, `SprintDispatchQuery` (query
+  params — see the C4 reconciliation note below on why this is a query
+  param and not a JSON body), `SprintDispatchItemResponse` (one shape
+  shared by both the dry-run preview and the real-run result, so they
+  read side by side identically), `SprintDispatchSummary`,
+  `DryRunSprintDispatchResponse`, `SprintDispatchResponse`. Reuses C1's
+  own `From<DispatchOutcome> for DispatchItemResponse` for every item a
+  real run actually dispatches, rather than re-deriving the outcome→field
+  mapping.
+- **`crates/tack-api/src/router.rs`** — uncommented A4's two marked
+  insertion points verbatim.
+- **`crates/tack-api/src/openapi.rs`** / **`docs/openapi.json`** —
+  registered the two new paths and five new schemas; regenerated,
+  drift gate green.
+- **`crates/tack-api/tests/sprint_dispatch_test.rs`** (new, 13 tests) — see
+  "Acceptance criteria, verified" below.
+
+**A concurrency caveat this card surfaced but did not fix: WIP-limit races
+under genuinely concurrent dispatch.** `dispatcher::apply_mapped_status`
+checks a target status's WIP limit by reading `count_items_by_status` and
+then, separately, writing the new status — no lock spans the two. C1's
+per-item `DispatchLocks` only serializes two requests for the *same*
+item; it does nothing for two *different* items racing to move into the
+*same* target status at the same time. Before this card, that race
+required two humans (or two auto-dispatch hooks) to collide within a
+few milliseconds — rare. **This card makes concurrent dispatch of
+different items an ordinary, expected occurrence within a single
+request** (`max_in_flight` items in flight at once, submitted from one
+`dispatch_sprint` call), which makes the same pre-existing race
+meaningfully more likely to actually manifest as a WIP limit being
+briefly over-committed. Not fixed here — it's `dispatcher.rs`'s WIP-check
+logic (C1's design), and fixing it properly means either a real
+serialization point around `apply_mapped_status`'s read+write or an
+atomic conditional update, not a `sprint_dispatch.rs`-local patch.
+Flagging loudly rather than quietly shipping a card that makes an
+existing race easier to trigger.
+
+**Reconciliation needed with C4's frontend (`frontend/src/shared/
+dispatch/api.ts`) — read before wiring the UI up to these routes.** C4
+built concurrently against its own documented "best-guess, not a spec C3
+is required to match" shape (that file's own words). The real wire
+contract, field by field:
+
+| C4 guessed | Actually is | Note |
+|---|---|---|
+| `max_in_flight` sent as a **JSON body** field on `POST .../dispatch` | **Query parameter** (`?max_in_flight=N`) on both routes | Sending it as a body today is silently ignored, not rejected — my handler never declares a body extractor, so an unread JSON body is not an error, it just has no effect. This is the one mismatch that fails silently rather than loudly; fix first. |
+| Dry-run response field `default_max_in_flight` | `max_in_flight` (the resolved/clamped value the dry-run itself would use) | Same concept, different name — a rename, not a shape change. |
+| Real-dispatch response `{ sprint_id, results: [...] }` | `{ sprint_id, max_in_flight, summary: {...}, items: [...] }` | `items`, not `results`; plus a `summary` object (counts by decision) C4 didn't anticipate. |
+| Plan item: `{ item_id, title, status, position: number \| null, skip_reason: string \| null, blocked_by }` | `{ item_id, title, status, order: number, decision: string, blocked_by, ...outcome fields }` | **Every item always has a position** (`order`) — nothing is excluded from the plan the way C4's `position: null` implies. `decision` is one closed vocabulary (`"waiting_on_dependencies"`, `"no_dispatch_policy"`, `"not_eligible"`, `"already_in_flight"`, `"would_dispatch"` dry-run-only, or — real run only — `"blocked"`/`"waiting_approval"`/`"dispatched"`/`"error"`) rather than free text. |
+| Real-run item result: `{ item_id, title, outcome, policy_id, message, status_applied, status_map_rejected }` | Same fields, but the field is named `decision` not `outcome`, plus `order`, `status`, `blocked_by`, `error`, `task`, `approval_token`, `current_status`, `dispatch_from` are also present (a strict superset) | `error` is new: set when `dispatch_item` returned an `Err` or its worker task panicked (decision 1) — C4's guessed shape has no equivalent field at all. |
+
+One thing C4 guessed **correctly** and matches exactly: the dry-run
+response includes **every** sprint item, not just the eligible subset —
+so the preview can show what's excluded and why, the same shape a real
+run walks.
+
+**Acceptance criteria, verified**
+(`crates/tack-api/tests/sprint_dispatch_test.rs`, 13 tests): 404 with
+`TACK_ORCH_ENABLE` unset (both routes) and for an unknown sprint; 409 for
+an unlinked project; an empty sprint dry-runs to an empty plan; a diamond
+dependency graph (A blocks B and C, B and C both block D) dry-runs in a
+valid topological order with A ready and B/C/D all correctly held back on
+A, then — once A is marked Done — B and C become ready while D still
+waits on B and C specifically (not transitively on A); a real dispatch of
+that same diamond matches the dry-run's order and skip set item-for-item,
+with the summary counts to match; a same-project-different-sprint
+dependency gates readiness identically to an in-sprint one, and clears
+once satisfied; a policy-blocked item does not abort an unrelated
+independent item in the same sprint (partial failure); a manually-created
+item and a GitHub-imported item in the same sprint dispatch with
+`trusted: true` and `trusted: false` respectively, asserted on the wire
+via `wiremock` body matchers (the non-negotiable: trust is per item, never
+a blanket batch value); `max_in_flight` is clamped (`0`→`1`, `999`→`20`,
+`7`→`7` unchanged) and echoed back; and the two timing-based concurrency
+tests above.
+
+**Verification.** `cargo test --workspace --no-fail-fast`: 493 passed, 0
+failed (472 baseline + 8 `tack-core` topological-order tests + 13
+`sprint_dispatch_test.rs` tests = 493 exactly). `cargo clippy --workspace
+--all-targets -- -D warnings`: clean (fixed a `collapsible_if` and a
+`large_enum_variant` — `sprint_dispatch::ItemResult::Outcome` now boxes
+`DispatchOutcome`, since it otherwise dominated the enum's size at 256
+bytes even for the common no-op variants). `cargo fmt --all -- --check`:
+clean (ran `rustfmt` directly on every file this card touched, per A3's
+convention of not reformatting the whole tree mid-cycle).
+`UPDATE_OPENAPI=1 cargo test -p tack-api --test openapi_contract`:
+regenerated `docs/openapi.json`, drift gate green. Ran the timing-based
+concurrency tests 3x in a row locally to check for flakiness under
+`--test-threads=4`; stable every time (150 ms delay against ~260/280 ms
+thresholds leaves comfortable margin on ordinary CI hardware — if this
+ever turns out flaky in CI specifically, widen the delay rather than
+narrow the assertion windows).
+
+**What I did not attempt.** The dispatch UI itself (C4's scope, untouched
+— `frontend/**`). The approvals inbox (D1). Terminal-state reconciliation
+already exists from C5 and needed no changes from this card — a sprint
+dispatch's items still get their `on_succeeded`/`on_failed`/`on_cancelled`
+applied the same way a manually-dispatched item's would, since both go
+through the same `orch_store.rs` reconciler path C5 built; this card
+never touches that. Did not verify against a live docket (no scratchpad
+`DOCKET_HOME` session run for this card) — V1/R1 already live-verified
+the `enqueue_task`/`list_tasks` contract this module builds on, and this
+card's own new logic (topological order, readiness gating, the bounded
+pool) is entirely Tack-side, exercised end-to-end against `wiremock` in
+the 13 new tests instead.
+
+### C4 — 2026-08-05
+
+**The card.** Tasks 35.8/35.9 — "Dispatch to agents" on the item detail and
+the board card menu, "Run sprint" on the Sprints view with C3's dry-run
+preview and an in-flight cap control, and security gating so every dispatch
+surface disappears cleanly (not error-fully) when `TACK_ORCH_ENABLE` is
+unset. Backup-exclusion (the other half of 35.9) was already closed by A9 —
+confirmed via TODO.md §6, not redone.
+
+**Files built, all new:** `frontend/src/shared/dispatch/{api,format,notify,
+DispatchOutcomeNote,DispatchCardMenu}.ts(x)` (the wire boundary + shared
+presentation, one file per concern, mirroring A5/B5's precedent),
+`frontend/src/features/sprints/DispatchSprintModal.tsx`. **Files edited:**
+`frontend/src/features/item-detail/ItemDetailDrawer.tsx` (dispatch control +
+outcome note; also two pre-existing-bug fixes, see below),
+`frontend/src/features/board/Board.tsx` (wired `DispatchCardMenu` into
+`ItemCard`), `frontend/src/features/sprints/Sprints.tsx` ("Run sprint"
+button + modal), `frontend/src/shared/agentActivity/useAgentActivityMap.ts`
+(additive `orchAvailable` accessor, reused by both Board and Sprints as the
+"should dispatch controls render at all" gate instead of a second probe),
+`frontend/e2e/a11y.spec.ts` + `frontend/e2e/helpers.ts` (additive scans +
+`createSprintWithItem` helper).
+
+**The three outcomes, kept visually and semantically distinct — the card's
+headline correctness requirement.** `describeDispatchOutcome` in
+`shared/dispatch/format.ts` is the one place every dispatch/decision value
+maps to a tone+label; every call site (item detail, board menu toast, sprint
+modal) goes through it or `notifyDispatchOutcome`/`DispatchOutcomeNote`,
+never its own ad-hoc copy. `waiting_approval` is `warning`, never `success`;
+`blocked` surfaces the actual `policy_id` (never a bare "dispatch failed");
+`already_in_flight` gets its own `info` tone rather than folding into
+`dispatched`, since the task was already running before this click.
+Regression-tested directly: `format.test.ts`'s "every one of the N documented
+values is visually distinct by tone+label pair" and
+`ItemDetailDrawer.dispatch.test.tsx`'s "a waiting_approval outcome is shown
+distinctly — never as 'Dispatched'".
+
+**Reconciled against card C3's real sprint-dispatch API — read this before
+touching `shared/dispatch/api.ts` or `DispatchSprintModal.tsx` again.** C3
+landed `POST /sprints/{id}/dispatch` / `GET /sprints/{id}/dispatch/dry-run`
+concurrently with this card; my first draft was a documented best guess
+(same "not a spec, a reconciliation target" framing A5 set). Per the
+coordinator's explicit instruction, I reconciled field-by-field against
+`docs/openapi.json` and C3's own handoff note (directly above this one)
+**before** finishing, not after. Three corrections that would have failed
+silently if shipped as guessed:
+
+1. **`max_in_flight` is a query parameter, never a JSON body field.** My
+   original `dispatchApi.dispatchSprint(id, { max_in_flight })` sent it as a
+   JSON body; the real handler (`axum::extract::Query<SprintDispatchQuery>`
+   in `handlers/orch.rs`) never declares a body extractor, so the value would
+   have been silently ignored — no error, just a sprint dispatching at
+   whatever the server's default concurrency is regardless of what the
+   operator typed into the cap field. Fixed: `dispatchApi.dryRunSprintDispatch`/
+   `dispatchSprint` now both take an optional `maxInFlight: number` and append
+   `?max_in_flight=N` via a shared `withMaxInFlight` helper; POST bodies are
+   `undefined` now, not `'{}'`. Regression-tested at the wire level in both
+   `api.test.ts` ("appends `?max_in_flight=N` as a QUERY PARAM, never a JSON
+   body") and `DispatchSprintModal.test.tsx` ("editing the in-flight cap
+   overrides the value sent to the real dispatch call").
+2. **Every sprint item is always present in the plan, with a closed-vocabulary
+   `decision`, not a nullable `position`.** My guessed shape filtered
+   "excluded" items down to `position: null` + a free-text `skip_reason`. The
+   real `SprintDispatchItemResponse` has no excluded bucket at all — every
+   item carries an `order` and one `decision` value (`waiting_on_dependencies`
+   / `no_dispatch_policy` / `not_eligible` / `already_in_flight` /
+   `would_dispatch` in a dry run; `blocked` / `waiting_approval` / `dispatched`
+   / `error` in a real run). `DispatchSprintModal.tsx`'s `planned`/`notPlanned`
+   memos now partition on `decision === 'would_dispatch'` instead of a null
+   check, and the "N items not dispatched this run" `<details>` section names
+   each one's real `decision` + `sprintItemDetail()` (policy id, dependency
+   count, current status) instead of a fabricated `skip_reason` string —
+   which happens to satisfy the coordinator's second point below better than
+   my original design could have (real structured reasons, not free text I
+   invented).
+3. **Post-dispatch counts come from the server's own `summary` object, never
+   re-derived client-side.** My original `summarizeSprintDispatchResults`
+   counted a `results: SprintDispatchItemResult[]` array by hand. The real
+   response has no `results` field (it's `items`, the same shape the dry-run
+   uses) and ships a pre-computed `summary: SprintDispatchSummary` with one
+   count per decision — `summarizeSprintDispatchCounts` (renamed) now just
+   projects that object into a display list, never sums `items` itself, so it
+   can't silently drift from what the server actually decided.
+
+**Partial failure and cross-sprint dependencies — the coordinator's other two
+callouts, both already fully represented by the real schema, so no UI logic
+needed inventing:** C3's `SprintDispatchSummary` has independent counts for
+`dispatched`/`waiting_approval`/`blocked`/`errored`/`waiting_on_dependencies`/
+etc., and `DispatchResultsSummary` renders every non-zero bucket as its own
+badge (`summarizeSprintDispatchCounts` — see `format.test.ts`'s "never a
+single merged '8 dispatched'" style tests) — a policy-blocked item and a
+downstream item still `waiting_on_dependencies` on it both show up honestly,
+never folded into one number. The dry-run preview's "why" already comes from
+`sprintItemDetail`, which reads `blocked_by`/`current_status`/`dispatch_from`
+regardless of whether the blocking dependency is in-sprint or not — the UI
+never had to know the difference, since C3's `decision`/`blocked_by` fields
+already encode the live check.
+
+**A real, pre-existing bug found and fixed while wiring this up — not a test
+artifact.** Solid's resource accessor (`dryRun()`, `agentActivity()` — as
+opposed to `.loading`/`.error`) **throws once the resource has errored**.
+Calling it from a memo/JSX expression that runs in the same reactive batch
+that just set the error throws *inside* that batch, which silently aborts
+propagation to sibling computations — in practice, a modal or drawer that
+gets stuck showing "Loading…" forever the instant the underlying fetch 404s,
+with an unhandled promise rejection as the only trace. Found this via
+`DispatchSprintModal`'s own dry-run resource (a fresh 404 test hung
+indefinitely instead of showing the disabled state) and fixed it there with
+a `dryRunData()` safe accessor (`undefined` once errored, never throws).
+**Then grepped for the same pattern elsewhere and found it already existed,
+predating this card, in `ItemDetailDrawer.tsx`'s `hasAgentActivity`/the
+`AgentActivityTab` call site (card B5's original resource)** — no test had
+ever driven that resource into an error state through the full drawer before
+mine did. Fixed identically (`agentActivityData()`). This directly serves
+this card's own "no broken-looking errors, no console noise" bar for the
+orchestration-disabled path — worth a scan for the same pattern (a resource
+accessor called directly, not via `.loading`/`.error`, inside a memo or an
+unconditional JSX expression) if a future card adds another `createResource`
+whose source can transition from absent to erroring.
+
+**Security gating (35.9).** Every dispatch control (item-detail button,
+board card menu, sprint "Run sprint" button) renders only once its own
+orchestration probe has resolved *without* error — `orchAvailable()`
+(`ItemDetailDrawer`) / `useAgentActivityMap.orchAvailable` (Board, reused
+verbatim by Sprints) — false while loading and on *any* error, not just a
+404, the same conservative "if we can't positively confirm it's on, don't
+show a privileged control" posture used throughout. This reuses the
+already-in-flight agent-activity fetch rather than adding a second
+"is-orchestration-enabled" probe per surface. The actual `TACK_ORCH_ENABLE`
+**and** control-plane-token gate is enforced server-side (C1/A4's
+`require_orch_enabled` layer + the 409 "project not linked to a control
+plane" case) — this card's job was making the frontend degrade to nothing
+rather than a broken control when that gate is closed, not re-implementing
+the gate itself.
+
+**The dry-run preview as the confirmation gate.** `DispatchSprintModal` has
+no one-click path from "Run sprint" straight to a real dispatch — opening it
+always shows the dependency-ordered `would_dispatch` plan (plus every
+not-yet-ready item and why) first; only an explicit "Confirm dispatch (N)"
+click on that same screen calls `POST /sprints/{id}/dispatch`. No projected
+cost is shown anywhere in the dry-run preview: no per-item cost data exists
+before a real dispatch happens (`cost_usd_estimated` only appears on
+`orch_tasks` after `enqueue_task` succeeds, per B6's schema), so inventing a
+sprint-level projection here would be "an estimate of an estimate" with
+nothing real backing it — the honest choice was to show none, not a
+fabricated number with a disclaimer.
+
+**Design tokens.** No new color pairing introduced anywhere in this card —
+`DispatchOutcomeNote`/`DispatchResultsSummary` reuse `Badge`'s existing six
+tones verbatim (same AA-audited set `AgentStateChip` already reuses per
+A10's audit), `DispatchCardMenu`'s popover reuses existing
+`--color-bg-elevated`/`--color-border-light`/`--shadow-lg` tokens. `npm run
+lint:tokens` stayed at the 0/0 baseline throughout.
+
+**Tests.** 51 new/updated Vitest tests across `shared/dispatch/{api,format,
+notify,DispatchOutcomeNote,DispatchCardMenu}.test.ts(x)`,
+`features/sprints/DispatchSprintModal.test.tsx`, and
+`features/item-detail/ItemDetailDrawer.dispatch.test.tsx` (a separate file
+from the pre-existing `ItemDetailDrawer.test.tsx` so the dispatch-specific
+fetch-mock map doesn't complicate that file's fixtures). `cd frontend && npm
+run type-check && npm run lint:tokens && npm run test && npm run build` all
+green — `test` shows 304 passing (253 baseline + 51 new/changed) and the
+same 3 known pre-existing failures (`client.test.ts`'s `requestBlob`, two
+`createObjectURL` assertions in `GlobalSettings.test.tsx`/`panels.test.tsx`),
+nothing else broken, **zero unhandled rejections** (confirmed clean after
+the resource-accessor fix above — a dirty run with that warning present was
+the first signal something was actually wrong, not just noisy). Did not run
+the Playwright e2e suite live (no backend available in this environment);
+added 6 additive scans to `frontend/e2e/a11y.spec.ts` (item-detail dispatch
+control visible, item-detail after a blocked outcome, sprint dry-run preview,
+sprint dispatch results) using the same `page.route()` interception
+technique A5 established for Fleet's orch-gated scans, plus a new
+`createSprintWithItem` helper in `e2e/helpers.ts` (the minimum "Run sprint"
+needs to render at all). Did not relax any existing a11y assertion.
+
+**What I did not attempt / left open:**
+
+- **List/Table dispatch controls.** The card brief named only "item detail
+  and the board card menu" — List and Table views have no dispatch UI added,
+  consistent with scope (and B5's precedent of not adding agent badges
+  everywhere at once either).
+- **Re-fetching the sprint dry-run when the in-flight cap changes.** The cap
+  field starts pre-filled from the dry-run response's own resolved
+  `max_in_flight` and edits are purely local until "Confirm dispatch" —
+  concurrency doesn't affect *which* items are eligible (C3's planning
+  function is independent of the worker-pool size), only how many run at
+  once, so the preview's item list/order stays accurate regardless; only the
+  displayed cap number could theoretically go stale if the user types an
+  out-of-range value the server would clamp differently. Not fixed — would
+  need a debounced re-fetch on every keystroke for a cosmetic-only benefit.
+- **List/Table agent-activity badges already existed (B5/B6/B7) and are
+  untouched** — this card only added dispatch *controls*, not new activity
+  surfaces.
+- **The WIP-limit race under concurrent sprint dispatch** C3 flagged in its
+  own handoff (`apply_mapped_status`'s read-then-write isn't atomic) is a
+  backend concern, out of this card's file ownership (`frontend/**` only).
+
+**For whoever next touches `shared/dispatch/**` or `DispatchSprintModal.tsx`:**
+treat `shared/dispatch/api.ts` as now fully reconciled against the real
+backend (both routes) — no further guessing needed. If C3's schema changes
+again, this file plus `format.ts` are still the only two that need editing;
+every component consumes `SprintDispatchItemResponse`/`SprintDispatchSummary`
+via `format.ts`'s helpers, never a raw field.

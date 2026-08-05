@@ -17,6 +17,7 @@ import { Avatar, AvatarStack, TypeBadge, PriorityDot, WipChip, AgentStateChip, t
 import { IconPlus } from '../../shared/ui/icons';
 import { estimateUnitSuffix } from '../../shared/estimateUnit';
 import { useAgentActivityMap, type AgentBadgeInfo } from '../../shared/agentActivity/useAgentActivityMap';
+import DispatchCardMenu from '../../shared/dispatch/DispatchCardMenu';
 
 /** Short, human id for the card header (real ids are UUIDs). */
 function shortId(id: string): string {
@@ -28,6 +29,8 @@ const ItemCard: Component<{
   typeLabel: string;
   onEdit: (item: Item) => void;
   agentInfo?: AgentBadgeInfo;
+  dispatchAvailable: boolean;
+  onDispatched: () => void;
 }> = (props) => {
   const [isDragging, setIsDragging] = createSignal(false);
 
@@ -82,6 +85,12 @@ const ItemCard: Component<{
         <Show when={props.agentInfo}>
           {(info) => <AgentStateChip state={info().state} title={info().remoteStatus} />}
         </Show>
+        <DispatchCardMenu
+          itemId={props.item.id}
+          itemTitle={props.item.title}
+          available={props.dispatchAvailable}
+          onDispatched={props.onDispatched}
+        />
       </div>
       <h4 style={{ 'font-size': '13px', 'font-weight': 600, margin: '0 0 9px', 'line-height': 1.35, color: 'var(--color-text-primary)' }}>
         {props.item.title}
@@ -112,6 +121,8 @@ const BoardColumnView: Component<{
   onAddItem: (status: string) => void;
   onEditItem: (item: Item) => void;
   agentInfoOf: (itemId: string) => AgentBadgeInfo | undefined;
+  dispatchAvailable: boolean;
+  onItemDispatched: () => void;
 }> = (props) => {
   const [isDragOver, setIsDragOver] = createSignal(false);
 
@@ -179,6 +190,8 @@ const BoardColumnView: Component<{
               typeLabel={props.typeLabelOf(item)}
               onEdit={props.onEditItem}
               agentInfo={props.agentInfoOf(item.id)}
+              dispatchAvailable={props.dispatchAvailable}
+              onDispatched={props.onItemDispatched}
             />
           )}
         </For>
@@ -394,6 +407,8 @@ const Board: Component = () => {
                     onAddItem={handleAddItem}
                     onEditItem={handleEditItem}
                     agentInfoOf={agentActivity.stateFor}
+                    dispatchAvailable={agentActivity.orchAvailable()}
+                    onItemDispatched={agentActivity.refetch}
                   />
                 )}
               </For>

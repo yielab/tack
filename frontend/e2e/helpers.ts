@@ -97,3 +97,42 @@ export async function createItemWithAssignee(
   const match = list.find((it: { assignee?: string }) => it.assignee === assignee);
   return (match ?? list[list.length - 1]).id;
 }
+
+/**
+ * Create a fresh sprint with one item assigned to it — the minimum the
+ * Sprints view's "Run sprint" dispatch control needs to render at all
+ * (`Sprints.tsx` only shows the button for a sprint with `itemsForSprint(id).
+ * length > 0`, TODO.md Wave 3, card C4). Returns both ids since the caller
+ * typically needs the sprint id (to mock its dry-run route) and doesn't
+ * otherwise have one.
+ */
+export async function createSprintWithItem(
+  request: APIRequestContext,
+  projectId: string,
+  sprintName = 'E2E Sprint',
+): Promise<{ sprintId: string; itemId: string }> {
+  const sprintRes = await request.post(`${API}/projects/${projectId}/sprints`, {
+    data: { name: sprintName },
+  });
+  expect(sprintRes.ok(), `create sprint failed: ${sprintRes.status()}`).toBeTruthy();
+  const sprint = await sprintRes.json();
+
+  const itemRes = await request.post(`${API}/projects/${projectId}/items`, {
+    data: { title: 'E2E Sprint Item', item_type: 'task' },
+  });
+  expect(itemRes.ok(), `create item failed: ${itemRes.status()}`).toBeTruthy();
+  const itemBody = await itemRes.json();
+  const itemId: string =
+    itemBody?.id ??
+    (await request
+      .get(`${API}/projects/${projectId}/items`)
+      .then((r) => r.json())
+      .then((p) => p.data.at(-1).id));
+
+  const patchRes = await request.patch(`${API}/items/${itemId}`, {
+    data: { sprint_id: sprint.id },
+  });
+  expect(patchRes.ok(), `assign item to sprint failed: ${patchRes.status()}`).toBeTruthy();
+
+  return { sprintId: sprint.id, itemId };
+}
