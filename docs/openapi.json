@@ -440,6 +440,208 @@
         }
       }
     },
+    "/api/control-planes": {
+      "get": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`GET /api/control-planes` — every registered control plane (tokens never\nincluded).",
+        "operationId": "list_control_planes",
+        "responses": {
+          "200": {
+            "description": "All registered control planes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ControlPlaneResponse"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Orchestration disabled (TACK_ORCH_ENABLE unset)"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`POST /api/control-planes` — register a control plane.",
+        "operationId": "create_control_plane",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateControlPlaneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Control plane registered (token never returned)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Orchestration disabled (TACK_ORCH_ENABLE unset)"
+          }
+        }
+      }
+    },
+    "/api/control-planes/{id}": {
+      "get": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`GET /api/control-planes/{id}`.",
+        "operationId": "get_control_plane",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Control plane ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The control plane",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or orchestration disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`DELETE /api/control-planes/{id}`.",
+        "operationId": "delete_control_plane",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Control plane ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or orchestration disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`PATCH /api/control-planes/{id}`.",
+        "operationId": "update_control_plane",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Control plane ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateControlPlaneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated control plane (token never returned)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlPlaneResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or orchestration disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/custom-fields/{id}": {
       "get": {
         "tags": [
@@ -596,6 +798,30 @@
         }
       }
     },
+    "/api/fleet": {
+      "get": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`GET /api/fleet`.",
+        "operationId": "get_fleet",
+        "responses": {
+          "200": {
+            "description": "One row per project linked to a control plane",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Orchestration disabled (TACK_ORCH_ENABLE unset)"
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -744,6 +970,103 @@
           },
           "404": {
             "description": "Item not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/items/{id}/agent-activity": {
+      "get": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`GET /api/items/{id}/agent-activity` — every mirrored dispatch attempt and\napproval for one item, newest first.",
+        "operationId": "get_item_agent_activity",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Item ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dispatch attempts and approvals mirrored for this item",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemAgentActivityResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item not found, or orchestration disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/items/{id}/dispatch": {
+      "post": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`POST /api/items/{id}/dispatch` — enqueue a governed task on the item's\nproject's linked control plane. See the `dispatcher` module for the full\nflow; this handler is just the HTTP boundary.",
+        "description": "**Trust default.** Unlike `dispatcher::dispatch_item`'s own required\n`trusted: bool` parameter (no default, by design — see that module's\ndoc), this direct/manual entry point has no request body asking the\ncaller to state trust explicitly, so it resolves one via\n`dispatcher::resolve_default_trust` — a conservative stopgap pending\ncard C2's `source: imported` marker (task 35.7). See that function's own\ndoc comment for exactly what it checks today and what it doesn't yet.",
+        "operationId": "dispatch_item",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Item ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dispatch outcome — branch on the `outcome` field, not HTTP status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchItemResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item not found, or orchestration disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Project not linked to a control plane, a dispatch for this item is already in flight, or the control plane could not be reached",
             "content": {
               "application/json": {
                 "schema": {
@@ -1351,6 +1674,26 @@
         }
       }
     },
+    "/api/metrics": {
+      "get": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`GET /api/metrics` — Prometheus text exposition merging Tack's own\nwork-tracking metrics (items by status, average cycle time, 7-day\nthroughput) with the latest mirrored sample of every metric docket has\nreported for each linked control plane (task 34.7). One Grafana/Prometheus\nscrape of this endpoint covers the whole factory.",
+        "operationId": "get_metrics",
+        "responses": {
+          "200": {
+            "description": "Prometheus text exposition: Tack's own work-tracking metrics plus the latest mirrored docket sample per metric/label set",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "404": {
+            "description": "Orchestration disabled (TACK_ORCH_ENABLE unset)"
+          }
+        }
+      }
+    },
     "/api/projects": {
       "get": {
         "tags": [
@@ -1654,6 +1997,42 @@
         }
       }
     },
+    "/api/projects/{id}/agent-activity": {
+      "get": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`GET /api/projects/{id}/agent-activity` — one row per item in this project\nthat has at least one mirrored dispatch attempt, each carrying only its\nlatest attempt's raw status (the Board/List/Table badge's data source).\nDoes not 404 for an unknown `project_id` — mirrors `list_items`'s\nprecedent (`handlers/items.rs`) of just returning an empty result for a\nproject-scoped list rather than a bulk-fetch racing a project's own\nlifecycle (e.g. deleted between the page loading and this poll).",
+        "operationId": "get_project_agent_activity",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest dispatch-attempt status per item with agent activity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBadgeResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Orchestration disabled (TACK_ORCH_ENABLE unset)"
+          }
+        }
+      }
+    },
     "/api/projects/{id}/export": {
       "get": {
         "tags": [
@@ -1884,6 +2263,103 @@
           },
           "404": {
             "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{id}/orch-link": {
+      "get": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`GET /api/projects/{id}/orch-link`.",
+        "operationId": "get_orch_link",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The project's control-plane link, if any",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrchLinkView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Orchestration disabled (TACK_ORCH_ENABLE unset)"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`PUT /api/projects/{id}/orch-link` — create or replace the project's link.",
+        "operationId": "put_orch_link",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertOrchLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrchLinkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (e.g. an unknown status name in status_map)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project or control plane not found, or orchestration disabled",
             "content": {
               "application/json": {
                 "schema": {
@@ -3021,6 +3497,48 @@
   },
   "components": {
     "schemas": {
+      "AgentBadgeResponse": {
+        "type": "object",
+        "description": "`GET /api/projects/{id}/agent-activity` response envelope — matches\n`frontend/src/shared/agentActivity/api.ts`'s `AgentBadgeResponse` exactly\n(`{ rows: [...] }`, not a bare array).",
+        "required": [
+          "rows"
+        ],
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentBadgeRowResponse"
+            }
+          }
+        }
+      },
+      "AgentBadgeRowResponse": {
+        "type": "object",
+        "description": "One row of `GET /api/projects/{id}/agent-activity` — the minimum a\nBoard/List/Table badge needs: an item's latest dispatch attempt's raw\nstatus. See the module-level doc comment for the inner-join / tie-break\ndecisions.",
+        "required": [
+          "item_id",
+          "remote_status",
+          "attempt",
+          "updated_at"
+        ],
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "remote_status": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "Attachment": {
         "type": "object",
         "required": [
@@ -3349,6 +3867,69 @@
           "system"
         ]
       },
+      "ControlPlaneResponse": {
+        "type": "object",
+        "description": "Client-safe view of a `control_planes` row. Deliberately has **no** `token`\nfield — see the module doc.",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "base_url",
+          "health",
+          "consecutive_failures",
+          "token_set",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "api_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "consecutive_failures": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "health": {
+            "type": "string",
+            "description": "`\"unknown\"` | `\"healthy\"` | `\"degraded\"` | `\"unreachable\"` — driven by\nthe reconciler's health state machine (`tack-orch::reconciler`),\npersisted verbatim."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "last_seen_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "name": {
+            "type": "string"
+          },
+          "token_set": {
+            "type": "boolean",
+            "description": "True when a docket Bearer token is currently stored for this plane.\nThe token itself is write-only over this API."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "CreateBoard": {
         "type": "object",
         "required": [
@@ -3397,6 +3978,36 @@
           },
           "content": {
             "type": "string"
+          }
+        }
+      },
+      "CreateControlPlaneRequest": {
+        "type": "object",
+        "description": "`POST /api/control-planes` body.",
+        "required": [
+          "name",
+          "base_url"
+        ],
+        "properties": {
+          "base_url": {
+            "type": "string"
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Defaults to `\"docket\"` when omitted — the only kind implemented today."
+          },
+          "name": {
+            "type": "string"
+          },
+          "token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "docket Bearer token. Write-only: never echoed back in any response."
           }
         }
       },
@@ -3847,6 +4458,103 @@
           "duplicates"
         ]
       },
+      "DispatchItemResponse": {
+        "type": "object",
+        "description": "`POST /api/items/{id}/dispatch` response. `outcome` is one of\n`\"dispatched\"`, `\"waiting_approval\"`, `\"already_in_flight\"`,\n`\"no_dispatch_policy\"`, `\"not_eligible\"`, `\"blocked\"` — every one of\nthese is a `200`, including `\"blocked\"`: docket gave a definitive,\nwell-formed refusal, which is a successful round-trip from Tack's HTTP\nperspective, not a Tack-side error. Callers must branch on `outcome`,\nnot on HTTP status, to tell these apart. See `dispatcher::DispatchOutcome`\nfor the same taxonomy on the Rust side.",
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "approval_token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Present only when `outcome == \"waiting_approval\"`."
+          },
+          "current_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Present only when `outcome == \"not_eligible\"`."
+          },
+          "dispatch_from": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Present only when `outcome == \"not_eligible\"`."
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Present only when `outcome == \"blocked\"` — docket's own message,\nnaming the guardrail policy id."
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "status_applied": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The Tack status `status_map` named for this trigger and actually\napplied. Absent when `status_map` named no target for this trigger,\nwhen the item was already there, or when the workflow engine\nrejected it (see `status_map_rejected` below)."
+          },
+          "status_map_rejected": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set when the workflow engine refused the `status_map`-driven\ntransition (TODO.md §0 rule 7 / task 35.6's `status_map_rejected`\noutcome). The item was left exactly as it was; this is the engine's\nown reason (e.g. an invalid transition or a WIP limit)."
+          },
+          "task": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DispatchedTaskResponse"
+              }
+            ]
+          }
+        }
+      },
+      "DispatchedTaskResponse": {
+        "type": "object",
+        "description": "A dispatched (or already-in-flight) `orch_tasks` row, projected for the\ndispatch response. Deliberately smaller than `ItemAgentAttemptResponse`\n(B6, `GET /items/{id}/agent-activity`) — no `run`/`events`/token-cost\nfields, since a task this fresh has none of that mirrored yet.",
+        "required": [
+          "remote_task_id",
+          "remote_status",
+          "attempt",
+          "dispatched_at",
+          "trusted"
+        ],
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "dispatched_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "remote_status": {
+            "type": "string"
+          },
+          "remote_task_id": {
+            "type": "string"
+          },
+          "trusted": {
+            "type": "boolean"
+          }
+        }
+      },
       "ErrorBody": {
         "type": "object",
         "required": [
@@ -3912,6 +4620,173 @@
             }
           }
         ]
+      },
+      "FleetEntry": {
+        "type": "object",
+        "description": "One row per Tack project that has an `orch_links` row, joining: the link,\nits control plane's reconciler-observed health, and mirrored cost/token/\napproval data summed from `orch_tasks`/`orch_approvals`.\n\n**Staleness must be representable.** `cost_usd_estimated` is `None`\nwhenever the plane is `unreachable` — never coerced to zero — so the UI can\ngrey the row and say \"last seen Nm ago\" instead of rendering a confident\nzero (TODO.md §0 rule 6 / this card's acceptance bar). `Some(0.0)` means the\nplane is reachable and genuinely has no mirrored cost yet. `tokens_in`/\n`tokens_out` are always a plain (never-null) sum — per A5's contract, the\nrow component gates on `health`/`isStale()`, not per-field nullability, to\ndecide whether a number is trustworthy to render.",
+        "required": [
+          "project_id",
+          "project_name",
+          "control_plane_id",
+          "control_plane_name",
+          "control_plane_kind",
+          "remote_project",
+          "health",
+          "consecutive_failures",
+          "gateway",
+          "roster",
+          "auto_dispatch",
+          "tokens_in",
+          "tokens_out",
+          "pending_approval_count"
+        ],
+        "properties": {
+          "api_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "auto_dispatch": {
+            "type": "boolean"
+          },
+          "blueprint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "budget_usd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "User-set cap, not a derived figure — deliberately unsuffixed."
+          },
+          "consecutive_failures": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "control_plane_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "control_plane_kind": {
+            "type": "string"
+          },
+          "control_plane_name": {
+            "type": "string"
+          },
+          "cost_usd_estimated": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Estimated cumulative spend, summed from `orch_tasks` for this\nproject's items. `None` = plane unreachable, figure is stale/unknown.\n`Some(0.0)` = plane reachable, nothing dispatched yet."
+          },
+          "gateway": {
+            "type": "string",
+            "description": "`\"active\"` | `\"inactive\"` | `\"unknown\"`. **Always `\"unknown\"` in Wave\n1** — `control_planes` has no persisted gateway column (see migration\n019) and the reconciler only polls `/health` + `/status.json` for the\nhealth state machine, not a stored gateway snapshot (card A2, 33.6). A\nlater wave that mirrors `FleetStatus.gateway` populates this for real."
+          },
+          "health": {
+            "type": "string",
+            "description": "`\"unknown\"` | `\"healthy\"` | `\"degraded\"` | `\"unreachable\"`."
+          },
+          "last_activity_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Most recent `orch_tasks.dispatched_at` for this project's items, or\n`None` if nothing has ever been dispatched. Real data (not a\nplaceholder) — computed from the same join as the cost/token sums —\nbut will always be `None` until Wave 3 (C1) starts dispatching."
+          },
+          "last_seen_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "pending_approval_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Pending docket approvals correlated to an item in this project (via\n`orch_approvals.item_id`). Approvals with no item correlation surface\nin the fleet-wide approvals inbox (Wave 4 / D1) instead of here."
+          },
+          "pricing_snapshot_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pricing-table snapshot date backing `cost_usd_estimated`. **Always\n`None` in Wave 1** — no pricing-snapshot mechanism exists yet; a later\nwave that adds one should populate this alongside real cost figures."
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "remote_project": {
+            "type": "string"
+          },
+          "roster": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FleetRosterMember"
+            },
+            "description": "Always `[]` in Wave 1 — see [`FleetRosterMember`]."
+          },
+          "tokens_in": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Summed from `orch_tasks.tokens_in`/`tokens_out` for this project's\nitems. Real data, always `0` until Wave 3 dispatches anything — not a\nplaceholder, just an honest current total."
+          },
+          "tokens_out": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "FleetListResponse": {
+        "type": "object",
+        "description": "`GET /api/fleet` response envelope — matches\n`frontend/src/features/fleet/api.ts`'s `FleetResponse` exactly (`{ rows:\n[...] }`, not a bare array).",
+        "required": [
+          "rows"
+        ],
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FleetEntry"
+            }
+          }
+        }
+      },
+      "FleetRosterMember": {
+        "type": "object",
+        "description": "One roster member — projected from a future live `FleetAgent` snapshot.\n**Always an empty list in Wave 1**: no agent-roster table exists yet\n(migrations 019–024 mirror control planes/links/tasks/runs/events/\napprovals only). A later wave that adds roster mirroring populates this;\nuntil then the field stays on the wire as `[]` rather than being removed,\nso `frontend/src/features/fleet/api.ts`'s `FleetRow.roster` never needs a\nshape change.",
+        "required": [
+          "id",
+          "name",
+          "role",
+          "model"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        }
       },
       "GitHubImportRequest": {
         "type": "object",
@@ -4033,6 +4908,10 @@
             "type": "integer",
             "format": "int32"
           },
+          "source": {
+            "$ref": "#/components/schemas/ItemSource",
+            "description": "Sticky provenance marker (Phase 35, card C2 — the prompt-injection\ntrust boundary): set once at creation time by whichever handler\ncreated the item, and never mutated afterward — `UpdateItem` has no\n`source` field, and the repository's `update_item` has no code path\nthat writes this column, so an item's source can never change once\nset. `#[serde(default)]` matters here: any JSON that predates this\nfield (an old export, or a hand-built import payload) deserializes\nto [`ItemSource::default()`] (`Unknown`), which [`ItemSource::is_trusted`]\ntreats as untrusted — the same \"unverifiable provenance resolves to\nuntrusted\" rule migration 029 applies to pre-existing database rows."
+          },
           "sprint_id": {
             "type": [
               "string",
@@ -4062,6 +4941,223 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "ItemAgentActivityResponse": {
+        "type": "object",
+        "description": "`GET /api/items/{id}/agent-activity` response.",
+        "required": [
+          "attempts",
+          "approvals",
+          "events_truncated",
+          "events_retention_days"
+        ],
+        "properties": {
+          "approvals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItemAgentApprovalResponse"
+            },
+            "description": "Newest-requested first; pending and decided both included."
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItemAgentAttemptResponse"
+            },
+            "description": "Newest attempt first (`orch_tasks.attempt DESC` — the repo layer's\n`list_orch_tasks_for_item` already returns this order)."
+          },
+          "events_retention_days": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "events_truncated": {
+            "type": "boolean",
+            "description": "See the module-level doc comment above `ItemAgentEventResponse` for\nwhy this can't be a precise per-item fact and what it means instead."
+          }
+        }
+      },
+      "ItemAgentApprovalResponse": {
+        "type": "object",
+        "description": "One `orch_approvals` row for the item (pending or already decided).",
+        "required": [
+          "token",
+          "state",
+          "requested_at"
+        ],
+        "properties": {
+          "action": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "agent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decided_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "remote_task_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requested_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "state": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "ItemAgentAttemptResponse": {
+        "type": "object",
+        "description": "One `orch_tasks` row (one dispatch attempt) for the item.",
+        "required": [
+          "remote_task_id",
+          "remote_status",
+          "attempt",
+          "dispatched_at",
+          "tokens_in",
+          "tokens_out",
+          "events"
+        ],
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cost_usd_estimated": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "dispatched_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItemAgentEventResponse"
+            }
+          },
+          "pricing_snapshot_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Always `null` — no pricing-snapshot mechanism exists anywhere in the\nsystem yet (TODO.md §0 rule 6; same gap A4 found for the Fleet view's\nidentical field). Left `null` rather than invented."
+          },
+          "remote_run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remote_status": {
+            "type": "string"
+          },
+          "remote_task_id": {
+            "type": "string"
+          },
+          "run": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ItemAgentRunResponse"
+              }
+            ]
+          },
+          "tokens_in": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tokens_out": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ItemAgentEventResponse": {
+        "type": "object",
+        "description": "One `orch_events` row. See `ItemAgentEventResponse` in\n`frontend/src/shared/agentActivity/api.ts`.",
+        "required": [
+          "id",
+          "event_type",
+          "payload",
+          "occurred_at"
+        ],
+        "properties": {
+          "event_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payload": {}
+        }
+      },
+      "ItemAgentRunResponse": {
+        "type": "object",
+        "description": "The `orch_runs` row correlated to an attempt via `remote_run_id`, if any\nhas been mirrored yet.",
+        "required": [
+          "run_id",
+          "source",
+          "state",
+          "error"
+        ],
+        "properties": {
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "error": {
+            "type": "string",
+            "description": "Non-empty only when `state == \"failed\"`. Projected as an empty string,\nnever `null` — matches `ItemAgentRun.error: string` on the frontend\n(deliberately not `string | null`, unlike `OrchRun.error` in the Rust\nrepo layer, which is `Option<String>`)."
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "state": {
+            "type": "string"
           }
         }
       },
@@ -4107,6 +5203,18 @@
             "format": "uuid"
           }
         }
+      },
+      "ItemSource": {
+        "type": "string",
+        "description": "Where an item's title/description text came from. Backend for the\nprompt-injection trust boundary (Phase 35, card C2): text imported from\nGitHub Issues, Linear, or any bulk import is written by parties Tack\ncannot vouch for, and becomes literal instructions to an autonomous\nagent the moment the item is dispatched. [`is_trusted`](ItemSource::is_trusted)\nis the single place that rule is encoded — nothing else in this codebase\nshould independently decide whether a `source` counts as trusted.",
+        "enum": [
+          "manual",
+          "github",
+          "linear",
+          "json_import",
+          "csv_import",
+          "unknown"
+        ]
       },
       "ItemType": {
         "oneOf": [
@@ -4193,6 +5301,88 @@
               "null"
             ],
             "description": "Import only issues from this team (slug or ID). When omitted, all\nissues accessible to the key are fetched."
+          }
+        }
+      },
+      "OrchLinkResponse": {
+        "type": "object",
+        "description": "Client-facing view of a project's control-plane link.",
+        "required": [
+          "project_id",
+          "control_plane_id",
+          "remote_project",
+          "auto_dispatch",
+          "status_map",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "auto_dispatch": {
+            "type": "boolean"
+          },
+          "blueprint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "budget_usd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "User-set cap, not a derived spend figure — deliberately unsuffixed\n(matches `orch_links.budget_usd`; TODO.md §0 rule 6)."
+          },
+          "control_plane_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "pipeline_file": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "remote_project": {
+            "type": "string"
+          },
+          "status_map": {
+            "$ref": "#/components/schemas/StatusMap"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "OrchLinkView": {
+        "type": "object",
+        "description": "`GET /api/projects/{id}/orch-link` response. `linked: false` (with\n`link: null`) is the ordinary state for a project that has never registered\na control plane — not an error, matching the `settings.rs` precedent for\noptional per-scope config (no 404 for \"not configured yet\").",
+        "required": [
+          "linked"
+        ],
+        "properties": {
+          "link": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OrchLinkResponse"
+              }
+            ]
+          },
+          "linked": {
+            "type": "boolean"
           }
         }
       },
@@ -4551,6 +5741,48 @@
           }
         }
       },
+      "StatusMap": {
+        "type": "object",
+        "description": "`status_map` — TODO.md §1.3. All keys optional except `dispatch_from` (which\nmay be an empty list before a dispatch policy is configured — Wave 3 needs\nit non-empty to actually dispatch, but registering a link ahead of that is\na normal, valid state in this wave). Every named status is validated against\nthe project's `WorkflowConfig` at save time — see [`validate_status_map`].\nAn absent key means \"do not touch the item's status on that transition.\"",
+        "properties": {
+          "dispatch_from": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "on_cancelled": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "on_failed": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "on_running": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "on_succeeded": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "on_waiting_approval": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "Transition": {
         "type": "object",
         "required": [
@@ -4647,6 +5879,31 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "UpdateControlPlaneRequest": {
+        "type": "object",
+        "description": "`PATCH /api/control-planes/{id}` body. `token` is tri-state — see the module\ndoc and [`deserialize_some`]. `name`/`base_url` follow the ordinary\n\"absent means untouched\" convention every other partial update in this API\nuses.",
+        "properties": {
+          "base_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absent = leave the stored token untouched. `null` = clear it. A string\n= set/replace it."
           }
         }
       },
@@ -4834,6 +6091,48 @@
           }
         }
       },
+      "UpsertOrchLinkRequest": {
+        "type": "object",
+        "description": "`PUT /api/projects/{id}/orch-link` body.",
+        "required": [
+          "control_plane_id",
+          "remote_project"
+        ],
+        "properties": {
+          "auto_dispatch": {
+            "type": "boolean"
+          },
+          "blueprint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "budget_usd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "control_plane_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pipeline_file": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remote_project": {
+            "type": "string"
+          },
+          "status_map": {
+            "$ref": "#/components/schemas/StatusMap"
+          }
+        }
+      },
       "WorkflowConfig": {
         "type": "object",
         "description": "Full workflow configuration for a project.",
@@ -4978,6 +6277,10 @@
     {
       "name": "settings",
       "description": "Runtime-editable server settings (cloud backup)."
+    },
+    {
+      "name": "orchestration",
+      "description": "Agent-Factory Control Center: control-plane registration, per-project links, and the Fleet view aggregate. Every route is disabled — 404 — unless TACK_ORCH_ENABLE is set."
     }
   ]
 }
