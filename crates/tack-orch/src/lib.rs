@@ -107,6 +107,18 @@ pub enum OrchError {
     /// granted: apr-..."`), kept verbatim for display.
     #[error("approval already decided: {0}")]
     AlreadyDecided(String),
+
+    /// The remote resource we tried to create already exists — docket's
+    /// `PodAlreadyExistsError` (`POST /pods` → HTTP 409, card D4). Its own
+    /// doc comment (`core/pod_provisioning.py`) calls this "skip, don't
+    /// clobber," matching the declarative `--from` path's long-standing
+    /// idempotence contract. Distinct from [`OrchError::AlreadyDecided`] (an
+    /// approval-specific conflict shape) so a provisioning caller isn't
+    /// forced to pattern-match a message string to tell "this name is
+    /// taken" from any other conflict. `message` is docket's own text
+    /// (e.g. `"'my-project' already exists"`), kept verbatim for display.
+    #[error("already exists: {0}")]
+    AlreadyExists(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -460,6 +472,77 @@ pub struct NewRemoteTask {
     pub trusted: bool,
 }
 
+/// `POST /pods` request body (card D4, Wave 4, task 37.2) — verified
+/// directly against `serve.py::_handle_post_pods` and
+/// `core/pod_provisioning.py::provision_pod` (docket commit `0d84f47`,
+/// P22-5), not inferred: `{project, path, blueprint, pod, budget,
+/// verifyCmd}`, every field but `project` optional. Field-by-field:
+///
+/// - `project` — the docket-side pod identifier. **Not** derived from
+///   Tack's own project name anywhere in this crate — the HTTP handler
+///   that builds this (`tack-api::handlers::provisioning`) requires the
+///   caller to name it explicitly, so a retry after a partial failure can
+///   be typed back in verbatim instead of risking a second, differently
+///   -named pod for the same intent.
+/// - `path` — interpreted per the blueprint's `workspace_kind`: a
+///   `codebase` blueprint (`software`) treats it as the pod's codebase
+///   path; a `workdir` blueprint (`research`/`content`/`ops`/
+///   `agentic-product`) treats it as the shared working directory,
+///   auto-provisioned by docket when empty. Empty string, not `None` —
+///   docket's own `body.get("path", "")` default.
+/// - `pod` — mirrors `docket add --pod full`. docket only accepts the
+///   literal string `"full"` (any other value is a `400`); `None` omits
+///   the key entirely, which is what every blueprint other than `software`
+///   should send (docket silently ignores it there per its own
+///   `_handle_post_pods` comment).
+/// - `budget` — a cap override (`None` = fall back to the blueprint's own
+///   default). Unsuffixed (not `*_usd_estimated`) because this is an
+///   operator-set ceiling, not a derived spend figure — same reasoning as
+///   `orch_links.budget_usd` (TODO.md §0 rule 6 governs *estimates*, not
+///   caps).
+/// - `verify_cmd` — applied to Implementer member(s) at creation time.
+///   docket validates it server-side (`validate_verify_cmd`: no NUL byte,
+///   no newline, ≤2000 chars) and returns `400` on failure; this crate does
+///   not duplicate that check.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ProvisionPodParams {
+    pub project: String,
+    #[serde(default)]
+    pub path: String,
+    pub blueprint: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pod: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget: Option<f64>,
+    #[serde(
+        rename = "verifyCmd",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub verify_cmd: String,
+}
+
+/// One pod member docket actually created — `POST /pods`'s `members[]`,
+/// `{"id": ..., "role": ..., "model": ...}` (verified against
+/// `_handle_post_pods`'s response body).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProvisionedPodMember {
+    pub id: String,
+    pub role: String,
+    pub model: String,
+}
+
+/// `POST /pods`'s `201` success body: `{"ok": true, "project": ...,
+/// "blueprint": ..., "members": [...]}` — `ok` is not modeled (only ever
+/// `true` on a 2xx), same "unmodeled key costs nothing" discipline as
+/// [`EnqueueTaskResponse`] in `adapters::docket`.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ProvisionedPod {
+    pub project: String,
+    pub blueprint: String,
+    pub members: Vec<ProvisionedPodMember>,
+}
+
 /// One page of `GET /traces/{project}?since=` — the events themselves, plus
 /// the remote's own resume cursor to send back as `since` on the next call.
 ///
@@ -571,6 +654,28 @@ pub trait ControlPlane: Send + Sync {
     /// token (or an illegal decision on one, which docket reports the same
     /// way) is [`OrchError::NotFound`].
     async fn decide_approval(&self, token: &str, grant: bool) -> Result<ApprovalState, OrchError>;
+
+    /// Provision a fresh pod from a blueprint — `POST /pods` (card D4, Wave
+    /// 4, task 37.2; docket P22-5, verified live against
+    /// `core/pod_provisioning.py`/`serve.py::_handle_post_pods`, commit
+    /// `0d84f47`). See [`ProvisionPodParams`] for the request shape.
+    ///
+    /// **docket provisions atomically: either every member is created, or
+    /// none are.** `core/pod_provisioning.py`'s module doc states the
+    /// contract explicitly — `provision_members` tears down every member
+    /// (and any pod-level port range / scratch dir) created during a
+    /// *failing* call before raising, so by the time this method returns
+    /// `Err`, docket itself has already rolled back whatever it started.
+    /// The one exception is [`OrchError::AlreadyExists`] (HTTP 409): raised
+    /// *before* anything is touched (`PodAlreadyExistsError` is checked
+    /// first, before even the blueprint name is resolved), so it also
+    /// leaves nothing new behind — it means a pod already existed under
+    /// this name, not that this call partially created one. Either way, a
+    /// caller of this method never needs to (and cannot, over HTTP — docket
+    /// has no `DELETE`/teardown route) undo a *successful* call; only the
+    /// caller's own side of a multi-step flow (e.g. a Tack project record
+    /// created moments earlier) can still need rolling back.
+    async fn provision_pod(&self, params: ProvisionPodParams) -> Result<ProvisionedPod, OrchError>;
 }
 
 // ---------------------------------------------------------------------------

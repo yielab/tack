@@ -46,7 +46,7 @@ Every card below has a handoff note in §6 with its full reasoning.
 | D2 | budget + policy panels | ✅ done — **no pause control/indicator built**: docket has zero HTTP surface for it, in either direction (see §1.4 note and §6) |
 | D3 | template `orchestration` block + pipeline library | ✅ done — backend + validation; UI editor deliberately deferred (see §6) |
 | D5 | unit economics (tokens, estimated cost, lead time, rework rate) | ✅ done — own `handlers/economics.rs` + `repo/economics.rs` module (D4 was concurrently mid-edit in `repo/orch.rs`, so this card deliberately never touched that file — see §6) |
-| **D4** | provisioning flow + wizard | 🟡 **in progress (concurrent with D5)** · `POST /pods` verified present at `serve.py:1097` with `core/pod_provisioning.py` (coordinator, 2026-08-05). **Nothing in this cycle is blocked any more.** Status at D5's finish: `frontend/src/features/provisioning/**`, `handlers/provisioning.rs` exist and mostly pass; 2 `ProvisioningWizard.test.tsx` failures still open as D5 hands off — not D5's file, left for D4/coordinator |
+| D4 | provisioning flow + wizard | ✅ done — `POST /templates/{id}/provision` (project → validate → provision pod → link, rollback on every failure before the pod exists, never after); wizard at `/provision`; live-verified against an isolated docket, including 409/400/401 (see §6) |
 
 **Known gaps, carried deliberately** (each is written up in the §6 note of the card that found it):
 
@@ -77,6 +77,23 @@ Every card below has a handoff note in §6 with its full reasoning.
   correlate a mirrored event to one specific dispatch *attempt* (not just one item)
   cannot do it today — `orch_events.item_id` is the only reliable correlation. D5's
   rework-rate computation is item-level for exactly this reason (D5).
+- A template's inline `orchestration.pipeline_yaml` has no delivery path to docket at
+  provisioning time — `POST /pods` has no pipeline field, and `orch_links` has no
+  `pipeline_yaml` column (only `pipeline_file`, a docket-known pipeline by name).
+  `create_project_with_pod` still provisions successfully and surfaces this as a
+  `warnings[]` entry rather than silently dropping it or inventing a delivery
+  mechanism (D4).
+- **A real SolidJS bug, not docket/Tack-API-specific:** `resource.latest`, like
+  calling a `createResource` accessor directly, throws once the resource has
+  errored — confirmed live. Reading it unguarded inside a `createMemo`/JSX
+  expression silently stops that resource's whole reactive graph from updating
+  (the page looks stuck loading forever, no console error). This is the same
+  failure class card C4 already documented for the bare accessor call — `.latest`
+  needs the identical guard, and this codebase has no lint for it yet. A grep for
+  `\.latest` across `frontend/src` (excluding tests) currently turns up only the
+  two guarded call sites this card just fixed — nothing else in the codebase uses
+  `.latest` today, so there is nothing else to retrofit right now, only something
+  to remember before the next `createResource` (D4).
 
 ---
 
@@ -189,7 +206,7 @@ item's status on that transition".
 | `GET /tasks/{project}` | Bearer | **shipped** (docket P22-2, `serve.py` `do_GET`) |
 | `GET /traces/{project}?since=` | Bearer | **shipped** (docket P22-3) — cursor paging; events are **snake_case** |
 | `POST /tasks/{project}` | Bearer | **shipped** (docket P22-1) — body `{description, priority, trusted}` → `{ok, task, project, status, approvalToken?}` |
-| `POST /pods` ⚠️ | Bearer | **does not exist yet** — blocks Tack Phase 37 (D4) |
+| `POST /pods` | Bearer | **shipped** (docket P22-5, `serve.py::_handle_post_pods` + `core/pod_provisioning.py`, commit `0d84f47`) — body `{project, path, blueprint, pod, budget, verifyCmd}` (all but `project` optional) → `201 {ok, project, blueprint, members: [{id, role, model}]}`. `409` (`PodAlreadyExistsError`) and every non-2xx are raised before/after docket's own rollback — never a half-created pod. No HTTP route to delete/un-provision a pod exists. Live-verified by card D4, 2026-08-05 — this row previously said "does not exist yet," which was already stale by the time D4 started (see the top-of-file correction and card D3's handoff) |
 
 > **Added 2026-08-05 (card D2).** docket's budget auto-pause
 > (`core/dispatch.py::_pause_lead_for_budget`, sets a Lead agent's
@@ -675,12 +692,16 @@ invalid pipeline is rejected with docket's own error text.
 
 ### D4 — Provisioning flow + wizard
 
-**Tasks:** 37.2, 37.4 · ⚠️ **Blocked on docket `POST /pods`** (docket Phase 22).
+**Tasks:** 37.2, 37.4 · ~~⚠️ Blocked on docket `POST /pods` (docket Phase 22).~~
+**Corrected 2026-08-05 (card D4): unblocked — `POST /pods` shipped (P22-5),
+live-verified against an isolated docket. Done — see §6.** Original brief:
 `POST /api/projects/from-template/{id}` gains `provision_pod: true`: create the Tack
 project → the docket pod → pipeline → budget → `orch_link`, with **rollback on partial
 failure**. A Tack project with a half-created pod is worse than no project. Wizard:
 product type → template → pod shape → budget → verify command → create, reusing the
-Phase 31 template-first onboarding surface.
+Phase 31 template-first onboarding surface. (Built as a separate route,
+`POST /api/templates/{id}/provision`, rather than extending the existing
+endpoint — see card D4's §6 handoff for why.)
 
 **Acceptance:** one wizard pass yields a correct board **and** a correct `docket list`
 entry (roles, models, budget, verify command); a forced mid-provision failure leaves
@@ -6614,5 +6635,313 @@ confirmed clean via `git diff`/`git status` before finishing.
   (`orch_tasks`, `orch_events`) this card reads from, so a live docket run
   would only re-confirm data this card never touches directly.
 
-This closes the cycle's last unbuilt card — see the status board update
-above.
+**Correction, added by D4:** this was not the cycle's last unbuilt card — D4
+(provisioning) was still `⬜ not started` when this note was written; see
+below.
+
+### D4 — 2026-08-05
+
+**The real `POST /pods` contract, confirmed two ways before designing
+anything — read `~/Sites/rack-cli/src/docket/serve.py::_handle_post_pods`
+and `core/pod_provisioning.py` yourself before touching this again.**
+
+- **Source.** Request: `{project, path, blueprint, pod, budget, verifyCmd}`
+  — every field but `project` optional. Success: `201 {"ok": true,
+  "project", "blueprint", "members": [{"id", "role", "model"}]}`. `400` —
+  unknown blueprint / bad `verifyCmd` / `pod` not `"full"` / missing
+  `project`, checked **before anything is touched**. `401` — bad/missing
+  Bearer token. `409` — `PodAlreadyExistsError`, also raised **before
+  anything is touched** (`pod_member_ids(project)` is the very first check
+  in `provision_pod`, before even the blueprint name is resolved) — "skip,
+  don't clobber," matching the declarative `--from` path's long-standing
+  idempotence contract. `500` — `PodProvisionError`, and
+  `core/pod_provisioning.py`'s own module docstring states this is raised
+  **only after rollback has already run**: `provision_members` tears down
+  every member (and any pod-level port range/scratch dir) created during
+  *that* failing call before raising. **Every docket-side failure mode is
+  therefore atomic — fully created or nothing created — with 409 as the
+  "already satisfied" case.** docket also has **no HTTP route to
+  delete/un-provision a pod at all** — I read every `do_GET`/`do_POST`
+  branch in `serve.py` by hand; there is no `do_DELETE`, no `/pods/{id}` of
+  any method.
+- **Live-verified, not just read.** `DOCKET_HOME` pointed at
+  `<scratchpad>/docket-home` for every invocation; `~/.docket`'s mtime
+  recorded before the first command and re-checked identical after the
+  last — confirmed unchanged, same discipline V1 established. Ran an
+  isolated `docket serve --port 18402` and exercised the happy path (201 +
+  exact `members[]` shape), the 409 (retry with the same `project`), 400
+  (bad blueprint / missing `project` / bad `pod` value), 401 (no
+  `Authorization` header), `pod:"full"` on `software` (4-member roster:
+  lead/implementer/reviewer/tester), and a `workdir`-kind blueprint
+  (`research`, auto-provisioned work dir, 5-member roster) — all via raw
+  `curl` first, then again by running **this crate's own compiled
+  `DocketAdapter::provision_pod`** against the same live server (happy path
+  and the 409), so the adapter code itself — not just my reading of the
+  docs — is confirmed correct end to end. Full transcript folded into
+  `adapters::docket`'s module doc ("Verified live" section, new bullet)
+  rather than only living here. Closes the one gap V1's own handoff
+  explicitly flagged as unexercised ("`POST /pods` — out of this card's
+  endpoint list ... not exercised").
+- **§1.4's table was already wrong and I did not own it** — the ⚠️ row
+  said `POST /pods` "does not exist yet." Since the status board and this
+  file's own top-of-file correction already established it ships, I fixed
+  that one table row (disclosed: a one-row edit to shared reference text,
+  same latitude A4/B2/D3 each took correcting stale rows they found while
+  reading source for their own card).
+
+**Rollback design — the reason this card exists, and the ordering that
+falls out of the contract above.** Two systems, one HTTP call that cannot
+be undone once it succeeds, and (per the contract above) nothing on
+docket's side is ever left half-created. That leaves exactly one thing that
+*can* end up half-created: Tack's own project row. So the flow
+(`handlers::provisioning::create_project_with_pod`, full reasoning in that
+module's doc comment) is ordered to keep that the only moving part:
+
+1. **Create the Tack project first** (reusing `handlers::templates::
+   build_project_from_template` — extracted from the existing
+   `create_project_from_template` handler, logic unchanged, see below).
+   Cheap, local, fully reversible.
+2. **Validate everything provisioning needs** — the referenced control
+   plane exists (checked *before* step 1, actually, so a bad id never costs
+   a throwaway project), `pod_shape` is well-formed, `status_map` names
+   real statuses in **the project's own just-created workflow** (not a
+   guess, not a template default — the actual `WorkflowConfig` `Repository::
+   create_project` just wrote). Any failure here rolls the project back.
+3. **Call `POST /pods`.** Any failure (400/401/409/500) means, per the
+   contract above, nothing new exists on docket's side — roll the project
+   back too, and say so in the error message (`rollback_project` returns a
+   clause describing what happened to the rollback itself — appended to the
+   error, not swallowed; if the delete itself fails, that's surfaced too,
+   explicitly naming the orphaned project id).
+4. **Write `orch_links`.** The one step that runs *after* the irreversible
+   action. §0 rule 5 holds structurally: the only HTTP call in this whole
+   flow already completed in step 3, so this is a short, additive SQLite
+   write with nothing held across it. **A failure here is not a request
+   failure and the project is never deleted at this point** — deleting it
+   would strictly worsen things, since the project row is now the *only*
+   record Tack has that this pod exists at all, and docket cannot be asked
+   to remove it. Instead the handler returns an ordinary `200` whose
+   `provisioning` field is `ProvisioningOutcome::PodCreatedLinkFailed`,
+   naming the exact control plane + remote project and pointing at the
+   existing manual-link UI (`features/settings/orchestration/LinkForm.tsx`,
+   card D2) — which only needs a `PUT /orch-link` call, never a second
+   `POST /pods`, so retrying it can never create a second pod.
+
+**What this deliberately does not attempt:** auto-retrying a failed
+`orch_links` write, or "adopting" a 409 as this attempt's own pod. Both
+would need Tack to track cross-request provisioning state it has nowhere
+reliable to put this cycle; a 409 is a hard failure (project rolled back,
+operator told to pick a different `remote_project` name or use the
+existing manual-link flow if the pre-existing pod is genuinely theirs).
+Also not built: a process-wide lock against two concurrent provisioning
+requests (unlike C1's per-item dispatch lock) — this is a rare, human-
+driven, explicitly-confirmed action, not a hot path; two concurrent
+attempts with different `remote_project` names just create two pods
+correctly, and two attempts with the *same* name collide on docket's own
+409, still rolled back cleanly.
+
+**Tested, not just asserted — every branch above, in
+`crates/tack-api/tests/provisioning_test.rs` (8 tests, wiremock-backed):**
+404 when `TACK_ORCH_ENABLE` is unset (the whole route lives inside
+`orch_routes()`, so this is structural, not a manual check); happy path
+(project created, pod provisioned, link written, `GET .../orch-link`
+confirms it); unknown `control_plane_id` 404s **before any project is
+created** (asserted via a before/after project count, not just the status
+code); empty `remote_project` 400s the same way; a bad `status_map` name
+rolls the project back **without ever calling docket** (the sharpest test
+in the file — no `/pods` mock is mounted at all, so if the handler
+validated late, it would hit wiremock's default 404 and the error message
+would read "pod provisioning failed," not name the bad status; asserting
+the message's exact shape is what proves the ordering, not just the status
+code); docket 400 rolls the project back; docket 409 rolls the project
+back; and — the one hard case — an `orch_links` write forced to fail
+(`DROP TABLE orch_links` on the test's own pool right before the request,
+deterministic fault injection rather than guessing at a mock) after a
+*successful* `POST /pods` leaves the project standing, reports
+`pod_created_link_failed`, and names the manual next step. Also 6 new
+`provision_pod` tests in `crates/tack-orch/tests/docket_adapter_test.rs`
+(happy path, 409, 400, 500, 401, full-request-shape-on-the-wire).
+
+**Privilege — deliberately *not* gated behind `TACK_ORCH_APPROVAL_TOKEN`.**
+D1's separate decision credential exists for one specific reason: releasing
+a guardrail's deliberate block is a categorically different, narrower
+privilege than "using the orchestration API at all," and its safe default
+had to be "nothing can release a gated action" because the failure mode of
+getting that backwards is a stranger with only the ordinary API token
+resuming a paused agent. Provisioning is consequential — it creates real
+infrastructure and can spend real budget — but it's ordinary use of the
+same privilege class as manual dispatch (`POST /items/{id}/dispatch`, C1)
+and sprint-wide dispatch (`POST /sprints/{id}/dispatch`, C3), both of which
+can also spend real budget across many items in one call and are gated
+only by the ordinary `TACK_API_TOKEN` + `TACK_ORCH_ENABLE` pair. A second
+credential *only* here, while sprint-wide dispatch needs none, would be an
+inconsistent boundary, not a more careful one. The "require confirmation"
+instruction is met on the frontend instead — full reasoning and the exact
+UI pattern below.
+
+**Backend files.** `crates/tack-orch/src/lib.rs` (additive:
+`ProvisionPodParams`, `ProvisionedPod`, `ProvisionedPodMember`,
+`OrchError::AlreadyExists`, `ControlPlane::provision_pod` — the Wave-0
+freeze is already lifted, R1/§2.1, so this is a plain trait-method
+addition, not a workaround); `crates/tack-orch/src/adapters/docket.rs`
+(implementation + module-doc "Verified live" addition);
+`crates/tack-orch/src/reconciler.rs` (`FakeControlPlane::provision_pod` →
+`Disabled`, mechanical, same pattern D1 used for `decide_approval`);
+`crates/tack-orch/tests/docket_adapter_test.rs` (+6 tests);
+`crates/tack-api/src/handlers/templates.rs` (extracted `pub(crate) async fn
+build_project_from_template` out of `create_project_from_template`'s body
+— **logic byte-for-byte unchanged**, just callable from a second module;
+the existing handler is now a 4-line wrapper); `crates/tack-api/src/
+handlers/provisioning.rs` (**new** — request/response DTOs,
+`create_project_with_pod`, the rollback helpers, full module-doc reasoning
+above); `crates/tack-api/src/handlers.rs` (`pub mod provisioning;`, one
+line); `crates/tack-api/src/router.rs` (**one line**, replacing A4's
+placeholder comment inside `orch_routes()` — `POST /templates/{id}/
+provision`, disclosed: I did **not** reuse the existing `POST /projects/
+from-template/{id}` endpoint the placeholder comment suggested; see
+`handlers/provisioning.rs`'s module doc for the two reasons, chiefly "don't
+widen a response shape a live frontend call site already depends on for a
+brand-new capability when a new route costs one line"); `crates/tack-api/
+src/openapi.rs` (additive: one path, five schemas); `docs/openapi.json`
+(regenerated, `UPDATE_OPENAPI=1 cargo test -p tack-api --test
+openapi_contract`, drift gate green — necessarily also reflects D5's
+concurrently-landed economics routes, same as every prior wave's
+regeneration); `crates/tack-api/tests/provisioning_test.rs` (**new**, 8
+tests). **No migration.** Provisioning reuses the existing `orch_links`
+table (A3/W0-B) verbatim via the existing `upsert_orch_link` repo function
+— nothing new to persist beyond what a link already stores. (Per the
+coordinator's note mid-card: migrations 030/031 are D3/D5's; if a future
+card needs one, it's 032 — not relevant to what I built, flagging for
+whoever's next.) I also did not write any `orch_events` row from this
+flow — provisioning is a one-shot creation action, not an ongoing
+dispatch/trace the reconciler correlates; B6/D5's `run_id`-always-`NULL`
+finding doesn't apply here since I never construct a `NewOrchEvent`.
+
+**Frontend.** New `frontend/src/features/provisioning/` (own feature
+directory, per the card's file-ownership instruction): `api.ts` (wire
+boundary — `ProvisionPodRequest`/`CreateProjectWithPodRequest`/
+`ProvisioningOutcome` hand-typed field-for-field against the Rust DTOs,
+same discipline A5/D1/D2/C4 each used for their own `api.ts`, plus
+`isOrchDisabled` duplicated per their established cross-feature-boundary
+precedent rather than imported); `format.ts` (`formatBudgetCap` — a cap,
+not an estimate, so it deliberately never carries the word "estimated",
+tested explicitly; `suggestRemoteProjectName`; `isFullPodShape`, mirroring
+the Rust handler's own `eq_ignore_ascii_case("full")` check so the
+checkbox and the request it sends can never disagree); `ProvisioningWizard.
+tsx` (the 4-step wizard: Project/template → Pod & control plane → Review →
+Result). `frontend/src/shared/ui/icons.tsx` (+`IconProvision`, additive —
+D5 already set the precedent of adding its own icon to this shared file
+this same wave); `frontend/src/shared/ui/Sidebar.tsx` (+nav link, additive,
+same file D1/D5 already touched this wave for their own nav entries);
+`frontend/src/app/routes.tsx` (+`/provision` route, additive);
+`frontend/src/shared/api/schema.gen.ts` (regenerated via `npm run gen:api`
+— frontend source untouched by the regen itself, same as D3's precedent).
+
+**Gating.** `GET /api/control-planes` doubles as the wizard's
+`orchAvailable()` probe (`api.ts`'s doc comment on `listControlPlanes`) —
+it already lives inside `orch_routes()`, so a 404 there *is* "orchestration
+disabled," no second probe needed. `orchAvailable()` is `false` while
+loading and on *any* error, not just 404 — same conservative posture C4's
+`useAgentActivityMap.orchAvailable`/`ItemDetailDrawer` use. Nothing below
+that gate renders while it's `false`: a `Switch`/`Match` over four states
+(loading / disabled / other-error-with-retry / no-control-planes-
+registered / ready) replaces what an earlier draft wrote as three nested
+`<Show>`s — not a style preference, see the bug below.
+
+**Confirmation, not a credential.** No one-click path from opening `/
+provision` to a pod existing: step 3's "Provision…" button only opens a
+confirmation `Modal` naming the exact docket project name, blueprint,
+control plane, and budget cap, with the literal words "This creates real
+infrastructure and cannot be automatically undone." — the same pattern D1
+built for approval decisions and C4 built for sprint dispatch. Live-scanned
+with the modal open (see a11y below), not just written.
+
+**A real, live SolidJS bug found and fixed while wiring the gating up — a
+third instance of the class C4's handoff already documented, in a new
+shape.** C4 found that calling a `createResource` accessor directly
+(`dryRun()`) throws once the resource has errored, and that doing so inside
+a memo/JSX expression silently aborts the whole reactive batch. Building
+this wizard's gating turned up the **same failure mode from `.latest`, not
+just the bare accessor call**: `createMemo(() => controlPlanes.latest ??
+[])` — a pattern that reads perfectly reasonable (`.latest` is documented
+as the "won't trigger Suspense" safe alternative to calling the resource)
+— **also throws once the resource is in an error state**, live-confirmed
+with a scratch repro (`console.log` immediately before/after the `.latest`
+read inside the memo: the "before" line printed twice — once on mount,
+once when the resource settled into `errored` — and the "after" line only
+printed the *first* time; the memo's own re-run, and every sibling
+computation depending on the same resource including an unrelated debug
+effect that only read `.loading`/`.error`, never fired again). The
+symptom in the real component was silent and easy to misdiagnose as a
+timing issue: `controlPlanes.loading` never became visibly `false`, so the
+page stayed on the loading skeleton forever on any 404/500 — no console
+error, no thrown exception visible in the test output, just a page that
+looks stuck loading. **Fix:** guard `.latest` behind an explicit
+`.error !== undefined` check in both memos (`controlPlaneList`/
+`templateList`) rather than calling it unconditionally — see
+`ProvisioningWizard.tsx`'s own doc comment on those two memos for the
+fix and the reasoning.
+**Flagging for whoever next writes a `createMemo`/JSX expression touching
+`resource.latest` anywhere in this codebase — C4's original finding was
+scoped to "calling the resource directly," and this shows `.latest` needs
+the identical guard, not just the bare call.** Regression-covered by the
+two vitest tests that specifically exercise the 404/500 paths (`orchestration
+disabled` / `a non-404 failure`) — both failed reliably before the fix
+(confirmed by reverting it and re-running) and pass after.
+
+**What I tested.** Rust: 8 new `provisioning_test.rs` tests + 6 new
+`docket_adapter_test.rs` tests (listed above). Frontend: `api.test.ts` (3),
+`format.test.ts` (7), `ProvisioningWizard.test.tsx` (5 — orchestration
+disabled, non-404 failure, no-control-planes empty state, the full
+happy-path walkthrough through all four steps **with an explicit assertion
+that the provisioning `POST` only fires after the confirm-modal click, not
+the "Provision…" click that opens it**, and the `pod_created_link_failed`
+warning state). Two new live-executed Playwright a11y scans in `e2e/
+a11y.spec.ts` (`provisioning wizard (orchestration disabled)`,
+`provisioning wizard (confirmation modal open)` — the second walks a real
+Chromium render through steps 1→2→3 and opens the real confirmation
+`Modal` via a real click, then scans with the dialog open, since that's
+the highest-focus-risk state) — both 0 violations, actually executed
+(`npx playwright test e2e/a11y.spec.ts --project=chromium -g
+provisioning`), not just written.
+
+**Verification.** `cargo build --workspace`: clean. `cargo test
+--workspace`: green (my net-new: 8 + 6 = 14 Rust tests on top of whatever
+D5 had already landed concurrently — no clean pre-D4 baseline to diff
+against since D5 was landing work in parallel, but nothing failed).
+`cargo clippy --workspace --all-targets -- -D warnings`: clean. `cargo fmt
+--all -- --check`: clean. `UPDATE_OPENAPI=1 cargo test -p tack-api --test
+openapi_contract`: regenerated, drift gate green. Frontend: `npm run
+type-check` clean; `npm run lint:tokens` 0/0 both gates; `npm run build`
+clean (`ProvisioningWizard` code-splits into its own ~12KB chunk); `npm
+run test -- --run`: 406 passed, the same 3 pre-existing `requestBlob`/
+`createObjectURL` failures named in this cycle's baseline, nothing else
+broken (my 15 new frontend tests all pass). `npx playwright test e2e/
+a11y.spec.ts --project=chromium`: 25 passed, 2 failed — **the same two
+pre-existing failures D1's handoff already found and flagged** (`sprint
+"Run sprint" dry-run preview` / `sprint dispatch results (mixed
+outcomes)`, both on `getByRole('button', {name:'Run sprint'})` resolving
+to multiple elements — now 4 instead of D1's 2, consistent with more
+Sprint-adjacent work having landed since; still unrelated to this card,
+still not investigated further, still worth the dedicated look D1's
+handoff already asked for).
+
+**Known gap, carried deliberately.** A template's inline
+`orchestration.pipeline_yaml` (card D3) has no delivery path to docket at
+provisioning time — `POST /pods` has no pipeline field at all (confirmed
+live), and `orch_links` has no `pipeline_yaml` column (only
+`pipeline_file`, a docket-known pipeline *by name*). If a template sets
+`pipeline_yaml` without also setting `pipeline_file`, `create_project_with_
+pod` still provisions the pod and writes the link, but adds a `warnings[]`
+entry saying so plainly — never silently drops it, never invents a
+delivery mechanism. Closing this for real needs a docket-side "upload a
+pipeline" primitive that doesn't exist yet; out of this card's scope to
+invent.
+
+**For whoever next touches provisioning.** `handlers/provisioning.rs`'s
+module doc is the one place to read first — it has the full rollback
+reasoning, the exact `POST /pods` contract, and the "why a separate route"
+call. `frontend/src/features/provisioning/api.ts` is the one file to edit
+if the wire shape ever changes. Nothing here blocks D5 (already done) or
+any future card — provisioning is a leaf feature, same as D1's approvals
+inbox and D2's budget panels were.

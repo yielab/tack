@@ -62,16 +62,24 @@ const ProvisioningWizard: Component = () => {
   );
   const [templates] = createResource(() => provisioningApi.listTemplates());
 
-  createEffect(() => {
-    console.log('DEBUG resource state', {
-      loading: controlPlanes.loading,
-      error: controlPlanes.error,
-      state: controlPlanes.state,
-    });
-  });
   const orchAvailable = () => !controlPlanes.loading && controlPlanes.error === undefined;
-  const controlPlaneList = createMemo(() => controlPlanes.latest ?? []);
-  const templateList = createMemo(() => templates.latest ?? []);
+  // Guard `.latest` behind an explicit `.error` check rather than calling it
+  // unconditionally. `resource.latest` — like calling the resource itself —
+  // **throws once the resource has settled into an error state**, a real,
+  // reproducible SolidJS behavior (confirmed live while building this
+  // component: an unguarded `controlPlanes.latest ?? []` inside this memo
+  // silently stopped the whole resource's reactive graph from updating on
+  // a 404/500, wedging the page on the loading skeleton forever with no
+  // console error — the exact failure shape card C4 already documented for
+  // a resource accessor called directly from a memo/JSX expression, see
+  // TODO.md §6 "C4"). These two memos are the only place either resource's
+  // value is read outside `.loading`/`.error`, so guarding here is enough.
+  const controlPlaneList = createMemo(() =>
+    controlPlanes.error !== undefined ? [] : (controlPlanes.latest ?? [])
+  );
+  const templateList = createMemo(() =>
+    templates.error !== undefined ? [] : (templates.latest ?? [])
+  );
 
   const [step, setStep] = createSignal<Step>(1);
 
@@ -99,8 +107,12 @@ const ProvisioningWizard: Component = () => {
   // Keep the suggested docket project name in sync with the Tack project
   // name until the operator edits it directly — after that, their choice
   // always wins (never silently overwritten mid-typing).
-  // DEBUG DISABLED
-  void suggestRemoteProjectName;
+  createEffect(() => {
+    const name = projectName();
+    if (!remoteProjectTouched()) {
+      setRemoteProject(suggestRemoteProjectName(name));
+    }
+  });
 
   // Seed step 2/3 from the chosen template's `orchestration` defaults, if
   // it has one — a template that already declares a blueprint/budget/
@@ -108,8 +120,14 @@ const ProvisioningWizard: Component = () => {
   // to draw on (TODO.md task 37.3/37.4), not something the operator should
   // have to re-type. Only applied on template *change*, so re-selecting
   // the same template never clobbers an edit the operator already made.
-  // DEBUG DISABLED 2
-  void isFullPodShape;
+  createEffect(() => {
+    const orch = selectedTemplate()?.orchestration;
+    if (!orch) return;
+    setBlueprint(orch.blueprint);
+    setFullRoster(isFullPodShape(orch.pod_shape));
+    if (orch.budget_usd != null) setBudgetUsd(String(orch.budget_usd));
+    if (orch.verify_cmd) setVerifyCmd(orch.verify_cmd);
+  });
 
   const step1Valid = () => projectName().trim().length > 0 && selectedTemplateId().length > 0;
   const step2Valid = () => controlPlaneId().length > 0 && remoteProject().trim().length > 0;

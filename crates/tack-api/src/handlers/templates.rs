@@ -240,40 +240,27 @@ pub struct CreateProjectFromTemplate {
     pub description: Option<String>,
 }
 
-/// POST /api/projects/from-template/:id - Create a project from a template
+/// The actual "build a project from a template" work — extracted (card D4,
+/// 2026-08-05) so `handlers::provisioning::create_project_with_pod` can
+/// reuse the exact same project-creation path (workflow/vocabulary/custom
+/// fields/boards) rather than a second, driftable copy of it, before going
+/// on to provision a pod and write the `orch_links` row. `pub(crate)`, not
+/// `pub` — this is an internal seam between two handler modules, not part
+/// of the public HTTP surface.
 ///
-/// **Card D3 note (Phase 37, TODO.md §6):** `template.orchestration`, when
-/// present, is deliberately inert here — this handler still only creates the
-/// Tack project (workflow/vocabulary/custom fields/boards), exactly as
-/// before this cycle. Turning the block into a live `orch_links` row needs a
-/// `control_plane_id` pointing at one specific, already-registered docket
-/// instance, which does not exist at this point (no pod has been
-/// provisioned) — that wiring is card D4's `provision_pod: true` extension
-/// of this same endpoint (TODO.md task 37.2), blocked on docket
-/// provisioning becoming reachable in a rollback-safe way, not this card's
-/// to build. This keeps TODO.md §0 rule 8 (off by default) trivially true
-/// for this path: nothing here reads `TACK_ORCH_ENABLE`, because nothing
-/// here does anything orchestration-shaped yet.
-#[instrument(skip(state))]
-#[utoipa::path(
-    post,
-    path = "/api/projects/from-template/{id}",
-    tag = "templates",
-    params(
-        ("id" = Uuid, Path, description = "Template ID"),
-    ),
-    request_body = CreateProjectFromTemplate,
-    responses(
-        (status = 200, description = "Project created from template", body = tack_core::models::Project),
-        (status = 404, description = "Template not found", body = crate::openapi::ErrorEnvelope),
-        (status = 422, description = "Validation error", body = crate::openapi::ErrorEnvelope),
-    ),
-)]
-pub async fn create_project_from_template(
-    State(state): State<AppState>,
-    Path(template_id): Path<Uuid>,
-    Json(data): Json<CreateProjectFromTemplate>,
-) -> Result<Json<Project>, StatusCode> {
+/// **`template.orchestration` is still inert here** — this function only
+/// ever creates the Tack project itself. Turning `orchestration` into a
+/// live `orch_links` row needs a `control_plane_id` pointing at one
+/// specific, already-registered docket instance, which callers of *this*
+/// function may not have yet (the plain `POST /api/projects/from-template/
+/// {id}` endpoint below never does); `handlers::provisioning` is the one
+/// caller that reads `template.orchestration` for its own defaults, after
+/// this function returns, not by changing anything in here.
+pub(crate) async fn build_project_from_template(
+    state: &AppState,
+    template_id: Uuid,
+    data: CreateProjectFromTemplate,
+) -> Result<Project, StatusCode> {
     data.validate()
         .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
 
@@ -387,6 +374,31 @@ pub async fn create_project_from_template(
             tracing::error!("Failed to find project after creation");
             StatusCode::NOT_FOUND
         })
+}
+
+/// POST /api/projects/from-template/:id - Create a project from a template
+#[instrument(skip(state))]
+#[utoipa::path(
+    post,
+    path = "/api/projects/from-template/{id}",
+    tag = "templates",
+    params(
+        ("id" = Uuid, Path, description = "Template ID"),
+    ),
+    request_body = CreateProjectFromTemplate,
+    responses(
+        (status = 200, description = "Project created from template", body = tack_core::models::Project),
+        (status = 404, description = "Template not found", body = crate::openapi::ErrorEnvelope),
+        (status = 422, description = "Validation error", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
+pub async fn create_project_from_template(
+    State(state): State<AppState>,
+    Path(template_id): Path<Uuid>,
+    Json(data): Json<CreateProjectFromTemplate>,
+) -> Result<Json<Project>, StatusCode> {
+    build_project_from_template(&state, template_id, data)
+        .await
         .map(Json)
 }
 
