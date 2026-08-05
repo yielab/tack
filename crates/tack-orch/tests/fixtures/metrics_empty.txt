@@ -1,0 +1,36 @@
+# PROVENANCE: captured live. `docket serve --port 18337` against the
+# pre-existing default DOCKET_HOME (~/.docket) — see the caveat in
+# `health.json`'s header; NOT an isolated sandbox. The
+# `docket_approvals_total{channel="timeout",outcome="denied"} 11` line below
+# is that real installation's genuine audit history — including, per the
+# same caveat, 11 denials this very capture run's own startup sweep caused
+# by fail-closed-expiring already-stale pending approvals. Left as captured,
+# unedited, because it is an accurate real Prometheus payload and a useful
+# non-zero-counter fixture; response body of
+# `curl http://127.0.0.1:18337/metrics`, 2026-08-04. Unauthenticated route,
+# Prometheus text-exposition format.
+# HELP docket_agents_total Number of project agents
+# TYPE docket_agents_total gauge
+docket_agents_total 0
+# HELP docket_agent_cost_usd Cumulative cost per agent (USD)
+# TYPE docket_agent_cost_usd gauge
+# HELP docket_cost_usd_total Total cost across all agents (USD)
+# TYPE docket_cost_usd_total gauge
+docket_cost_usd_total 0.0
+# HELP docket_gateway_up Gateway service active (1) or not (0)
+# TYPE docket_gateway_up gauge
+docket_gateway_up 0
+# HELP docket_approvals_pending_total Pending approvals awaiting a human decision
+# TYPE docket_approvals_pending_total gauge
+docket_approvals_pending_total 0
+# HELP docket_tool_calls_total Tool calls dispatched through the gated tool registry, by gate decision
+# TYPE docket_tool_calls_total counter
+# HELP docket_policy_hits_total Guardrail policy hits, by policy id, hook and action (the pre_tool_call slice is bounded by the audit log's current generation -- see the rotation caveat above)
+# TYPE docket_policy_hits_total counter
+# HELP docket_approvals_total Resolved approvals, by channel and outcome (channel="timeout" is a fail-closed expiry, not a human channel; bounded by the audit log's current generation -- see the rotation caveat above)
+# TYPE docket_approvals_total counter
+docket_approvals_total{channel="timeout",outcome="denied"} 11
+# HELP docket_turn_duration_seconds Session wall-clock (session_start -> session_end), fleet-wide
+# TYPE docket_turn_duration_seconds summary
+docket_turn_duration_seconds_sum 0.0
+docket_turn_duration_seconds_count 0

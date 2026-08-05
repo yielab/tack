@@ -1,0 +1,39 @@
+// PROVENANCE: captured live 2026-08-05 (card V1) — corrects card B2's
+// version of this fixture, which got the envelope shape right (verified by
+// reading `serve.py` source directly) but explicitly flagged that the route
+// itself had never actually been exercised over the wire. It now has: real
+// isolated `DOCKET_HOME`/`docket serve --port 18401`, project `demo2`,
+// session `agent:demo2:task-7bf4553c`. The first two events are real output
+// from calling `docket.core.trace.trace_event('demo2',
+// 'agent:demo2:task-7bf4553c', 'lead', 'tool_call', ..., cost_usd=0.0021,
+// duration_ms=842)` / `trace_event(..., 'session_start', '{}')` directly
+// (real docket code, real on-disk JSONL) — the third is hand-appended to
+// that same file afterward (docket's own `trace_event()` refuses to persist
+// an `event_type` outside its `EVENT_TYPES` frozenset, so there is no way to
+// really *produce* an unrecognised event type from this docket version; this
+// exercises `RemoteEvent::event_type`'s forward-compat plain-`String`
+// handling, same rationale as B2's version). Response body of
+// `curl -H "Authorization: Bearer <token>" http://127.0.0.1:18401/traces/demo2`,
+// 2026-08-05. Authenticated route (Bearer).
+//
+// This closes the exact gap B2's handoff note named: `events` really is an
+// array of raw JSON strings requiring a second decode (confirmed over an
+// actual HTTP round trip, not just by reading `_traces_page`/`do_GET`
+// source), and `next` really is present on the wire in docket's minted
+// `"<ts>Z:<n>"` form — here `"2026-08-05T11:08:10Z:3"` because all three
+// events landed in the same wall-clock second (back-to-back calls within
+// one second), so the trailing same-second run covers the whole page.
+// `next` is still not modeled in `TracesResponse` (nothing reads it — see
+// `adapters/docket.rs`'s module doc); `reconciler.rs`'s
+// `next_trace_cursor_matches_a_real_docket_servers_minted_cursor` test is
+// where a real multi-second cursor sequence (captured against the same live
+// server, a separate single-session project) is checked byte-for-byte
+// against docket's own minted `next` values.
+{
+  "events": [
+    "{\"ts\": \"2026-08-05T11:08:10Z\", \"project\": \"demo2\", \"session_id\": \"agent:demo2:task-7bf4553c\", \"agent_role\": \"lead\", \"event_type\": \"tool_call\", \"payload\": {\"tool\": \"bash\", \"command\": \"cargo test -p tack-orch\"}, \"cost_usd\": 0.0021, \"duration_ms\": 842}",
+    "{\"ts\": \"2026-08-05T11:08:10Z\", \"project\": \"demo2\", \"session_id\": \"agent:demo2:task-7bf4553c\", \"agent_role\": \"lead\", \"event_type\": \"session_start\", \"payload\": {}}",
+    "{\"ts\": \"2026-08-05T11:08:10Z\", \"project\": \"demo2\", \"session_id\": \"agent:demo2:task-7bf4553c\", \"agent_role\": \"lead\", \"event_type\": \"some_future_event_type_v3\", \"payload\": {\"note\": \"forward-compat event Tack does not know about yet\"}}"
+  ],
+  "next": "2026-08-05T11:08:10Z:3"
+}

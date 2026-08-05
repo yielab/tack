@@ -1,0 +1,36 @@
+# PROVENANCE: captured live. `docket serve --port 18339` run against an
+# isolated `DOCKET_HOME` (a fresh temp dir, explicitly exported before this
+# and every fixture capture after `metrics_empty.txt`/`health.json`/
+# `status_empty.json` — see the caveat in `health.json`'s header) seeded with
+# one real project-agent workspace (`demo-lead`, budgetUsd=25) and one real
+# pending approval (via `docket.core.approval.approval_create`, not
+# fabricated JSON); response body of `curl http://127.0.0.1:18339/metrics`,
+# 2026-08-04. Unauthenticated route, Prometheus text-exposition format.
+# Exercises: a non-empty `docket_agent_cost_usd`/`docket_agent_turns_total`
+# label set and `docket_approvals_pending_total 1`.
+# HELP docket_agents_total Number of project agents
+# TYPE docket_agents_total gauge
+docket_agents_total 1
+# HELP docket_agent_cost_usd Cumulative cost per agent (USD)
+# TYPE docket_agent_cost_usd gauge
+docket_agent_cost_usd{agent="demo-lead",model="anthropic/claude-sonnet-4-6"} 0.0
+docket_agent_turns_total{agent="demo-lead"} 0
+# HELP docket_cost_usd_total Total cost across all agents (USD)
+# TYPE docket_cost_usd_total gauge
+docket_cost_usd_total 0.0
+# HELP docket_gateway_up Gateway service active (1) or not (0)
+# TYPE docket_gateway_up gauge
+docket_gateway_up 0
+# HELP docket_approvals_pending_total Pending approvals awaiting a human decision
+# TYPE docket_approvals_pending_total gauge
+docket_approvals_pending_total 1
+# HELP docket_tool_calls_total Tool calls dispatched through the gated tool registry, by gate decision
+# TYPE docket_tool_calls_total counter
+# HELP docket_policy_hits_total Guardrail policy hits, by policy id, hook and action (the pre_tool_call slice is bounded by the audit log's current generation -- see the rotation caveat above)
+# TYPE docket_policy_hits_total counter
+# HELP docket_approvals_total Resolved approvals, by channel and outcome (channel="timeout" is a fail-closed expiry, not a human channel; bounded by the audit log's current generation -- see the rotation caveat above)
+# TYPE docket_approvals_total counter
+# HELP docket_turn_duration_seconds Session wall-clock (session_start -> session_end), fleet-wide
+# TYPE docket_turn_duration_seconds summary
+docket_turn_duration_seconds_sum 0.0
+docket_turn_duration_seconds_count 0

@@ -1,0 +1,21 @@
+// PROVENANCE: captured live. `docket serve --port 18337` (rack-cli @
+// pyproject version 0.2.0-beta.1, installed editable from
+// /home/ox/Sites/rack-cli) run against the pre-existing default DOCKET_HOME
+// (~/.docket) — NOT an isolated sandbox, see caveat below; response body of
+// `curl http://127.0.0.1:18337/health`, 2026-08-04. Unauthenticated route.
+// `gateway` is always 0 on this docket version — `core/utils.py`'s
+// `gateway_active()` is hardcoded to return False (no daemon gateway any
+// more; see its docstring).
+//
+// CAVEAT for whoever reads this next: this first capture (before switching
+// to an isolated `DOCKET_HOME` for every later fixture — see
+// `status_with_agent.json`, `runs_list.json`, etc.) was run without
+// overriding `DOCKET_HOME`, so it hit the operator's real `~/.docket`. Its
+// startup sweep (`_run_sweeps`, always run once at `docket serve` start)
+// fail-closed-denied 11 real pending approvals that were already >18h past
+// the 900s APPROVAL_TIMEOUT (harmless — they'd have been denied identically
+// on the operator's own next sweep — but it was still an unintended side
+// effect of this test run, not something requested, and is disclosed here
+// and in TODO.md §6's A1 handoff note). No further command in this card ran
+// without an explicit `DOCKET_HOME` override.
+{"status":"ok","gateway":0}

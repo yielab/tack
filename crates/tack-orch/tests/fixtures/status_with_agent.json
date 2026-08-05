@@ -1,0 +1,30 @@
+// PROVENANCE: captured live. `docket serve --port 18339` run against an
+// isolated DOCKET_HOME seeded with one real project-agent workspace
+// (`workspaces/projects/demo-lead/.docket-meta.json`, written by hand in the
+// same shape `docket add` itself writes: name/role/scope/model/budgetUsd/
+// kind/modelSource); response body of `curl http://127.0.0.1:18339/status.json`,
+// 2026-08-04. Unauthenticated route. `channels` is empty here (no channel
+// wired for this seeded agent) — contrast `status_empty.json`, which still
+// reports `["telegram"]` from a *different* docket install's own channel
+// config; channel membership is unrelated to agent registration.
+{
+  "apiVersion": "2",
+  "timestamp": "2026-08-04T19:51:00Z",
+  "gateway": "inactive",
+  "channels": [],
+  "agents": [
+    {
+      "id": "demo-lead",
+      "name": "demo-lead",
+      "kind": "project",
+      "scope": "project",
+      "model": "anthropic/claude-sonnet-4-6",
+      "registered": false,
+      "bindings": [],
+      "lastActivity": "never",
+      "costUsd": 0.0,
+      "budgetUsd": 25.0
+    }
+  ],
+  "totalCostUsd": 0.0
+}
