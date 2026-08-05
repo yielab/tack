@@ -2,18 +2,44 @@ use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
-use tack_core::models::{CreateItem, Item, ItemFilter, ItemType, Priority, UpdateItem};
+use tack_core::models::{CreateItem, Item, ItemFilter, ItemSource, ItemType, Priority, UpdateItem};
 use tack_core::workflow::StatusCategory;
 
 use super::Repository;
 
 impl Repository {
+    /// Create an item via the ordinary path — always `ItemSource::Manual`
+    /// (the operator's own words, typed or spoken by them: the UI, `tack
+    /// add`, the MCP tool, and the Alexa skill all go through this).
+    /// External-data import paths must call
+    /// [`create_item_with_source`](Self::create_item_with_source) instead so
+    /// the item's provenance is recorded truthfully — see TODO.md's C2 card
+    /// and `tack_core::models::ItemSource`.
     #[instrument(skip(self))]
     pub async fn create_item(
         &self,
         project_id: Uuid,
         initial_status: &str,
         input: CreateItem,
+    ) -> Result<Item, sqlx::Error> {
+        self.create_item_with_source(project_id, initial_status, input, ItemSource::Manual)
+            .await
+    }
+
+    /// Create an item recording an explicit provenance `source`. Every
+    /// import path (GitHub, Linear, JSON/YAML project import, CSV import)
+    /// calls this directly with its own [`ItemSource`] variant instead of
+    /// [`create_item`](Self::create_item), which is hardcoded to `Manual`.
+    /// `source` is written once, here, and nowhere else — `update_item` has
+    /// no code path that touches this column, which is what makes the trust
+    /// marker sticky for the lifetime of the item.
+    #[instrument(skip(self))]
+    pub async fn create_item_with_source(
+        &self,
+        project_id: Uuid,
+        initial_status: &str,
+        input: CreateItem,
+        source: ItemSource,
     ) -> Result<Item, sqlx::Error> {
         let id = Uuid::new_v4();
         let now = Utc::now();
@@ -37,9 +63,11 @@ impl Repository {
         .await?;
         let sort_order = max_sort.unwrap_or(0) + 1;
 
+        let source_str = source.to_string();
+
         sqlx::query(
-            "INSERT INTO items (id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO items (id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(id.to_string())
         .bind(project_id.to_string())
@@ -56,12 +84,13 @@ impl Repository {
         .bind(input.sprint_id.map(|s| s.to_string()))
         .bind(&input.assignee)
         .bind(input.due_date.map(|d| d.to_rfc3339()))
+        .bind(&source_str)
         .bind(&now_str)
         .bind(&now_str)
         .execute(self.pool())
         .await?;
 
-        debug!(item_id = %id, title = %input.title, "Item created");
+        debug!(item_id = %id, title = %input.title, source = %source_str, "Item created");
 
         Ok(Item {
             id,
@@ -81,6 +110,7 @@ impl Repository {
             due_date: input.due_date,
             started_at: None,
             completed_at: None,
+            source,
             created_at: now,
             updated_at: now,
         })
@@ -89,7 +119,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn get_item(&self, id: Uuid) -> Result<Option<Item>, sqlx::Error> {
         let row = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at
              FROM items WHERE id = ?"
         )
         .bind(id.to_string())
@@ -107,7 +137,7 @@ impl Repository {
     ) -> Result<Vec<Item>, sqlx::Error> {
         let (where_clause, binds) = item_filter_clause(project_id, filter);
         let mut query = format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at
              FROM items{where_clause} ORDER BY sort_order ASC"
         );
 
@@ -152,7 +182,7 @@ impl Repository {
         to: chrono::DateTime<chrono::Utc>,
     ) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at
              FROM items
              WHERE due_date IS NOT NULL
                AND due_date >= ?
@@ -351,7 +381,7 @@ impl Repository {
         query: &str,
     ) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.started_at, i.completed_at, i.created_at, i.updated_at
+            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.source, i.started_at, i.completed_at, i.created_at, i.updated_at
              FROM items i
              JOIN items_fts fts ON i.rowid = fts.rowid
              WHERE i.project_id = ? AND items_fts MATCH ?
@@ -373,7 +403,7 @@ impl Repository {
         query: &str,
     ) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.started_at, i.completed_at, i.created_at, i.updated_at
+            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.source, i.started_at, i.completed_at, i.created_at, i.updated_at
              FROM items i
              JOIN items_fts fts ON i.rowid = fts.rowid
              JOIN projects p ON i.project_id = p.id
@@ -392,7 +422,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn get_item_tree(&self, project_id: Uuid) -> Result<Vec<Item>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at
              FROM items WHERE project_id = ? ORDER BY parent_id NULLS FIRST, sort_order ASC"
         )
         .bind(project_id.to_string())
@@ -438,7 +468,7 @@ impl Repository {
     ) -> Result<bool, sqlx::Error> {
         // Get all children of this parent
         let children = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, started_at, completed_at, created_at, updated_at
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at
              FROM items WHERE parent_id = ?"
         )
         .bind(parent_id.to_string())
@@ -494,6 +524,7 @@ struct ItemRow {
     sprint_id: Option<String>,
     assignee: Option<String>,
     due_date: Option<String>,
+    source: String,
     started_at: Option<String>,
     completed_at: Option<String>,
     created_at: String,
@@ -522,6 +553,10 @@ impl ItemRow {
                     .ok()
                     .map(|d| d.with_timezone(&Utc))
             }),
+            // `FromStr` for `ItemSource` is infallible (unrecognised text
+            // degrades to `Unknown`, i.e. untrusted) — see its own doc
+            // comment for why that's the safe direction.
+            source: self.source.parse().unwrap_or_default(),
             started_at: self.started_at.and_then(|s| {
                 chrono::DateTime::parse_from_rfc3339(&s)
                     .ok()

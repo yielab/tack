@@ -5,6 +5,7 @@ pub mod custom_fields;
 pub mod dependencies;
 pub mod github_links;
 pub mod items;
+pub mod orch;
 pub mod projects;
 pub mod roles;
 pub mod sprints;
