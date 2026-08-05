@@ -2,10 +2,30 @@ use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
+use tack_core::CoreError;
 use tack_core::models::{CreateItem, Item, ItemFilter, ItemSource, ItemType, Priority, UpdateItem};
-use tack_core::workflow::StatusCategory;
+use tack_core::workflow::{StatusCategory, WorkflowConfig};
 
 use super::Repository;
+
+/// The result of [`Repository::update_item_status_checked`] — see its doc
+/// comment.
+#[derive(Debug)]
+pub enum StatusUpdateOutcome {
+    /// The transition was applied; carries the freshly reloaded item.
+    /// Boxed: `Item` otherwise dominates this enum's size even for the
+    /// common `Rejected` case (`clippy::large_enum_variant`) — the same fix
+    /// card C3 applied to `sprint_dispatch::ItemResult::Outcome` for the
+    /// same reason.
+    Applied(Box<Item>),
+    /// The target column's WIP limit is at (or over) capacity — nothing was
+    /// written, the item was left exactly as it was. Carries the exact
+    /// [`CoreError::WipLimitExceeded`] [`WorkflowConfig::check_wip_limit`]
+    /// produced, computed from the count read inside the same transaction
+    /// that decided not to write, so callers get the engine's own error
+    /// text rather than a re-derived approximation.
+    Rejected(CoreError),
+}
 
 impl Repository {
     /// Create an item via the ordinary path — always `ItemSource::Manual`
@@ -390,6 +410,112 @@ impl Repository {
                 .fetch_one(self.pool())
                 .await?;
         Ok(count)
+    }
+
+    /// Atomically check `target_status`'s WIP limit (per `workflow`) and,
+    /// only if it isn't exceeded, apply the status transition — all inside
+    /// one `BEGIN IMMEDIATE` SQLite write transaction, so the count read the
+    /// limit check depends on can never be interleaved with another
+    /// writer racing the same column.
+    ///
+    /// Card R2 (2026-08-05): `dispatcher::apply_mapped_status` used to do
+    /// this as two separate steps — [`Repository::count_items_by_status`]
+    /// then a plain [`Repository::update_item`] — with no lock spanning
+    /// them. Two concurrent callers moving *different* items into the same
+    /// WIP-limited column could each read "under the limit" before either
+    /// had written, and both would then commit, pushing the column over its
+    /// configured limit. `BEGIN IMMEDIATE` (rather than the plain deferred
+    /// `BEGIN` [`Repository::upsert_orch_tasks`] and friends use, which only
+    /// takes SQLite's write lock on the *first* write inside the
+    /// transaction) acquires the write lock up front, at the count read —
+    /// so a second concurrent caller's own `BEGIN IMMEDIATE` blocks until
+    /// the first transaction commits or rolls back, rather than both
+    /// proceeding as if uncontended and one of them hitting a deferred
+    /// transaction's read-to-write lock upgrade conflict later.
+    ///
+    /// `handlers::items::update_item` (the human/board-drag path) and
+    /// `handlers::alexa` (the voice "mark done" path) both still do the
+    /// unguarded two-step `count_items_by_status` + `update_item` — same
+    /// race, not fixed by this method, since those handlers are outside
+    /// this card's file ownership. See TODO.md's R2 handoff.
+    ///
+    /// Only touches the fields `dispatcher::apply_mapped_status` needs
+    /// (status, and the status-category-derived started_at/completed_at) —
+    /// not the full field set `update_item` handles. If a future caller
+    /// needs more fields updated atomically alongside the WIP check, extend
+    /// this method rather than composing it with `update_item`'s separate,
+    /// unguarded writes.
+    #[instrument(skip(self, workflow))]
+    pub async fn update_item_status_checked(
+        &self,
+        id: Uuid,
+        project_id: Uuid,
+        target_status: &str,
+        status_category: Option<StatusCategory>,
+        workflow: &WorkflowConfig,
+    ) -> Result<Option<StatusUpdateOutcome>, sqlx::Error> {
+        let now = Utc::now().to_rfc3339();
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
+
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ?")
+                .bind(project_id.to_string())
+                .bind(target_status)
+                .fetch_one(&mut *tx)
+                .await?;
+
+        if let Err(e) = workflow.check_wip_limit(target_status, count as usize) {
+            tx.rollback().await?;
+            return Ok(Some(StatusUpdateOutcome::Rejected(e)));
+        }
+
+        sqlx::query("UPDATE items SET status = ?, updated_at = ? WHERE id = ?")
+            .bind(target_status)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(&mut *tx)
+            .await?;
+
+        if let Some(category) = status_category {
+            match category {
+                StatusCategory::InProgress => {
+                    sqlx::query(
+                        "UPDATE items SET started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ? WHERE id = ?",
+                    )
+                    .bind(&now)
+                    .bind(&now)
+                    .bind(id.to_string())
+                    .execute(&mut *tx)
+                    .await?;
+                }
+                StatusCategory::Done => {
+                    sqlx::query(
+                        "UPDATE items SET completed_at = COALESCE(completed_at, ?), updated_at = ? WHERE id = ?",
+                    )
+                    .bind(&now)
+                    .bind(&now)
+                    .bind(id.to_string())
+                    .execute(&mut *tx)
+                    .await?;
+                }
+                StatusCategory::Todo => {
+                    sqlx::query(
+                        "UPDATE items SET completed_at = NULL, updated_at = ? WHERE id = ?",
+                    )
+                    .bind(&now)
+                    .bind(id.to_string())
+                    .execute(&mut *tx)
+                    .await?;
+                }
+            }
+        }
+
+        tx.commit().await?;
+
+        Ok(self
+            .get_item(id)
+            .await?
+            .map(|item| StatusUpdateOutcome::Applied(Box::new(item))))
     }
 
     #[instrument(skip(self))]
