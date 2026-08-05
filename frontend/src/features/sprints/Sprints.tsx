@@ -397,6 +397,7 @@ export default function Sprints() {
                               class="text-xs px-2 py-1 rounded"
                               style={{ 'background-color': 'var(--color-primary-100)', color: 'var(--color-primary-700)' }}
                               onClick={() => setDispatchTarget(sprint)}
+                              aria-label={`Run sprint: ${sprint.name}`}
                             >
                               Run sprint
                             </button>
