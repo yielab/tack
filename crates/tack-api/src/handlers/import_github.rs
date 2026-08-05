@@ -5,7 +5,7 @@ use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
 
-use tack_core::models::{CreateItem, ItemType};
+use tack_core::models::{CreateItem, ItemSource, ItemType};
 
 use crate::error::{ApiError, ApiResult};
 use crate::router::AppState;
@@ -233,7 +233,15 @@ pub async fn import_github(
                 assignee: issue.assignee.as_ref().map(|u| u.login.clone()),
             };
 
-            match state.repo.create_item(project_id, &status, data).await {
+            // `ItemSource::Github` — this title/description came from a GitHub
+            // issue, filed by anyone who could open one on the linked repo.
+            // Untrusted for dispatch purposes (see `tack_core::models::ItemSource`
+            // and TODO.md's C2 card) for the lifetime of the item.
+            match state
+                .repo
+                .create_item_with_source(project_id, &status, data, ItemSource::Github)
+                .await
+            {
                 Ok(created_item) => {
                     created += 1;
                     // Link the new item to its issue so status changes can be

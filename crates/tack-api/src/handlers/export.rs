@@ -10,8 +10,8 @@ use tracing::{info, instrument};
 use uuid::Uuid;
 
 use tack_core::models::{
-    CreateDependency, CreateItem, CreateSprint, Dependency, Item, ItemType, Priority, Project,
-    Sprint, UpdateProject,
+    CreateDependency, CreateItem, CreateSprint, Dependency, Item, ItemSource, ItemType, Priority,
+    Project, Sprint, UpdateProject,
 };
 
 use crate::error::ApiError;
@@ -291,9 +291,17 @@ async fn run_import(
     let mut item_id_map: HashMap<Uuid, Uuid> = HashMap::new();
 
     for item in &data.items {
+        // Preserve the imported item's own `source` rather than defaulting to
+        // `Manual` — this is what makes the trust marker survive an
+        // export → import round-trip (TODO.md's C2 card acceptance bar). An
+        // export produced before this field existed, or any hand-built
+        // payload that omits it, deserializes `item.source` to
+        // `ItemSource::Unknown` (untrusted) via `Item`'s `#[serde(default)]`,
+        // never to `Manual` — so a payload can't claim trust it never had
+        // just by leaving the field out.
         let new = state
             .repo
-            .create_item(
+            .create_item_with_source(
                 new_project_id,
                 &item.status,
                 CreateItem {
@@ -309,6 +317,7 @@ async fn run_import(
                     sprint_id: item.sprint_id.and_then(|s| sprint_id_map.get(&s).copied()),
                     assignee: item.assignee.clone(),
                 },
+                item.source.clone(),
             )
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
@@ -504,7 +513,14 @@ pub async fn import_csv(
             assignee: get(assign_col).map(|s| s.to_string()),
         };
 
-        match state.repo.create_item(project_id, &status, data).await {
+        // `ItemSource::CsvImport` — a bare CSV carries no provenance of its
+        // own, so every row is untrusted for dispatch purposes, same as the
+        // GitHub/Linear importers.
+        match state
+            .repo
+            .create_item_with_source(project_id, &status, data, ItemSource::CsvImport)
+            .await
+        {
             Ok(_) => created += 1,
             Err(e) => {
                 tracing::warn!(error = %e, "Skipped CSV row due to create_item error");

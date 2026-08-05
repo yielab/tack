@@ -103,6 +103,35 @@ pub struct AppConfig {
     /// How many remote backups to retain after each upload. Default: 10.
     #[serde(default = "default_backup_retention")]
     pub backup_retention: usize,
+
+    // ── Agent-Factory Control Center (orchestration) ───────────────────────────
+    /// Enables the orchestration reconciler and every control-plane API route
+    /// (`/api/control-planes`, `/api/projects/{id}/orch-link`, `/api/fleet`, and
+    /// their Wave 2-4 successors). **Off by default.** With this unset, no
+    /// reconciler task is spawned (see `server.rs`) and every orch route 404s
+    /// (TODO.md §0 rule 8 / §4 cross-cutting acceptance).
+    #[serde(default)]
+    pub orch_enable: bool,
+
+    /// Base reconciler poll interval in seconds, before per-plane backoff and
+    /// jitter are applied. Default: 10.
+    #[serde(default = "default_orch_poll_secs")]
+    pub orch_poll_secs: u64,
+
+    /// How many days of `orch_events` (and, once Wave 2 lands, `orch_metrics`)
+    /// history to keep before the retention sweep rolls old rows into per-day
+    /// aggregates and deletes them. Default: 90.
+    #[serde(default = "default_orch_event_retention_days")]
+    pub orch_event_retention_days: u32,
+
+    /// Shared secret required to grant/deny a docket approval via
+    /// `POST /api/approvals/{token}` (Wave 4). Deliberately separate from
+    /// `TACK_API_TOKEN`: granting an approval is a materially higher-privilege
+    /// act than editing a card, so holding the ordinary API token is not enough
+    /// on its own. Consumed starting Wave 4; defined now so the config surface
+    /// for this cycle lands in one place. Never logged.
+    #[serde(default)]
+    pub orch_approval_token: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -132,6 +161,10 @@ impl Default for AppConfig {
             backup_prefix: default_backup_prefix(),
             backup_interval_secs: None,
             backup_retention: default_backup_retention(),
+            orch_enable: false,
+            orch_poll_secs: default_orch_poll_secs(),
+            orch_event_retention_days: default_orch_event_retention_days(),
+            orch_approval_token: None,
         }
     }
 }
@@ -169,6 +202,13 @@ fn default_backup_prefix() -> String {
 }
 fn default_backup_retention() -> usize {
     10
+}
+
+fn default_orch_poll_secs() -> u64 {
+    10
+}
+fn default_orch_event_retention_days() -> u32 {
+    90
 }
 
 fn default_allowed_origins() -> Vec<String> {
@@ -311,6 +351,22 @@ impl AppConfig {
         }
         if let Ok(v) = std::env::var("TACK_BACKUP_RETENTION") {
             config.backup_retention = v.parse().unwrap_or(default_backup_retention());
+        }
+        if let Ok(v) = std::env::var("TACK_ORCH_ENABLE") {
+            config.orch_enable = v == "1" || v.eq_ignore_ascii_case("true");
+        }
+        if let Ok(v) = std::env::var("TACK_ORCH_POLL_SECS") {
+            config.orch_poll_secs = v.parse().unwrap_or(default_orch_poll_secs());
+        }
+        if let Ok(v) = std::env::var("TACK_ORCH_EVENT_RETENTION_DAYS") {
+            config.orch_event_retention_days =
+                v.parse().unwrap_or(default_orch_event_retention_days());
+        }
+        // Never log the approval-token value
+        if let Ok(v) = std::env::var("TACK_ORCH_APPROVAL_TOKEN")
+            && !v.is_empty()
+        {
+            config.orch_approval_token = Some(v);
         }
         config
     }

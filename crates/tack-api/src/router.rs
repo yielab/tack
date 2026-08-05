@@ -19,7 +19,8 @@ use crate::debug;
 use crate::handlers::spa;
 use crate::handlers::{
     alexa, attachments, backup, boards_multi, comments, custom_fields, dependencies, export,
-    import_github, import_linear, items, projects, roles, settings, sprints, templates, websocket,
+    import_github, import_linear, items, orch, projects, roles, settings, sprints, templates,
+    websocket,
 };
 use crate::middleware::require_token;
 use crate::webhook::WebhookClient;
@@ -43,6 +44,61 @@ impl AppState {
 }
 
 const ATTACH_LIMIT: usize = 50 * 1024 * 1024; // 50 MB for file uploads
+
+/// Agent-Factory Control Center routes (Phases 33–38). Every route this cycle
+/// needs is batched into this one function (card A4 / TODO.md §2: `router.rs`
+/// is a chokepoint file, touched once) — later-wave agents add their route to
+/// the appropriate section below and update `crate::openapi::ApiDoc` rather
+/// than restructuring this function or `build_router`.
+///
+/// The whole sub-router is gated behind `TACK_ORCH_ENABLE` via
+/// [`orch::require_orch_enabled`] — with the flag unset every route here
+/// 404s, same as if it didn't exist (TODO.md §0 rule 8 / §4 cross-cutting
+/// acceptance). The auth token gate (`require_token`) is layered on top of
+/// this in `build_router`, so it still applies as usual.
+fn orch_routes(state: AppState) -> Router<AppState> {
+    Router::new()
+        // ─── Control planes (Wave 1 / A4, 33.5) ───────────────────────────
+        .route(
+            "/control-planes",
+            post(orch::create_control_plane).get(orch::list_control_planes),
+        )
+        .route(
+            "/control-planes/{id}",
+            get(orch::get_control_plane)
+                .patch(orch::update_control_plane)
+                .delete(orch::delete_control_plane),
+        )
+        // ─── Project ↔ control-plane link (Wave 1 / A4, 33.5) ─────────────
+        .route(
+            "/projects/{id}/orch-link",
+            get(orch::get_orch_link).put(orch::put_orch_link),
+        )
+        // ─── Fleet view aggregate (Wave 1 / A4, 33.5) ──────────────────────
+        .route("/fleet", get(orch::get_fleet))
+        // ─── Wave 2 (Phase 34) — metrics ────────────────────────────────────
+        .route("/metrics", get(orch::get_metrics)) // B3, 34.3/34.7
+        // ─── Wave 2 (Phase 34) — item/project agent activity ───────────────
+        .route(
+            "/items/{id}/agent-activity",
+            get(orch::get_item_agent_activity),
+        ) // B6, 34.8/34.9
+        .route(
+            "/projects/{id}/agent-activity",
+            get(orch::get_project_agent_activity),
+        ) // B6, 34.8/34.9
+        // ─── Wave 3 (Phase 35) — dispatch ───────────────────────────────────
+        .route("/items/{id}/dispatch", post(orch::dispatch_item)) // C1, 35.2/35.3/35.6
+        // .route("/sprints/{id}/dispatch", post(orch::dispatch_sprint)) // C3, 35.4
+        // .route("/sprints/{id}/dispatch/dry-run", get(orch::dry_run_sprint_dispatch)) // C3, 35.4
+        // ─── Wave 4 (Phases 36–38) — approvals + provisioning, add here: ───
+        // .route("/approvals/{token}", post(orch::decide_approval)) // D1, 36.1 — also gated on TACK_ORCH_APPROVAL_TOKEN
+        // .route("/projects/from-template/{id}", post(templates::create_project_from_template)) // D4, 37.2 — provision_pod:true extension of the existing endpoint, not a new route
+        .layer(middleware::from_fn_with_state(
+            state,
+            orch::require_orch_enabled,
+        ))
+}
 
 /// Build the full Axum router with all routes, middleware, and state.
 pub fn build_router(state: AppState) -> Router {
@@ -223,6 +279,13 @@ pub fn build_router(state: AppState) -> Router {
         .route("/boards/{id}/view", get(boards_multi::get_board_view))
         // ─── Alexa voice integration (skill-ID auth, exempt from token) ──
         .route("/alexa", post(alexa::handle_request))
+        // ─── Agent-Factory Control Center (Phase 33+, gated) ──────────────
+        // Every route this cycle needs is batched into this one sub-router so
+        // router.rs is structurally touched once (TODO.md §2's chokepoint
+        // note); later waves add their route to `orch_routes` below rather
+        // than restructuring this file. `require_orch_enabled` 404s every
+        // route here when TACK_ORCH_ENABLE is unset (TODO.md §0 rule 8).
+        .merge(orch_routes(state.clone()))
         // ─── Auth token gate ──────────────────────────────────────
         .layer(middleware::from_fn_with_state(state.clone(), require_token));
 
