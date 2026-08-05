@@ -21,10 +21,11 @@
 //! never turn into a 500 on a user's request.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Path, Request, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
@@ -35,8 +36,10 @@ use uuid::Uuid;
 use tack_core::workflow::WorkflowConfig;
 use tack_db::repo::orch::{
     ControlPlane, CreateControlPlane, OrchApproval, OrchEvent, OrchLink, OrchMetricLatest, OrchRun,
-    OrchTask, UpdateControlPlane, UpsertOrchLink,
+    OrchTask, PendingOrchApproval, UpdateControlPlane, UpsertOrchLink,
 };
+use tack_orch::adapters::docket::DocketAdapter;
+use tack_orch::{ControlPlane as OrchControlPlane, OrchError};
 
 use crate::dispatcher::{self, DispatchOutcome};
 use crate::error::{ApiError, ApiResult};
@@ -1694,4 +1697,300 @@ pub async fn dispatch_sprint(
 ) -> ApiResult<Json<SprintDispatchResponse>> {
     let report = sprint_dispatch::dispatch_sprint(&state, sprint_id, query.max_in_flight).await?;
     Ok(Json(report.into()))
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// GET /api/approvals, POST /api/approvals/{token}
+// (card D1, Wave 4, tasks 36.1/36.2 — approvals inbox + decision proxy)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// The fleet-wide inbox of approvals **currently blocking an agent fleet**,
+// plus the proxy that actually grants or denies one via docket's own
+// `POST /approvals/{token}`. This is a two-privilege-level surface —
+// reading the inbox needs only the ordinary orchestration gate (this
+// module's `require_orch_enabled` layer + the outer `TACK_API_TOKEN` Bearer
+// gate `router.rs` applies to the whole API), but *deciding* one needs the
+// separate `TACK_ORCH_APPROVAL_TOKEN` on top (see
+// `require_approval_token`'s own doc comment for the full "why", and
+// TODO.md §0 rule — "granting an approval is a higher-privilege action than
+// editing a card").
+//
+// Uncorrelated approvals (`item_id: null` — B1 could not attribute the
+// gate to a Tack item, e.g. a CLI-dispatched run) are included here, not
+// filtered out: the per-project Fleet view (`GET /fleet`) deliberately
+// excludes them (an inner join on `items`/`projects`, per A4's handoff)
+// specifically because this inbox is where they're meant to surface — an
+// approval Tack can't attribute to a project is the one most likely to be
+// silently blocking a fleet, per this card's own rationale.
+
+/// Header carrying the operator's `TACK_ORCH_APPROVAL_TOKEN` on a decision
+/// request. Deliberately not `Authorization` (already spoken for by the
+/// ordinary `TACK_API_TOKEN` Bearer gate — this is a second, independent
+/// credential, not a replacement for the first) and deliberately a header,
+/// not a request-body field (so it never ends up echoed into a JSON log
+/// line the way a body field might).
+pub const APPROVAL_TOKEN_HEADER: &str = "x-tack-approval-token";
+
+/// One row of the fleet-wide approvals inbox — a pending `orch_approvals`
+/// record enriched with the correlated control plane / item / project, when
+/// known. See the module-doc section above on why uncorrelated rows
+/// (`item_id: null`) are never filtered out.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct PendingApprovalResponse {
+    pub token: String,
+    pub control_plane_id: Uuid,
+    pub control_plane_name: String,
+    pub item_id: Option<Uuid>,
+    pub item_title: Option<String>,
+    pub item_status: Option<String>,
+    pub project_id: Option<Uuid>,
+    pub project_name: Option<String>,
+    pub remote_task_id: Option<String>,
+    /// `orch_approvals.agent` — populated from docket's `role` field on
+    /// ingestion (B1's handoff, TODO.md §6: "role is the closest field").
+    pub agent: Option<String>,
+    /// The gated action's description, already redacted by docket before it
+    /// reached Tack's mirror.
+    pub action: Option<String>,
+    pub requested_at: DateTime<Utc>,
+}
+
+impl From<PendingOrchApproval> for PendingApprovalResponse {
+    fn from(a: PendingOrchApproval) -> Self {
+        Self {
+            token: a.token,
+            control_plane_id: a.control_plane_id,
+            control_plane_name: a.control_plane_name,
+            item_id: a.item_id,
+            item_title: a.item_title,
+            item_status: a.item_status,
+            project_id: a.project_id,
+            project_name: a.project_name,
+            remote_task_id: a.remote_task_id,
+            agent: a.agent,
+            action: a.action,
+            requested_at: a.requested_at,
+        }
+    }
+}
+
+/// `GET /api/approvals` response envelope.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct PendingApprovalListResponse {
+    /// Oldest-requested first — docket approvals fail closed on timeout, so
+    /// surfacing the longest-waiting one first has a real cost (this
+    /// card's rationale).
+    pub rows: Vec<PendingApprovalResponse>,
+    /// Whether `TACK_ORCH_APPROVAL_TOKEN` is configured on this server at
+    /// all, **without ever exposing its value** — the same write-only-secret
+    /// discipline as `ControlPlaneResponse.token_set` /
+    /// `handlers::settings`'s `secret_key_set`. The frontend uses this to
+    /// decide whether to render Grant/Deny controls at all (a missing
+    /// server-side secret means nobody can act on this inbox today); the
+    /// server still enforces the real check independently on every
+    /// `POST /api/approvals/{token}` call regardless of what this flag says,
+    /// so a stale/cached `true` can never grant a privilege the header check
+    /// wouldn't also grant.
+    pub grant_available: bool,
+}
+
+/// `GET /api/approvals` — the fleet-wide pending-approval inbox, oldest
+/// first. Read-only; no `TACK_ORCH_APPROVAL_TOKEN` needed (see the
+/// module-doc section above on why reading and deciding are different
+/// privilege levels).
+#[utoipa::path(
+    get,
+    path = "/api/approvals",
+    tag = "orchestration",
+    responses(
+        (status = 200, description = "Fleet-wide pending-approval inbox, oldest first — includes uncorrelated approvals", body = PendingApprovalListResponse),
+        (status = 404, description = "Orchestration disabled", body = ErrorEnvelope),
+    ),
+)]
+#[instrument(skip(state))]
+pub async fn list_pending_approvals(
+    State(state): State<AppState>,
+) -> ApiResult<Json<PendingApprovalListResponse>> {
+    let rows = state
+        .repo
+        .list_pending_orch_approvals_with_context()
+        .await?;
+    Ok(Json(PendingApprovalListResponse {
+        rows: rows.into_iter().map(Into::into).collect(),
+        grant_available: state.config.orch_approval_token.is_some(),
+    }))
+}
+
+/// The gate this whole card exists for. Granting or denying a docket
+/// approval releases whatever an autonomous agent was paused for — a
+/// materially higher-privilege action than the ordinary `TACK_API_TOKEN`
+/// Bearer gate already covers (which lets a caller move any card on the
+/// board). So it requires the **separate** `TACK_ORCH_APPROVAL_TOKEN` on
+/// top, checked here rather than as a blanket middleware layer (unlike
+/// `require_orch_enabled`) because it applies to exactly one route, not the
+/// whole `orch_routes()` sub-router — reading the inbox (`GET /approvals`)
+/// deliberately does not go through this function.
+///
+/// **The safe default when `TACK_ORCH_APPROVAL_TOKEN` is unset: always
+/// reject.** There is deliberately no "no secret configured, so skip the
+/// check" branch the way `middleware::require_token`'s ordinary Bearer gate
+/// has for an unset `TACK_API_TOKEN` ("pure-local mode, allow everything").
+/// The two gates look similar but their safe defaults point opposite ways
+/// on purpose: an unconfigured `TACK_API_TOKEN` means "no auth configured
+/// for this whole install, trust the network boundary instead" — a
+/// deliberate, instantly-reversible operator choice. An unconfigured
+/// `TACK_ORCH_APPROVAL_TOKEN` must mean "nothing on this server is
+/// configured to release a gated agent action" — not "anyone holding the
+/// ordinary API token can." [`PendingApprovalListResponse::grant_available`]
+/// is how the frontend learns this without ever seeing the secret itself.
+fn require_approval_token(state: &AppState, headers: &HeaderMap) -> ApiResult<()> {
+    let Some(expected) = &state.config.orch_approval_token else {
+        return Err(ApiError::Forbidden(
+            "granting or denying approvals requires TACK_ORCH_APPROVAL_TOKEN to be configured \
+             on this server"
+                .to_string(),
+        ));
+    };
+    let provided = headers
+        .get(APPROVAL_TOKEN_HEADER)
+        .and_then(|v| v.to_str().ok());
+    match provided {
+        Some(tok) if crate::middleware::constant_time_eq(tok.as_bytes(), expected.as_bytes()) => {
+            Ok(())
+        }
+        _ => Err(ApiError::Forbidden(format!(
+            "missing or invalid {APPROVAL_TOKEN_HEADER} header"
+        ))),
+    }
+}
+
+/// Resolve `control_plane_id` into a live control-plane client. Deliberately
+/// duplicated from `dispatcher::build_control_plane` (a private fn in a
+/// file owned by a different agent this wave — see TODO.md's
+/// file-ownership map, `crates/tack-api/src/dispatcher.rs`) rather than
+/// exported from there: ~15 lines, no shared state, not worth the
+/// cross-agent coordination a shared export would need mid-cycle for a
+/// single additional caller. If a third caller ever needs this, that's the
+/// point to actually share it.
+async fn build_control_plane_for_decision(
+    state: &AppState,
+    control_plane_id: Uuid,
+) -> ApiResult<Arc<dyn OrchControlPlane>> {
+    let row = match state.repo.get_control_plane(control_plane_id).await {
+        Ok(row) => row,
+        Err(sqlx::Error::RowNotFound) => {
+            return Err(ApiError::NotFound(format!(
+                "control plane {control_plane_id} not found"
+            )));
+        }
+        Err(e) => return Err(ApiError::Database(e)),
+    };
+    let token = state.repo.get_control_plane_token(control_plane_id).await?;
+
+    match row.kind.as_str() {
+        "docket" => {
+            let adapter = DocketAdapter::new(row.base_url.clone(), token).map_err(|e| {
+                ApiError::Internal(anyhow::anyhow!(
+                    "failed to construct control-plane adapter: {e}"
+                ))
+            })?;
+            Ok(Arc::new(adapter))
+        }
+        other => Err(ApiError::Internal(anyhow::anyhow!(
+            "unsupported control-plane kind {other:?}"
+        ))),
+    }
+}
+
+/// `POST /api/approvals/{token}` request body.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalDecisionAction {
+    Grant,
+    Deny,
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct DecideApprovalRequest {
+    pub action: ApprovalDecisionAction,
+}
+
+/// `POST /api/approvals/{token}` response — docket's own resulting state
+/// (`"granted"`/`"denied"`, or an unrecognised value shown as-is per this
+/// whole cycle's "never fail on an unknown remote value" discipline).
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct DecideApprovalResponse {
+    pub token: String,
+    pub state: String,
+}
+
+/// `POST /api/approvals/{token}` — grant or deny a pending approval,
+/// proxying to docket's own `POST /approvals/{token}` with `channel: "tack"`
+/// so the decision is honestly attributed in docket's hash-chained audit
+/// log (its P22-4) rather than reading as an anonymous/CLI decision.
+///
+/// **Not idempotent, not reversible** — see [`OrchError::AlreadyDecided`]'s
+/// doc comment for what happens when the token was already resolved
+/// elsewhere (a normal race for an inbox like this, not a bug): this
+/// handler reports it as `409`, not `500`, and the frontend treats it as
+/// "remove this stale row," not as an error toast.
+#[utoipa::path(
+    post,
+    path = "/api/approvals/{token}",
+    tag = "orchestration",
+    params(("token" = String, Path, description = "docket approval token")),
+    request_body = DecideApprovalRequest,
+    responses(
+        (status = 200, description = "Decision applied — docket's own resulting state", body = DecideApprovalResponse),
+        (status = 403, description = "Missing/invalid X-Tack-Approval-Token header, or TACK_ORCH_APPROVAL_TOKEN not configured on this server", body = ErrorEnvelope),
+        (status = 404, description = "Unknown token, orchestration disabled, or the control plane that issued it was deleted", body = ErrorEnvelope),
+        (status = 409, description = "The approval was already decided (granted/denied/expired) elsewhere", body = ErrorEnvelope),
+    ),
+)]
+#[instrument(skip(state, headers))]
+pub async fn decide_approval(
+    State(state): State<AppState>,
+    Path(token): Path<String>,
+    headers: HeaderMap,
+    Json(body): Json<DecideApprovalRequest>,
+) -> ApiResult<Json<DecideApprovalResponse>> {
+    require_approval_token(&state, &headers)?;
+
+    let approval = state
+        .repo
+        .get_orch_approval(&token)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("approval {token} not found")))?;
+
+    let control_plane = build_control_plane_for_decision(&state, approval.control_plane_id).await?;
+    let grant = matches!(body.action, ApprovalDecisionAction::Grant);
+
+    let result_state = match control_plane.decide_approval(&token, grant).await {
+        Ok(s) => s,
+        Err(OrchError::AlreadyDecided(message)) => return Err(ApiError::Conflict(message)),
+        Err(OrchError::NotFound(message)) => return Err(ApiError::NotFound(message)),
+        Err(OrchError::Auth) => {
+            return Err(ApiError::Internal(anyhow::anyhow!(
+                "control plane rejected Tack's own credentials while deciding an approval"
+            )));
+        }
+        Err(e) => {
+            return Err(ApiError::Conflict(format!(
+                "failed to reach control plane to decide approval: {e}"
+            )));
+        }
+    };
+
+    // Local mirror only — docket already made the real decision above; this
+    // just keeps the row out of the next `GET /api/approvals` fetch. See
+    // `mark_orch_approval_decided`'s own doc comment.
+    state
+        .repo
+        .mark_orch_approval_decided(&token, result_state.as_str(), Utc::now())
+        .await?;
+
+    Ok(Json(DecideApprovalResponse {
+        token,
+        state: result_state.as_str().to_string(),
+    }))
 }

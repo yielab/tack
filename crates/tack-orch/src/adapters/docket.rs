@@ -30,18 +30,23 @@
 //!
 //! # Write methods
 //!
-//! **`enqueue_task` is implemented (card C1, Wave 3, 2026-08-05)** — see
-//! below. [`ControlPlane::dispatch`] and [`ControlPlane::decide_approval`]
-//! still return [`OrchError::Disabled`] unconditionally — **not** because
-//! docket lacks the routes (`POST /dispatch/{project}` and
-//! `POST /approvals/{token}` are both real, live-verified endpoints too,
-//! card V1) but because C1's card scoped it to the per-item dispatch
-//! primitive (`enqueue_task`) only; `dispatch` (a distinct pipeline-run
-//! trigger, body = arbitrary `variables`) has no consumer in Tack yet and
-//! `decide_approval` is Wave 4 / card D1's job (it also needs a second,
-//! separate gate — `TACK_ORCH_APPROVAL_TOKEN` — that doesn't exist yet
-//! either). Wiring either now, with no caller and no design for the
+//! **`enqueue_task` (card C1, Wave 3) and `decide_approval` (card D1, Wave 4,
+//! 2026-08-05) are both implemented** — see below. [`ControlPlane::dispatch`]
+//! still returns [`OrchError::Disabled`] unconditionally — not because
+//! docket lacks the route (`POST /dispatch/{project}` is a real,
+//! live-verified endpoint too, card V1) but because it's a distinct
+//! pipeline-run trigger (body = arbitrary `variables`) with no consumer in
+//! Tack yet. Wiring it now, with no caller and no design for the
 //! surrounding safety properties, would just be dead code.
+//!
+//! `decide_approval`'s implementation sends a fixed `channel: "tack"` on
+//! every decision (verified against `approval.APPROVAL_CHANNELS` in
+//! `~/Sites/rack-cli/src/docket/core/approval.py`, which already lists
+//! `"tack"` alongside `cli`/`http`/`mcp`/`telegram`/`timeout`) — see the
+//! trait doc for why this isn't a parameter. The **separate**
+//! `TACK_ORCH_APPROVAL_TOKEN` gate D1's card requires sits one layer up, in
+//! `tack-api`'s HTTP handler — this adapter has no concept of it, the same
+//! way it has no concept of Tack's ordinary `TACK_API_TOKEN`.
 //!
 //! `enqueue_task`'s implementation deliberately does **not** parse
 //! `status`/`approvalToken` off `POST /tasks/{project}`'s response body,
@@ -102,6 +107,20 @@
 //!   the policy skipped) exactly as `core/dispatch.py::enqueue_task`'s
 //!   docstring says. This is the prompt-injection boundary card C2 depends
 //!   on; it is now confirmed real, not just read from source.
+//! - **`POST /approvals/{token}` grant genuinely resumes a gated task**
+//!   (`waiting_approval` → `pending`, confirmed via a follow-up `GET
+//!   /tasks/{project}`) and returns `{"ok": true, "token": "...", "state":
+//!   "granted"}`; an unknown token 404s with `{"ok": false, "error":
+//!   "Approval not found: <token>"}`. V1 did **not** verify `deny` or the
+//!   409/`ApprovalNoop` (already-decided) path live — read directly from
+//!   `core/approval.py`'s source instead (`approval_grant`/`approval_deny`
+//!   raise `ApprovalNoop` only for "already granted"/"already denied or
+//!   expired" respectively; any other non-`pending` state raises the plain
+//!   `ApprovalError` that `serve.py` maps to 404 alongside a genuinely
+//!   unknown token) — `decide_approval`'s classification below (card D1,
+//!   2026-08-05) follows that reading, not a live capture, for the 409/404
+//!   split. Flagging this as read-from-source, not live-verified, per this
+//!   module's own discipline.
 //!
 //! # `list_tasks` / `traces`
 //!
@@ -143,15 +162,23 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use reqwest::{Client, StatusCode, Url};
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use crate::adapters::prometheus;
 use crate::{
-    ControlPlane, FleetStatus, Health, MetricSample, NewRemoteTask, OrchError, RemoteApproval,
-    RemoteEvent, RemoteRun, RemoteTask, TracesPage,
+    ApprovalState, ControlPlane, FleetStatus, Health, MetricSample, NewRemoteTask, OrchError,
+    RemoteApproval, RemoteEvent, RemoteRun, RemoteTask, TracesPage,
 };
+
+/// The fixed `channel` docket records against every approval decision made
+/// through Tack's UI (`approval.APPROVAL_CHANNELS` already lists `"tack"`
+/// alongside `cli`/`http`/`mcp`/`telegram`/`timeout` — verified against
+/// `~/Sites/rack-cli/src/docket/core/approval.py`). See
+/// [`ControlPlane::decide_approval`]'s doc comment for why this isn't a
+/// parameter.
+const APPROVAL_CHANNEL: &str = "tack";
 
 /// Every request this adapter makes gets this timeout — docket runs on
 /// loopback in every deployment TODO.md describes, so 5s is generous for a
@@ -345,6 +372,25 @@ struct EnqueueTaskResponse {
     task: String,
 }
 
+/// `POST /approvals/{token}` request body — `serve.py`'s `do_POST` reads
+/// exactly these two keys. `channel` is optional on the wire (docket
+/// defaults to `"http"` if absent) but this adapter always sends it — see
+/// [`APPROVAL_CHANNEL`].
+#[derive(Debug, Serialize)]
+struct DecideApprovalRequest<'a> {
+    action: &'a str,
+    channel: &'a str,
+}
+
+/// `POST /approvals/{token}` success response: `{"ok": true, "token": "...",
+/// "state": "granted"|"denied"}` (card V1, live-verified for the grant
+/// case). `ok`/`token` are never read — only `state` is modeled, same
+/// "unmodeled keys cost nothing" discipline as [`EnqueueTaskResponse`].
+#[derive(Debug, Deserialize)]
+struct DecideApprovalResponse {
+    state: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct TasksResponse {
     tasks: Vec<RemoteTask>,
@@ -530,12 +576,64 @@ impl ControlPlane for DocketAdapter {
         Err(OrchError::Disabled)
     }
 
-    async fn decide_approval(&self, _token: &str, _grant: bool) -> Result<(), OrchError> {
-        // Gated behind TACK_ORCH_ENABLE and owned by Wave 3 (card D1 wires
-        // the actual approve/deny UI + a separate TACK_ORCH_APPROVAL_TOKEN
-        // gate on top of this) — see the module doc's "Write methods"
-        // section. `POST /approvals/{token}` is a real, working docket
-        // route today; same "gated, not missing" note as `dispatch`.
-        Err(OrchError::Disabled)
+    async fn decide_approval(&self, token: &str, grant: bool) -> Result<ApprovalState, OrchError> {
+        // POST /approvals/{token}, Bearer-authed. Built by hand rather than
+        // through `get_authed`/`send` — those only ever GET, and this route
+        // needs 409 classified distinctly from `send`'s generic non-2xx
+        // branch, the same reason `enqueue_task` builds its own request
+        // (see the module doc's "Verified live" section for the grant/404
+        // facts and the read-from-source 409/404 split this implements).
+        let url = self.url(&format!("approvals/{token}"))?;
+        let body = DecideApprovalRequest {
+            action: if grant { "grant" } else { "deny" },
+            channel: APPROVAL_CHANNEL,
+        };
+        let mut req = self.client.post(url).json(&body);
+        if let Some(t) = &self.token {
+            req = req.bearer_auth(t);
+        }
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| OrchError::Http(format!("request failed: {e}")))?;
+        let status = resp.status();
+
+        if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+            return Err(OrchError::Auth);
+        }
+        if status == StatusCode::CONFLICT {
+            // `approval.ApprovalNoop` — already granted/denied/expired. Not a
+            // transport failure; see `OrchError::AlreadyDecided`'s doc comment.
+            let text = resp.text().await.unwrap_or_default();
+            let message = serde_json::from_str::<ErrorBody>(&text)
+                .ok()
+                .and_then(|b| (!b.error.is_empty()).then_some(b.error))
+                .unwrap_or_else(|| text.trim().to_string());
+            return Err(OrchError::AlreadyDecided(message));
+        }
+        if status == StatusCode::NOT_FOUND {
+            // Covers both a genuinely unknown token and docket's
+            // `approval.ApprovalError` for an illegal state transition on a
+            // known token (e.g. denying an already-granted one) — `serve.py`
+            // maps both to 404 with different `error` text; this adapter
+            // surfaces docket's own message rather than collapsing the
+            // distinction further (see the module doc).
+            let text = resp.text().await.unwrap_or_default();
+            let message = serde_json::from_str::<ErrorBody>(&text)
+                .ok()
+                .and_then(|b| (!b.error.is_empty()).then_some(b.error))
+                .unwrap_or_else(|| text.trim().to_string());
+            return Err(OrchError::NotFound(message));
+        }
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            let snippet: String = text.chars().take(ERROR_BODY_SNIPPET_LEN).collect();
+            return Err(OrchError::Http(format!(
+                "unexpected status {status}: {snippet}"
+            )));
+        }
+
+        let parsed: DecideApprovalResponse = Self::decode_json(resp).await?;
+        Ok(ApprovalState::from(parsed.state))
     }
 }

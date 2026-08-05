@@ -188,6 +188,8 @@ pub struct ItemDetail {
         handlers::orch::dispatch_item,
         handlers::orch::dispatch_sprint,
         handlers::orch::dry_run_sprint_dispatch,
+        handlers::orch::list_pending_approvals,
+        handlers::orch::decide_approval,
     ),
     components(schemas(
         // Local response/request envelopes
@@ -227,6 +229,11 @@ pub struct ItemDetail {
         handlers::orch::SprintDispatchSummary,
         handlers::orch::DryRunSprintDispatchResponse,
         handlers::orch::SprintDispatchResponse,
+        handlers::orch::PendingApprovalResponse,
+        handlers::orch::PendingApprovalListResponse,
+        handlers::orch::ApprovalDecisionAction,
+        handlers::orch::DecideApprovalRequest,
+        handlers::orch::DecideApprovalResponse,
         // Core domain models + DTOs
         Workspace,
         Project,

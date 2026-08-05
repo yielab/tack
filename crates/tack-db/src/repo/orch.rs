@@ -1147,6 +1147,142 @@ impl Repository {
 
         Ok(rows.into_iter().map(|r| r.into_orch_approval()).collect())
     }
+
+    /// The same fleet-wide, oldest-first pending inbox as
+    /// [`Self::list_pending_orch_approvals`], enriched with the correlated
+    /// control plane / item / project — everything card D1's inbox UI needs
+    /// to show "the requesting agent, the action text, and the correlated
+    /// item" in one round trip rather than N+1 follow-up reads. `LEFT JOIN`s
+    /// against `items`/`projects` so an uncorrelated approval
+    /// (`item_id IS NULL`) still comes back with every `item_*`/`project_*`
+    /// field `None` rather than being silently dropped — the whole reason
+    /// this query exists is that an uncorrelated approval is "the most
+    /// likely one to be silently blocking a fleet" (D1's card) and must
+    /// still surface. `control_planes` is an inner join: `orch_approvals.
+    /// control_plane_id` is `NOT NULL` and cascades on delete, so a
+    /// dangling reference here would mean the schema's own invariant broke,
+    /// not a case to degrade gracefully.
+    #[instrument(skip(self))]
+    pub async fn list_pending_orch_approvals_with_context(
+        &self,
+    ) -> Result<Vec<PendingOrchApproval>, sqlx::Error> {
+        let rows: Vec<PendingOrchApprovalRow> = sqlx::query_as(
+            "SELECT
+                a.token, a.control_plane_id, cp.name AS control_plane_name,
+                a.item_id, i.title AS item_title, i.status AS item_status,
+                i.project_id AS project_id, p.name AS project_name,
+                a.remote_task_id, a.agent, a.action, a.requested_at
+             FROM orch_approvals a
+             JOIN control_planes cp ON cp.id = a.control_plane_id
+             LEFT JOIN items i ON i.id = a.item_id
+             LEFT JOIN projects p ON p.id = i.project_id
+             WHERE a.state = 'pending'
+             ORDER BY a.requested_at ASC",
+        )
+        .fetch_all(self.pool())
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| r.into_pending_approval())
+            .collect())
+    }
+
+    /// Writes back docket's real decision (card D1, task 36.1) once
+    /// [`tack_orch::ControlPlane::decide_approval`] has actually resumed or
+    /// killed the gated task on docket's side — this is a **local mirror
+    /// update only**, called after that HTTP call already succeeded, never
+    /// instead of it (the decision is real the moment docket accepts it;
+    /// this just keeps Tack's own `orch_approvals` row from re-appearing in
+    /// [`Self::list_pending_orch_approvals_with_context`] on the next
+    /// fetch). A no-op, not an error, if `token` isn't in Tack's mirror at
+    /// all — the caller only ever has a token that came from this table in
+    /// the first place (the inbox lists it), so this is defensive, not an
+    /// expected path.
+    #[instrument(skip(self))]
+    pub async fn mark_orch_approval_decided(
+        &self,
+        token: &str,
+        state: &str,
+        decided_at: chrono::DateTime<Utc>,
+    ) -> Result<(), sqlx::Error> {
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            "UPDATE orch_approvals SET state = ?, decided_at = ?, updated_at = ? WHERE token = ?",
+        )
+        .bind(state)
+        .bind(decided_at.to_rfc3339())
+        .bind(&now)
+        .bind(token)
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+}
+
+/// One row of the fleet-wide approvals inbox, enriched with correlated
+/// context — see [`Repository::list_pending_orch_approvals_with_context`].
+/// Always `state == "pending"` (the query's own `WHERE`), so unlike
+/// [`OrchApproval`] this doesn't carry `state`/`decided_at`/`created_at`/
+/// `updated_at` at all — nothing here that a caller would ever read.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PendingOrchApproval {
+    pub token: String,
+    pub control_plane_id: Uuid,
+    pub control_plane_name: String,
+    /// `None` = uncorrelated (B1 could not attribute this approval to a
+    /// Tack item) — see the query's own doc comment for why this must never
+    /// be filtered out.
+    pub item_id: Option<Uuid>,
+    pub item_title: Option<String>,
+    pub item_status: Option<String>,
+    pub project_id: Option<Uuid>,
+    pub project_name: Option<String>,
+    pub remote_task_id: Option<String>,
+    /// `orch_approvals.agent` — populated from docket's `role` field on
+    /// ingestion (B1's handoff, TODO.md §6: "There's no separate 'agent'
+    /// concept on docket's wire shape — role is the closest field").
+    pub agent: Option<String>,
+    pub action: Option<String>,
+    pub requested_at: DateTime<Utc>,
+}
+
+#[derive(sqlx::FromRow)]
+struct PendingOrchApprovalRow {
+    token: String,
+    control_plane_id: String,
+    control_plane_name: String,
+    item_id: Option<String>,
+    item_title: Option<String>,
+    item_status: Option<String>,
+    project_id: Option<String>,
+    project_name: Option<String>,
+    remote_task_id: Option<String>,
+    agent: Option<String>,
+    action: Option<String>,
+    requested_at: String,
+}
+
+impl PendingOrchApprovalRow {
+    fn into_pending_approval(self) -> PendingOrchApproval {
+        PendingOrchApproval {
+            token: self.token,
+            control_plane_id: Uuid::parse_str(&self.control_plane_id).unwrap(),
+            control_plane_name: self.control_plane_name,
+            item_id: self.item_id.as_deref().map(|s| Uuid::parse_str(s).unwrap()),
+            item_title: self.item_title,
+            item_status: self.item_status,
+            project_id: self
+                .project_id
+                .as_deref()
+                .map(|s| Uuid::parse_str(s).unwrap()),
+            project_name: self.project_name,
+            remote_task_id: self.remote_task_id,
+            agent: self.agent,
+            action: self.action,
+            requested_at: parse_rfc3339(&self.requested_at),
+        }
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════

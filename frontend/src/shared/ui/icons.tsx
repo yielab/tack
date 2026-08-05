@@ -163,6 +163,13 @@ export const IconFleet = stroke(
   { width: 1.4 },
 );
 
+export const IconApprovals = stroke(
+  <>
+    <path d="M3 8.4l3.2 3.2L13 4.8" stroke-linecap="round" stroke-linejoin="round" />
+  </>,
+  { width: 1.7 },
+);
+
 export const IconAttachment = stroke(
   <path d="M11 5L6 10a2 2 0 0 0 2.8 2.8l5-5a3.4 3.4 0 0 0-4.8-4.8l-5 5a4.8 4.8 0 0 0 6.8 6.8L14 11" stroke-linecap="round" stroke-linejoin="round" />,
   { width: 1.5 },
