@@ -102,7 +102,8 @@ use chrono::Utc;
 use tracing::warn;
 use uuid::Uuid;
 
-use tack_core::models::{Item, Priority, Project, UpdateItem};
+use tack_core::models::{Item, Priority, Project};
+use tack_db::repo::items::StatusUpdateOutcome;
 use tack_db::repo::orch::{NewOrchEvent, NewOrchTask, OrchTask};
 use tack_orch::adapters::docket::DocketAdapter;
 use tack_orch::{ControlPlane, NewRemoteTask, OrchError};
@@ -434,13 +435,27 @@ pub async fn dispatch_item(
 }
 
 /// Apply `target_status` to `item` **through the workflow engine** —
-/// `validate_transition` + WIP-limit check, exactly the same gate
-/// `handlers::items::update_item` applies to a human-driven status change
-/// (TODO.md §0 rule 7). A refusal is recorded as a `status_map_rejected`
-/// `orch_events` row and returned as `rejected_reason`; the item is left
-/// untouched. On success, mirrors `update_item`'s side effects (WebSocket
-/// broadcast, parent auto-propagation, GitHub push-back) so a status_map-
-/// driven transition is indistinguishable from a human dragging the card.
+/// `validate_transition` + an atomic WIP-limit check-and-write, exactly the
+/// same gate `handlers::items::update_item` applies to a human-driven status
+/// change (TODO.md §0 rule 7). A refusal is recorded as a
+/// `status_map_rejected` `orch_events` row and returned as
+/// `rejected_reason`; the item is left untouched. On success, mirrors
+/// `update_item`'s side effects (WebSocket broadcast, parent
+/// auto-propagation, GitHub push-back) so a status_map-driven transition is
+/// indistinguishable from a human dragging the card.
+///
+/// **The WIP-limit check and the status write happen in one SQLite
+/// transaction** (`Repository::update_item_status_checked`), not as two
+/// separate steps. Card R2 (2026-08-05): this used to be a plain
+/// `count_items_by_status` read followed by an unguarded `update_item`
+/// write, which let two concurrent dispatches into the same WIP-limited
+/// column both observe "under the limit" and both commit — rare before
+/// card C3's sprint dispatch made concurrent writes into one column routine
+/// rather than coincidental. See that method's doc comment for the fix.
+/// `validate_transition` itself stays a separate, unguarded check above —
+/// it only depends on the project's static workflow config (explicit
+/// transitions), not on any row count, so it isn't subject to the same
+/// race.
 ///
 /// Generic over `target_status`/`trigger` so it can serve both the
 /// dispatch-time triggers this card wires up (`on_running`,
@@ -475,19 +490,6 @@ pub async fn apply_mapped_status(
         });
     }
 
-    let count = state
-        .repo
-        .count_items_by_status(item.project_id, target_status)
-        .await? as usize;
-    if let Err(e) = project.workflow.check_wip_limit(target_status, count) {
-        record_status_map_rejected(state, item, control_plane_id, target_status, trigger, &e).await;
-        return Ok(StatusApplication {
-            target_status: target_status.to_string(),
-            applied: false,
-            rejected_reason: Some(e.to_string()),
-        });
-    }
-
     let status_category = project
         .workflow
         .statuses
@@ -495,16 +497,30 @@ pub async fn apply_mapped_status(
         .find(|s| s.name == target_status)
         .map(|s| s.category.clone());
 
-    let update = UpdateItem {
-        status: Some(target_status.to_string()),
-        status_category,
-        ..Default::default()
-    };
-    let updated = state
+    let outcome = state
         .repo
-        .update_item(item.id, update)
+        .update_item_status_checked(
+            item.id,
+            item.project_id,
+            target_status,
+            status_category,
+            &project.workflow,
+        )
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Item {} not found", item.id)))?;
+
+    let updated = match outcome {
+        StatusUpdateOutcome::Rejected(e) => {
+            record_status_map_rejected(state, item, control_plane_id, target_status, trigger, &e)
+                .await;
+            return Ok(StatusApplication {
+                target_status: target_status.to_string(),
+                applied: false,
+                rejected_reason: Some(e.to_string()),
+            });
+        }
+        StatusUpdateOutcome::Applied(updated) => updated,
+    };
 
     websocket::broadcast_event(
         state,
