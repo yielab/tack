@@ -153,6 +153,16 @@ export const IconClose = stroke(
   { width: 1.7 },
 );
 
+export const IconFleet = stroke(
+  <>
+    <circle cx="4.3" cy="4.3" r="2.1" />
+    <circle cx="11.7" cy="4.3" r="2.1" />
+    <circle cx="8" cy="11.2" r="2.1" />
+    <path d="M5.9 5.7L7 9.6M10.1 5.7L9 9.6" stroke-linecap="round" />
+  </>,
+  { width: 1.4 },
+);
+
 export const IconAttachment = stroke(
   <path d="M11 5L6 10a2 2 0 0 0 2.8 2.8l5-5a3.4 3.4 0 0 0-4.8-4.8l-5 5a4.8 4.8 0 0 0 6.8 6.8L14 11" stroke-linecap="round" stroke-linejoin="round" />,
   { width: 1.5 },
