@@ -1,0 +1,1038 @@
+//! Unit economics (Phase 38 / card D5, tasks 38.1-38.4): tokens, estimated cost,
+//! agent-vs-human lead time, and rework rate, sliced by `project_type` and
+//! `item_type`. Read-only aggregate endpoints over `Repository::
+//! list_completed_item_economics`/`list_item_ids_with_rework_signal`
+//! (`tack_db::repo::economics`) — no live docket call, so a plane outage can never
+//! turn into a 500 here, the same discipline `handlers::orch`'s module doc names for
+//! `GET /api/fleet`.
+//!
+//! **Gated behind `TACK_ORCH_ENABLE`.** [`economics_routes`] is merged into
+//! `router.rs`'s `orch_routes()`, which applies `orch::require_orch_enabled` once as a
+//! layer over the whole sub-router — every route below inherits it without a
+//! per-handler check, and 404s (not 200-with-empty-data) when the flag is unset,
+//! matching TODO.md §0 rule 8.
+//!
+//! **Rule 6, applied on every response this module returns.** Token counts
+//! (`tokens_in`/`tokens_out`) are always present and rendered first; every dollar
+//! figure is named `cost_usd_estimated` (never "cost" or "spend") and travels with a
+//! `pricing_snapshot_at` that is honestly `None` today (no pricing-snapshot mechanism
+//! exists anywhere in this codebase yet — confirmed against A4's and D2's own
+//! handoffs, which found the identical gap). The frontend must render it through
+//! `shared/agentActivity/format.ts#formatEstimatedCost` — reused verbatim, not
+//! reimplemented, per this card's explicit instruction.
+//!
+//! **Three honesty decisions this module makes, spelled out because the card asked
+//! for them to be stated, not just implemented (TODO.md, card D5):**
+//!
+//! 1. **Minimum sample size — [`MIN_SAMPLE_SIZE`].** Below it, [`LeadTimeStat`] and
+//!    [`ReworkStat`] report `below_min_sample: true` and raw counts/durations, never
+//!    a derived average or rate a reader could mistake for a stable signal.
+//! 2. **Selection bias — [`LEAD_TIME_SELECTION_BIAS_NOTE`].** Carried on every
+//!    [`EconomicsSlice`] that has a lead-time comparison, not linked from a doc.
+//!    Items reach an agent via auto-dispatch (which only fires on specific statuses)
+//!    or because a person chose to hand them off — neither is a random sample of all
+//!    work, so a shorter average agent lead time is at least as consistent with
+//!    "people dispatch the easy stuff" as with "agents are faster." This module
+//!    deliberately never computes a single "agents are Nx faster" ratio: both
+//!    populations' stats are reported side by side and left for the reader to
+//!    compare, exactly the discipline card D2's handoff set for cost ratios ("never
+//!    shows a bare percentage / ratio without the caveat attached").
+//! 3. **Retention truncation — [`REWORK_RATE_DEFINITION`] / [`REWORK_TRUNCATION_NOTE`].**
+//!    `orch_tasks` (tokens, cost, dispatch timestamps) is never purged — only
+//!    `orch_events`/`orch_metrics` are, by the Phase 34.6 retention sweep. So token,
+//!    cost, and lead-time figures below are NOT subject to truncation, and this
+//!    module says so rather than blanket-hedging every number on the page. Only the
+//!    rework signal (which lives in `orch_events`) can go stale: an item whose only
+//!    dispatch attempt predates `TACK_ORCH_EVENT_RETENTION_DAYS` is excluded from the
+//!    rework-rate denominator entirely (`ReworkStat::attempts_excluded_stale`), never
+//!    counted as "no rework happened" — see `tack_db::repo::economics`'s module doc
+//!    for the underlying schema gap (`orch_events.run_id` is always `NULL` today, so
+//!    correlation is item-level, not attempt-level).
+
+use axum::Json;
+use axum::extract::{Query, State};
+use axum::http::header;
+use axum::response::{IntoResponse, Response};
+use chrono::{DateTime, Duration, Utc};
+use serde::{Deserialize, Serialize};
+use tracing::instrument;
+use uuid::Uuid;
+
+use tack_db::repo::economics::ItemEconomicsRow;
+
+use crate::error::ApiResult;
+use crate::router::AppState;
+
+// ════════════════════════════════════════════════════════════════════════════
+// Constants — the honesty decisions, in one place so the UI copy and the wire
+// data can never drift apart (every string below is also asserted verbatim in
+// this module's tests).
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Below this many samples, a slice reports raw counts/durations instead of a
+/// derived average or rate. Stated, not statistically derived (TODO.md's card asked
+/// for a chosen minimum, not an optimal one): 5 is small enough that a real board
+/// reaches it quickly, and large enough that a single outlier item can't masquerade
+/// as a trend — the exact "3x faster from 2 items" mistake the card calls out by
+/// name.
+pub const MIN_SAMPLE_SIZE: i64 = 5;
+
+/// Rendered next to every agent-vs-human lead-time comparison, not buried in a doc
+/// (TODO.md's explicit instruction).
+pub const LEAD_TIME_SELECTION_BIAS_NOTE: &str = "Items dispatched to agents are not a random sample of all work — auto-dispatch \
+     fires only on specific statuses, and people choose what to hand off. This is not \
+     a controlled comparison, and no single \"agents are Nx faster\" figure is \
+     computed from it.";
+
+/// The exact rework definition this module computes, rendered verbatim in the UI so
+/// the number and the words describing it can never drift apart.
+pub const REWORK_RATE_DEFINITION: &str = "Share of dispatched items (completed, with at least one docket dispatch) that \
+     have at least one rework_started, verification_failed, or tester_verdict_failed \
+     event recorded against them.";
+
+/// Rendered next to the rework-rate figure whenever any attempt was excluded as
+/// stale. Never states a count of lost events — only a query-time cutoff comparison.
+pub const REWORK_TRUNCATION_NOTE: &str = "Rework signals come from mirrored docket events, which age out after the \
+     configured retention window and are rolled into a daily total that no longer \
+     names the item. Items whose only dispatch attempt predates that window are \
+     excluded from this rate rather than counted as \"no rework\" — their event \
+     history may already be gone.";
+
+// ════════════════════════════════════════════════════════════════════════════
+// Response DTOs
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Average-or-raw duration figure. `avg_hours` and `raw_hours` are mutually
+/// exclusive: exactly one is populated (or, at `sample_count == 0`, neither).
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct LeadTimeStat {
+    pub sample_count: i64,
+    pub below_min_sample: bool,
+    /// `None` whenever `below_min_sample` is true (including `sample_count == 0`) —
+    /// see `raw_hours`.
+    pub avg_hours: Option<f64>,
+    /// Populated only when `below_min_sample` is true and `sample_count > 0`: the
+    /// individual durations, so a small sample is shown honestly rather than averaged
+    /// into a number that looks more precise than it is.
+    pub raw_hours: Option<Vec<f64>>,
+}
+
+impl LeadTimeStat {
+    fn from_hours(mut hours: Vec<f64>) -> Self {
+        let sample_count = hours.len() as i64;
+        if sample_count == 0 {
+            return Self {
+                sample_count: 0,
+                below_min_sample: true,
+                avg_hours: None,
+                raw_hours: None,
+            };
+        }
+        if sample_count < MIN_SAMPLE_SIZE {
+            hours.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            return Self {
+                sample_count,
+                below_min_sample: true,
+                avg_hours: None,
+                raw_hours: Some(hours),
+            };
+        }
+        let avg = hours.iter().sum::<f64>() / sample_count as f64;
+        Self {
+            sample_count,
+            below_min_sample: false,
+            avg_hours: Some(avg),
+            raw_hours: None,
+        }
+    }
+}
+
+/// Rework-rate figure for one slice, plus the exact definition and truncation
+/// caveat that produced it (TODO.md: "make sure the number matches the words").
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct ReworkStat {
+    /// Every dispatched item in scope, including ones excluded from the rate below.
+    pub attempts_total: i64,
+    /// Excluded because their only dispatch predates the retention cutoff — their
+    /// event history may already be gone (see `REWORK_TRUNCATION_NOTE`).
+    pub attempts_excluded_stale: i64,
+    /// Of the *eligible* (`attempts_total - attempts_excluded_stale`) items, how many
+    /// carry at least one qualifying event.
+    pub attempts_with_rework_signal: i64,
+    pub below_min_sample: bool,
+    /// `None` when the eligible sample is `0` or below `MIN_SAMPLE_SIZE`.
+    pub rate: Option<f64>,
+    pub definition: String,
+    pub truncation_note: String,
+}
+
+impl ReworkStat {
+    fn compute(total: i64, excluded_stale: i64, with_signal: i64) -> Self {
+        let eligible = total - excluded_stale;
+        let below_min_sample = eligible < MIN_SAMPLE_SIZE;
+        let rate = if eligible > 0 && !below_min_sample {
+            Some(with_signal as f64 / eligible as f64)
+        } else {
+            None
+        };
+        Self {
+            attempts_total: total,
+            attempts_excluded_stale: excluded_stale,
+            attempts_with_rework_signal: with_signal,
+            below_min_sample,
+            rate,
+            definition: REWORK_RATE_DEFINITION.to_string(),
+            truncation_note: REWORK_TRUNCATION_NOTE.to_string(),
+        }
+    }
+}
+
+/// One row of the summary: "overall", one `project_type`, or one `item_type`.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct EconomicsSlice {
+    /// `"overall"`, a `project_type` value, or an `item_type` value — see the
+    /// containing response's `by_project_type`/`by_item_type` field it came from.
+    pub key: String,
+    pub completed_item_count: i64,
+    /// Completed items with at least one `orch_tasks` row (dispatched to an agent at
+    /// least once — regardless of who ultimately finished it).
+    pub agent_completed_count: i64,
+    /// Completed items with zero `orch_tasks` rows — never dispatched.
+    pub human_completed_count: i64,
+    pub tokens_in: i64,
+    pub tokens_out: i64,
+    /// Summed `orch_tasks.cost_usd_estimated` for this slice's agent-dispatched
+    /// items. `None` only when `agent_completed_count == 0` (nothing to sum);
+    /// `Some(0.0)` means agent items exist but none report a cost yet.
+    pub cost_usd_estimated: Option<f64>,
+    /// Always `None` today — no pricing-snapshot mechanism exists yet (rule 6).
+    pub pricing_snapshot_at: Option<String>,
+    /// `cost_usd_estimated / agent_completed_count`. `None` whenever
+    /// `agent_completed_count < MIN_SAMPLE_SIZE` — the headline "cost per shipped
+    /// item" figure is exactly the kind of small-sample-noise ratio TODO.md's card
+    /// warns about, so it is withheld below the stated minimum rather than shown
+    /// from a handful of items.
+    pub cost_usd_estimated_per_item: Option<f64>,
+    pub agent_lead_time: LeadTimeStat,
+    pub human_lead_time: LeadTimeStat,
+    pub lead_time_selection_bias_note: String,
+    pub rework: ReworkStat,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct EconomicsSummaryResponse {
+    pub generated_at: DateTime<Utc>,
+    pub min_sample_size: i64,
+    pub events_retention_days: u32,
+    pub overall: EconomicsSlice,
+    pub by_project_type: Vec<EconomicsSlice>,
+    pub by_item_type: Vec<EconomicsSlice>,
+}
+
+/// Which population a `GET /api/economics/items` row belongs to (see the module doc's
+/// definition: "dispatched at least once" vs. "never dispatched").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum EconomicsPopulation {
+    Agent,
+    Human,
+}
+
+/// One completed item's economics — the row shape behind both the dashboard's
+/// drill-down list and the CSV/JSON export (task 38.4).
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct EconomicsItemResponse {
+    pub item_id: Uuid,
+    pub project_id: Uuid,
+    pub project_type: String,
+    pub item_type: String,
+    pub title: String,
+    pub status: String,
+    pub population: EconomicsPopulation,
+    pub started_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub first_dispatched_at: Option<DateTime<Utc>>,
+    pub attempt_count: i64,
+    pub tokens_in: i64,
+    pub tokens_out: i64,
+    pub cost_usd_estimated: Option<f64>,
+    pub pricing_snapshot_at: Option<String>,
+    /// `dispatched_at → completed_at` for an agent item, `started_at → completed_at`
+    /// for a human item; `None` if the required timestamp is missing or the computed
+    /// duration is negative (a data anomaly, e.g. a redispatch after completion —
+    /// excluded rather than shown as a nonsensical negative duration).
+    pub lead_time_hours: Option<f64>,
+    /// Only meaningful when `population == Agent`; always `false` for a human item.
+    pub rework_applicable: bool,
+    /// Whether this item's rework-signal data is trustworthy — `false` when its only
+    /// dispatch predates the retention cutoff (see the module doc).
+    pub rework_data_reliable: bool,
+    /// Raw signal presence; only trust this when `rework_applicable &&
+    /// rework_data_reliable` both hold.
+    pub rework_signal: bool,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct EconomicsItemsResponse {
+    pub rows: Vec<EconomicsItemResponse>,
+    /// Total matching rows before `limit`/`offset` — never truncated silently (see
+    /// the query docs below).
+    pub total: i64,
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Pure aggregation — no I/O, exercised directly by this module's unit tests with
+// hand-built `ItemEconomicsRow`s rather than only through a DB-backed integration
+// test (the min-sample/staleness branches are easiest to prove exhaustively here).
+// ════════════════════════════════════════════════════════════════════════════
+
+struct SliceBuilder {
+    completed_item_count: i64,
+    agent_completed_count: i64,
+    human_completed_count: i64,
+    tokens_in: i64,
+    tokens_out: i64,
+    cost_sum: f64,
+    agent_lead_hours: Vec<f64>,
+    human_lead_hours: Vec<f64>,
+    rework_total: i64,
+    rework_excluded_stale: i64,
+    rework_with_signal: i64,
+}
+
+impl SliceBuilder {
+    fn new() -> Self {
+        Self {
+            completed_item_count: 0,
+            agent_completed_count: 0,
+            human_completed_count: 0,
+            tokens_in: 0,
+            tokens_out: 0,
+            cost_sum: 0.0,
+            agent_lead_hours: Vec::new(),
+            human_lead_hours: Vec::new(),
+            rework_total: 0,
+            rework_excluded_stale: 0,
+            rework_with_signal: 0,
+        }
+    }
+
+    fn add(
+        &mut self,
+        item: &ItemEconomicsRow,
+        has_rework_signal: bool,
+        retention_cutoff: DateTime<Utc>,
+    ) {
+        self.completed_item_count += 1;
+        let is_agent = item.attempt_count > 0;
+
+        if is_agent {
+            self.agent_completed_count += 1;
+            self.tokens_in += item.tokens_in;
+            self.tokens_out += item.tokens_out;
+            self.cost_sum += item.cost_usd_estimated.unwrap_or(0.0);
+
+            if let (Some(dispatched), Some(completed)) =
+                (item.first_dispatched_at, item.completed_at)
+                && let Some(hours) = positive_hours(dispatched, completed)
+            {
+                self.agent_lead_hours.push(hours);
+            }
+
+            self.rework_total += 1;
+            let reliable = item
+                .last_dispatched_at
+                .is_some_and(|d| d >= retention_cutoff);
+            if reliable {
+                if has_rework_signal {
+                    self.rework_with_signal += 1;
+                }
+            } else {
+                self.rework_excluded_stale += 1;
+            }
+        } else {
+            self.human_completed_count += 1;
+            if let (Some(started), Some(completed)) = (item.started_at, item.completed_at)
+                && let Some(hours) = positive_hours(started, completed)
+            {
+                self.human_lead_hours.push(hours);
+            }
+        }
+    }
+
+    fn finish(self, key: String) -> EconomicsSlice {
+        let cost_usd_estimated = if self.agent_completed_count > 0 {
+            Some(self.cost_sum)
+        } else {
+            None
+        };
+        let cost_usd_estimated_per_item = match (cost_usd_estimated, self.agent_completed_count) {
+            (Some(sum), n) if n >= MIN_SAMPLE_SIZE => Some(sum / n as f64),
+            _ => None,
+        };
+
+        EconomicsSlice {
+            key,
+            completed_item_count: self.completed_item_count,
+            agent_completed_count: self.agent_completed_count,
+            human_completed_count: self.human_completed_count,
+            tokens_in: self.tokens_in,
+            tokens_out: self.tokens_out,
+            cost_usd_estimated,
+            pricing_snapshot_at: None,
+            cost_usd_estimated_per_item,
+            agent_lead_time: LeadTimeStat::from_hours(self.agent_lead_hours),
+            human_lead_time: LeadTimeStat::from_hours(self.human_lead_hours),
+            lead_time_selection_bias_note: LEAD_TIME_SELECTION_BIAS_NOTE.to_string(),
+            rework: ReworkStat::compute(
+                self.rework_total,
+                self.rework_excluded_stale,
+                self.rework_with_signal,
+            ),
+        }
+    }
+}
+
+/// Hours between two timestamps, or `None` if the duration is zero-or-negative — a
+/// data anomaly (e.g. a redispatch recorded after completion) rather than a real
+/// lead time, excluded instead of shown as nonsensical.
+fn positive_hours(from: DateTime<Utc>, to: DateTime<Utc>) -> Option<f64> {
+    let seconds = (to - from).num_seconds();
+    if seconds <= 0 {
+        return None;
+    }
+    Some(seconds as f64 / 3600.0)
+}
+
+fn build_summary(
+    rows: &[ItemEconomicsRow],
+    rework_signal_items: &std::collections::HashSet<Uuid>,
+    retention_cutoff: DateTime<Utc>,
+    retention_days: u32,
+) -> EconomicsSummaryResponse {
+    let mut overall = SliceBuilder::new();
+    let mut by_project_type: std::collections::BTreeMap<String, SliceBuilder> =
+        std::collections::BTreeMap::new();
+    let mut by_item_type: std::collections::BTreeMap<String, SliceBuilder> =
+        std::collections::BTreeMap::new();
+
+    for row in rows {
+        let has_signal = rework_signal_items.contains(&row.item_id);
+        overall.add(row, has_signal, retention_cutoff);
+        by_project_type
+            .entry(row.project_type.clone())
+            .or_insert_with(SliceBuilder::new)
+            .add(row, has_signal, retention_cutoff);
+        by_item_type
+            .entry(row.item_type.clone())
+            .or_insert_with(SliceBuilder::new)
+            .add(row, has_signal, retention_cutoff);
+    }
+
+    EconomicsSummaryResponse {
+        generated_at: Utc::now(),
+        min_sample_size: MIN_SAMPLE_SIZE,
+        events_retention_days: retention_days,
+        overall: overall.finish("overall".to_string()),
+        by_project_type: by_project_type
+            .into_iter()
+            .map(|(k, b)| b.finish(k))
+            .collect(),
+        by_item_type: by_item_type.into_iter().map(|(k, b)| b.finish(k)).collect(),
+    }
+}
+
+fn to_item_response(
+    row: &ItemEconomicsRow,
+    rework_signal_items: &std::collections::HashSet<Uuid>,
+    retention_cutoff: DateTime<Utc>,
+) -> EconomicsItemResponse {
+    let is_agent = row.attempt_count > 0;
+    let population = if is_agent {
+        EconomicsPopulation::Agent
+    } else {
+        EconomicsPopulation::Human
+    };
+
+    let lead_time_hours = if is_agent {
+        row.first_dispatched_at
+            .zip(row.completed_at)
+            .and_then(|(from, to)| positive_hours(from, to))
+    } else {
+        row.started_at
+            .zip(row.completed_at)
+            .and_then(|(from, to)| positive_hours(from, to))
+    };
+
+    let rework_data_reliable = is_agent
+        && row
+            .last_dispatched_at
+            .is_some_and(|d| d >= retention_cutoff);
+    let rework_signal = is_agent && rework_signal_items.contains(&row.item_id);
+
+    EconomicsItemResponse {
+        item_id: row.item_id,
+        project_id: row.project_id,
+        project_type: row.project_type.clone(),
+        item_type: row.item_type.clone(),
+        title: row.title.clone(),
+        status: row.status.clone(),
+        population,
+        started_at: row.started_at,
+        completed_at: row.completed_at,
+        first_dispatched_at: row.first_dispatched_at,
+        attempt_count: row.attempt_count,
+        tokens_in: row.tokens_in,
+        tokens_out: row.tokens_out,
+        cost_usd_estimated: row.cost_usd_estimated,
+        pricing_snapshot_at: None,
+        lead_time_hours,
+        rework_applicable: is_agent,
+        rework_data_reliable,
+        rework_signal,
+    }
+}
+
+fn build_csv(
+    rows: &[&ItemEconomicsRow],
+    rework_signal_items: &std::collections::HashSet<Uuid>,
+    retention_cutoff: DateTime<Utc>,
+) -> String {
+    let mut out = String::from(
+        "item_id,project_id,project_type,item_type,title,status,population,started_at,\
+         completed_at,first_dispatched_at,attempt_count,tokens_in,tokens_out,\
+         cost_usd_estimated,lead_time_hours,rework_applicable,rework_data_reliable,\
+         rework_signal\n",
+    );
+    for row in rows {
+        let item = to_item_response(row, rework_signal_items, retention_cutoff);
+        out.push_str(&format!(
+            "{},{},{},{},{},{},{:?},{},{},{},{},{},{},{},{},{},{},{}\n",
+            item.item_id,
+            item.project_id,
+            item.project_type,
+            item.item_type,
+            item.title.replace(',', " "),
+            item.status,
+            item.population,
+            item.started_at.map(|d| d.to_rfc3339()).unwrap_or_default(),
+            item.completed_at
+                .map(|d| d.to_rfc3339())
+                .unwrap_or_default(),
+            item.first_dispatched_at
+                .map(|d| d.to_rfc3339())
+                .unwrap_or_default(),
+            item.attempt_count,
+            item.tokens_in,
+            item.tokens_out,
+            item.cost_usd_estimated
+                .map(|c| c.to_string())
+                .unwrap_or_default(),
+            item.lead_time_hours
+                .map(|h| h.to_string())
+                .unwrap_or_default(),
+            item.rework_applicable,
+            item.rework_data_reliable,
+            item.rework_signal,
+        ));
+    }
+    out
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Handlers
+// ════════════════════════════════════════════════════════════════════════════
+
+/// `GET /api/economics/summary`.
+#[utoipa::path(
+    get,
+    path = "/api/economics/summary",
+    tag = "orchestration",
+    responses(
+        (status = 200, description = "Unit economics (tokens, estimated cost, agent-vs-human lead time, rework rate) sliced by project_type and item_type", body = EconomicsSummaryResponse),
+        (status = 404, description = "Orchestration disabled (TACK_ORCH_ENABLE unset)"),
+    ),
+)]
+#[instrument(skip(state))]
+pub async fn get_economics_summary(
+    State(state): State<AppState>,
+) -> ApiResult<Json<EconomicsSummaryResponse>> {
+    let rows = state.repo.list_completed_item_economics().await?;
+    let rework_signal_items = state.repo.list_item_ids_with_rework_signal().await?;
+    let retention_days = state.config.orch_event_retention_days;
+    let retention_cutoff = Utc::now() - Duration::days(retention_days as i64);
+
+    Ok(Json(build_summary(
+        &rows,
+        &rework_signal_items,
+        retention_cutoff,
+        retention_days,
+    )))
+}
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct EconomicsItemsQuery {
+    /// Filter to one `project_type` (e.g. `"software"`). Omit for all.
+    pub project_type: Option<String>,
+    /// Filter to one `item_type` (e.g. `"bug"`). Omit for all.
+    pub item_type: Option<String>,
+    /// `"json"` (default, paginated) or `"csv"` (an attachment; ignores
+    /// `limit`/`offset`, capped at `EXPORT_MAX_ROWS`).
+    #[serde(default = "default_items_format")]
+    pub format: String,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+fn default_items_format() -> String {
+    "json".to_string()
+}
+
+const ITEMS_DEFAULT_LIMIT: u32 = 200;
+const ITEMS_MAX_LIMIT: u32 = 2000;
+/// CSV export ignores pagination and returns up to this many rows — a safety cap,
+/// not real streaming (task 38.4 asked for CSV/JSON export "reusing the existing
+/// export machinery in export.rs", which itself loads a whole project into memory the
+/// same way; this matches that same "good enough for one operator's own instance"
+/// scope rather than building a new streaming path).
+const EXPORT_MAX_ROWS: usize = 20_000;
+
+/// `GET /api/economics/items` — per-completed-item economics (task 38.1's raw
+/// population) plus CSV/JSON export (task 38.4), reusing `export.rs`'s
+/// `?format=` + `Content-Disposition: attachment` convention rather than a second
+/// export route.
+#[utoipa::path(
+    get,
+    path = "/api/economics/items",
+    tag = "orchestration",
+    params(EconomicsItemsQuery),
+    responses(
+        (status = 200, description = "Per-completed-item economics (JSON, paginated) or a CSV export attachment, per the format query", body = EconomicsItemsResponse),
+        (status = 404, description = "Orchestration disabled (TACK_ORCH_ENABLE unset)"),
+    ),
+)]
+#[instrument(skip(state))]
+pub async fn get_economics_items(
+    State(state): State<AppState>,
+    Query(query): Query<EconomicsItemsQuery>,
+) -> ApiResult<Response> {
+    let rows = state.repo.list_completed_item_economics().await?;
+    let rework_signal_items = state.repo.list_item_ids_with_rework_signal().await?;
+    let retention_days = state.config.orch_event_retention_days;
+    let retention_cutoff = Utc::now() - Duration::days(retention_days as i64);
+
+    let mut filtered: Vec<&ItemEconomicsRow> = rows
+        .iter()
+        .filter(|r| {
+            query
+                .project_type
+                .as_deref()
+                .map(|pt| pt == r.project_type)
+                .unwrap_or(true)
+        })
+        .filter(|r| {
+            query
+                .item_type
+                .as_deref()
+                .map(|it| it == r.item_type)
+                .unwrap_or(true)
+        })
+        .collect();
+    filtered.sort_by_key(|r| std::cmp::Reverse(r.completed_at));
+
+    if query.format == "csv" {
+        let capped_len = filtered.len().min(EXPORT_MAX_ROWS);
+        let csv = build_csv(
+            &filtered[..capped_len],
+            &rework_signal_items,
+            retention_cutoff,
+        );
+        return Ok((
+            [
+                (header::CONTENT_TYPE, "text/csv"),
+                (
+                    header::CONTENT_DISPOSITION,
+                    "attachment; filename=\"unit-economics.csv\"",
+                ),
+            ],
+            csv,
+        )
+            .into_response());
+    }
+
+    let total = filtered.len() as i64;
+    let limit = query
+        .limit
+        .unwrap_or(ITEMS_DEFAULT_LIMIT)
+        .min(ITEMS_MAX_LIMIT) as usize;
+    let offset = query.offset.unwrap_or(0) as usize;
+    let page: Vec<EconomicsItemResponse> = filtered
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .map(|r| to_item_response(r, &rework_signal_items, retention_cutoff))
+        .collect();
+
+    Ok(Json(EconomicsItemsResponse { rows: page, total }).into_response())
+}
+
+/// Mounted with one line into `router.rs`'s `orch_routes()`
+/// (`.merge(economics::economics_routes())`) so it inherits `require_orch_enabled`
+/// and the ordinary Bearer-token gate without a second layer here.
+pub fn economics_routes() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route(
+            "/economics/summary",
+            axum::routing::get(get_economics_summary),
+        )
+        .route("/economics/items", axum::routing::get(get_economics_items))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[allow(clippy::too_many_arguments)]
+    fn item(
+        project_type: &str,
+        item_type: &str,
+        attempt_count: i64,
+        first_dispatched_at: Option<DateTime<Utc>>,
+        last_dispatched_at: Option<DateTime<Utc>>,
+        started_at: Option<DateTime<Utc>>,
+        completed_at: Option<DateTime<Utc>>,
+        tokens_in: i64,
+        tokens_out: i64,
+        cost_usd_estimated: Option<f64>,
+    ) -> ItemEconomicsRow {
+        ItemEconomicsRow {
+            item_id: Uuid::new_v4(),
+            project_id: Uuid::new_v4(),
+            project_type: project_type.to_string(),
+            item_type: item_type.to_string(),
+            title: "t".to_string(),
+            status: "Done".to_string(),
+            started_at,
+            completed_at,
+            attempt_count,
+            first_dispatched_at,
+            last_dispatched_at,
+            tokens_in,
+            tokens_out,
+            cost_usd_estimated,
+        }
+    }
+
+    fn hours_ago(h: i64) -> DateTime<Utc> {
+        Utc::now() - Duration::hours(h)
+    }
+
+    #[test]
+    fn agent_and_human_populations_split_correctly() {
+        let agent = item(
+            "software",
+            "task",
+            1,
+            Some(hours_ago(10)),
+            Some(hours_ago(10)),
+            None,
+            Some(hours_ago(2)),
+            100,
+            200,
+            Some(1.5),
+        );
+        let human = item(
+            "software",
+            "task",
+            0,
+            None,
+            None,
+            Some(hours_ago(20)),
+            Some(hours_ago(4)),
+            0,
+            0,
+            None,
+        );
+        let rows = vec![agent, human];
+        let signal = std::collections::HashSet::new();
+        let summary = build_summary(&rows, &signal, Utc::now() - Duration::days(90), 90);
+
+        assert_eq!(summary.overall.completed_item_count, 2);
+        assert_eq!(summary.overall.agent_completed_count, 1);
+        assert_eq!(summary.overall.human_completed_count, 1);
+        assert_eq!(summary.overall.tokens_in, 100);
+        assert_eq!(summary.overall.tokens_out, 200);
+        assert_eq!(summary.overall.cost_usd_estimated, Some(1.5));
+        // Below MIN_SAMPLE_SIZE (1 sample each) — raw hours, not an average.
+        assert!(summary.overall.agent_lead_time.below_min_sample);
+        assert!(summary.overall.agent_lead_time.avg_hours.is_none());
+        assert_eq!(
+            summary
+                .overall
+                .agent_lead_time
+                .raw_hours
+                .as_ref()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(summary.overall.human_lead_time.below_min_sample);
+    }
+
+    #[test]
+    fn zero_agent_items_yields_none_cost_not_zero() {
+        let human = item(
+            "software",
+            "task",
+            0,
+            None,
+            None,
+            Some(hours_ago(5)),
+            Some(hours_ago(1)),
+            0,
+            0,
+            None,
+        );
+        let rows = vec![human];
+        let signal = std::collections::HashSet::new();
+        let summary = build_summary(&rows, &signal, Utc::now() - Duration::days(90), 90);
+        assert_eq!(summary.overall.agent_completed_count, 0);
+        assert_eq!(summary.overall.cost_usd_estimated, None);
+        assert_eq!(summary.overall.cost_usd_estimated_per_item, None);
+    }
+
+    #[test]
+    fn lead_time_reports_average_at_or_above_min_sample() {
+        let mut rows = Vec::new();
+        for h in [10, 20, 30, 40, 50] {
+            rows.push(item(
+                "software",
+                "task",
+                1,
+                Some(hours_ago(h + 5)),
+                Some(hours_ago(h + 5)),
+                None,
+                Some(hours_ago(5)),
+                10,
+                10,
+                Some(0.1),
+            ));
+        }
+        assert_eq!(rows.len(), MIN_SAMPLE_SIZE as usize);
+        let signal = std::collections::HashSet::new();
+        let summary = build_summary(&rows, &signal, Utc::now() - Duration::days(90), 90);
+        assert!(!summary.overall.agent_lead_time.below_min_sample);
+        assert!(summary.overall.agent_lead_time.avg_hours.is_some());
+        assert!(summary.overall.agent_lead_time.raw_hours.is_none());
+    }
+
+    #[test]
+    fn cost_per_item_withheld_below_min_sample_shown_at_or_above() {
+        let mut rows = Vec::new();
+        for _ in 0..4 {
+            rows.push(item(
+                "software",
+                "task",
+                1,
+                Some(hours_ago(5)),
+                Some(hours_ago(5)),
+                None,
+                Some(hours_ago(1)),
+                10,
+                10,
+                Some(2.0),
+            ));
+        }
+        let signal = std::collections::HashSet::new();
+        let summary = build_summary(&rows, &signal, Utc::now() - Duration::days(90), 90);
+        // 4 agent items — below MIN_SAMPLE_SIZE (5).
+        assert_eq!(summary.overall.agent_completed_count, 4);
+        assert!(summary.overall.cost_usd_estimated_per_item.is_none());
+        assert_eq!(summary.overall.cost_usd_estimated, Some(8.0));
+
+        rows.push(item(
+            "software",
+            "task",
+            1,
+            Some(hours_ago(5)),
+            Some(hours_ago(5)),
+            None,
+            Some(hours_ago(1)),
+            10,
+            10,
+            Some(2.0),
+        ));
+        let summary2 = build_summary(&rows, &signal, Utc::now() - Duration::days(90), 90);
+        assert_eq!(summary2.overall.agent_completed_count, 5);
+        assert_eq!(summary2.overall.cost_usd_estimated_per_item, Some(2.0));
+    }
+
+    #[test]
+    fn rework_rate_excludes_stale_attempts_from_the_denominator() {
+        let cutoff = Utc::now() - Duration::days(30);
+        // 5 fresh items (within retention), 2 with a rework signal.
+        let mut rows = Vec::new();
+        let mut signal_ids = std::collections::HashSet::new();
+        for i in 0..5 {
+            let row = item(
+                "software",
+                "task",
+                1,
+                Some(hours_ago(10)),
+                Some(hours_ago(10)),
+                None,
+                Some(hours_ago(1)),
+                10,
+                10,
+                Some(1.0),
+            );
+            if i < 2 {
+                signal_ids.insert(row.item_id);
+            }
+            rows.push(row);
+        }
+        // 3 stale items (last_dispatched_at before the cutoff) — must be excluded
+        // from the denominator entirely, not counted as "no rework".
+        for _ in 0..3 {
+            rows.push(item(
+                "software",
+                "task",
+                1,
+                Some(Utc::now() - Duration::days(120)),
+                Some(Utc::now() - Duration::days(120)),
+                None,
+                Some(hours_ago(1)),
+                10,
+                10,
+                Some(1.0),
+            ));
+        }
+
+        let summary = build_summary(&rows, &signal_ids, cutoff, 30);
+        let rework = &summary.overall.rework;
+        assert_eq!(rework.attempts_total, 8);
+        assert_eq!(rework.attempts_excluded_stale, 3);
+        assert_eq!(rework.attempts_with_rework_signal, 2);
+        // Eligible = 5, which meets MIN_SAMPLE_SIZE, so a rate is shown.
+        assert_eq!(rework.rate, Some(2.0 / 5.0));
+    }
+
+    #[test]
+    fn rework_rate_is_none_below_min_sample_even_with_signal_data() {
+        let cutoff = Utc::now() - Duration::days(30);
+        let mut rows = Vec::new();
+        let mut signal_ids = std::collections::HashSet::new();
+        for _ in 0..3 {
+            let row = item(
+                "software",
+                "task",
+                1,
+                Some(hours_ago(10)),
+                Some(hours_ago(10)),
+                None,
+                Some(hours_ago(1)),
+                10,
+                10,
+                Some(1.0),
+            );
+            signal_ids.insert(row.item_id);
+            rows.push(row);
+        }
+        let summary = build_summary(&rows, &signal_ids, cutoff, 30);
+        assert!(summary.overall.rework.below_min_sample);
+        assert_eq!(summary.overall.rework.rate, None);
+    }
+
+    #[test]
+    fn negative_duration_is_excluded_not_shown_as_negative() {
+        // first_dispatched_at AFTER completed_at — a data anomaly (e.g. a
+        // redispatch recorded post-completion).
+        let row = item(
+            "software",
+            "task",
+            1,
+            Some(hours_ago(1)),
+            Some(hours_ago(1)),
+            None,
+            Some(hours_ago(10)),
+            10,
+            10,
+            Some(1.0),
+        );
+        let signal = std::collections::HashSet::new();
+        let summary = build_summary(&[row], &signal, Utc::now() - Duration::days(90), 90);
+        assert_eq!(summary.overall.agent_lead_time.sample_count, 0);
+    }
+
+    #[test]
+    fn slices_by_project_type_and_item_type_are_disjoint_and_sum_to_overall() {
+        let rows = vec![
+            item(
+                "software",
+                "bug",
+                1,
+                Some(hours_ago(5)),
+                Some(hours_ago(5)),
+                None,
+                Some(hours_ago(1)),
+                5,
+                5,
+                Some(0.5),
+            ),
+            item(
+                "construction",
+                "task",
+                0,
+                None,
+                None,
+                Some(hours_ago(5)),
+                Some(hours_ago(1)),
+                0,
+                0,
+                None,
+            ),
+        ];
+        let signal = std::collections::HashSet::new();
+        let summary = build_summary(&rows, &signal, Utc::now() - Duration::days(90), 90);
+        assert_eq!(summary.by_project_type.len(), 2);
+        assert_eq!(summary.by_item_type.len(), 2);
+        let total_from_slices: i64 = summary
+            .by_project_type
+            .iter()
+            .map(|s| s.completed_item_count)
+            .sum();
+        assert_eq!(total_from_slices, summary.overall.completed_item_count);
+    }
+
+    #[test]
+    fn item_response_marks_rework_not_applicable_for_human_items() {
+        let human = item(
+            "software",
+            "task",
+            0,
+            None,
+            None,
+            Some(hours_ago(5)),
+            Some(hours_ago(1)),
+            0,
+            0,
+            None,
+        );
+        let signal = std::collections::HashSet::new();
+        let resp = to_item_response(&human, &signal, Utc::now() - Duration::days(90));
+        assert_eq!(resp.population, EconomicsPopulation::Human);
+        assert!(!resp.rework_applicable);
+        assert!(!resp.rework_data_reliable);
+        assert!(!resp.rework_signal);
+    }
+
+    #[test]
+    fn constants_are_asserted_verbatim_so_the_number_and_the_words_cannot_drift() {
+        assert!(REWORK_RATE_DEFINITION.contains("rework_started"));
+        assert!(REWORK_RATE_DEFINITION.contains("verification_failed"));
+        assert!(REWORK_RATE_DEFINITION.contains("tester_verdict_failed"));
+        assert!(LEAD_TIME_SELECTION_BIAS_NOTE.contains("not a random sample"));
+        assert!(REWORK_TRUNCATION_NOTE.contains("retention window"));
+    }
+}

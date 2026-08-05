@@ -902,6 +902,103 @@
         }
       }
     },
+    "/api/economics/items": {
+      "get": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`GET /api/economics/items` — per-completed-item economics (task 38.1's raw\npopulation) plus CSV/JSON export (task 38.4), reusing `export.rs`'s\n`?format=` + `Content-Disposition: attachment` convention rather than a second\nexport route.",
+        "operationId": "get_economics_items",
+        "parameters": [
+          {
+            "name": "project_type",
+            "in": "query",
+            "description": "Filter to one `project_type` (e.g. `\"software\"`). Omit for all.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "item_type",
+            "in": "query",
+            "description": "Filter to one `item_type` (e.g. `\"bug\"`). Omit for all.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "`\"json\"` (default, paginated) or `\"csv\"` (an attachment; ignores\n`limit`/`offset`, capped at `EXPORT_MAX_ROWS`).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-completed-item economics (JSON, paginated) or a CSV export attachment, per the format query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EconomicsItemsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Orchestration disabled (TACK_ORCH_ENABLE unset)"
+          }
+        }
+      }
+    },
+    "/api/economics/summary": {
+      "get": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`GET /api/economics/summary`.",
+        "operationId": "get_economics_summary",
+        "responses": {
+          "200": {
+            "description": "Unit economics (tokens, estimated cost, agent-vs-human lead time, rework rate) sliced by project_type and item_type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EconomicsSummaryResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Orchestration disabled (TACK_ORCH_ENABLE unset)"
+          }
+        }
+      }
+    },
     "/api/fleet": {
       "get": {
         "tags": [
@@ -1865,7 +1962,6 @@
           "templates"
         ],
         "summary": "POST /api/projects/from-template/:id - Create a project from a template",
-        "description": "**Card D3 note (Phase 37, TODO.md §6):** `template.orchestration`, when\npresent, is deliberately inert here — this handler still only creates the\nTack project (workflow/vocabulary/custom fields/boards), exactly as\nbefore this cycle. Turning the block into a live `orch_links` row needs a\n`control_plane_id` pointing at one specific, already-registered docket\ninstance, which does not exist at this point (no pod has been\nprovisioned) — that wiring is card D4's `provision_pod: true` extension\nof this same endpoint (TODO.md task 37.2), blocked on docket\nprovisioning becoming reachable in a rollback-safe way, not this card's\nto build. This keeps TODO.md §0 rule 8 (off by default) trivially true\nfor this path: nothing here reads `TACK_ORCH_ENABLE`, because nothing\nhere does anything orchestration-shaped yet.",
         "operationId": "create_project_from_template",
         "parameters": [
           {
@@ -3814,6 +3910,89 @@
           }
         }
       }
+    },
+    "/api/templates/{id}/provision": {
+      "post": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "`POST /api/templates/{id}/provision` — create a Tack project from a\ntemplate, provision a docket pod for it, and link the two. See the\nmodule doc for the full rollback design.",
+        "operationId": "create_project_with_pod",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Template ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectWithPodRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Project created; pod provisioned. `provisioning.status` distinguishes a fully-linked result from one where the pod exists but the link write failed (both are real, neither was rolled back)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateProjectWithPodResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error, or docket refused the provisioning request — the project (if one had been created for this attempt) was rolled back",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Template or control plane not found, or orchestration disabled (TACK_ORCH_ENABLE unset)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A pod already exists on this control plane under that remote project name — the project created for this attempt was rolled back",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "name/description validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4621,6 +4800,43 @@
           }
         }
       },
+      "CreateProjectWithPodRequest": {
+        "type": "object",
+        "description": "`POST /api/templates/{id}/provision` body.",
+        "required": [
+          "name",
+          "provision_pod"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "provision_pod": {
+            "$ref": "#/components/schemas/ProvisionPodRequest"
+          }
+        }
+      },
+      "CreateProjectWithPodResponse": {
+        "type": "object",
+        "required": [
+          "project",
+          "provisioning"
+        ],
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/Project"
+          },
+          "provisioning": {
+            "$ref": "#/components/schemas/ProvisioningOutcome"
+          }
+        }
+      },
       "CreateRole": {
         "type": "object",
         "required": [
@@ -4979,6 +5195,264 @@
           },
           "summary": {
             "$ref": "#/components/schemas/SprintDispatchSummary"
+          }
+        }
+      },
+      "EconomicsItemResponse": {
+        "type": "object",
+        "description": "One completed item's economics — the row shape behind both the dashboard's\ndrill-down list and the CSV/JSON export (task 38.4).",
+        "required": [
+          "item_id",
+          "project_id",
+          "project_type",
+          "item_type",
+          "title",
+          "status",
+          "population",
+          "attempt_count",
+          "tokens_in",
+          "tokens_out",
+          "rework_applicable",
+          "rework_data_reliable",
+          "rework_signal"
+        ],
+        "properties": {
+          "attempt_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "cost_usd_estimated": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "first_dispatched_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "item_type": {
+            "type": "string"
+          },
+          "lead_time_hours": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "`dispatched_at → completed_at` for an agent item, `started_at → completed_at`\nfor a human item; `None` if the required timestamp is missing or the computed\nduration is negative (a data anomaly, e.g. a redispatch after completion —\nexcluded rather than shown as a nonsensical negative duration)."
+          },
+          "population": {
+            "$ref": "#/components/schemas/EconomicsPopulation"
+          },
+          "pricing_snapshot_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "project_type": {
+            "type": "string"
+          },
+          "rework_applicable": {
+            "type": "boolean",
+            "description": "Only meaningful when `population == Agent`; always `false` for a human item."
+          },
+          "rework_data_reliable": {
+            "type": "boolean",
+            "description": "Whether this item's rework-signal data is trustworthy — `false` when its only\ndispatch predates the retention cutoff (see the module doc)."
+          },
+          "rework_signal": {
+            "type": "boolean",
+            "description": "Raw signal presence; only trust this when `rework_applicable &&\nrework_data_reliable` both hold."
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "tokens_in": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tokens_out": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "EconomicsItemsResponse": {
+        "type": "object",
+        "required": [
+          "rows",
+          "total"
+        ],
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EconomicsItemResponse"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total matching rows before `limit`/`offset` — never truncated silently (see\nthe query docs below)."
+          }
+        }
+      },
+      "EconomicsPopulation": {
+        "type": "string",
+        "description": "Which population a `GET /api/economics/items` row belongs to (see the module doc's\ndefinition: \"dispatched at least once\" vs. \"never dispatched\").",
+        "enum": [
+          "agent",
+          "human"
+        ]
+      },
+      "EconomicsSlice": {
+        "type": "object",
+        "description": "One row of the summary: \"overall\", one `project_type`, or one `item_type`.",
+        "required": [
+          "key",
+          "completed_item_count",
+          "agent_completed_count",
+          "human_completed_count",
+          "tokens_in",
+          "tokens_out",
+          "agent_lead_time",
+          "human_lead_time",
+          "lead_time_selection_bias_note",
+          "rework"
+        ],
+        "properties": {
+          "agent_completed_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Completed items with at least one `orch_tasks` row (dispatched to an agent at\nleast once — regardless of who ultimately finished it)."
+          },
+          "agent_lead_time": {
+            "$ref": "#/components/schemas/LeadTimeStat"
+          },
+          "completed_item_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cost_usd_estimated": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Summed `orch_tasks.cost_usd_estimated` for this slice's agent-dispatched\nitems. `None` only when `agent_completed_count == 0` (nothing to sum);\n`Some(0.0)` means agent items exist but none report a cost yet."
+          },
+          "cost_usd_estimated_per_item": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "`cost_usd_estimated / agent_completed_count`. `None` whenever\n`agent_completed_count < MIN_SAMPLE_SIZE` — the headline \"cost per shipped\nitem\" figure is exactly the kind of small-sample-noise ratio TODO.md's card\nwarns about, so it is withheld below the stated minimum rather than shown\nfrom a handful of items."
+          },
+          "human_completed_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Completed items with zero `orch_tasks` rows — never dispatched."
+          },
+          "human_lead_time": {
+            "$ref": "#/components/schemas/LeadTimeStat"
+          },
+          "key": {
+            "type": "string",
+            "description": "`\"overall\"`, a `project_type` value, or an `item_type` value — see the\ncontaining response's `by_project_type`/`by_item_type` field it came from."
+          },
+          "lead_time_selection_bias_note": {
+            "type": "string"
+          },
+          "pricing_snapshot_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Always `None` today — no pricing-snapshot mechanism exists yet (rule 6)."
+          },
+          "rework": {
+            "$ref": "#/components/schemas/ReworkStat"
+          },
+          "tokens_in": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tokens_out": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "EconomicsSummaryResponse": {
+        "type": "object",
+        "required": [
+          "generated_at",
+          "min_sample_size",
+          "events_retention_days",
+          "overall",
+          "by_project_type",
+          "by_item_type"
+        ],
+        "properties": {
+          "by_item_type": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EconomicsSlice"
+            }
+          },
+          "by_project_type": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EconomicsSlice"
+            }
+          },
+          "events_retention_days": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "min_sample_size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "overall": {
+            "$ref": "#/components/schemas/EconomicsSlice"
           }
         }
       },
@@ -5694,6 +6168,42 @@
           }
         ]
       },
+      "LeadTimeStat": {
+        "type": "object",
+        "description": "Average-or-raw duration figure. `avg_hours` and `raw_hours` are mutually\nexclusive: exactly one is populated (or, at `sample_count == 0`, neither).",
+        "required": [
+          "sample_count",
+          "below_min_sample"
+        ],
+        "properties": {
+          "avg_hours": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "`None` whenever `below_min_sample` is true (including `sample_count == 0`) —\nsee `raw_hours`."
+          },
+          "below_min_sample": {
+            "type": "boolean"
+          },
+          "raw_hours": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "description": "Populated only when `below_min_sample` is true and `sample_count > 0`: the\nindividual durations, so a small sample is shown honestly rather than averaged\ninto a number that looks more precise than it is."
+          },
+          "sample_count": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "LinearImportRequest": {
         "type": "object",
         "required": [
@@ -6274,6 +6784,193 @@
           "custom"
         ]
       },
+      "ProvisionPodRequest": {
+        "type": "object",
+        "description": "The pod-provisioning half of the request body. Every field mirrors\ndocket's real `POST /pods` body (see the module doc) except\n`control_plane_id` (Tack's own reference, never sent to docket) and\n`status_map`/`auto_dispatch`/`pipeline_file`, which configure the\n`orch_links` row written *after* the pod exists, not the `POST /pods`\ncall itself. Any field left `None` falls back to the chosen template's\n`orchestration` block, if it has one; if neither supplies a value,\ndocket's own blueprint default applies (for `blueprint`, `budget`,\n`verify_cmd`) or the field is simply omitted from the link.",
+        "required": [
+          "control_plane_id",
+          "remote_project"
+        ],
+        "properties": {
+          "auto_dispatch": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "blueprint": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OrchBlueprint"
+              }
+            ]
+          },
+          "budget_usd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "control_plane_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Codebase path (`software`-kind blueprints) or shared work directory\n(`workdir`-kind blueprints — `research`/`content`/`ops`/\n`agentic-product`). Empty/omitted lets docket auto-provision a work\ndirectory for `workdir`-kind blueprints; meaningless to omit for\n`software`, which then gets an empty codebase."
+          },
+          "pipeline_file": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A pipeline docket already knows about by name/path — stored on the\n`orch_links` row (`pipeline_file`). Inline `pipeline_yaml` on a\ntemplate has no delivery mechanism to docket yet (`POST /pods` has\nno pipeline field at all) — see the response's `warnings`."
+          },
+          "pod_shape": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Mirrors docket's `pod` field. Only the literal string `\"full\"` is\nmeaningful (docket's own `software`-only roster override); any\nother non-empty value is rejected before docket is ever called."
+          },
+          "remote_project": {
+            "type": "string",
+            "description": "The docket-side pod identifier. Required — never derived from the\nTack project name — so a retry after a partial failure can be typed\nback in verbatim instead of risking a second, differently-named pod\nfor the same intent (see the module doc's rollback design)."
+          },
+          "status_map": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StatusMap"
+              }
+            ]
+          },
+          "verify_cmd": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ProvisionedPodMemberResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "model"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "ProvisioningOutcome": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The pod was provisioned and the project is linked to it — the\nreconciler will start picking it up on its next poll.",
+            "required": [
+              "control_plane_id",
+              "remote_project",
+              "blueprint",
+              "members",
+              "warnings",
+              "status"
+            ],
+            "properties": {
+              "blueprint": {
+                "type": "string"
+              },
+              "control_plane_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "members": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ProvisionedPodMemberResponse"
+                }
+              },
+              "remote_project": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "linked"
+                ]
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Non-fatal notices — e.g. a template's inline `pipeline_yaml`\nthat could not be delivered anywhere. Empty in the common case."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The pod exists on docket (real, billable, cannot be undone through\nthis API) but Tack failed to save the `orch_links` row. The project\nis real too — neither was rolled back. `warnings` always contains a\nconcrete instruction naming the control plane + remote project the\noperator needs to link manually.",
+            "required": [
+              "control_plane_id",
+              "remote_project",
+              "blueprint",
+              "members",
+              "warnings",
+              "status"
+            ],
+            "properties": {
+              "blueprint": {
+                "type": "string"
+              },
+              "control_plane_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "members": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ProvisionedPodMemberResponse"
+                }
+              },
+              "remote_project": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pod_created_link_failed"
+                ]
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ],
+        "description": "The outcome of the provisioning half of the request, once the Tack\nproject itself exists. See the module doc's rollback design for exactly\nwhen each variant is produced — both are a `200`, never an error\nresponse, because in both cases the project *and* the pod are real and\nvalid; `PodCreatedLinkFailed` just means one more step (linking) needs\nfinishing, manually, via the existing Settings → Orchestration UI."
+      },
       "RestoreRemoteRequest": {
         "type": "object",
         "properties": {
@@ -6287,6 +6984,52 @@
               "null"
             ],
             "description": "Object key to restore. Defaults to the latest backup when omitted."
+          }
+        }
+      },
+      "ReworkStat": {
+        "type": "object",
+        "description": "Rework-rate figure for one slice, plus the exact definition and truncation\ncaveat that produced it (TODO.md: \"make sure the number matches the words\").",
+        "required": [
+          "attempts_total",
+          "attempts_excluded_stale",
+          "attempts_with_rework_signal",
+          "below_min_sample",
+          "definition",
+          "truncation_note"
+        ],
+        "properties": {
+          "attempts_excluded_stale": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Excluded because their only dispatch predates the retention cutoff — their\nevent history may already be gone (see `REWORK_TRUNCATION_NOTE`)."
+          },
+          "attempts_total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Every dispatched item in scope, including ones excluded from the rate below."
+          },
+          "attempts_with_rework_signal": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Of the *eligible* (`attempts_total - attempts_excluded_stale`) items, how many\ncarry at least one qualifying event."
+          },
+          "below_min_sample": {
+            "type": "boolean"
+          },
+          "definition": {
+            "type": "string"
+          },
+          "rate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "`None` when the eligible sample is `0` or below `MIN_SAMPLE_SIZE`."
+          },
+          "truncation_note": {
+            "type": "string"
           }
         }
       },

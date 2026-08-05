@@ -45,8 +45,8 @@ Every card below has a handoff note in §6 with its full reasoning.
 | F1 | per-sprint accessible names on the Run sprint control | ✅ done |
 | D2 | budget + policy panels | ✅ done — **no pause control/indicator built**: docket has zero HTTP surface for it, in either direction (see §1.4 note and §6) |
 | D3 | template `orchestration` block + pipeline library | ✅ done — backend + validation; UI editor deliberately deferred (see §6) |
-| **D5** | unit economics (tokens, estimated cost, lead time, rework rate) | ⬜ **not started** |
-| **D4** | provisioning flow + wizard | ⬜ **not started — UNBLOCKED** · `POST /pods` verified present at `serve.py:1097` with `core/pod_provisioning.py` (coordinator, 2026-08-05). **Nothing in this cycle is blocked any more.** Still needs its own design for rollback-on-partial-failure |
+| D5 | unit economics (tokens, estimated cost, lead time, rework rate) | ✅ done — own `handlers/economics.rs` + `repo/economics.rs` module (D4 was concurrently mid-edit in `repo/orch.rs`, so this card deliberately never touched that file — see §6) |
+| **D4** | provisioning flow + wizard | 🟡 **in progress (concurrent with D5)** · `POST /pods` verified present at `serve.py:1097` with `core/pod_provisioning.py` (coordinator, 2026-08-05). **Nothing in this cycle is blocked any more.** Status at D5's finish: `frontend/src/features/provisioning/**`, `handlers/provisioning.rs` exist and mostly pass; 2 `ProvisioningWizard.test.tsx` failures still open as D5 hands off — not D5's file, left for D4/coordinator |
 
 **Known gaps, carried deliberately** (each is written up in the §6 note of the card that found it):
 
@@ -71,6 +71,12 @@ Every card below has a handoff note in §6 with its full reasoning.
   ingestion fixes would close this: docket exposing `paused`/`pausedReason` on
   `/status.json`, and Tack persisting `RemoteEvent.project`/a `remote_project` column
   on mirrored trace events.
+- `orch_events.run_id` is always `NULL` — every `NewOrchEvent` constructed anywhere in
+  this codebase (trace ingestion in `tack-orch::reconciler`, `status_map_rejected` in
+  `dispatcher.rs`) hardcodes `run_id: None`. Any future feature that wants to
+  correlate a mirrored event to one specific dispatch *attempt* (not just one item)
+  cannot do it today — `orch_events.item_id` is the only reliable correlation. D5's
+  rework-rate computation is item-level for exactly this reason (D5).
 
 ---
 
@@ -6322,3 +6328,291 @@ function's shape is probably cheaper than a fourth reimplementation, though
 D5's slicing needs may not fit its existing signature unchanged. Nothing in
 this card blocks D5 or D4 — budget/policy are leaf reads, same as D1's
 approvals inbox was.
+
+### D5 — 2026-08-05
+
+**The definitions, up front — read this before the number, per the card's
+own instruction.**
+
+1. **Population split: "agent" vs. "human."** A completed item
+   (`items.completed_at IS NOT NULL`) is **agent** population if it has ≥1
+   `orch_tasks` row (dispatched at least once, regardless of who ultimately
+   finished it) and **human** population if it has zero. Agent lead time is
+   `MIN(orch_tasks.dispatched_at) → completed_at`; human lead time is
+   `items.started_at → completed_at`. The two populations are disjoint by
+   construction — no item is counted in both.
+2. **Minimum sample size: 5.** Chosen, not derived (the card asked for a
+   stated minimum, not an optimal one — see `handlers/economics.rs`'s doc
+   comment on `MIN_SAMPLE_SIZE` for the reasoning). Below it: lead time shows
+   raw per-item hours instead of an average (`LeadTimeStat::raw_hours`,
+   never both fields populated); rework rate shows raw counts instead of a
+   percentage (`ReworkStat::rate` stays `None`); cost-per-completed-item —
+   "the headline number of the whole cycle" per the card's own text — is
+   withheld entirely (`EconomicsSlice::cost_usd_estimated_per_item` is
+   `None`) rather than shown from a handful of items. Every one of these
+   branches is unit-tested directly (see below).
+3. **Selection bias — never a bare "agents are Nx faster."** Every slice
+   carries `lead_time_selection_bias_note` on the wire (not a doc link) and
+   `EconomicsPage.tsx` renders it directly under the two lead-time figures,
+   inside a `Badge tone="info"`. This module **deliberately never computes a
+   ratio between the agent and human lead-time averages** — both are shown
+   side by side and left for the reader to compare, the same discipline
+   card D2's handoff set for its budget-progress fraction ("never shows a
+   bare percentage without the caveat attached"). A frontend test
+   (`EconomicsPage.test.tsx`) asserts the DOM never matches `/\d+x faster/i`.
+4. **Rework rate, exact definition:** *share of dispatched, completed items
+   (≥1 `orch_tasks` row) that have at least one `rework_started`,
+   `verification_failed`, or `tester_verdict_failed` event recorded against
+   them* — item-level, not attempt-level (see finding #1 below for why).
+   `REWORK_RATE_DEFINITION` travels on the wire verbatim and renders next to
+   the number; a test asserts the constant contains all three literal event
+   type names, so the words and the number cannot silently drift apart.
+   Population for the rate is **completed** agent-dispatched items only —
+   a real, disclosed choice: an item that was dispatched, reworked
+   repeatedly, and never completed is invisible to this rate, which likely
+   **understates** rework rather than overstating it. Flagging this loudly
+   since it's the opposite bias direction from what's obvious at a glance.
+5. **Retention truncation.** `attempts_excluded_stale` removes an item from
+   the rework-rate denominator entirely — never counts it as "no rework" —
+   whenever its own latest dispatch predates
+   `now - TACK_ORCH_EVENT_RETENTION_DAYS`. `REWORK_TRUNCATION_NOTE` names
+   the retention window, never a count of lost events (the count is
+   genuinely unknowable — see finding #2). Token, cost, and lead-time
+   figures are **explicitly not** subject to this: `orch_tasks` is never
+   purged by the Phase 34.6 retention sweep (only `orch_events`/
+   `orch_metrics` are), and the module doc says so in as many words rather
+   than blanket-hedging every number on the page. Verified by reading the
+   retention sweep's own code (B3's `rollup_and_purge_orch_events`/
+   `rollup_and_purge_orch_metrics`) — neither touches `orch_tasks`.
+
+**Two findings from reading the ingestion code directly, neither assumed.**
+
+1. **`orch_events.run_id` is always `NULL` in this codebase today.** I went
+   looking for every place that constructs a `NewOrchEvent` before designing
+   the rework-signal correlation (expecting to reuse B6's documented
+   `run_id = orch_tasks.remote_run_id` join). There are exactly two call
+   sites — `tack-orch::reconciler`'s trace ingestion and
+   `tack-api::dispatcher`'s `status_map_rejected` recording — and **both
+   hardcode `run_id: None`**. `reconciler.rs`'s own comment on the trace-
+   ingestion site explains why: "docket's trace payload carries no run_id,
+   only session_id... Left unset rather than guessing." So a per-*attempt*
+   correlation (which B6/B5's `ItemAgentActivity` shape documents and which
+   I originally planned to reuse) would silently match nothing in real
+   data. What *is* populated reliably is `orch_events.item_id` (via
+   `reconciler::session_id_task_id` → `find_orch_task_by_remote_task_id`),
+   so `list_item_ids_with_rework_signal` (`repo/economics.rs`) correlates
+   at the item level instead — coarser than attempt-level, but the only
+   correlation the actual data supports. Added to TODO.md's "Known gaps"
+   list above since this affects any future card, not just this one.
+2. **The daily rollup drops the correlation key too.** `orch_events_daily`
+   (B3, migration 026) aggregates by `(day, control_plane_id, event_type)` —
+   no `item_id`, and (per finding #1) `run_id` was never populated anyway.
+   So once an item's dispatch history ages past the retention window, its
+   rework signal is unrecoverable at any granularity, not just per-attempt.
+   This is why `attempts_excluded_stale` exists as a hard exclusion rather
+   than a "probably fine" heuristic.
+
+**What I built.**
+
+- **`crates/tack-db/src/migrations.rs`** — migration 031, a partial index
+  `idx_items_completed_at ON items(completed_at) WHERE completed_at IS NOT
+  NULL`. Both economics queries filter `WHERE completed_at IS NOT NULL`
+  across the whole instance (not scoped to one project — the whole point is
+  slicing across projects), so none of the existing `(project_id, ...)`
+  composite indexes help; without this it's a full `items` table scan on
+  any instance with meaningful history.
+- **`crates/tack-db/src/repo/economics.rs`** (new module, not an extension
+  of `repo/orch.rs`). Two functions: `list_completed_item_economics` (one
+  `LEFT JOIN` + `GROUP BY` query — items × projects × orch_tasks — returning
+  `ItemEconomicsRow`, one row per completed item, agent or human) and
+  `list_item_ids_with_rework_signal` (distinct `item_id`s with a qualifying
+  `orch_events` row). **Deliberately its own file**, not an addition to
+  `repo/orch.rs`: card D4 (provisioning) was concurrently editing that exact
+  file this wave (confirmed via the coordinator's mid-run correction — my
+  first draft put these queries in `repo/orch.rs` and had to be moved after
+  a transport-error resume). A separate module removes the collision
+  outright rather than timing edits around a concurrent agent. Registered
+  in `repo.rs` with one line (`pub mod economics;`).
+- **`crates/tack-api/src/handlers/economics.rs`** (new module, my own — not
+  `handlers/orch.rs`). Two routes: `GET /api/economics/summary` (the
+  dashboard aggregate, sliced `overall`/`by_project_type`/`by_item_type`)
+  and `GET /api/economics/items` (per-item list, `?project_type=`/
+  `?item_type=`/`?limit=`/`?offset=` filters, plus `?format=csv` for the
+  task-38.4 export — reusing `export.rs`'s `?format=` + `Content-
+  Disposition: attachment` convention, not a second export route). Both
+  routes are pure DB reads — no live call to docket, so a plane outage can
+  never turn this into a 500 (same rule `GET /api/fleet` established). The
+  aggregation itself (`SliceBuilder`, `LeadTimeStat`, `ReworkStat`) is pure
+  Rust with zero I/O, exercised directly by 10 unit tests in the module's
+  own `#[cfg(test)]` block using hand-built `ItemEconomicsRow`s — faster and
+  more exhaustive for the min-sample/staleness/negative-duration branches
+  than only integration-testing through a seeded SQLite DB.
+- **`crates/tack-api/src/router.rs`** — one line:
+  `.merge(crate::handlers::economics::economics_routes())` inside
+  `orch_routes()`, right after D4's provisioning route. `economics_routes()`
+  is a self-contained sub-router (both new routes) defined in my own module,
+  so this is genuinely the only line this card added to a file it doesn't
+  own. No `use` statement changed — the merge call is fully qualified.
+- **`crates/tack-api/src/openapi.rs`** — 2 paths + 7 schemas, in one
+  contiguous block after D4's own additions. Full disclosure on the "one
+  additive line" instruction: this ended up more than one line, same as
+  every other Wave 3/4 card that touched this file (D2's handoff reports "2
+  new paths, five new schemas" for the identical reason) — `utoipa`'s
+  `#[derive(OpenApi)]` macro has no mechanism to merge in a separately
+  compiled sub-document; every path function and every `ToSchema` type must
+  be named individually in the one `paths(...)`/`components(schemas(...))`
+  list. I could not find a way to make this genuinely one line without
+  restructuring `openapi.rs` itself, which is out of this card's scope and
+  would be a worse trade than a disclosed, contiguous 9-line block.
+  `docs/openapi.json` regenerated; drift gate green.
+- **`crates/tack-api/src/handlers.rs`** — one line, `pub mod economics;`.
+- **`crates/tack-api/tests/economics_test.rs`** (new, 10 tests) — the HTTP
+  plumbing: off-by-default (both routes 404 with `TACK_ORCH_ENABLE` unset);
+  empty/well-formed summary with zero completed items; real agent-vs-human
+  population split with real token/cost sums from seeded `orch_tasks`;
+  project_type/item_type slicing (seeded a software item via
+  `complete_as_agent` and a construction item walked through its real
+  linear workflow via `complete_as_human`); rework-rate item-level
+  correlation via a directly-seeded `orch_events` row; stale-attempt
+  exclusion from the rework denominator (seeded one fresh + one 30-day-old
+  dispatch against a 7-day retention config); items-endpoint pagination
+  (`total` reflects the full match count, not the page size — a dashboard
+  that silently truncated its own totals would defeat the point of this
+  card); CSV export's `Content-Type`/`Content-Disposition: attachment`
+  headers and header-row shape; and per-item `rework_data_reliable: false`
+  for a stale-only dispatch.
+- **Frontend — `frontend/src/features/economics/`** (new): `api.ts` (wire
+  boundary — every field checked against the real, already-built Rust DTOs,
+  not guessed ahead of a backend landing later, since I built both sides
+  myself), `format.ts` (`formatHours`, `formatRate`, `describeLeadTime`,
+  `describeRework`, `describeCostPerItem` — all min-sample-aware; re-exports
+  `formatEstimatedCost`/`formatTokens` from `shared/agentActivity/format.ts`
+  **verbatim, per the card's explicit instruction** — no second cost
+  formatter), `SliceTable.tsx` (one table component reused for both
+  `by_project_type` and `by_item_type`), `EconomicsPage.tsx` (the dashboard:
+  stat tiles, the lead-time comparison section with its selection-bias
+  badge, the rework section with its definition + conditional truncation
+  badge, both breakdown tables, CSV/JSON export buttons using the same
+  `downloadBlob` pattern `DataPanel.tsx` already established — duplicated
+  locally rather than extracted to a shared helper, matching that file's own
+  precedent of not sharing it). Wired into `app/routes.tsx` (`/economics`,
+  lazy-loaded, same pattern as Fleet/Approvals) and `shared/ui/Sidebar.tsx`
+  (new nav entry + a new `IconEconomics` bar-chart glyph in `icons.tsx`).
+  29 new Vitest tests across `api.test.ts`/`format.test.ts`/
+  `EconomicsPage.test.tsx` — the disabled/empty/error/populated states, the
+  min-sample raw-vs-average branches, the "never shows a bare Nx-faster
+  ratio" assertion (regex-asserted absent from the DOM), the rework
+  definition rendering next to the rate, and the conditional stale-
+  truncation badge. 3 new live-executed Playwright a11y scans added to
+  `frontend/e2e/a11y.spec.ts` (disabled / empty-but-enabled / populated with
+  deliberately below-min-sample **and** stale-excluded-attempt states, since
+  those are the two states most likely to introduce an a11y issue that an
+  all-clean fixture would never exercise) — run against real Chromium
+  (`npx playwright test e2e/a11y.spec.ts --project=chromium -g
+  "economics"`), 0 violations. One real violation found and fixed along the
+  way: `SliceTable.tsx`'s horizontally-scrollable wrapper `div` needed
+  `tabindex="0"` + `role="region"` + `aria-label` — axe's
+  `scrollable-region-focusable` rule, which only fires once the table
+  genuinely overflows (7 columns did; `FleetPage.tsx`'s narrower table
+  apparently never has, which is presumably why this wasn't caught before).
+
+**Rule 9 / lint:tokens.** No raw hex anywhere in the new files — `npm run
+lint:tokens` stayed 0/0. Reused `Badge`/`Button`/`EmptyState`/`Skeleton`
+throughout; the only new component is `SliceTable.tsx`, built entirely from
+existing token-styled `<th>`/`<td>` conventions copied from
+`FleetPage.tsx`.
+
+**Rule 5.** Both handlers are plain reads — `list_completed_item_economics`
+and `list_item_ids_with_rework_signal` never call out to docket, so there is
+no HTTP call for a SQLite transaction to span in the first place. No
+transaction is opened at all in either query (a single `fetch_all` each).
+
+**Rule 8.** Both routes are mounted inside `orch_routes()`, inheriting
+`require_orch_enabled` from A4's existing layer — verified by test
+(`both_routes_404_when_orch_disabled`) and by the first Playwright scan.
+
+**Verification.** `cargo test --workspace`: all green throughout (moving
+baseline all session, per D1/D2's own "concurrent Wave 4 work" caveat — D4
+was landing `handlers/provisioning.rs` and editing `crates/tack-orch/**` the
+entire time this card ran; one transient failure in a `zzz_live_verify_d4`
+test target appeared once mid-session and the target no longer existed on
+the next run — D4 mid-edit, not mine, confirmed via `git status` before
+investigating further, exactly per the coordinator's warning). `cargo
+clippy --workspace --all-targets -- -D warnings`: clean (fixed 2
+`collapsible_if`, 1 `unnecessary_sort_by`, 2 `too_many_arguments` on test
+helpers with `#[allow]`). `cargo fmt --all -- --check`: clean. `UPDATE_
+OPENAPI=1 cargo test -p tack-api --test openapi_contract`: regenerated,
+drift gate green, re-verified green again at the very end of the session
+after D4's own concurrent changes settled. Frontend: `npm run type-check`
+clean; `npm run lint:tokens` 0/0; `npx vitest run` — my own 29 tests all
+pass; full suite showed 5 failures at final check, of which exactly 3 are
+the named pre-existing `requestBlob`/`createObjectURL` baseline
+(`client.test.ts`, `GlobalSettings.test.tsx`, `panels.test.tsx`) and 2 are
+`ProvisioningWizard.test.tsx` (D4's own file, untracked in git status,
+confirmed not mine — was 4 failing earlier in the session, D4 fixed 2 of
+its own while this card was finishing up). `npx playwright test
+e2e/a11y.spec.ts --project=chromium`: 23 of 25 passed — the 2 failures are
+the pre-existing sprint "Run sprint" duplicate-button bug D1/D2's handoffs
+already named repeatedly, not mine; all 3 new economics scans and every
+other pre-existing scan passed clean.
+
+**Files touched, all disclosed:** new —
+`crates/tack-db/src/repo/economics.rs`,
+`crates/tack-api/src/handlers/economics.rs`,
+`crates/tack-api/tests/economics_test.rs`, everything under
+`frontend/src/features/economics/**`. One-line-or-near-it additions —
+`crates/tack-db/src/repo.rs` (module registration),
+`crates/tack-api/src/handlers.rs` (module registration),
+`crates/tack-api/src/router.rs` (one `.merge()` line),
+`crates/tack-db/src/migrations.rs` (migration 031, additive DDL only),
+`frontend/src/app/routes.tsx` (one lazy import + one route),
+`frontend/src/shared/ui/Sidebar.tsx` (one nav button),
+`frontend/src/shared/ui/icons.tsx` (one new icon). Larger, disclosed
+additions — `crates/tack-api/src/openapi.rs` (paths + schemas, see above for
+why this couldn't stay to one line), `frontend/e2e/a11y.spec.ts` (3 new
+scans). Did not touch `crates/tack-db/src/repo/orch.rs`,
+`crates/tack-api/src/handlers/orch.rs`, `crates/tack-orch/**`,
+`crates/tack-api/src/handlers/provisioning.rs`, or anything under
+`frontend/src/features/provisioning/**` — all D4's territory this wave,
+confirmed clean via `git diff`/`git status` before finishing.
+
+**What's still open / for whoever's next.**
+
+- **`orch_events.run_id` is always `NULL`** (finding #1 above) — a real gap
+  for any future per-attempt (not per-item) event correlation. Now in
+  TODO.md's "Known gaps" list.
+- **Rework rate undercounts by construction** (definition #4 above): an
+  item dispatched, reworked, and never completed doesn't enter the
+  population at all. A "rework rate among all dispatched items, completed
+  or not" would need a second query shape (drop the `completed_at IS NOT
+  NULL` filter) — deliberately not built here, since every other figure on
+  this page is anchored to "per completed item" per the card's own
+  acceptance bar, and mixing two populations across the same dashboard
+  seemed more likely to confuse than clarify. Flagging as a real design
+  fork for whoever revisits this.
+- **Task 38.3 (model right-sizing export) was not built.** Re-reading the
+  schema before starting: `orch_tasks`/`orch_events` carry no `role` or
+  `model` field anywhere — docket's per-agent role/model roster
+  (`FleetAgent.kind`/`FleetAgent.model`) is a `/status.json` snapshot,
+  never persisted per-dispatch. Exporting "per-role outcome quality against
+  the model docket used" would require either a schema change (persist
+  role/model at dispatch time, which `enqueue_task`'s current signature has
+  no field for) or joining against `orch_metrics`' Prometheus labels (I
+  checked — `docket_tool_calls_total`/`docket_policy_hits_total` etc. carry
+  no per-task role/model label either, confirmed by reading B3's parser and
+  the metrics it actually stores). This is real, disclosed scope, not an
+  oversight: building it would mean either extending `orch_tasks`' schema
+  (C1's table, migration 021 — a real, reasonable follow-up: add
+  `role`/`model` columns at dispatch time if docket's `POST /tasks`
+  response or the task-list payload ever carries them) or reworking C1's
+  `dispatch_item` to capture that data, which is squarely C1/C3's
+  dispatcher, not a leaf economics-reads card's job to change in passing.
+  Tasks 38.1/38.2/38.4 are complete; 38.3 needs a schema decision first.
+- **No live-docket verification.** Like D2's and C1's later work, this
+  card's own logic is entirely Tack-side SQL/aggregation over already-
+  ingested data — V1 already live-verified the ingestion paths
+  (`orch_tasks`, `orch_events`) this card reads from, so a live docket run
+  would only re-confirm data this card never touches directly.
+
+This closes the cycle's last unbuilt card — see the status board update
+above.

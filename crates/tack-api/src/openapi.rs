@@ -193,6 +193,9 @@ pub struct ItemDetail {
         handlers::orch::dry_run_sprint_dispatch,
         handlers::orch::list_pending_approvals,
         handlers::orch::decide_approval,
+        handlers::provisioning::create_project_with_pod,
+        handlers::economics::get_economics_summary,
+        handlers::economics::get_economics_items,
     ),
     components(schemas(
         // Local response/request envelopes
@@ -242,6 +245,18 @@ pub struct ItemDetail {
         handlers::orch::ApprovalDecisionAction,
         handlers::orch::DecideApprovalRequest,
         handlers::orch::DecideApprovalResponse,
+        handlers::provisioning::ProvisionPodRequest,
+        handlers::provisioning::CreateProjectWithPodRequest,
+        handlers::provisioning::ProvisionedPodMemberResponse,
+        handlers::provisioning::ProvisioningOutcome,
+        handlers::provisioning::CreateProjectWithPodResponse,
+        handlers::economics::LeadTimeStat,
+        handlers::economics::ReworkStat,
+        handlers::economics::EconomicsSlice,
+        handlers::economics::EconomicsSummaryResponse,
+        handlers::economics::EconomicsPopulation,
+        handlers::economics::EconomicsItemResponse,
+        handlers::economics::EconomicsItemsResponse,
         // Core domain models + DTOs
         Workspace,
         Project,

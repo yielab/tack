@@ -18,6 +18,8 @@ const ProjectSettings = lazy(() => import('../features/settings/ProjectSettings'
 const GlobalSettings  = lazy(() => import('../features/settings/GlobalSettings'));
 const Fleet         = lazy(() => import('../features/fleet/FleetPage'));
 const Approvals     = lazy(() => import('../features/approvals/ApprovalsPage'));
+const Economics     = lazy(() => import('../features/economics/EconomicsPage'));
+const ProvisioningWizard = lazy(() => import('../features/provisioning/ProvisioningWizard'));
 
 export const routes: RouteDefinition[] = [
   { path: '/',         component: Projects },
@@ -26,6 +28,8 @@ export const routes: RouteDefinition[] = [
   { path: '/templates/new', component: TemplateCreator },
   { path: '/fleet',      component: Fleet },
   { path: '/approvals',  component: Approvals },
+  { path: '/economics',  component: Economics },
+  { path: '/provision',  component: ProvisioningWizard },
   { path: '/settings', component: GlobalSettings },
 
   // Project destinations
