@@ -1,47 +1,95 @@
 # Orchestration Architecture
 
 This chapter covers the Agent-Factory Control Center: the `tack-orch` crate, the
-`ControlPlane` trait, the reconciler's poll loop, and the schema behind it. It assumes
-you've read the [Architecture Overview](README.md) and the [Crate Tour](crate-tour.md)
-for the four original crates — this one adds a fifth.
+`ControlPlane` trait, the reconciler's poll loop, the dispatcher, and the schema
+behind all of it. It assumes you've read the
+[Architecture Overview](README.md) and the [Crate Tour](crate-tour.md) for the four
+original crates — this one adds a fifth.
 
 For the *why* behind this feature and the full multi-phase plan, see
 [Roadmap → Agent-Factory Control Center](../roadmap.md#next--agent-factory-control-center-phases-3338-august-2026).
-This page documents what's actually implemented today (Phase 33, read-only), not the
-aspirational end state.
+This page documents what's actually implemented as of the end of that cycle
+(phases 33–38, all shipped) — not an aspirational end state, and not the Phase-33
+read-only snapshot this page originally described. The reciprocal docket-side work
+(the `POST /tasks`, `GET /traces`, `POST /pods` endpoints this crate depends on) is
+tracked as docket's own Phase 22; every one of its cards has shipped as of this
+writing — verify against `~/Sites/rack-cli/src/docket/serve.py` directly if you're
+reading this later, since docket's own `ROADMAP.md` has repeatedly lagged its source
+during this cycle (see [Known staleness traps](#known-staleness-traps-hit-during-this-cycle)).
 
 ## The one-line architecture
 
 Tack holds desired state, an external agent-fleet backend executes it, and a
-reconciler closes the loop by polling. As shipped today, only the pull half of that
-loop exists:
+reconciler in a new `tack-orch` crate closes the loop. Unlike the Phase-33
+read-only shape, **both halves of the loop are real**: intent flows **push** (Tack →
+docket, synchronous, returns a task/run id), and progress flows **pull** (a
+jittered poll loop, Kubernetes-style):
 
 ```text
-┌─────────────────────────── Tack (control center) ────────────────────────────┐
-│  Fleet view          GET /api/fleet                                          │
-│  tack-api            GET/POST /api/control-planes, /api/control-planes/{id}  │
-│                       GET/PUT  /api/projects/{id}/orch-link                  │
-│                                                                               │
-│  tack-orch::reconciler    one tokio task per registered plane                │
-│      poll /health + /status.json  ──►  healthy/degraded/unreachable          │
-│                                         + control_planes.* (tack-db)         │
-│                                                                               │
-│  tack-orch::ControlPlane (trait)                                            │
-│      └── adapters::docket::DocketAdapter   (the only implementor today)     │
-└───────────────────────────────────┬───────────────────────────────────────────┘
-                                    │ HTTP, Bearer on authenticated routes only
-┌───────────────────────────────────▼───────────────────────────────────────────┐
-│  docket serve            /health  /status.json  /metrics  (unauthenticated)  │
-│                           /runs  /runs/{id}  /approvals  (Bearer)            │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────── Tack (control center) ──────────────────────────────┐
+│  Fleet · Approvals inbox · Agent Activity · Economics · Provisioning wizard      │
+│  tack-api    POST /api/items/{id}/dispatch            (dispatcher.rs, C1)        │
+│              POST /api/sprints/{id}/dispatch          (sprint_dispatch.rs, C3)   │
+│              GET  /api/sprints/{id}/dispatch/dry-run                             │
+│              POST /api/approvals/{token}              (D1, separate token gate)  │
+│              POST /api/templates/{id}/provision        (provisioning.rs, D4)     │
+│              GET  /api/economics/{summary,items}       (economics.rs, D5)        │
+│                                                                                    │
+│  tack-orch::dispatcher / sprint_dispatch (in tack-api)                           │
+│      item/sprint → enqueue_task → orch_tasks → status_map (workflow engine)      │
+│                                                                                    │
+│  tack-orch::reconciler   one tokio task per registered plane                     │
+│      poll: health, status, runs, approvals, metrics, traces                      │
+│        → orch_* tables → terminal status_map (human-wins) → BoardEvent           │
+│                                                                                    │
+│  tack-orch::ControlPlane (trait)                                                 │
+│      └── adapters::docket::DocketAdapter   (the only implementor today)          │
+└─────────────────────────────────────┬──────────────────────────────────────────────┘
+                                      │ HTTP, Bearer on authenticated routes only
+┌─────────────────────────────────────▼──────────────────────────────────────────────┐
+│  docket serve            /health  /status.json  /metrics          (unauthenticated)│
+│                           /runs  /approvals  /tasks  /traces        (Bearer)       │
+│                           POST /tasks/{project}   POST /dispatch/{project}         │
+│                           POST /approvals/{token}   POST /pods      (Bearer)       │
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Everything above the line is real and shipped. Dispatch (Tack → docket, the push
-half of the loop — `POST /api/items/{id}/dispatch` and friends) does not exist yet;
-neither does docket's own `POST /tasks/{project}` that it would depend on. See
-[What's implemented vs. not](#whats-implemented-vs-not) for the precise boundary.
+Everything above the line is real, shipped, and tested. The one thing that never
+exists on the wire: `ControlPlane::dispatch` (`POST /dispatch/{project}`, pipeline
+`variables`) is implemented but never called by anything in Tack today — dispatch
+only ever uses `enqueue_task`/`POST /tasks/{project}`. See
+[The dispatcher](#the-dispatcher-tack-apisrcdispatcherrs) for why.
 
-## The `ControlPlane` trait, and why it exists
+## What docket exposes today
+
+Verified against `~/Sites/rack-cli/src/docket/serve.py` directly, not against
+docket's own `ROADMAP.md` (see the staleness note below).
+
+| Route | Auth | Notes |
+|---|---|---|
+| `GET /status.json`, `GET /metrics`, `GET /health` | none | No pause/resume surface exists anywhere in this table, in either direction — see [What's genuinely missing](#whats-genuinely-missing-not-a-tack-gap). |
+| `GET /runs?project=`, `GET /runs/{id}` | Bearer | |
+| `GET /approvals` | Bearer | Records carry `context: {taskId, pipelineIndex}` — the correlation key back to an item. |
+| `GET /tasks/{project}` | Bearer | The pod's task queue as JSON. |
+| `GET /traces/{project}?since=` | Bearer | Cursor-paged; **event payloads are snake_case**, the one docket endpoint that differs from the otherwise-camelCase convention. |
+| `POST /tasks/{project}` | Bearer | Body `{description, priority, trusted}` → `{ok, task, project, status, approvalToken?}`. Honours the `pre_input` policy gate: `block` → 4xx naming the policy id; `require_approval` → task returned as `waiting_approval` with a token, never a 200 pretending it's queued. |
+| `POST /dispatch/{project}` | Bearer | Runs an *existing* queue through the pipeline; body = pipeline `variables`; returns `{ok, run, project}`. Not used by Tack today (see above). |
+| `POST /approvals/{token}` | Bearer | `{action: "grant"\|"deny"}` → docket's resulting `state`. `channel="tack"` is sent on every decision Tack makes (already a first-class member of docket's `APPROVAL_CHANNELS`). |
+| `POST /pods` | Bearer | `{project, path, blueprint, pod, budget, verifyCmd}` (all but `project` optional) → `201 {ok, project, blueprint, members: [{id, role, model}]}`. Atomic on docket's side — every failure mode either raises before anything is touched (`409` for an existing pod) or tears down everything it started before raising (`500`). **No HTTP route to delete/un-provision a pod exists.** |
+
+### Known staleness traps hit during this cycle
+
+docket's own `ROADMAP.md` marked `POST /tasks`, `GET /traces`, and `POST /pods` as
+`TODO` on multiple occasions **after** they had already shipped in `serve.py` — not
+a timing artifact; in at least one case `ROADMAP.md`'s own last commit postdated the
+shipping commit. Two Tack cards (Wave 3's start, and card D3/D4) were initially
+planned as blocked on endpoints that turned out to already exist. **The lesson this
+cycle re-learned twice: `serve.py` is the authority on what docket exposes over
+HTTP, never docket's `ROADMAP.md` and never a prior card's "blocked" note in this
+file's history.** Re-verify against source before trusting any staleness claim,
+including the ones on this page.
+
+## The `ControlPlane` trait
 
 `crates/tack-orch/src/lib.rs` defines:
 
@@ -56,40 +104,59 @@ pub trait ControlPlane: Send + Sync {
     async fn get_run(&self, run_id: &str) -> Result<RemoteRun, OrchError>;
     async fn list_approvals(&self) -> Result<Vec<RemoteApproval>, OrchError>;
     async fn list_tasks(&self, project: &str) -> Result<Vec<RemoteTask>, OrchError>;
-    async fn traces(&self, project: &str, since: Option<&str>) -> Result<Vec<RemoteEvent>, OrchError>;
-    // Write side — implemented by DocketAdapter as Err(OrchError::Disabled) until dispatch ships.
+    async fn traces(&self, project: &str, since: Option<&str>) -> Result<TracesPage, OrchError>;
     async fn enqueue_task(&self, project: &str, task: NewRemoteTask) -> Result<String, OrchError>;
     async fn dispatch(&self, project: &str, vars: serde_json::Value) -> Result<String, OrchError>;
-    async fn decide_approval(&self, token: &str, grant: bool) -> Result<(), OrchError>;
+    async fn decide_approval(&self, token: &str, grant: bool) -> Result<ApprovalState, OrchError>;
+    async fn provision_pod(&self, params: ProvisionPodParams) -> Result<ProvisionedPod, OrchError>;
 }
 ```
 
-**Tack is a factory control center, not a docket-specific dashboard.** Nothing in the
-reconciler, the API handlers, or the frontend imports `DocketAdapter` directly — they
-only ever hold an `Arc<dyn ControlPlane>`. `docket` is the only backend implemented
-today (`adapters::docket::DocketAdapter`), but the trait is the seam a second backend
-(GitHub Actions, Temporal, a different agent-fleet tool entirely) would implement
-without touching the reconciler, the handlers, or the Fleet view at all. If you're
-reaching for `DocketAdapter` by name outside `tack-orch::adapters` or a control-plane
-construction site, you're probably working against the trait, not with it.
+**No longer frozen.** The trait was frozen after Wave 0 to stop concurrent agents
+from churning a shared interface mid-cycle — it worked, and then it started
+producing designs worse than the churn it was meant to prevent. Card R1 (§2.1 of
+`TODO.md`) lifted the freeze and immediately used the room to fix the two
+workarounds the freeze had forced (below). **Treat this trait's current shape as
+current, not eternal** — change it again if a real design need shows up, and update
+every implementor/caller in the same change, the way R1 did.
 
-`DocketAdapter::new(base_url: impl Into<String>, token: Option<String>) -> Result<Self, OrchError>`
-returns `Result` rather than panicking, because `base_url` frequently comes from a
-user-typed value in a DB row — a bad URL is a normal, expected failure mode, not a
-crash. `token: None` is a fully-supported configuration: every unauthenticated docket
-route still works, and calling an authenticated route without a token just gets
-docket's real `401` (mapped to `OrchError::Auth`).
+**Two fixes R1 made once the freeze lifted, worth understanding as the trait's own
+history:**
+
+1. **`traces` returns docket's own opaque cursor, not a client-reconstructed one.**
+   Before R1, `ControlPlane::traces` had nowhere to return docket's real `next`
+   cursor (the frozen return type was `Result<Vec<RemoteEvent>, OrchError>`), so an
+   earlier card reimplemented docket's `"<ts>Z:<n>"` cursor algorithm client-side —
+   correct at the time, and guaranteed to silently drift the moment docket changed
+   that algorithm, with no compile error to catch it. `TracesPage { events,
+   next: Option<String> }` fixes this: `next` is opaque, never parsed or
+   reconstructed by Tack, just persisted and passed back verbatim. Live-verified: a
+   `since` value fed straight back from a real `docket serve` produces zero new
+   events and an unchanged `next` — proof the forwarded cursor is one docket itself
+   re-mints identically.
+2. **`OrchError::PolicyBlocked { policy_id, message }` replaces string-prefix
+   matching.** Before R1, the only way to tell "docket's `pre_input` policy
+   deliberately refused this" apart from a generic transport failure was a
+   `POLICY_BLOCK_PREFIX` constant and `msg.strip_prefix(...)` — a reworded docket
+   error message would have silently turned a policy block into a generic failure.
+   The typed variant carries a real `policy_id`, parsed once
+   (`adapters::docket::parse_policy_block`) with a `"unknown"` fallback if docket's
+   wording ever drifts (never panicking — the same "degrade, don't fail the poll"
+   discipline the remote-state enums already use).
 
 ### `OrchError`
 
 ```rust
 pub enum OrchError {
-    Http(String),        // transport-level failure
-    Auth,                 // 401/403
-    Decode(String),       // malformed response body
-    NotFound(String),     // resource doesn't exist on the remote side
-    Unavailable(String),  // plane configured but not currently reachable
-    Disabled,              // gated behind a flag/config or a not-yet-implemented write method
+    Http(String),                              // transport-level failure
+    Auth,                                       // 401/403
+    Decode(String),                             // malformed response body
+    NotFound(String),                           // resource doesn't exist on the remote side
+    Unavailable(String),                        // plane configured but not currently reachable
+    Disabled,                                   // gated behind a flag/config, or a write method the adapter doesn't implement
+    PolicyBlocked { policy_id: String, message: String },  // pre_input refused it, on purpose (card R1)
+    AlreadyDecided(String),                     // the approval was already granted/denied (card D1)
+    AlreadyExists(String),                      // docket's PodAlreadyExistsError, 409 (card D4)
 }
 ```
 
@@ -122,14 +189,19 @@ for the user-facing framing of this same rule.
 plane. Each tick is three strictly separated phases, enforced by the types rather than
 by convention:
 
-1. **Fetch** (`reconcile_once`) — every HTTP call the tick needs. No database handle
-   is reachable from this phase at all; `reconcile_once` and everything it calls never
-   receive a store or pool.
+1. **Fetch** (`reconcile_once`) — every HTTP call the tick needs, across **six**
+   steps today (health, status, runs, approvals, metrics, traces — the last three
+   landed in Wave 2, one field/one `poll_*` fn/one struct-literal line each, per the
+   extension recipe below). No database handle is reachable from this phase at all.
 2. **Decide** (`HealthTracker::observe`) — a pure, synchronous state transition over
-   the fetch result. No I/O.
-3. **Persist** (`spawn_one`'s single `store.record_health(...).await` call) — one
-   short write, invoked once per tick, strictly after phase 1's `.await` has already
-   resolved.
+   the health/status fetch results only. No I/O. Ingestion data (runs, approvals,
+   metrics, traces) rides alongside in the same `(PollEvaluation, FetchOutcome)`
+   tuple but is deliberately **not** read by `evaluate` — a new poll step's failure
+   must never influence the plane's reachability verdict.
+3. **Persist** (`spawn_one`'s loop) — `store.record_health(...)` first, then each
+   ingestion step's own upsert call (`upsert_runs`, `upsert_approvals`,
+   `upsert_metrics`, `persist_events`), each its own short write, strictly after
+   phase 1's `.await` has already resolved.
 
 Because phase 1 has fully completed before phase 3 begins, there is no window where a
 write transaction is open while an HTTP request to docket is in flight — this is the
@@ -148,239 +220,342 @@ pub const MAX_BACKOFF_SECS: u64 = 300;
 - **Recovery is immediate.** A single successful poll resets `consecutive_failures` to
   zero and re-evaluates state from scratch, regardless of how long the prior outage
   ran.
-- An `apiVersion` mismatch (`FleetStatus.api_version`'s major component differs from
-  `EXPECTED_API_VERSION`, currently `"2"`) is an **independent** signal from
-  reachability: `HealthTracker::observe` takes the more severe of the two
-  (`HealthState` derives `Ord` with `Healthy < Degraded < Unreachable` specifically so
-  this "max of two signals" logic is a one-line `.max()`). A plane that's both
-  unreachable *and* version-mismatched still reports `unreachable`, never silently
-  downgraded.
-- Poll backoff doubles with each consecutive failure, capped at `MAX_BACKOFF_SECS`
-  (`backoff_secs`); backoff only kicks in once a poll has actually failed.
-- Log severity only fires on a *transition* — entering degraded/unreachable logs
-  `warn`, recovering logs `info`, an unchanged repeat failure logs `debug`. A
-  sustained outage produces at most two `warn` lines no matter how long it lasts.
+- An `apiVersion` mismatch is an **independent** signal from reachability —
+  `HealthTracker::observe` takes the more severe of the two (`HealthState` derives
+  `Ord` with `Healthy < Degraded < Unreachable`).
+- Poll backoff doubles with each consecutive failure, capped at `MAX_BACKOFF_SECS`.
+- Log severity only fires on a *transition* (`warn` entering degraded/unreachable,
+  `info` recovering, `debug` on an unchanged repeat failure) — a sustained outage
+  produces at most two `warn` lines no matter how long it lasts.
 
 ### Jitter is deterministic, not `rand`
 
 `jittered_secs(plane_id, tick, base_secs)` hashes `(plane_id, tick)` with
-`std::collections::hash_map::DefaultHasher` and maps the result to a ±20% fraction
-applied to `base_secs`. This is deliberate, not a placeholder: `rand` is not a
-workspace dependency, and a deterministic function keeps the schedule reproducible in
-tests without threading a seeded RNG through the whole call chain. It still gives the
-real anti-stampede property — different plane IDs land on different offsets within the
-same base interval, so N registered planes don't all wake up on the same tick.
+`std::collections::hash_map::DefaultHasher` and maps the result to a ±20% fraction —
+deliberate, not a placeholder: `rand` is not a workspace dependency, and this keeps
+the schedule reproducible in tests. It still gives the real anti-stampede property —
+N registered planes don't all wake up on the same tick.
 
 ### Panic isolation
 
-A panic inside a poll — a bug in a `poll_*` function, a misbehaving adapter — must
-never take down another plane's task, or surface in a user request. `spawn_one` gets
-this by wrapping each tick's fetch phase in its own `tokio::spawn`: a panic there
-becomes a `JoinError` the outer (non-panicking) loop catches, logs, and treats as a
-failed poll. The loop keeps ticking; no other plane's task is affected; nothing here
-ever makes an *inbound* HTTP call, so there's no way for this to touch a live user
-request at all.
+`spawn_one` wraps each tick's fetch phase in its own `tokio::spawn`: a panic there
+becomes a `JoinError` the outer loop catches, logs, and treats as a failed poll. No
+other plane's task is affected, and nothing in this module ever makes an *inbound*
+HTTP call, so a panic here can never touch a live user request.
 
 ### Extending the poll loop: adding a `poll_*` step
 
-`reconcile_once` builds a `FetchOutcome` as a flat struct-of-results, one field per
-HTTP call. Adding a new poll step (a future `poll_runs`, `poll_approvals`,
-`poll_traces`, `poll_metrics`, or anything else) is exactly three edits, and nothing
-else in the file changes:
+Exactly three edits, established by B1/B2/B3 and unchanged since:
 
 ```rust
 // 1. Add a field to FetchOutcome:
 struct FetchOutcome {
     health: Result<Health, OrchError>,
     status: Result<FleetStatus, OrchError>,
-    runs: Result<Vec<RemoteRun>, OrchError>,       // <- new
+    runs: Vec<(String, Result<Vec<RemoteRun>, OrchError>)>,
+    approvals: Result<Vec<RemoteApproval>, OrchError>,
+    metrics: Result<Vec<MetricSample>, OrchError>,
+    traces: Vec<TracesPollResult>,     // <- your new field
 }
 
-// 2. Add your own fetch-only poll_* fn, same shape as poll_health/poll_status
-//    (module-private, no DB access — HTTP call only):
-async fn poll_runs(
-    control_plane: &Arc<dyn ControlPlane>,
-    project: Option<&str>,
-) -> Result<Vec<RemoteRun>, OrchError> {
-    control_plane.list_runs(project).await
-}
+// 2. A fetch-only poll_* fn, module-private, no DB access:
+async fn poll_traces(control_plane: &Arc<dyn ControlPlane>, /* … */) -> /* … */ { /* … */ }
 
-// 3. Add one line inside reconcile_once's struct literal:
-async fn reconcile_once(control_plane: &Arc<dyn ControlPlane>) -> PollEvaluation {
-    let fetched = FetchOutcome {
-        health: poll_health(control_plane).await,
-        status: poll_status(control_plane).await,
-        runs: poll_runs(control_plane, project).await,   // <- new
-    };
-    evaluate(&fetched)
-}
+// 3. One line inside reconcile_once's struct literal.
 ```
 
-Your own persistence call (e.g. `store.upsert_orch_runs(...)`) does **not** go inside
-`reconcile_once` — add it in `spawn_one`'s loop, as its own short call placed *after*
-`store.record_health(...).await`, keeping the same fetch-then-persist separation.
-**Do not let a new poll step's failure influence `evaluate`'s reachability verdict** —
-`evaluate` deliberately reads only `.health`/`.status`; every other field is a
-data-ingestion concern with its own success/failure handling, independent of plane
-health.
+Your own persistence call goes in `spawn_one`'s loop, as its own short call placed
+*after* `store.record_health(...).await` — never inside `reconcile_once`. **Do not
+let a new poll step's failure influence `evaluate`'s reachability verdict.**
 
-### Persistence interface
+### `orch_events` has no natural key — B2's solution, worth knowing before touching trace ingestion
 
-The reconciler depends on a narrow trait, not `tack_db::Repository` directly:
+Unlike `orch_runs` (keyed by `run_id`) and `orch_approvals` (keyed by `token`), a
+docket trace event is a position in a JSONL stream, not an entity with a stable id.
+`orch_events.id` is caller-assigned specifically so it can be derived as a **pure
+function of the source event** — keyed on `(control_plane_id, remote_project, seq)`
+when docket's record carries a sequence number, hashed from a canonicalised record
+otherwise. Never keyed on ingestion time, poll tick, or insert order — all three make
+replay non-idempotent. A rewound or reset cursor re-ingests an overlapping window
+with **zero** duplicate rows, tested directly.
 
-```rust
-#[async_trait::async_trait]
-pub trait ControlPlaneStore: Send + Sync {
-    async fn list_registered(&self) -> Result<Vec<RegisteredPlane>, OrchError>;
-    async fn record_health(&self, control_plane_id: Uuid, record: &HealthRecord) -> Result<(), OrchError>;
-}
-```
+### Terminal `status_map` reconciliation
 
-The reason it's an abstraction rather than the concrete repository: turning a
-`control_planes` row into a live `Arc<dyn ControlPlane>` needs both a real database
-read *and* dispatch on `kind` to a concrete adapter constructor, and `tack-orch` has
-no reason to depend on `tack-db`'s concrete `Repository` type beyond what it already
-needs for the trait's own signatures.
+The reconciler is also where the terminal half of `status_map` (`on_succeeded`,
+`on_failed`, `on_cancelled`) is applied — see
+[`RepoControlPlaneStore::upsert_runs`](#the-persistence-interface) below, which calls
+into it right after resolving a run's correlated item. `on_running`/
+`on_waiting_approval` are **not** reconciler-driven — the reconciler never polls
+docket's `/tasks` endpoint at all, only `/runs` and `/approvals`, so those two keys
+are applied once, synchronously, at dispatch time (see the dispatcher below) and
+never revisited by a poll.
 
-The real implementation, `RepoControlPlaneStore`, lives in
-`crates/tack-api/src/orch_store.rs` — deliberately kept out of `server.rs`,
-`router.rs`, `config.rs`, and `handlers/orch.rs`, since `tack-api` is the one crate
-that already depends on both `tack-db` (for `Repository`) and `tack-orch` (for the
-adapter and the trait), and this glue has exactly one reason to change: a new
-control-plane `kind` needs a new adapter, or the persistence mapping shifts.
-`list_registered` never fails the whole poll cycle over one bad row — an unknown
-`kind`, a token-lookup error, or an adapter that fails to construct (an unparsable
-`base_url`) each just skip that one plane (logged at `warn`) rather than aborting
-every other registered plane's polling too. Only a failure to read the
-`control_planes` table at all surfaces as an `Err`.
-
-`server.rs` spawns it, gated behind `config.orch_enable`:
-
-```rust
-if config.orch_enable {
-    let store: Arc<dyn reconciler::ControlPlaneStore> =
-        Arc::new(RepoControlPlaneStore::new(state.repo.clone()));
-    let handles = reconciler::spawn_reconcilers(
-        true,
-        store,
-        reconciler::ReconcilerConfig { poll_secs: config.orch_poll_secs },
-    ).await;
-    // ...
-}
-```
-
-`spawn_reconcilers(enabled, ..)` is itself the mechanism behind "off by default": with
-`enabled: false` it returns an empty `Vec` **without even calling
-`store.list_registered()`** — not just "spawns nothing," but "never queries for what
-it would have spawned."
-
-## The Prometheus text parser
+### The Prometheus text parser
 
 `crates/tack-orch/src/adapters/prometheus.rs` — a small, dependency-free parser for
-docket's `/metrics` endpoint (Prometheus text-exposition format): `pub fn
-parse(input: &str) -> Vec<MetricSample>`. It never errors and never panics; a
-malformed line is dropped, not treated as a whole-document failure. It lives under
-`adapters::` rather than at the crate root because `tack-orch/src/lib.rs` is frozen
-(see below) and adding a new top-level module there requires an edit to a file no
-single Wave-1 card owned — the public path is
-`tack_orch::adapters::prometheus::parse`, not `tack_orch::prometheus::parse`. Any
-future consumer of `/metrics` (a metrics-ingestion feature, a `GET /api/metrics`
-handler) should reuse this parser rather than writing a second one.
+docket's `/metrics` endpoint: `pub fn parse(input: &str) -> Vec<MetricSample>`. Never
+errors, never panics; a malformed line is dropped, not a whole-document failure.
+Reused verbatim by `poll_metrics`'s ingestion (B3) — do not write a second parser.
 
-## Crate layout
+## The dispatcher (`tack-api/src/dispatcher.rs`)
 
-```text
-crates/tack-orch/
-├── Cargo.toml         Depends on tack-core, tack-db, tokio, reqwest (the
-│                       workspace's existing client — no second one), serde,
-│                       serde_json, thiserror, async-trait, chrono, uuid,
-│                       tracing. Dev-dep: wiremock.
-└── src/
-    ├── lib.rs          ControlPlane trait, OrchError, remote-state enums,
-    │                    every DTO (Health, FleetStatus, FleetAgent,
-    │                    RemoteRun, RemoteApproval, RemoteTask, NewRemoteTask,
-    │                    RemoteEvent, MetricSample). Frozen after Wave 1 —
-    │                    every later addition consumes this surface verbatim
-    │                    rather than renaming a field.
-    ├── reconciler.rs   Poll loop, health state machine, ControlPlaneStore
-    │                    trait, spawn_reconcilers/spawn_one.
-    └── adapters/
-        ├── mod.rs       pub mod docket; pub mod prometheus;
-        ├── docket.rs    DocketAdapter — the ControlPlane impl for docket.
-        └── prometheus.rs  /metrics text-exposition parser.
-```
+The write path that turns Tack into a control center rather than a dashboard. Given
+an item that has just entered (or is being manually pushed into) a dispatch-eligible
+status, `dispatch_item(state, item_id: Uuid, trusted: bool) ->
+Result<DispatchOutcome, ApiError>`:
 
-**Dependency direction is inward-only and enforced by review, not by the compiler:**
-`tack-orch` depends on `tack-core` and `tack-db`; it must never depend on `tack-api`.
-`tack-api` depends on `tack-orch` (`crates/tack-api/Cargo.toml`) to spawn the
-reconciler and expose the control-plane/fleet routes — never the reverse. If you're
-adding code to `tack-orch` and find yourself reaching for a `tack-api` handler DTO,
-stop: define the type in `tack-orch` and let `tack-api` depend on it, or duplicate the
-small shape, rather than inverting the graph.
+1. Resolves the item's project → `orch_links` → `status_map`. An unlinked project,
+   or an empty `dispatch_from`, are ordinary states (`DispatchOutcome::NoDispatchPolicy`),
+   not errors.
+2. Refuses — without calling docket — if the item's status isn't in `dispatch_from`
+   (`DispatchOutcome::NotEligible`).
+3. Idempotency: if the item's most recent `orch_tasks` attempt is still
+   `pending`/`running`/`waiting_approval`, does **not** call docket again
+   (`DispatchOutcome::AlreadyInFlight`).
+4. Calls `ControlPlane::enqueue_task` — `POST /tasks/{project}`'s three outcomes,
+   live-verified (card V1):
+   - **block** → `DispatchOutcome::Blocked { policy_id, message }`, no `orch_tasks`
+     row at all.
+   - **allow** / **require_approval** are indistinguishable at `enqueue_task`'s
+     return-type level (both `Ok(task_id)`, since the trait's `Result<String,
+     OrchError>` return can't carry docket's real `status`/`approvalToken` fields
+     without widening it again) — `dispatch_item` makes one follow-up `list_tasks`
+     call to resolve which actually happened. Widening `enqueue_task`'s return type
+     to avoid that extra round trip is a real, deliberately-deferred future change,
+     not an oversight.
+5. Persists `orch_tasks` (task id + attempt + `trusted`), then applies the
+   `status_map`-named target (`on_waiting_approval` or `on_running`) **through the
+   workflow engine, never raw SQL** — a transition the engine refuses is recorded as
+   a `status_map_rejected` `orch_events` row and the item is left untouched.
 
-`crates/tack-api/src/orch_store.rs` is where the two halves actually meet — see
-"Persistence interface" above.
+### `trusted` has no default, anywhere in this call chain
+
+`dispatch_item`'s `trusted: bool` parameter is **required and non-`Option`** —
+deliberately, because docket's own `core/dispatch.py::enqueue_task` treats an
+*omitted* `trusted` as "trusted iff the caller is `operator`," which is always true
+for every existing caller (confirmed live, card V1). A required Rust `bool` can't
+stop a caller from passing the wrong *value*, but it makes the *omission* — the
+actual vulnerability — a compile error. `handlers::orch::dispatch_item` (the manual
+"Dispatch" button's HTTP entry point) resolves a default from the item's persisted
+`source.is_trusted()` (see [`ItemSource`](#the-trust-boundary-itemsource) below);
+the auto-dispatch hook and sprint dispatch both do the same. There is no convenience
+wrapper anywhere that defaults `trusted` — adding one would silently recreate the
+hole this signature exists to close.
+
+### Idempotency and `attempt`
+
+`attempt = 1 + the highest existing orch_tasks.attempt for this item` (0 if none).
+Two layers make "double-dispatch creates one task, not two" hold under real
+concurrency:
+
+1. **`DispatchLocks`** — a process-wide `static LazyLock<Mutex<HashSet<Uuid>>>` in
+   `dispatcher.rs`, deliberately **not** a field on `AppState` (dozens of
+   pre-existing `AppState { .. }` struct literals across test files would have
+   needed updating). A second concurrent request for the same item gets an
+   immediate `409` rather than racing the first.
+2. The `orch_tasks` read itself catches the sequential case.
+
+This holds because Tack is a single-process, single-SQLite-writer binary; it would
+not hold across multiple replicas.
+
+### The trust boundary: `ItemSource`
+
+Migration 029 added `items.source TEXT NOT NULL DEFAULT 'unknown'`, backed by
+`tack_core::models::ItemSource` (`Manual` / `Github` / `Linear` / `JsonImport` /
+`CsvImport` / `Unknown`) with `is_trusted()` — `true` iff `Manual` — as the **single**
+place the trust rule is encoded. `source` is written exactly once, in
+`Repository::create_item_with_source`, and `update_item` has no code path that
+touches the column at all (not "chose not to," the column name doesn't appear in
+its SQL — enforced by a test that edits an untrusted item's title/description
+through `update_item` and asserts `source` is unchanged).
+
+Two independently-chosen defaults, deliberately not the same value:
+
+- **The migration's SQL default (`'unknown'`) is backfill-only** — every
+  pre-migration row (including items GitHub-imported before this Phase even
+  existed) resolves to untrusted, since there's no record of which ones were
+  manually typed.
+- **`Item`'s `#[serde(default)]` also resolves to `Unknown`** — an old export or a
+  hand-built import payload that omits `source` can't claim `Manual` trust just by
+  leaving the field out.
+
+| Path | `ItemSource` |
+|---|---|
+| `POST /api/projects/{id}/items` (UI, `tack add`, MCP tool) | `Manual` |
+| Alexa voice skill | `Manual` — the project owner's own speech, not third-party text |
+| GitHub import | `Github` |
+| Linear import | `Linear` |
+| JSON/YAML project import | **Preserves** the source item's own `source` from the payload (a full snapshot restore already implies at least `create_item`-level privilege; the `#[serde(default)]` above still stops a payload that omits the field from claiming `Manual`) |
+| CSV import | `CsvImport` |
+
+## Sprint dispatch (`tack-api/src/sprint_dispatch.rs`)
+
+`POST /api/sprints/{id}/dispatch` / `GET /api/sprints/{id}/dispatch/dry-run` —
+DAG-ordered, no precedent in either codebase. Both routes share one planning
+function, `plan_sprint_dispatch`, so a dry-run preview and a real run are
+**guaranteed** to agree, not just usually agree.
+
+- **Readiness** = every direct dependency is in a Done-category status *right now*
+  (checked against the live item table, not against a `RunState`) — including
+  dependencies outside the sprint, or outside the project.
+- **Ordering** comes from `tack-core::dependency::DependencyGraph::topological_order`
+  — Kahn's algorithm, made **deterministic** (not merely "a valid order") via a
+  `BinaryHeap` tie-break on each node's position in the input slice, since this
+  codebase's default hasher is randomized per instance. An impossible cycle (should
+  be unreachable — `validate_new_edge` prevents it at creation) returns
+  `CoreError::DependencyCycle` rather than looping or truncating.
+- **Concurrency**: a `tokio::sync::Semaphore` bounds in-flight `dispatch_item` calls
+  at `max_in_flight` (query param, clamped `[1, 20]`, default 5), submitted in
+  topological order.
+- **Partial failure**: a policy block or error on one item never aborts the rest.
+  Downstream-blocked items report `waiting_on_dependencies` on their own next
+  evaluation — no separate bookkeeping needed, since a blocked item never reaches a
+  Done-category status.
+
+**A known, disclosed WIP-limit race this card surfaced (fixed by R2/R3, see
+below).** Concurrent dispatch of *different* items into the *same* WIP-limited
+column was, before R2's fix, a genuine race — `apply_mapped_status` read a column's
+item count and wrote the new status as two separate, unlocked steps.
+`max_in_flight` made this an everyday occurrence rather than a rare two-human
+collision.
+
+## Fixing the WIP-limit race: `update_item_status_checked`
+
+`crates/tack-db/src/repo/items.rs`'s `Repository::update_item_status_checked` wraps
+the count-check-then-write sequence in one `BEGIN IMMEDIATE` SQLite transaction —
+acquiring the write lock **at the count read**, not on the first write. This matters
+concretely: a plain deferred `self.pool().begin()` (the pre-existing convention
+elsewhere in `repo/orch.rs`) only takes the lock when the *first write statement*
+runs, so two concurrent transactions could both read the count before either takes
+the lock. `BEGIN IMMEDIATE` (`sqlx::Pool::begin_with`) makes the second concurrent
+caller's transaction simply block until the first commits, so it's guaranteed to
+read post-commit state.
+
+Returns `Option<StatusUpdateOutcome>` (`Applied(Box<Item>)` / `Rejected(CoreError)`,
+`None` only if the item vanished). Reuses the exact same `WorkflowConfig::
+check_wip_limit` the old unguarded code called — no duplicated comparison logic.
+
+**Three call sites now use it**, closing the race everywhere it could manifest, not
+just on the dispatch path where it was first found: `dispatcher::apply_mapped_status`
+(the original fix, card R2, reproduced 12/12 concurrent dispatches over-filling a
+WIP-5 column before the fix), `handlers::items::update_item` (the human board-drag
+path, card R3), and `handlers::alexa::complete_task` (the voice "mark done" path,
+card R3). All three reproduced the identical race live before being fixed — see
+their own test files (`wip_limit_race_test.rs`, `board_drag_wip_race_test.rs`,
+`alexa_wip_race_test.rs`) for the exact repro methodology (genuinely concurrent
+requests via `tokio::spawn` on a multi-thread runtime, asserting the pre-fix code
+over-fills the column before touching anything).
+
+`Repository::count_items_by_status` still exists and is still used where an
+unguarded read is fine (e.g. the Fleet aggregate) — only the *check-then-write*
+sequence needed the atomic replacement.
+
+## The persistence interface
+
+`crates/tack-api/src/orch_store.rs`'s `RepoControlPlaneStore` implements
+`reconciler::ControlPlaneStore` (the reconciler's narrow persistence trait) and is
+where the reconciler and the rest of `tack-api` actually meet. Beyond
+`list_registered`/`record_health`, it's grown the ingestion upsert calls (`upsert_runs`,
+`upsert_approvals`, `upsert_metrics`, `persist_events`) and — the one with real
+business logic in it — the terminal `status_map` reconciliation:
+
+`upsert_runs` calls `reconcile_terminal_status_map` right after resolving a run's
+correlated item, for any run that just transitioned to `succeeded`/`failed`/
+`cancelled`. Three private methods:
+
+1. **`reconcile_terminal_status_map`** — maps the run's terminal `RunState` to the
+   matching `status_map` key, no-ops on an absent key or an already-matching status,
+   then either applies the transition (through `dispatcher::apply_mapped_status`,
+   reused verbatim, not reimplemented) or records the skip.
+2. **`card_has_diverged`** — the human-move detector, below.
+3. **`record_status_map_skipped`** — writes a `status_map_skipped_human_override`
+   `orch_events` row using the same free-form-`event_type` convention
+   `status_map_rejected` already established.
+
+### How "has a human moved it" is determined without a schema change
+
+There's no persisted "who/what last set this status" column — deliberately, to
+avoid a migration for this feature. `card_has_diverged` instead compares
+`item.status` against **the one `status_map` key the item's latest `orch_tasks`
+attempt actually used**: `on_waiting_approval`'s value if that attempt's
+`remote_status` is `waiting_approval`, else `on_running`'s value.
+
+**This has to be exactly one key, not a union of every plausible marker.** An
+earlier draft checked membership in `{dispatch_from ∪ on_running ∪
+on_waiting_approval}` — wrong, and caught by a test built around the roadmap's own
+worked `status_map` example, where `on_waiting_approval` and `on_failed` are **both**
+`"Blocked"`. Under the union check, a human dragging a card to "Blocked" (exactly
+the scenario this feature exists to protect) reads as "unchanged, still parked at
+`on_waiting_approval`'s value" — and the terminal transition fires anyway, silently
+overwriting the human's decision. Resolving to a single expected value from the
+attempt's own last known `remote_status`, rather than a set, is what fixes it. See
+`crates/tack-api/tests/orch_terminal_status_test.rs`'s
+`a_human_move_since_dispatch_blocks_on_succeeded_even_when_the_value_collides_with_on_waiting_approval`.
+
+**Accepted limit:** this cannot detect a human re-choosing the exact status the
+automation already believed the item was in (dragging a card to "In Progress" for
+your own reason while `on_running` already parked it there) — no value-based check
+can, without a real change-log.
 
 ## The database layer
 
-`crates/tack-db/src/repo/orch.rs` is the repository module for every table below.
-Notable design points:
+`crates/tack-db/src/repo/orch.rs` is the repository module for the orchestration
+tables; `repo/economics.rs` is a **separate** module for the two unit-economics
+queries (kept separate specifically to avoid a same-file collision with a
+concurrently-landing card, not a structural necessity). Notable design points:
 
 - **The stored control-plane token never leaves this layer in a read DTO.**
-  `get_control_plane_token(id) -> Result<Option<String>, sqlx::Error>` is
-  doc-commented "INTERNAL ONLY" — every other read (`get_control_plane`,
-  `list_control_planes`) returns a DTO with no `token` field at all, only
-  `token_set: bool`. This is a compile-time guarantee, not a runtime check: there is
-  no field to accidentally serialize.
-- `UpdateControlPlane.token: Option<Option<String>>` gives the API layer tri-state
-  `PATCH` semantics: `None` = field absent (leave stored token untouched), `Some(None)`
-  = explicit `null` (clear it), `Some(Some(t))` = set/replace.
-- Batch upserts (`upsert_orch_tasks`/`_runs`/`_events`/`_approvals`) each take a slice
-  and use **one transaction per call**, not one per row — a poll tick that upserts 50
-  task rows opens exactly one write transaction. An empty slice is a documented no-op:
-  `Ok(())` without opening a transaction at all.
+  `get_control_plane_token` is doc-commented "INTERNAL ONLY"; every other read
+  returns `token_set: bool`, never the value. Compile-time guarantee: there is no
+  field to accidentally serialize.
+- `UpdateControlPlane.token: Option<Option<String>>` gives tri-state `PATCH`
+  semantics — absent leaves it, `Some(None)` clears it, `Some(Some(t))` replaces it.
+- Batch upserts (`upsert_orch_tasks`/`_runs`/`_events`/`_approvals`/`_metrics`) use
+  **one transaction per call**, not one per row.
 - `orch_runs.item_id` and `orch_approvals.item_id` are write-once through the upsert
-  path (`ON CONFLICT DO UPDATE SET item_id = COALESCE(excluded.item_id, item_id)`): a
-  poll that doesn't yet know an item's attribution can never clobber an attribution a
-  previous poll already learned.
-- `remote_status`/`state`/`source`/`event_type` columns are plain `String` — this
-  layer does no matching against `RunState`/`TaskStatus`/etc. An unrecognised value
-  round-trips byte-for-byte, the same "never fail on an unknown value" discipline as
-  the enums in `tack-orch`.
+  path (`COALESCE(excluded.item_id, item_id)`) — a poll that doesn't yet know an
+  item's attribution can never clobber one a previous poll already learned.
+- `remote_status`/`state`/`source`/`event_type` columns are plain `String` — no
+  matching against the Rust enums happens at this layer. An unrecognised value
+  round-trips byte-for-byte.
+- **`orch_events.run_id` is always `NULL` in the whole codebase.** Both call sites
+  that construct a `NewOrchEvent` (trace ingestion, `status_map_rejected`) hardcode
+  `run_id: None` — docket's trace payload carries no run id, only a `session_id` the
+  reconciler doesn't correlate to a specific dispatch attempt. `orch_events.item_id`
+  is the only reliable correlation key today; anything that needs per-*attempt* (not
+  per-item) correlation can't get it from this table yet.
 
-## Migrations 019–024
+## Migrations 019–031
 
-Landed in `crates/tack-db/src/migrations.rs` following the `018_github_links`
-precedent — a `const [&str; N]` slice of statements per migration, registered in the
-migration list. Every foreign key to `items`/`projects`/`control_planes` is `ON DELETE
-CASCADE`. Timestamps are RFC3339 `TEXT`; UUIDs are `TEXT`, matching every other table
-in the database.
+Landed following the `018_github_links` precedent — a `const [&str; N]` slice of
+statements per migration, registered in the migration list. Every foreign key to
+`items`/`projects`/`control_planes` is `ON DELETE CASCADE`. Timestamps are RFC3339
+`TEXT`; UUIDs are `TEXT`.
 
-| Migration | Table | Key columns |
+| Migration | Table / change | Key columns |
 |---|---|---|
-| 019 | `control_planes` | `id` PK, `name`, `kind` (default `'docket'`), `base_url`, `token` (nullable, write-only over the API), `api_version`, `health` (default `'unknown'`), `last_seen_at`, `consecutive_failures`. No FKs — root of the graph. |
-| 020 | `orch_links` | `project_id` PK (FK → `projects`, one link per project — mirrors the one-row-per-item shape of `github_links`), `control_plane_id` (FK → `control_planes`), `remote_project`, `pipeline_file`, `blueprint`, `auto_dispatch`, `budget_usd` (a cap, deliberately not `_estimated`), `status_map` (JSON `TEXT`, default `'{}'`). |
-| 021 | `orch_tasks` | **Composite PK `(item_id, remote_task_id)`** — not a single-column key, because an item can be redispatched and each dispatch gets its own row. `remote_run_id` (indexed, not a hard FK — a task can exist before its run is mirrored), `remote_status` (default `'pending'`), `attempt` (default 1), `tokens_in`/`tokens_out` (the primary measure), `cost_usd_estimated` (derived, nullable), `dispatched_at`, `trusted` (default 1; imported items will set 0). |
-| 022 | `orch_runs` | `run_id` PK, `control_plane_id` (FK), `item_id` (nullable FK — `NULL` means "mirrored, unattributed," the normal case until dispatch exists), `remote_project`, `source` (default `'cli'`), `state` (default `'queued'`), `started_at`, `ended_at`, `error`. |
-| 023 | `orch_events` | Append-only telemetry. `id` PK (caller-assigned — a trace event has no natural key from docket's side), `control_plane_id` (FK), `item_id` (nullable FK), `run_id` (`TEXT`, no hard FK), `event_type` (raw string, stored verbatim including types Tack doesn't yet recognise), `payload` (JSON `TEXT`). Two indexes: `(item_id, occurred_at)` for an item's timeline, `(occurred_at)` for the future retention sweep. |
-| 024 | `orch_approvals` | `token` PK (docket's own approval token — a correlation id, not a credential), `control_plane_id` (FK), `item_id` (nullable FK — `NULL` means uncorrelated, must still surface in a fleet-wide inbox), `remote_task_id` (no hard FK, correlation only), `agent`, `action`, `state` (default `'pending'`), `requested_at`, `decided_at`. |
+| 019 | `control_planes` | `id` PK, `name`, `kind` (default `'docket'`), `base_url`, `token` (nullable, write-only over the API), `api_version`, `health`, `last_seen_at`, `consecutive_failures`. No FKs — root of the graph. |
+| 020 | `orch_links` | `project_id` PK (FK → `projects`), `control_plane_id` (FK), `remote_project`, `pipeline_file`, `blueprint`, `auto_dispatch`, `budget_usd` (a cap, deliberately not `_estimated`), `status_map` (JSON `TEXT`). |
+| 021 | `orch_tasks` | **Composite PK `(item_id, remote_task_id)`** — an item can be redispatched, each attempt gets its own row. `remote_run_id` (indexed, no hard FK), `remote_status`, `attempt`, `tokens_in`/`tokens_out`, `cost_usd_estimated` (nullable), `dispatched_at`, `trusted`. |
+| 022 | `orch_runs` | `run_id` PK, `control_plane_id` (FK), `item_id` (nullable — `NULL` = mirrored, unattributed), `remote_project`, `source`, `state`, `started_at`, `ended_at`, `error`. |
+| 023 | `orch_events` | Append-only telemetry. `id` PK (caller-assigned), `control_plane_id` (FK), `item_id` (nullable FK), `run_id` (always `NULL` today — see above), `event_type` (raw string), `payload` (JSON `TEXT`). Indexes `(item_id, occurred_at)`, `(occurred_at)`. |
+| 024 | `orch_approvals` | `token` PK (docket's own correlation id, not a credential), `control_plane_id` (FK), `item_id` (nullable — `NULL` = uncorrelated, still shown fleet-wide), `remote_task_id`, `agent`, `action`, `state`, `requested_at`, `decided_at`. |
+| 025 | `orch_metrics` | Mirror of docket's Prometheus `/metrics` scrape — one row per scrape per metric per label set. |
+| 026 | `orch_events_daily` | Per-day aggregate of purged `orch_events`. Keyed `(day, control_plane_id, event_type)` — **drops `item_id`**, so per-item history truncation past the retention window is not recoverable from the aggregate. |
+| 027 | `orch_metrics_daily` | Per-day aggregate of purged `orch_metrics`; non-finite samples counted but excluded from sum/min/max. |
+| 028 | `orch_trace_cursors` | Resumption cursor per `(control_plane_id, remote_project)`, stored as an **opaque string** (R1 made this docket's own cursor value, not a client reconstruction — the column itself needed no schema change either way). |
+| 029 | `items.source` | `ALTER TABLE items ADD COLUMN source TEXT NOT NULL DEFAULT 'unknown'` — the prompt-injection trust boundary. See [The trust boundary](#the-trust-boundary-itemsource). |
+| 030 | `project_templates.orchestration` | `ALTER TABLE project_templates ADD COLUMN orchestration TEXT` (nullable, no default — `NULL` = no block, distinct from `Some("{}")`). Backwards compatible; every existing template row and every existing INSERT keeps working unchanged. |
+| 031 | `idx_items_completed_at` | Partial index `ON items(completed_at) WHERE completed_at IS NOT NULL` — both unit-economics queries filter on this column instance-wide (not scoped to one project, since the whole point is slicing across projects), so no existing `(project_id, …)` composite index helps without it. |
 
-Indexes beyond the primary/foreign keys: `orch_links.control_plane_id`,
-`orch_tasks.remote_run_id`, `orch_runs(control_plane_id, state)`,
-`orch_events(item_id, occurred_at)`, `orch_events(occurred_at)`,
-`orch_approvals.item_id`, `orch_approvals.state`.
-
-`orch_metrics` — mentioned as a possible seventh table in earlier planning notes — is
-**not** part of migrations 019–024 and does not exist yet. Nothing in the current
-crate layout references it. If a future migration adds it, it needs its own number
-(025+) and its own repository functions in `repo/orch.rs`, following the same
-`New*` input struct + batch `upsert_*` shape as every other entity there.
+Agent state is **not** denormalized onto `items` — the board query LEFT JOINs the
+latest `orch_tasks` row.
 
 ## The API surface
 
-Every route below is registered once, in a dedicated `orch_routes()` sub-router in
-`crates/tack-api/src/router.rs`, and carries a single middleware layer —
-`orch::require_orch_enabled` — rather than a per-handler check:
+Every route below lives in `orch_routes()` (`crates/tack-api/src/router.rs`), gated
+by a single middleware layer, `orch::require_orch_enabled`, rather than a per-handler
+check:
 
 ```rust
 pub async fn require_orch_enabled(
@@ -396,166 +571,131 @@ pub async fn require_orch_enabled(
 ```
 
 With `TACK_ORCH_ENABLE` unset, every route below 404s — indistinguishable from not
-existing. The ordinary Bearer-token gate (`require_token`) wraps this sub-router too,
-so both gates apply when both are configured.
+existing. The ordinary Bearer-token gate (`require_token`) wraps this sub-router too.
 
 | Method | Path | Notes |
 |---|---|---|
-| `POST` | `/api/control-planes` | Register a control plane. `token` write-only; response never echoes it. |
-| `GET` | `/api/control-planes` | List every registered plane (no tokens). |
+| `POST` | `/api/control-planes` | Register. `token` write-only. |
+| `GET` | `/api/control-planes` | List (no tokens). |
 | `GET` | `/api/control-planes/{id}` | One plane. |
-| `PATCH` | `/api/control-planes/{id}` | `token: Option<Option<String>>` tri-state — absent leaves it, `null` clears it, a string replaces it. |
+| `PATCH` | `/api/control-planes/{id}` | `token: Option<Option<String>>` tri-state. |
 | `DELETE` | `/api/control-planes/{id}` | Deregister. |
-| `GET` | `/api/projects/{id}/orch-link` | Returns `{linked: false, link: null}` for an unlinked project — `200`, not `404` (matches the `settings.rs` "not configured yet" precedent, not "resource not found"). |
-| `PUT` | `/api/projects/{id}/orch-link` | Create/replace the project's link. Validates every `status_map` status name against the project's live `WorkflowConfig`; an unknown name is `400`. |
-| `GET` | `/api/fleet` | The Fleet view's aggregate — see below. |
-
-`router.rs` also carries commented placeholders, one line each, for every route later
-phases of this feature will add (`/metrics`, `/items/{id}/dispatch`,
-`/sprints/{id}/dispatch`, `/approvals/{token}`), at the exact insertion point — the
-intent is that `router.rs` gets touched once per addition, not restructured.
+| `GET` | `/api/projects/{id}/orch-link` | `{linked: false, link: null}` for an unlinked project — `200`, not `404`. |
+| `PUT` | `/api/projects/{id}/orch-link` | Create/replace. Validates every `status_map` status name against the project's live `WorkflowConfig`. |
+| `GET` | `/api/fleet` | The Fleet view's aggregate. |
+| `GET` | `/api/metrics` | Tack's own work-tracking metrics merged with the mirrored docket ones (Prometheus text), unauthenticated like docket's own. |
+| `GET` | `/api/items/{id}/agent-activity` | One item's dispatch/hop/token timeline. |
+| `GET` | `/api/projects/{id}/agent-activity` | Project-level roll-up of the same. |
+| `POST` | `/api/items/{id}/dispatch` | Enqueue a governed task; applies `on_running`/`on_waiting_approval`. |
+| `POST` | `/api/sprints/{id}/dispatch` | DAG-ordered sprint dispatch. `max_in_flight` query param. |
+| `GET` | `/api/sprints/{id}/dispatch/dry-run` | Same planning function, zero writes, zero HTTP calls to docket. |
+| `GET` | `/api/approvals` | Fleet-wide pending-approvals inbox, oldest first, includes uncorrelated rows. |
+| `POST` | `/api/approvals/{token}` | Grant/deny. Gated additionally by `X-Tack-Approval-Token` against `TACK_ORCH_APPROVAL_TOKEN` — `403` unconditionally if that variable is unset, no fallback. |
+| `GET` | `/api/projects/{id}/orch-budget` | This project's `budget_usd` vs. token-derived spend. |
+| `GET` | `/api/projects/{id}/orch-policy` | Denial rate / policy hits / tool-call volume — **scoped to the control plane, not the project** (`scoped_to_control_plane_only: true` always present on the wire). |
+| `POST` | `/api/templates/{id}/provision` | Create a Tack project *and* a docket pod from a template's `orchestration` block, with rollback-before-the-pod-exists (never after — docket has no delete route). |
+| `GET` | `/api/economics/summary` | Tokens, estimated cost, lead time, rework rate — overall / by `project_type` / by `item_type`. |
+| `GET` | `/api/economics/items` | Per-item detail; `?format=csv` for export. |
 
 ### `GET /api/fleet`
 
-One row per Tack project that has an `orch_links` row (not one row per control plane),
-joining the link, its control plane's reconciler-observed health, and cost/token/
-approval sums from `orch_tasks`/`orch_approvals` for that project's items:
+One row per Tack project with an `orch_links` row, joining the link, its control
+plane's reconciler-observed health, and cost/token/approval sums from `orch_tasks`/
+`orch_approvals` for that project's items. `cost_usd_estimated` is `null` whenever
+`health == "unreachable"` — never coerced to `0`. `pending_approval_count` is
+project-scoped; an uncorrelated approval (`item_id IS NULL`) is excluded here and
+surfaces only in the fleet-wide `/api/approvals` inbox.
 
-```json
-{
-  "rows": [
-    {
-      "project_id": "uuid", "project_name": "string",
-      "control_plane_id": "uuid", "control_plane_name": "string", "control_plane_kind": "docket",
-      "remote_project": "string",
-      "health": "unknown | healthy | degraded | unreachable",
-      "last_seen_at": "RFC3339 | null", "consecutive_failures": 0, "api_version": "string | null",
-      "gateway": "active | inactive | unknown",
-      "roster": [{ "id": "string", "name": "string", "role": "string", "model": "string" }],
-      "last_activity_at": "RFC3339 | null",
-      "auto_dispatch": false, "blueprint": "string | null", "budget_usd": 50.0,
-      "tokens_in": 0, "tokens_out": 0,
-      "cost_usd_estimated": 0.0,
-      "pricing_snapshot_at": "string | null",
-      "pending_approval_count": 0
-    }
-  ]
-}
-```
+Every handler in `handlers/orch.rs`/`handlers/economics.rs`/`handlers/provisioning.rs`
+that isn't a dispatch/provisioning route reads Tack's own database, populated
+out-of-band by the reconciler — a docket outage can only ever leave `health`/
+`last_seen_at` stale, never turn into a `500`.
 
-`cost_usd_estimated` is `null` whenever `health == "unreachable"` — never coerced to
-`0` — so a stale row is representable as stale rather than as a confident zero.
-`Some(0.0)` means the plane is reachable and genuinely has nothing mirrored yet.
-`tokens_in`/`tokens_out` are always a plain (never-null) sum: staleness is signalled
-through `health`, not through nullability, on those two fields specifically.
-`pending_approval_count` is scoped **per project** (an inner join on
-`orch_approvals.item_id → items.project_id`) — an uncorrelated approval (`item_id
-IS NULL`) is excluded from every row here and is meant to surface in a fleet-wide
-approvals inbox instead, once that exists.
+## The five non-negotiables
 
-Every handler in `handlers/orch.rs` reads Tack's own database, populated out-of-band
-by the reconciler. **No handler in this file makes an outbound HTTP call** — a docket
-outage can only ever leave `health`/`last_seen_at` stale; it can never turn into a
-`500` on a user's request, because the two are architecturally decoupled (the
-reconciler is the only thing that ever talks to docket, entirely off the request
-path).
-
-## The four non-negotiables
-
-These are enforced by the shape of the code, not just documented as a convention —
-each one below names where.
+Enforced by the shape of the code, not just documented — each one below names where.
 
 1. **Never hold a SQLite write transaction across an HTTP call to docket.** The
-   reconciler's fetch → decide → persist phase separation (above) makes this
-   structurally true: the persist phase doesn't have a `ControlPlane` handle to await
-   on even if it wanted one. Every repository batch-upsert function also does its own
-   HTTP-free single-transaction write — none of them call out to a control plane.
+   reconciler's fetch → decide → persist phase separation makes this structurally
+   true. The dispatcher's own fetch → HTTP → short-write sequence (used by every
+   caller: manual dispatch, auto-dispatch, sprint dispatch) does the same.
 2. **Status changes go through the workflow engine, never raw SQL.** WIP limits,
-   explicit transitions, `started_at`/`completed_at`, and parent auto-propagation must
-   all still fire on an orchestration-driven status change, exactly as they do on a
-   user drag. As shipped today there's no code path that writes an item's status from
-   this feature yet (dispatch, the feature that will need this, hasn't landed) — but
-   the save-time guard is already in place one layer up: `PUT /orch-link`'s
+   explicit transitions, `started_at`/`completed_at`, and parent auto-propagation all
+   fire on an orchestration-driven status change exactly as they do on a user drag —
+   `apply_mapped_status` calls the same `Repository::update_item_status_checked`
+   the human/Alexa paths now call (see the WIP-race fix above). `PUT /orch-link`'s
    `status_map` validates every named status against the project's live
-   `WorkflowConfig` before it's ever stored, so a typo can't silently become a
-   no-op transition later.
+   `WorkflowConfig` before it's ever stored.
 3. **Everything is off by default.** `TACK_ORCH_ENABLE` unset ⇒ `spawn_reconcilers`
    returns before even querying for registered planes, and `require_orch_enabled`
-   404s every route in `orch_routes()`. Both are tested
-   (`crates/tack-orch/src/reconciler.rs`'s
-   `disabled_orchestration_spawns_no_tasks_and_never_queries_the_store`;
-   `crates/tack-api/tests/orch_test.rs`'s `every_orch_route_404s_when_disabled`).
-4. **The stored control-plane token never leaves the repository layer.** Every read
-   DTO — in `repo/orch.rs` and in `handlers/orch.rs`'s `ControlPlaneResponse` — exposes
-   `token_set: bool` and nothing else; the only function that returns the real value,
-   `get_control_plane_token`, is doc-commented internal-only and is called from
-   exactly one place (`orch_store.rs`, to construct a live adapter). See the [user
-   guide](../user-guide/orchestration.md#a-known-gap-the-control-plane-token-is-not-yet-scrubbed-from-backups)
-   for a related, currently-open gap: this discipline covers the API, but the local
-   database backup endpoint does not yet scrub `control_planes.token` the way it
-   already scrubs the cloud-backup secret key.
+   404s every route.
+4. **The stored control-plane token never leaves the repository layer**, and is
+   **scrubbed from every backup bundle.** `scrub_snapshot_secrets`
+   (`crates/tack-api/src/remote_backup.rs`) nulls `control_planes.token` before the
+   `VACUUM`, alongside the pre-existing `app_meta` secret scrub — closed by card A9
+   after the same class of leak the S3 secret key had before its own exclusion
+   shipped. Tested with a raw-bytes assertion on the extracted snapshot, not just a
+   DTO-shape check.
+5. **A check-then-write status update is never split across two unlocked steps.**
+   `Repository::update_item_status_checked`'s `BEGIN IMMEDIATE` transaction is the
+   one place a WIP-limit check and its corresponding write happen — every caller
+   (dispatch, sprint dispatch, board drag, Alexa) goes through it. Added this cycle
+   after cards R2/R3 found and fixed a real, live-reproduced race (see above); listed
+   here as a standing rule for any future status-writing code path, not just a
+   changelog entry.
 
 ## Adding a new control-plane backend
 
 1. Implement `ControlPlane` for your type in a new `adapters::<name>` module,
    returning `OrchError::Disabled` for any write method you don't support yet.
 2. Add a `match` arm for your `kind` string in `RepoControlPlaneStore::list_registered`
-   (`crates/tack-api/src/orch_store.rs`) that constructs your adapter from a
-   `control_planes` row's `base_url`/token.
-3. Nothing in `reconciler.rs`, `handlers/orch.rs`, or the Fleet frontend needs to
-   change — they all consume `Arc<dyn ControlPlane>`.
+   (`crates/tack-api/src/orch_store.rs`).
+3. Nothing in `reconciler.rs`, `dispatcher.rs`, `sprint_dispatch.rs`,
+   `handlers/orch.rs`, or the Fleet frontend needs to change — they all consume
+   `Arc<dyn ControlPlane>`.
 
-## What's implemented vs. not
+## What's genuinely missing (not a Tack gap)
 
-Implemented, tested, and live behind `TACK_ORCH_ENABLE`: control-plane
-registration/CRUD, project↔control-plane links with `status_map` validation, the
-reconciler's health polling (`/health` + `/status.json` only) and state machine, and
-the `GET /api/fleet` aggregate.
+Two things docket itself doesn't expose over HTTP, confirmed by reading `serve.py`
+directly rather than assumed — Tack builds no workaround for either:
 
-Not implemented — present only as honest placeholders on the wire, or not present at
-all:
-
-- **`gateway` is always `"unknown"`.** `control_planes` has no persisted gateway
-  column, and the reconciler doesn't poll or store one — `FleetStatus.gateway` exists
-  in the DTO but nothing writes it anywhere yet. Also worth knowing independent of
-  this: docket's own `gateway_active()` is hardcoded to return `false` in the current
-  docket version (no daemon gateway exists any more), so even a plane that *is* being
-  polled for this would read `"inactive"` universally today, not just in Tack's
-  placeholder.
-- **`roster` is always `[]`.** No agent-roster table exists in migrations 019–024.
-- **`pricing_snapshot_at` is always `null`.** No pricing-snapshot mechanism exists
-  anywhere in the codebase yet.
-- **Dispatch does not exist.** No `POST /api/items/{id}/dispatch`, no
-  `POST /api/sprints/{id}/dispatch`, no code path that writes to docket at all. The
-  `ControlPlane` trait's write methods (`enqueue_task`, `dispatch`,
-  `decide_approval`) are all implemented by `DocketAdapter` today as
-  `Err(OrchError::Disabled)`.
-- **`GET /tasks/{project}` and `GET /traces/{project}` don't exist on docket at all**
-  in the version this integration targets — confirmed by reading docket's own route
-  table, not inferred. `ControlPlane::list_tasks`/`traces` will return `NotFound`
-  against any real docket instance until that changes upstream. This is expected, not
-  a bug — treat a `NotFound` from either method as "not available yet," not as the
-  plane being broken.
-- **Run, approval, and trace mirroring into `orch_runs`/`orch_approvals`/`orch_events`
-  is not wired up.** The tables and the repository's batch-upsert functions for them
-  exist (per the schema above), but nothing in the reconciler calls them yet — the
-  poll loop currently only executes the two steps in the diagram above.
+- **Pause/resume has zero HTTP surface, in either direction.** `docket profile <id>
+  --resume` is CLI-only; `/status.json` and `/metrics` were both checked line by
+  line and neither field (`paused`/`pausedReason`) is emitted anywhere. The one
+  indirect signal (a `paused_refused` trace event) can't be reliably attributed to
+  one linked Tack project with today's ingestion (`orch_events` has no
+  `remote_project` column). Tack builds no pause control or indicator — see the
+  [user guide](../user-guide/orchestration.md#budget-pause-and-policy).
+- **`docket pipeline validate` is CLI-only.** No HTTP route exists for it, so
+  `handlers::templates::validate_template_orchestration` only checks that
+  `orchestration.pipeline_yaml` parses as YAML, never that it's a valid docket
+  pipeline. Recorded upstream as docket's own `ROADMAP.md` Phase 22, card P22-8.
 
 ## Testing this feature
 
-- `cargo test -p tack-orch` — the `ControlPlane`/DTO unit tests in `lib.rs`, the
-  `DocketAdapter` integration tests against `wiremock` fixtures in
-  `tests/docket_adapter_test.rs` (captured from a real `docket serve`, plus
-  deliberately malformed/unknown-enum fixtures), the Prometheus parser's own unit
-  tests, and the reconciler's state-machine tests in `reconciler.rs` (driven by a fake
-  `ControlPlane`/`ControlPlaneStore`, no real network or database).
-- `cargo test -p tack-db` — migration table-existence/upgrade-in-place/FK-orphan tests
-  (`tests/orch_migrations_test.rs`) and the repository's CRUD/idempotency tests
-  (`tests/orch_repo_test.rs`), both against in-memory SQLite.
-- `cargo test -p tack-api` — the route-gating and token-leak tests
-  (`tests/orch_test.rs`), including `every_orch_route_404s_when_disabled` and a suite
-  that asserts the literal token string never appears in any response body.
+- `cargo test -p tack-orch` — `ControlPlane`/DTO unit tests, the `DocketAdapter`
+  integration tests against `wiremock` fixtures (captured from a real
+  `docket serve`, plus deliberately malformed/unknown-enum fixtures), the
+  Prometheus parser's own tests, and the reconciler's state-machine tests (driven by
+  a fake `ControlPlane`/`ControlPlaneStore`, no real network or database).
+- `cargo test -p tack-db` — migration table-existence/upgrade-in-place/FK-orphan
+  tests, the repository's CRUD/idempotency tests, and `status_update_checked_test.rs`
+  (the atomic WIP-check transaction's own correctness, isolated from any HTTP call).
+- `cargo test -p tack-api` — route-gating and token-leak tests
+  (`every_orch_route_404s_when_disabled`, and a suite asserting the literal
+  control-plane token string never appears in any response body); the dispatch,
+  sprint-dispatch, terminal-status, approvals, budget/policy, provisioning, and
+  economics test files (`orch_dispatch_test.rs`, `sprint_dispatch_test.rs`,
+  `orch_terminal_status_test.rs`, `orch_approvals_test.rs`,
+  `orch_budget_policy_test.rs`, `provisioning_test.rs`, `economics_test.rs`); and
+  the two WIP-race regression suites (`wip_limit_race_test.rs`,
+  `board_drag_wip_race_test.rs`, `alexa_wip_race_test.rs`) that reproduce the race
+  live before asserting the fix.
 
-None of these require a live docket instance — the adapter tests run against
-`wiremock`, and everything downstream of it runs against an in-memory database and a
-hand-written fake `ControlPlane`.
+None of these require a live docket instance for CI — the adapter tests run against
+`wiremock`, and everything downstream runs against an in-memory database and a
+hand-written fake `ControlPlane`. Several cards in this cycle **additionally**
+verified against a real, isolated `docket serve` (scratch `DOCKET_HOME`, never
+`~/.docket`) as a live sanity check beyond the committed suite — see
+[Local Integration Setup](../user-guide/orchestration-local-setup.md) if you want to
+do the same.

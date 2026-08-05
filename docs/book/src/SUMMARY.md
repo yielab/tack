@@ -19,6 +19,7 @@
 - [Configuration](user-guide/configuration.md)
 - [Administration & Security](user-guide/administration.md)
 - [Orchestration & the Fleet View](user-guide/orchestration.md)
+  - [Local Integration Setup](user-guide/orchestration-local-setup.md)
 - [Troubleshooting & FAQ](user-guide/troubleshooting.md)
 
 ---
