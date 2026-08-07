@@ -115,3 +115,18 @@
   changed fields/checkpoint conflicts, corrupt response handling, exactly-once capped capacity,
   and rollback when persisting the replay record fails. The boolean compatibility completion API
   delegates to the hardened typed path.
+
+### Heartbeat replay correction
+
+- Migration 056 adds the durable canonical request fingerprint to heartbeat replay rows. The
+  heartbeat response now preserves its ID, acceptance time, and every renewed
+  attempt/fence/expiry/cancellation flag; exact retry returns those original typed fields even
+  after the clock has advanced. Same-ID input changes return `Conflict`; malformed stored
+  responses fail closed.
+- Heartbeat capacity is checked against all active unexpired reservations, not merely the
+  submitted leases. A runner cannot report free capacity while it still holds a lease, and the
+  persisted value is constrained to `total_capacity - active_reservations`.
+- Pre-056 replay rows have the empty migration default fingerprint and therefore return
+  `Conflict`; their incomplete historical response is not treated as authoritative. Focused
+  coverage includes false-free capacity, multi-lease canonical replay, stale lease, response
+  loss after clock advance, changed-input no-write, and replay-insert rollback.

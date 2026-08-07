@@ -192,9 +192,23 @@ pub struct HeartbeatLease<'a> {
     pub fencing_token: i64,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeartbeatLeaseResponse {
+    pub attempt_id: String,
+    pub fencing_token: i64,
+    pub lease_expires_at: DateTime<Utc>,
+    pub cancellation_requested: bool,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeartbeatBatchResponse {
+    pub heartbeat_id: String,
+    pub accepted_at: DateTime<Utc>,
+    pub leases: Vec<HeartbeatLeaseResponse>,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HeartbeatBatchResult {
-    Accepted(Vec<(String, i64, DateTime<Utc>, bool)>),
-    Replayed(String),
+    Accepted(HeartbeatBatchResponse),
+    Replayed(HeartbeatBatchResponse),
+    Conflict,
     StaleLease(String),
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -338,6 +352,100 @@ fn replay_response(serialized: &str) -> Result<CompletionResponse, sqlx::Error> 
         terminal_state: required("terminal_state")?,
         final_event_checkpoint,
         committed_at: required("committed_at")?,
+    })
+}
+
+fn heartbeat_fingerprint(
+    runner_id: &str,
+    heartbeat_id: &str,
+    available_capacity: i64,
+    leases: &[HeartbeatLease<'_>],
+    lease_duration: Duration,
+) -> Result<String, sqlx::Error> {
+    let lease_duration_nanoseconds = lease_duration
+        .num_nanoseconds()
+        .ok_or_else(|| sqlx::Error::Protocol("heartbeat lease duration is out of range".into()))?;
+    let mut leases = leases
+        .iter()
+        .map(|lease| (lease.attempt_id, lease.fencing_token))
+        .collect::<Vec<_>>();
+    leases.sort_unstable();
+    serde_json::to_string(&serde_json::json!({
+        "runner_id": runner_id,
+        "heartbeat_id": heartbeat_id,
+        "available_capacity": available_capacity,
+        "lease_duration_nanoseconds": lease_duration_nanoseconds,
+        "leases": leases
+            .into_iter()
+            .map(|(attempt_id, fencing_token)| serde_json::json!({
+                "attempt_id": attempt_id,
+                "fencing_token": fencing_token,
+            }))
+            .collect::<Vec<_>>(),
+    }))
+    .map_err(|error| sqlx::Error::Protocol(error.to_string()))
+}
+
+fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, sqlx::Error> {
+    let value: serde_json::Value = serde_json::from_str(serialized)
+        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| sqlx::Error::Protocol("invalid heartbeat replay response".into()))?;
+    let required_string = |object: &serde_json::Map<String, serde_json::Value>, field: &str| {
+        object
+            .get(field)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                sqlx::Error::Protocol(format!("invalid heartbeat replay response field: {field}"))
+            })
+    };
+    let accepted_at = DateTime::parse_from_rfc3339(&required_string(object, "accepted_at")?)
+        .map(|value| value.with_timezone(&Utc))
+        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+    let leases = object
+        .get("leases")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| {
+            sqlx::Error::Protocol("invalid heartbeat replay response field: leases".into())
+        })?
+        .iter()
+        .map(|value| {
+            let value = value.as_object().ok_or_else(|| {
+                sqlx::Error::Protocol("invalid heartbeat replay response lease".into())
+            })?;
+            let lease_expires_at =
+                DateTime::parse_from_rfc3339(&required_string(value, "lease_expires_at")?)
+                    .map(|value| value.with_timezone(&Utc))
+                    .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+            Ok(HeartbeatLeaseResponse {
+                attempt_id: required_string(value, "attempt_id")?,
+                fencing_token: value
+                    .get("fencing_token")
+                    .and_then(serde_json::Value::as_i64)
+                    .ok_or_else(|| {
+                        sqlx::Error::Protocol(
+                            "invalid heartbeat replay response field: fencing_token".into(),
+                        )
+                    })?,
+                lease_expires_at,
+                cancellation_requested: value
+                    .get("cancellation_requested")
+                    .and_then(serde_json::Value::as_bool)
+                    .ok_or_else(|| {
+                        sqlx::Error::Protocol(
+                            "invalid heartbeat replay response field: cancellation_requested"
+                                .into(),
+                        )
+                    })?,
+            })
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()?;
+    Ok(HeartbeatBatchResponse {
+        heartbeat_id: required_string(object, "heartbeat_id")?,
+        accepted_at,
+        leases,
     })
 }
 
@@ -568,26 +676,53 @@ impl Repository {
         let now = clock.now();
         let now_s = now.to_rfc3339();
         let expires = now + lease_duration;
+        let fingerprint = heartbeat_fingerprint(
+            runner_id,
+            heartbeat_id,
+            available_capacity,
+            leases,
+            lease_duration,
+        )?;
         let mut tx = self.pool().begin().await?;
-        if let Some(response) = sqlx::query_scalar::<_, String>(
-            "SELECT response FROM execution_heartbeat_replays WHERE runner_id=? AND heartbeat_id=?",
+        let capacity: Option<i64> = sqlx::query_scalar(
+            "SELECT total_capacity FROM agent_runners WHERE id=? AND state='active' AND revoked_at IS NULL",
+        )
+        .bind(runner_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some(capacity) = capacity else {
+            tx.commit().await?;
+            return Ok(HeartbeatBatchResult::StaleLease(runner_id.into()));
+        };
+        if let Some(row) = sqlx::query(
+            "SELECT fingerprint,response FROM execution_heartbeat_replays WHERE runner_id=? AND heartbeat_id=?",
         )
         .bind(runner_id)
         .bind(heartbeat_id)
         .fetch_optional(&mut *tx)
         .await?
         {
+            let stored_fingerprint: String = row.get("fingerprint");
+            if stored_fingerprint != fingerprint {
+                tx.commit().await?;
+                return Ok(HeartbeatBatchResult::Conflict);
+            }
+            let response: String = row.get("response");
+            let response = heartbeat_response(&response)?;
             tx.commit().await?;
             return Ok(HeartbeatBatchResult::Replayed(response));
         }
-        let capacity:Option<i64>=sqlx::query_scalar("SELECT total_capacity FROM agent_runners WHERE id=? AND state='active' AND revoked_at IS NULL").bind(runner_id).fetch_optional(&mut *tx).await?;
-        let Some(capacity) = capacity else {
-            tx.commit().await?;
-            return Ok(HeartbeatBatchResult::StaleLease(runner_id.into()));
-        };
-        if available_capacity < 0 || available_capacity > capacity {
+        let active_reservations: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM execution_attempts WHERE runner_id=? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at>?",
+        )
+        .bind(runner_id)
+        .bind(&now_s)
+        .fetch_one(&mut *tx)
+        .await?;
+        let expected_available_capacity = capacity - active_reservations;
+        if expected_available_capacity < 0 || available_capacity != expected_available_capacity {
             tx.rollback().await?;
-            return Ok(HeartbeatBatchResult::StaleLease(runner_id.into()));
+            return Ok(HeartbeatBatchResult::Conflict);
         }
         let mut result = Vec::with_capacity(leases.len());
         for lease in leases {
@@ -598,18 +733,33 @@ impl Repository {
             };
             let cancellation: Option<String> = row.get("cancellation_requested_at");
             sqlx::query("UPDATE execution_attempts SET last_heartbeat_at=?,lease_expires_at=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=?").bind(&now_s).bind(expires.to_rfc3339()).bind(&now_s).bind(lease.attempt_id).bind(runner_id).bind(lease.fencing_token).execute(&mut *tx).await?;
-            result.push((
-                lease.attempt_id.into(),
-                lease.fencing_token,
-                expires,
-                cancellation.is_some(),
-            ));
+            result.push(HeartbeatLeaseResponse {
+                attempt_id: lease.attempt_id.into(),
+                fencing_token: lease.fencing_token,
+                lease_expires_at: expires,
+                cancellation_requested: cancellation.is_some(),
+            });
         }
         sqlx::query("UPDATE agent_runners SET available_capacity=?,last_heartbeat_at=?,updated_at=? WHERE id=?").bind(available_capacity).bind(&now_s).bind(&now_s).bind(runner_id).execute(&mut *tx).await?;
-        let stored=serde_json::to_string(&result.iter().map(|(id,f,_,c)| serde_json::json!({"attempt_id":id,"fencing_token":f,"cancellation_requested":c})).collect::<Vec<_>>()).map_err(|e|sqlx::Error::Protocol(e.to_string()))?;
-        sqlx::query("INSERT INTO execution_heartbeat_replays(runner_id,heartbeat_id,response,created_at) VALUES(?,?,?,?)").bind(runner_id).bind(heartbeat_id).bind(&stored).bind(&now_s).execute(&mut *tx).await?;
+        let response = HeartbeatBatchResponse {
+            heartbeat_id: heartbeat_id.into(),
+            accepted_at: now,
+            leases: result,
+        };
+        let stored = serde_json::json!({
+            "heartbeat_id": response.heartbeat_id,
+            "accepted_at": response.accepted_at.to_rfc3339(),
+            "leases": response.leases.iter().map(|lease| serde_json::json!({
+                "attempt_id": lease.attempt_id,
+                "fencing_token": lease.fencing_token,
+                "lease_expires_at": lease.lease_expires_at.to_rfc3339(),
+                "cancellation_requested": lease.cancellation_requested,
+            })).collect::<Vec<_>>(),
+        })
+        .to_string();
+        sqlx::query("INSERT INTO execution_heartbeat_replays(runner_id,heartbeat_id,fingerprint,response,created_at) VALUES(?,?,?,?,?)").bind(runner_id).bind(heartbeat_id).bind(fingerprint).bind(&stored).bind(&now_s).execute(&mut *tx).await?;
         tx.commit().await?;
-        Ok(HeartbeatBatchResult::Accepted(result))
+        Ok(HeartbeatBatchResult::Accepted(response))
     }
 
     pub async fn recover_attempt(
