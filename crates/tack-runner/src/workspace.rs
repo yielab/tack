@@ -126,7 +126,18 @@ where
         workspace: &Workspace,
         repository: &RepositorySpec,
     ) -> Result<(), WorkspaceError> {
-        let created = !workspace.path.exists();
+        let root = self.ensure_safe_root()?;
+        if workspace.path != root.join(encode_id(workspace.attempt_id.as_str())) {
+            return Err(WorkspaceError::UnsafePath);
+        }
+        let created = match fs::symlink_metadata(&workspace.path) {
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+                return Err(WorkspaceError::UnsafePath);
+            }
+            Ok(_) => false,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+            Err(_) => return Err(WorkspaceError::UnsafePath),
+        };
         fs::create_dir_all(&workspace.path).map_err(|_| WorkspaceError::Io)?;
         owner_only(&workspace.path).map_err(|_| WorkspaceError::Io)?;
 
@@ -145,12 +156,12 @@ where
 
     /// Deletes only a resolved child of this dedicated root. The root itself,
     /// repository roots, symlinks and unknown paths are refused, never guessed.
-    pub fn cleanup(&self, workspace: &Path) -> Result<CleanupResult, WorkspaceError> {
+    pub fn cleanup(&self, workspace: &Workspace) -> Result<CleanupResult, WorkspaceError> {
         let root = self.ensure_safe_root()?;
         // Inspect the requested path before resolving it. Inspecting only the
         // canonical target would make a symlink inside `root` look like an
         // ordinary directory and could delete a different workspace.
-        if fs::symlink_metadata(workspace)
+        if fs::symlink_metadata(&workspace.path)
             .map_err(|_| WorkspaceError::UnsafePath)?
             .file_type()
             .is_symlink()
@@ -158,9 +169,18 @@ where
             return Ok(CleanupResult::Refused);
         }
         let candidate = workspace
+            .path
             .canonicalize()
             .map_err(|_| WorkspaceError::UnsafePath)?;
         if candidate == root || !candidate.starts_with(&root) {
+            return Ok(CleanupResult::Refused);
+        }
+        if candidate != root.join(encode_id(workspace.attempt_id.as_str())) {
+            return Ok(CleanupResult::Refused);
+        }
+        let marker = candidate.join(".tack-attempt");
+        let stored = fs::read_to_string(marker).map_err(|_| WorkspaceError::UnsafePath)?;
+        if stored != workspace.attempt_id.as_str() {
             return Ok(CleanupResult::Refused);
         }
         fs::remove_dir_all(candidate).map_err(|_| WorkspaceError::Io)?;
@@ -300,17 +320,29 @@ mod tests {
             .prepare(&lease("attempt-one"), &repository())
             .await
             .expect("workspace");
+        let root_workspace = Workspace {
+            attempt_id: workspace.attempt_id.clone(),
+            id: workspace.id.clone(),
+            path: root.clone(),
+            base_revision: workspace.base_revision.clone(),
+        };
+        let unresolved = Workspace {
+            attempt_id: workspace.attempt_id.clone(),
+            id: workspace.id.clone(),
+            path: root.join("not-created"),
+            base_revision: workspace.base_revision.clone(),
+        };
 
         assert_eq!(
-            manager.cleanup(&root).expect("refuse root"),
+            manager.cleanup(&root_workspace).expect("refuse root"),
             CleanupResult::Refused
         );
         assert!(matches!(
-            manager.cleanup(&root.join("not-created")),
+            manager.cleanup(&unresolved),
             Err(WorkspaceError::UnsafePath)
         ));
         assert_eq!(
-            manager.cleanup(&workspace.path).expect("cleanup workspace"),
+            manager.cleanup(&workspace).expect("cleanup workspace"),
             CleanupResult::Deleted
         );
         fs::remove_dir_all(root).expect("remove temporary workspace root");
@@ -329,12 +361,54 @@ mod tests {
             .expect("workspace");
         let link = root.join("link-to-workspace");
         symlink(&workspace.path, &link).expect("create symlink");
+        let linked_workspace = Workspace {
+            path: link,
+            ..workspace.clone()
+        };
 
         assert_eq!(
-            manager.cleanup(&link).expect("refuse symlink"),
+            manager.cleanup(&linked_workspace).expect("refuse symlink"),
             CleanupResult::Refused
         );
         assert!(workspace.path.exists(), "symlink target is preserved");
+        fs::remove_dir_all(root).expect("remove temporary workspace root");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn provision_rejects_an_existing_attempt_path_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let root = root();
+        let manager = WorkspaceManager::new(&root, FakeProvisioner);
+        let planned = manager
+            .plan(&lease("attempt-one"), &repository())
+            .expect("plan");
+        fs::create_dir_all(root.join("outside")).expect("outside");
+        symlink(root.join("outside"), &planned.path).expect("attempt path symlink");
+
+        assert!(matches!(
+            manager.provision(&planned, &repository()).await,
+            Err(WorkspaceError::UnsafePath)
+        ));
+        fs::remove_dir_all(root).expect("remove temporary workspace root");
+    }
+
+    #[tokio::test]
+    async fn cleanup_refuses_a_marker_that_does_not_match_the_workspace_identity() {
+        let root = root();
+        let manager = WorkspaceManager::new(&root, FakeProvisioner);
+        let workspace = manager
+            .prepare(&lease("attempt-one"), &repository())
+            .await
+            .expect("workspace");
+        fs::write(workspace.path.join(".tack-attempt"), "other-attempt").expect("alter marker");
+
+        assert_eq!(
+            manager.cleanup(&workspace).expect("refuse marker"),
+            CleanupResult::Refused
+        );
+        assert!(workspace.path.exists());
         fs::remove_dir_all(root).expect("remove temporary workspace root");
     }
 }

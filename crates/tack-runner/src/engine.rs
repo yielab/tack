@@ -95,6 +95,7 @@ pub enum RunCycle {
     Completed { attempt_id: AttemptId },
     Cancelled { attempt_id: AttemptId },
     Quarantined { attempt_id: AttemptId },
+    RecoveryPending { attempt_id: AttemptId },
 }
 
 pub struct RunnerEngine<P, A, W> {
@@ -152,13 +153,14 @@ where
             let observation = match self.adapter.reconcile(&record).await {
                 Ok(observation) => observation,
                 Err(_) => {
-                    self.journal.quarantine(record.clone())?;
-                    outcomes.push(RunCycle::Quarantined {
-                        attempt_id: record.attempt_id,
-                    });
+                    outcomes.push(self.report_or_retain_ambiguity(session, &record).await?);
                     continue;
                 }
             };
+            if !matches!(observation, RecoveryObservation::ProcessStopped) {
+                outcomes.push(self.report_or_retain_ambiguity(session, &record).await?);
+                continue;
+            }
             let report = RecoveryReport {
                 attempt_id: record.attempt_id.clone(),
                 fencing_token: record.fencing_token,
@@ -170,8 +172,9 @@ where
                 .await
                 .is_err()
             {
-                self.journal.quarantine(record.clone())?;
-                outcomes.push(RunCycle::Quarantined {
+                // The server has not acknowledged the safe observation, so
+                // keep the original unresolved evidence for a retry.
+                outcomes.push(RunCycle::RecoveryPending {
                     attempt_id: record.attempt_id,
                 });
                 continue;
@@ -222,7 +225,9 @@ where
         let handle = self.adapter.start(&spec).await?;
         record.state = JournalState::ProcessObservedRunning;
         record.process_id = Some(handle.process_id.clone());
-        self.journal.update(&record)?;
+        if self.journal.update(&record).is_err() {
+            return self.quarantine_after_spawn(session, &record, &handle).await;
+        }
         if self
             .protocol
             .report_start(
@@ -268,7 +273,9 @@ where
 
         if lease.cancellation_requested {
             record.state = JournalState::CancellationRequested;
-            self.journal.update(&record)?;
+            if self.journal.update(&record).is_err() {
+                return self.quarantine_after_spawn(session, &record, &handle).await;
+            }
             let observation = match self.adapter.cancel(&handle).await {
                 Ok(observation) => observation,
                 Err(_) => return self.quarantine_after_spawn(session, &record, &handle).await,
@@ -293,7 +300,7 @@ where
             }
             record.state = JournalState::Reported;
             self.journal.update(&record)?;
-            let _ = self.workspaces.cleanup(&record.workspace.path);
+            let _ = self.workspaces.cleanup(&spec.workspace);
             return Ok(RunCycle::Cancelled {
                 attempt_id: record.attempt_id,
             });
@@ -329,7 +336,7 @@ where
         }
         record.state = JournalState::Reported;
         self.journal.update(&record)?;
-        let _ = self.workspaces.cleanup(&record.workspace.path);
+        let _ = self.workspaces.cleanup(&spec.workspace);
         Ok(RunCycle::Completed {
             attempt_id: record.attempt_id,
         })
@@ -341,10 +348,19 @@ where
         record: &AttemptJournal,
         handle: &LocalRunHandle,
     ) -> Result<RunCycle, EngineError> {
-        // Quarantine before best-effort cancellation: failure to signal a
-        // process must never erase the evidence needed by an operator.
-        self.journal.quarantine(record.clone())?;
-        let _ = self
+        // Report before moving evidence out of restart scans. If delivery
+        // fails, the journal remains unresolved for a later recovery pass.
+        let outcome = self.report_or_retain_ambiguity(session, record).await;
+        let _ = self.adapter.cancel(handle).await;
+        outcome
+    }
+
+    async fn report_or_retain_ambiguity(
+        &self,
+        session: &RunnerSession,
+        record: &AttemptJournal,
+    ) -> Result<RunCycle, EngineError> {
+        let delivered = self
             .protocol
             .observe_recovery(
                 session,
@@ -354,8 +370,14 @@ where
                     observation: RecoveryObservation::Ambiguous,
                 },
             )
-            .await;
-        let _ = self.adapter.cancel(handle).await;
+            .await
+            .is_ok();
+        if !delivered {
+            return Ok(RunCycle::RecoveryPending {
+                attempt_id: record.attempt_id.clone(),
+            });
+        }
+        self.journal.quarantine(record)?;
         Ok(RunCycle::Quarantined {
             attempt_id: record.attempt_id.clone(),
         })
@@ -389,6 +411,7 @@ mod tests {
         completion_reports: Arc<AtomicUsize>,
         cancellation_reports: Arc<AtomicUsize>,
         recovery_reports: Arc<AtomicUsize>,
+        recovery_failures_remaining: Arc<AtomicUsize>,
     }
 
     #[async_trait]
@@ -481,7 +504,14 @@ mod tests {
             _report: RecoveryReport,
         ) -> Result<(), ProtocolClientError> {
             self.recovery_reports.fetch_add(1, Ordering::SeqCst);
-            Ok(())
+            let remaining = self.recovery_failures_remaining.load(Ordering::SeqCst);
+            if remaining > 0 {
+                self.recovery_failures_remaining
+                    .fetch_sub(1, Ordering::SeqCst);
+                Err(ProtocolClientError::Transport)
+            } else {
+                Ok(())
+            }
         }
     }
 
@@ -490,6 +520,8 @@ mod tests {
         expected_journal: PathBuf,
         start_after_journal: Arc<AtomicBool>,
         cancel_calls: Arc<AtomicUsize>,
+        recovery_observation: RecoveryObservation,
+        reconcile_fails: bool,
     }
 
     #[async_trait]
@@ -526,7 +558,11 @@ mod tests {
             &self,
             _journal: &AttemptJournal,
         ) -> Result<RecoveryObservation, HarnessError> {
-            Ok(RecoveryObservation::ProcessStopped)
+            if self.reconcile_fails {
+                Err(HarnessError::RecoveryUnavailable)
+            } else {
+                Ok(self.recovery_observation.clone())
+            }
         }
     }
 
@@ -591,6 +627,17 @@ mod tests {
             completion_reports: Arc::new(AtomicUsize::new(0)),
             cancellation_reports: Arc::new(AtomicUsize::new(0)),
             recovery_reports: Arc::new(AtomicUsize::new(0)),
+            recovery_failures_remaining: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn adapter(expected_journal: PathBuf) -> FakeAdapter {
+        FakeAdapter {
+            expected_journal,
+            start_after_journal: Arc::new(AtomicBool::new(false)),
+            cancel_calls: Arc::new(AtomicUsize::new(0)),
+            recovery_observation: RecoveryObservation::ProcessStopped,
+            reconcile_fails: false,
         }
     }
 
@@ -608,11 +655,7 @@ mod tests {
         let journal = OwnerOnlyJournal::new(&root);
         let expected = journal.journal_path(&AttemptId::new("attempt"));
         let protocol = protocol(work(), true, false);
-        let adapter = FakeAdapter {
-            expected_journal: expected,
-            start_after_journal: Arc::new(AtomicBool::new(false)),
-            cancel_calls: Arc::new(AtomicUsize::new(0)),
-        };
+        let adapter = adapter(expected);
         let started = Arc::clone(&adapter.start_after_journal);
         let cancellations = Arc::clone(&adapter.cancel_calls);
         let provisioned = Arc::new(AtomicBool::new(false));
@@ -655,11 +698,7 @@ mod tests {
         let root = temporary_root("stale");
         let journal = OwnerOnlyJournal::new(&root);
         let protocol = protocol(work(), false, true);
-        let adapter = FakeAdapter {
-            expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-            start_after_journal: Arc::new(AtomicBool::new(false)),
-            cancel_calls: Arc::new(AtomicUsize::new(0)),
-        };
+        let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
         let cancellations = Arc::clone(&adapter.cancel_calls);
         let provisioned = Arc::new(AtomicBool::new(false));
         let engine = RunnerEngine::new(
@@ -715,11 +754,7 @@ mod tests {
             .persist_before_spawn(&record)
             .expect("persist prior journal");
         let protocol = protocol(work(), false, false);
-        let adapter = FakeAdapter {
-            expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-            start_after_journal: Arc::new(AtomicBool::new(false)),
-            cancel_calls: Arc::new(AtomicUsize::new(0)),
-        };
+        let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
         let engine = RunnerEngine::new(
             protocol.clone(),
             adapter,
@@ -752,11 +787,7 @@ mod tests {
         let journal = OwnerOnlyJournal::new(&root);
         let mut protocol = protocol(work(), false, false);
         protocol.fail_running_start = true;
-        let adapter = FakeAdapter {
-            expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-            start_after_journal: Arc::new(AtomicBool::new(false)),
-            cancel_calls: Arc::new(AtomicUsize::new(0)),
-        };
+        let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
         let engine = RunnerEngine::new(
             protocol.clone(),
             adapter,
@@ -789,11 +820,7 @@ mod tests {
         let journal = OwnerOnlyJournal::new(&root);
         let mut protocol = protocol(work(), true, false);
         protocol.fail_cancellation_report = true;
-        let adapter = FakeAdapter {
-            expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-            start_after_journal: Arc::new(AtomicBool::new(false)),
-            cancel_calls: Arc::new(AtomicUsize::new(0)),
-        };
+        let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
         let engine = RunnerEngine::new(
             protocol.clone(),
             adapter,
@@ -817,6 +844,190 @@ mod tests {
         ));
         assert_eq!(protocol.cancellation_reports.load(Ordering::SeqCst), 1);
         assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 1);
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+
+    #[tokio::test]
+    async fn failed_ambiguity_delivery_is_retried_on_restart_without_respawn() {
+        let root = temporary_root("retry-recovery");
+        let journal = OwnerOnlyJournal::new(&root);
+        let lease = work().lease;
+        let record = AttemptJournal::prepared(
+            &lease,
+            super::super::journal::WorkspaceJournal {
+                workspace_id: super::super::WorkspaceId::new("ws"),
+                path: root.join("workspaces/attempt"),
+                base_revision: "revision".into(),
+            },
+        );
+        journal
+            .persist_before_spawn(&record)
+            .expect("prior journal");
+        let protocol = protocol(work(), false, false);
+        protocol
+            .recovery_failures_remaining
+            .store(1, Ordering::SeqCst);
+        let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+        let never_started = Arc::clone(&adapter.start_after_journal);
+        let engine = RunnerEngine::new(
+            protocol.clone(),
+            adapter,
+            journal.clone(),
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: journal.journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+        );
+
+        assert!(matches!(
+            engine
+                .recover(&session())
+                .await
+                .expect("first recovery")
+                .as_slice(),
+            [RunCycle::RecoveryPending { .. }]
+        ));
+        assert_eq!(journal.unresolved().expect("still scanned").len(), 1);
+        assert!(matches!(
+            engine
+                .recover(&session())
+                .await
+                .expect("second recovery")
+                .as_slice(),
+            [RunCycle::Completed { .. }]
+        ));
+        assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 2);
+        assert!(
+            !never_started.load(Ordering::SeqCst),
+            "recovery never respawns"
+        );
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+
+    #[tokio::test]
+    async fn running_recovery_observation_is_quarantined_not_completed() {
+        let root = temporary_root("running-recovery");
+        let journal = OwnerOnlyJournal::new(&root);
+        let lease = work().lease;
+        let record = AttemptJournal::prepared(
+            &lease,
+            super::super::journal::WorkspaceJournal {
+                workspace_id: super::super::WorkspaceId::new("ws"),
+                path: root.join("workspaces/attempt"),
+                base_revision: "revision".into(),
+            },
+        );
+        journal
+            .persist_before_spawn(&record)
+            .expect("prior journal");
+        let protocol = protocol(work(), false, false);
+        let mut adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+        adapter.recovery_observation = RecoveryObservation::ProcessRunning;
+        let engine = RunnerEngine::new(
+            protocol.clone(),
+            adapter,
+            journal.clone(),
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: journal.journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+        );
+
+        assert!(matches!(
+            engine
+                .recover(&session())
+                .await
+                .expect("recovery")
+                .as_slice(),
+            [RunCycle::Quarantined { .. }]
+        ));
+        assert!(journal.unresolved().expect("scanned journal").is_empty());
+        assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 1);
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+
+    #[tokio::test]
+    async fn duplicate_claim_for_quarantined_attempt_cannot_start_again() {
+        let root = temporary_root("duplicate-quarantine");
+        let journal = OwnerOnlyJournal::new(&root);
+        let lease = work().lease;
+        let record = AttemptJournal::prepared(
+            &lease,
+            super::super::journal::WorkspaceJournal {
+                workspace_id: super::super::WorkspaceId::new("ws"),
+                path: root.join("workspaces/attempt"),
+                base_revision: "revision".into(),
+            },
+        );
+        journal
+            .persist_before_spawn(&record)
+            .expect("prior journal");
+        journal.quarantine(&record).expect("quarantine");
+        let protocol = protocol(work(), false, false);
+        let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+        let started = Arc::clone(&adapter.start_after_journal);
+        let engine = RunnerEngine::new(
+            protocol,
+            adapter,
+            journal,
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: OwnerOnlyJournal::new(&root)
+                        .journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+        );
+
+        assert!(matches!(
+            engine.run_once(&session(), claim_request()).await,
+            Err(EngineError::Journal(JournalError::AlreadyExists))
+        ));
+        assert!(
+            !started.load(Ordering::SeqCst),
+            "duplicate claim did not start a process"
+        );
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+
+    #[tokio::test]
+    async fn post_spawn_journal_update_failure_reports_ambiguity_and_cancels() {
+        let root = temporary_root("journal-update");
+        let journal = OwnerOnlyJournal::new(&root);
+        journal.fail_next_update_for_test();
+        let protocol = protocol(work(), false, false);
+        let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+        let cancellations = Arc::clone(&adapter.cancel_calls);
+        let engine = RunnerEngine::new(
+            protocol.clone(),
+            adapter,
+            journal,
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: OwnerOnlyJournal::new(&root)
+                        .journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+        );
+
+        assert!(matches!(
+            engine
+                .run_once(&session(), claim_request())
+                .await
+                .expect("cycle"),
+            RunCycle::Quarantined { .. }
+        ));
+        assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 1);
+        assert_eq!(cancellations.load(Ordering::SeqCst), 1);
         std::fs::remove_dir_all(root).expect("remove temporary root");
     }
 }
