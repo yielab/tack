@@ -1,8 +1,14 @@
 # III-C3 handoff
 
 - Base SHA / branch / final SHA: `f14019b` / `agent/iii-c3-runner-engine` / the commit
-  containing this handoff.
-- Files changed (must equal ownership list): `crates/tack-runner/src/{client,journal,workspace,engine}.rs`, focused tests embedded in those owned modules, and this handoff. The manifest/lock dependency amendment is the separate B3/integrator commit `d8300e4`.
+  containing this handoff. Do not treat the raw `1b6dede..HEAD` history as C3-only: this working
+  branch also carries separate A0/B1/B3 prerequisite-owner amendments.
+- C3-owned source commits are `5b0e212`, `c9f8f48`, `120309d`, `12989e2`, `103c7c4`,
+  `fe894c3`, `f8e77b6`, `a124abf`, and the final heartbeat-ID follow-up commit. C3-owned files
+  are `crates/tack-runner/src/{client,journal,workspace,engine}.rs`, focused tests embedded in
+  those owned modules, and this handoff. The A0/B1/B3 prerequisite commits already present on
+  this branch are separate owner amendments and must be merged first; in particular B3 owns
+  `d8300e4`, `0e6731f`, and `934bc80` and the Cargo manifest/lock changes.
 - Contract fixtures consumed: enrollment, claim, heartbeat, completion, cancellation, limits,
   lifecycle and stable-error fixtures under `docs/contracts/runner-v1/`; no fixture changed.
 - Behavior implemented: a typed pull-protocol seam; enrollment, claim, heartbeat,
@@ -97,7 +103,7 @@
 - Restart terminal replay now reconstructs the journal workspace and invokes the existing
   guarded cleanup only after the terminal acknowledgement is durably recorded as `Reported`.
   Acknowledge-write failure retains both outbox and workspace for the next replay.
-- Final verification: `cargo test -p tack-runner` — 46 library tests and 2 CLI tests passed;
+- Final verification: `cargo test -p tack-runner` — 47 library tests and 2 CLI tests passed;
   `cargo clippy -p tack-runner --all-targets -- -D warnings`, `cargo fmt --all -- --check`, and
   `git diff --check` passed.
 - Dependency ownership: B3 clock/chrono integration is separate commits `0e6731f` and
@@ -105,3 +111,7 @@
   edits.
 - Remaining C3 blocker: none. C2/C5 still own the authenticated concrete HTTP transport and
   heartbeat scheduling; C3 intentionally supplies the typed `PullProtocol` boundary only.
+- Periodic heartbeat IDs are now opaque `hb_` values deterministically derived from
+  attempt/fence plus injected RFC 3339 `sent_at`: a later send has a new ID, while an exact retry
+  of a frozen same-instant payload retains its ID. The periodic-send test proves two advanced
+  clock instants are both accepted without a replay conflict.

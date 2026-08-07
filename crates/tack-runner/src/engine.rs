@@ -427,11 +427,7 @@ where
         HeartbeatRequest {
             protocol_version: ProtocolVersion::v1(),
             runner_id: session.runner_id.clone(),
-            heartbeat_id: format!(
-                "heartbeat:{}:{}",
-                record.attempt_id.as_str(),
-                record.fencing_token.0
-            ),
+            heartbeat_id: Self::heartbeat_id(record, &sent_at),
             sent_at: Timestamp::new(sent_at),
             available_capacity: 0,
             active_attempts: vec![ActiveAttempt {
@@ -442,6 +438,23 @@ where
                 last_event_checkpoint: record.last_event_checkpoint.clone(),
             }],
         }
+    }
+
+    /// The logical heartbeat send time separates periodic sends for the same
+    /// attempt/fence, while reusing the exact frozen payload preserves its
+    /// idempotency ID for a retry.
+    fn heartbeat_id(record: &AttemptJournal, sent_at: &str) -> String {
+        let material = format!(
+            "{}:{}:{sent_at}",
+            record.attempt_id.as_str(),
+            record.fencing_token.0
+        );
+        let opaque = material
+            .as_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        format!("hb_{opaque}")
     }
 
     fn persist_pending_terminal_report<T: serde::Serialize>(
@@ -730,13 +743,13 @@ where
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::BTreeMap,
+        collections::{BTreeMap, BTreeSet},
         path::PathBuf,
         sync::{
             Arc, Mutex,
             atomic::{AtomicBool, AtomicUsize, Ordering},
         },
-        time::SystemTime,
+        time::{Duration, SystemTime},
     };
 
     use super::*;
@@ -796,10 +809,23 @@ mod tests {
     }
 
     #[derive(Clone)]
+    struct AdvancingClock {
+        base: SystemTime,
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl crate::Clock for AdvancingClock {
+        fn now(&self) -> SystemTime {
+            self.base + Duration::from_secs(self.calls.fetch_add(1, Ordering::SeqCst) as u64)
+        }
+    }
+
+    #[derive(Clone)]
     struct FakeProtocol {
         claim: Arc<Mutex<Option<ClaimResult>>>,
         cancellation_requested: bool,
         heartbeat_echo_matches: Arc<AtomicBool>,
+        accepted_heartbeat_ids: Arc<Mutex<BTreeSet<String>>>,
         stale_completion: Arc<AtomicBool>,
         fail_running_start: bool,
         fail_cancellation_report: Arc<AtomicBool>,
@@ -875,6 +901,14 @@ mod tests {
             _session: &RunnerSession,
             request: HeartbeatRequest,
         ) -> Result<super::super::HeartbeatResponse, ProtocolClientError> {
+            if !self
+                .accepted_heartbeat_ids
+                .lock()
+                .expect("fake protocol lock")
+                .insert(request.heartbeat_id.clone())
+            {
+                return Err(ProtocolClientError::Rejected);
+            }
             self.received_heartbeats
                 .lock()
                 .expect("fake protocol lock")
@@ -1289,6 +1323,7 @@ mod tests {
             claim: Arc::new(Mutex::new(Some(ClaimResult::Work(Box::new(work))))),
             cancellation_requested,
             heartbeat_echo_matches: Arc::new(AtomicBool::new(true)),
+            accepted_heartbeat_ids: Arc::new(Mutex::new(BTreeSet::new())),
             stale_completion: Arc::new(AtomicBool::new(stale_completion)),
             fail_running_start: false,
             fail_cancellation_report: Arc::new(AtomicBool::new(false)),
@@ -1487,6 +1522,55 @@ mod tests {
             serde_json::to_string(&retry).expect("retry heartbeat")
         );
         assert_eq!(first.sent_at.as_str(), "2026-08-06T12:20:15Z");
+    }
+
+    #[tokio::test]
+    async fn periodic_heartbeats_advance_ids_without_replay_conflicts() {
+        let root = temporary_root("periodic-heartbeat-ids");
+        let journal = OwnerOnlyJournal::new(&root);
+        let protocol = protocol(work(), false, false);
+        let base: SystemTime = chrono::DateTime::parse_from_rfc3339("2026-08-06T12:20:15Z")
+            .expect("timestamp")
+            .into();
+        let engine = RunnerEngine::with_clock(
+            protocol.clone(),
+            adapter(journal.journal_path(&AttemptId::new("attempt"))),
+            journal,
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: OwnerOnlyJournal::new(&root)
+                        .journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+            AdvancingClock {
+                base,
+                calls: Arc::new(AtomicUsize::new(0)),
+            },
+        );
+        let claimed = work();
+        let record = AttemptJournal::prepared(
+            &claimed.lease,
+            super::super::WorkspaceJournal {
+                workspace_id: super::super::WorkspaceId::new("ws_617474656d7074"),
+                path: root.join("workspaces/617474656d7074"),
+                base_revision: "revision".into(),
+            },
+        );
+        let first = engine.heartbeat_request(&session(), &record);
+        let second = engine.heartbeat_request(&session(), &record);
+
+        assert_ne!(first.heartbeat_id, second.heartbeat_id);
+        assert_ne!(first.sent_at, second.sent_at);
+        protocol
+            .heartbeat(&session(), first)
+            .await
+            .expect("first logical heartbeat accepted");
+        protocol
+            .heartbeat(&session(), second)
+            .await
+            .expect("advanced logical heartbeat is not a replay conflict");
     }
 
     #[tokio::test]
@@ -1779,7 +1863,7 @@ mod tests {
             .lock()
             .expect("fake protocol lock");
         assert_eq!(heartbeats.len(), 1);
-        assert_eq!(heartbeats[0].heartbeat_id, "heartbeat:attempt:7");
+        assert!(heartbeats[0].heartbeat_id.starts_with("hb_"));
         assert_eq!(heartbeats[0].accepted_at.as_str(), "2026-08-06T12:20:16Z");
         assert_eq!(
             heartbeats[0].lease_results[0].lease_expires_at.as_str(),
