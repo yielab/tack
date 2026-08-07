@@ -10,7 +10,8 @@ use tack_db::{
         CancellationObservation, CancellationObservationInput, ClaimReplayResult, Completion,
         CompletionResult, EnqueueResult, EnrollmentToken, EventApplyResult, EventBatch,
         ExecutionClock, HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewEvent,
-        NewExecutionRequest, NewRunner, RecoveryClassification, RedeemEnrollmentResult,
+        NewExecutionRequest, NewRunner, RecoveryDisposition, RecoveryObservation,
+        RecoveryObservationInput, RecoveryObservationResult, RedeemEnrollmentResult,
     },
 };
 
@@ -194,28 +195,24 @@ async fn heartbeat_replays_and_recovery_is_audited_once() {
         HeartbeatBatchResult::Replayed(_)
     ));
     clock.advance(Duration::seconds(61));
-    assert!(
-        repo.recover_attempt(
-            "attempt-a",
-            "recover-1",
-            RecoveryClassification::SafePreSpawnRequeue,
-            "proven not spawned",
-            &clock
-        )
-        .await
-        .unwrap()
-    );
-    assert!(
-        repo.recover_attempt(
-            "attempt-a",
-            "recover-1",
-            RecoveryClassification::SafePreSpawnRequeue,
-            "proven not spawned",
-            &clock
-        )
-        .await
-        .unwrap()
-    );
+    let recovery = RecoveryObservationInput {
+        runner_id: "runner-a",
+        attempt_id: "attempt-a",
+        fencing_token: lease.fencing_token,
+        recovery_key: "recover-1",
+        observation: RecoveryObservation::ProcessStopped,
+        details: r#"{"journal_state":"prepared","process_observed":false}"#,
+    };
+    assert!(matches!(
+        repo.recover_attempt(recovery.clone(), &clock)
+            .await
+            .unwrap(),
+        RecoveryObservationResult::Applied(_)
+    ));
+    assert!(matches!(
+        repo.recover_attempt(recovery, &clock).await.unwrap(),
+        RecoveryObservationResult::Replayed(_)
+    ));
     let audits: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM execution_recovery_audits WHERE attempt_id='attempt-a'",
     )
@@ -692,6 +689,341 @@ fn cancellation_input<'a>(
         details: r#"{"detail":{"b":2,"a":1}}"#,
         observation: r#"{"status":"cancelled","signals":["runner"]}"#,
     }
+}
+
+fn recovery_input<'a>(
+    attempt_id: &'a str,
+    fencing_token: i64,
+    recovery_key: &'a str,
+    observation: RecoveryObservation,
+) -> RecoveryObservationInput<'a> {
+    RecoveryObservationInput {
+        runner_id: "runner-a",
+        attempt_id,
+        fencing_token,
+        recovery_key,
+        observation,
+        details: r#"{"journal_state":"prepared","process_observed":false,"observer":{"b":2,"a":1}}"#,
+    }
+}
+
+#[tokio::test]
+async fn recovery_stopped_without_start_requeues_current_fence_and_replays() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-recovery-safe",
+        "attempt-recovery-safe",
+    )
+    .await;
+    let input = recovery_input(
+        "attempt-recovery-safe",
+        fence,
+        "recovery-safe",
+        RecoveryObservation::ProcessStopped,
+    );
+    let applied = repo.recover_attempt(input.clone(), &clock).await.unwrap();
+    let RecoveryObservationResult::Applied(applied) = applied else {
+        panic!("current-fence stopped process with no start must requeue");
+    };
+    assert_eq!(
+        applied.disposition,
+        RecoveryDisposition::SafePreSpawnRequeue
+    );
+    let semantic_retry = RecoveryObservationInput {
+        details: r#"{"observer":{"a":1,"b":2},"process_observed":false,"journal_state":"prepared"}"#,
+        ..input.clone()
+    };
+    let replayed = repo.recover_attempt(semantic_retry, &clock).await.unwrap();
+    let RecoveryObservationResult::Replayed(replayed) = replayed else {
+        panic!("canonical recovery retry must replay");
+    };
+    assert_eq!(replayed, applied);
+    let changed = RecoveryObservationInput {
+        details: r#"{"journal_state":"prepared","process_observed":true,"observer":"changed"}"#,
+        ..input
+    };
+    assert_eq!(
+        repo.recover_attempt(changed, &clock).await.unwrap(),
+        RecoveryObservationResult::Conflict
+    );
+    let attempt_state: String = sqlx::query_scalar(
+        "SELECT state FROM execution_attempts WHERE id = 'attempt-recovery-safe'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    let request_state: String = sqlx::query_scalar(
+        "SELECT state FROM execution_requests WHERE id = 'request-recovery-safe'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(attempt_state, "lost");
+    assert_eq!(request_state, "queued");
+}
+
+#[tokio::test]
+async fn recovery_running_ambiguous_and_spawn_evidence_need_operator() {
+    let (repo, item_id, clock) = ready_repo().await;
+    sqlx::query(
+        "UPDATE agent_runners SET total_capacity = 4, available_capacity = 4 WHERE id = 'runner-a'",
+    )
+    .execute(repo.pool())
+    .await
+    .unwrap();
+    let stopped_fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-recovery-started",
+        "attempt-recovery-started",
+    )
+    .await;
+    let running_fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-recovery-running",
+        "attempt-recovery-running",
+    )
+    .await;
+    let ambiguous_fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-recovery-ambiguous",
+        "attempt-recovery-ambiguous",
+    )
+    .await;
+    let post_spawn_fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-recovery-post-spawn",
+        "attempt-recovery-post-spawn",
+    )
+    .await;
+    sqlx::query(
+        "UPDATE execution_attempts SET started_at = ? WHERE id = 'attempt-recovery-started'",
+    )
+    .bind(clock.now().to_rfc3339())
+    .execute(repo.pool())
+    .await
+    .unwrap();
+    for (attempt_id, fence, key, observation) in [
+        (
+            "attempt-recovery-started",
+            stopped_fence,
+            "recovery-started",
+            RecoveryObservation::ProcessStopped,
+        ),
+        (
+            "attempt-recovery-running",
+            running_fence,
+            "recovery-running",
+            RecoveryObservation::ProcessRunning,
+        ),
+        (
+            "attempt-recovery-ambiguous",
+            ambiguous_fence,
+            "recovery-ambiguous",
+            RecoveryObservation::Ambiguous,
+        ),
+    ] {
+        assert!(matches!(
+            repo.recover_attempt(recovery_input(attempt_id, fence, key, observation), &clock)
+                .await
+                .unwrap(),
+            RecoveryObservationResult::Applied(response)
+                if response.disposition == RecoveryDisposition::NeedsOperator
+        ));
+    }
+    assert!(matches!(
+        repo.recover_attempt(
+            RecoveryObservationInput {
+                runner_id: "runner-a",
+                attempt_id: "attempt-recovery-post-spawn",
+                fencing_token: post_spawn_fence,
+                recovery_key: "recovery-post-spawn",
+                observation: RecoveryObservation::ProcessStopped,
+                details: r#"{"journal_state":"spawned","process_observed":false}"#,
+            },
+            &clock,
+        )
+        .await
+        .unwrap(),
+        RecoveryObservationResult::Applied(response)
+            if response.disposition == RecoveryDisposition::NeedsOperator
+    ));
+    let needs_operator: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_attempts WHERE state = 'needs_operator'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(needs_operator, 4);
+}
+
+#[tokio::test]
+async fn recovery_foreign_revoked_and_terminal_are_not_recovered() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-recovery-stale",
+        "attempt-recovery-stale",
+    )
+    .await;
+    assert_eq!(
+        repo.recover_attempt(
+            recovery_input(
+                "attempt-recovery-stale",
+                fence + 1,
+                "recovery-foreign",
+                RecoveryObservation::Ambiguous,
+            ),
+            &clock,
+        )
+        .await
+        .unwrap(),
+        RecoveryObservationResult::Stale
+    );
+    sqlx::query(
+        "UPDATE execution_attempts SET state = 'succeeded' WHERE id = 'attempt-recovery-stale'",
+    )
+    .execute(repo.pool())
+    .await
+    .unwrap();
+    let terminal = recovery_input(
+        "attempt-recovery-stale",
+        fence,
+        "recovery-terminal",
+        RecoveryObservation::Ambiguous,
+    );
+    assert!(matches!(
+        repo.recover_attempt(terminal.clone(), &clock).await.unwrap(),
+        RecoveryObservationResult::Applied(response)
+            if response.disposition == RecoveryDisposition::AlreadyTerminal
+    ));
+    assert!(matches!(
+        repo.recover_attempt(terminal.clone(), &clock).await.unwrap(),
+        RecoveryObservationResult::Replayed(response)
+            if response.disposition == RecoveryDisposition::AlreadyTerminal
+    ));
+    assert_eq!(
+        repo.recover_attempt(
+            RecoveryObservationInput {
+                details: r#"{"journal_state":"prepared","process_observed":true}"#,
+                ..terminal
+            },
+            &clock,
+        )
+        .await
+        .unwrap(),
+        RecoveryObservationResult::Conflict
+    );
+    repo.revoke_runner("runner-a", &clock).await.unwrap();
+    assert_eq!(
+        repo.recover_attempt(
+            recovery_input(
+                "attempt-recovery-stale",
+                fence,
+                "recovery-revoked",
+                RecoveryObservation::Ambiguous,
+            ),
+            &clock,
+        )
+        .await
+        .unwrap(),
+        RecoveryObservationResult::Stale
+    );
+}
+
+#[tokio::test]
+async fn recovery_capacity_release_is_capped_and_replay_safe() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-recovery-cap",
+        "attempt-recovery-cap",
+    )
+    .await;
+    sqlx::query(
+        "UPDATE agent_runners SET available_capacity = total_capacity WHERE id = 'runner-a'",
+    )
+    .execute(repo.pool())
+    .await
+    .unwrap();
+    let input = recovery_input(
+        "attempt-recovery-cap",
+        fence,
+        "recovery-cap",
+        RecoveryObservation::Ambiguous,
+    );
+    repo.recover_attempt(input.clone(), &clock).await.unwrap();
+    repo.recover_attempt(input, &clock).await.unwrap();
+    let capacity: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(capacity, 1);
+}
+
+#[tokio::test]
+async fn recovery_replay_insert_failure_rolls_back_lifecycle_and_capacity() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-recovery-rollback",
+        "attempt-recovery-rollback",
+    )
+    .await;
+    sqlx::query("CREATE TRIGGER fail_recovery_replay BEFORE INSERT ON execution_recovery_audits BEGIN SELECT RAISE(ABORT, 'forced recovery replay failure'); END")
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    assert!(
+        repo.recover_attempt(
+            recovery_input(
+                "attempt-recovery-rollback",
+                fence,
+                "recovery-rollback",
+                RecoveryObservation::Ambiguous,
+            ),
+            &clock,
+        )
+        .await
+        .is_err()
+    );
+    let attempt_state: String = sqlx::query_scalar(
+        "SELECT state FROM execution_attempts WHERE id = 'attempt-recovery-rollback'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    let request_state: String = sqlx::query_scalar(
+        "SELECT state FROM execution_requests WHERE id = 'request-recovery-rollback'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    let capacity: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(attempt_state, "leased");
+    assert_eq!(request_state, "leased");
+    assert_eq!(capacity, 0);
 }
 
 #[tokio::test]

@@ -113,6 +113,7 @@ fn all_migrations() -> Vec<Migration> {
             "057_execution_cancellation_replay_response",
             &MIGRATION_057[..],
         ),
+        ordinary("058_execution_recovery_replay_response", &MIGRATION_058[..]),
     ]
 }
 
@@ -1542,4 +1543,8 @@ const MIGRATION_056: [&str; 1] =
 const MIGRATION_057: [&str; 2] = [
     "ALTER TABLE execution_cancellation_replays ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE execution_cancellation_replays ADD COLUMN response TEXT NOT NULL DEFAULT ''",
+];
+const MIGRATION_058: [&str; 2] = [
+    "ALTER TABLE execution_recovery_audits ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE execution_recovery_audits ADD COLUMN response TEXT NOT NULL DEFAULT ''",
 ];

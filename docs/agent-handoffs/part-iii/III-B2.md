@@ -149,3 +149,19 @@
   retry rather than fabricating a response. Focused coverage includes response-loss replay after
   time advance, semantic JSON replay, changed-input no-write, foreign fence, corrupt response,
   capped capacity, transaction rollback, and terminal/ambiguous classifications.
+
+### Recovery observation v1
+
+- Migration 058 makes recovery audits durable replay records with a fingerprint and response.
+  `recover_attempt` now accepts a runner/attempt/fence/key observation, authenticates an active,
+  non-revoked owning runner before lookup, and returns typed applied/replayed/conflict/stale
+  results with the original committed timestamp.
+- Only `process_stopped` with server `started_at` absent plus validated details
+  `journal_state="prepared"` and `process_observed=false` can safely mark the attempt `lost`
+  and requeue its request. Started, spawned, running, process-observed, or ambiguous evidence is
+  conservatively `needs_operator`. Terminal attempts create an auditable/replayable
+  `already_terminal` disposition with no lifecycle or capacity mutation.
+- Pre-058 audit records have the empty migration-default fingerprint/response and return
+  `Conflict`; their historical audit is not fabricated into a recovery response. Focused tests
+  cover every disposition, semantic replay and changed input, foreign/revoked access, capped
+  release, and rollback of lifecycle, capacity, and audit together.
