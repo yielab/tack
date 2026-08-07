@@ -285,21 +285,32 @@ async fn crash_during_event_batch_rolls_back_rows_and_checkpoint_then_replays_on
     enqueue(&fixture).await;
     claim(&fixture).await;
     sqlx::query(
-        "CREATE TRIGGER inject_event_crash BEFORE INSERT ON execution_events BEGIN \
-         SELECT RAISE(ABORT, 'injected event crash'); END",
+        "CREATE TRIGGER inject_second_event_crash BEFORE INSERT ON execution_events \
+         WHEN NEW.sequence = 2 BEGIN SELECT RAISE(ABORT, 'injected second event crash'); END",
     )
     .execute(fixture.repo.pool())
     .await
-    .expect("install trigger");
-    let event = NewEvent {
-        id: "event-row-1",
-        event_id: "event-1",
-        sequence: 1,
-        source: "runner",
-        kind: "progress",
-        payload: r#"{"phase":"spawn"}"#,
-        occurred_at: fixture.clock.now(),
-    };
+    .expect("install second-row trigger");
+    let events = [
+        NewEvent {
+            id: "event-row-1",
+            event_id: "event-1",
+            sequence: 1,
+            source: "runner",
+            kind: "progress",
+            payload: r#"{"phase":"spawn"}"#,
+            occurred_at: fixture.clock.now(),
+        },
+        NewEvent {
+            id: "event-row-2",
+            event_id: "event-2",
+            sequence: 2,
+            source: "runner",
+            kind: "progress",
+            payload: r#"{"phase":"running"}"#,
+            occurred_at: fixture.clock.now(),
+        },
+    ];
     let batch = || EventBatch {
         runner_id: "runner-crash",
         attempt_id: "attempt-crash",
@@ -311,7 +322,7 @@ async fn crash_during_event_batch_rolls_back_rows_and_checkpoint_then_replays_on
     assert!(
         fixture
             .repo
-            .append_execution_events(batch(), std::slice::from_ref(&event), &fixture.clock)
+            .append_execution_events(batch(), &events, &fixture.clock)
             .await
             .is_err()
     );
@@ -325,21 +336,49 @@ async fn crash_during_event_batch_rolls_back_rows_and_checkpoint_then_replays_on
     assert_eq!(row.get::<Option<String>, _>("event_checkpoint"), None);
     assert_eq!(row.get::<i64, _>("event_count"), 0);
 
-    sqlx::query("DROP TRIGGER inject_event_crash")
+    sqlx::query("DROP TRIGGER inject_second_event_crash")
         .execute(fixture.repo.pool())
         .await
-        .expect("drop trigger");
+        .expect("drop second-row trigger");
+    sqlx::query(
+        "CREATE TRIGGER inject_checkpoint_crash BEFORE UPDATE OF event_checkpoint \
+         ON execution_attempts BEGIN SELECT RAISE(ABORT, 'injected checkpoint crash'); END",
+    )
+    .execute(fixture.repo.pool())
+    .await
+    .expect("install checkpoint trigger");
     assert!(
         fixture
             .repo
-            .append_execution_events(batch(), std::slice::from_ref(&event), &fixture.clock)
+            .append_execution_events(batch(), &events, &fixture.clock)
+            .await
+            .is_err()
+    );
+    let row = sqlx::query(
+        "SELECT event_checkpoint, (SELECT COUNT(*) FROM execution_events) AS event_count \
+         FROM execution_attempts WHERE id = 'attempt-crash'",
+    )
+    .fetch_one(fixture.repo.pool())
+    .await
+    .expect("checkpoint state after checkpoint fault");
+    assert_eq!(row.get::<Option<String>, _>("event_checkpoint"), None);
+    assert_eq!(row.get::<i64, _>("event_count"), 0);
+
+    sqlx::query("DROP TRIGGER inject_checkpoint_crash")
+        .execute(fixture.repo.pool())
+        .await
+        .expect("drop checkpoint trigger");
+    assert!(
+        fixture
+            .repo
+            .append_execution_events(batch(), &events, &fixture.clock)
             .await
             .expect("first report")
     );
     assert!(
         fixture
             .repo
-            .append_execution_events(batch(), std::slice::from_ref(&event), &fixture.clock)
+            .append_execution_events(batch(), &events, &fixture.clock)
             .await
             .expect("replay")
     );
@@ -347,7 +386,7 @@ async fn crash_during_event_batch_rolls_back_rows_and_checkpoint_then_replays_on
         .fetch_one(fixture.repo.pool())
         .await
         .expect("event count");
-    assert_eq!(count, 1);
+    assert_eq!(count, 2);
 }
 
 #[tokio::test]
