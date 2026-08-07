@@ -1120,37 +1120,25 @@ async fn test_fresh_db_migrates_all_the_way_through_038() {
     );
 }
 
-// ─── Boot-safety guard: refuse to boot on a half-applied rebuild ──────────
+// ─── Rebuild recovery: stale staging and every statement failure ───────────
 
 #[tokio::test]
-async fn test_a_half_applied_orch_runs_rebuild_refuses_to_boot_with_a_named_error() {
+async fn test_a_stale_orch_runs_staging_table_is_recovered_without_a_boot_loop() {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
     migrations::run_up_to(&pool, "036_control_planes_version")
         .await
         .expect("apply migrations up to 036");
 
-    // Simulate a crash between migration 037's CREATE TABLE orch_runs_new and
-    // its DROP TABLE orch_runs: both tables present, and "037_orch_runs_rebuild"
-    // was never recorded — `apply_migrations` only inserts that row after every
-    // statement in the migration has succeeded, and this deliberately stops
-    // short of that.
+    // A staging table from the previously unreleased implementation must not
+    // brick the first repaired boot. The original remains authoritative.
     sqlx::query("CREATE TABLE orch_runs_new (external_run_id TEXT)")
         .execute(&pool)
         .await
         .expect("simulate the half-applied intermediate table");
 
-    let result = migrations::run_all(&pool).await;
-    let err = result
-        .expect_err("run_all must refuse to boot when both orch_runs and orch_runs_new exist");
-    let message = err.to_string();
-    assert!(
-        message.contains("orch_runs") && message.contains("orch_runs_new"),
-        "the error must name both tables so an operator knows what to look at: {message}"
-    );
-    assert!(
-        message.to_lowercase().contains("backup"),
-        "the error must name the recovery path (a backup), not just refuse silently: {message}"
-    );
+    migrations::run_all(&pool)
+        .await
+        .expect("the repaired transactional rebuild must recover the stale staging table");
 
     let recorded: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM _migrations WHERE name = '037_orch_runs_rebuild')",
@@ -1159,20 +1147,19 @@ async fn test_a_half_applied_orch_runs_rebuild_refuses_to_boot_with_a_named_erro
     .await
     .expect("check _migrations");
     assert!(
-        !recorded,
-        "the rebuild must not be recorded as applied when boot was refused"
+        recorded,
+        "the rebuild record appears only once its recovery transaction commits"
     );
 
-    // And the original table must still be intact — refusing must happen
-    // *before* any destructive statement runs, not after DROP TABLE orch_runs.
     assert!(
         table_exists(&pool, "orch_runs").await,
-        "orch_runs must still exist — refusing to boot must not itself destroy data"
+        "orch_runs must exist after a recovered rebuild"
     );
+    assert!(!table_exists(&pool, "orch_runs_new").await);
 }
 
 #[tokio::test]
-async fn test_a_half_applied_orch_approvals_rebuild_refuses_to_boot_with_a_named_error() {
+async fn test_a_stale_orch_approvals_staging_table_is_recovered_without_a_boot_loop() {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
     migrations::run_up_to(&pool, "037_orch_runs_rebuild")
         .await
@@ -1183,15 +1170,9 @@ async fn test_a_half_applied_orch_approvals_rebuild_refuses_to_boot_with_a_named
         .await
         .expect("simulate the half-applied intermediate table");
 
-    let result = migrations::run_all(&pool).await;
-    let err = result.expect_err(
-        "run_all must refuse to boot when both orch_approvals and orch_approvals_new exist",
-    );
-    let message = err.to_string();
-    assert!(
-        message.contains("orch_approvals") && message.contains("orch_approvals_new"),
-        "the error must name both tables: {message}"
-    );
+    migrations::run_all(&pool)
+        .await
+        .expect("the repaired transactional rebuild must recover stale approval staging");
 
     let recorded: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM _migrations WHERE name = '038_orch_approvals_rebuild')",
@@ -1199,10 +1180,10 @@ async fn test_a_half_applied_orch_approvals_rebuild_refuses_to_boot_with_a_named
     .fetch_one(&pool)
     .await
     .expect("check _migrations");
-    assert!(!recorded);
+    assert!(recorded);
 
-    // 037 already landed cleanly before this test manufactured the 038
-    // half-applied state — the guard must not un-record or re-attempt it.
+    // 037 already landed cleanly before this test manufactured the stale 038
+    // staging table; recovery must leave its committed record untouched.
     let migration_037_recorded: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM _migrations WHERE name = '037_orch_runs_rebuild')",
     )
@@ -1217,6 +1198,166 @@ async fn test_a_half_applied_orch_approvals_rebuild_refuses_to_boot_with_a_named
 
     assert!(
         table_exists(&pool, "orch_approvals").await,
-        "orch_approvals must still exist — refusing to boot must not itself destroy data"
+        "orch_approvals must exist after recovery"
     );
+    assert!(!table_exists(&pool, "orch_approvals_new").await);
+}
+
+async fn assert_injected_rebuild_failure_rolls_back(migration: &'static str, steps: usize) {
+    for step in 0..steps {
+        let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+        let cutoff = if migration == "037_orch_runs_rebuild" {
+            "036_control_planes_version"
+        } else {
+            "037_orch_runs_rebuild"
+        };
+        migrations::run_up_to(&pool, cutoff)
+            .await
+            .expect("apply pre-rebuild schema");
+
+        let source_table = if migration == "037_orch_runs_rebuild" {
+            "orch_runs"
+        } else {
+            "orch_approvals"
+        };
+        let staging_table = if migration == "037_orch_runs_rebuild" {
+            "orch_runs_new"
+        } else {
+            "orch_approvals_new"
+        };
+
+        let result = migrations::run_all_with_rebuild_failure(&pool, migration, step).await;
+        assert!(
+            result.is_err(),
+            "failure injection at {migration} step {step} must fail"
+        );
+        assert!(
+            table_exists(&pool, source_table).await,
+            "source table must survive injected {migration} step {step}"
+        );
+        assert!(
+            !table_exists(&pool, staging_table).await,
+            "transaction rollback must remove staging after injected {migration} step {step}"
+        );
+        let recorded: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM _migrations WHERE name = ?)")
+                .bind(migration)
+                .fetch_one(&pool)
+                .await
+                .expect("check migration record");
+        assert!(
+            !recorded,
+            "migration record must not exist before commit after injected {migration} step {step}"
+        );
+
+        migrations::run_all(&pool)
+            .await
+            .expect("a clean retry after every injected failure must recover");
+    }
+}
+
+#[tokio::test]
+async fn test_every_orch_runs_rebuild_statement_rolls_back_and_retries() {
+    // Six SQL statements, copy verification, and fetched FK assertion.
+    assert_injected_rebuild_failure_rolls_back("037_orch_runs_rebuild", 8).await;
+}
+
+#[tokio::test]
+async fn test_every_orch_approvals_rebuild_statement_rolls_back_and_retries() {
+    // Seven SQL statements, copy verification, and fetched FK assertion.
+    assert_injected_rebuild_failure_rolls_back("038_orch_approvals_rebuild", 9).await;
+}
+
+#[tokio::test]
+async fn test_rebuild_refuses_a_foreign_key_violation_before_source_deletion() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+    migrations::run_up_to(&pool, "036_control_planes_version")
+        .await
+        .expect("apply pre-rebuild schema");
+
+    // Manufacture legacy corruption on one connection. This is intentionally
+    // outside normal repository behavior: the point is to prove the rebuild
+    // fetches and asserts foreign_key_check rather than merely executing its
+    // PRAGMA and ignoring the returned rows.
+    let mut connection = pool.acquire().await.expect("acquire connection");
+    sqlx::query("PRAGMA foreign_keys=OFF")
+        .execute(&mut *connection)
+        .await
+        .expect("disable FK enforcement for corruption fixture");
+    sqlx::query(
+        "INSERT INTO orch_runs (run_id, control_plane_id, remote_project) \
+         VALUES ('orphan-run', 'missing-plane', 'demo')",
+    )
+    .execute(&mut *connection)
+    .await
+    .expect("insert intentionally orphaned legacy row");
+    sqlx::query("PRAGMA foreign_keys=ON")
+        .execute(&mut *connection)
+        .await
+        .expect("restore FK enforcement");
+    drop(connection);
+
+    let error = migrations::run_all(&pool)
+        .await
+        .expect_err("foreign_key_check must reject a corrupt rebuild source");
+    assert!(error.to_string().contains("foreign_key_check"));
+    assert!(table_exists(&pool, "orch_runs").await);
+    assert!(!table_exists(&pool, "orch_runs_new").await);
+    let recorded: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM _migrations WHERE name = '037_orch_runs_rebuild')",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("check migration record");
+    assert!(!recorded, "a rejected rebuild must not be recorded");
+}
+
+#[tokio::test]
+async fn test_migration_history_checksum_tampering_refuses_to_run() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+    migrations::run_up_to(&pool, "036_control_planes_version")
+        .await
+        .expect("apply known prefix");
+    sqlx::query("UPDATE _migrations SET checksum = 'tampered' WHERE name = '001_workspaces'")
+        .execute(&pool)
+        .await
+        .expect("tamper checksum fixture");
+
+    let error = migrations::run_all(&pool)
+        .await
+        .expect_err("an edited recorded migration must fail closed");
+    assert!(error.to_string().contains("checksum changed"));
+    assert!(
+        !table_exists(&pool, "orch_runs_new").await,
+        "the invariant is checked before a rebuild can make staging state"
+    );
+}
+
+#[tokio::test]
+async fn test_file_backed_rebuild_creates_an_automatic_pre_upgrade_snapshot() {
+    let db_path = std::env::temp_dir().join(format!("tack-migration-{}.db", Uuid::new_v4()));
+    let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
+    let pool = init_pool(&db_url).await.expect("file-backed pool");
+    migrations::run_up_to(&pool, "036_control_planes_version")
+        .await
+        .expect("apply pre-rebuild schema");
+
+    migrations::run_all(&pool)
+        .await
+        .expect("file-backed rebuild with snapshot");
+    let backup_path = format!("{}.before-037_orch_runs_rebuild.sqlite", db_path.display());
+    assert!(
+        std::path::Path::new(&backup_path).is_file(),
+        "the first pending rebuild must create a durable pre-upgrade SQLite snapshot"
+    );
+
+    drop(pool);
+    for path in [
+        db_path,
+        std::path::PathBuf::from(&backup_path),
+        std::path::PathBuf::from(format!("{}-shm", backup_path)),
+        std::path::PathBuf::from(format!("{}-wal", backup_path)),
+    ] {
+        let _ = std::fs::remove_file(path);
+    }
 }
