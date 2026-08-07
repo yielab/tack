@@ -8,7 +8,7 @@ use uuid::Uuid;
 use validator::Validate;
 
 use tack_core::models::{CreateItem, Item, ItemFilter, UpdateItem};
-use tack_db::repo::items::StatusUpdateOutcome;
+use tack_db::repo::items::AtomicItemUpdateOutcome;
 use tack_db::repo::orch::NewOrchEvent;
 
 use crate::dispatcher::{self, DispatchOutcome};
@@ -43,43 +43,25 @@ fn precondition_failed(message: String) -> Response {
     (StatusCode::PRECONDITION_FAILED, Json(body)).into_response()
 }
 
-/// Validates an incoming `If-Match` header against `id`'s current version
-/// and, if it matches, atomically claims the next version — see
-/// `Repository::claim_item_version`'s doc comment for why the claim (not
-/// this comparison) is what actually decides a concurrent race.
-///
-/// Returns `Ok(None)` for "proceed" (either no `If-Match` was sent — **the
-/// absent case that must behave exactly as it did before this card** — or
-/// it matched and the claim succeeded) and `Ok(Some(response))` for a 412
-/// the caller should return immediately, before touching any of the
-/// item's other fields.
-async fn check_if_match(
-    state: &AppState,
+/// Converts a matching `If-Match` into the version guarded by the repository
+/// transaction.  It deliberately does *not* claim a version: doing so before
+/// status/WIP validation would leave a rejected PATCH with a moved ETag.
+fn expected_version_from_if_match(
     id: Uuid,
     headers: &HeaderMap,
-) -> ApiResult<Option<Response>> {
+    current_version: i64,
+) -> Result<Option<i64>, Response> {
     let Some(if_match) = headers.get(header::IF_MATCH) else {
         return Ok(None);
     };
     let provided = if_match.to_str().unwrap_or("");
-    let current_version = state.repo.get_item_version(id).await?.unwrap_or(1);
     if provided != item_etag(id, current_version) {
-        return Ok(Some(precondition_failed(format!(
+        return Err(precondition_failed(format!(
             "item {id} was modified since it was fetched (If-Match did not match); \
              refresh and retry"
-        ))));
+        )));
     }
-    if !state.repo.claim_item_version(id, current_version).await? {
-        // Lost the race between the comparison above and this claim: some
-        // other writer bumped the version in between. Same verdict, same
-        // message — the caller can't tell the two cases apart and doesn't
-        // need to.
-        return Ok(Some(precondition_failed(format!(
-            "item {id} was modified since it was fetched (If-Match did not match); \
-             refresh and retry"
-        ))));
-    }
-    Ok(None)
+    Ok(Some(current_version))
 }
 
 #[instrument(skip(state))]
@@ -187,9 +169,9 @@ pub async fn list_items(
     ),
 )]
 pub async fn get_item(State(state): State<AppState>, Path(id): Path<Uuid>) -> ApiResult<Response> {
-    let item = state
+    let snapshot = state
         .repo
-        .get_item(id)
+        .get_item_snapshot(id)
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
 
@@ -197,21 +179,15 @@ pub async fn get_item(State(state): State<AppState>, Path(id): Path<Uuid>) -> Ap
     let roles = state.repo.get_roles_for_item(id).await?;
     let deps = state.repo.list_dependencies_for_item(id).await?;
 
-    // `unwrap_or(1)` covers the vanishingly small window between the two
-    // reads where the item was deleted concurrently — `item` above already
-    // proved it existed, so falling back to the migration's own DEFAULT is
-    // the harmless choice, not a masked error.
-    let version = state.repo.get_item_version(id).await?.unwrap_or(1);
-
     let mut response = Json(serde_json::json!({
-        "item": item,
+        "item": snapshot.item,
         "roles": roles,
         "dependencies": deps,
     }))
     .into_response();
     response.headers_mut().insert(
         header::ETAG,
-        HeaderValue::from_str(&item_etag(id, version)).expect("etag is ascii"),
+        HeaderValue::from_str(&item_etag(id, snapshot.version)).expect("etag is ascii"),
     );
     Ok(response)
 }
@@ -235,96 +211,50 @@ pub async fn update_item(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
-    Json(mut input): Json<UpdateItem>,
+    Json(input): Json<UpdateItem>,
 ) -> ApiResult<Response> {
     input
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
-    // Get old item state for status change detection
-    let old_item = state
+    // This snapshot is the version the browser is allowed to mutate.  The
+    // repository carries it into the same transaction as every field/WIP
+    // change; no pre-claim can leave a rejected request with a bumped ETag.
+    let snapshot = state
         .repo
-        .get_item(id)
+        .get_item_snapshot(id)
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
+    let expected_version = match expected_version_from_if_match(id, &headers, snapshot.version) {
+        Ok(expected_version) => expected_version,
+        Err(response) => return Ok(response),
+    };
+    let project = state
+        .repo
+        .get_project(snapshot.item.project_id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("Project not found".into()))?;
 
-    // Optimistic concurrency (card G3, D4). Checked *after* confirming the
-    // item exists (so a missing item is still a 404, not a 412) and
-    // *before* any field is written — an absent `If-Match` header takes the
-    // `None` branch immediately and this call adds no extra query, which is
-    // what makes the change behave exactly as today for every caller that
-    // doesn't send the header, including the MCP tools and the Alexa skill.
-    if let Some(response) = check_if_match(&state, id, &headers).await? {
-        return Ok(response);
-    }
-
-    let old_status = old_item.status.clone();
-
-    // If status is being changed, validate the transition and apply the
-    // status write through the WIP-check-and-write path (Repository::
-    // update_item_status_checked). Card R2 (2026-08-05) fixed the identical
-    // race on the dispatch path — a separate `count_items_by_status` read
-    // followed by an unguarded `update_item` write let two concurrent movers
-    // into the same WIP-limited column each observe "under the limit" and
-    // both commit. This is the everyday board-drag/API path, so it carries
-    // the same race; see `crates/tack-api/tests/board_drag_wip_race_test.rs`
-    // for the repro. `update_item_status_checked` only touches the status
-    // column and its started_at/completed_at bookkeeping, so any other
-    // fields in this same request (title, description, ...) are still
-    // applied afterwards via the ordinary `repo.update_item` call below —
-    // with `input.status`/`input.status_category` cleared so that call
-    // doesn't redundantly (and unguarded-ly) re-write status.
-    if let Some(ref new_status) = input.status {
-        let project = state
-            .repo
-            .get_project(old_item.project_id)
-            .await?
-            .ok_or_else(|| ApiError::NotFound("Project not found".into()))?;
-
-        // Validate transition (unguarded — depends only on the project's
-        // static workflow config, not a row count, so it isn't racy).
-        project
-            .workflow
-            .validate_transition(&old_item.status, new_status)?;
-
-        // Resolve the target status category so the repo can maintain
-        // started_at / completed_at as the item crosses category boundaries.
-        let status_category = project
-            .workflow
-            .statuses
-            .iter()
-            .find(|s| &s.name == new_status)
-            .map(|s| s.category.clone());
-
-        let outcome = state
-            .repo
-            .update_item_status_checked(
-                id,
-                old_item.project_id,
-                new_status,
-                status_category,
-                &project.workflow,
-            )
-            .await?
-            .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
-
-        match outcome {
-            StatusUpdateOutcome::Rejected(e) => return Err(e.into()),
-            StatusUpdateOutcome::Applied(_) => {}
+    let (item, version, old_status) = match state
+        .repo
+        .update_item_atomically(id, input, &project.workflow, expected_version)
+        .await?
+    {
+        AtomicItemUpdateOutcome::Updated {
+            item,
+            version,
+            old_status,
+        } => (*item, version, old_status),
+        AtomicItemUpdateOutcome::NotFound => {
+            return Err(ApiError::NotFound(format!("Item {id} not found")));
         }
-
-        // Status (and its started_at/completed_at side effects) is already
-        // applied and committed above — don't let the field-by-field
-        // `update_item` call below touch it again.
-        input.status = None;
-        input.status_category = None;
-    }
-
-    let item = state
-        .repo
-        .update_item(id, input)
-        .await?
-        .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
+        AtomicItemUpdateOutcome::PreconditionFailed => {
+            return Ok(precondition_failed(format!(
+                "item {id} was modified since it was fetched (If-Match did not match); refresh and retry"
+            )));
+        }
+        AtomicItemUpdateOutcome::Rejected(error) => return Err(error.into()),
+    };
 
     // Broadcast WebSocket event
     websocket::broadcast_event(
@@ -362,7 +292,12 @@ pub async fn update_item(
     // auto_dispatch on (§0 rules 5 and 8).
     maybe_auto_dispatch(&state, &item, &old_status).await;
 
-    Ok(Json(serde_json::to_value(item).unwrap()).into_response())
+    let mut response = Json(serde_json::to_value(item).unwrap()).into_response();
+    response.headers_mut().insert(
+        header::ETAG,
+        HeaderValue::from_str(&item_etag(id, version)).expect("etag is ascii"),
+    );
+    Ok(response)
 }
 
 /// Best-effort, fire-and-forget GitHub push: when a linked item crosses the

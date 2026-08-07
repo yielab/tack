@@ -463,13 +463,17 @@ pub struct UpdateItem {
     #[validate(length(min = 1, max = 500, message = "title must be 1–500 characters"))]
     pub title: Option<String>,
     #[validate(length(max = 50_000, message = "description too long (max 50 000 chars)"))]
-    pub description: Option<String>,
+    /// Omitted leaves the description untouched; JSON `null` clears it.
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub description: Option<Option<String>>,
     pub item_type: Option<ItemType>,
     #[validate(length(min = 1, max = 100, message = "status must be 1–100 characters"))]
     pub status: Option<String>,
     pub priority: Option<Priority>,
     #[validate(range(min = 0.0, message = "estimate must be non-negative"))]
-    pub estimate: Option<f64>,
+    /// Omitted leaves the estimate untouched; JSON `null` clears it.
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub estimate: Option<Option<f64>>,
     // Double-`Option` fields: outer `None` = key absent (leave untouched),
     // `Some(None)` = JSON `null` (clear the column), `Some(Some(v))` = set to `v`.
     // This lets the frontend clear a sprint assignment / due date / estimate unit
@@ -484,7 +488,9 @@ pub struct UpdateItem {
     pub sprint_id: Option<Option<Uuid>>,
     pub sort_order: Option<i32>,
     #[validate(length(max = 200, message = "assignee name too long (max 200 chars)"))]
-    pub assignee: Option<String>,
+    /// Omitted leaves the assignee untouched; JSON `null` clears it.
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub assignee: Option<Option<String>>,
     /// Server-only: the target status's category, populated by the update handler
     /// when the status changes so the persistence layer can maintain
     /// `started_at` / `completed_at`. Never (de)serialized from client requests.

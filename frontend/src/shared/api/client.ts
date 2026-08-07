@@ -149,6 +149,14 @@ async function toApiError(res: Response): Promise<ApiError> {
  * - Returns `undefined` for `204 No Content`, otherwise the parsed JSON body.
  */
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await requestWithHeaders<T>(path, init)).data;
+}
+
+/** JSON request with response headers retained for conditional item edits. */
+export async function requestWithHeaders<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<{ data: T; headers: Headers }> {
   const headers = authHeaders(init?.headers);
   if (!headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
@@ -157,8 +165,8 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(apiUrl(path), { ...init, headers });
 
   if (!res.ok) throw await toApiError(res);
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  if (res.status === 204) return { data: undefined as T, headers: res.headers };
+  return { data: await res.json() as T, headers: res.headers };
 }
 
 /** Fetch a binary payload (downloads, exports, backups). */

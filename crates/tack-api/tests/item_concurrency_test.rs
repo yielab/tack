@@ -460,3 +460,130 @@ async fn concurrent_patches_at_higher_fanout_still_yield_exactly_one_winner() {
     assert_eq!(ok_count, 1, "exactly one racer must win the claim");
     assert_eq!(precondition_failed_count, N - 1);
 }
+
+// ─── Wave III-A2 atomic PATCH invariants ──────────────────────────────────
+
+#[tokio::test]
+async fn multi_field_wip_rejection_writes_nothing_and_does_not_bump_version() {
+    let (app, state) = app_with_state().await;
+    let project_id = create_project(&app).await;
+    for i in 0..5 {
+        let item_id = create_item(&app, project_id, &format!("Capacity {i}")).await;
+        let moved = req(
+            &app,
+            Method::PATCH,
+            &format!("/api/items/{item_id}"),
+            Some(json!({"status": "In Progress"})),
+        )
+        .await;
+        assert_eq!(moved.status(), StatusCode::OK);
+    }
+    let target = create_item(&app, project_id, "Must remain unchanged").await;
+    let before = state.repo.get_item_version(target).await.unwrap().unwrap();
+
+    let rejected = req(
+        &app,
+        Method::PATCH,
+        &format!("/api/items/{target}"),
+        Some(json!({"title": "Must not land", "status": "In Progress"})),
+    )
+    .await;
+    assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+
+    let after = req(&app, Method::GET, &format!("/api/items/{target}"), None).await;
+    let item = body_json(after).await["item"].clone();
+    assert_eq!(item["title"], "Must remain unchanged");
+    assert_eq!(item["status"], "Backlog");
+    assert_eq!(
+        state.repo.get_item_version(target).await.unwrap().unwrap(),
+        before
+    );
+}
+
+#[tokio::test]
+async fn nullable_patch_fields_clear_and_patch_body_etag_describe_one_snapshot() {
+    let (app, _state) = app_with_state().await;
+    let project_id = create_project(&app).await;
+    let item_id = create_item(&app, project_id, "Nullable fields").await;
+    let etag = get_etag(&app, item_id).await;
+
+    let seeded = req_with_if_match(
+        &app,
+        Method::PATCH,
+        &format!("/api/items/{item_id}"),
+        Some(json!({"description": "note", "assignee": "Ada", "estimate": 3.5})),
+        Some(&etag),
+    )
+    .await;
+    assert_eq!(seeded.status(), StatusCode::OK);
+    let seed_etag = seeded
+        .headers()
+        .get("etag")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+
+    let cleared = req_with_if_match(
+        &app,
+        Method::PATCH,
+        &format!("/api/items/{item_id}"),
+        Some(json!({"description": null, "assignee": null, "estimate": null})),
+        Some(&seed_etag),
+    )
+    .await;
+    assert_eq!(cleared.status(), StatusCode::OK);
+    assert_eq!(
+        cleared.headers().get("etag").unwrap().to_str().unwrap(),
+        format!("\"{item_id}-3\""),
+        "one multi-field PATCH increments version once"
+    );
+    let body = body_json(cleared).await;
+    assert!(body["description"].is_null());
+    assert!(body["assignee"].is_null());
+    assert!(body["estimate"].is_null());
+
+    let fresh = req(&app, Method::GET, &format!("/api/items/{item_id}"), None).await;
+    assert_eq!(
+        fresh.headers().get("etag").unwrap().to_str().unwrap(),
+        format!("\"{item_id}-3\""),
+        "GET observes the same version as the PATCH body/ETag snapshot"
+    );
+}
+
+#[tokio::test]
+async fn before_update_failure_cannot_partially_apply_a_multi_field_patch() {
+    let (app, state) = app_with_state().await;
+    let project_id = create_project(&app).await;
+    let item_id = create_item(&app, project_id, "Original").await;
+    let before = state.repo.get_item_version(item_id).await.unwrap().unwrap();
+
+    // The trigger runs after the transaction has performed every validation
+    // but before SQLite applies the one generated UPDATE. It is a deterministic
+    // failure injection: the old field-by-field implementation would already
+    // have committed earlier fields at this point.
+    sqlx::query(
+        "CREATE TRIGGER fail_atomic_item_patch BEFORE UPDATE ON items WHEN NEW.title = 'Blocked' BEGIN SELECT RAISE(ABORT, 'injected before-update failure'); END",
+    )
+    .execute(state.repo.pool())
+    .await
+    .unwrap();
+    let failed = req(
+        &app,
+        Method::PATCH,
+        &format!("/api/items/{item_id}"),
+        Some(json!({"title": "Blocked", "description": "must not persist", "assignee": "Ada"})),
+    )
+    .await;
+    assert_eq!(failed.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+    let after = req(&app, Method::GET, &format!("/api/items/{item_id}"), None).await;
+    let item = body_json(after).await["item"].clone();
+    assert_eq!(item["title"], "Original");
+    assert!(item["description"].is_null());
+    assert!(item["assignee"].is_null());
+    assert_eq!(
+        state.repo.get_item_version(item_id).await.unwrap().unwrap(),
+        before
+    );
+}

@@ -4,6 +4,7 @@ import Drawer from '../../shared/ui/Drawer';
 import Tabs, { type TabItem } from '../../shared/ui/Tabs';
 import Button from '../../shared/ui/Button';
 import { api } from '../../shared/api';
+import { isItemVersionConflict } from '../../shared/api/items';
 import { toast } from '../../shared/ui/toast';
 import type { Item, UpdateItem } from '../../shared/types';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
@@ -154,7 +155,11 @@ const ItemDetailDrawer: Component = () => {
       window.dispatchEvent(new CustomEvent(ITEM_UPDATED_EVENT, { detail: updated }));
     } catch (err) {
       void refetch(); // reconcile to the server value
-      toast.error(err instanceof Error ? err.message : 'Failed to update item');
+      toast.error(
+        isItemVersionConflict(err)
+          ? 'This item changed elsewhere. It has been refreshed; review it and retry your edit.'
+          : err instanceof Error ? err.message : 'Failed to update item',
+      );
     }
   };
 

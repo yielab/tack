@@ -1,4 +1,5 @@
 use chrono::Utc;
+use sqlx::{QueryBuilder, Sqlite};
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
@@ -25,6 +26,29 @@ pub enum StatusUpdateOutcome {
     /// that decided not to write, so callers get the engine's own error
     /// text rather than a re-derived approximation.
     Rejected(CoreError),
+}
+
+/// Result of one complete item PATCH.  Unlike the older helpers this owns the
+/// WIP decision, field update, timestamps, and version increment in one
+/// transaction, so callers cannot accidentally compose partial mutations.
+#[derive(Debug)]
+pub enum AtomicItemUpdateOutcome {
+    Updated {
+        item: Box<Item>,
+        version: i64,
+        old_status: String,
+    },
+    NotFound,
+    PreconditionFailed,
+    Rejected(CoreError),
+}
+
+/// A read snapshot whose item and version were observed in the same SQLite
+/// transaction.  This is the only safe source for an item response plus ETag.
+#[derive(Debug)]
+pub struct ItemSnapshot {
+    pub item: Item,
+    pub version: i64,
 }
 
 impl Repository {
@@ -162,6 +186,29 @@ impl Repository {
             .bind(id.to_string())
             .fetch_optional(self.pool())
             .await
+    }
+
+    /// Read the body and ETag counter from one database snapshot.  Two plain
+    /// reads can otherwise observe different writers and send a body whose
+    /// ETag describes a later version.
+    #[instrument(skip(self))]
+    pub async fn get_item_snapshot(&self, id: Uuid) -> Result<Option<ItemSnapshot>, sqlx::Error> {
+        let mut tx = self.pool().begin().await?;
+        let row = sqlx::query_as::<_, ItemRow>(
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at FROM items WHERE id = ?",
+        )
+        .bind(id.to_string())
+        .fetch_optional(&mut *tx)
+        .await?;
+        let version = sqlx::query_scalar("SELECT version FROM items WHERE id = ?")
+            .bind(id.to_string())
+            .fetch_optional(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(row.zip(version).map(|(row, version)| ItemSnapshot {
+            item: row.into_item(),
+            version,
+        }))
     }
 
     /// Atomic compare-and-swap on `items.version` — the guard that actually
@@ -307,7 +354,7 @@ impl Repository {
             .execute(self.pool())
             .await?;
         }
-        if let Some(ref description) = input.description {
+        if let Some(description) = input.description {
             sqlx::query(
                 "UPDATE items SET description = ?, updated_at = ?, version = version + 1 WHERE id = ?",
             )
@@ -378,11 +425,11 @@ impl Repository {
             .execute(self.pool())
             .await?;
         }
-        if input.assignee.is_some() {
+        if let Some(assignee) = input.assignee {
             sqlx::query(
                 "UPDATE items SET assignee = ?, updated_at = ?, version = version + 1 WHERE id = ?",
             )
-            .bind(&input.assignee)
+            .bind(assignee)
             .bind(&now)
             .bind(id.to_string())
             .execute(self.pool())
@@ -464,6 +511,199 @@ impl Repository {
         }
 
         self.get_item(id).await
+    }
+
+    /// Apply a browser/API PATCH as one all-or-nothing mutation.  The
+    /// `BEGIN IMMEDIATE` lock covers the WIP count and the conditional update;
+    /// the generated SQL changes every addressed column plus timestamps and
+    /// version exactly once.
+    #[instrument(skip(self, input, workflow))]
+    pub async fn update_item_atomically(
+        &self,
+        id: Uuid,
+        input: UpdateItem,
+        workflow: &WorkflowConfig,
+        expected_version: Option<i64>,
+    ) -> Result<AtomicItemUpdateOutcome, sqlx::Error> {
+        let now = Utc::now().to_rfc3339();
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
+
+        let current = sqlx::query_as::<_, ItemRow>(
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at FROM items WHERE id = ?",
+        )
+        .bind(id.to_string())
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some(current) = current else {
+            tx.rollback().await?;
+            return Ok(AtomicItemUpdateOutcome::NotFound);
+        };
+        let current_version: i64 = sqlx::query_scalar("SELECT version FROM items WHERE id = ?")
+            .bind(id.to_string())
+            .fetch_one(&mut *tx)
+            .await?;
+        if expected_version.is_some_and(|expected| expected != current_version) {
+            tx.rollback().await?;
+            return Ok(AtomicItemUpdateOutcome::PreconditionFailed);
+        }
+
+        let old_status = current.status.clone();
+        let addresses_a_field = input.title.is_some()
+            || input.description.is_some()
+            || input.item_type.is_some()
+            || input.status.is_some()
+            || input.priority.is_some()
+            || input.estimate.is_some()
+            || input.estimate_unit.is_some()
+            || input.tags.is_some()
+            || input.due_date.is_some()
+            || input.sprint_id.is_some()
+            || input.sort_order.is_some()
+            || input.assignee.is_some();
+        // Match the pre-A2 no-op PATCH behavior: without an addressed field
+        // there is no logical mutation and therefore no version to consume.
+        if !addresses_a_field {
+            let item = current.into_item();
+            tx.commit().await?;
+            return Ok(AtomicItemUpdateOutcome::Updated {
+                item: Box::new(item),
+                version: current_version,
+                old_status,
+            });
+        }
+        let status_category = if let Some(target) = input.status.as_deref() {
+            if let Err(error) = workflow.validate_transition(&old_status, target) {
+                tx.rollback().await?;
+                return Ok(AtomicItemUpdateOutcome::Rejected(error));
+            }
+            let count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ?",
+            )
+            .bind(&current.project_id)
+            .bind(target)
+            .fetch_one(&mut *tx)
+            .await?;
+            if let Err(error) = workflow.check_wip_limit(target, count as usize) {
+                tx.rollback().await?;
+                return Ok(AtomicItemUpdateOutcome::Rejected(error));
+            }
+            workflow
+                .statuses
+                .iter()
+                .find(|status| status.name == target)
+                .map(|status| status.category.clone())
+        } else {
+            None
+        };
+
+        let mut query = QueryBuilder::<Sqlite>::new("UPDATE items SET ");
+        let mut fields = query.separated(", ");
+        if let Some(title) = input.title.as_deref() {
+            fields.push("title = ").push_bind_unseparated(title);
+        }
+        if let Some(description) = input.description.as_ref() {
+            fields
+                .push("description = ")
+                .push_bind_unseparated(description.as_deref());
+        }
+        if let Some(item_type) = input.item_type.as_ref() {
+            fields
+                .push("item_type = ")
+                .push_bind_unseparated(item_type.to_string());
+        }
+        if let Some(status) = input.status.as_deref() {
+            fields.push("status = ").push_bind_unseparated(status);
+        }
+        if let Some(priority) = input.priority.as_ref() {
+            fields
+                .push("priority = ")
+                .push_bind_unseparated(priority.to_string());
+        }
+        if let Some(estimate) = input.estimate {
+            fields.push("estimate = ").push_bind_unseparated(estimate);
+        }
+        if let Some(estimate_unit) = input.estimate_unit.as_ref() {
+            let value = estimate_unit
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+            fields.push("estimate_unit = ").push_bind_unseparated(value);
+        }
+        if let Some(tags) = input.tags.as_ref() {
+            let value = serde_json::to_string(tags)
+                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+            fields.push("tags = ").push_bind_unseparated(value);
+        }
+        if let Some(due_date) = input.due_date.as_ref() {
+            fields
+                .push("due_date = ")
+                .push_bind_unseparated(due_date.as_ref().map(|date| date.to_rfc3339()));
+        }
+        if let Some(sprint_id) = input.sprint_id.as_ref() {
+            fields
+                .push("sprint_id = ")
+                .push_bind_unseparated(sprint_id.map(|sprint_id| sprint_id.to_string()));
+        }
+        if let Some(sort_order) = input.sort_order {
+            fields
+                .push("sort_order = ")
+                .push_bind_unseparated(sort_order);
+        }
+        if let Some(assignee) = input.assignee.as_ref() {
+            fields
+                .push("assignee = ")
+                .push_bind_unseparated(assignee.as_deref());
+        }
+        match status_category {
+            Some(StatusCategory::InProgress) => {
+                fields
+                    .push("started_at = COALESCE(started_at, ")
+                    .push_bind_unseparated(&now)
+                    .push_unseparated(")");
+                fields.push("completed_at = NULL");
+            }
+            Some(StatusCategory::Done) => {
+                fields
+                    .push("completed_at = COALESCE(completed_at, ")
+                    .push_bind_unseparated(&now)
+                    .push_unseparated(")");
+            }
+            Some(StatusCategory::Todo) => {
+                fields.push("completed_at = NULL");
+            }
+            None => {}
+        }
+        fields.push("updated_at = ").push_bind_unseparated(&now);
+        fields.push("version = version + 1");
+        drop(fields);
+        query.push(" WHERE id = ").push_bind(id.to_string());
+        if let Some(expected_version) = expected_version {
+            query.push(" AND version = ").push_bind(expected_version);
+        }
+        let result = query.build().execute(&mut *tx).await?;
+        if result.rows_affected() != 1 {
+            tx.rollback().await?;
+            return Ok(if expected_version.is_some() {
+                AtomicItemUpdateOutcome::PreconditionFailed
+            } else {
+                AtomicItemUpdateOutcome::NotFound
+            });
+        }
+
+        let item = sqlx::query_as::<_, ItemRow>(
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, source, started_at, completed_at, created_at, updated_at FROM items WHERE id = ?",
+        )
+        .bind(id.to_string())
+        .fetch_one(&mut *tx)
+        .await?
+        .into_item();
+        tx.commit().await?;
+        Ok(AtomicItemUpdateOutcome::Updated {
+            item: Box::new(item),
+            version: current_version + 1,
+            old_status,
+        })
     }
 
     #[instrument(skip(self))]

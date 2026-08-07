@@ -17,7 +17,7 @@ function ok(body: unknown = {}): Response {
 
 function lastCall() {
   const [url, init] = fetchMock.mock.calls.at(-1)!;
-  return { url: url as string, method: (init?.method ?? 'GET') as string, body: init?.body };
+  return { url: url as string, method: (init?.method ?? 'GET') as string, body: init?.body, headers: init?.headers };
 }
 
 beforeEach(() => {
@@ -49,9 +49,20 @@ describe('api.items', () => {
       method: 'GET',
     });
   });
-  it('update → PATCH /api/items/{id}', async () => {
+  it('update fetches an ETag then sends it as If-Match', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ item: { id: 'i1' } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ETag: '"i1-1"' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'i1' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ETag: '"i1-2"' },
+      }));
     await api.items.update('i1', { status: 'done' });
-    expect(lastCall()).toMatchObject({ url: '/api/items/i1', method: 'PATCH' });
+    const call = lastCall();
+    expect(call).toMatchObject({ url: '/api/items/i1', method: 'PATCH' });
+    expect(new Headers(call.headers).get('If-Match')).toBe('"i1-1"');
   });
 });
 
