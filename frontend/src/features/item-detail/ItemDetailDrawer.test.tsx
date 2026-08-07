@@ -50,7 +50,7 @@ beforeEach(() => {
     return Promise.resolve(
       new Response(JSON.stringify(jsonOf(url)), {
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ETag: '"item-1:1"' },
       }),
     );
   });

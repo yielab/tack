@@ -117,7 +117,9 @@ async fn update_item_never_changes_source() {
             item.id,
             UpdateItem {
                 title: Some("Edited title".into()),
-                description: Some("Edited description, possibly attacker-authored".into()),
+                description: Some(Some(
+                    "Edited description, possibly attacker-authored".into(),
+                )),
                 ..Default::default()
             },
         )

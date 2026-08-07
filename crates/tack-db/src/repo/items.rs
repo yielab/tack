@@ -597,86 +597,87 @@ impl Repository {
         };
 
         let mut query = QueryBuilder::<Sqlite>::new("UPDATE items SET ");
-        let mut fields = query.separated(", ");
-        if let Some(title) = input.title.as_deref() {
-            fields.push("title = ").push_bind_unseparated(title);
-        }
-        if let Some(description) = input.description.as_ref() {
-            fields
-                .push("description = ")
-                .push_bind_unseparated(description.as_deref());
-        }
-        if let Some(item_type) = input.item_type.as_ref() {
-            fields
-                .push("item_type = ")
-                .push_bind_unseparated(item_type.to_string());
-        }
-        if let Some(status) = input.status.as_deref() {
-            fields.push("status = ").push_bind_unseparated(status);
-        }
-        if let Some(priority) = input.priority.as_ref() {
-            fields
-                .push("priority = ")
-                .push_bind_unseparated(priority.to_string());
-        }
-        if let Some(estimate) = input.estimate {
-            fields.push("estimate = ").push_bind_unseparated(estimate);
-        }
-        if let Some(estimate_unit) = input.estimate_unit.as_ref() {
-            let value = estimate_unit
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()
-                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
-            fields.push("estimate_unit = ").push_bind_unseparated(value);
-        }
-        if let Some(tags) = input.tags.as_ref() {
-            let value = serde_json::to_string(tags)
-                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
-            fields.push("tags = ").push_bind_unseparated(value);
-        }
-        if let Some(due_date) = input.due_date.as_ref() {
-            fields
-                .push("due_date = ")
-                .push_bind_unseparated(due_date.as_ref().map(|date| date.to_rfc3339()));
-        }
-        if let Some(sprint_id) = input.sprint_id.as_ref() {
-            fields
-                .push("sprint_id = ")
-                .push_bind_unseparated(sprint_id.map(|sprint_id| sprint_id.to_string()));
-        }
-        if let Some(sort_order) = input.sort_order {
-            fields
-                .push("sort_order = ")
-                .push_bind_unseparated(sort_order);
-        }
-        if let Some(assignee) = input.assignee.as_ref() {
-            fields
-                .push("assignee = ")
-                .push_bind_unseparated(assignee.as_deref());
-        }
-        match status_category {
-            Some(StatusCategory::InProgress) => {
+        {
+            let mut fields = query.separated(", ");
+            if let Some(title) = input.title.as_deref() {
+                fields.push("title = ").push_bind_unseparated(title);
+            }
+            if let Some(description) = input.description.as_ref() {
                 fields
-                    .push("started_at = COALESCE(started_at, ")
-                    .push_bind_unseparated(&now)
-                    .push_unseparated(")");
-                fields.push("completed_at = NULL");
+                    .push("description = ")
+                    .push_bind_unseparated(description.as_deref());
             }
-            Some(StatusCategory::Done) => {
+            if let Some(item_type) = input.item_type.as_ref() {
                 fields
-                    .push("completed_at = COALESCE(completed_at, ")
-                    .push_bind_unseparated(&now)
-                    .push_unseparated(")");
+                    .push("item_type = ")
+                    .push_bind_unseparated(item_type.to_string());
             }
-            Some(StatusCategory::Todo) => {
-                fields.push("completed_at = NULL");
+            if let Some(status) = input.status.as_deref() {
+                fields.push("status = ").push_bind_unseparated(status);
             }
-            None => {}
+            if let Some(priority) = input.priority.as_ref() {
+                fields
+                    .push("priority = ")
+                    .push_bind_unseparated(priority.to_string());
+            }
+            if let Some(estimate) = input.estimate {
+                fields.push("estimate = ").push_bind_unseparated(estimate);
+            }
+            if let Some(estimate_unit) = input.estimate_unit.as_ref() {
+                let value = estimate_unit
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()
+                    .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+                fields.push("estimate_unit = ").push_bind_unseparated(value);
+            }
+            if let Some(tags) = input.tags.as_ref() {
+                let value = serde_json::to_string(tags)
+                    .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+                fields.push("tags = ").push_bind_unseparated(value);
+            }
+            if let Some(due_date) = input.due_date.as_ref() {
+                fields
+                    .push("due_date = ")
+                    .push_bind_unseparated(due_date.as_ref().map(|date| date.to_rfc3339()));
+            }
+            if let Some(sprint_id) = input.sprint_id.as_ref() {
+                fields
+                    .push("sprint_id = ")
+                    .push_bind_unseparated(sprint_id.map(|sprint_id| sprint_id.to_string()));
+            }
+            if let Some(sort_order) = input.sort_order {
+                fields
+                    .push("sort_order = ")
+                    .push_bind_unseparated(sort_order);
+            }
+            if let Some(assignee) = input.assignee.as_ref() {
+                fields
+                    .push("assignee = ")
+                    .push_bind_unseparated(assignee.as_deref());
+            }
+            match status_category {
+                Some(StatusCategory::InProgress) => {
+                    fields
+                        .push("started_at = COALESCE(started_at, ")
+                        .push_bind_unseparated(&now)
+                        .push_unseparated(")");
+                    fields.push("completed_at = NULL");
+                }
+                Some(StatusCategory::Done) => {
+                    fields
+                        .push("completed_at = COALESCE(completed_at, ")
+                        .push_bind_unseparated(&now)
+                        .push_unseparated(")");
+                }
+                Some(StatusCategory::Todo) => {
+                    fields.push("completed_at = NULL");
+                }
+                None => {}
+            }
+            fields.push("updated_at = ").push_bind_unseparated(&now);
+            fields.push("version = version + 1");
         }
-        fields.push("updated_at = ").push_bind_unseparated(&now);
-        fields.push("version = version + 1");
-        drop(fields);
         query.push(" WHERE id = ").push_bind(id.to_string());
         if let Some(expected_version) = expected_version {
             query.push(" AND version = ").push_bind(expected_version);
