@@ -122,6 +122,7 @@ fn all_migrations() -> Vec<Migration> {
             "060_quarantine_malformed_execution_request_snapshots",
             &MIGRATION_060[..],
         ),
+        ordinary("061_execution_attempt_start_facts", &MIGRATION_061[..]),
     ]
 }
 
@@ -1606,4 +1607,8 @@ const MIGRATION_060: [&str; 1] = [
         WHEN EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(request_snapshot) THEN request_snapshot ELSE '{}' END, '$.permission_policy.tools') AS tool WHERE tool.type IS NOT 'text') THEN 1
         WHEN EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(request_snapshot) THEN request_snapshot ELSE '{}' END, '$.environment') AS environment WHERE environment.type IS NOT 'object' OR ((json_type(environment.value, '$.value') = 'text') + (json_type(environment.value, '$.secret_reference') = 'text')) != 1) THEN 1
         ELSE 0 END = 1)",
+];
+const MIGRATION_061: [&str; 2] = [
+    "ALTER TABLE execution_attempts ADD COLUMN prepared_at TEXT",
+    "ALTER TABLE execution_attempts ADD COLUMN process_id TEXT",
 ];

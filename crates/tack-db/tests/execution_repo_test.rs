@@ -7,6 +7,7 @@ use sqlx::Row;
 use tack_db::{
     Repository, init_pool, migrations,
     repo::execution::{
+        AttemptTransitionInput, AttemptTransitionPhase, AttemptTransitionResult,
         CancellationObservation, CancellationObservationInput, Completion, CompletionResult,
         EnqueueResult, EnrollmentToken, EventApplyResult, EventBatch, ExecutionClock,
         HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewArtifact, NewDecision, NewEvent,
@@ -2971,4 +2972,212 @@ async fn queue_and_history_indexes_are_used() {
         row.get::<String, _>(3)
             .contains("idx_execution_events_timeline")
     }));
+}
+
+#[tokio::test]
+async fn attempt_start_transitions_are_naturally_idempotent_and_freeze_facts() {
+    let (repo, item_id, clock) = ready_repo().await;
+    repo.enqueue_execution(
+        request("request-start", &item_id, "key-start", "same"),
+        &clock,
+    )
+    .await
+    .unwrap();
+    let lease = claim_lease(
+        &repo,
+        "runner-a",
+        "attempt-start",
+        Duration::seconds(60),
+        &clock,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    let preparing = AttemptTransitionInput {
+        runner_id: "runner-a",
+        attempt_id: "attempt-start",
+        fencing_token: lease.fencing_token,
+        phase: AttemptTransitionPhase::Preparing,
+        workspace_id: "workspace-1",
+        base_revision: "abc123",
+        process_id: None,
+    };
+    let prepared_at = match repo
+        .transition_attempt_with_facts(preparing.clone(), &clock)
+        .await
+        .unwrap()
+    {
+        AttemptTransitionResult::Applied(response) => response.committed_at,
+        result => panic!("expected preparation to apply, got {result:?}"),
+    };
+    clock.advance(Duration::seconds(1));
+    assert!(matches!(
+        repo.transition_attempt_with_facts(preparing, &clock)
+            .await
+            .unwrap(),
+        AttemptTransitionResult::Replayed(response) if response.committed_at == prepared_at
+    ));
+    assert_eq!(
+        repo.transition_attempt_with_facts(
+            AttemptTransitionInput {
+                runner_id: "runner-a",
+                attempt_id: "attempt-start",
+                fencing_token: lease.fencing_token,
+                phase: AttemptTransitionPhase::Preparing,
+                workspace_id: "workspace-changed",
+                base_revision: "abc123",
+                process_id: None,
+            },
+            &clock,
+        )
+        .await
+        .unwrap(),
+        AttemptTransitionResult::Conflict
+    );
+
+    let running = AttemptTransitionInput {
+        runner_id: "runner-a",
+        attempt_id: "attempt-start",
+        fencing_token: lease.fencing_token,
+        phase: AttemptTransitionPhase::Running,
+        workspace_id: "workspace-1",
+        base_revision: "abc123",
+        process_id: Some("process-1"),
+    };
+    let started_at = match repo
+        .transition_attempt_with_facts(running.clone(), &clock)
+        .await
+        .unwrap()
+    {
+        AttemptTransitionResult::Applied(response) => response.committed_at,
+        result => panic!("expected start to apply, got {result:?}"),
+    };
+    clock.advance(Duration::seconds(1));
+    assert!(matches!(
+        repo.transition_attempt_with_facts(
+            AttemptTransitionInput {
+                phase: AttemptTransitionPhase::Preparing,
+                process_id: None,
+                ..running.clone()
+            },
+            &clock,
+        )
+        .await
+        .unwrap(),
+        AttemptTransitionResult::Replayed(response)
+            if response.state == "preparing" && response.committed_at == prepared_at
+    ));
+    assert!(matches!(
+        repo.transition_attempt_with_facts(running, &clock)
+            .await
+            .unwrap(),
+        AttemptTransitionResult::Replayed(response) if response.committed_at == started_at
+    ));
+    assert_eq!(
+        repo.transition_attempt_with_facts(
+            AttemptTransitionInput {
+                runner_id: "runner-a",
+                attempt_id: "attempt-start",
+                fencing_token: lease.fencing_token,
+                phase: AttemptTransitionPhase::Running,
+                workspace_id: "workspace-1",
+                base_revision: "abc123",
+                process_id: Some("process-changed"),
+            },
+            &clock,
+        )
+        .await
+        .unwrap(),
+        AttemptTransitionResult::Conflict
+    );
+
+    let row = sqlx::query(
+        "SELECT state,workspace_id,base_revision,process_id,prepared_at,started_at FROM execution_attempts WHERE id='attempt-start'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(row.get::<String, _>("state"), "running");
+    assert_eq!(row.get::<String, _>("workspace_id"), "workspace-1");
+    assert_eq!(row.get::<String, _>("base_revision"), "abc123");
+    assert_eq!(row.get::<String, _>("process_id"), "process-1");
+    assert_eq!(row.get::<String, _>("prepared_at"), prepared_at);
+    assert_eq!(row.get::<String, _>("started_at"), started_at);
+}
+
+#[tokio::test]
+async fn attempt_start_transition_rejects_wrong_order_and_stale_authority_without_writes() {
+    let (repo, item_id, clock) = ready_repo().await;
+    repo.enqueue_execution(
+        request("request-order", &item_id, "key-order", "same"),
+        &clock,
+    )
+    .await
+    .unwrap();
+    let lease = claim_lease(
+        &repo,
+        "runner-a",
+        "attempt-order",
+        Duration::seconds(5),
+        &clock,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    let running = AttemptTransitionInput {
+        runner_id: "runner-a",
+        attempt_id: "attempt-order",
+        fencing_token: lease.fencing_token,
+        phase: AttemptTransitionPhase::Running,
+        workspace_id: "workspace-1",
+        base_revision: "abc123",
+        process_id: Some("process-1"),
+    };
+    assert_eq!(
+        repo.transition_attempt_with_facts(running.clone(), &clock)
+            .await
+            .unwrap(),
+        AttemptTransitionResult::Conflict
+    );
+    assert_eq!(
+        repo.transition_attempt_with_facts(
+            AttemptTransitionInput {
+                fencing_token: lease.fencing_token + 1,
+                ..running.clone()
+            },
+            &clock,
+        )
+        .await
+        .unwrap(),
+        AttemptTransitionResult::Stale
+    );
+    clock.advance(Duration::seconds(6));
+    assert_eq!(
+        repo.transition_attempt_with_facts(
+            AttemptTransitionInput {
+                phase: AttemptTransitionPhase::Preparing,
+                process_id: None,
+                ..running
+            },
+            &clock,
+        )
+        .await
+        .unwrap(),
+        AttemptTransitionResult::Stale
+    );
+
+    let row = sqlx::query(
+        "SELECT state,workspace_id,base_revision,process_id,prepared_at,started_at FROM execution_attempts WHERE id='attempt-order'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(row.get::<String, _>("state"), "leased");
+    assert!(row.get::<Option<String>, _>("workspace_id").is_none());
+    assert!(row.get::<Option<String>, _>("base_revision").is_none());
+    assert!(row.get::<Option<String>, _>("process_id").is_none());
+    assert!(row.get::<Option<String>, _>("prepared_at").is_none());
+    assert!(row.get::<Option<String>, _>("started_at").is_none());
 }
