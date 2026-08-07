@@ -1,0 +1,12 @@
+{
+  "protocol_version": 1,
+  "runner_id": "runr_01J00000000000000000000001",
+  "attempt_id": "att_01J00000000000000000000001",
+  "fencing_token": 7,
+  "recovery_key": "recovery:att_01J00000000000000000000001:7:process_stopped",
+  "observation": "process_stopped",
+  "details": {
+    "journal_state": "prepared",
+    "process_observed": false
+  }
+}

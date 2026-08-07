@@ -71,3 +71,20 @@ Wave 1 branch point after the combined tree passed:
 - OpenAPI source/drift tests, migration crash/retry tests, trust redirect and split-origin
   WebSocket adversarial tests, zero docket-golden drift, fixture parsing/lifecycle coverage,
   and `mdbook build docs/book`.
+
+## Additive v1 recovery-observation amendment
+
+- Added canonical `recovery-observation.request.json` and response fixtures for the separately
+  authenticated `POST /api/runner/v1/attempts/{attempt_id}/recovery-observation` operation.
+  They carry the C3 recovery key, process observation, and non-secret journal evidence, and
+  return one authoritative disposition: `safe_pre_spawn_requeue`, `needs_operator`, or
+  `already_terminal`.
+- `protocol.json` now expressly permits and names additive authenticated operations that leave
+  every existing v1 operation's fields, enum meanings, limits, and semantics unchanged.
+  `lifecycle-transitions.json` records authoritative recovery disposition and replay rules;
+  the existing state-pair rules remain unchanged. ADR 0050 records the route and safety rule.
+- Required downstream work: B1 adds shared DTOs; B2 persists/replays recovery outcomes; C2
+  implements the fenced route; C3 consumes disposition instead of treating all acknowledgements
+  alike; B4 adds fixture conformance. Stable existing errors cover malformed input, stale fence,
+  idempotency conflict, revoked runner, invalid transition and internal failures; no error enum
+  change is required.

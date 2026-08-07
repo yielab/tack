@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "attempt_id": "att_01J00000000000000000000001",
+  "recovery_key": "recovery:att_01J00000000000000000000001:7:process_stopped",
+  "disposition": "safe_pre_spawn_requeue",
+  "replayed": false,
+  "committed_at": "2026-08-06T12:25:01Z"
+}

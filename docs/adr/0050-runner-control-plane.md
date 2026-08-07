@@ -50,6 +50,15 @@ token returns `stale_lease` and writes nothing. Event rows and their checkpoint 
 one transaction. Replayed event batches and terminal reports are no-ops. Cancellation is
 requested and observed separately; a sent signal is not proof of cancellation.
 
+Recovery observation is an additive runner-v1 operation at
+`POST /api/runner/v1/attempts/{attempt_id}/recovery-observation`. It carries an opaque recovery
+idempotency key, a local process observation, and non-secret journal evidence. The server first
+authenticates runner ownership and fencing, then determines the disposition from authoritative
+attempt state: only a stopped process with authoritative absence of a server-observed start may
+be safely requeued; running or ambiguous evidence becomes `needs_operator`; a terminal attempt
+acknowledges `already_terminal` without transition. A same-key byte-equivalent replay returns the
+original disposition, while a changed request is an `idempotency_conflict`.
+
 ## Enrollment, revocation and rotation
 
 - An operator issues a short-lived, single-use enrollment token. Only its hash and expiry
@@ -71,9 +80,11 @@ The JSON fixtures in `docs/contracts/runner-v1/` are the language-neutral author
 Protocol v1 is the integer `1`. During this cycle an API accepts only v1 and answers
 `unsupported_protocol` with its supported range otherwise. Additive fields must be
 optional and ignored when unknown; meanings, required fields, enum values and limits may
-not change in-place. A semantic change requires a new protocol version and fixtures. Phase
-57 must prove compatibility with one previous released runner before widening the accepted
-range.
+not change in-place. A separately authenticated operation may be added in-place only when it
+does not change any existing operation's fields, enums, limits or semantics; it must be named in
+`protocol.json` with paired fixtures. A semantic change requires a new protocol version and
+fixtures. Phase 57 must prove compatibility with one previous released runner before widening the
+accepted range.
 
 ## Consequences
 
@@ -86,4 +97,3 @@ range.
 - Docket can be absent without disabling the runner path.
 - v1 deliberately excludes automatic task decomposition, multi-agent fan-out, a generic
   plugin ABI, a Tack model gateway and GitHub Actions execution.
-
