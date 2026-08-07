@@ -7,12 +7,10 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 let fetchMock: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
-  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:x');
-  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
   fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
     const url = String(input);
     if (url.endsWith('/api/backup')) {
-      return Promise.resolve(new Response(new Blob(['DB']), { status: 200 }));
+      return Promise.resolve(new Response('DB', { status: 200 }));
     }
     return Promise.resolve(new Response('{}', { status: 200 }));
   });
@@ -44,9 +42,14 @@ describe('GlobalSettings', () => {
   it('downloads a backup from GET /backup', async () => {
     const { container } = mount();
     findButton(container, 'Download backup').click();
-    await flush();
-    expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/api/backup'))).toBe(true);
-    expect(URL.createObjectURL).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/api/backup'))).toBe(true);
+      expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    });
+    const downloaded = vi.mocked(URL.createObjectURL).mock.calls[0][0];
+    expect(Object.prototype.toString.call(downloaded)).toBe('[object Blob]');
+    expect(downloaded.size).toBe(2);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:vitest/2');
   });
 
   it('posts a restore only after the confirm dialog is accepted', async () => {

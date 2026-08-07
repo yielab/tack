@@ -35,11 +35,9 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:x');
-  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
   fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
     const url = String(input);
-    if (url.includes('/export')) return Promise.resolve(new Response(new Blob(['x']), { status: 200 }));
+    if (url.includes('/export')) return Promise.resolve(new Response('x', { status: 200 }));
     if (url.endsWith('/api/projects/p1/roles')) return Promise.resolve(new Response('[]', { status: 200 }));
     if (url.endsWith('/api/projects/import')) return Promise.resolve(new Response(JSON.stringify({ id: 'new' }), { status: 200 }));
     if (url.endsWith('/api/projects/p1/import-csv')) return Promise.resolve(new Response(JSON.stringify({ created: 3, skipped: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
@@ -99,9 +97,14 @@ describe('Settings panels', () => {
     await flush();
 
     btn(container, 'Export JSON').click();
-    await flush();
-    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/projects/p1/export?format=json'))).toBe(true);
-    expect(URL.createObjectURL).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/projects/p1/export?format=json'))).toBe(true);
+      expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    });
+    const exported = vi.mocked(URL.createObjectURL).mock.calls[0][0];
+    expect(Object.prototype.toString.call(exported)).toBe('[object Blob]');
+    expect(exported.size).toBe(1);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:vitest/1');
 
     const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
     const file = new File([JSON.stringify({ project: {}, items: [] })], 'p.json', { type: 'application/json' });

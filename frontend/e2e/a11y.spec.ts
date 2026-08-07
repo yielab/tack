@@ -645,7 +645,7 @@ test('approvals inbox confirmation modal has no accessibility violations', async
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 });
 
-test('approvals inbox (decisions disabled — no TACK_ORCH_APPROVAL_TOKEN) has no accessibility violations', async ({
+test('approvals inbox without a saved browser decision credential has no accessibility violations', async ({
   page,
 }) => {
   await page.route('**/api/approvals', (route) => {
@@ -653,14 +653,18 @@ test('approvals inbox (decisions disabled — no TACK_ORCH_APPROVAL_TOKEN) has n
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ rows: mockApprovalRows, grant_available: false }),
+      // The server no longer guesses decision availability in a list response.
+      // Authorization is decided by the separately supplied browser credential
+      // on the real POST, so the action controls remain visible here.
+      body: JSON.stringify({ rows: mockApprovalRows }),
     });
   });
 
   await page.goto('/approvals');
   await waitForApp(page);
   await expect(page.getByText('Deploy service')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Grant' })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Your approval token' })).toHaveValue('');
+  await expect(page.getByRole('button', { name: 'Grant' })).toHaveCount(mockApprovalRows.length);
 
   const violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
