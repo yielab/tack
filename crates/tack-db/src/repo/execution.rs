@@ -731,7 +731,9 @@ fn parse_execution_request_snapshot(serialized: &str) -> Result<serde_json::Valu
     ] {
         snapshot_string(root, field)?;
     }
-    snapshot_field(root, "created_by")?;
+    let created_by = snapshot_object(snapshot_field(root, "created_by")?, "created_by")?;
+    snapshot_string(created_by, "source")?;
+    snapshot_string(created_by, "subject_id")?;
     DateTime::parse_from_rfc3339(&snapshot_string(root, "created_at")?)
         .map_err(|error| snapshot_error(format!("created_at must be RFC3339: {error}")))?;
     let selector = snapshot_object(snapshot_field(root, "selector")?, "selector")?;
@@ -751,8 +753,14 @@ fn parse_execution_request_snapshot(serialized: &str) -> Result<serde_json::Valu
     )?;
     snapshot_string(profile, "name")?;
     snapshot_string(profile, "instructions")?;
-    snapshot_field(profile, "tool_policy")?;
-    snapshot_field(profile, "budgets")?;
+    snapshot_object(
+        snapshot_field(profile, "tool_policy")?,
+        "resolved_agent_profile.tool_policy",
+    )?;
+    snapshot_object(
+        snapshot_field(profile, "budgets")?,
+        "resolved_agent_profile.budgets",
+    )?;
     snapshot_field(profile, "timeout_seconds")?
         .as_u64()
         .ok_or_else(|| snapshot_error("resolved_agent_profile.timeout_seconds must be u64"))?;
@@ -781,21 +789,25 @@ fn parse_execution_request_snapshot(serialized: &str) -> Result<serde_json::Valu
     snapshot_field(root, "timeout_seconds")?
         .as_u64()
         .ok_or_else(|| snapshot_error("timeout_seconds must be u64"))?;
-    snapshot_field(root, "budgets")?;
+    snapshot_object(snapshot_field(root, "budgets")?, "budgets")?;
     snapshot_nullable_string(root, "status_map_policy_id")?;
     let environment = snapshot_object(snapshot_field(root, "environment")?, "environment")?;
     for value in environment.values() {
         let environment_value = snapshot_object(value, "environment value")?;
-        snapshot_nullable_string(environment_value, "value")?;
-        snapshot_nullable_string(environment_value, "secret_reference")?;
+        let value = snapshot_nullable_string(environment_value, "value")?;
+        let secret_reference = snapshot_nullable_string(environment_value, "secret_reference")?;
+        if value.is_some() == secret_reference.is_some() {
+            return Err(snapshot_error(
+                "environment entry must contain exactly one value or secret_reference",
+            ));
+        }
     }
-    snapshot_field(root, "metadata")?;
+    snapshot_object(snapshot_field(root, "metadata")?, "metadata")?;
     Ok(value)
 }
 
 fn validate_execution_request_snapshot(
     input: &NewExecutionRequest<'_>,
-    created_at: &str,
 ) -> Result<String, sqlx::Error> {
     let snapshot = parse_execution_request_snapshot(input.request_snapshot)?;
     let root = snapshot_object(&snapshot, "snapshot")?;
@@ -811,15 +823,6 @@ fn validate_execution_request_snapshot(
     matches("request_id", input.id)?;
     matches("item_id", input.item_id)?;
     matches("idempotency_key", input.idempotency_key)?;
-    let snapshot_created_at =
-        DateTime::parse_from_rfc3339(&snapshot_string(root, "created_at")?)
-            .map_err(|error| snapshot_error(format!("created_at must be RFC3339: {error}")))?;
-    let normalized_created_at = DateTime::parse_from_rfc3339(created_at).map_err(|error| {
-        snapshot_error(format!("normalized created_at must be RFC3339: {error}"))
-    })?;
-    if snapshot_created_at != normalized_created_at {
-        return Err(snapshot_error("created_at contradicts normalized request"));
-    }
     let selector = snapshot_object(snapshot_field(root, "selector")?, "selector")?;
     if snapshot_string(selector, "kind")? != input.selector_kind {
         return Err(snapshot_error("selector contradicts normalized request"));
@@ -872,7 +875,23 @@ fn validate_execution_request_snapshot(
             )));
         }
     }
-    serde_json::to_string(&snapshot).map_err(|error| snapshot_error(error.to_string()))
+    serde_json::to_string(&canonical_json(snapshot))
+        .map_err(|error| snapshot_error(error.to_string()))
+}
+
+fn snapshot_created_at_matches_now(snapshot: &str, now: &str) -> Result<(), sqlx::Error> {
+    let snapshot = parse_execution_request_snapshot(snapshot)?;
+    let root = snapshot_object(&snapshot, "snapshot")?;
+    let snapshot_created_at =
+        DateTime::parse_from_rfc3339(&snapshot_string(root, "created_at")?)
+            .map_err(|error| snapshot_error(format!("created_at must be RFC3339: {error}")))?;
+    let normalized_created_at = DateTime::parse_from_rfc3339(now).map_err(|error| {
+        snapshot_error(format!("normalized created_at must be RFC3339: {error}"))
+    })?;
+    if snapshot_created_at != normalized_created_at {
+        return Err(snapshot_error("created_at contradicts normalized request"));
+    }
+    Ok(())
 }
 
 fn lease_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Lease, sqlx::Error> {
@@ -1595,24 +1614,27 @@ impl Repository {
         clock: &dyn ExecutionClock,
     ) -> Result<EnqueueResult, sqlx::Error> {
         let now = stamp(clock);
-        let request_snapshot = validate_execution_request_snapshot(&input, &now)?;
+        let request_snapshot = validate_execution_request_snapshot(&input)?;
         let mut tx = self.pool().begin().await?;
-        let existing: Option<(String, String)> = sqlx::query_as(
-            "SELECT id, request_fingerprint FROM execution_requests \
+        let existing: Option<(String, String, String)> = sqlx::query_as(
+            "SELECT id, request_fingerprint, request_snapshot FROM execution_requests \
              WHERE idempotency_scope = ? AND idempotency_key = ?",
         )
         .bind(input.idempotency_scope)
         .bind(input.idempotency_key)
         .fetch_optional(&mut *tx)
         .await?;
-        if let Some((id, fingerprint)) = existing {
+        if let Some((id, fingerprint, stored_snapshot)) = existing {
             tx.commit().await?;
-            return Ok(if fingerprint == input.request_fingerprint {
-                EnqueueResult::Replayed(id)
-            } else {
-                EnqueueResult::Conflict
-            });
+            return Ok(
+                if fingerprint == input.request_fingerprint && stored_snapshot == request_snapshot {
+                    EnqueueResult::Replayed(id)
+                } else {
+                    EnqueueResult::Conflict
+                },
+            );
         }
+        snapshot_created_at_matches_now(&request_snapshot, &now)?;
         sqlx::query(
             "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key, \
              request_fingerprint, selector_kind, selector_id, agent_profile_id, agent_profile_snapshot, \

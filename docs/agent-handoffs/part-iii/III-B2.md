@@ -183,6 +183,14 @@
 - Focused coverage uses full fixtures and proves removed, malformed, cross-field, and clock
   mismatch snapshots create no row; it upgrades through migrations 049–058 then proves M059
   quarantines the legacy queued record without data loss.
+- Exact enqueue retries compare the canonical immutable snapshot stored with the original request
+  before the fresh-request clock check. They therefore replay after time advances, while a
+  changed `created_at` (or any other frozen field) is a conflict. Fresh inserts still require
+  `created_at` to match the injected clock.
+- Migration 060 expands quarantine to every nonterminal malformed or partial snapshot, including
+  pre-existing three-key cohorts, without altering terminal historical rows. Snapshot validation
+  now requires typed `created_by`, object-valued budgets/metadata/profile policies, a string
+  repository kind, and exactly one literal value or secret reference for each environment entry.
 
 ### Legacy boundary cleanup
 

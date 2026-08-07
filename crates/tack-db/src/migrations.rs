@@ -118,6 +118,10 @@ fn all_migrations() -> Vec<Migration> {
             "059_quarantine_legacy_execution_request_snapshots",
             &MIGRATION_059[..],
         ),
+        ordinary(
+            "060_quarantine_malformed_execution_request_snapshots",
+            &MIGRATION_060[..],
+        ),
     ]
 }
 
@@ -1554,4 +1558,48 @@ const MIGRATION_058: [&str; 2] = [
 ];
 const MIGRATION_059: [&str; 1] = [
     "UPDATE execution_requests SET state = 'needs_operator', updated_at = created_at WHERE state = 'queued' AND request_snapshot = '{}'",
+];
+const MIGRATION_060: [&str; 1] = [
+    "UPDATE execution_requests SET state = 'needs_operator', updated_at = created_at WHERE state NOT IN ('succeeded','failed','cancelled') AND CASE
+        WHEN json_valid(request_snapshot) = 0 THEN 1
+        WHEN json_type(request_snapshot) IS NOT 'object' THEN 1
+        WHEN json_type(request_snapshot, '$.request_id') IS NOT 'text' THEN 1
+        WHEN json_type(request_snapshot, '$.item_id') IS NOT 'text' THEN 1
+        WHEN json_type(request_snapshot, '$.idempotency_key') IS NOT 'text' THEN 1
+        WHEN json_type(request_snapshot, '$.created_by') IS NOT 'object' THEN 1
+        WHEN json_type(request_snapshot, '$.created_by.source') IS NOT 'text' THEN 1
+        WHEN json_type(request_snapshot, '$.created_by.subject_id') IS NOT 'text' THEN 1
+        WHEN json_type(request_snapshot, '$.created_at') IS NOT 'text' THEN 1
+        WHEN datetime(json_extract(request_snapshot, '$.created_at')) IS NULL THEN 1
+        WHEN json_type(request_snapshot, '$.selector') IS NOT 'object' THEN 1
+        WHEN json_type(request_snapshot, '$.selector.kind') IS NOT 'text' THEN 1
+        WHEN json_extract(request_snapshot, '$.selector.kind') NOT IN ('exact_runner','fleet','any') THEN 1
+        WHEN json_extract(request_snapshot, '$.selector.kind') = 'exact_runner' AND json_type(request_snapshot, '$.selector.runner_id') IS NOT 'text' THEN 1
+        WHEN json_extract(request_snapshot, '$.selector.kind') = 'fleet' AND json_type(request_snapshot, '$.selector.fleet_id') IS NOT 'text' THEN 1
+        WHEN json_type(request_snapshot, '$.agent_profile_id') IS NOT 'text' THEN 1
+        WHEN json_type(request_snapshot, '$.requested_harness_kind') IS NOT 'text' THEN 1
+        WHEN json_type(request_snapshot, '$.requested_model_provider') IS NOT 'text' AND json_type(request_snapshot, '$.requested_model_provider') IS NOT 'null' THEN 1
+        WHEN json_type(request_snapshot, '$.requested_model_id') IS NOT 'text' AND json_type(request_snapshot, '$.requested_model_id') IS NOT 'null' THEN 1
+        WHEN json_type(request_snapshot, '$.resolved_agent_profile') IS NOT 'object' THEN 1
+        WHEN json_type(request_snapshot, '$.resolved_agent_profile.name') IS NOT 'text' THEN 1
+        WHEN json_type(request_snapshot, '$.resolved_agent_profile.instructions') IS NOT 'text' THEN 1
+        WHEN json_type(request_snapshot, '$.resolved_agent_profile.tool_policy') IS NOT 'object' THEN 1
+        WHEN json_type(request_snapshot, '$.resolved_agent_profile.timeout_seconds') NOT IN ('integer','real') THEN 1
+        WHEN json_type(request_snapshot, '$.resolved_agent_profile.budgets') IS NOT 'object' THEN 1
+        WHEN json_type(request_snapshot, '$.repository') IS NOT 'object' THEN 1
+        WHEN json_type(request_snapshot, '$.repository.kind') IS NOT 'text' THEN 1
+        WHEN json_type(request_snapshot, '$.repository.remote') IS NOT 'text' THEN 1
+        WHEN json_type(request_snapshot, '$.repository.base_revision') IS NOT 'text' THEN 1
+        WHEN json_type(request_snapshot, '$.repository.subdirectory') IS NOT 'text' AND json_type(request_snapshot, '$.repository.subdirectory') IS NOT 'null' THEN 1
+        WHEN json_type(request_snapshot, '$.permission_policy') IS NOT 'object' THEN 1
+        WHEN json_type(request_snapshot, '$.permission_policy.tools') IS NOT 'array' THEN 1
+        WHEN json_type(request_snapshot, '$.permission_policy.network') IS NOT 'true' AND json_type(request_snapshot, '$.permission_policy.network') IS NOT 'false' THEN 1
+        WHEN json_type(request_snapshot, '$.timeout_seconds') NOT IN ('integer','real') THEN 1
+        WHEN json_type(request_snapshot, '$.budgets') IS NOT 'object' THEN 1
+        WHEN json_type(request_snapshot, '$.status_map_policy_id') IS NOT 'text' AND json_type(request_snapshot, '$.status_map_policy_id') IS NOT 'null' THEN 1
+        WHEN json_type(request_snapshot, '$.environment') IS NOT 'object' THEN 1
+        WHEN json_type(request_snapshot, '$.metadata') IS NOT 'object' THEN 1
+        WHEN EXISTS (SELECT 1 FROM json_each(request_snapshot, '$.permission_policy.tools') AS tool WHERE json_type(tool.value) IS NOT 'text') THEN 1
+        WHEN EXISTS (SELECT 1 FROM json_each(request_snapshot, '$.environment') AS environment WHERE json_type(environment.value) IS NOT 'object' OR ((json_type(environment.value, '$.value') = 'text') + (json_type(environment.value, '$.secret_reference') = 'text')) != 1) THEN 1
+        ELSE 0 END = 1",
 ];
