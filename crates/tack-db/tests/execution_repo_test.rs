@@ -164,6 +164,9 @@ async fn heartbeat_replays_and_recovery_is_audited_once() {
     let leases = [HeartbeatLease {
         attempt_id: "attempt-a",
         fencing_token: lease.fencing_token,
+        state: "leased",
+        journal_state: "prepared",
+        last_event_checkpoint: None,
     }];
     let sent_at = clock.now();
     assert!(matches!(
@@ -280,7 +283,7 @@ async fn structured_events_and_cancellation_observation_replay() {
                 cancellation_request_id: "cancel-z",
                 observed_at: clock.now(),
                 details: "{}",
-                observation: "{}",
+                observation: r#""process_stopped""#,
             },
             &clock
         )
@@ -297,7 +300,7 @@ async fn structured_events_and_cancellation_observation_replay() {
                 cancellation_request_id: "cancel-z",
                 observed_at: clock.now(),
                 details: "{}",
-                observation: "{}",
+                observation: r#""process_stopped""#,
             },
             &clock
         )
@@ -687,7 +690,7 @@ fn cancellation_input<'a>(
         cancellation_request_id,
         observed_at,
         details: r#"{"detail":{"b":2,"a":1}}"#,
-        observation: r#"{"status":"cancelled","signals":["runner"]}"#,
+        observation: r#""process_stopped""#,
     }
 }
 
@@ -1059,7 +1062,7 @@ async fn cancellation_response_loss_replays_authoritative_response_after_time_ad
     clock.advance(Duration::seconds(61));
     let semantic_retry = CancellationObservationInput {
         details: r#"{"detail":{"a":1,"b":2}}"#,
-        observation: r#"{"signals":["runner"],"status":"cancelled"}"#,
+        observation: r#""process_stopped""#,
         ..input
     };
     let replay = repo
@@ -1179,6 +1182,46 @@ async fn cancellation_corrupt_replay_response_fails_closed() {
         .await
         .unwrap();
     assert!(repo.observe_cancellation(input, &clock).await.is_err());
+}
+
+#[tokio::test]
+async fn cancellation_requires_exact_process_stopped_observation_without_write() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-cancellation-observation",
+        "attempt-cancellation-observation",
+    )
+    .await;
+    repo.request_execution_cancellation("request-cancellation-observation", &clock)
+        .await
+        .unwrap();
+    let invalid = CancellationObservationInput {
+        observation: r#""process_running""#,
+        ..cancellation_input(
+            "attempt-cancellation-observation",
+            fence,
+            "cancellation-observation",
+            clock.now(),
+        )
+    };
+    assert!(repo.observe_cancellation(invalid, &clock).await.is_err());
+    let attempt_state: String = sqlx::query_scalar(
+        "SELECT state FROM execution_attempts WHERE id = 'attempt-cancellation-observation'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    let replay_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_cancellation_replays WHERE attempt_id = 'attempt-cancellation-observation'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(attempt_state, "leased");
+    assert_eq!(replay_count, 0);
 }
 
 #[tokio::test]
@@ -1345,6 +1388,9 @@ async fn heartbeat_rejects_false_free_capacity_while_a_lease_is_active() {
             &[HeartbeatLease {
                 attempt_id: "attempt-heartbeat-free",
                 fencing_token: fence,
+                state: "leased",
+                journal_state: "prepared",
+                last_event_checkpoint: None,
             }],
             Duration::seconds(60),
             &clock,
@@ -1390,10 +1436,16 @@ async fn heartbeat_multi_lease_replay_is_canonical_and_authoritative() {
         HeartbeatLease {
             attempt_id: "attempt-heartbeat-multi-a",
             fencing_token: first_fence,
+            state: "leased",
+            journal_state: "prepared",
+            last_event_checkpoint: None,
         },
         HeartbeatLease {
             attempt_id: "attempt-heartbeat-multi-b",
             fencing_token: second_fence,
+            state: "leased",
+            journal_state: "prepared",
+            last_event_checkpoint: None,
         },
     ];
     let sent_at = clock.now();
@@ -1445,6 +1497,9 @@ async fn heartbeat_exact_replay_after_clock_advance_returns_original_fields() {
     let leases = [HeartbeatLease {
         attempt_id: "attempt-heartbeat-time",
         fencing_token: fence,
+        state: "leased",
+        journal_state: "prepared",
+        last_event_checkpoint: None,
     }];
     let sent_at = clock.now();
     let accepted = repo
@@ -1482,7 +1537,7 @@ async fn heartbeat_exact_replay_after_clock_advance_returns_original_fields() {
 }
 
 #[tokio::test]
-async fn heartbeat_changed_same_id_sent_at_conflicts_without_write() {
+async fn heartbeat_frozen_request_mutations_conflict_without_write() {
     let (repo, item_id, clock) = ready_repo().await;
     let fence = ready_completion_attempt(
         &repo,
@@ -1495,6 +1550,9 @@ async fn heartbeat_changed_same_id_sent_at_conflicts_without_write() {
     let leases = [HeartbeatLease {
         attempt_id: "attempt-heartbeat-conflict",
         fencing_token: fence,
+        state: "leased",
+        journal_state: "prepared",
+        last_event_checkpoint: None,
     }];
     let sent_at = clock.now();
     repo.heartbeat_batch(
@@ -1529,6 +1587,35 @@ async fn heartbeat_changed_same_id_sent_at_conflicts_without_write() {
         .unwrap(),
         HeartbeatBatchResult::Conflict
     );
+    for mutated_leases in [
+        [HeartbeatLease {
+            state: "running",
+            ..leases[0].clone()
+        }],
+        [HeartbeatLease {
+            journal_state: "spawned",
+            ..leases[0].clone()
+        }],
+        [HeartbeatLease {
+            last_event_checkpoint: Some("checkpoint-mutated"),
+            ..leases[0].clone()
+        }],
+    ] {
+        assert_eq!(
+            repo.heartbeat_batch(
+                "runner-a",
+                "heartbeat-conflict",
+                sent_at,
+                0,
+                &mutated_leases,
+                Duration::seconds(60),
+                &clock,
+            )
+            .await
+            .unwrap(),
+            HeartbeatBatchResult::Conflict
+        );
+    }
     let after: String = sqlx::query_scalar(
         "SELECT lease_expires_at FROM execution_attempts WHERE id = 'attempt-heartbeat-conflict'",
     )
@@ -1559,6 +1646,9 @@ async fn heartbeat_stale_lease_returns_typed_stale_result() {
             &[HeartbeatLease {
                 attempt_id: "attempt-heartbeat-stale",
                 fencing_token: fence,
+                state: "leased",
+                journal_state: "prepared",
+                last_event_checkpoint: None,
             }],
             Duration::seconds(60),
             &clock,
@@ -1650,6 +1740,9 @@ async fn heartbeat_replay_insert_failure_rolls_back_all_updates() {
             &[HeartbeatLease {
                 attempt_id: "attempt-heartbeat-rollback",
                 fencing_token: fence,
+                state: "leased",
+                journal_state: "prepared",
+                last_event_checkpoint: None,
             }],
             Duration::seconds(60),
             &clock,
