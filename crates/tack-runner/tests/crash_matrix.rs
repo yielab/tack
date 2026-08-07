@@ -8,16 +8,21 @@ use std::{
 };
 
 use async_trait::async_trait;
+use tack_orch::execution::{
+    AttemptId as DomainAttemptId, AttemptSnapshot, ExecutionRequestSnapshot, ProtocolVersion,
+    RecoveryObservationRequest, RecoveryObservationResponse, RunnerId as DomainRunnerId,
+};
 use tack_runner::{
     EnrollmentCredential,
     client::{
-        AttemptId, AttemptLease, AttemptState, CancelObservation, CancellationReport, ClaimRequest,
-        ClaimRequestId, ClaimResult, ClaimedWork, CompletionReport, EngineError, EnrollmentRequest,
+        AttemptId, AttemptLease, AttemptState, CancelObservation, CancellationEvidence,
+        CancellationReport, CancellationResponse, ClaimRequest, ClaimRequestId, ClaimResult,
+        ClaimedWork, CompletionReport, CompletionResponse, EngineError, EnrollmentRequest,
         EnrollmentResponse, FencingToken, HarnessAdapter, HarnessError, HarnessOutcome,
         HeartbeatRequest, HeartbeatResponse, JournalError, JournalState, LeaseResult,
         LocalRunHandle, OwnerOnlyJournal, ProtocolClientError, PullProtocol, RecoveryObservation,
-        RecoveryReport, RepositorySpec, RunCycle, RunnerCredential, RunnerEngine, RunnerId,
-        RunnerSession, StartPhase, StartReport, Timestamp, Workspace, WorkspaceError, WorkspaceId,
+        RepositorySpec, RunCycle, RunnerCredential, RunnerEngine, RunnerId, RunnerSession,
+        StartPhase, StartReport, Timestamp, Workspace, WorkspaceError, WorkspaceId,
         WorkspaceJournal, WorkspaceManager, WorktreeProvisioner,
     },
 };
@@ -86,6 +91,14 @@ impl PullProtocol for FakeProtocol {
         Err(ProtocolClientError::Rejected)
     }
 
+    async fn refresh(
+        &self,
+        _session: &RunnerSession,
+        _request: tack_runner::client::RefreshRequest,
+    ) -> Result<tack_runner::client::RefreshResponse, ProtocolClientError> {
+        Err(ProtocolClientError::Rejected)
+    }
+
     async fn claim(
         &self,
         _session: &RunnerSession,
@@ -96,7 +109,7 @@ impl PullProtocol for FakeProtocol {
             .lock()
             .expect("claim lock")
             .take()
-            .map(ClaimResult::Work)
+            .map(|work| ClaimResult::Work(Box::new(work)))
             .ok_or(ProtocolClientError::Rejected)
     }
 
@@ -115,9 +128,13 @@ impl PullProtocol for FakeProtocol {
             .next()
             .expect("active attempt");
         Ok(HeartbeatResponse {
+            protocol_version: ProtocolVersion::v1(),
+            heartbeat_id: request.heartbeat_id,
+            accepted_at: Timestamp::new("2026-08-07T12:00:01Z"),
             lease_results: vec![LeaseResult {
                 attempt_id: active.attempt_id,
                 fencing_token: active.fencing_token,
+                lease_expires_at: Timestamp::new("2026-08-07T12:01:00Z"),
                 cancellation_requested: self.cancellation_requested,
             }],
         })
@@ -149,38 +166,52 @@ impl PullProtocol for FakeProtocol {
     async fn report_completion(
         &self,
         _session: &RunnerSession,
-        _report: CompletionReport,
-    ) -> Result<(), ProtocolClientError> {
+        report: CompletionReport,
+    ) -> Result<CompletionResponse, ProtocolClientError> {
         let mut evidence = self.evidence.lock().expect("protocol evidence");
         evidence.events.push("completion".into());
         evidence.completion_reports += 1;
         if self.failure == FailurePoint::Completion {
             Err(ProtocolClientError::Transport)
         } else {
-            Ok(())
+            Ok(CompletionResponse {
+                protocol_version: ProtocolVersion::v1(),
+                attempt_id: report.attempt_id,
+                completion_id: report.completion_id,
+                state: report.terminal_state,
+                replayed: false,
+                committed_at: Timestamp::new("2026-08-07T12:00:01Z"),
+            })
         }
     }
 
     async fn report_cancellation(
         &self,
         _session: &RunnerSession,
-        _report: CancellationReport,
-    ) -> Result<(), ProtocolClientError> {
+        report: CancellationReport,
+    ) -> Result<CancellationResponse, ProtocolClientError> {
         let mut evidence = self.evidence.lock().expect("protocol evidence");
         evidence.events.push("cancellation_observation".into());
         evidence.cancellation_reports += 1;
         if self.failure == FailurePoint::Cancellation {
             Err(ProtocolClientError::Transport)
         } else {
-            Ok(())
+            Ok(CancellationResponse {
+                protocol_version: ProtocolVersion::v1(),
+                attempt_id: report.attempt_id,
+                cancellation_request_id: report.cancellation_request_id,
+                state: AttemptState::Cancelled,
+                replayed: false,
+                committed_at: Timestamp::new("2026-08-07T12:00:01Z"),
+            })
         }
     }
 
     async fn observe_recovery(
         &self,
         _session: &RunnerSession,
-        report: RecoveryReport,
-    ) -> Result<(), ProtocolClientError> {
+        report: RecoveryObservationRequest,
+    ) -> Result<RecoveryObservationResponse, ProtocolClientError> {
         let mut evidence = self.evidence.lock().expect("protocol evidence");
         evidence
             .events
@@ -196,7 +227,13 @@ impl PullProtocol for FakeProtocol {
         {
             Err(ProtocolClientError::Transport)
         } else {
-            Ok(())
+            let mut response: RecoveryObservationResponse = serde_json::from_str(include_str!(
+                "../../../docs/contracts/runner-v1/recovery-observation.response.json"
+            ))
+            .expect("recovery fixture");
+            response.attempt_id = report.attempt_id;
+            response.recovery_key = report.recovery_key;
+            Ok(response)
         }
     }
 }
@@ -242,16 +279,22 @@ impl HarnessAdapter for FakeAdapter {
         })
     }
 
-    async fn cancel(&self, _handle: &LocalRunHandle) -> Result<CancelObservation, HarnessError> {
+    async fn cancel(&self, _handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
         self.evidence.lock().expect("process evidence").cancels += 1;
-        Ok(CancelObservation::ProcessStopped)
+        Ok(CancellationEvidence {
+            observation: CancelObservation::ProcessStopped,
+            observed_at: Timestamp::new("2026-08-07T12:00:01Z"),
+            details: serde_json::Map::new(),
+        })
     }
 
     async fn wait(&self, _handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError> {
         Ok(HarnessOutcome {
             terminal_state: AttemptState::Succeeded,
-            terminal_reason: "completed".into(),
+            terminal_reason: serde_json::json!({"code":"completed"}),
             final_checkpoint: None,
+            actual_execution: actual_execution(),
+            usage: usage(),
         })
     }
 
@@ -260,7 +303,7 @@ impl HarnessAdapter for FakeAdapter {
         _journal: &tack_runner::client::AttemptJournal,
     ) -> Result<RecoveryObservation, HarnessError> {
         self.evidence.lock().expect("process evidence").reconciles += 1;
-        Ok(self.recovery.clone())
+        Ok(self.recovery)
     }
 }
 
@@ -310,7 +353,52 @@ fn root(label: &str) -> PathBuf {
     ))
 }
 
+fn actual_execution() -> tack_orch::execution::ActualExecution {
+    serde_json::from_str(
+        r#"{
+            "harness_kind":"fake", "harness_version":"1.0.0",
+            "model_provider":"test-provider", "model_id":"test-model",
+            "model_observation_source":"harness_reported",
+            "capability_snapshot":{
+                "cancel":{"support":"supported","reason":null},
+                "resume":{"support":"unsupported","reason":"no resume"},
+                "decisions":{"support":"supported","reason":null},
+                "artifacts":{"support":"supported","reason":null},
+                "usage":{"support":"advisory","reason":"partial"}
+            },
+            "workspace_id":"ws_617474656d70742d6372617368",
+            "base_revision":"0123456789abcdef",
+            "started_at":"2026-08-07T12:00:00Z", "ended_at":"2026-08-07T12:01:00Z"
+        }"#,
+    )
+    .expect("actual execution")
+}
+
+fn usage() -> tack_orch::execution::Usage {
+    serde_json::from_str(
+        r#"{
+            "tokens_in":{"value":1,"source":"measured"},
+            "tokens_out":{"value":2,"source":"measured"},
+            "duration_ms":{"value":3,"source":"measured"},
+            "cost_usd":{"value":null,"source":"not_measured"}
+        }"#,
+    )
+    .expect("usage")
+}
+
 fn work() -> ClaimedWork {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../docs/contracts/runner-v1/claim.response.json"
+    ))
+    .expect("claim fixture");
+    let mut request: ExecutionRequestSnapshot =
+        serde_json::from_value(fixture["request"].clone()).expect("request snapshot");
+    let mut attempt: AttemptSnapshot =
+        serde_json::from_value(fixture["attempt"].clone()).expect("attempt snapshot");
+    request.repository.base_revision = "0123456789abcdef".into();
+    attempt.attempt_id = DomainAttemptId::new("attempt-crash");
+    attempt.runner_id = DomainRunnerId::new("runner-crash");
+    attempt.base_revision = request.repository.base_revision.clone();
     ClaimedWork {
         claim_request_id: ClaimRequestId::new("claim-crash"),
         lease: AttemptLease {
@@ -322,10 +410,8 @@ fn work() -> ClaimedWork {
             issued_at: Timestamp::new("2026-08-07T12:00:00Z"),
             expires_at: Timestamp::new("2026-08-07T12:01:00Z"),
         },
-        repository: RepositorySpec {
-            remote: "https://example.invalid/repository.git".into(),
-            base_revision: "0123456789abcdef".into(),
-        },
+        request,
+        attempt,
     }
 }
 
@@ -333,6 +419,7 @@ fn session() -> RunnerSession {
     RunnerSession::new(
         RunnerId::new("runner-crash"),
         RunnerCredential::new("test-secret-never-log"),
+        Timestamp::new("2026-08-07T13:00:00Z"),
     )
 }
 
@@ -449,7 +536,7 @@ async fn after_spawn_before_ack_failure_is_audited_ambiguous_and_never_retried()
 }
 
 #[tokio::test]
-async fn completion_ack_failure_quarantines_once_with_ambiguous_recovery_evidence() {
+async fn completion_response_loss_stays_in_terminal_outbox_without_duplicate_send() {
     let root = root("completion");
     let protocol = FakeProtocol::new(work(), FailurePoint::Completion, false);
     let adapter = FakeAdapter::new(RecoveryObservation::Ambiguous);
@@ -464,31 +551,22 @@ async fn completion_ack_failure_quarantines_once_with_ambiguous_recovery_evidenc
     let result = engine
         .run_once(&session(), claim())
         .await
-        .expect("quarantine result");
-    assert!(matches!(result, RunCycle::Quarantined { .. }));
+        .expect("terminal outbox result");
+    assert!(matches!(result, RunCycle::TerminalReportPending { .. }));
     let evidence = protocol.evidence.lock().expect("protocol evidence");
     assert_eq!(
         evidence.completion_reports, 1,
         "completion is never blind-retried"
     );
-    assert_eq!(
-        evidence.recovery_reports,
-        vec![RecoveryObservation::Ambiguous]
-    );
+    assert!(evidence.recovery_reports.is_empty());
     assert!(evidence.events.iter().any(|event| event == "completion"));
-    assert!(
-        evidence
-            .events
-            .iter()
-            .any(|event| event == "recovery:Ambiguous")
-    );
     drop(evidence);
-    assert!(journal.unresolved().expect("journal scan").is_empty());
+    assert_eq!(journal.unresolved().expect("journal scan").len(), 1);
     remove_test_root(&root);
 }
 
 #[tokio::test]
-async fn cancellation_ack_failure_never_claims_terminal_and_records_ambiguity() {
+async fn cancellation_response_loss_stays_in_terminal_outbox_without_duplicate_send() {
     let root = root("cancellation");
     let protocol = FakeProtocol::new(work(), FailurePoint::Cancellation, true);
     let adapter = FakeAdapter::new(RecoveryObservation::Ambiguous);
@@ -503,15 +581,12 @@ async fn cancellation_ack_failure_never_claims_terminal_and_records_ambiguity() 
     let result = engine
         .run_once(&session(), claim())
         .await
-        .expect("quarantine result");
-    assert!(matches!(result, RunCycle::Quarantined { .. }));
+        .expect("terminal outbox result");
+    assert!(matches!(result, RunCycle::TerminalReportPending { .. }));
     let evidence = protocol.evidence.lock().expect("protocol evidence");
     assert_eq!(evidence.cancellation_reports, 1);
     assert_eq!(evidence.completion_reports, 0);
-    assert_eq!(
-        evidence.recovery_reports,
-        vec![RecoveryObservation::Ambiguous]
-    );
+    assert!(evidence.recovery_reports.is_empty());
     assert!(
         evidence
             .events
@@ -521,12 +596,9 @@ async fn cancellation_ack_failure_never_claims_terminal_and_records_ambiguity() 
     drop(evidence);
     let process = adapter.evidence.lock().expect("process evidence");
     assert_eq!(process.starts, 1);
-    assert_eq!(
-        process.cancels, 2,
-        "initial stop plus best-effort quarantine stop"
-    );
+    assert_eq!(process.cancels, 1, "only the requested cancellation runs");
     drop(process);
-    assert!(journal.unresolved().expect("journal scan").is_empty());
+    assert_eq!(journal.unresolved().expect("journal scan").len(), 1);
     remove_test_root(&root);
 }
 
@@ -662,14 +734,14 @@ async fn process_running_recovery_observation_reports_ambiguity_and_quarantines_
     let evidence = protocol.evidence.lock().expect("protocol evidence");
     assert_eq!(
         evidence.recovery_reports,
-        vec![RecoveryObservation::Ambiguous]
+        vec![RecoveryObservation::ProcessRunning]
     );
     assert!(
-        !evidence
+        evidence
             .events
             .iter()
             .any(|event| event == "recovery:ProcessRunning"),
-        "a running process must never be reported as a safe completed recovery"
+        "a running process is preserved as an audited recovery fact"
     );
     drop(evidence);
     assert!(

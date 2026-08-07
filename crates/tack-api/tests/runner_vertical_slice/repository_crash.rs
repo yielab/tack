@@ -9,8 +9,9 @@ use tack_core::{
 use tack_db::{
     Repository, init_pool, migrations,
     repo::execution::{
-        Completion, EventBatch, ExecutionClock, NewAgentProfile, NewEvent, NewExecutionRequest,
-        NewRunner,
+        Completion, EventApplyResult, EventBatch, ExecutionClock, NewAgentProfile, NewEvent,
+        NewExecutionRequest, NewRunner, RecoveryDisposition, RecoveryObservation,
+        RecoveryObservationInput, RecoveryObservationResult,
     },
 };
 use uuid::Uuid;
@@ -24,10 +25,6 @@ impl FakeClock {
                 .expect("fixed timestamp")
                 .with_timezone(&Utc),
         ))
-    }
-
-    fn advance(&self, duration: Duration) {
-        *self.0.lock().expect("clock lock") += duration;
     }
 }
 
@@ -130,7 +127,7 @@ async fn fixture() -> Fixture {
     }
 }
 
-fn request<'a>(item_id: &'a str) -> NewExecutionRequest<'a> {
+fn request<'a>(item_id: &'a str, request_snapshot: &'a str) -> NewExecutionRequest<'a> {
     NewExecutionRequest {
         id: "request-crash",
         item_id,
@@ -140,24 +137,54 @@ fn request<'a>(item_id: &'a str) -> NewExecutionRequest<'a> {
         selector_kind: "exact_runner",
         selector_id: "runner-crash",
         agent_profile_id: Some("profile-crash"),
-        agent_profile_snapshot: "{}",
+        agent_profile_snapshot: r#"{"name":"Crash Matrix Profile","instructions":"exercise failure boundaries","tool_policy":{},"budgets":{},"timeout_seconds":60}"#,
         requested_harness_kind: Some("mock"),
         requested_model_provider: None,
         requested_model_id: None,
-        repository_snapshot: "{}",
-        permission_policy: "{}",
+        repository_snapshot: r#"{"kind":"git","remote":"https://example.invalid/repository.git","base_revision":"0123456789abcdef","subdirectory":null}"#,
+        permission_policy: r#"{"tools":[],"network":false}"#,
         timeout_seconds: Some(60),
         budgets: "{}",
         status_map_policy_id: None,
         environment: "{}",
         metadata: "{}",
+        request_snapshot,
     }
 }
 
+fn request_snapshot(item_id: &str, clock: &FakeClock) -> String {
+    serde_json::json!({
+        "request_id": "request-crash",
+        "item_id": item_id,
+        "idempotency_key": "request-1",
+        "agent_profile_id": "profile-crash",
+        "requested_harness_kind": "mock",
+        "requested_model_provider": null,
+        "requested_model_id": null,
+        "created_by": {"source": "test", "subject_id": "crash-matrix"},
+        "created_at": clock.now().to_rfc3339(),
+        "selector": {"kind": "exact_runner", "runner_id": "runner-crash"},
+        "resolved_agent_profile": {
+            "name": "Crash Matrix Profile", "instructions": "exercise failure boundaries",
+            "tool_policy": {}, "budgets": {}, "timeout_seconds": 60
+        },
+        "repository": {
+            "kind": "git", "remote": "https://example.invalid/repository.git",
+            "base_revision": "0123456789abcdef", "subdirectory": null
+        },
+        "permission_policy": {"tools": [], "network": false},
+        "timeout_seconds": 60,
+        "budgets": {}, "status_map_policy_id": null,
+        "environment": {}, "metadata": {}
+    })
+    .to_string()
+}
+
 async fn enqueue(fixture: &Fixture) {
+    let snapshot = request_snapshot(&fixture.item_id, &fixture.clock);
     fixture
         .repo
-        .enqueue_execution(request(&fixture.item_id), &fixture.clock)
+        .enqueue_execution(request(&fixture.item_id, &snapshot), &fixture.clock)
         .await
         .expect("enqueue");
 }
@@ -165,8 +192,9 @@ async fn enqueue(fixture: &Fixture) {
 async fn claim(fixture: &Fixture) {
     fixture
         .repo
-        .claim_execution(
+        .claim_execution_idempotent_with_snapshot(
             "runner-crash",
+            "claim-crash",
             "attempt-crash",
             Duration::seconds(60),
             &fixture.clock,
@@ -190,8 +218,9 @@ async fn crash_before_claim_commit_rolls_back_request_capacity_and_fence() {
 
     let crashed = fixture
         .repo
-        .claim_execution(
+        .claim_execution_idempotent_with_snapshot(
             "runner-crash",
+            "claim-crash",
             "attempt-crash",
             Duration::seconds(60),
             &fixture.clock,
@@ -224,8 +253,9 @@ async fn crash_before_claim_commit_rolls_back_request_capacity_and_fence() {
         .expect("drop trigger");
     let lease = fixture
         .repo
-        .claim_execution(
+        .claim_execution_idempotent_with_snapshot(
             "runner-crash",
+            "claim-after-crash",
             "attempt-after-retry",
             Duration::seconds(60),
             &fixture.clock,
@@ -233,23 +263,34 @@ async fn crash_before_claim_commit_rolls_back_request_capacity_and_fence() {
         .await
         .expect("claim retry")
         .expect("lease after retry");
-    assert_eq!(lease.fencing_token, 1, "rollback cannot burn a fence");
+    assert_eq!(lease.lease.fencing_token, 1, "rollback cannot burn a fence");
 }
 
 #[tokio::test]
-async fn expired_post_claim_ambiguity_never_grants_a_second_fence() {
+async fn post_spawn_recovery_audits_needs_operator_and_never_grants_a_second_fence() {
     let fixture = fixture().await;
     enqueue(&fixture).await;
     claim(&fixture).await;
-    fixture.clock.advance(Duration::seconds(61));
-
-    assert!(
-        fixture
-            .repo
-            .classify_expired_attempt("attempt-crash", "needs_operator", &fixture.clock)
-            .await
-            .expect("classify expiry")
-    );
+    let recovery = fixture
+        .repo
+        .recover_attempt(
+            RecoveryObservationInput {
+                runner_id: "runner-crash",
+                attempt_id: "attempt-crash",
+                fencing_token: 1,
+                recovery_key: "recovery:attempt-crash:1:ambiguous",
+                observation: RecoveryObservation::Ambiguous,
+                details: r#"{"journal_state":"process_observed_running","process_observed":true}"#,
+            },
+            &fixture.clock,
+        )
+        .await
+        .expect("record recovery");
+    assert!(matches!(
+        recovery,
+        RecoveryObservationResult::Applied(ref response)
+            if response.disposition == RecoveryDisposition::NeedsOperator
+    ));
     let state: String =
         sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id = 'attempt-crash'")
             .fetch_one(fixture.repo.pool())
@@ -259,8 +300,9 @@ async fn expired_post_claim_ambiguity_never_grants_a_second_fence() {
     assert!(
         fixture
             .repo
-            .claim_execution(
+            .claim_execution_idempotent_with_snapshot(
                 "runner-crash",
+                "claim-invalid-second-fence",
                 "attempt-invalid-second-fence",
                 Duration::seconds(60),
                 &fixture.clock,
@@ -322,7 +364,7 @@ async fn crash_during_event_batch_rolls_back_rows_and_checkpoint_then_replays_on
     assert!(
         fixture
             .repo
-            .append_execution_events(batch(), &events, &fixture.clock)
+            .append_execution_events_result(batch(), &events, &fixture.clock)
             .await
             .is_err()
     );
@@ -350,7 +392,7 @@ async fn crash_during_event_batch_rolls_back_rows_and_checkpoint_then_replays_on
     assert!(
         fixture
             .repo
-            .append_execution_events(batch(), &events, &fixture.clock)
+            .append_execution_events_result(batch(), &events, &fixture.clock)
             .await
             .is_err()
     );
@@ -368,20 +410,22 @@ async fn crash_during_event_batch_rolls_back_rows_and_checkpoint_then_replays_on
         .execute(fixture.repo.pool())
         .await
         .expect("drop checkpoint trigger");
-    assert!(
+    assert!(matches!(
         fixture
             .repo
-            .append_execution_events(batch(), &events, &fixture.clock)
+            .append_execution_events_result(batch(), &events, &fixture.clock)
             .await
-            .expect("first report")
-    );
-    assert!(
+            .expect("first report"),
+        EventApplyResult::Applied(ref result) if !result.replayed
+    ));
+    assert!(matches!(
         fixture
             .repo
-            .append_execution_events(batch(), &events, &fixture.clock)
+            .append_execution_events_result(batch(), &events, &fixture.clock)
             .await
-            .expect("replay")
-    );
+            .expect("replay"),
+        EventApplyResult::Applied(ref result) if result.replayed
+    ));
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_events")
         .fetch_one(fixture.repo.pool())
         .await
@@ -406,6 +450,7 @@ async fn crash_during_completion_rolls_back_attempt_and_request_then_replays_onc
         attempt_id: "attempt-crash",
         fencing_token: 1,
         completion_id: "completion-1",
+        final_event_checkpoint: None,
         terminal_state: "succeeded",
         terminal_reason: "completed",
         actual_execution: "{}",
