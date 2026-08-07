@@ -5,14 +5,20 @@
 //! as ambiguous and quarantined rather than retried.
 
 use async_trait::async_trait;
+use std::collections::BTreeMap;
+use tack_orch::execution::{
+    AttemptId as DomainAttemptId, FencingToken as DomainFencingToken, ProtocolVersion,
+    RecoveryDetails as DomainRecoveryDetails, RecoveryDisposition, RecoveryJournalState,
+    RecoveryKey, RecoveryObservation, RecoveryObservationRequest, RecoveryObservationResponse,
+    RunnerId as DomainRunnerId,
+};
 use thiserror::Error;
 
 use super::{
     ActiveAttempt, AttemptId, AttemptState, CancellationReport, CancellationRequestId,
     ClaimRequest, ClaimResult, ClaimedWork, ClaimedWorkError, CompletionId, CompletionReport,
     EnrollmentRequest, EnrollmentResponse, HeartbeatRequest, ProtocolClientError, PullProtocol,
-    RecoveryDetails, RecoveryReport, RefreshRequest, RefreshResponse, RunnerSession, StartPhase,
-    StartReport,
+    RefreshRequest, RefreshResponse, RunnerSession, StartPhase, StartReport,
     journal::{AttemptJournal, JournalError, JournalState, OwnerOnlyJournal},
     workspace::{Workspace, WorkspaceError, WorkspaceManager, WorktreeProvisioner},
 };
@@ -55,23 +61,6 @@ pub enum CancelObservation {
     ProcessStopped,
     AlreadyTerminal,
     Ambiguous,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RecoveryObservation {
-    ProcessRunning,
-    ProcessStopped,
-    Ambiguous,
-}
-
-impl RecoveryObservation {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::ProcessRunning => "process_running",
-            Self::ProcessStopped => "process_stopped",
-            Self::Ambiguous => "ambiguous",
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -187,34 +176,12 @@ where
         for mut record in self.journal.unresolved()? {
             let observation = match self.adapter.reconcile(&record).await {
                 Ok(observation) => observation,
-                Err(_) => {
-                    outcomes.push(self.report_or_retain_ambiguity(session, &record).await?);
-                    continue;
-                }
+                Err(_) => RecoveryObservation::Ambiguous,
             };
-            if !matches!(observation, RecoveryObservation::ProcessStopped) {
-                outcomes.push(self.report_or_retain_ambiguity(session, &record).await?);
-                continue;
-            }
-            let report = Self::recovery_report(&record, observation);
-            if self
-                .protocol
-                .observe_recovery(session, report)
-                .await
-                .is_err()
-            {
-                // The server has not acknowledged the safe observation, so
-                // keep the original unresolved evidence for a retry.
-                outcomes.push(RunCycle::RecoveryPending {
-                    attempt_id: record.attempt_id,
-                });
-                continue;
-            }
-            record.state = JournalState::RecoveryObserved;
-            self.journal.update(&record)?;
-            outcomes.push(RunCycle::Completed {
-                attempt_id: record.attempt_id,
-            });
+            outcomes.push(
+                self.report_recovery_and_apply_disposition(session, &mut record, observation)
+                    .await?,
+            );
         }
         Ok(outcomes)
     }
@@ -399,43 +366,116 @@ where
         session: &RunnerSession,
         record: &AttemptJournal,
     ) -> Result<RunCycle, EngineError> {
-        let delivered = self
+        let mut record = record.clone();
+        self.report_recovery_and_apply_disposition(
+            session,
+            &mut record,
+            RecoveryObservation::Ambiguous,
+        )
+        .await
+    }
+
+    async fn report_recovery_and_apply_disposition(
+        &self,
+        session: &RunnerSession,
+        record: &mut AttemptJournal,
+        observation: RecoveryObservation,
+    ) -> Result<RunCycle, EngineError> {
+        let request = Self::recovery_request(session, record, observation);
+        let response = match self
             .protocol
-            .observe_recovery(
-                session,
-                Self::recovery_report(record, RecoveryObservation::Ambiguous),
-            )
+            .observe_recovery(session, request.clone())
             .await
-            .is_ok();
-        if !delivered {
-            return Ok(RunCycle::RecoveryPending {
+        {
+            Ok(response)
+                if response.attempt_id == request.attempt_id
+                    && response.recovery_key == request.recovery_key =>
+            {
+                response
+            }
+            Ok(_) | Err(_) => {
+                // An absent or mismatched acknowledgement cannot settle local
+                // process evidence; leave the journal in the restart scan.
+                return Ok(RunCycle::RecoveryPending {
+                    attempt_id: record.attempt_id.clone(),
+                });
+            }
+        };
+
+        self.apply_recovery_disposition(record, observation, response)
+    }
+
+    fn apply_recovery_disposition(
+        &self,
+        record: &mut AttemptJournal,
+        observation: RecoveryObservation,
+        response: RecoveryObservationResponse,
+    ) -> Result<RunCycle, EngineError> {
+        let settled = match response.disposition {
+            RecoveryDisposition::SafePreSpawnRequeue => {
+                observation == RecoveryObservation::ProcessStopped
+                    && record.state == JournalState::Prepared
+                    && record.process_id.is_none()
+            }
+            RecoveryDisposition::AlreadyTerminal => {
+                observation == RecoveryObservation::ProcessStopped
+            }
+            RecoveryDisposition::NeedsOperator => false,
+        };
+        if settled {
+            record.state = JournalState::RecoveryObserved;
+            self.journal.update(record)?;
+            return Ok(RunCycle::Completed {
                 attempt_id: record.attempt_id.clone(),
             });
         }
+
+        // `needs_operator` is always durable quarantine. A disposition that
+        // contradicts local evidence is treated just as conservatively.
         self.journal.quarantine(record)?;
         Ok(RunCycle::Quarantined {
             attempt_id: record.attempt_id.clone(),
         })
     }
 
-    fn recovery_report(
+    fn recovery_request(
+        session: &RunnerSession,
         record: &AttemptJournal,
         observation: RecoveryObservation,
-    ) -> RecoveryReport {
-        RecoveryReport {
-            attempt_id: record.attempt_id.clone(),
-            fencing_token: record.fencing_token,
-            observation,
-            recovery_key: format!(
+    ) -> RecoveryObservationRequest {
+        RecoveryObservationRequest {
+            protocol_version: ProtocolVersion::v1(),
+            runner_id: DomainRunnerId::new(session.runner_id.as_str()),
+            attempt_id: DomainAttemptId::new(record.attempt_id.as_str()),
+            fencing_token: DomainFencingToken(record.fencing_token.0),
+            recovery_key: RecoveryKey::new(format!(
                 "recovery:{}:{}:{}",
                 record.attempt_id.as_str(),
                 record.fencing_token.0,
-                observation.as_str()
-            ),
-            details: RecoveryDetails {
-                journal_state: record.state,
+                match observation {
+                    RecoveryObservation::ProcessStopped => "process_stopped",
+                    RecoveryObservation::ProcessRunning => "process_running",
+                    RecoveryObservation::Ambiguous => "ambiguous",
+                }
+            )),
+            observation,
+            details: DomainRecoveryDetails {
+                journal_state: Self::recovery_journal_state(record.state),
                 process_observed: record.process_id.is_some(),
+                additional: BTreeMap::new(),
             },
+            additional: BTreeMap::new(),
+        }
+    }
+
+    const fn recovery_journal_state(state: JournalState) -> RecoveryJournalState {
+        match state {
+            JournalState::Prepared => RecoveryJournalState::Prepared,
+            JournalState::ProcessObservedRunning => RecoveryJournalState::ProcessObservedRunning,
+            JournalState::CancellationRequested => RecoveryJournalState::CancellationRequested,
+            JournalState::RecoveryObserved => RecoveryJournalState::RecoveryObserved,
+            JournalState::Reported => RecoveryJournalState::Reported,
+            JournalState::Quarantined => RecoveryJournalState::Quarantined,
         }
     }
 }
@@ -443,6 +483,7 @@ where
 #[cfg(test)]
 mod tests {
     use std::{
+        collections::BTreeMap,
         path::PathBuf,
         sync::{
             Arc, Mutex,
@@ -457,8 +498,16 @@ mod tests {
     };
     use tack_orch::execution::{
         AttemptId as DomainAttemptId, AttemptSnapshot, ExecutionRequestSnapshot,
-        RunnerId as DomainRunnerId,
+        RecoveryDisposition, RecoveryJournalState, RecoveryObservationRequest,
+        RecoveryObservationResponse, RunnerId as DomainRunnerId,
     };
+
+    #[derive(Clone)]
+    struct RecoveryResponseConfig {
+        disposition: RecoveryDisposition,
+        replayed: bool,
+        additional: BTreeMap<String, serde_json::Value>,
+    }
 
     #[derive(Clone)]
     struct FakeProtocol {
@@ -474,8 +523,9 @@ mod tests {
         reported_completions: Arc<Mutex<Vec<CompletionReport>>>,
         cancellation_reports: Arc<AtomicUsize>,
         recovery_reports: Arc<AtomicUsize>,
-        reported_recoveries: Arc<Mutex<Vec<RecoveryReport>>>,
+        reported_recoveries: Arc<Mutex<Vec<RecoveryObservationRequest>>>,
         recovery_failures_remaining: Arc<AtomicUsize>,
+        recovery_response: Arc<Mutex<RecoveryResponseConfig>>,
         refresh_requests: Arc<Mutex<Vec<RefreshRequest>>>,
     }
 
@@ -602,20 +652,34 @@ mod tests {
         async fn observe_recovery(
             &self,
             _session: &RunnerSession,
-            _report: RecoveryReport,
-        ) -> Result<(), ProtocolClientError> {
+            report: RecoveryObservationRequest,
+        ) -> Result<RecoveryObservationResponse, ProtocolClientError> {
             self.recovery_reports.fetch_add(1, Ordering::SeqCst);
             self.reported_recoveries
                 .lock()
                 .expect("fake protocol lock")
-                .push(_report.clone());
+                .push(report.clone());
             let remaining = self.recovery_failures_remaining.load(Ordering::SeqCst);
             if remaining > 0 {
                 self.recovery_failures_remaining
                     .fetch_sub(1, Ordering::SeqCst);
                 Err(ProtocolClientError::Transport)
             } else {
-                Ok(())
+                let config = self
+                    .recovery_response
+                    .lock()
+                    .expect("fake protocol lock")
+                    .clone();
+                let mut response: RecoveryObservationResponse = serde_json::from_str(include_str!(
+                    "../../../docs/contracts/runner-v1/recovery-observation.response.json"
+                ))
+                .expect("recovery response fixture");
+                response.attempt_id = report.attempt_id;
+                response.recovery_key = report.recovery_key;
+                response.disposition = config.disposition;
+                response.replayed = config.replayed;
+                response.additional = config.additional;
+                Ok(response)
             }
         }
     }
@@ -820,6 +884,11 @@ mod tests {
             recovery_reports: Arc::new(AtomicUsize::new(0)),
             reported_recoveries: Arc::new(Mutex::new(Vec::new())),
             recovery_failures_remaining: Arc::new(AtomicUsize::new(0)),
+            recovery_response: Arc::new(Mutex::new(RecoveryResponseConfig {
+                disposition: RecoveryDisposition::SafePreSpawnRequeue,
+                replayed: false,
+                additional: BTreeMap::new(),
+            })),
             refresh_requests: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -1100,11 +1169,20 @@ mod tests {
             .expect("fake protocol lock");
         assert_eq!(recoveries.len(), 1);
         assert_eq!(
-            recoveries[0].recovery_key,
+            recoveries[0].recovery_key.as_str(),
             "recovery:attempt:7:process_stopped"
         );
-        assert_eq!(recoveries[0].details.journal_state, JournalState::Prepared);
+        assert_eq!(recoveries[0].protocol_version.as_u16(), 1);
+        assert_eq!(recoveries[0].runner_id.as_str(), "runner");
+        assert_eq!(recoveries[0].attempt_id.as_str(), "attempt");
+        assert_eq!(recoveries[0].fencing_token.0, 7);
+        assert_eq!(
+            recoveries[0].details.journal_state,
+            RecoveryJournalState::Prepared
+        );
         assert!(!recoveries[0].details.process_observed);
+        assert!(recoveries[0].additional.is_empty());
+        assert!(recoveries[0].details.additional.is_empty());
         assert_eq!(
             journal
                 .load(&AttemptId::new("attempt"))
@@ -1112,6 +1190,225 @@ mod tests {
                 .state,
             JournalState::RecoveryObserved
         );
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+
+    #[tokio::test]
+    async fn needs_operator_response_durably_quarantines_stopped_pre_spawn_recovery() {
+        let root = temporary_root("needs-operator-recovery");
+        let journal = OwnerOnlyJournal::new(&root);
+        let lease = work().lease;
+        let record = AttemptJournal::prepared(
+            &lease,
+            super::super::journal::WorkspaceJournal {
+                workspace_id: super::super::WorkspaceId::new("ws"),
+                path: root.join("workspaces/attempt"),
+                base_revision: "revision".into(),
+            },
+        );
+        journal
+            .persist_before_spawn(&record)
+            .expect("prior journal");
+        let protocol = protocol(work(), false, false);
+        protocol
+            .recovery_response
+            .lock()
+            .expect("fake protocol lock")
+            .disposition = RecoveryDisposition::NeedsOperator;
+        let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+        let engine = RunnerEngine::new(
+            protocol.clone(),
+            adapter,
+            journal.clone(),
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: journal.journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+        );
+
+        assert!(matches!(
+            engine
+                .recover(&session())
+                .await
+                .expect("recovery")
+                .as_slice(),
+            [RunCycle::Quarantined { .. }]
+        ));
+        assert!(journal.unresolved().expect("scanned journal").is_empty());
+        assert!(
+            root.join("quarantine")
+                .read_dir()
+                .expect("quarantine")
+                .next()
+                .is_some(),
+            "operator disposition moves evidence out of restart scans"
+        );
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+
+    #[tokio::test]
+    async fn replayed_already_terminal_response_settles_only_stopped_evidence() {
+        let root = temporary_root("terminal-replay-recovery");
+        let journal = OwnerOnlyJournal::new(&root);
+        let lease = work().lease;
+        let record = AttemptJournal::prepared(
+            &lease,
+            super::super::journal::WorkspaceJournal {
+                workspace_id: super::super::WorkspaceId::new("ws"),
+                path: root.join("workspaces/attempt"),
+                base_revision: "revision".into(),
+            },
+        );
+        journal
+            .persist_before_spawn(&record)
+            .expect("prior journal");
+        let protocol = protocol(work(), false, false);
+        {
+            let mut response = protocol
+                .recovery_response
+                .lock()
+                .expect("fake protocol lock");
+            response.disposition = RecoveryDisposition::AlreadyTerminal;
+            response.replayed = true;
+            response
+                .additional
+                .insert("future_response_field".into(), serde_json::json!(42));
+        }
+        let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+        let engine = RunnerEngine::new(
+            protocol.clone(),
+            adapter,
+            journal.clone(),
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: journal.journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+        );
+
+        assert!(matches!(
+            engine
+                .recover(&session())
+                .await
+                .expect("recovery")
+                .as_slice(),
+            [RunCycle::Completed { .. }]
+        ));
+        assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            journal
+                .load(&AttemptId::new("attempt"))
+                .expect("journal")
+                .state,
+            JournalState::RecoveryObserved
+        );
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+
+    #[tokio::test]
+    async fn already_terminal_response_quarantines_running_or_ambiguous_evidence() {
+        for (label, running, reconcile_fails) in [
+            ("terminal-running-recovery", true, false),
+            ("terminal-ambiguous-recovery", false, true),
+        ] {
+            let root = temporary_root(label);
+            let journal = OwnerOnlyJournal::new(&root);
+            let lease = work().lease;
+            let record = AttemptJournal::prepared(
+                &lease,
+                super::super::journal::WorkspaceJournal {
+                    workspace_id: super::super::WorkspaceId::new("ws"),
+                    path: root.join("workspaces/attempt"),
+                    base_revision: "revision".into(),
+                },
+            );
+            journal
+                .persist_before_spawn(&record)
+                .expect("prior journal");
+            let protocol = protocol(work(), false, false);
+            protocol
+                .recovery_response
+                .lock()
+                .expect("fake protocol lock")
+                .disposition = RecoveryDisposition::AlreadyTerminal;
+            let mut adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+            adapter.reconcile_fails = reconcile_fails;
+            if running {
+                adapter.recovery_observation = RecoveryObservation::ProcessRunning;
+            }
+            let engine = RunnerEngine::new(
+                protocol,
+                adapter,
+                journal.clone(),
+                WorkspaceManager::new(
+                    root.join("workspaces"),
+                    FakeWorktree {
+                        expected_journal: journal.journal_path(&AttemptId::new("attempt")),
+                        provision_after_journal: Arc::new(AtomicBool::new(false)),
+                    },
+                ),
+            );
+
+            assert!(matches!(
+                engine
+                    .recover(&session())
+                    .await
+                    .expect("recovery")
+                    .as_slice(),
+                [RunCycle::Quarantined { .. }]
+            ));
+            assert!(journal.unresolved().expect("scanned journal").is_empty());
+            std::fs::remove_dir_all(root).expect("remove temporary root");
+        }
+    }
+
+    #[tokio::test]
+    async fn safe_requeue_response_never_settles_post_spawn_stopped_evidence() {
+        let root = temporary_root("safe-post-spawn-recovery");
+        let journal = OwnerOnlyJournal::new(&root);
+        let lease = work().lease;
+        let mut record = AttemptJournal::prepared(
+            &lease,
+            super::super::journal::WorkspaceJournal {
+                workspace_id: super::super::WorkspaceId::new("ws"),
+                path: root.join("workspaces/attempt"),
+                base_revision: "revision".into(),
+            },
+        );
+        record.state = JournalState::ProcessObservedRunning;
+        record.process_id = Some("former-process".into());
+        journal
+            .persist_before_spawn(&record)
+            .expect("prior journal");
+        let protocol = protocol(work(), false, false);
+        let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+        let engine = RunnerEngine::new(
+            protocol,
+            adapter,
+            journal.clone(),
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: journal.journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+        );
+
+        assert!(matches!(
+            engine
+                .recover(&session())
+                .await
+                .expect("recovery")
+                .as_slice(),
+            [RunCycle::Quarantined { .. }]
+        ));
+        assert!(journal.unresolved().expect("scanned journal").is_empty());
         std::fs::remove_dir_all(root).expect("remove temporary root");
     }
 

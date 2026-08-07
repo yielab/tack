@@ -2,8 +2,8 @@ use std::{fmt, time::Duration};
 
 use async_trait::async_trait;
 use tack_orch::execution::{
-    ActualExecution, AttemptSnapshot, ExecutionRequestSnapshot, ExecutionState, RunnerCapabilities,
-    Usage,
+    ActualExecution, AttemptSnapshot, ExecutionRequestSnapshot, ExecutionState,
+    RecoveryObservationRequest, RecoveryObservationResponse, RunnerCapabilities, Usage,
 };
 
 use crate::{EnrollmentCredential, RunnerError, Shutdown};
@@ -17,9 +17,10 @@ pub mod workspace;
 
 pub use engine::{
     CancelObservation, EngineError, HarnessAdapter, HarnessError, HarnessOutcome, LocalRunHandle,
-    RecoveryObservation, RunCycle, RunnerEngine,
+    RunCycle, RunnerEngine,
 };
 pub use journal::{AttemptJournal, JournalError, JournalState, OwnerOnlyJournal, WorkspaceJournal};
+pub use tack_orch::execution::RecoveryObservation;
 pub use workspace::{
     CleanupResult, UnavailableWorktreeProvisioner, Workspace, WorkspaceError, WorkspaceManager,
     WorktreeProvisioner,
@@ -355,23 +356,6 @@ pub struct CancellationReport {
     pub observation: CancelObservation,
 }
 
-#[derive(Debug, Clone)]
-pub struct RecoveryReport {
-    pub attempt_id: AttemptId,
-    pub fencing_token: FencingToken,
-    pub observation: RecoveryObservation,
-    /// A deterministic idempotency key for this attempt/fence/observation.
-    pub recovery_key: String,
-    /// Non-secret local evidence that explains the recovery classification.
-    pub details: RecoveryDetails,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct RecoveryDetails {
-    pub journal_state: JournalState,
-    pub process_observed: bool,
-}
-
 /// Typed transport seam. The frozen fixtures specify payloads but not an
 /// operation-path map, so C3 must not invent an HTTP route authority ahead of
 /// C2/C5 integration.
@@ -422,8 +406,8 @@ pub trait PullProtocol: Send + Sync {
     async fn observe_recovery(
         &self,
         session: &RunnerSession,
-        report: RecoveryReport,
-    ) -> Result<(), ProtocolClientError>;
+        report: RecoveryObservationRequest,
+    ) -> Result<RecoveryObservationResponse, ProtocolClientError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
