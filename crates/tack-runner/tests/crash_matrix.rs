@@ -12,13 +12,13 @@ use tack_runner::{
     EnrollmentCredential,
     client::{
         AttemptId, AttemptLease, AttemptState, CancelObservation, CancellationReport, ClaimRequest,
-        ClaimRequestId, ClaimResult, ClaimedWork, CompletionReport, EnrollmentRequest,
+        ClaimRequestId, ClaimResult, ClaimedWork, CompletionReport, EngineError, EnrollmentRequest,
         EnrollmentResponse, FencingToken, HarnessAdapter, HarnessError, HarnessOutcome,
-        HeartbeatRequest, HeartbeatResponse, JournalState, LeaseResult, LocalRunHandle,
-        OwnerOnlyJournal, ProtocolClientError, PullProtocol, RecoveryObservation, RecoveryReport,
-        RepositorySpec, RunCycle, RunnerCredential, RunnerEngine, RunnerId, RunnerSession,
-        StartPhase, StartReport, Timestamp, Workspace, WorkspaceError, WorkspaceManager,
-        WorktreeProvisioner,
+        HeartbeatRequest, HeartbeatResponse, JournalError, JournalState, LeaseResult,
+        LocalRunHandle, OwnerOnlyJournal, ProtocolClientError, PullProtocol, RecoveryObservation,
+        RecoveryReport, RepositorySpec, RunCycle, RunnerCredential, RunnerEngine, RunnerId,
+        RunnerSession, StartPhase, StartReport, Timestamp, Workspace, WorkspaceError, WorkspaceId,
+        WorkspaceJournal, WorkspaceManager, WorktreeProvisioner,
     },
 };
 
@@ -48,6 +48,7 @@ struct FakeProtocol {
     failure: FailurePoint,
     cancellation_requested: bool,
     evidence: Arc<Mutex<ProtocolEvidence>>,
+    recovery_failures_remaining: Arc<AtomicUsize>,
 }
 
 impl FakeProtocol {
@@ -57,6 +58,7 @@ impl FakeProtocol {
             failure,
             cancellation_requested,
             evidence: Arc::new(Mutex::new(ProtocolEvidence::default())),
+            recovery_failures_remaining: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -66,6 +68,11 @@ impl FakeProtocol {
             .expect("protocol evidence")
             .events
             .push(event.into());
+    }
+
+    fn fail_recovery_reports(&self, count: usize) {
+        self.recovery_failures_remaining
+            .store(count, Ordering::SeqCst);
     }
 }
 
@@ -179,7 +186,18 @@ impl PullProtocol for FakeProtocol {
             .events
             .push(format!("recovery:{:?}", report.observation));
         evidence.recovery_reports.push(report.observation);
-        Ok(())
+        drop(evidence);
+        if self
+            .recovery_failures_remaining
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                remaining.checked_sub(1)
+            })
+            .is_ok()
+        {
+            Err(ProtocolClientError::Transport)
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -509,5 +527,237 @@ async fn cancellation_ack_failure_never_claims_terminal_and_records_ambiguity() 
     );
     drop(process);
     assert!(journal.unresolved().expect("journal scan").is_empty());
+    remove_test_root(&root);
+}
+
+#[tokio::test]
+async fn failed_ambiguity_report_stays_pending_then_restart_quarantines_without_respawn() {
+    let root = root("ambiguity-report-retry");
+    let protocol = FakeProtocol::new(work(), FailurePoint::ProcessStartAck, false);
+    protocol.fail_recovery_reports(1);
+    let adapter = FakeAdapter::new(RecoveryObservation::Ambiguous);
+    let journal = OwnerOnlyJournal::new(&root);
+    let engine = RunnerEngine::new(
+        protocol.clone(),
+        adapter.clone(),
+        journal.clone(),
+        WorkspaceManager::new(root.join("workspaces"), FakeWorktree::succeeds()),
+    );
+
+    assert!(matches!(
+        engine
+            .run_once(&session(), claim())
+            .await
+            .expect("pending result"),
+        RunCycle::RecoveryPending { .. }
+    ));
+    assert_eq!(
+        journal.unresolved().expect("pending local evidence").len(),
+        1,
+        "failed report keeps the journal eligible for restart recovery"
+    );
+    assert_eq!(adapter.evidence.lock().expect("process evidence").starts, 1);
+
+    let restarted = RunnerEngine::new(
+        protocol.clone(),
+        adapter.clone(),
+        journal.clone(),
+        WorkspaceManager::new(root.join("workspaces"), FakeWorktree::succeeds()),
+    );
+    let outcomes = restarted
+        .recover(&session())
+        .await
+        .expect("restart recovery");
+    assert!(matches!(
+        outcomes.as_slice(),
+        [RunCycle::Quarantined { .. }]
+    ));
+
+    let process = adapter.evidence.lock().expect("process evidence");
+    assert_eq!(
+        process.starts, 1,
+        "restart recovery must never launch again"
+    );
+    assert_eq!(process.reconciles, 1);
+    assert_eq!(process.cancels, 1, "only the original post-spawn stop runs");
+    drop(process);
+    let evidence = protocol.evidence.lock().expect("protocol evidence");
+    assert_eq!(
+        evidence.recovery_reports,
+        vec![
+            RecoveryObservation::Ambiguous,
+            RecoveryObservation::Ambiguous
+        ],
+        "the ambiguity report is retried exactly once after its failed delivery"
+    );
+    assert_eq!(
+        evidence
+            .events
+            .iter()
+            .filter(|event| event.as_str() == "start:process_observed_running")
+            .count(),
+        1
+    );
+    drop(evidence);
+    assert!(
+        journal
+            .unresolved()
+            .expect("post-quarantine scan")
+            .is_empty()
+    );
+    assert!(
+        root.join("quarantine")
+            .read_dir()
+            .expect("quarantine")
+            .next()
+            .is_some(),
+        "server-acknowledged ambiguity is preserved as local quarantine evidence"
+    );
+    remove_test_root(&root);
+}
+
+#[tokio::test]
+async fn process_running_recovery_observation_reports_ambiguity_and_quarantines_without_spawn() {
+    let root = root("process-running-recovery");
+    let protocol = FakeProtocol::new(work(), FailurePoint::None, false);
+    let adapter = FakeAdapter::new(RecoveryObservation::ProcessRunning);
+    let journal = OwnerOnlyJournal::new(&root);
+    let lease = work().lease;
+    journal
+        .persist_before_spawn(&tack_runner::client::AttemptJournal::prepared(
+            &lease,
+            WorkspaceJournal {
+                workspace_id: WorkspaceId::new("ws_crash"),
+                path: root.join("workspaces/attempt-crash"),
+                base_revision: "0123456789abcdef".into(),
+            },
+        ))
+        .expect("persist prior journal");
+
+    let engine = RunnerEngine::new(
+        protocol.clone(),
+        adapter.clone(),
+        journal.clone(),
+        WorkspaceManager::new(root.join("workspaces"), FakeWorktree::succeeds()),
+    );
+    let outcomes = engine
+        .recover(&session())
+        .await
+        .expect("recover running process");
+    assert!(matches!(
+        outcomes.as_slice(),
+        [RunCycle::Quarantined { .. }]
+    ));
+    let process = adapter.evidence.lock().expect("process evidence");
+    assert_eq!(
+        process.starts, 0,
+        "recovery must not spawn a second process"
+    );
+    assert_eq!(process.reconciles, 1);
+    assert_eq!(
+        process.cancels, 0,
+        "no local handle exists to cancel on restart"
+    );
+    drop(process);
+    let evidence = protocol.evidence.lock().expect("protocol evidence");
+    assert_eq!(
+        evidence.recovery_reports,
+        vec![RecoveryObservation::Ambiguous]
+    );
+    assert!(
+        !evidence
+            .events
+            .iter()
+            .any(|event| event == "recovery:ProcessRunning"),
+        "a running process must never be reported as a safe completed recovery"
+    );
+    drop(evidence);
+    assert!(
+        journal
+            .unresolved()
+            .expect("post-quarantine scan")
+            .is_empty()
+    );
+    assert!(
+        root.join("quarantine")
+            .read_dir()
+            .expect("quarantine")
+            .next()
+            .is_some()
+    );
+    remove_test_root(&root);
+}
+
+#[tokio::test]
+async fn reoffered_quarantined_attempt_is_rejected_before_a_second_spawn() {
+    let root = root("quarantined-reoffer");
+    let protocol = FakeProtocol::new(work(), FailurePoint::ProcessStartAck, false);
+    let adapter = FakeAdapter::new(RecoveryObservation::Ambiguous);
+    let journal = OwnerOnlyJournal::new(&root);
+    let first = RunnerEngine::new(
+        protocol.clone(),
+        adapter.clone(),
+        journal.clone(),
+        WorkspaceManager::new(root.join("workspaces"), FakeWorktree::succeeds()),
+    );
+    assert!(matches!(
+        first
+            .run_once(&session(), claim())
+            .await
+            .expect("first quarantine"),
+        RunCycle::Quarantined { .. }
+    ));
+
+    *protocol.work.lock().expect("claim lock") = Some(work());
+    let restarted = RunnerEngine::new(
+        protocol.clone(),
+        adapter.clone(),
+        journal.clone(),
+        WorkspaceManager::new(root.join("workspaces"), FakeWorktree::succeeds()),
+    );
+    assert!(matches!(
+        restarted.run_once(&session(), claim()).await,
+        Err(EngineError::Journal(JournalError::AlreadyExists))
+    ));
+
+    let process = adapter.evidence.lock().expect("process evidence");
+    assert_eq!(
+        process.starts, 1,
+        "reoffered quarantined work cannot relaunch"
+    );
+    assert_eq!(process.cancels, 1);
+    drop(process);
+    let evidence = protocol.evidence.lock().expect("protocol evidence");
+    assert_eq!(
+        evidence
+            .events
+            .iter()
+            .filter(|event| event.as_str() == "claim_committed")
+            .count(),
+        2,
+        "the server reoffer reached the runner but stopped at local evidence"
+    );
+    assert_eq!(
+        evidence
+            .events
+            .iter()
+            .filter(|event| event.as_str() == "start:preparing")
+            .count(),
+        1,
+        "the rejected reoffer never starts preparation or a process"
+    );
+    assert_eq!(
+        evidence.recovery_reports,
+        vec![RecoveryObservation::Ambiguous]
+    );
+    drop(evidence);
+    assert!(journal.unresolved().expect("journal scan").is_empty());
+    assert!(
+        root.join("quarantine")
+            .read_dir()
+            .expect("quarantine")
+            .next()
+            .is_some()
+    );
     remove_test_root(&root);
 }
