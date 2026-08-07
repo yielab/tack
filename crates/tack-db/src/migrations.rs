@@ -104,6 +104,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("052_execution_report_replays", &MIGRATION_052[..]),
         ordinary("053_execution_request_snapshot", &MIGRATION_053[..]),
         ordinary("054_execution_event_batch_replays", &MIGRATION_054[..]),
+        ordinary("055_execution_completion_replays", &MIGRATION_055[..]),
     ]
 }
 
@@ -1524,4 +1525,7 @@ const MIGRATION_053: [&str; 1] =
     ["ALTER TABLE execution_requests ADD COLUMN request_snapshot TEXT NOT NULL DEFAULT '{}'"];
 const MIGRATION_054: [&str; 1] = [
     "CREATE TABLE execution_event_batch_replays (attempt_id TEXT NOT NULL REFERENCES execution_attempts(id) ON DELETE CASCADE, checkpoint TEXT NOT NULL, fingerprint TEXT NOT NULL, response TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (attempt_id, checkpoint))",
+];
+const MIGRATION_055: [&str; 1] = [
+    "CREATE TABLE execution_completion_replays (attempt_id TEXT NOT NULL REFERENCES execution_attempts(id) ON DELETE CASCADE, completion_id TEXT NOT NULL, fingerprint TEXT NOT NULL, response TEXT NOT NULL, committed_at TEXT NOT NULL, PRIMARY KEY(attempt_id, completion_id))",
 ];
