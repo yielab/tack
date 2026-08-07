@@ -88,6 +88,16 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("036_control_planes_version", &MIGRATION_036[..]),
         rebuild("037_orch_runs_rebuild", MIGRATION_037),
         rebuild("038_orch_approvals_rebuild", MIGRATION_038),
+        ordinary("039_agent_fleets", &MIGRATION_039[..]),
+        ordinary("040_agent_runners", &MIGRATION_040[..]),
+        ordinary("041_agent_fleet_members", &MIGRATION_041[..]),
+        ordinary("042_agent_profiles", &MIGRATION_042[..]),
+        ordinary("043_model_profiles", &MIGRATION_043[..]),
+        ordinary("044_execution_requests", &MIGRATION_044[..]),
+        ordinary("045_execution_attempts", &MIGRATION_045[..]),
+        ordinary("046_execution_events", &MIGRATION_046[..]),
+        ordinary("047_execution_artifacts", &MIGRATION_047[..]),
+        ordinary("048_execution_decisions", &MIGRATION_048[..]),
     ]
 }
 
@@ -1285,3 +1295,198 @@ const MIGRATION_038: RebuildMigration = RebuildMigration {
         item_id, remote_task_id, agent, action, state, requested_at, decided_at, created_at, \
         updated_at FROM orch_approvals_new",
 };
+
+// ─── Harness-agnostic runner fleet (Part III, card B2) ─────────────────────
+//
+// These tables are deliberately additive. The existing `orch_*` history is a
+// legacy Docket bridge and is neither renamed nor reused for neutral execution
+// state. Each named migration remains an ordinary transaction under the runner
+// above; `_migrations` is written in the same transaction only at commit.
+
+const MIGRATION_039: [&str; 2] = [
+    "CREATE TABLE agent_fleets (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL UNIQUE,
+        concurrency_limit INTEGER,
+        default_policy TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )",
+    "CREATE INDEX idx_agent_fleets_name ON agent_fleets(name)",
+];
+
+const MIGRATION_040: [&str; 2] = [
+    "CREATE TABLE agent_runners (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL UNIQUE,
+        credential_hash TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'active',
+        labels TEXT NOT NULL DEFAULT '{}',
+        total_capacity INTEGER NOT NULL DEFAULT 1,
+        available_capacity INTEGER NOT NULL DEFAULT 0,
+        capability_snapshot TEXT NOT NULL DEFAULT '{}',
+        protocol_version INTEGER NOT NULL,
+        last_heartbeat_at TEXT,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )",
+    "CREATE INDEX idx_agent_runners_state_capacity ON agent_runners(state, available_capacity)",
+];
+
+const MIGRATION_041: [&str; 2] = [
+    "CREATE TABLE agent_fleet_members (
+        fleet_id TEXT NOT NULL REFERENCES agent_fleets(id) ON DELETE CASCADE,
+        runner_id TEXT NOT NULL REFERENCES agent_runners(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (fleet_id, runner_id)
+    )",
+    "CREATE INDEX idx_agent_fleet_members_runner ON agent_fleet_members(runner_id)",
+];
+
+const MIGRATION_042: [&str; 2] = [
+    "CREATE TABLE agent_profiles (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL UNIQUE,
+        instructions TEXT NOT NULL,
+        tool_policy TEXT NOT NULL DEFAULT '{}',
+        limits TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )",
+    "CREATE INDEX idx_agent_profiles_name ON agent_profiles(name)",
+];
+
+const MIGRATION_043: [&str; 2] = [
+    "CREATE TABLE model_profiles (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL UNIQUE,
+        model_provider TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        config_reference TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )",
+    "CREATE INDEX idx_model_profiles_provider_model ON model_profiles(model_provider, model_id)",
+];
+
+const MIGRATION_044: [&str; 3] = [
+    "CREATE TABLE execution_requests (
+        id TEXT PRIMARY KEY NOT NULL,
+        item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        idempotency_scope TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        request_fingerprint TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'queued',
+        selector_kind TEXT NOT NULL,
+        selector_id TEXT NOT NULL,
+        agent_profile_id TEXT REFERENCES agent_profiles(id) ON DELETE SET NULL,
+        agent_profile_snapshot TEXT NOT NULL,
+        requested_harness_kind TEXT,
+        requested_model_provider TEXT,
+        requested_model_id TEXT,
+        repository_snapshot TEXT NOT NULL,
+        permission_policy TEXT NOT NULL,
+        timeout_seconds INTEGER,
+        budgets TEXT NOT NULL DEFAULT '{}',
+        status_map_policy_id TEXT,
+        environment TEXT NOT NULL DEFAULT '{}',
+        metadata TEXT NOT NULL DEFAULT '{}',
+        cancellation_requested_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(idempotency_scope, idempotency_key)
+    )",
+    "CREATE INDEX idx_execution_requests_queue ON execution_requests(state, created_at)",
+    "CREATE INDEX idx_execution_requests_item ON execution_requests(item_id, created_at)",
+];
+
+const MIGRATION_045: [&str; 3] = [
+    "CREATE TABLE execution_attempts (
+        id TEXT PRIMARY KEY NOT NULL,
+        request_id TEXT NOT NULL REFERENCES execution_requests(id) ON DELETE CASCADE,
+        attempt_number INTEGER NOT NULL,
+        runner_id TEXT NOT NULL REFERENCES agent_runners(id) ON DELETE RESTRICT,
+        fencing_token INTEGER NOT NULL,
+        state TEXT NOT NULL DEFAULT 'leased',
+        lease_issued_at TEXT NOT NULL,
+        lease_expires_at TEXT NOT NULL,
+        last_heartbeat_at TEXT,
+        event_checkpoint TEXT,
+        completion_id TEXT,
+        workspace_id TEXT,
+        base_revision TEXT,
+        actual_execution TEXT,
+        terminal_reason TEXT,
+        usage TEXT,
+        started_at TEXT,
+        ended_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(request_id, attempt_number),
+        UNIQUE(request_id, fencing_token)
+    )",
+    "CREATE INDEX idx_execution_attempts_runner_lease ON execution_attempts(runner_id, lease_expires_at)",
+    "CREATE INDEX idx_execution_attempts_request_state ON execution_attempts(request_id, state)",
+];
+
+const MIGRATION_046: [&str; 3] = [
+    "CREATE TABLE execution_events (
+        id TEXT PRIMARY KEY NOT NULL,
+        attempt_id TEXT NOT NULL REFERENCES execution_attempts(id) ON DELETE CASCADE,
+        event_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        occurred_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(attempt_id, event_id),
+        UNIQUE(attempt_id, sequence)
+    )",
+    "CREATE INDEX idx_execution_events_timeline ON execution_events(attempt_id, sequence)",
+    "CREATE INDEX idx_execution_events_occurred ON execution_events(occurred_at)",
+];
+
+const MIGRATION_047: [&str; 3] = [
+    "CREATE TABLE execution_artifacts (
+        id TEXT PRIMARY KEY NOT NULL,
+        attempt_id TEXT NOT NULL REFERENCES execution_attempts(id) ON DELETE CASCADE,
+        artifact_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        name TEXT NOT NULL,
+        media_type TEXT,
+        size_bytes INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        content_disposition TEXT,
+        content_reference TEXT,
+        metadata TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        UNIQUE(attempt_id, artifact_id)
+    )",
+    "CREATE INDEX idx_execution_artifacts_attempt ON execution_artifacts(attempt_id)",
+    "CREATE INDEX idx_execution_artifacts_sha256 ON execution_artifacts(sha256)",
+];
+
+const MIGRATION_048: [&str; 3] = [
+    "CREATE TABLE execution_decisions (
+        id TEXT PRIMARY KEY NOT NULL,
+        attempt_id TEXT NOT NULL REFERENCES execution_attempts(id) ON DELETE CASCADE,
+        decision_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'pending',
+        prompt TEXT NOT NULL,
+        options TEXT NOT NULL DEFAULT '[]',
+        metadata TEXT NOT NULL DEFAULT '{}',
+        answer TEXT,
+        expires_at TEXT,
+        resolved_at TEXT,
+        resolved_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(attempt_id, decision_id)
+    )",
+    "CREATE INDEX idx_execution_decisions_pending ON execution_decisions(state, expires_at)",
+    "CREATE INDEX idx_execution_decisions_attempt ON execution_decisions(attempt_id)",
+];
