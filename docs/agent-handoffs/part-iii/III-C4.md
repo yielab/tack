@@ -13,7 +13,7 @@
   API, database, runner, router, fixture, or contract source was modified by
   C4.
 - Tests run on the rebased current C4 branch: `cargo test -p tack-api --test
-  runner_vertical_slice` (5 passed) and `cargo test -p tack-runner --test
+  runner_vertical_slice` (7 passed) and `cargo test -p tack-runner --test
   crash_matrix` (7 passed). `cargo clippy -p tack-api --test
   runner_vertical_slice -- -D warnings`, `cargo clippy -p tack-runner --test
   crash_matrix -- -D warnings`, `cargo fmt --all -- --check`, and `git diff
@@ -32,6 +32,12 @@
   safe. Completion proves its attempt/request state transaction rolls back as a
   unit. Runner response-loss cases retain a durable terminal outbox rather than
   fabricating an ambiguity/quarantine path.
+- Enrollment redemption: two concurrent token-redemption attempts have exactly
+  one winner, the hash-only token is consumed once, and the durable token row
+  never requires a raw bearer value.
+- Heartbeat: a fault during lease update leaves no replay row; the retry commits
+  one authoritative response, the exact retry replays it, a changed payload for
+  that ID conflicts, and replay never double-writes runner capacity.
 - Before local spawn: a worktree-provisioning failure leaves a prepared journal;
   restart reports `ProcessStopped` without a harness start.
 - After spawn before start acknowledgement, completion acknowledgement, and
@@ -48,9 +54,7 @@
 ## Remaining scope boundary
 
 - The C4-owned matrix uses repository seams and runner fakes; C2/C5 still own
-  authenticated route-level restart verification. Enrollment concurrency and
-  heartbeat replay are B2 repository contracts but do not yet have dedicated
-  C4 fault-injection cases in this focused suite.
+  authenticated route-level restart verification.
 - C4 is not a C5 router test: it has no production authenticated route,
   endpoint-envelope, or API/runner restart-through-router coverage. The runner
   tests use an explicit fake protocol/process seam; API audit assertions depend
