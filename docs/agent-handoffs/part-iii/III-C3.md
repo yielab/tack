@@ -3,12 +3,13 @@
 - Base SHA / branch / final SHA: `f14019b` / `agent/iii-c3-runner-engine` / the commit
   containing this handoff. Do not treat the raw `1b6dede..HEAD` history as C3-only: this working
   branch also carries separate A0/B1/B3 prerequisite-owner amendments.
-- C3-owned source commits are `5b0e212`, `c9f8f48`, `120309d`, `12989e2`, `103c7c4`,
-  `fe894c3`, `f8e77b6`, `a124abf`, and the final heartbeat-ID follow-up commit. C3-owned files
+- C3-owned source commits are `5b0e212`, `c9f8f48`, `120309d`, `103c7c4`, `fe894c3`,
+  `f8e77b6`, `a124abf`, and the final heartbeat-ID follow-up commit. C3-owned files
   are `crates/tack-runner/src/{client,journal,workspace,engine}.rs`, focused tests embedded in
   those owned modules, and this handoff. The A0/B1/B3 prerequisite commits already present on
-  this branch are separate owner amendments and must be merged first; in particular B3 owns
-  `d8300e4`, `0e6731f`, and `934bc80` and the Cargo manifest/lock changes.
+  this branch are separate owner amendments and must be merged first; A0 owns the contract
+  amendment `12989e2`, while B3 owns `d8300e4`, `0e6731f`, and `934bc80` and the Cargo
+  manifest/lock changes.
 - Contract fixtures consumed: enrollment, claim, heartbeat, completion, cancellation, limits,
   lifecycle and stable-error fixtures under `docs/contracts/runner-v1/`; no fixture changed.
 - Behavior implemented: a typed pull-protocol seam; enrollment, claim, heartbeat,
