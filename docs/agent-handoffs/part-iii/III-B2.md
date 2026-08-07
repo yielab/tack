@@ -134,6 +134,9 @@
   pre-`sent_at` fingerprints therefore conflict rather than replaying. Capacity reservations
   count every unresolved active attempt even after its lease expires: expiry alone cannot make a
   slot available; a recovery/terminal transition must release it.
+- Each heartbeat active-attempt entry now also freezes and persists its reported `state`,
+  `journal_state`, and `last_event_checkpoint`; any same-ID mutation of one of those fields is a
+  `Conflict` rather than a replay.
 
 ### Cancellation observation correction
 
@@ -149,6 +152,8 @@
   retry rather than fabricating a response. Focused coverage includes response-loss replay after
   time advance, semantic JSON replay, changed-input no-write, foreign fence, corrupt response,
   capped capacity, transaction rollback, and terminal/ambiguous classifications.
+- Cancellation `observation` is intentionally constrained to the exact JSON string
+  `"process_stopped"`; any other JSON value fails before opening a transaction or changing state.
 
 ### Recovery observation v1
 

@@ -190,11 +190,17 @@ pub struct ClaimedExecution {
 pub struct HeartbeatLease<'a> {
     pub attempt_id: &'a str,
     pub fencing_token: i64,
+    pub state: &'a str,
+    pub journal_state: &'a str,
+    pub last_event_checkpoint: Option<&'a str>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeartbeatLeaseResponse {
     pub attempt_id: String,
     pub fencing_token: i64,
+    pub state: String,
+    pub journal_state: String,
+    pub last_event_checkpoint: Option<String>,
     pub lease_expires_at: DateTime<Utc>,
     pub cancellation_requested: bool,
 }
@@ -431,7 +437,15 @@ fn heartbeat_fingerprint(
         .ok_or_else(|| sqlx::Error::Protocol("heartbeat lease duration is out of range".into()))?;
     let mut leases = leases
         .iter()
-        .map(|lease| (lease.attempt_id, lease.fencing_token))
+        .map(|lease| {
+            (
+                lease.attempt_id,
+                lease.fencing_token,
+                lease.state,
+                lease.journal_state,
+                lease.last_event_checkpoint,
+            )
+        })
         .collect::<Vec<_>>();
     leases.sort_unstable();
     serde_json::to_string(&serde_json::json!({
@@ -442,9 +456,12 @@ fn heartbeat_fingerprint(
         "lease_duration_nanoseconds": lease_duration_nanoseconds,
         "leases": leases
             .into_iter()
-            .map(|(attempt_id, fencing_token)| serde_json::json!({
+            .map(|(attempt_id, fencing_token, state, journal_state, last_event_checkpoint)| serde_json::json!({
                 "attempt_id": attempt_id,
                 "fencing_token": fencing_token,
+                "state": state,
+                "journal_state": journal_state,
+                "last_event_checkpoint": last_event_checkpoint,
             }))
             .collect::<Vec<_>>(),
     }))
@@ -494,6 +511,17 @@ fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, sqlx::
                             "invalid heartbeat replay response field: fencing_token".into(),
                         )
                     })?,
+                state: required_string(value, "state")?,
+                journal_state: required_string(value, "journal_state")?,
+                last_event_checkpoint: match value.get("last_event_checkpoint") {
+                    Some(serde_json::Value::Null) => None,
+                    Some(serde_json::Value::String(value)) => Some(value.clone()),
+                    _ => {
+                        return Err(sqlx::Error::Protocol(
+                            "invalid heartbeat replay response field: last_event_checkpoint".into(),
+                        ));
+                    }
+                },
                 lease_expires_at,
                 cancellation_requested: value
                     .get("cancellation_requested")
@@ -521,6 +549,11 @@ fn cancellation_fingerprint(
         .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
     let observation: serde_json::Value = serde_json::from_str(input.observation)
         .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+    if observation != serde_json::Value::String("process_stopped".into()) {
+        return Err(sqlx::Error::Protocol(
+            "cancellation observation must be JSON string process_stopped".into(),
+        ));
+    }
     serde_json::to_string(&serde_json::json!({
         "runner_id": input.runner_id,
         "attempt_id": input.attempt_id,
@@ -928,6 +961,9 @@ impl Repository {
             result.push(HeartbeatLeaseResponse {
                 attempt_id: lease.attempt_id.into(),
                 fencing_token: lease.fencing_token,
+                state: lease.state.into(),
+                journal_state: lease.journal_state.into(),
+                last_event_checkpoint: lease.last_event_checkpoint.map(str::to_owned),
                 lease_expires_at: expires,
                 cancellation_requested: cancellation.is_some(),
             });
@@ -944,6 +980,9 @@ impl Repository {
             "leases": response.leases.iter().map(|lease| serde_json::json!({
                 "attempt_id": lease.attempt_id,
                 "fencing_token": lease.fencing_token,
+                "state": lease.state,
+                "journal_state": lease.journal_state,
+                "last_event_checkpoint": lease.last_event_checkpoint,
                 "lease_expires_at": lease.lease_expires_at.to_rfc3339(),
                 "cancellation_requested": lease.cancellation_requested,
             })).collect::<Vec<_>>(),
