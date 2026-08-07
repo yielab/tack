@@ -3,6 +3,7 @@ import { render } from 'solid-js/web';
 import { MemoryRouter, Route } from '@solidjs/router';
 import ApprovalsPage from './ApprovalsPage';
 import { approvalTokenStore } from './api';
+import { useToasts } from '../../shared/ui/toast';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
@@ -84,7 +85,7 @@ describe('ApprovalsPage — request failure (not a 404)', () => {
 
 describe('ApprovalsPage — enabled, inbox empty', () => {
   it('shows "Inbox zero"', async () => {
-    mockFetch(200, { rows: [], grant_available: true });
+    mockFetch(200, { rows: [] });
     const { container, dispose } = mount();
     await flush();
     expect(container.textContent).toContain('Inbox zero');
@@ -92,22 +93,65 @@ describe('ApprovalsPage — enabled, inbox empty', () => {
   });
 });
 
-describe('ApprovalsPage — grant_available: false', () => {
-  it('never renders a Grant or Deny button, even with rows present', async () => {
-    mockFetch(200, { rows: [uncorrelated, correlated], grant_available: false });
+describe('ApprovalsPage — no client-side pre-check on whether granting is possible (card G1)', () => {
+  it('always renders Grant/Deny once the inbox loads — the real gate is the server, not a guessed-ahead-of-time flag', async () => {
+    mockFetch(200, { rows: [uncorrelated, correlated] });
     const { container, dispose } = mount();
     await flush();
     const buttons = Array.from(container.querySelectorAll('button')).map((b) => b.textContent);
-    expect(buttons).not.toContain('Grant');
-    expect(buttons).not.toContain('Deny');
-    expect(container.textContent).toContain('TACK_ORCH_APPROVAL_TOKEN');
+    expect(buttons).toContain('Grant');
+    expect(buttons).toContain('Deny');
+    dispose();
+  });
+
+  it("surfaces the server's real 403 reason on an actual decide attempt, rather than hiding the controls ahead of time", async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith('/approvals') || url.includes('/approvals?')) {
+        return Promise.resolve(new Response(JSON.stringify({ rows: [correlated] }), { status: 200 }));
+      }
+      if (url.includes('/approvals/apr-correlated')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: {
+                status: 403,
+                message:
+                  'granting or denying approvals requires TACK_ORCH_APPROVAL_TOKEN to be configured on this server',
+              },
+            }),
+            { status: 403 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }));
+    });
+
+    const { container, dispose } = mount();
+    await flush();
+
+    const grantBtn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Grant')!;
+    grantBtn.click();
+    await flush();
+    const dialog = document.querySelector('[role="dialog"]')!;
+    const confirmBtn = Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Grant')!;
+    confirmBtn.click();
+    await flush();
+    await flush();
+
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/approvals/apr-correlated'))).toBe(true);
+    const messages = useToasts()().map((t) => t.message);
+    expect(messages.some((m) => m.includes('TACK_ORCH_APPROVAL_TOKEN'))).toBe(true);
+    // The row is untouched — a 403 must not be treated like "already
+    // decided" and silently drop the row from the inbox.
+    expect(container.textContent).toContain('builder');
     dispose();
   });
 });
 
 describe('ApprovalsPage — populated inbox, oldest first, uncorrelated surfaced', () => {
   it('renders both rows, oldest (uncorrelated) first, and names the uncorrelated one explicitly', async () => {
-    mockFetch(200, { rows: [uncorrelated, correlated], grant_available: true });
+    mockFetch(200, { rows: [uncorrelated, correlated] });
     const { container, dispose } = mount();
     await flush();
 
@@ -124,7 +168,7 @@ describe('ApprovalsPage — populated inbox, oldest first, uncorrelated surfaced
 
 describe('ApprovalsPage — grant is never a single click', () => {
   it('clicking Grant opens a confirmation modal naming the agent/action/item before any decide call fires', async () => {
-    const fetchMock = mockFetch(200, { rows: [correlated], grant_available: true });
+    const fetchMock = mockFetch(200, { rows: [correlated] });
     const { container, dispose } = mount();
     await flush();
 
@@ -155,7 +199,7 @@ describe('ApprovalsPage — confirmed grant', () => {
       const url = String(input);
       if (url.endsWith('/approvals') || url.includes('/approvals?')) {
         return Promise.resolve(
-          new Response(JSON.stringify({ rows: [correlated], grant_available: true }), {
+          new Response(JSON.stringify({ rows: [correlated] }), {
             status: 200,
           })
         );

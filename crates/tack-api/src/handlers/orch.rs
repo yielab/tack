@@ -36,7 +36,7 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Path, Request, State};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
@@ -49,7 +49,7 @@ use tack_db::repo::orch::{
     ControlPlane, CreateControlPlane, OrchApproval, OrchEvent, OrchLink, OrchMetricLatest, OrchRun,
     OrchTask, PendingOrchApproval, UpdateControlPlane, UpsertOrchLink,
 };
-use tack_orch::adapters::docket::DocketAdapter;
+use tack_orch::adapters::registry::{self, RegistryError};
 use tack_orch::{ControlPlane as OrchControlPlane, OrchError};
 
 use crate::dispatcher::{self, DispatchOutcome};
@@ -114,6 +114,249 @@ where
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// Capabilities (card G1) — wire mirror of tack_orch::Capabilities, surfaced
+// on GET /api/control-planes/{id} and GET /api/fleet so the UI reads what a
+// plane can do instead of checking `kind` (TODO.md §II.0 rule 6).
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Local, non-generic mirrors rather than deriving `utoipa::ToSchema`
+// directly on `tack_orch`'s types: that crate depends on neither `utoipa`
+// nor `tack-api` (see its own module doc — the dependency graph points
+// inward only), so every wire DTO in this file already follows the same
+// wrap-and-convert shape (`ControlPlaneResponse` from `tack_db::repo::orch::
+// ControlPlane`, `OrchLinkResponse` from `OrchLink`, and so on) — this is
+// that same convention, not a new one.
+
+/// Wire mirror of `tack_orch::Support`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SupportLevel {
+    Unsupported,
+    Advisory,
+    Supported,
+}
+
+impl From<tack_orch::Support> for SupportLevel {
+    fn from(v: tack_orch::Support) -> Self {
+        match v {
+            tack_orch::Support::Unsupported => Self::Unsupported,
+            tack_orch::Support::Advisory => Self::Advisory,
+            tack_orch::Support::Supported => Self::Supported,
+        }
+    }
+}
+
+/// Wire mirror of `tack_orch::EventScope`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum EventScopeLevel {
+    None,
+    Run,
+    Project,
+    Plane,
+}
+
+impl From<tack_orch::EventScope> for EventScopeLevel {
+    fn from(v: tack_orch::EventScope) -> Self {
+        match v {
+            tack_orch::EventScope::None => Self::None,
+            tack_orch::EventScope::Run => Self::Run,
+            tack_orch::EventScope::Project => Self::Project,
+            tack_orch::EventScope::Plane => Self::Plane,
+        }
+    }
+}
+
+/// Wire mirror of `tack_orch::DecisionSupport`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DecisionSupportLevel {
+    None,
+    Poll,
+    Push,
+}
+
+impl From<tack_orch::DecisionSupport> for DecisionSupportLevel {
+    fn from(v: tack_orch::DecisionSupport) -> Self {
+        match v {
+            tack_orch::DecisionSupport::None => Self::None,
+            tack_orch::DecisionSupport::Poll => Self::Poll,
+            tack_orch::DecisionSupport::Push => Self::Push,
+        }
+    }
+}
+
+/// Wire mirror of `tack_orch::UsageSupport`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageSupportLevel {
+    NotMeasured,
+    FromProvider,
+    FromGateway,
+}
+
+impl From<tack_orch::UsageSupport> for UsageSupportLevel {
+    fn from(v: tack_orch::UsageSupport) -> Self {
+        match v {
+            tack_orch::UsageSupport::NotMeasured => Self::NotMeasured,
+            tack_orch::UsageSupport::FromProvider => Self::FromProvider,
+            tack_orch::UsageSupport::FromGateway => Self::FromGateway,
+        }
+    }
+}
+
+/// Wire mirror of `tack_orch::ModelSelection`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelSelectionLevel {
+    Unsupported,
+    Advisory,
+    Honoured,
+}
+
+impl From<tack_orch::ModelSelection> for ModelSelectionLevel {
+    fn from(v: tack_orch::ModelSelection) -> Self {
+        match v {
+            tack_orch::ModelSelection::Unsupported => Self::Unsupported,
+            tack_orch::ModelSelection::Advisory => Self::Advisory,
+            tack_orch::ModelSelection::Honoured => Self::Honoured,
+        }
+    }
+}
+
+/// `pause`/`resume`'s wire shape — level plus why, not a bare enum. See
+/// `tack_orch::Capabilities`'s own doc comment: the reason is
+/// adapter-authored data, never a string this API layer invents.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct SupportCapability {
+    pub level: SupportLevel,
+    pub reason: String,
+}
+
+impl From<tack_orch::Rated<tack_orch::Support>> for SupportCapability {
+    fn from(r: tack_orch::Rated<tack_orch::Support>) -> Self {
+        Self {
+            level: r.level.into(),
+            reason: r.reason.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct EventScopeCapability {
+    pub level: EventScopeLevel,
+    pub reason: String,
+}
+
+impl From<tack_orch::Rated<tack_orch::EventScope>> for EventScopeCapability {
+    fn from(r: tack_orch::Rated<tack_orch::EventScope>) -> Self {
+        Self {
+            level: r.level.into(),
+            reason: r.reason.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct DecisionsCapability {
+    pub level: DecisionSupportLevel,
+    pub reason: String,
+}
+
+impl From<tack_orch::Rated<tack_orch::DecisionSupport>> for DecisionsCapability {
+    fn from(r: tack_orch::Rated<tack_orch::DecisionSupport>) -> Self {
+        Self {
+            level: r.level.into(),
+            reason: r.reason.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct UsageCapability {
+    pub level: UsageSupportLevel,
+    pub reason: String,
+}
+
+impl From<tack_orch::Rated<tack_orch::UsageSupport>> for UsageCapability {
+    fn from(r: tack_orch::Rated<tack_orch::UsageSupport>) -> Self {
+        Self {
+            level: r.level.into(),
+            reason: r.reason.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct ModelSelectionCapability {
+    pub level: ModelSelectionLevel,
+    pub reason: String,
+}
+
+impl From<tack_orch::Rated<tack_orch::ModelSelection>> for ModelSelectionCapability {
+    fn from(r: tack_orch::Rated<tack_orch::ModelSelection>) -> Self {
+        Self {
+            level: r.level.into(),
+            reason: r.reason.to_string(),
+        }
+    }
+}
+
+/// Wire mirror of `tack_orch::Capabilities` — what a control plane can
+/// actually do, so the UI can disable a control and explain why instead of
+/// checking `kind` (TODO.md §II.0 rule 6).
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct CapabilitiesResponse {
+    pub dispatch: bool,
+    pub cancel: bool,
+    pub pause: SupportCapability,
+    pub resume: SupportCapability,
+    pub event_scope: EventScopeCapability,
+    pub artifacts: bool,
+    pub decisions: DecisionsCapability,
+    pub usage: UsageCapability,
+    pub model_selection: ModelSelectionCapability,
+    pub runtimes: bool,
+    pub plane_metrics: bool,
+    pub provisioning: bool,
+}
+
+impl From<tack_orch::Capabilities> for CapabilitiesResponse {
+    fn from(c: tack_orch::Capabilities) -> Self {
+        Self {
+            dispatch: c.dispatch,
+            cancel: c.cancel,
+            pause: c.pause.into(),
+            resume: c.resume.into(),
+            event_scope: c.event_scope.into(),
+            artifacts: c.artifacts,
+            decisions: c.decisions.into(),
+            usage: c.usage.into(),
+            model_selection: c.model_selection.into(),
+            runtimes: c.runtimes,
+            plane_metrics: c.plane_metrics,
+            provisioning: c.provisioning,
+        }
+    }
+}
+
+/// Best-effort capabilities lookup for a `control_planes` row — `None` when
+/// this build of Tack has no adapter for `kind` (the "unconfigured" case —
+/// see `orch_store::RepoControlPlaneStore::mark_unconfigured`'s doc
+/// comment). `ControlPlane::capabilities` is synchronous and does no I/O
+/// (see the trait's own doc comment), so this never makes a network call
+/// and never needs the plane's real credentials — a throwaway adapter with
+/// no token is enough to read a value derived purely from the adapter's own
+/// static configuration. Same placeholder `config`/`secrets` caveat as
+/// `dispatcher::build_control_plane`: `tack_db::repo::orch::ControlPlane`
+/// doesn't yet surface those columns, and `"docket"` doesn't read them.
+fn capabilities_for(kind: &str, base_url: &str) -> Option<CapabilitiesResponse> {
+    registry::build(kind, base_url, None, &serde_json::json!({}), None)
+        .ok()
+        .map(|adapter| adapter.capabilities().into())
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // control_planes
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -126,21 +369,30 @@ pub struct ControlPlaneResponse {
     pub kind: String,
     pub base_url: String,
     pub api_version: Option<String>,
-    /// `"unknown"` | `"healthy"` | `"degraded"` | `"unreachable"` — driven by
-    /// the reconciler's health state machine (`tack-orch::reconciler`),
-    /// persisted verbatim.
+    /// `"unknown"` (pre-first-poll default) | `"healthy"` | `"degraded"` |
+    /// `"unreachable"` (the reconciler's health state machine,
+    /// `tack-orch::reconciler`, persisted verbatim) | `"unconfigured"` (card
+    /// G1 — this build of Tack could not even build a live adapter for
+    /// `kind`, so the reconciler's state machine never ran against this
+    /// plane at all; see `orch_store::RepoControlPlaneStore::
+    /// mark_unconfigured`'s doc comment).
     pub health: String,
     pub last_seen_at: Option<DateTime<Utc>>,
     pub consecutive_failures: i64,
     /// True when a docket Bearer token is currently stored for this plane.
     /// The token itself is write-only over this API.
     pub token_set: bool,
+    /// What this plane can actually do — `None` only in the same
+    /// `"unconfigured"` case `health` names: this build of Tack has no
+    /// adapter for `kind`. See [`capabilities_for`].
+    pub capabilities: Option<CapabilitiesResponse>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 impl From<ControlPlane> for ControlPlaneResponse {
     fn from(c: ControlPlane) -> Self {
+        let capabilities = capabilities_for(&c.kind, &c.base_url);
         Self {
             id: c.id,
             name: c.name,
@@ -151,6 +403,7 @@ impl From<ControlPlane> for ControlPlaneResponse {
             last_seen_at: c.last_seen_at,
             consecutive_failures: c.consecutive_failures,
             token_set: c.token_set,
+            capabilities,
             created_at: c.created_at,
             updated_at: c.updated_at,
         }
@@ -197,6 +450,159 @@ async fn get_control_plane_or_404(state: &AppState, id: Uuid) -> ApiResult<Contr
         ))),
         Err(e) => Err(e.into()),
     }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Optimistic concurrency (card G1, TODO.md §3b D4) — ETag / If-Match for
+// PATCH /api/control-planes/{id} and PUT /api/projects/{id}/orch-link,
+// against the `version` columns migrations 035/036 added.
+// ════════════════════════════════════════════════════════════════════════════
+//
+// `crates/tack-db/src/repo/orch.rs` doesn't yet surface `version` through
+// `ControlPlane`/`OrchLink`'s typed read structs or `update_control_plane`/
+// `upsert_orch_link` (that file is outside this card's file ownership — see
+// TODO.md's file-ownership map). Everything below reads/writes the raw
+// column directly against `state.pool()` — the same escape hatch
+// `handlers::backup` already uses for its own raw `PRAGMA`/`VACUUM`
+// statements (see `get_backup`), not a new pattern in this codebase, just a
+// new user of it. Whoever next gives `control_planes`/`orch_links` a typed
+// `version` field in the repo layer should fold this block's raw queries
+// into it rather than leaving two competing sources of truth for the same
+// column.
+//
+// **Design: a single-statement compare-and-swap, not read-then-write.** The
+// `If-Match`-present path runs `UPDATE ... SET version = version + 1 WHERE
+// id = ? AND version = ?` — SQLite serializes writers, so of two concurrent
+// requests racing with the same expected version, exactly one `UPDATE`
+// matches a row and the other affects zero rows. That is what makes
+// `concurrent_patch_with_the_same_if_match_yields_one_200_and_one_412`
+// (TODO.md card G3's acceptance test, which this mechanism must also
+// satisfy for control planes and orch-links) true rather than a race
+// between two independent `SELECT`s. The follow-up content write (via the
+// existing `state.repo.update_control_plane`/`upsert_orch_link`) is a
+// separate statement — this codebase's multi-statement writes are not
+// wrapped in an explicit transaction anywhere else either (see e.g.
+// `update_control_plane`'s own three sequential `UPDATE`s), so this is
+// consistent with, not a regression from, the existing risk profile.
+
+/// `ETag` value for a row currently at `version` — always a quoted decimal,
+/// never `W/"..."` (there is no meaningfully "equivalent but different"
+/// representation of a database row here to make a weak tag worth the extra
+/// parsing branch on the way back in).
+fn etag_for(version: i64) -> String {
+    format!("\"{version}\"")
+}
+
+/// Parse an `If-Match` header value back into the integer version a caller
+/// read off a previous [`etag_for`]. Anything that isn't exactly that shape
+/// (a stray `W/` prefix, `*`, garbage) is `None`, which every call site
+/// below treats as "does not match" — safe by construction, since a caller
+/// sending something that was never one of our own ETags can never
+/// accidentally satisfy a precondition it shouldn't.
+fn parse_if_match(raw: &str) -> Option<i64> {
+    raw.trim().trim_matches('"').parse::<i64>().ok()
+}
+
+/// `412 Precondition Failed`, matching [`ApiError`]'s own `{"error":
+/// {status, message}}` envelope exactly (see `error.rs`'s `IntoResponse`
+/// impl) — this module doesn't add a variant to `ApiError` itself for this
+/// (that file has no owner card this wave; see TODO.md's file-ownership
+/// map), so both `If-Match`-gated handlers below build this response by
+/// hand instead.
+fn precondition_failed(message: impl Into<String>) -> Response {
+    let body = serde_json::json!({
+        "error": {
+            "status": StatusCode::PRECONDITION_FAILED.as_u16(),
+            "message": message.into(),
+        }
+    });
+    (StatusCode::PRECONDITION_FAILED, Json(body)).into_response()
+}
+
+async fn control_plane_version(
+    pool: &sqlx::SqlitePool,
+    id: Uuid,
+) -> Result<Option<i64>, sqlx::Error> {
+    sqlx::query_scalar("SELECT version FROM control_planes WHERE id = ?")
+        .bind(id.to_string())
+        .fetch_optional(pool)
+        .await
+}
+
+/// Atomic compare-and-swap on `control_planes.version` — see this section's
+/// own doc comment for why this is one statement, not a read then a write.
+/// Returns `true` iff a row matched (existed **and** was at
+/// `expected_version`); the caller can't yet tell those two failure modes
+/// apart from this alone, and [`update_control_plane`] does one more read
+/// only in the `false` branch, to preserve its existing 404-vs-412 split.
+async fn bump_control_plane_version_if_match(
+    pool: &sqlx::SqlitePool,
+    id: Uuid,
+    expected_version: i64,
+) -> Result<bool, sqlx::Error> {
+    let result =
+        sqlx::query("UPDATE control_planes SET version = version + 1 WHERE id = ? AND version = ?")
+            .bind(id.to_string())
+            .bind(expected_version)
+            .execute(pool)
+            .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+/// Unconditional bump — used when no `If-Match` was supplied, so the
+/// version still moves forward for a *later* conditional request to detect
+/// this write against (see `update_control_plane`'s own doc note: an absent
+/// `If-Match` skips the *check*, never the bump).
+async fn bump_control_plane_version(pool: &sqlx::SqlitePool, id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE control_planes SET version = version + 1 WHERE id = ?")
+        .bind(id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+async fn orch_link_version(
+    pool: &sqlx::SqlitePool,
+    project_id: Uuid,
+) -> Result<Option<i64>, sqlx::Error> {
+    sqlx::query_scalar("SELECT version FROM orch_links WHERE project_id = ?")
+        .bind(project_id.to_string())
+        .fetch_optional(pool)
+        .await
+}
+
+/// `orch_links`' twin of [`bump_control_plane_version_if_match`]. Unlike
+/// the control-planes case, [`put_orch_link`] treats "no row yet" and "row
+/// exists but version doesn't match" identically (both `412`) rather than
+/// disambiguating with a follow-up read — `PUT .../orch-link` is a
+/// create-or-replace endpoint, so a caller that sends `If-Match` for a link
+/// it never actually read an `ETag` for (there is nothing to match — the
+/// project has no link yet) is asserting a precondition that cannot be
+/// satisfied either way.
+async fn bump_orch_link_version_if_match(
+    pool: &sqlx::SqlitePool,
+    project_id: Uuid,
+    expected_version: i64,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE orch_links SET version = version + 1 WHERE project_id = ? AND version = ?",
+    )
+    .bind(project_id.to_string())
+    .bind(expected_version)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+async fn bump_orch_link_version(
+    pool: &sqlx::SqlitePool,
+    project_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE orch_links SET version = version + 1 WHERE project_id = ?")
+        .bind(project_id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 /// `POST /api/control-planes` — register a control plane.
@@ -275,7 +681,14 @@ pub async fn get_control_plane(
     Ok(Json(cp.into()))
 }
 
-/// `PATCH /api/control-planes/{id}`.
+/// `PATCH /api/control-planes/{id}`. Supports optimistic concurrency (card
+/// G1, TODO.md §3b D4): an `If-Match: "<version>"` header, taken from a
+/// previous response's `ETag`, must match the row's current version or the
+/// request is rejected with `412` and nothing is written. **Omitting
+/// `If-Match` behaves exactly as before this card** — the precondition
+/// check is skipped entirely; the version still moves forward on every
+/// successful write either way, so a later conditional request from a
+/// different client can always detect this one.
 #[utoipa::path(
     patch,
     path = "/api/control-planes/{id}",
@@ -283,16 +696,39 @@ pub async fn get_control_plane(
     params(("id" = Uuid, Path, description = "Control plane ID")),
     request_body = UpdateControlPlaneRequest,
     responses(
-        (status = 200, description = "Updated control plane (token never returned)", body = ControlPlaneResponse),
+        (status = 200, description = "Updated control plane (token never returned); carries an ETag header naming the new version", body = ControlPlaneResponse),
         (status = 404, description = "Not found, or orchestration disabled", body = ErrorEnvelope),
+        (status = 412, description = "If-Match did not match the control plane's current version — nothing was written", body = ErrorEnvelope),
     ),
 )]
-#[instrument(skip(state, input))]
+#[instrument(skip(state, input, headers))]
 pub async fn update_control_plane(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    headers: HeaderMap,
     Json(input): Json<UpdateControlPlaneRequest>,
-) -> ApiResult<Json<ControlPlaneResponse>> {
+) -> ApiResult<Response> {
+    let if_match = headers.get(header::IF_MATCH).and_then(|v| v.to_str().ok());
+
+    if let Some(raw) = if_match {
+        let matched = match parse_if_match(raw) {
+            Some(expected) => {
+                bump_control_plane_version_if_match(state.pool(), id, expected).await?
+            }
+            None => false,
+        };
+        if !matched {
+            return Ok(match control_plane_version(state.pool(), id).await? {
+                Some(_) => precondition_failed(
+                    "If-Match did not match the control plane's current version",
+                ),
+                None => {
+                    ApiError::NotFound(format!("{CONTROL_PLANE_NOT_FOUND}: {id}")).into_response()
+                }
+            });
+        }
+    }
+
     let cp = match state
         .repo
         .update_control_plane(
@@ -314,7 +750,20 @@ pub async fn update_control_plane(
         Err(e) => return Err(e.into()),
     };
 
-    Ok(Json(cp.into()))
+    if if_match.is_none() {
+        // The precondition branch above already bumped the version when it
+        // ran — this only covers the unconditional path, so every
+        // successful write moves the version forward exactly once.
+        bump_control_plane_version(state.pool(), id).await?;
+    }
+
+    let version = control_plane_version(state.pool(), id).await?.unwrap_or(1);
+
+    Ok((
+        [(header::ETAG, etag_for(version))],
+        Json(ControlPlaneResponse::from(cp)),
+    )
+        .into_response())
 }
 
 /// `DELETE /api/control-planes/{id}`.
@@ -505,7 +954,13 @@ pub async fn get_orch_link(
     }))
 }
 
-/// `PUT /api/projects/{id}/orch-link` — create or replace the project's link.
+/// `PUT /api/projects/{id}/orch-link` — create or replace the project's
+/// link. Supports optimistic concurrency (card G1, TODO.md §3b D4) the same
+/// way `PATCH /api/control-planes/{id}` does — see that handler's doc
+/// comment for the `If-Match`/`ETag` contract. One difference: this is a
+/// create-or-replace endpoint, so a nonexistent link and a version mismatch
+/// both surface as `412` here (see `bump_orch_link_version_if_match`'s doc
+/// comment for why that collapse is correct, not a shortcut).
 #[utoipa::path(
     put,
     path = "/api/projects/{id}/orch-link",
@@ -513,17 +968,19 @@ pub async fn get_orch_link(
     params(("id" = Uuid, Path, description = "Project ID")),
     request_body = UpsertOrchLinkRequest,
     responses(
-        (status = 200, description = "Saved link", body = OrchLinkResponse),
+        (status = 200, description = "Saved link; carries an ETag header naming the new version", body = OrchLinkResponse),
         (status = 400, description = "Validation error (e.g. an unknown status name in status_map)", body = ErrorEnvelope),
         (status = 404, description = "Project or control plane not found, or orchestration disabled", body = ErrorEnvelope),
+        (status = 412, description = "If-Match did not match (or no link exists yet to match) — nothing was written", body = ErrorEnvelope),
     ),
 )]
-#[instrument(skip(state, input))]
+#[instrument(skip(state, input, headers))]
 pub async fn put_orch_link(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
+    headers: HeaderMap,
     Json(input): Json<UpsertOrchLinkRequest>,
-) -> ApiResult<Json<OrchLinkResponse>> {
+) -> ApiResult<Response> {
     let project = state
         .repo
         .get_project(project_id)
@@ -540,6 +997,22 @@ pub async fn put_orch_link(
     }
 
     validate_status_map(&input.status_map, &project.workflow)?;
+
+    let if_match = headers.get(header::IF_MATCH).and_then(|v| v.to_str().ok());
+
+    if let Some(raw) = if_match {
+        let matched = match parse_if_match(raw) {
+            Some(expected) => {
+                bump_orch_link_version_if_match(state.pool(), project_id, expected).await?
+            }
+            None => false,
+        };
+        if !matched {
+            return Ok(precondition_failed(
+                "If-Match did not match the project's current orch-link version",
+            ));
+        }
+    }
 
     let status_map_json =
         serde_json::to_value(&input.status_map).unwrap_or_else(|_| serde_json::json!({}));
@@ -560,7 +1033,19 @@ pub async fn put_orch_link(
         )
         .await?;
 
-    Ok(Json(link.into()))
+    if if_match.is_none() {
+        bump_orch_link_version(state.pool(), project_id).await?;
+    }
+
+    let version = orch_link_version(state.pool(), project_id)
+        .await?
+        .unwrap_or(1);
+
+    Ok((
+        [(header::ETAG, etag_for(version))],
+        Json(OrchLinkResponse::from(link)),
+    )
+        .into_response())
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -609,11 +1094,16 @@ pub struct FleetEntry {
     pub control_plane_name: String,
     pub control_plane_kind: String,
     pub remote_project: String,
-    /// `"unknown"` | `"healthy"` | `"degraded"` | `"unreachable"`.
+    /// `"unknown"` | `"healthy"` | `"degraded"` | `"unreachable"` |
+    /// `"unconfigured"` — see [`ControlPlaneResponse::health`]'s doc
+    /// comment for what each means.
     pub health: String,
     pub last_seen_at: Option<DateTime<Utc>>,
     pub consecutive_failures: i64,
     pub api_version: Option<String>,
+    /// What this row's control plane can actually do. `None` only in the
+    /// `"unconfigured"` health case — see [`capabilities_for`].
+    pub capabilities: Option<CapabilitiesResponse>,
     /// `"active"` | `"inactive"` | `"unknown"`. **Always `"unknown"` in Wave
     /// 1** — `control_planes` has no persisted gateway column (see migration
     /// 019) and the reconciler only polls `/health` + `/status.json` for the
@@ -705,6 +1195,7 @@ pub async fn get_fleet(State(state): State<AppState>) -> ApiResult<Json<FleetLis
                 last_seen_at: plane.last_seen_at,
                 consecutive_failures: plane.consecutive_failures,
                 api_version: plane.api_version.clone(),
+                capabilities: capabilities_for(&plane.kind, &plane.base_url),
                 gateway: "unknown".to_string(),
                 roster: Vec::new(),
                 last_activity_at: usage.last_activity_at,
@@ -2221,14 +2712,16 @@ fn require_approval_token(state: &AppState, headers: &HeaderMap) -> ApiResult<()
     }
 }
 
-/// Resolve `control_plane_id` into a live control-plane client. Deliberately
-/// duplicated from `dispatcher::build_control_plane` (a private fn in a
-/// file owned by a different agent this wave — see TODO.md's
-/// file-ownership map, `crates/tack-api/src/dispatcher.rs`) rather than
-/// exported from there: ~15 lines, no shared state, not worth the
-/// cross-agent coordination a shared export would need mid-cycle for a
-/// single additional caller. If a third caller ever needs this, that's the
-/// point to actually share it.
+/// Resolve `control_plane_id` into a live control-plane client. Built on
+/// `adapters::registry::build` (card G1), which is what
+/// `dispatcher::build_control_plane` and `handlers::provisioning::
+/// resolve_control_plane` are now built on too — the three-near-identical-
+/// copies state this function's doc comment used to disclose ("if a third
+/// caller ever needs this, that's the point to actually share it") is
+/// gone: there were already three, so this is that point. Each caller keeps
+/// its own request-scoped error mapping (this one, unlike the reconciler's
+/// batch-loop use in `orch_store.rs`, must error rather than skip — see
+/// `dispatcher::build_control_plane`'s doc comment for that distinction).
 async fn build_control_plane_for_decision(
     state: &AppState,
     control_plane_id: Uuid,
@@ -2244,17 +2737,19 @@ async fn build_control_plane_for_decision(
     };
     let token = state.repo.get_control_plane_token(control_plane_id).await?;
 
-    match row.kind.as_str() {
-        "docket" => {
-            let adapter = DocketAdapter::new(row.base_url.clone(), token).map_err(|e| {
-                ApiError::Internal(anyhow::anyhow!(
-                    "failed to construct control-plane adapter: {e}"
-                ))
-            })?;
-            Ok(Arc::new(adapter))
-        }
-        other => Err(ApiError::Internal(anyhow::anyhow!(
-            "unsupported control-plane kind {other:?}"
+    match registry::build(
+        &row.kind,
+        &row.base_url,
+        token,
+        &serde_json::json!({}),
+        None,
+    ) {
+        Ok(adapter) => Ok(adapter),
+        Err(RegistryError::Construction(e)) => Err(ApiError::Internal(anyhow::anyhow!(
+            "failed to construct control-plane adapter: {e}"
+        ))),
+        Err(RegistryError::UnknownKind(kind)) => Err(ApiError::Internal(anyhow::anyhow!(
+            "unsupported control-plane kind {kind:?}"
         ))),
     }
 }

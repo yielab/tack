@@ -644,6 +644,77 @@ Enforced by the shape of the code, not just documented — each one below names 
    here as a standing rule for any future status-writing code path, not just a
    changelog entry.
 
+## Concurrency control: `version`, `ETag`, `If-Match` — and what it doesn't cover
+
+Card G3 added a `version INTEGER` column to `items`, `orch_links`, and `control_planes`
+(migrations 034–036), and `handlers::items::{get_item,update_item}` now round-trips it as
+an RFC 7232 `ETag`/`If-Match` pair: `GET /api/items/{id}` returns `ETag: "<id>-<version>"`,
+and `PATCH /api/items/{id}` with a matching `If-Match` claims the next version atomically
+before touching any other field; a stale or mismatched `If-Match` is a `412`, never a
+silent overwrite. **An absent `If-Match` header behaves exactly as it always has** — this
+is additive, not a new requirement on any existing caller.
+
+### The MCP write path now sends it
+
+Before card G4, `tack-cli`'s HTTP client (`client.rs`) had no way to attach a header to a
+request at all, so `tack mcp`'s `update_item`/`move_item` tools were unconditionally
+last-write-wins — the one write path most exposed to the exact race `If-Match` exists to
+catch (an autonomous agent editing a card a human is also looking at). Both tools now:
+
+1. `GET /items/{id}` first, via `TackClient::get_with_etag`, to read the current `ETag`.
+2. `PATCH /items/{id}` with that value as `If-Match`, via `TackClient::patch_if_match`.
+3. On `412`, return a *distinct* tool error naming the race and telling the agent to
+   re-read and retry — not the generic `{status}: {message}` shape every other error uses.
+   An agent that can't tell "you raced" from "the server broke" retries blindly and
+   clobbers whatever won.
+
+If the server ever answers a `GET` with no `ETag` (an older server, or a route that never
+gains version tracking), the client sends no `If-Match` and the write proceeds exactly as
+it did before this card — the fallback is silent and total, not a partial degrade.
+
+### CORS had to catch up separately
+
+`If-Match` and `ETag` are meaningless to a browser client unless the CORS layer explicitly
+allows/exposes them — `tower_http`'s preflight response only lists what
+`CorsLayer::allow_headers`/`expose_headers` were built with, regardless of what a real
+request needs. `router.rs`'s `CorsLayer` now allows `if-match` on requests and exposes
+`ETag` on responses; it also allows `x-tack-approval-token`, a **pre-existing** bug this
+card fixed while it was in the file, not something this cycle introduced —
+`frontend/src/features/approvals/api.ts` has sent that header on every grant/deny decision
+since Phase 36, and it has only ever worked because production is same-origin via
+`embed-spa`. Any cross-origin deployment through `TACK_ALLOWED_ORIGINS` would have failed
+every approval preflight silently. See `crates/tack-api/tests/cors_test.rs` — there was no
+CORS test anywhere in this repo before it.
+
+### Two writers this control deliberately does not cover
+
+Both of the following mutate `items.status` (or a row's `version`) with no HTTP request in
+flight at all, which means no `If-Match` was ever possible — not an oversight, a
+consequence of where the call happens:
+
+- **The reconciler's terminal-status transition.**
+  `RepoControlPlaneStore::upsert_runs` (`orch_store.rs`) calls
+  `dispatcher::apply_mapped_status` directly, in-process, from a background `tokio` task —
+  there is no `HeaderMap` to read an `If-Match` from because there is no request. This is
+  **the largest single mutator of `items.status` in the whole system** (every terminal
+  docket run that has a `status_map` target passes through it) and it sits entirely outside
+  the concurrency control this card built. A human moving a card at the same moment a poll
+  resolves a terminal status is instead handled by a *different* mechanism —
+  `card_has_diverged`, described above — which compares the item's status against the one
+  value the automation itself expects, not a version number.
+- **`propagate_parent_completion`.** A child's `PATCH` (which *does* carry `If-Match` for
+  the child) can cascade into `Repository::check_and_update_parent_status` bumping the
+  *parent's* `version` — a row no caller in that request ever named, let alone sent a
+  precondition for. A client holding the parent's old `ETag` from an earlier `GET` will see
+  its next `If-Match` on the parent 412 the moment any child completes the set, and that is
+  correct: the parent genuinely changed underneath it.
+
+**What this means for a client:** a `412` proves *a* concurrent write happened to the exact
+row named in the request; it is not a total ordering over every writer in the system, and a
+`200` on some other row is not proof that row is still what a stale `GET` believes it to
+be. Anything that needs a stronger guarantee than "the row I'm PATCHing hasn't changed
+since I last read it" needs a mechanism this cycle didn't build.
+
 ## Adding a new control-plane backend
 
 1. Implement `ControlPlane` for your type in a new `adapters::<name>` module,

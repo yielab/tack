@@ -7,6 +7,11 @@
 
 pub mod docket;
 
+/// A compile-only second [`crate::ControlPlane`] implementor (TODO.md card
+/// G1, Wave B / Phase 40). Never registered — see the module's own doc
+/// comment and `registry::build`'s.
+pub mod github_actions;
+
 /// The Prometheus text-exposition parser card A1 built for `/metrics`
 /// (TODO.md §Wave 1, card A1, step 3). Declared here — rather than as a
 /// crate-root `pub mod prometheus;` in `lib.rs` — only because `lib.rs` is
@@ -14,3 +19,9 @@ pub mod docket;
 /// `adapters`/`reconciler`, which W0-A pre-declared). Card B3 (Wave 2)
 /// reuses this module as-is: `tack_orch::adapters::prometheus::parse`.
 pub mod prometheus;
+
+/// One place every caller builds a live adapter from a `control_planes`
+/// row's `kind` (TODO.md card G1, Wave B / Phase 40) — see the module's own
+/// doc comment for what it replaces and why it lives here, not in
+/// `tack-api`.
+pub mod registry;

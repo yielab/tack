@@ -67,6 +67,7 @@ describe('orchestrationSettingsApi control-plane admin', () => {
         last_seen_at: null,
         consecutive_failures: 0,
         token_set: false,
+        capabilities: null,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
       },
@@ -75,6 +76,42 @@ describe('orchestrationSettingsApi control-plane admin', () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain('/control-planes');
     expect(res).toHaveLength(1);
     expect(res[0].token_set).toBe(false);
+  });
+
+  it('listControlPlanes carries capabilities through for a configured plane (card G1)', async () => {
+    const fetchMock = mockFetch(200, [
+      {
+        id: 'cp-1',
+        name: 'docket-prod',
+        kind: 'docket',
+        base_url: 'https://docket.example.com',
+        api_version: null,
+        health: 'healthy',
+        last_seen_at: '2026-08-05T00:00:00Z',
+        consecutive_failures: 0,
+        token_set: true,
+        capabilities: {
+          dispatch: true,
+          cancel: false,
+          pause: { level: 'unsupported', reason: 'docket profile <pod-id> --resume' },
+          resume: { level: 'unsupported', reason: 'r' },
+          event_scope: { level: 'project', reason: 'r' },
+          artifacts: false,
+          decisions: { level: 'poll', reason: 'r' },
+          usage: { level: 'from_provider', reason: 'r' },
+          model_selection: { level: 'unsupported', reason: 'r' },
+          runtimes: true,
+          plane_metrics: true,
+          provisioning: true,
+        },
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ]);
+    const res = await orchestrationSettingsApi.listControlPlanes();
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/control-planes');
+    expect(res[0].capabilities?.pause.level).toBe('unsupported');
+    expect(res[0].capabilities?.pause.reason).toContain('docket profile');
   });
 
   it('getControlPlane GETs /control-planes/{id}', async () => {

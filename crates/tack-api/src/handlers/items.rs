@@ -1,5 +1,7 @@
 use axum::Json;
 use axum::extract::{Path, Query, State};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use chrono::Utc;
 use tracing::instrument;
 use uuid::Uuid;
@@ -13,6 +15,72 @@ use crate::dispatcher::{self, DispatchOutcome};
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::websocket::{self, BoardEvent};
 use crate::router::AppState;
+
+/// A version-derived `ETag`, not a content hash (card G3; see
+/// docs/plans/agnostic-control-plane.md D4). Quoted per RFC 7232 so a
+/// client only ever needs to echo the string back verbatim via `If-Match`
+/// — no quote-stripping or parsing on either side, which is also why the
+/// value embeds the id: a client that (incorrectly) sends back an `ETag`
+/// fetched for a different item can never accidentally collide with this
+/// one's version counter.
+fn item_etag(id: Uuid, version: i64) -> String {
+    format!("\"{id}-{version}\"")
+}
+
+/// A stale `If-Match` never becomes an [`ApiError`] — `error.rs` is off
+/// this card's file list (see TODO.md's II.2 ownership map), so this
+/// hand-builds the exact `{"error": {"status", "message"}}` envelope
+/// `ApiError`'s `IntoResponse` impl produces, rather than adding a new
+/// variant to a file another card owns. A client that already parses that
+/// shape for every other 4xx from this API needs no special case for 412.
+fn precondition_failed(message: String) -> Response {
+    let body = serde_json::json!({
+        "error": {
+            "status": StatusCode::PRECONDITION_FAILED.as_u16(),
+            "message": message,
+        }
+    });
+    (StatusCode::PRECONDITION_FAILED, Json(body)).into_response()
+}
+
+/// Validates an incoming `If-Match` header against `id`'s current version
+/// and, if it matches, atomically claims the next version — see
+/// `Repository::claim_item_version`'s doc comment for why the claim (not
+/// this comparison) is what actually decides a concurrent race.
+///
+/// Returns `Ok(None)` for "proceed" (either no `If-Match` was sent — **the
+/// absent case that must behave exactly as it did before this card** — or
+/// it matched and the claim succeeded) and `Ok(Some(response))` for a 412
+/// the caller should return immediately, before touching any of the
+/// item's other fields.
+async fn check_if_match(
+    state: &AppState,
+    id: Uuid,
+    headers: &HeaderMap,
+) -> ApiResult<Option<Response>> {
+    let Some(if_match) = headers.get(header::IF_MATCH) else {
+        return Ok(None);
+    };
+    let provided = if_match.to_str().unwrap_or("");
+    let current_version = state.repo.get_item_version(id).await?.unwrap_or(1);
+    if provided != item_etag(id, current_version) {
+        return Ok(Some(precondition_failed(format!(
+            "item {id} was modified since it was fetched (If-Match did not match); \
+             refresh and retry"
+        ))));
+    }
+    if !state.repo.claim_item_version(id, current_version).await? {
+        // Lost the race between the comparison above and this claim: some
+        // other writer bumped the version in between. Same verdict, same
+        // message — the caller can't tell the two cases apart and doesn't
+        // need to.
+        return Ok(Some(precondition_failed(format!(
+            "item {id} was modified since it was fetched (If-Match did not match); \
+             refresh and retry"
+        ))));
+    }
+    Ok(None)
+}
 
 #[instrument(skip(state))]
 #[utoipa::path(
@@ -118,10 +186,7 @@ pub async fn list_items(
         (status = 404, description = "Item not found", body = crate::openapi::ErrorEnvelope),
     ),
 )]
-pub async fn get_item(
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> ApiResult<Json<serde_json::Value>> {
+pub async fn get_item(State(state): State<AppState>, Path(id): Path<Uuid>) -> ApiResult<Response> {
     let item = state
         .repo
         .get_item(id)
@@ -132,11 +197,23 @@ pub async fn get_item(
     let roles = state.repo.get_roles_for_item(id).await?;
     let deps = state.repo.list_dependencies_for_item(id).await?;
 
-    Ok(Json(serde_json::json!({
+    // `unwrap_or(1)` covers the vanishingly small window between the two
+    // reads where the item was deleted concurrently — `item` above already
+    // proved it existed, so falling back to the migration's own DEFAULT is
+    // the harmless choice, not a masked error.
+    let version = state.repo.get_item_version(id).await?.unwrap_or(1);
+
+    let mut response = Json(serde_json::json!({
         "item": item,
         "roles": roles,
         "dependencies": deps,
-    })))
+    }))
+    .into_response();
+    response.headers_mut().insert(
+        header::ETAG,
+        HeaderValue::from_str(&item_etag(id, version)).expect("etag is ascii"),
+    );
+    Ok(response)
 }
 
 #[instrument(skip(state))]
@@ -157,8 +234,9 @@ pub async fn get_item(
 pub async fn update_item(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    headers: HeaderMap,
     Json(mut input): Json<UpdateItem>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Response> {
     input
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -169,6 +247,16 @@ pub async fn update_item(
         .get_item(id)
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
+
+    // Optimistic concurrency (card G3, D4). Checked *after* confirming the
+    // item exists (so a missing item is still a 404, not a 412) and
+    // *before* any field is written — an absent `If-Match` header takes the
+    // `None` branch immediately and this call adds no extra query, which is
+    // what makes the change behave exactly as today for every caller that
+    // doesn't send the header, including the MCP tools and the Alexa skill.
+    if let Some(response) = check_if_match(&state, id, &headers).await? {
+        return Ok(response);
+    }
 
     let old_status = old_item.status.clone();
 
@@ -268,11 +356,13 @@ pub async fn update_item(
     maybe_sync_github(&state, &item, &old_status).await;
 
     // Auto-dispatch to the linked control plane, if configured (card C2 /
-    // task 35.5). Off unless TACK_ORCH_ENABLE is set and the project's
-    // orch_link has auto_dispatch on (§0 rules 5 and 8).
+    // task 35.5). Off unless orchestration is *effectively* enabled — see
+    // `maybe_auto_dispatch`'s own doc comment (card G3 fixed this call site
+    // to stop ignoring the UI toggle) — and the project's orch_link has
+    // auto_dispatch on (§0 rules 5 and 8).
     maybe_auto_dispatch(&state, &item, &old_status).await;
 
-    Ok(Json(serde_json::to_value(item).unwrap()))
+    Ok(Json(serde_json::to_value(item).unwrap()).into_response())
 }
 
 /// Best-effort, fire-and-forget GitHub push: when a linked item crosses the
@@ -367,8 +457,20 @@ pub(crate) async fn propagate_parent_completion(state: &AppState, item: &Item, o
 /// recorded here — `Success` already gets its own `orch_tasks` row and, for
 /// `on_running`/`on_waiting_approval`, its own status_map bookkeeping
 /// inside `dispatch_item` itself.
+///
+/// **The enable gate reads the *effective* setting, not the raw env flag**
+/// (card G3, docs/plans/agnostic-control-plane.md §8.4). Before this fix the
+/// check below was `!state.config.orch_enable` — `TACK_ORCH_ENABLE`'s
+/// startup value only — while every HTTP orchestration route gates on
+/// [`crate::handlers::settings::effective_orch_enabled`], which prefers
+/// whatever an operator most recently set via `PUT
+/// /api/settings/orchestration`. An operator who started the server with
+/// `TACK_ORCH_ENABLE=1` and then switched orchestration off in Settings
+/// still got auto-dispatch on every status change: the one write path in
+/// this file that never went through the UI-editable setting at all. This
+/// is a behavior change to a shipped feature — see CHANGELOG.md.
 pub(crate) async fn maybe_auto_dispatch(state: &AppState, item: &Item, old_status: &str) {
-    if !state.config.orch_enable {
+    if !crate::handlers::settings::effective_orch_enabled(state).await {
         return;
     }
     if item.status == old_status {

@@ -2,6 +2,8 @@ import { type Component, type JSX, For, Show } from 'solid-js';
 import { A } from '@solidjs/router';
 import { Badge } from '../../shared/ui';
 import HealthChip from './HealthChip';
+import CapabilityNote from '../../shared/orch/CapabilityNote';
+import { gatePause } from '../../shared/orch/capabilities';
 import type { FleetRow as FleetRowData, FleetGatewayState } from './api';
 import { formatEstimatedCost, formatBudget, formatTokens, relativeTime, isStale } from './format';
 
@@ -79,8 +81,22 @@ const FleetRow: Component<FleetRowProps> = (props) => {
         <HealthChip health={row().health} />
         <Show when={row().health !== 'healthy'}>
           <div style={{ 'font-size': '11px', color: 'var(--color-text-tertiary)', 'margin-top': '5px' }}>
-            {row().health === 'unknown' ? 'Not yet connected' : `Last seen ${relativeTime(row().last_seen_at)}`}
+            {row().health === 'unknown'
+              ? 'Not yet connected'
+              : row().health === 'unconfigured'
+                ? 'Credentials missing — reconfigure this plane in Settings'
+                : `Last seen ${relativeTime(row().last_seen_at)}`}
           </div>
+        </Show>
+        {/* Capability negotiation (card G1): read straight from the wire
+            payload, never from `control_plane_kind` — TODO.md §II.0 rule 6.
+            `capabilities` is only `null` in the `unconfigured` case above,
+            where there is nothing to ask. Pause is the capability every
+            operator is most likely to reach for from this exact row (a
+            plane pinned at its budget cap), so it's the one surfaced here;
+            `ControlPlanesManager.tsx` shows the full set on the admin page. */}
+        <Show when={row().capabilities}>
+          {(caps) => <CapabilityNote label="Pause" gate={gatePause(caps())} />}
         </Show>
       </td>
 

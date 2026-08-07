@@ -53,11 +53,13 @@ export function formatBudget(budgetUsd: number | null): string {
 }
 
 /** A plane's data is trustworthy-as-current only when `healthy`. `degraded`
- *  data is recent but may be a poll or two stale; `unreachable`/`unknown`
- *  data must never be shown as if it were a live reading — see
- *  `FleetRow.tsx`'s stale-field treatment. */
+ *  data is recent but may be a poll or two stale; `unreachable`/`unknown`/
+ *  `unconfigured` data must never be shown as if it were a live reading —
+ *  see `FleetRow.tsx`'s stale-field treatment. `unconfigured` is at least as
+ *  stale as `unknown`: the reconciler never even attempted a poll, so there
+ *  is no cached reading of any age to fall back on. */
 export function isStale(health: ControlPlaneHealth): boolean {
-  return health === 'unreachable' || health === 'unknown';
+  return health === 'unreachable' || health === 'unknown' || health === 'unconfigured';
 }
 
 export const HEALTH_LABEL: Record<ControlPlaneHealth, string> = {
@@ -65,6 +67,7 @@ export const HEALTH_LABEL: Record<ControlPlaneHealth, string> = {
   degraded: 'Degraded',
   unreachable: 'Unreachable',
   unknown: 'Unknown',
+  unconfigured: 'Missing credentials',
 };
 
 export const HEALTH_TONE: Record<ControlPlaneHealth, 'success' | 'warning' | 'danger' | 'neutral'> = {
@@ -72,4 +75,11 @@ export const HEALTH_TONE: Record<ControlPlaneHealth, 'success' | 'warning' | 'da
   degraded: 'warning',
   unreachable: 'danger',
   unknown: 'neutral',
+  // Reuses `degraded`'s tone rather than adding a fifth distinct color: an
+  // `unconfigured` plane is a config problem an operator can fix in one
+  // step (re-enter the token/secret), not an active outage — the same
+  // "needs attention, not yet broken" urgency class as `degraded`. The
+  // label text (not color) is what distinguishes them, per this file's own
+  // WCAG 1.4.1 discipline (see `HealthChip.tsx`'s doc comment).
+  unconfigured: 'warning',
 };

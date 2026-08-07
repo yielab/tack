@@ -1,0 +1,38 @@
+{
+  "method": "list_tasks",
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/tasks/demo",
+      "query": [],
+      "header_names": [
+        "accept",
+        "authorization",
+        "host",
+        "user-agent"
+      ],
+      "body": null
+    }
+  ],
+  "result": {
+    "outcome": "ok",
+    "value": [
+      {
+        "approvalToken": null,
+        "claimId": null,
+        "claimedAt": null,
+        "completedAt": null,
+        "costUsd": 0.0,
+        "created": "2026-08-05T11:07:59.520734+00:00",
+        "description": "Fix the flaky retry test in tack-orch adapter",
+        "id": "task-7bf4553c-c7f9-40fb-b6a9-b29332155d94",
+        "pendingApprovalIndex": null,
+        "priority": "high",
+        "reason": "",
+        "source": "operator",
+        "startedAt": null,
+        "status": "pending"
+      }
+    ]
+  }
+}

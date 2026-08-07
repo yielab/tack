@@ -105,7 +105,7 @@ use uuid::Uuid;
 use tack_core::models::{Item, Priority, Project};
 use tack_db::repo::items::StatusUpdateOutcome;
 use tack_db::repo::orch::{NewOrchEvent, NewOrchTask, OrchTask};
-use tack_orch::adapters::docket::DocketAdapter;
+use tack_orch::adapters::registry::{self, RegistryError};
 use tack_orch::{ControlPlane, NewRemoteTask, OrchError};
 
 use crate::error::ApiError;
@@ -588,6 +588,12 @@ async fn record_status_map_rejected(
 /// dispatch one item to one specific plane, so a misconfigured plane must
 /// surface as a real error on this one request, not silently vanish from a
 /// list.
+///
+/// Built on `adapters::registry::build` (card G1) — see that function's own
+/// doc comment for why `config`/`secrets` are passed as placeholders here:
+/// `tack_db::repo::orch::ControlPlane` (the row type `get_control_plane`
+/// returns) doesn't yet surface those columns, and the one registered
+/// `kind`, `"docket"`, doesn't read them anyway.
 async fn build_control_plane(
     state: &AppState,
     control_plane_id: Uuid,
@@ -603,17 +609,19 @@ async fn build_control_plane(
     };
     let token = state.repo.get_control_plane_token(control_plane_id).await?;
 
-    match row.kind.as_str() {
-        "docket" => {
-            let adapter = DocketAdapter::new(row.base_url.clone(), token).map_err(|e| {
-                ApiError::Internal(anyhow::anyhow!(
-                    "failed to construct control-plane adapter: {e}"
-                ))
-            })?;
-            Ok(Arc::new(adapter))
-        }
-        other => Err(ApiError::Internal(anyhow::anyhow!(
-            "unsupported control-plane kind {other:?}"
+    match registry::build(
+        &row.kind,
+        &row.base_url,
+        token,
+        &serde_json::json!({}),
+        None,
+    ) {
+        Ok(adapter) => Ok(adapter),
+        Err(RegistryError::Construction(e)) => Err(ApiError::Internal(anyhow::anyhow!(
+            "failed to construct control-plane adapter: {e}"
+        ))),
+        Err(RegistryError::UnknownKind(kind)) => Err(ApiError::Internal(anyhow::anyhow!(
+            "unsupported control-plane kind {kind:?}"
         ))),
     }
 }

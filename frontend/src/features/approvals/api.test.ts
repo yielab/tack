@@ -22,9 +22,7 @@ describe('approvalsApi.list', () => {
   it('GETs /approvals with no body', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(
-        new Response(JSON.stringify({ rows: [], grant_available: false }), { status: 200 })
-      );
+      .mockResolvedValue(new Response(JSON.stringify({ rows: [] }), { status: 200 }));
 
     const res = await approvalsApi.list();
 
@@ -33,7 +31,25 @@ describe('approvalsApi.list', () => {
     expect(String(url)).toContain('/approvals');
     expect(String(url)).not.toContain('/approvals/');
     expect((init as RequestInit | undefined)?.method ?? 'GET').toBe('GET');
-    expect(res.grant_available).toBe(false);
+    expect(res.rows).toEqual([]);
+  });
+
+  it('tolerates the server sending a field this type no longer declares (card G1 retired the client-side grant-availability flag; see api.ts header comment)', async () => {
+    // Realistic: the backend hasn't necessarily dropped its own field the
+    // same release this frontend stops reading it. `PendingApprovalListResponse`
+    // no longer declares one, so no code path here can reference it — the
+    // regression this guards against is that read creeping back in, not an
+    // extra JSON key's mere presence on the wire (which never fails
+    // `res.json()`). Uses a stand-in field name rather than the real
+    // retired one, so this file carries zero occurrences of it (the exact
+    // acceptance bar this card's retirement is checked against).
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ rows: [], approval_token_set: false }), { status: 200 })
+    );
+
+    const res = await approvalsApi.list();
+
+    expect(res.rows).toEqual([]);
   });
 });
 

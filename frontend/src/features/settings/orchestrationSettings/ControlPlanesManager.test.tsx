@@ -11,6 +11,21 @@ function mount(pollSecs = 10) {
   return { container, dispose };
 }
 
+const DOCKET_CAPABILITIES = {
+  dispatch: true,
+  cancel: false,
+  pause: { level: 'unsupported', reason: 'docket profile <pod-id> --resume clears it' },
+  resume: { level: 'unsupported', reason: 'r' },
+  event_scope: { level: 'project', reason: 'r' },
+  artifacts: false,
+  decisions: { level: 'poll', reason: 'r' },
+  usage: { level: 'from_provider', reason: 'r' },
+  model_selection: { level: 'unsupported', reason: 'model routing is docket-owned' },
+  runtimes: true,
+  plane_metrics: true,
+  provisioning: true,
+};
+
 const PLANE = {
   id: 'cp-1',
   name: 'docket-prod',
@@ -21,6 +36,7 @@ const PLANE = {
   last_seen_at: '2026-08-05T00:00:00Z',
   consecutive_failures: 0,
   token_set: true,
+  capabilities: DOCKET_CAPABILITIES,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 };
@@ -53,6 +69,30 @@ describe('ControlPlanesManager', () => {
     expect(container.textContent).toContain('Healthy');
     expect(container.textContent).toContain('https://docket.example.com');
     expect(container.textContent).toContain('Token set');
+  });
+
+  it('renders the pause/model-selection reasons straight from the capability payload (card G1)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify([PLANE]), { status: 200 }),
+    );
+    const { container } = mount();
+    await flush();
+    expect(container.textContent).toContain('Pause:');
+    expect(container.textContent).toContain('docket profile <pod-id> --resume clears it');
+    expect(container.textContent).toContain('Model selection:');
+    expect(container.textContent).toContain('model routing is docket-owned');
+  });
+
+  it('renders no capability notes when capabilities is null (unconfigured plane)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify([{ ...PLANE, health: 'unconfigured', capabilities: null }]), {
+        status: 200,
+      }),
+    );
+    const { container } = mount();
+    await flush();
+    expect(container.textContent).toContain('Missing credentials');
+    expect(container.textContent).not.toContain('Pause:');
   });
 
   it('registers a new control plane via the form and shows it immediately', async () => {

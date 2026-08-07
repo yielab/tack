@@ -132,7 +132,6 @@ const ApprovalsPage: Component = () => {
   const rows = (): PendingApproval[] => inbox()?.rows ?? [];
   const disabled = () => isOrchDisabled(inbox.error);
   const failed = () => inbox.error !== undefined && !disabled();
-  const grantAvailable = () => inbox()?.grant_available ?? false;
 
   const poll = setInterval(() => {
     if (!inbox.loading) void refetch();
@@ -202,7 +201,15 @@ const ApprovalsPage: Component = () => {
         </p>
       </div>
 
-      <Show when={!inbox.loading && !disabled() && !failed() && grantAvailable()}>
+      {/* Always shown once the inbox itself loaded successfully — there is
+          no reliable pre-check for "will granting actually work" (card G1
+          retired the one that used to guess; see api.ts's
+          PendingApprovalListResponse doc comment). Grant/Deny below are
+          likewise always rendered; if TACK_ORCH_APPROVAL_TOKEN isn't
+          configured on the server at all, or the token typed here is wrong,
+          the actual decide call answers with a real 403 and
+          `confirmDecision`'s catch surfaces that server-given reason. */}
+      <Show when={!inbox.loading && !disabled() && !failed()}>
         <div
           class="mb-4 flex flex-wrap items-end gap-2 rounded-lg p-3"
           style={{
@@ -223,21 +230,6 @@ const ApprovalsPage: Component = () => {
           <Button variant="secondary" onClick={saveToken}>
             Save
           </Button>
-        </div>
-      </Show>
-
-      <Show when={!inbox.loading && !disabled() && !failed() && !grantAvailable()}>
-        <div
-          class="mb-4 rounded-lg p-3 text-sm"
-          style={{
-            border: '1px solid var(--color-warning-600)',
-            'background-color': 'var(--color-warning-100)',
-            color: 'var(--color-warning-700)',
-          }}
-        >
-          Granting and denying are disabled on this server — set{' '}
-          <code class="font-mono">TACK_ORCH_APPROVAL_TOKEN</code> and restart it to unlock
-          decisions. The inbox below is still live.
         </div>
       </Show>
 
@@ -302,24 +294,22 @@ const ApprovalsPage: Component = () => {
                       </Show>
                     </td>
                     <td style={tdStyle}>
-                      <Show when={grantAvailable()}>
-                        <div class="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="success"
-                            onClick={() => openConfirm(row, 'grant')}
-                          >
-                            Grant
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            onClick={() => openConfirm(row, 'deny')}
-                          >
-                            Deny
-                          </Button>
-                        </div>
-                      </Show>
+                      <div class="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="success"
+                          onClick={() => openConfirm(row, 'grant')}
+                        >
+                          Grant
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          onClick={() => openConfirm(row, 'deny')}
+                        >
+                          Deny
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 )}

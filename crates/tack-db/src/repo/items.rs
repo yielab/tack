@@ -149,6 +149,54 @@ impl Repository {
         Ok(row.map(|r| r.into_item()))
     }
 
+    /// The optimistic-concurrency counter an `ETag` is derived from (card G3,
+    /// migration 034; see docs/plans/agnostic-control-plane.md D4). A
+    /// dedicated read rather than folding `version` into [`get_item`](Self::get_item)'s
+    /// `Item`-shaped query: `tack_core::models::Item` has no `version` field
+    /// — Wave B's file-ownership map keeps `tack-core` off this card, so a
+    /// caller that needs the counter asks for it separately rather than
+    /// widening the domain model mid-cycle for one internal reader.
+    #[instrument(skip(self))]
+    pub async fn get_item_version(&self, id: Uuid) -> Result<Option<i64>, sqlx::Error> {
+        sqlx::query_scalar("SELECT version FROM items WHERE id = ?")
+            .bind(id.to_string())
+            .fetch_optional(self.pool())
+            .await
+    }
+
+    /// Atomic compare-and-swap on `items.version` — the guard that actually
+    /// decides an `If-Match` race, not the string comparison a caller does
+    /// first. A caller-side "read the version, compare to the header, then
+    /// write" sequence is a classic check-then-act race: two requests can
+    /// both read version 5, both see it matches, and both go on to write —
+    /// exactly the lost update optimistic concurrency exists to catch. This
+    /// method folds the compare and the write into one
+    /// `UPDATE ... WHERE version = ?` statement, so the race is decided by
+    /// SQLite's own writer serialization (only one connection holds the
+    /// write lock at a time) rather than by two Tokio tasks interleaving
+    /// `.await` points. Of two concurrent callers racing the same
+    /// `expected_version`, exactly one `UPDATE` can match the `WHERE`
+    /// clause; the loser's `rows_affected()` comes back 0 — not a torn read
+    /// of a version someone else already moved past — and the caller
+    /// reports 412 without ever touching the item's other fields.
+    #[instrument(skip(self))]
+    pub async fn claim_item_version(
+        &self,
+        id: Uuid,
+        expected_version: i64,
+    ) -> Result<bool, sqlx::Error> {
+        let now = Utc::now().to_rfc3339();
+        let result = sqlx::query(
+            "UPDATE items SET version = version + 1, updated_at = ? WHERE id = ? AND version = ?",
+        )
+        .bind(&now)
+        .bind(id.to_string())
+        .bind(expected_version)
+        .execute(self.pool())
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
     #[instrument(skip(self))]
     pub async fn list_items(
         &self,
@@ -235,6 +283,12 @@ impl Repository {
         Ok(rows.into_iter().map(|r| r.into_item()).collect())
     }
 
+    /// Card G3 (Wave B): every branch below bumps `version`, not just the
+    /// obvious one — a counter that only moves on the common path is worse
+    /// than none, because a caller would trust a stale `ETag` computed from
+    /// a version this method silently left behind. See
+    /// `crates/tack-db/tests/version_concurrency_test.rs`'s
+    /// `version_increments_on_every_item_update`.
     #[instrument(skip(self))]
     pub async fn update_item(
         &self,
@@ -244,105 +298,129 @@ impl Repository {
         let now = Utc::now().to_rfc3339();
 
         if let Some(ref title) = input.title {
-            sqlx::query("UPDATE items SET title = ?, updated_at = ? WHERE id = ?")
-                .bind(title)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
+            sqlx::query(
+                "UPDATE items SET title = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+            )
+            .bind(title)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(self.pool())
+            .await?;
         }
         if let Some(ref description) = input.description {
-            sqlx::query("UPDATE items SET description = ?, updated_at = ? WHERE id = ?")
-                .bind(description)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
+            sqlx::query(
+                "UPDATE items SET description = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+            )
+            .bind(description)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(self.pool())
+            .await?;
         }
         if let Some(ref status) = input.status {
-            sqlx::query("UPDATE items SET status = ?, updated_at = ? WHERE id = ?")
-                .bind(status)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
+            sqlx::query(
+                "UPDATE items SET status = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+            )
+            .bind(status)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(self.pool())
+            .await?;
         }
         if let Some(ref priority) = input.priority {
-            sqlx::query("UPDATE items SET priority = ?, updated_at = ? WHERE id = ?")
-                .bind(priority.to_string())
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
+            sqlx::query(
+                "UPDATE items SET priority = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+            )
+            .bind(priority.to_string())
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(self.pool())
+            .await?;
         }
         if let Some(ref item_type) = input.item_type {
-            sqlx::query("UPDATE items SET item_type = ?, updated_at = ? WHERE id = ?")
-                .bind(item_type.to_string())
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
+            sqlx::query(
+                "UPDATE items SET item_type = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+            )
+            .bind(item_type.to_string())
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(self.pool())
+            .await?;
         }
         if let Some(estimate) = input.estimate {
-            sqlx::query("UPDATE items SET estimate = ?, updated_at = ? WHERE id = ?")
-                .bind(estimate)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
+            sqlx::query(
+                "UPDATE items SET estimate = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+            )
+            .bind(estimate)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(self.pool())
+            .await?;
         }
         if let Some(ref tags) = input.tags {
             let tags_json = serde_json::to_string(tags).unwrap();
-            sqlx::query("UPDATE items SET tags = ?, updated_at = ? WHERE id = ?")
-                .bind(&tags_json)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
+            sqlx::query(
+                "UPDATE items SET tags = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+            )
+            .bind(&tags_json)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(self.pool())
+            .await?;
         }
         if let Some(sort_order) = input.sort_order {
-            sqlx::query("UPDATE items SET sort_order = ?, updated_at = ? WHERE id = ?")
-                .bind(sort_order)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
+            sqlx::query(
+                "UPDATE items SET sort_order = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+            )
+            .bind(sort_order)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(self.pool())
+            .await?;
         }
         if input.assignee.is_some() {
-            sqlx::query("UPDATE items SET assignee = ?, updated_at = ? WHERE id = ?")
-                .bind(&input.assignee)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
+            sqlx::query(
+                "UPDATE items SET assignee = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+            )
+            .bind(&input.assignee)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(self.pool())
+            .await?;
         }
         // Double-`Option` fields: outer `Some` means "the client addressed this
         // field", inner `Option` carries the new value (`None` ⇒ clear to NULL).
         if let Some(sprint_id) = input.sprint_id {
-            sqlx::query("UPDATE items SET sprint_id = ?, updated_at = ? WHERE id = ?")
-                .bind(sprint_id.map(|s| s.to_string()))
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
+            sqlx::query(
+                "UPDATE items SET sprint_id = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+            )
+            .bind(sprint_id.map(|s| s.to_string()))
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(self.pool())
+            .await?;
         }
         if let Some(due_date) = input.due_date {
-            sqlx::query("UPDATE items SET due_date = ?, updated_at = ? WHERE id = ?")
-                .bind(due_date.map(|d| d.to_rfc3339()))
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
+            sqlx::query(
+                "UPDATE items SET due_date = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+            )
+            .bind(due_date.map(|d| d.to_rfc3339()))
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(self.pool())
+            .await?;
         }
         if let Some(estimate_unit) = input.estimate_unit {
             // `estimate_unit` is stored as a JSON string; `None` clears it to SQL NULL.
             let value = estimate_unit.map(|u| serde_json::to_string(&u).unwrap());
-            sqlx::query("UPDATE items SET estimate_unit = ?, updated_at = ? WHERE id = ?")
-                .bind(value)
-                .bind(&now)
-                .bind(id.to_string())
-                .execute(self.pool())
-                .await?;
+            sqlx::query(
+                "UPDATE items SET estimate_unit = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+            )
+            .bind(value)
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(self.pool())
+            .await?;
         }
 
         // Maintain started_at / completed_at from the status category the handler
@@ -353,7 +431,7 @@ impl Repository {
                 // back out of Done) clear the completion timestamp.
                 StatusCategory::InProgress => {
                     sqlx::query(
-                        "UPDATE items SET started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ? WHERE id = ?",
+                        "UPDATE items SET started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?",
                     )
                     .bind(&now)
                     .bind(&now)
@@ -364,7 +442,7 @@ impl Repository {
                 // Entering Done: record completion (keep an earlier value if set).
                 StatusCategory::Done => {
                     sqlx::query(
-                        "UPDATE items SET completed_at = COALESCE(completed_at, ?), updated_at = ? WHERE id = ?",
+                        "UPDATE items SET completed_at = COALESCE(completed_at, ?), updated_at = ?, version = version + 1 WHERE id = ?",
                     )
                     .bind(&now)
                     .bind(&now)
@@ -375,7 +453,7 @@ impl Repository {
                 // Leaving Done back to a Todo column: drop the completion stamp.
                 StatusCategory::Todo => {
                     sqlx::query(
-                        "UPDATE items SET completed_at = NULL, updated_at = ? WHERE id = ?",
+                        "UPDATE items SET completed_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?",
                     )
                     .bind(&now)
                     .bind(id.to_string())
@@ -470,18 +548,20 @@ impl Repository {
             return Ok(Some(StatusUpdateOutcome::Rejected(e)));
         }
 
-        sqlx::query("UPDATE items SET status = ?, updated_at = ? WHERE id = ?")
-            .bind(target_status)
-            .bind(&now)
-            .bind(id.to_string())
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(
+            "UPDATE items SET status = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+        )
+        .bind(target_status)
+        .bind(&now)
+        .bind(id.to_string())
+        .execute(&mut *tx)
+        .await?;
 
         if let Some(category) = status_category {
             match category {
                 StatusCategory::InProgress => {
                     sqlx::query(
-                        "UPDATE items SET started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ? WHERE id = ?",
+                        "UPDATE items SET started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?",
                     )
                     .bind(&now)
                     .bind(&now)
@@ -491,7 +571,7 @@ impl Repository {
                 }
                 StatusCategory::Done => {
                     sqlx::query(
-                        "UPDATE items SET completed_at = COALESCE(completed_at, ?), updated_at = ? WHERE id = ?",
+                        "UPDATE items SET completed_at = COALESCE(completed_at, ?), updated_at = ?, version = version + 1 WHERE id = ?",
                     )
                     .bind(&now)
                     .bind(&now)
@@ -501,7 +581,7 @@ impl Repository {
                 }
                 StatusCategory::Todo => {
                     sqlx::query(
-                        "UPDATE items SET completed_at = NULL, updated_at = ? WHERE id = ?",
+                        "UPDATE items SET completed_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?",
                     )
                     .bind(&now)
                     .bind(id.to_string())
@@ -633,7 +713,7 @@ impl Repository {
             // Update parent status to completed
             let now = Utc::now().to_rfc3339();
             sqlx::query(
-                "UPDATE items SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?",
+                "UPDATE items SET status = ?, completed_at = ?, updated_at = ?, version = version + 1 WHERE id = ?",
             )
             .bind(completed_status)
             .bind(&now)

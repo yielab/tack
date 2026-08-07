@@ -33,16 +33,30 @@ export interface AgentActivityMap {
   /**
    * `true` once this same bulk fetch has resolved successfully — i.e.
    * orchestration is enabled on this server and the project is reachable.
-   * Added by card C4 (Wave 3, dispatch UI + security gating) as the cheap,
-   * already-in-flight signal for "should dispatch controls render at all,"
-   * reusing this hook's existing request instead of adding a second probe.
-   * `false` while loading and on ANY failure, not just a 404 — the same
-   * conservative "if we can't positively confirm it's on, don't show a
-   * privileged control" posture this card's brief calls for (TODO.md §0 rule
-   * 8: off by default). `stateFor`'s own fail-open behavior is unaffected —
-   * a missing badge is still never worth degrading the view over, but
-   * showing a dispatch button that's about to 404 is a different, worse
-   * failure mode than a missing chip.
+   * `false` while loading and on ANY failure, not just a 404 — badges have
+   * always failed open (see {@link stateFor}'s own doc comment), but a
+   * caller gating something more consequential than a missing chip should
+   * not show it until it can positively confirm the fetch succeeded.
+   *
+   * **Card C4 (Wave 3) also fed this into `DispatchCardMenu`'s `available`
+   * prop, via `Board.tsx`'s `dispatchAvailable={agentActivity.orchAvailable()}`
+   * — that usage is WRONG and card G1 (TODO.md §II.1.2 / §II.0 rule 6)
+   * retires it: this boolean only ever means "the bulk agent-activity fetch
+   * did not error," i.e. "orchestration is on," never "this project's
+   * control plane can dispatch." Those happened to coincide while docket was
+   * the only adapter; they stop coinciding the moment a second provider with
+   * `capabilities().dispatch === false` exists. The real signal is
+   * `shared/orch/capabilities.ts`'s `Capabilities.dispatch`, read from the
+   * project's linked control plane — but nothing reachable from THIS hook
+   * (fed only a bare `projectId`) currently carries that value without a
+   * second network call this hook was never designed to make, and
+   * `Board.tsx`/`BoardColumnView.tsx`/`ItemCard.tsx` (which thread the prop
+   * down to the menu) are outside this card's file ownership. Left as a
+   * flagged, NOT closed gap for whoever next touches the dispatch-gating
+   * call chain: this function's own remaining, correct uses (gating
+   * "is there bulk activity data to show at all," e.g. `Sprints.tsx`) must
+   * keep working exactly as they do today, so this doc comment is retracted
+   * rather than the function's behavior changed.**
    */
   orchAvailable: () => boolean;
 }

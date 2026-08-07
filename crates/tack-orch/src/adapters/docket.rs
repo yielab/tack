@@ -186,9 +186,9 @@ use tracing::warn;
 
 use crate::adapters::prometheus;
 use crate::{
-    ApprovalState, ControlPlane, FleetStatus, Health, MetricSample, NewRemoteTask, OrchError,
-    ProvisionPodParams, ProvisionedPod, RemoteApproval, RemoteEvent, RemoteRun, RemoteTask,
-    TracesPage,
+    ApprovalState, Capabilities, ControlPlane, DecisionSupport, EventScope, FleetStatus, Health,
+    MetricSample, ModelSelection, NewRemoteTask, OrchError, ProvisionPodParams, ProvisionedPod,
+    Rated, RemoteApproval, RemoteEvent, RemoteRun, RemoteTask, Support, TracesPage, UsageSupport,
 };
 
 /// The fixed `channel` docket records against every approval decision made
@@ -434,6 +434,96 @@ struct TracesResponse {
 impl ControlPlane for DocketAdapter {
     fn kind(&self) -> &'static str {
         "docket"
+    }
+
+    /// The verified truth, not optimism — every field below is justified
+    /// against this adapter's own implementation or `serve.py`'s real route
+    /// table, not against what a docket-shaped provider *could* plausibly
+    /// do. See TODO.md card G1 and `docs/book/src/developer/orchestration.md`.
+    fn capabilities(&self) -> Capabilities {
+        Capabilities {
+            // `ControlPlane::dispatch` (the trait method literally named
+            // `dispatch`) always returns `OrchError::Disabled` — see this
+            // module's own doc comment, "Write methods". But the capability
+            // named here is "can this plane accept new work at all," and
+            // docket answers that with `enqueue_task`
+            // (`POST /tasks/{project}`, live-verified by card V1), which
+            // this adapter fully implements and `dispatcher.rs` actually
+            // calls. `false` here would misreport what docket can do to
+            // satisfy the name of one dead trait method.
+            dispatch: true,
+            // No cancel route exists anywhere in docket's HTTP surface —
+            // `serve.py`'s full route table (this module's "Verified live"
+            // section, and `docs/book/src/developer/orchestration.md`'s
+            // route inventory) has nothing under `/runs/{id}/cancel` or
+            // equivalent. A queued/running task can only be abandoned by
+            // the pod itself, never revoked over HTTP.
+            cancel: false,
+            // Checked line by line against `serve.py` (see
+            // `docs/book/src/developer/orchestration.md`'s "What's
+            // genuinely missing" section): neither `/status.json` nor
+            // `/metrics` ever emits a `paused`/`pausedReason` field, and no
+            // HTTP route accepts a pause or resume request in either
+            // direction. The only real remedy is the docket CLI, which is
+            // why the reason names it directly rather than describing the
+            // absence in the abstract.
+            pause: Rated::new(
+                Support::Unsupported,
+                "docket exposes no pause endpoint over HTTP in either direction; from the \
+                 docket CLI, run `docket profile <pod-id> --resume` to clear a \
+                 budget-triggered pause",
+            ),
+            resume: Rated::new(
+                Support::Unsupported,
+                "docket exposes no resume endpoint over HTTP in either direction; from the \
+                 docket CLI, run `docket profile <pod-id> --resume`",
+            ),
+            // `GET /traces/{project}` is scoped by project, and `RemoteEvent`
+            // carries no run id to narrow further — see `persist_events`'s
+            // own doc comment in `reconciler.rs` ("docket's trace payload
+            // carries no run_id, only session_id... left unset rather than
+            // guessing").
+            event_scope: Rated::new(
+                EventScope::Project,
+                "docket's trace stream (GET /traces/{project}) is scoped per project; \
+                 individual events carry no run id to narrow further",
+            ),
+            // No artifact-retrieval route exists on docket's HTTP surface.
+            artifacts: false,
+            // `GET /approvals` is read on the reconciler's regular poll
+            // cadence — docket has no webhook or push mechanism for a
+            // pending approval.
+            decisions: Rated::new(
+                DecisionSupport::Poll,
+                "pending approvals are read via GET /approvals on the reconciler's poll \
+                 cadence; docket has no push/webhook path for a new approval",
+            ),
+            // docket's own driver estimates cost/token figures itself (see
+            // the crate doc's "Money is always an estimate" note) and
+            // reports them via /status.json, /metrics, and trace events —
+            // there is no separate metering gateway in front of it.
+            usage: Rated::new(
+                UsageSupport::FromProvider,
+                "docket estimates cost/token usage itself and reports it via /status.json, \
+                 /metrics, and trace events; there is no metering gateway in front of it",
+            ),
+            // docket owns its own model routing per role/blueprint
+            // (`core/dispatch.py`) and has no documented HTTP input that
+            // lets a caller override it per task.
+            model_selection: Rated::new(
+                ModelSelection::Unsupported,
+                "docket owns its own model routing per role/blueprint and has no HTTP input \
+                 to override it per task; a caller-supplied model would be silently ignored",
+            ),
+            // `GET /status.json`'s `agents[]` is exactly this roster — see
+            // `FleetStatus`/`FleetAgent`.
+            runtimes: true,
+            // `GET /metrics`, Prometheus text exposition (`adapters::prometheus`).
+            plane_metrics: true,
+            // `POST /pods`, live-verified by card D4 — see this module's
+            // "Verified live" section.
+            provisioning: true,
+        }
     }
 
     async fn health(&self) -> Result<Health, OrchError> {

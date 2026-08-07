@@ -15,7 +15,23 @@ a `ControlPlane` trait and a pull-based reconciler, six new tables, dispatch fro
 board, a fleet-wide approvals inbox, one-click product+pod provisioning, and
 per-product unit economics. Executable task cards for parallel agents are in
 [TODO.md](../../../TODO.md); the reciprocal docket-side work is Phase 22 of that
-project's `ROADMAP.md`.
+project's `ROADMAP.md`. **That cycle is complete** — all six phases shipped 2026-08-05.
+
+**Historical cycle (partially implemented August 2026): Phases 39–49 — the Agnostic
+Control Plane.**
+Phases 33–38 built a control center against exactly one backend. This cycle makes it true
+of any backend: capability negotiation so the UI disables what a provider cannot do and
+names why, a `ControlPlane` trait with no docket nouns left in it, a **GitHub Actions
+adapter** chosen because it shares none of docket's shape, an inbound telemetry channel
+pushed from inside a run, per-item model choice owned by Tack, and the GitHub pipeline
+finished in both directions (which closes Phase 21). Full plan with per-item verification
+commands in [docs/plans/agnostic-control-plane.md](../../plans/agnostic-control-plane.md);
+task cards in [TODO.md](../../../TODO.md), Part II.
+
+**Status correction (2026-08-06):** Phases 39–42 exist in the current unreleased working
+tree, but Phase 41's atomic-write acceptance and Phase 42's provider-scoped identity are
+reopened. Phases 43–49 are frozen/superseded by the harness-agnostic runner plan appended
+at the bottom of this roadmap. Their text is intentionally retained as design history.
 
 ## Audit-driven cycle (Phases 26–32) — status board
 
@@ -29,7 +45,7 @@ project's `ROADMAP.md`.
 | 31 | Construction Verticals | ✅ Done | — |
 | 32 | Enterprise OSS Standards | ✅ Done (32.1–32.5) | 32.6 binary-size guard (tokio `full` trim, feature-gate `object_store`, CI size gate) not started; retroactive git tags for beta.1–5 pending |
 
-**Still open after this cycle:** Phase 21 inbound GitHub sync (webhook/poll + comment mirroring); the four deferred sub-tasks above (28.6, 29.2 typing, 32.6, historical tags). Everything else in 26–32 is code-complete and tested.
+**Still open after this cycle:** Phase 21 inbound GitHub sync (webhook/poll + comment mirroring) — now **scheduled as Phases 47 and 49**; the four deferred sub-tasks above (28.6, 29.2 typing, 32.6, historical tags). Everything else in 26–32 is code-complete and tested.
 
 ---
 
@@ -402,6 +418,13 @@ vs Huly. Scope per decision #2.
 > **Still pending (future slices):** Task 1 comments-mirroring, Task 4 inbound sync
 > (webhook/poll), per-project tokens + manual item linking, and a real-repo live test.
 > The task notes below describe the _full_ bi-directional vision.
+>
+> **Scheduled:** the remaining slices are **Phases 47 and 49** of the Agnostic
+> Control Plane cycle. Phase 47 builds the inbound webhook receiver (signature
+> verification, delivery dedupe, echo suppression) that Task 4 describes; Phase 49 adds
+> comment/label mirroring, per-project credentials, PR and check-run state, and merge
+> evidence. Task 2's "backfill links for previously imported items" is covered by
+> migration 049's reverse index.
 
 #### Task 1 — Spec the sync model
 
@@ -1602,6 +1625,688 @@ execute itself on the board in real time, approve gated actions from the approva
 inbox, and answer what the product line cost per shipped item — with every cost figure
 honestly labelled an estimate.
 
+## Next — Agnostic Control Plane (Phases 39–49, August 2026)
+
+**Thesis:** competitors start from the fleet and bolt on a board. Tack starts from the
+work item and adds the fleet. That is why Tack can say _"this feature cost 4.2M tokens
+across 3 runs and 2 reworks"_ and a fleet dashboard cannot — it has no concept of a
+feature. Phases 33–38 built that control center against exactly one backend. This cycle
+makes it true of any backend, proves it with a second adapter that shares none of
+docket's shape, closes the GitHub pipeline in both directions, and gives the operator
+per-item model choice.
+
+**The test this cycle has to pass:** _can an adapter be written for a provider with no
+pods, no roles, no hops, no approval store and no policy engine, without touching the
+trait?_ If not, the trait is contaminated. Today it is: of the thirteen methods on
+`ControlPlane`, only `kind()` and `get_run()` survive that question unchanged, three
+(`status()`, `list_tasks()`, `provision_pod()`) are pure docket, and eight carry
+docket-shaped DTOs.
+
+The full plan, with per-item verification commands and the reasoning behind every
+decision, is **[docs/plans/agnostic-control-plane.md](../../plans/agnostic-control-plane.md)**.
+Executable task cards for parallel agents are in [TODO.md](../../../TODO.md), Part II.
+
+### The load-bearing idea: capability negotiation
+
+A control plane over N providers that does not model capabilities will either lie or
+degrade to the intersection of all providers. Today _"docket exposes no pause/resume over
+HTTP"_ is prose in `developer/orchestration.md` and a note in a UI panel. It becomes
+`capabilities().pause == Unsupported`, with the UI disabling the control and naming the
+reason from that value — never from a hard-coded `kind === 'docket'` check.
+
+Model selection is the acceptance test for it. docket owns its own routing and may ignore
+a model passed from outside; a GitHub Actions adapter forwards it verbatim. So
+`capabilities().model_selection` has three live values — `Honoured`, `Advisory`,
+`Unsupported` — and the UI must render three different things rather than show a picker
+that silently does nothing.
+
+### Verified external facts this cycle is built on
+
+Checked against the vendor documentation during planning, not assumed.
+
+| Fact | Value | Consequence |
+|---|---|---|
+| `POST /repos/{o}/{r}/actions/workflows/{id}/dispatches` on github.com | `200` with `{workflow_run_id, run_url, html_url}` | usable as a fast path only |
+| The same endpoint on **GitHub Enterprise Server 3.17** | `204 No Content`, empty body | **correlation must not depend on the dispatch response** |
+| Cancel a run | `POST .../runs/{id}/cancel` -> `202` | `capabilities().cancel == true` |
+| Pause / suspend / hold a run | **no endpoint exists** | `capabilities().pause == Unsupported` — a capability, not a gap to work around |
+| Run logs | `GET .../runs/{id}/logs` -> `302`, link expires in **1 minute** | not an event stream; events derive from `/jobs` steps instead |
+| Log and artifact retention | default 90 days; public 1–90, private 1–400 | bounded history for the derived event channel |
+| Job limits | GitHub-hosted **6 h**, self-hosted **5 days**, workflow run 35 days including waiting | the ceiling for a blocking decision |
+| Pending deployments | `GET`/`POST .../runs/{id}/pending_deployments`, body `{environment_ids, state, comment}` | Actions' decision store |
+| Webhook headers | `X-GitHub-Event`, `X-GitHub-Delivery` (GUID), `X-Hub-Signature-256` | dedupe key and HMAC verification |
+| Claude Code hooks | `PreToolUse`/`PostToolUse` are **synchronous and block the tool call**; default `command` hook timeout **600 s**, per-hook `timeout` field; exit 2 blocks | the HITL mechanism and its ceiling |
+
+### Decisions taken before planning
+
+| # | Decision | Chosen | Cost accepted |
+|---|---|---|---|
+| D1 | Final shape of `ControlPlane` | one breaking reshape | one wide, risky commit |
+| D2 | Inbound telemetry ingest | add it, behind a third secret | a new public and auth surface |
+| D3 | Published route shapes | **break with notice** | 21 operations change; external clients must update |
+| D4 | Concurrency control | `version` column + `ETag`/`If-Match` | three additive migrations |
+| D5 | Credential a run holds | one **per-run scoped** credential | new minting and expiry machinery |
+| D6 | Non-additive migrations | **rebuild `orch_runs` and `orch_approvals`** | the only irreversible step in the cycle |
+| D7 | Plane-wide metrics | keep `plane_metrics()` on the trait | one method most providers will not implement |
+
+### Non-negotiable design rules for this cycle
+
+The four rules from Phases 33–38 stand unchanged. Five more apply here:
+
+- **Tack never runs agents, and never proxies model traffic.** It is always a client of a
+  control plane, it never holds a vendor key on the request path, and it never implements
+  routing or fallback. Tack configures and reads a gateway; it never becomes one.
+- **Model identifiers are opaque strings.** Tack stores the identifier plus the id of the
+  gateway that understands it, and **never parses, maps, normalises or classifies it.**
+  Tack classifies work items; the gateway classifies models. No tier abstraction under any
+  name — docket removed `economy`/`standard`/`premium` in 0.2.0 and accepts them nowhere.
+- **No docket noun crosses the anti-corruption layer.** If the UI says "pod," the ACL has
+  leaked. `OrchBlueprint` and `TemplateOrchestration` in `tack-core/src/models.rs` are an
+  existing violation this cycle resolves.
+- **One `ALTER` per migration name.** `migrations.rs` runs each statement individually with
+  **no wrapping transaction** and records the name only after all of them succeed. A
+  multi-`ALTER` migration failing partway records nothing, re-runs statement one on the
+  next boot, hits `duplicate column name`, and the server never boots again — with no
+  down-migration. Both existing `ALTER` migrations are deliberately single statements.
+- **The harness is a config string, not an abstraction.** Which agent CLI runs is one plain
+  field on the project, beside the workflow name to trigger. No harness trait, no
+  capability matrix, no plugin layer.
+
+### Schema this cycle (migrations 032–049)
+
+| Migration | Change | Purpose |
+|---|---|---|
+| 032 | `control_planes.config` | provider configuration JSON (owner/repo, workflow file, ref, API base) |
+| 033 | `control_planes.secrets` | write-only credentials JSON; **must be added to `remote_backup.rs::scrub_snapshot_secrets` in the same commit** |
+| 034–036 | `items.version`, `orch_links.version`, `control_planes.version` | optimistic concurrency (D4) |
+| 037 | **`orch_runs` rebuild** | PK becomes `(control_plane_id, external_run_id, run_attempt)`; adds `correlation_id TEXT UNIQUE`. A global `run_id` PK makes a Tack-minted id and a provider id two rows `ON CONFLICT` can never merge |
+| 038 | **`orch_approvals` rebuild** | `control_plane_id` becomes nullable (a hook-originated decision has no plane); adds `kind`, `external_id`, `provider_metadata`. `token` stays the PK and the URL segment |
+| 039 | `orch_events.source` | `'poll' \| 'push' \| 'local'` — three provenances already exist in the code, so a two-value vocabulary would mislabel every locally-minted row |
+| 040–041 | `orch_events.external_id` + partial unique index | ingest idempotency |
+| 042 | `orch_model_policy` | per-item / per-item-type / per-project model choice |
+| 043 | `orch_links.harness` | the harness config field |
+| 044–049 | `github_links.{host,node_id,last_synced_at,remote_updated_at,state_hash}` + reverse index | bi-directional sync; the index is **non-unique** because a unique one could fail on a user's existing duplicates and brick the boot loop |
+
+### Status of this cycle
+
+| Phase | Title | Status |
+|---|---|---|
+| 39 | Regression Oracle | **implemented in current working tree; unreleased** |
+| 40 | Capability Model & Adapter Registry | **implemented in current working tree; unreleased** |
+| 41 | Optimistic Concurrency | **partial — CAS/version scaffolding implemented; atomic mutation and browser adoption reopened** |
+| 42 | Run Identity & Decision Store Rebuild | **transitional implementation in current working tree; provider identity acceptance reopened** |
+| 43 | Agnostic `ControlPlane` Trait (breaking) | **superseded by Phase 50+ runner boundary** |
+| 44 | Unified Decision Inbox | **superseded; decision capability re-scoped into Phase 55** |
+| 45 | GitHub Actions Adapter & Telemetry Ingest | **superseded; compile-only adapter is not a harness proof** |
+| 46 | Model Policy & Gateway | **superseded; model profiles and measured usage re-scoped into Phase 56** |
+| 47 | Inbound GitHub Webhooks | **frozen; remains optional future GitHub integration work** |
+| 48 | Intervention Without Pause | **superseded; runner decisions re-scoped into Phase 55** |
+| 49 | Bi-Directional GitHub Pipeline | **frozen; remains optional future GitHub integration work** |
+
+**Historical sequencing (superseded):** this plan expected every phase to ship alone,
+Phases 39–43 to form one coherent release, and Phase 45 to falsify or prove the trait. The
+Phase 50+ cycle now supplies the active sequencing and acceptance gates.
+
+**Two findings from the planning read that change what "done" means:**
+
+1. **Nine of thirteen trait methods have no test asserting what leaves the process.** Only
+   four of the 37 `DocketAdapter` tests check an outgoing request. A rewrite could change
+   what docket receives on nine methods and CI would stay green. Phase 39 exists solely to
+   fix that before anything else runs.
+2. **`orch_tasks.tokens_in`/`tokens_out` are written as literal `0` by
+   `dispatcher.rs:382` and updated by nothing.** Every token figure in the Fleet view, the
+   Budget panel and the whole Economics page currently reads a structural zero — for
+   docket too. Phase 46 builds the first real measurement path.
+
+### Phase 39 — Regression Oracle **implemented in working tree; unreleased**
+
+**Goal:** make the docket adapter's _and the reconciler's_ observable behaviour a
+committed artifact, so the reshape has something to be proved against.
+
+#### Task 39.1 — Tick-level contract test (the primary oracle)
+
+`crates/tack-orch/tests/docket_tick_contract_test.rs`. Drives a full `reconcile_once` plus
+the whole persist phase against a `wiremock` docket **and** an in-memory SQLite — both
+patterns already exist in `tests/ingestion_test.rs` and `tests/traces_ingestion_test.rs`.
+Snapshots two artifacts to `tests/golden/`: the **ordered** list of HTTP requests the tick
+issued (method, path, sorted query, headers present, canonicalised body) and the resulting
+rows of `orch_runs`, `orch_approvals`, `orch_events`, `orch_metrics`,
+`orch_trace_cursors`, deterministically sorted. Five scenarios: cold start, warm cursor,
+**rewound cursor**, zero linked projects, three linked projects.
+
+#### Task 39.2 — Per-method wire contract test (secondary)
+
+`crates/tack-orch/tests/docket_wire_contract_test.rs` — request transcript plus decoded
+result for all thirteen current methods.
+
+#### Task 39.3 — Pinned-literal event id
+
+`derive_event_id`'s namespace constant carries a _"must never change once any deployment
+has ingested a single event"_ warning, and the existing determinism test only proves
+determinism **within one build**. Add an assertion against a committed literal UUID.
+
+#### Task 39.4 — CI gates
+
+A golden-drift step in the `rust` job mirroring the existing OpenAPI gate, plus
+`cargo llvm-cov -p tack-orch --fail-under-lines 70` — there is **no `tack-orch` coverage
+floor today**, which makes the adapter the least-guarded code in the workspace.
+
+**Acceptance:** `UPDATE_GOLDEN=1 cargo test -p tack-orch --test docket_tick_contract_test
+&& git diff --exit-code crates/tack-orch/tests/golden/` exits 0 on an unmodified tree; and
+each of the three wrong refactors documented in the plan (delegate-and-re-scope, dropping
+the retention guard, changing the id derivation) fails at least one committed test.
+
+### Phase 40 — Capability Model & Adapter Registry **implemented in working tree; unreleased**
+
+**Goal:** make "what can this provider do" a typed value the UI reads, and give a plane
+somewhere to keep provider configuration and credentials.
+
+#### Task 40.1 — `Capabilities`
+
+`dispatch`, `cancel`, `pause: Support{Unsupported,Advisory,Supported}`, `resume`,
+`event_scope: EventScope{None,Run,Project,Plane}`, `artifacts`,
+`decisions: DecisionSupport{None,Poll,Push}`,
+`usage: UsageSupport{NotMeasured,FromProvider,FromGateway}`,
+`model_selection: ModelSelection{Unsupported,Advisory,Honoured}`, `runtimes`,
+`plane_metrics`, `provisioning`. Each carries a `reason` for the disabled case.
+
+#### Task 40.2 — Migrations 032 and 033
+
+`control_planes.config` then `control_planes.secrets`, **one `ALTER` each**. The `secrets`
+commit also adds its block to `remote_backup.rs::scrub_snapshot_secrets`, before the
+trailing `VACUUM`.
+
+#### Task 40.3 — `health = 'unconfigured'`
+
+A restored backup has `secrets IS NULL`, and `orch_store.rs` currently `continue`s past a
+failed adapter construction with only a `warn!` — the plane **vanishes from polling
+invisibly**. Benign for docket (its token is optional), fatal and silent for any plane
+whose credentials are required.
+
+#### Task 40.4 — One adapter registry
+
+`tack_orch::adapters::registry::build(kind, base_url, config, secrets)` replaces four
+copy-pasted `match kind` sites. It must live in `tack-orch` — `crates/tack-orch/Cargo.toml`
+forbids depending on `tack-api`. The four callers keep their **different** failure
+behaviour: one warns and continues, three error.
+
+#### Task 40.5 — GitHub Actions compile-only stub
+
+`kind()` and `capabilities()` truthfully filled in, every other method `unimplemented!()`,
+never registered. Its only job is to make _"both adapters compile against the trait"_ a
+Phase 43 gate rather than a Phase 45 discovery.
+
+#### Task 40.6 — Fix the auto-dispatch gate
+
+`handlers/items.rs` gates auto-dispatch on `state.config.orch_enable`, not
+`effective_orch_enabled` — so it **ignores the UI toggle today**. With a GitHub Actions
+plane that means a workflow dispatched automatically while the UI reports orchestration
+off. A behaviour change to a shipped feature; note it in `CHANGELOG.md`.
+
+#### Task 40.7 — Surface capabilities in the API and the UI
+
+`GET /api/control-planes/{id}` and `GET /api/fleet` carry them; every gated control reads
+them. Retire `grant_available` and `useAgentActivityMap`'s `orchAvailable()`-as-dispatch-gate
+— the latter really means _"orchestration is on"_, not _"this provider can dispatch"_.
+
+**Acceptance:** `rg -c "match .*kind\.as_str\(\)" crates/tack-api/src/` returns 0;
+`rg -n "kind === 'docket'|grant_available" frontend/src` returns 0; a disabled control
+renders a reason string **sourced from the capability**, asserted by a Vitest test.
+
+### Phase 41 — Optimistic Concurrency **partial; acceptance reopened**
+
+**Goal:** make a lost update detectable, and be honest about the writers that never go
+through HTTP.
+
+#### Task 41.1 — Migrations 034–036
+
+`version INTEGER NOT NULL DEFAULT 1` on `items`, `orch_links`, `control_planes`, **one
+`ALTER` each**. The repo layer bumps it on every `UPDATE`.
+
+#### Task 41.2 — `ETag` and `If-Match`
+
+`ETag` on `GET`, `If-Match` on `PATCH`/`PUT`, `412` on mismatch. **An absent `If-Match`
+preserves today's behaviour exactly**, so nothing breaks.
+
+#### Task 41.3 — CORS
+
+`router.rs` has **no `expose_headers` call at all**, so a browser can read no
+non-safelisted response header today. Add `expose_headers([ETAG])`, and add `if-match` and
+**`x-tack-approval-token`** to the allow-list. The latter is a pre-existing bug: the decide
+call works only because production is same-origin via `embed-spa`, and is already broken on
+any cross-origin `TACK_ALLOWED_ORIGINS` path. This ships the repo's first CORS test.
+
+#### Task 41.4 — MCP writes send `If-Match`
+
+`tack-cli`'s client `request()` **cannot set a header at all**, so every MCP write is
+unconditionally last-write-wins. The agent-versus-human race is precisely the one this
+phase exists for, and the agent path is the unprotected one.
+
+#### Task 41.5 — Document the writers that bypass HTTP
+
+The reconciler calls `dispatcher::apply_mapped_status` directly, with no request and no
+`If-Match` — **the largest single mutator of `items.status` is outside this control by
+design**. And `propagate_parent_completion` mutates a _parent_ item on a child's PATCH, so
+a parent's ETag changes with no caller having touched it. Both are correct; both must be
+written down so a client does not conclude `412` is a total ordering.
+
+**Acceptance:** replaying a stale `ETag` after a write has landed, and presenting an `ETag`
+belonging to a different item, each produce `412` — sequentially, so the check is
+deterministic; a `PATCH` with no `If-Match` still succeeds; and a preflight response allows
+`if-match` and `x-tack-approval-token` and exposes `etag`.
+
+> **Corrected 2026-08-06.** This phase originally accepted on "two concurrent `PATCH`es
+> carrying the same `ETag` produce exactly one `200` and one `412`". An adversarial pass
+> that made the `If-Match` comparison always succeed — so a stale `ETag` is accepted and
+> `412` never returned — was caught by that test only 5 times in 15 runs, because the
+> underlying atomic `UPDATE ... WHERE version = ?` reproduces the same shape by coincidence
+> when two racers share one still-valid version. Observing a race is not the same as
+> proving a precondition was checked. The concurrent test remains in the suite as a
+> property test of the compare-and-swap layer.
+
+### Phase 42 — Run Identity & Decision Store Rebuild **transitional; acceptance reopened**
+
+**Goal:** give a run an identity two providers can share, and let a decision exist without
+a control plane.
+
+#### Task 42.1 — Migration 037, rebuild `orch_runs`
+
+SQLite's 12-step procedure, **this table only**: `PRAGMA foreign_keys=OFF`, create with
+`PRIMARY KEY (control_plane_id, external_run_id, run_attempt)` and `correlation_id TEXT
+UNIQUE`, `INSERT ... SELECT` copying `run_id` into `external_run_id` with `run_attempt = 1`,
+drop, rename, recreate indexes, `PRAGMA foreign_key_check`.
+
+#### Task 42.2 — Migration 038, rebuild `orch_approvals`
+
+`control_plane_id` becomes nullable; add `kind`, `external_id`, `provider_metadata`.
+`token` stays the primary key and the URL segment — renaming a column that is in a user's
+database buys nothing.
+
+#### Task 42.3 — Half-applied-rebuild guard
+
+`run_all` refuses to boot if both `orch_runs` and `orch_runs_new` exist, with an error
+naming the backup endpoint, rather than re-running `DROP TABLE`.
+
+#### Task 42.4 — Release note
+
+This upgrade rewrites two tables. Take a backup first.
+
+**Acceptance:** a seeded database at migration 036 upgrades with identical row counts and
+per-row field equality, an empty `PRAGMA foreign_key_check`, and the old PK's uniqueness
+still enforced; a deliberately half-applied state refuses to boot with a named error.
+
+### Phase 43 — Agnostic `ControlPlane` Trait **superseded; do not start** (breaking)
+
+**Goal:** replace the docket-shaped trait with the agnostic one, and prove docket's
+behaviour did not move.
+
+Sixteen methods, every one capability-gated. Four corrections against the obvious design,
+each forced by real code:
+
+- **`events` is scoped, not per-run.** `RemoteEvent` carries no run id and `persist_events`
+  says so outright. A per-run `events()` is _unimplementable_ for docket — every event
+  currently ingested would be dropped. `EventScope::{Run, Project, Plane}` plus
+  `capabilities().event_scope` declares which shape an adapter serves.
+- **`dispatch` returns a rich `DispatchAck`.** Today `dispatcher.rs` makes a **second**
+  call to `list_tasks` purely to recover `remote_status` and `approval_token`. Deleting
+  `list_tasks` without widening the ack makes `approval_token` permanently `null` and sends
+  every approval-gated dispatch down the `on_running` branch. **The OpenAPI drift gate
+  cannot catch that** — the field still exists, only its value dies.
+- **`RunState` stays a normalized closed enum on the trait**, never in `provider_metadata`.
+  `orch_store.rs` is the only place a finishing agent moves a card and it matches three
+  literals; GitHub has nine conclusions, seven of which would fall through with no error,
+  no log and no event, leaving cards permanently in "In Progress".
+- **`plane_metrics()` stays** (D7). docket's `/metrics` is plane-wide with no run or project
+  dimension, and `GET /api/projects/{id}/orch-policy` is built entirely from it including a
+  server-computed `denial_rate` — a per-adapter UI fragment cannot produce a number the
+  server already committed to in the spec.
+
+#### Task 43.1 — Normalized DTOs and the `RunState` mapping table
+
+`PlaneHealth`, `Runtime`, `DispatchTarget`, `DispatchRequest`, `DispatchAck`, `RunHandle`,
+`RunStatus`, `RunState`, `EventScope`, `EventPage`, `RunEvent`, `Artifact`, `Decision`,
+`DecisionKind`, `DecisionAnswer`, `DecisionState`, `Usage`, `CorrelatableRecord`. `RunState`
+becomes `Queued | Running | Blocked | Succeeded | Failed | Cancelled | TimedOut |
+Unknown(String)`, keeping the existing `remote_string_enum!` round-trip discipline. GitHub
+`waiting` and `action_required` map to `Blocked` **and raise a `Decision`** — a deployment
+gate is a human waiting, not a terminal state.
+
+#### Task 43.2 — The trait, and `DocketAdapter` rewritten
+
+`provision_pod` leaves the trait for a provider-specific route.
+
+#### Task 43.3 — Reconciler restructure
+
+`evaluate` consumes **only** `health()`. `EXPECTED_API_VERSION` moves out of the reconciler
+into the docket adapter, and `PlaneHealth` carries `api_version` and `version_ok` — the
+adapter decides what "reachable" means, so docket keeps requiring both `/health` and
+`/status.json` while a GitHub plane does not go unreachable for lacking a runner-admin
+scope. Correlation moves to a first-class `correlation_keys()` rather than reaching into
+`RemoteRun.task_ids` and `RemoteApproval.context.taskId`.
+
+#### Task 43.4 — `status_map` gains `on_blocked` and `on_timed_out`
+
+Both optional; absent means fall back to `on_waiting_approval` and `on_failed`, so **every
+`status_map` already saved in a user's database behaves exactly as it does today**.
+
+#### Task 43.5 — `tack-api` onto the new trait
+
+The read-back call in `dispatcher.rs` disappears because `DispatchAck` carries `state` and
+`pending_decision_id`.
+
+#### Task 43.6 — Resolve the `tack-core` layer violation
+
+Move `OrchBlueprint` and `TemplateOrchestration` out of the pure-domain crate into
+`tack-api::handlers::provisioning`. `project_templates.orchestration` is already `TEXT`, so
+`tack-core` keeps only an opaque `serde_json::Value`. No migration.
+
+#### Task 43.7 — Regenerate the contract, write the breaking-change notes
+
+#### Task 43.8 — Frontend: neutral shapes, lazy provider fragment
+
+`shared/orch/providers/docket/` loaded with `lazy(() => import(...))`, the pattern already
+used for every route, so the 30 KB gzipped entry-bundle gate is unaffected. `Pod health`
+becomes `Health`; `Roster` becomes `Runtimes`.
+
+**Acceptance:** the Phase 39 tick golden is **byte-identical**; both adapters compile
+against the new trait; a `status_map` saved before this release behaves identically;
+`rg -n "blueprint|Blueprint|\bpod\b|docket" crates/tack-core/src/` returns 0;
+`rg -n "Pod health|Roster|Burn vs budget" frontend/src` returns 0; and
+`dispatch_ack_carries_the_approval_token_without_a_second_call` asserts both a non-null
+token and exactly one docket request.
+
+### Phase 44 — Unified Decision Inbox **superseded by Phase 55**
+
+**Goal:** turn the approvals inbox into a four-kind decision inbox any provider, or an
+uninstrumented hook, can feed.
+
+"Blocked waiting on a human" exists in every provider in a different shape: an approval
+token in docket, a hook exiting 2 in Claude Code, an environment protection rule in
+Actions. The inbox is already the most active surface in the app — it is the **only**
+polling loop in the entire frontend, while the Fleet page does not poll at all.
+
+#### Task 44.1 — Four kinds
+
+`ApprovalOfIrreversibleAction`, `PlanAwaitingReview`, `OpenQuestion`,
+`WorkOrderAmbiguity`, end to end.
+
+#### Task 44.2 — Routes move to `/api/decisions`
+
+Per D3, broken with notice, no alias. `TACK_ORCH_APPROVAL_TOKEN` keeps its exact meaning —
+resolving a decision stays higher-privilege than editing a card.
+
+#### Task 44.3 — Per-kind answer controls, axe-clean
+
+#### Task 44.4 — Decision provenance without an actor
+
+With one shared secret there is no per-user identity, so the audit row records the
+**surface** a decision was resolved through and the UI never renders a name it does not
+have.
+
+**Acceptance:** the four kinds render distinctly; the existing approval-token gating tests
+pass verbatim in behaviour; the UI never implies attribution.
+
+### Phase 45 — GitHub Actions Adapter & Telemetry Ingest **superseded; do not start**
+
+**Goal:** the falsification test. A second adapter, end to end, including the only way its
+agent telemetry can exist.
+
+**Where it runs:** **GitHub-hosted runners** first. Zero infrastructure, honours "one
+binary, no runtime dependencies", and the adapter's job is to falsify the trait, not to
+reach local resources. Self-hosted costs Tack **zero code** — `runs-on` lives in the target
+repo's workflow file, which Tack neither writes nor reads — and is the only option that
+reaches a local GPU, database or `.env`. "Under docket" is rejected: it would make adapter
+2 a docket variant and prove nothing.
+
+**How progress reaches the panel:** two independent channels. Run lifecycle is _pulled_
+from the provider API (and later pushed by webhooks). Agent telemetry is **pushed from
+inside the run** by a `PostToolUse` hook, because no provider API reports tool-level detail
+— GitHub knows "job 2 of 3, in progress" and nothing more, because GitHub is not the agent.
+That is what forces an inbound endpoint Tack does not have today.
+
+The ingest endpoints are **in this phase, not before it**: their only consumer is this
+adapter's handshake, and shipping a separately-credentialed write endpoint with zero
+callers is pure attack surface.
+
+#### Task 45.1 — The adapter
+
+`health` uses a cheap authenticated `GET /repos/{o}/{r}`, **never** the runner list — that
+needs repo-admin and a 403 would pin every plane at `unreachable` through the backoff.
+`events` is `EventScope::Run`, derived from `GET .../runs/{id}/jobs` steps with the cursor
+as the highest `(job_id, step_number)`; logs are not used at all. `pending_decisions` and
+`resolve_decision` map to `pending_deployments`. `pause`/`resume` are `Unsupported`. Raw
+`reqwest` — no `octocrab`, per the crate's own rule against a second HTTP client.
+
+#### Task 45.2 — Correlation, with a single-use nonce
+
+Tack mints `tack_run_id` and passes it as a **non-secret** workflow input. Because that
+input is caller-supplied, anyone with `actions:write` could forge one, so
+`POST /api/fleet/runs/bind` verifies it was minted **by Tack, for that plane, and is still
+unbound**, and consumes it. That one call is simultaneously the handshake, the correlation
+binding, and the exchange that returns the **per-run credential** (D5) — which therefore
+never appears anywhere loggable. **Workflow inputs are visible in the run's UI and logs**;
+no vendor key, gateway key or API token ever travels as one.
+
+#### Task 45.3 — `POST /api/fleet/runs/{correlation_id}/events`
+
+Authenticated by the run credential only, idempotent on a caller-supplied `event_id`,
+rejects events for a run in a terminal state.
+
+#### Task 45.4 — Migrations 039–041
+
+`orch_events.source` with the **three-value** vocabulary plus a backfill of existing
+locally-minted rows to `'local'`; `external_id`; a partial unique index over the new column,
+which cannot fail on existing data.
+
+#### Task 45.5 — Auth wiring, outside both existing gates
+
+A run must not need `TACK_API_TOKEN`, and toggling orchestration off in the UI must not
+`409` an in-flight handshake and re-label every live run "not instrumented". These routes
+get their own sub-router with their own guard — **not** a fourth entry in the
+`path().ends_with(...)` exemption list, which would silently exempt any future path ending
+in the same string.
+
+#### Task 45.6 — Reference workflow and hook
+
+Under `docs/examples/github-actions/`, with the operator guide. Documents honestly that
+fork-PR runs receive no secrets, cannot bind, and will correctly render "not instrumented".
+
+#### Task 45.7 — "Not instrumented" versus "waiting on a human"
+
+A missing bind is **not** enough to declare a run uninstrumented: a run parked on a
+required-reviewer environment sits in `waiting` for up to 35 days and is exactly what the
+decision inbox exists to surface. The timer is suppressed whenever the run is `waiting` or
+a decision is open against it. Separately, a run that goes `queued -> cancelled` without
+ever starting never arms an `in_progress`-based timer at all, so the reaper runs off a
+**dispatch-time deadline** and leaves an event explaining why the card stopped.
+
+#### Task 45.8 — Frontend: a second Kind, with its own config form and lazy fragment
+
+**Acceptance:** a forged, a reused, and a wrong-plane nonce each `403` and create no run
+row; replaying an event batch leaves the row count unchanged; a `waiting` run is never
+labelled "not instrumented"; a run cancelled before starting is reaped and leaves an event;
+and a test enumerating the router asserts the token-exemption set is exactly the intended
+paths.
+
+### Phase 46 — Model Policy & Gateway **superseded by Phase 56**
+
+**Goal:** the operator picks the model for a piece of work from the UI, without editing
+YAML or restarting anything, and can see where the choice came from.
+
+Resolution order: **item override -> item-type default -> project default -> control-plane
+default.** The UI shows the **resolved** value and its provenance — "sonnet, from project
+default". A policy whose provenance is invisible is a policy nobody trusts.
+
+#### Task 46.1 — Migration 042, `orch_model_policy`
+
+#### Task 46.2 — Pure resolution in `tack-core`
+
+It **never parses, maps, normalises or classifies the identifier**. This also removes the
+staleness problem permanently: a new model needs no Tack release.
+
+#### Task 46.3 — API returns the resolved value with its provenance
+
+#### Task 46.4 — `capabilities().model_selection` respected, all three values live
+
+docket `Unsupported` (it owns its routing), GitHub Actions `Honoured` (forwarded verbatim).
+**This is the capability-negotiation acceptance test for the whole cycle.**
+
+#### Task 46.5 — Per-project gateway config
+
+Base URL, an optional **server-side read-only spend-query credential**, and nothing else.
+The run gets its own key from a repo secret the operator sets; Tack never sends one into a
+run. When a gateway is configured and a pre-dispatch probe fails, dispatch returns a new
+`gateway_unreachable` outcome and **no run starts** — a run that silently bypasses the
+gateway is unmeasured and uncapped.
+
+#### Task 46.6 — The first real token measurement
+
+Roll pushed telemetry and docket's own `cost_charged` events into `orch_tasks`. Where no
+source exists, render **"not measured"**, never `0`.
+
+#### Task 46.7 — `orch_links.harness`
+
+One plain config field. No trait, no capability matrix, no plugin layer.
+
+**Acceptance:** all sixteen presence combinations resolve correctly; a nonsense identifier
+round-trips unchanged; three capability values render three different controls; a project
+with no measurement source renders "not measured" and never `$0.00` or `0 tokens`.
+
+### Phase 47 — Inbound GitHub Webhooks **frozen; future optional integration**
+
+**Goal:** replace polling latency with push for run lifecycle, and add the inbound half of
+the pipeline.
+
+#### Task 47.1 — `POST /api/webhooks/github/{control_plane_id}`
+
+`X-Hub-Signature-256` verified with the `hmac`/`sha2`/`hex` crates already present —
+`webhook.rs` has `sign` and no `verify` today — using the existing `constant_time_eq`.
+
+#### Task 47.2 — Delivery dedupe on `X-GitHub-Delivery`
+
+#### Task 47.3 — `workflow_run`, `workflow_job`, `deployment_review`
+
+Polling stays as the reconciliation backstop, so a missed delivery self-heals.
+
+#### Task 47.4 — Echo suppression, three layers
+
+A `ChangeOrigin` tag so a webhook-driven write never re-fires `maybe_sync_github`; a
+`github_links.state_hash` backstop for when the tag is lost across a process boundary; and
+dropping deliveries whose `sender.id` is the identity Tack pushes as. `ItemSource` cannot
+serve here — it is written once at creation and `update_item` never touches it.
+
+**Acceptance:** a bad, missing, or wrong-plane signature each `401` with zero writes; a
+replayed delivery GUID changes no row; a dropped delivery is recovered by the next poll;
+and a webhook-driven status change produces **zero** outbound requests.
+
+### Phase 48 — Intervention Without Pause **superseded by Phase 55**
+
+**Goal:** fail-closed human-in-the-loop inside a run, on a provider with no pause API.
+
+A `PreToolUse` hook runs **synchronously and blocks the tool call until it returns**. So it
+can post a decision request to Tack and poll for the answer with a bounded wait, returning
+allow or deny. That makes the decision inbox the mechanism that supplies **intervention**,
+not just visibility.
+
+#### Task 48.1 — Raise and await, on the run credential
+
+The run credential can **raise** a decision and can **never answer one** — resolution stays
+behind `TACK_ORCH_APPROVAL_TOKEN`.
+
+#### Task 48.2 — The ceiling, stated and enforced
+
+The reference hook sets `timeout: 600` **explicitly** rather than relying on the default,
+and requests `wait=540`, leaving headroom for the round trip. 540 s is far under the 6 h
+GitHub-hosted job cap, so the wait can never be what kills a job. **Expiry is fail-closed:**
+deny, hook exits 2, tool call blocked, and an event records the expiry.
+
+#### Task 48.3 — Where the item lands on expiry
+
+`on_blocked` if set, otherwise the item does not move and the decision is recorded as
+expired. Never silently "done".
+
+#### Task 48.4 — Reference hook and the cost note
+
+The wait is **paid idle runner time**, so decisions belong at genuine gates, not per tool
+call.
+
+**Acceptance:** a run credential cannot resolve its own decision; an expired decision
+returns deny, writes an audit row, and never moves an item to a done status.
+
+### Phase 49 — Bi-Directional GitHub Pipeline **frozen; future optional integration** — closes Phase 21
+
+**Goal:** finish the bridge whose first foot shipped as Phase 21 v1.
+
+| Event | Effect |
+|---|---|
+| Item created in Tack | Issue created on GitHub (optional, per project) |
+| Issue created/edited on GitHub | Item created/updated in Tack |
+| Dispatch from Tack | Run started, visible both sides |
+| PR opened by the agent | Item moves state, PR linked |
+| CI checks running | Item in verifying |
+| Check failed | Item to failed, with the run link |
+| PR merged | Item to done, with evidence: SHA, run URL, artifacts |
+| Agent hits a blocking decision | In Tack's inbox **and** as a comment/label on the issue |
+| Human resolves on either side | Reflected on the other |
+
+#### Task 49.1 — Migrations 044–049
+
+**One `ALTER` each**, plus a **non-unique** reverse index — a unique one could fail on a
+user's existing duplicates, and a failed statement in this migration runner bricks the boot
+loop. Uniqueness is enforced in the repo layer, which logs when it finds more than one.
+
+#### Task 49.2 — Credential precedence, decided and written down
+
+`TACK_GITHUB_TOKEN`/`TACK_GITHUB_API_BASE` remain the fallback; a control plane's own
+credentials win where a plane is involved. Two token sources with different scopes exist
+today and the rule was never stated.
+
+#### Task 49.3 — Inbound issues and comments
+
+Applied **through `tack-core`** so workflow rules hold, with `ItemSource::Github` preserved
+so the trust boundary is not laundered.
+
+#### Task 49.4 — Outbound item to issue, per project, opt-in, off by default
+
+#### Task 49.5 — PR, check suite, and merge evidence
+
+#### Task 49.6 — Decision mirroring both ways
+
+#### Task 49.7 — Retry and rate limits for the outbound path
+
+Today the push is `tokio::spawn`'d and never awaited, with zero retry and no persisted
+failure record — unlike the auto-dispatch hook beside it, which writes an event. Add a
+bounded retry honouring `Retry-After` and `x-ratelimit-reset`. No new dependency: `tower`
+is already a workspace dep with `features = ["full"]`.
+
+#### Task 49.8 — Rewrite `docs/GITHUB-SYNC.md` for v2
+
+**Acceptance:** an issue edited on GitHub updates the item without bypassing the workflow
+engine (an illegal transition is rejected, not forced); a merged PR completes the item with
+SHA, run URL and artifacts all non-empty; resolving on either side reflects on the other
+with no echo; and a rate-limited push retries and records a failure event.
+
+### Multi-Agent Dispatch Plan (Phases 39–49)
+
+Per-agent task cards, the file-ownership map, and the rules of engagement live in
+**[TODO.md](../../../TODO.md)**, Part II. The full plan with per-item verification commands
+is [docs/plans/agnostic-control-plane.md](../../plans/agnostic-control-plane.md).
+
+**Sequencing at a glance:** Phase 39 is blocking and must land before anything is touched —
+it is the only thing that makes the reshape safe rather than blind. Phases 40–42 are
+independent of each other. Phase 43 is the widest single change in the cycle and is
+deliberately one phase rather than two coexisting trait surfaces. Phase 45 is the phase that
+either falsifies the trait or proves it; if it forces a trait change, that is **evidence**,
+and Phase 39's golden re-runs to prove docket still did not move. Phases 46–49 are largely
+independent tracks.
+
+**Definition of done for the whole cycle:** an operator registers a GitHub Actions control
+plane beside a docket one, dispatches the same sprint to either, sees per-item token cost
+from both, resolves a blocking decision raised from inside a running workflow, and watches a
+merged PR complete the card with its SHA and run URL — with every control the provider
+cannot support visibly disabled and its reason named, and with docket's behaviour provably
+unchanged throughout.
+
 ### Future / Optional
 
 #### Multi-User / Auth
@@ -1643,3 +2348,395 @@ No current plans. The SPA is responsive on mobile browsers; no native app and no
 See [CONTRIBUTING.md](../../../CONTRIBUTING.md) for code style, PR process, and how to add new
 features. The [Adding Features](developer/adding-features.md) guide walks through the
 three most common extension patterns.
+
+---
+
+# Next — Harness-Agnostic Runner Fleet (Phases 50–57)
+
+**Status:** planned; this section supersedes the unstarted implementation work in Phases
+43–49. Phases 39–42 and every earlier section remain in this document as implementation and
+decision history.
+
+## Product outcome
+
+Tack remains a project-management application and the source of truth for work. A user can
+open any item, create an **execution request**, select an agent profile, fleet, harness,
+model provider and model, and observe the resulting attempts without turning the item itself
+into a provider-specific run record.
+
+The first supported harness families are:
+
+- Codex;
+- Claude Code;
+- OpenCode.
+
+They are executed by a new pull-based `tack-runner`, not by the Tack API process. Docket is
+no longer the architectural center. It may survive as an optional legacy bridge if that
+provides value, but Tack must not maintain two competing schedulers for the same execution.
+GitHub Actions remains a CI/integration target, not the proof of a coding-agent harness
+abstraction.
+
+## Why the boundary changes
+
+The old `ControlPlane` boundary assumes another project already owns tasks, runtimes,
+approvals, metrics and provisioning. That is appropriate for Docket, but not for Codex,
+Claude Code or OpenCode: those are execution harnesses, not remote project-management
+control planes. Generalising Docket's thirteen-method interface would preserve the wrong
+ownership model and force harness adapters to invent unsupported fleet-wide APIs.
+
+The new boundary is:
+
+```text
+Tack item
+   │ creates
+   ▼
+Execution request ── durable queue / scheduler ──► Fleet
+                                                   │ grants fenced lease
+                                                   ▼
+                                             tack-runner
+                                                   │ local adapter
+                         ┌─────────────────────────┼─────────────────────────┐
+                         ▼                         ▼                         ▼
+                       Codex                  Claude Code                OpenCode
+                         │                         │                         │
+                         └──── events / decisions / artifacts / usage ─────┘
+                                                   │
+                                                   ▼
+                                immutable attempt history in Tack
+```
+
+## Vocabulary and ownership
+
+These are different concepts and must never be collapsed into one `provider` field:
+
+| Concept | Meaning | Example |
+|---|---|---|
+| PM item | Human intent and workflow state | “Implement export validation” |
+| Execution request | Durable request to work on an item | Run the item with a selected policy |
+| Agent profile | Instructions, role, tools, permissions and budget | “Rust reviewer, read/write repo” |
+| Fleet | Scheduling group | “Local trusted development machines” |
+| Runner | One registered worker process/machine | `runner-laptop-01` |
+| Harness | Program that performs the coding-agent session | Codex, Claude Code, OpenCode |
+| Model provider | Service that serves a model | OpenAI, Anthropic, a gateway, local runtime |
+| Model | Opaque model identifier | Stored exactly as selected/reported |
+| Attempt | One immutable execution of a request | Attempt 2 on `runner-laptop-01` |
+| Decision | Human input required by a running attempt | Allow/deny a tool action |
+
+Tack owns items, requests, scheduling state, leases and the normalized history. The runner
+owns local workspace preparation, harness invocation, local credentials, process lifecycle
+and conversion from harness output to the runner protocol. A harness adapter does not get
+to mutate Tack item state directly.
+
+## Non-negotiable architecture rules
+
+1. **The API server never launches a coding harness.** Only `tack-runner` starts local
+   processes. The server may schedule, lease, cancel and record them.
+2. **Pull, do not push.** Runners authenticate, register capabilities and claim work. Tack
+   does not connect to arbitrary runner URLs or send stored model credentials to a changed
+   host.
+3. **One item may have many requests and attempts.** PM workflow state and execution state
+   remain separate. Status mapping is explicit, optional and passes through the workflow
+   engine.
+4. **Requested and actual execution facts are both stored.** A request records the desired
+   fleet/harness/provider/model; the attempt records what the runner actually used, including
+   harness version and capability snapshot.
+5. **Capability values drive every choice.** The UI offers only combinations reported by
+   eligible runners. Harness/provider/model combinations are not assumed to form a Cartesian
+   product.
+6. **Model identifiers are opaque.** Tack may compare identity and display provenance, but
+   does not infer quality tiers or silently substitute a model.
+7. **Secrets stay at the narrowest boundary.** Harness/model credentials remain local to a
+   runner where possible. Tack stores hashed runner credentials and secret references, not
+   raw vendor credentials inside execution payloads.
+8. **No exactly-once claim.** The system guarantees at most one valid active lease through
+   fencing. A crash after a local process starts can be ambiguous unless the harness supports
+   resume/idempotency; ambiguous attempts become `needs_operator` and are never blindly
+   retried.
+9. **Every attempt uses an isolated workspace/worktree.** A lost or cancelled attempt must
+   not leave another attempt writing the same checkout.
+10. **Usage is nullable and sourced.** Missing measurement is `not_measured`, never zero.
+    Estimated and provider-reported amounts remain distinct.
+11. **The runner protocol is versioned and bounded.** Events, artifact metadata, heartbeat
+    frequency, payload size and retention all have explicit limits.
+12. **Docket is a legacy adapter, not a dependency.** New runner work must start and pass CI
+    without Docket running or its repository being present.
+
+## Execution and failure semantics
+
+The normalized request/attempt lifecycle is:
+
+```text
+queued → leased → preparing → running → waiting_decision
+   │        │          │          │              │
+   └────────┴──────────┴──────────┴──────────────┼─► succeeded
+                                                 ├─► failed
+                                                 ├─► cancelled
+                                                 ├─► lost
+                                                 └─► needs_operator
+```
+
+- Claiming a request is one SQLite transaction that creates an attempt, installs a lease
+  owner, lease expiry and monotonically increasing fencing token, and changes the request
+  from `queued` to `leased`.
+- Heartbeats and all writes carry the attempt id and fencing token. Writes from an expired
+  owner are rejected.
+- A runner keeps a small local journal before spawning the harness. On restart it reports
+  the journal and either resumes/reconciles or marks ownership ambiguous.
+- Lease expiry alone does not automatically start another process. The scheduler first
+  classifies the previous attempt as safely recoverable, terminal, or `needs_operator`.
+- Completion and the final event commit are idempotent. Replaying an event batch or terminal
+  report changes no row and emits no duplicate WebSocket notification.
+- Cancellation has requested and observed states. A request is not “cancelled” merely
+  because Tack sent a signal; the runner must report termination or become lost.
+
+## Additive data model
+
+New execution work uses an additive namespace rather than stretching the existing
+`orch_*` tables. Exact migration numbers are allocated by the single migration owner only
+after Phase 50 decides the fate of unreleased migrations 037/038.
+
+| Table | Required purpose/invariants |
+|---|---|
+| `agent_fleets` | Named scheduling groups and optional concurrency/default policy |
+| `agent_runners` | Identity, hashed credential, state, last heartbeat, labels, capacity, capability snapshot and protocol version |
+| `agent_fleet_members` | Many-to-many fleet membership; unique `(fleet_id, runner_id)` |
+| `agent_profiles` | Reusable instructions, tool/permission policy, limits; no vendor secret values |
+| `model_profiles` | Opaque provider/model/config reference and display name; optional runner-local secret reference |
+| `execution_requests` | Item, requested selections, priority, idempotency key, state, cancellation request and immutable request snapshot |
+| `execution_attempts` | Request attempt number, runner, fencing token, lease timestamps, actual harness/provider/model/version, terminal reason and nullable usage |
+| `execution_events` | Idempotent ordered event stream; unique `(attempt_id, event_id)` with source and bounded payload |
+| `execution_artifacts` | Metadata and content reference/checksum; content storage policy is explicit |
+| `execution_decisions` | Pending/resolved/expired human decisions scoped to one attempt, with separate resolver authorization |
+
+Repository APIs expose typed keys containing attempt and runner scope. No lookup may
+correlate provider-local ids globally. All row conversion is fallible; malformed persisted
+identifiers/timestamps surface corruption rather than panicking or fabricating `Utc::now()`.
+
+## Runner protocol v1
+
+Runner routes live under a separately authenticated, versioned `/api/runner/v1` router.
+They are not added to the existing suffix-based bearer-token exemption list.
+
+Minimum operations:
+
+| Operation | Contract |
+|---|---|
+| Register/refresh | Exchange a one-time enrollment token, publish runner identity, protocol version and capabilities |
+| Heartbeat | Idempotently refresh runner health/capacity and active-attempt leases |
+| Claim | Long-poll or bounded poll; atomically grants one eligible request and fencing token |
+| Accept/start | Records preparation/start facts before the local harness process is launched |
+| Event batch | Caller-supplied event ids; the batch and checkpoint commit atomically |
+| Decision poll | Returns unresolved decisions visible to that attempt only |
+| Artifact manifest | Registers bounded metadata/checksum before optional content upload |
+| Complete | Idempotent terminal report carrying actual execution snapshot and usage provenance |
+| Cancel observation | Runner acknowledges whether the process stopped, was already terminal, or is ambiguous |
+
+The operator-facing API separately creates/cancels execution requests, lists attempts and
+events, manages fleets/runners/profiles, and issues/revokes enrollment credentials. Runner
+credentials cannot create PM items or resolve their own privileged decisions.
+
+## Harness adapter boundary
+
+Adapters live in `tack-runner`, not in `tack-api`. The interface stays small and is proven
+against real harness behavior before it is frozen:
+
+```rust
+pub trait HarnessAdapter: Send + Sync {
+    fn kind(&self) -> HarnessKind;
+    async fn probe(&self) -> Result<HarnessCapabilities, HarnessError>;
+    async fn validate(&self, spec: &ExecutionSpec) -> Result<(), HarnessError>;
+    async fn start(&self, spec: &ExecutionSpec, sink: &dyn EventSink)
+        -> Result<LocalRunHandle, HarnessError>;
+    async fn cancel(&self, handle: &LocalRunHandle) -> Result<CancelObservation, HarnessError>;
+    async fn reconcile(&self, journal: &LocalRunJournal)
+        -> Result<RecoveryObservation, HarnessError>;
+}
+```
+
+No method may use `unimplemented!()`. Unsupported behavior is a typed capability/result.
+Harness-specific configuration and raw events stay in adapter-owned metadata; normalized
+lifecycle, decisions, artifacts and usage are first-class protocol values.
+
+## Phase status
+
+| Phase | Title | Status |
+|---|---|---|
+| 50 | Boundary, Safety & Contract Freeze | **planned — blocking** |
+| 51 | Durable Execution Domain & Schema | **planned** |
+| 52 | Pull Runner Protocol & `tack-runner` | **planned** |
+| 53 | Codex / Claude Code / OpenCode Harness Proof | **planned** |
+| 54 | Fleet Scheduler & Item Assignment UX | **planned** |
+| 55 | Decisions, Artifacts & Realtime Activity | **planned** |
+| 56 | Model Profiles, Policy & Honest Usage | **planned** |
+| 57 | Docket Bridge, Recovery & Release | **planned** |
+
+### Phase 50 — Boundary, Safety & Contract Freeze
+
+**Goal:** enter implementation with one owner for each chokepoint, a green baseline, and no
+ambiguity about which project schedules work.
+
+- Add an ADR declaring Tack the scheduler/plan-of-record, `tack-runner` the process owner,
+  and Docket an optional legacy bridge.
+- Freeze/delete from production registration the compile-only GitHub Actions adapter; no
+  panicking implementation may ship.
+- Decide whether unreleased migrations 037/038 are retained, replaced or squashed before
+  any new migration is numbered. Include an operator backup/recovery path.
+- Fix the release-blocking trust boundaries: stored rich-text XSS/CSP, control-plane URL
+  credential retention/SSRF, query-string secret logging, exact auth route matching,
+  configuration precedence and unauthenticated non-loopback startup.
+- Replace split version claims/field writes with atomic item/control-plane/link mutations;
+  fix nullable PATCH semantics and browser ETag adoption.
+- Restore a green frontend unit/E2E baseline and correct unresolved font packaging.
+- Commit runner protocol fixtures, lifecycle transition tables, payload limits and error
+  envelopes before API or runner implementation begins.
+
+**Exit:** the full existing CI matrix is green; the contract fixtures are reviewed; every
+migration and router/OpenAPI file has one named integration owner; no Phase 51+ card is
+allowed to invent a field or lifecycle state independently.
+
+### Phase 51 — Durable Execution Domain & Schema
+
+**Goal:** represent requests, attempts, fleets and runners without any Docket or harness
+noun in the neutral domain.
+
+- Add pure domain types and transition validation.
+- Add the tables above through the repaired migration runner, with upgrade, rollback/recovery,
+  FK, uniqueness and crash-boundary tests.
+- Implement repositories for atomic enqueue, claim/fence, heartbeat, event batch commit,
+  terminal completion, cancellation request and lease recovery.
+- Add retention and bounded purge for execution events/artifact metadata.
+- Add test builders and a fake clock so expiry tests contain no sleeps.
+
+**Exit:** two concurrent claimers produce one lease; an expired fencing token cannot write;
+replayed events/completion are no-ops; an ambiguous attempt is not automatically retried;
+and a database opened at every supported prior migration upgrades without data loss.
+
+### Phase 52 — Pull Runner Protocol & `tack-runner`
+
+**Goal:** a mock runner can enroll, claim and complete an execution without any real coding
+harness installed.
+
+- Create a workspace `tack-runner` binary with local journal, cancellation, graceful
+  shutdown and isolated worktree/workspace management.
+- Implement the separately authenticated runner router and operator runner/fleet APIs.
+- Hash credentials at rest, support enrollment/revocation/rotation, and never return a
+  stored credential after enrollment.
+- Implement heartbeat health, capacity, fencing and recovery observations.
+- Stream bounded events and artifacts using backpressure; do not buffer an unbounded run in
+  memory.
+
+**Exit:** an end-to-end mock execution survives API restart; runner restart either safely
+resumes or becomes `needs_operator`; revoked credentials fail closed; duplicate reports do
+not duplicate rows or notifications.
+
+### Phase 53 — Codex / Claude Code / OpenCode Harness Proof
+
+**Goal:** prove the adapter boundary against actual coding harnesses rather than a second
+remote scheduler.
+
+- Start with three isolated probe adapters in parallel. Each detects installed version,
+  reports capabilities, validates requested model/provider/config, executes a deterministic
+  fixture repository and records the actual invocation/result contract.
+- Reconcile discoveries once, then freeze `HarnessAdapter` v1. A harness limitation changes
+  a capability, not another adapter's behavior.
+- Implement production adapters with process-tree cancellation, output parsing, local
+  journal/recovery and worktree isolation.
+- Add opt-in live contract tests plus deterministic fake-binary tests for CI.
+
+**Exit:** the same fixture item can be completed independently through all three harnesses;
+an unsupported provider/model combination is rejected before leasing/spawn; cancelling one
+attempt cannot kill another; and no adapter contains a panic placeholder.
+
+### Phase 54 — Fleet Scheduler & Item Assignment UX
+
+**Goal:** users can assign an item to an exact runner or a fleet and select only supported
+harness/provider/model combinations.
+
+- Scheduler filters by health, fleet membership, labels, capacity, harness capability and
+  model compatibility, then orders deterministically by explicit policy.
+- Add project defaults and per-request overrides without storing execution fields on the PM
+  item.
+- Add “Run with agent” from Board, item detail and Sprint, all using one shared capability
+  and execution-request store.
+- Add Fleet views for runner health, capacity, current attempts and reasons a selection is
+  unavailable.
+- Add CLI/MCP execution commands using the same API and optimistic-concurrency behavior.
+
+**Exit:** manual exact-runner and automatic fleet assignment both work; saturated/unhealthy
+runners are never leased; all dispatch surfaces make the same capability decision; and a
+new request appears consistently in every work lens without duplicate WebSockets.
+
+### Phase 55 — Decisions, Artifacts & Realtime Activity
+
+**Goal:** one normalized attempt timeline contains agent output, human gates and deliverables.
+
+- Add append-only event/activity UI with explicit source and truncation/retention state.
+- Add decisions whose runner credential may raise/read but never resolve; resolution remains
+  behind a separately scoped operator credential.
+- Add artifact manifests/checksums and a bounded content-storage policy for patches, logs
+  and generated files.
+- Broadcast state changes after the database transaction commits, with event-id dedupe.
+- Map terminal run state to an item only through an optional project status policy and the
+  workflow engine.
+
+**Exit:** an approval survives restarts, cannot be self-approved by its run, expiry is
+fail-closed, artifacts verify against their checksum, and replay produces no duplicate
+timeline or item transition.
+
+### Phase 56 — Model Profiles, Policy & Honest Usage
+
+**Goal:** choose and audit models without turning Tack into a model gateway or inventing
+measurements.
+
+- Add opaque model profiles and resolution provenance: request override → agent-profile
+  default → project default → fleet default.
+- Intersect the resolved choice with the selected runner/harness capabilities before lease.
+- Persist requested and actual provider/model plus the source of the actual observation.
+- Normalize nullable token/time/cost usage with `measured`, `estimated` and `not_measured`
+  provenance. Never aggregate runner cost and model cost into one unlabeled number.
+- Rebuild Economics on measured attempts; hide or label structural legacy zeros.
+
+**Exit:** every presence/precedence combination resolves deterministically; opaque unknown
+model ids round-trip unchanged; actual selection differences are visible; and absent usage
+renders `not measured`, never `0` or `$0.00`.
+
+### Phase 57 — Docket Bridge, Recovery & Release
+
+**Goal:** release the runner path without requiring Docket and without silently losing
+useful legacy history.
+
+- Decide whether Docket is maintained as `legacy-docket`, exported/imported into normalized
+  attempts, or deprecated. Document one owner for scheduling; never dual-dispatch one
+  request.
+- Add compatibility views/migration tooling only where users have real legacy data.
+- Run kill/restart/fencing tests at every remote/local side-effect boundary, a large-event
+  soak, multi-runner capacity tests and a backup/restore drill including artifacts.
+- Add protocol compatibility tests across one previous runner version, release notes,
+  operator recovery procedures and an explicit rollback path.
+- Remove/quarantine obsolete GHA/Docket-generalisation stubs and update public feature claims.
+
+**Exit:** Tack starts and executes with no Docket configured; one live workflow completes
+through each supported harness; ambiguous crashes require explicit reconciliation rather
+than duplicate work; all CI/cross-browser/security/migration gates pass; the tree is clean
+and the release is tagged.
+
+## Explicitly deferred
+
+- Multi-agent fan-out, supervisor/sub-agent graphs and automatic task decomposition. The v1
+  scheduler grants one active lease per execution request.
+- A model proxy/gateway inside Tack. Existing external gateways may be referenced by an
+  opaque model profile, but model traffic never crosses the Tack API process.
+- Inbound/bidirectional GitHub synchronization and GitHub Actions execution.
+- Multi-user identity/RBAC beyond scoped operator/runner credentials. This becomes required
+  before exposing the service to mutually untrusted users.
+- A generic plugin ABI. Three in-tree adapters must first prove a stable boundary.
+
+## Definition of done for the cycle
+
+From the same Tack item, an operator can create separate attempts using Codex, Claude Code
+and OpenCode; select an exact healthy runner or fleet; choose only a supported provider and
+opaque model; see the requested and actual execution facts; resolve a bounded human gate;
+inspect verified artifacts and an idempotent event timeline; and recover from API/runner
+restart without silent loss or blind duplicate execution. Docket is optional, token/cost
+values are measured or explicitly `not measured`, and no historical PM item or legacy
+orchestration row is erased to achieve the cutover.

@@ -1,6 +1,8 @@
 import { type Component, createResource, createSignal, For, Show } from 'solid-js';
 import { Badge, Button, EmptyState, Field, Select, Skeleton } from '../../../shared/ui';
 import { toast } from '../../../shared/ui/toast';
+import CapabilityNote from '../../../shared/orch/CapabilityNote';
+import { gatePause, gateModelSelection } from '../../../shared/orch/capabilities';
 import { orchestrationSettingsApi, type ControlPlaneDetail } from './api';
 import { elapsedSince, HEALTH_LABEL, HEALTH_TONE, healthExplanation } from './format';
 
@@ -192,6 +194,21 @@ const ControlPlanesManager: Component<ControlPlanesManagerProps> = (props) => {
                         {cp.last_seen_at ? ` Last seen ${elapsedSince(cp.last_seen_at)} ago.` : ''}
                       </Show>
                     </p>
+                    {/* Capability negotiation (card G1): read straight from
+                        the wire payload, never from `cp.kind` — TODO.md
+                        §II.0 rule 6. `capabilities` is only `null` in the
+                        `unconfigured` health case above, where there's
+                        nothing to ask. Pause and model selection are the two
+                        an operator configuring a plane most needs to know
+                        about up front. */}
+                    <Show when={cp.capabilities}>
+                      {(caps) => (
+                        <>
+                          <CapabilityNote label="Pause" gate={gatePause(caps())} />
+                          <CapabilityNote label="Model selection" gate={gateModelSelection(caps())} />
+                        </>
+                      )}
+                    </Show>
                   </div>
                   <div class="flex items-center gap-2">
                     <Button

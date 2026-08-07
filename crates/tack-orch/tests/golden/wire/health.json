@@ -1,0 +1,23 @@
+{
+  "method": "health",
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/health",
+      "query": [],
+      "header_names": [
+        "accept",
+        "host",
+        "user-agent"
+      ],
+      "body": null
+    }
+  ],
+  "result": {
+    "outcome": "ok",
+    "value": {
+      "gateway": 0,
+      "status": "ok"
+    }
+  }
+}

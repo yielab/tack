@@ -179,8 +179,9 @@ mod tests {
     use std::time::Duration;
     use tack_orch::reconciler::{ControlPlaneStore, HealthRecord, RegisteredPlane};
     use tack_orch::{
-        ControlPlane, FleetStatus, Health, MetricSample, NewRemoteTask, OrchError, RemoteApproval,
-        RemoteRun, RemoteTask, TracesPage,
+        Capabilities, ControlPlane, DecisionSupport, EventScope, FleetStatus, Health, MetricSample,
+        ModelSelection, NewRemoteTask, OrchError, Rated, RemoteApproval, RemoteRun, RemoteTask,
+        Support, TracesPage, UsageSupport,
     };
     use uuid::Uuid;
 
@@ -193,6 +194,28 @@ mod tests {
     impl ControlPlane for QuietControlPlane {
         fn kind(&self) -> &'static str {
             "fake"
+        }
+        /// Not exercised by anything in this module — these tests only
+        /// care about task lifecycle (see this struct's own doc comment) —
+        /// so any internally-consistent value satisfies the trait.
+        fn capabilities(&self) -> Capabilities {
+            Capabilities {
+                dispatch: true,
+                cancel: false,
+                pause: Rated::new(Support::Unsupported, "fake plane: no pause mechanism"),
+                resume: Rated::new(Support::Unsupported, "fake plane: no resume mechanism"),
+                event_scope: Rated::new(EventScope::Project, "fake plane: scripted per project"),
+                artifacts: false,
+                decisions: Rated::new(DecisionSupport::Poll, "fake plane: scripted approvals"),
+                usage: Rated::new(UsageSupport::NotMeasured, "fake plane: no usage source"),
+                model_selection: Rated::new(
+                    ModelSelection::Unsupported,
+                    "fake plane: no model routing",
+                ),
+                runtimes: false,
+                plane_metrics: true,
+                provisioning: false,
+            }
         }
         async fn health(&self) -> Result<Health, OrchError> {
             Ok(Health {

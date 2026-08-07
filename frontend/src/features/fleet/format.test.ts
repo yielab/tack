@@ -85,9 +85,10 @@ describe('relativeTime', () => {
 });
 
 describe('isStale', () => {
-  it('treats unreachable and unknown as stale', () => {
+  it('treats unreachable, unknown, and unconfigured as stale', () => {
     expect(isStale('unreachable')).toBe(true);
     expect(isStale('unknown')).toBe(true);
+    expect(isStale('unconfigured')).toBe(true);
   });
 
   it('treats healthy and degraded as not stale', () => {
@@ -97,11 +98,17 @@ describe('isStale', () => {
 });
 
 describe('HEALTH_LABEL / HEALTH_TONE', () => {
-  it('covers every health state with a distinct tone', () => {
-    const tones = new Set(Object.values(HEALTH_TONE));
-    expect(tones.size).toBe(4); // healthy, degraded, unreachable, unknown are all visually distinct
+  it('covers every health state, including the fifth (unconfigured) one', () => {
     expect(Object.keys(HEALTH_LABEL).sort()).toEqual(
-      ['degraded', 'healthy', 'unknown', 'unreachable'].sort(),
+      ['degraded', 'healthy', 'unconfigured', 'unknown', 'unreachable'].sort(),
     );
+    for (const h of Object.keys(HEALTH_LABEL) as (keyof typeof HEALTH_LABEL)[]) {
+      expect(HEALTH_TONE[h]).toBeTruthy();
+    }
+  });
+
+  it('unconfigured reuses the warning tone but keeps its own label — text, not color, is what distinguishes it from degraded', () => {
+    expect(HEALTH_TONE.unconfigured).toBe('warning');
+    expect(HEALTH_LABEL.unconfigured).not.toBe(HEALTH_LABEL.degraded);
   });
 });

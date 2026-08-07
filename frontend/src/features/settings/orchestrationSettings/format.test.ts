@@ -20,8 +20,8 @@ describe('elapsedSince', () => {
 });
 
 describe('HEALTH_LABEL / HEALTH_TONE', () => {
-  it('covers every ControlPlaneHealth value', () => {
-    for (const h of ['healthy', 'degraded', 'unreachable', 'unknown'] as const) {
+  it('covers every ControlPlaneHealth value, including the fifth (unconfigured) one', () => {
+    for (const h of ['healthy', 'degraded', 'unreachable', 'unknown', 'unconfigured'] as const) {
       expect(HEALTH_LABEL[h]).toBeTruthy();
       expect(HEALTH_TONE[h]).toBeTruthy();
     }
@@ -31,6 +31,12 @@ describe('HEALTH_LABEL / HEALTH_TONE', () => {
     expect(HEALTH_TONE.healthy).toBe('success');
     expect(HEALTH_TONE.unreachable).toBe('danger');
   });
+
+  it('unconfigured has its own label, distinct from every other state', () => {
+    const labels = ['healthy', 'degraded', 'unreachable', 'unknown', 'unconfigured'] as const;
+    const distinct = new Set(labels.map((h) => HEALTH_LABEL[h]));
+    expect(distinct.size).toBe(labels.length);
+  });
 });
 
 describe('healthExplanation', () => {
@@ -39,8 +45,12 @@ describe('healthExplanation', () => {
   });
 
   it('returns non-empty copy for every health value', () => {
-    for (const h of ['healthy', 'degraded', 'unreachable', 'unknown'] as const) {
+    for (const h of ['healthy', 'degraded', 'unreachable', 'unknown', 'unconfigured'] as const) {
       expect(healthExplanation(h, 10).length).toBeGreaterThan(0);
     }
+  });
+
+  it('tells the operator how to recover from unconfigured — re-enter the token', () => {
+    expect(healthExplanation('unconfigured', 10)).toMatch(/token/i);
   });
 });

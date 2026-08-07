@@ -32,6 +32,18 @@ jobs:
         run: |
           UPDATE_OPENAPI=1 cargo test -p tack-api --test openapi_contract openapi_spec_matches_committed_file
           git diff --exit-code docs/openapi.json
+      # Regenerate the tack-orch regression oracles (docs/plans/agnostic-control-plane.md
+      # §6) from the code and fail if they drifted. docket_tick_contract_test is the
+      # primary oracle (one full reconciler tick's ordered request list plus the
+      # resulting orch_runs/orch_approvals/orch_events/orch_metrics/orch_trace_cursors
+      # rows); docket_wire_contract_test is the secondary, per-method oracle. A trait or
+      # reconciler rewrite that changes what leaves the process, or what gets persisted,
+      # without a golden regen is caught here.
+      - name: tack-orch golden drift gate
+        run: |
+          UPDATE_GOLDEN=1 cargo test -p tack-orch --test docket_tick_contract_test
+          UPDATE_GOLDEN=1 cargo test -p tack-orch --test docket_wire_contract_test
+          git diff --exit-code crates/tack-orch/tests/golden/
 
   msrv:
     name: MSRV (Rust 1.85 — edition 2024 floor)
@@ -66,13 +78,18 @@ jobs:
         with:
           tool: cargo-llvm-cov
       # Per-crate line-coverage floors mirror the targets documented in
-      # docs/TESTING.md (tack-core >= 85%, tack-db/tack-api >= 70%).
+      # docs/TESTING.md (tack-core >= 85%, tack-db/tack-api/tack-orch >= 70%).
       - name: Rust coverage — tack-core (>= 85%)
         run: cargo llvm-cov -p tack-core --fail-under-lines 85
       - name: Rust coverage — tack-db (>= 70%)
         run: cargo llvm-cov -p tack-db --fail-under-lines 70
       - name: Rust coverage — tack-api (>= 70%)
         run: cargo llvm-cov -p tack-api --fail-under-lines 70
+      # tack-orch had no floor before Phase 39 (docs/plans/agnostic-control-plane.md
+      # item 0.4) — it is the adapter code this cycle rewrites the most, and was the
+      # least-guarded crate in the workspace without this line.
+      - name: Rust coverage — tack-orch (>= 70%)
+        run: cargo llvm-cov -p tack-orch --fail-under-lines 70
       - uses: actions/setup-node@v4
         with:
           node-version: "20"

@@ -1,0 +1,19 @@
+{
+  "orch_runs": [],
+  "orch_approvals": [],
+  "orch_events": [],
+  "orch_metrics": [
+    {
+      "control_plane_id": "<CONTROL_PLANE_ID>",
+      "created_at": "<NOW>",
+      "id": "<METRIC_ID_1>",
+      "labels": {
+        "pod": "unlinked"
+      },
+      "name": "docket_pod_cost_usd",
+      "scraped_at": "<NOW>",
+      "value": 1.0
+    }
+  ],
+  "orch_trace_cursors": []
+}

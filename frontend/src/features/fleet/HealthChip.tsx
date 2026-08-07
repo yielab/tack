@@ -12,14 +12,18 @@ const DOT_COLOR: Record<ControlPlaneHealth, string> = {
   degraded: 'var(--color-warning-600)',
   unreachable: 'var(--color-danger-600)',
   unknown: 'var(--color-text-tertiary)',
+  // Shares degraded's amber — see `format.ts#HEALTH_TONE`'s doc comment for
+  // why the label, not the color, is what has to carry the distinction.
+  unconfigured: 'var(--color-warning-600)',
 };
 
 /**
- * Pod health chip — the fleet row's primary at-a-glance signal. Four
- * visually distinct states (healthy / degraded / unreachable / unknown),
- * each a token-driven color plus a text label so the distinction never
- * relies on color alone (WCAG 1.4.1 — also keeps this readable for anyone
- * with color-vision deficiency, not just axe-clean).
+ * Pod health chip — the fleet row's primary at-a-glance signal. Five states
+ * (healthy / degraded / unreachable / unknown / unconfigured), each a
+ * token-driven color plus a text label so the distinction never relies on
+ * color alone (WCAG 1.4.1 — also keeps this readable for anyone with
+ * color-vision deficiency, not just axe-clean). `degraded` and
+ * `unconfigured` deliberately share a dot color; their labels differ.
  */
 const HealthChip: Component<HealthChipProps> = (props) => {
   const content = (): JSX.Element => (

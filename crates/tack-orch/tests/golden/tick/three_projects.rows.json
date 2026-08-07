@@ -1,0 +1,38 @@
+{
+  "orch_runs": [],
+  "orch_approvals": [],
+  "orch_events": [],
+  "orch_metrics": [
+    {
+      "control_plane_id": "<CONTROL_PLANE_ID>",
+      "created_at": "<NOW>",
+      "id": "<METRIC_ID_1>",
+      "labels": {
+        "pod": "fleet"
+      },
+      "name": "docket_pod_cost_usd",
+      "scraped_at": "<NOW>",
+      "value": 3.0
+    }
+  ],
+  "orch_trace_cursors": [
+    {
+      "control_plane_id": "<CONTROL_PLANE_ID>",
+      "cursor": "cursor-1",
+      "remote_project": "demo-a",
+      "updated_at": "<NOW>"
+    },
+    {
+      "control_plane_id": "<CONTROL_PLANE_ID>",
+      "cursor": "cursor-2",
+      "remote_project": "demo-b",
+      "updated_at": "<NOW>"
+    },
+    {
+      "control_plane_id": "<CONTROL_PLANE_ID>",
+      "cursor": "cursor-3",
+      "remote_project": "demo-c",
+      "updated_at": "<NOW>"
+    }
+  ]
+}

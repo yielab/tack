@@ -71,6 +71,7 @@
 // consecutive_failures) to actually manage a plane, not just pick one.
 
 import { request } from '../../../shared/api/client';
+import type { Capabilities } from '../../../shared/orch/capabilities';
 
 export type OrchestrationSettingsSource = 'database' | 'env_default';
 
@@ -84,8 +85,14 @@ export interface OrchestrationSettings {
   linked_project_count: number;
   poll_secs: number;
   /** Whether `TACK_ORCH_APPROVAL_TOKEN` is configured — never the value
-   *  itself, matching `features/approvals/api.ts#PendingApprovalListResponse
-   *  .grant_available`'s "boolean only, secret never round-trips" rule. */
+   *  itself, the same "boolean only, secret never round-trips" rule as
+   *  `token_set` below. (Card G1 retired the one place this pattern used to
+   *  leak into a response as a one-off "is this feature usable" flag — the
+   *  approvals inbox's old grant-availability boolean — in favour of the
+   *  server enforcing the real check on every write regardless; see
+   *  `features/approvals/api.ts`'s header for why. This field is a
+   *  different, legitimate case: a plain server-config boolean an operator
+   *  is here specifically to read, not a per-request capability guess.) */
   approval_token_set: boolean;
   env_default: boolean;
 }
@@ -94,12 +101,16 @@ export interface UpdateOrchestrationSettingsBody {
   enabled: boolean;
 }
 
-/** `"unknown"` | `"healthy"` | `"degraded"` | `"unreachable"` — the
- *  reconciler's health state machine, persisted verbatim. Duplicated from
+/** `"unknown"` | `"healthy"` | `"degraded"` | `"unreachable"` |
+ *  `"unconfigured"` — the reconciler's health state machine, persisted
+ *  verbatim. `unconfigured` (card G1) means this build of Tack could not
+ *  build a live adapter for the plane's `kind` at all — most commonly a
+ *  restored backup, whose `secrets` column comes back `NULL` — so the
+ *  reconciler never attempted a poll. Duplicated from
  *  `features/fleet/api.ts`/`features/settings/orchestration/api.ts` per
  *  their own established precedent (each feature directory's wire boundary
  *  owns its own copy of this tiny union rather than reaching across). */
-export type ControlPlaneHealth = 'healthy' | 'degraded' | 'unreachable' | 'unknown';
+export type ControlPlaneHealth = 'healthy' | 'degraded' | 'unreachable' | 'unknown' | 'unconfigured';
 
 /** `ControlPlaneResponse` (`handlers/orch.rs`) in full — every field a
  *  management UI needs, as opposed to `features/settings/orchestration/
@@ -116,6 +127,11 @@ export interface ControlPlaneDetail {
   /** True when a docket Bearer token is currently stored for this plane.
    *  The token itself is write-only over this API — never returned. */
   token_set: boolean;
+  /** What this plane can actually do — `null` only in the `'unconfigured'`
+   *  health case: this build of Tack has no adapter for `kind` at all, so
+   *  there was nothing to ask. `ControlPlanesManager.tsx` reads this,
+   *  never `kind`, to decide what to show (TODO.md §II.0 rule 6). */
+  capabilities: Capabilities | null;
   created_at: string;
   updated_at: string;
 }

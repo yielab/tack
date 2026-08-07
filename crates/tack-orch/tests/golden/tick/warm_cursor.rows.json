@@ -1,0 +1,56 @@
+{
+  "orch_runs": [
+    {
+      "control_plane_id": "<CONTROL_PLANE_ID>",
+      "correlation_id": null,
+      "created_at": "<NOW>",
+      "ended_at": "2026-08-02T00:00:02+00:00",
+      "error": null,
+      "external_run_id": "run-warm-1",
+      "item_id": null,
+      "remote_project": "demo",
+      "run_attempt": 1,
+      "source": "webhook",
+      "started_at": "2026-08-02T00:00:00+00:00",
+      "state": "succeeded",
+      "updated_at": "<NOW>"
+    }
+  ],
+  "orch_approvals": [],
+  "orch_events": [
+    {
+      "control_plane_id": "<CONTROL_PLANE_ID>",
+      "created_at": "<NOW>",
+      "event_type": "tool_call",
+      "id": "<EVENT_ID_1>",
+      "item_id": null,
+      "occurred_at": "2026-08-01T12:05:00+00:00",
+      "payload": {
+        "command": "cargo build",
+        "tool": "bash"
+      },
+      "run_id": null
+    }
+  ],
+  "orch_metrics": [
+    {
+      "control_plane_id": "<CONTROL_PLANE_ID>",
+      "created_at": "<NOW>",
+      "id": "<METRIC_ID_1>",
+      "labels": {
+        "pod": "demo"
+      },
+      "name": "docket_pod_cost_usd",
+      "scraped_at": "<NOW>",
+      "value": 9.75
+    }
+  ],
+  "orch_trace_cursors": [
+    {
+      "control_plane_id": "<CONTROL_PLANE_ID>",
+      "cursor": "2026-08-01T12:05:00Z:1",
+      "remote_project": "demo",
+      "updated_at": "<NOW>"
+    }
+  ]
+}

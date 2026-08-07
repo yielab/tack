@@ -42,15 +42,26 @@ export interface PendingApproval {
   requested_at: string;
 }
 
+/**
+ * `GET /api/approvals` response envelope. The backend still sends a
+ * grant-availability boolean alongside `rows` (whether
+ * `TACK_ORCH_APPROVAL_TOKEN` is configured) — deliberately not declared or
+ * read here anymore (card G1, TODO.md §II.1.2: "two ad-hoc capability bits
+ * ... are retired"). It was never a *provider* capability — `Capabilities`
+ * describes what a control plane can do, not whether this Tack server holds
+ * a decision-granting secret — so there is no real field in
+ * `shared/orch/capabilities.ts` for it to become. Pre-emptively hiding
+ * Grant/Deny based on a client-side guess also bought nothing:
+ * `handlers/orch.rs`'s own doc comment on the field says the server
+ * "enforces the real check independently on every decide call regardless of
+ * what this flag says." So the UI now always renders the controls and lets
+ * a real decide attempt fail with the server's actual 403 (see
+ * {@link isApprovalTokenRejected} and `ApprovalsPage.tsx`'s
+ * `confirmDecision`) — a real server answer, not a client-side prediction of
+ * one, and one fewer thing this file has to keep in sync with the backend.
+ */
 export interface PendingApprovalListResponse {
   rows: PendingApproval[];
-  /** Whether `TACK_ORCH_APPROVAL_TOKEN` is configured on the server at all
-   *  — never the value itself. `false` means nobody can grant or deny from
-   *  Tack today, no matter what a caller types into the token field below;
-   *  the UI uses this to decide whether to render decision controls at
-   *  all. The server enforces the real check independently on every
-   *  decide call regardless of this flag. */
-  grant_available: boolean;
 }
 
 export type ApprovalDecisionActionValue = 'grant' | 'deny';
@@ -74,9 +85,11 @@ const APPROVAL_TOKEN_STORAGE_KEY = 'tack_orch_approval_token';
  * an unavailable store) but is never sent automatically the way the Bearer
  * token is — `approvalsApi.decide` is the only thing that ever reads it,
  * and only when actually deciding an approval, never on a plain `list()`.
- * Nothing about this value is ever logged or echoed back by the server
- * (the API's own `PendingApprovalListResponse.grant_available` boolean is
- * the only server-side signal about it that ever reaches the client).
+ * Nothing about this value is ever logged or echoed back by the server —
+ * see {@link PendingApprovalListResponse}'s doc comment for why there is no
+ * longer a pre-emptive "is granting even possible" signal from the list
+ * call at all; the real answer only ever comes from an actual decide
+ * attempt.
  */
 export const approvalTokenStore = {
   get(): string | null {

@@ -1,0 +1,72 @@
+{
+  "orch_runs": [
+    {
+      "control_plane_id": "<CONTROL_PLANE_ID>",
+      "correlation_id": null,
+      "created_at": "<NOW>",
+      "ended_at": null,
+      "error": null,
+      "external_run_id": "run-cold-1",
+      "item_id": null,
+      "remote_project": "demo",
+      "run_attempt": 1,
+      "source": "cli",
+      "started_at": "2026-08-01T00:00:00+00:00",
+      "state": "running",
+      "updated_at": "<NOW>"
+    }
+  ],
+  "orch_approvals": [
+    {
+      "action": "Confirm irreversible deploy",
+      "agent": "implementer",
+      "control_plane_id": "<CONTROL_PLANE_ID>",
+      "created_at": "<NOW>",
+      "decided_at": null,
+      "external_id": null,
+      "item_id": null,
+      "kind": "approval",
+      "provider_metadata": "{}",
+      "remote_task_id": null,
+      "requested_at": "2026-08-01T00:05:00+00:00",
+      "state": "pending",
+      "token": "apr-cold-1",
+      "updated_at": "<NOW>"
+    }
+  ],
+  "orch_events": [
+    {
+      "control_plane_id": "<CONTROL_PLANE_ID>",
+      "created_at": "<NOW>",
+      "event_type": "session_start",
+      "id": "<EVENT_ID_1>",
+      "item_id": null,
+      "occurred_at": "2026-08-01T00:10:00+00:00",
+      "payload": {
+        "note": "cold-start"
+      },
+      "run_id": null
+    }
+  ],
+  "orch_metrics": [
+    {
+      "control_plane_id": "<CONTROL_PLANE_ID>",
+      "created_at": "<NOW>",
+      "id": "<METRIC_ID_1>",
+      "labels": {
+        "pod": "demo"
+      },
+      "name": "docket_pod_cost_usd",
+      "scraped_at": "<NOW>",
+      "value": 4.5
+    }
+  ],
+  "orch_trace_cursors": [
+    {
+      "control_plane_id": "<CONTROL_PLANE_ID>",
+      "cursor": "2026-08-01T00:10:00Z:1",
+      "remote_project": "demo",
+      "updated_at": "<NOW>"
+    }
+  ]
+}
