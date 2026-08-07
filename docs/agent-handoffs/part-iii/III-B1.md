@@ -11,3 +11,26 @@
 - Secrets/logging review: no logs or credentials were added. Credential-like values remain opaque fixture/domain data and are never formatted by errors.
 - Safe merge order and likely conflicts: merge before B2/B3/B4. The only shared surface is the B1-owned `tack-orch/src/lib.rs` module export; later cards should consume `tack_orch::execution` without altering legacy orchestration files.
 - Checklist: no unowned files, no live secret, no panic stub, no blind retry.
+
+## Recovery-observation amendment
+
+- Base / contract / final: this amendment starts at the additive runner-v1
+  recovery contract commit `1c189b7`; its final commit records the domain-only
+  implementation.
+- Owned changes: `crates/tack-orch/src/execution/{types,mod}.rs` and this
+  handoff only. No API, database, runner, Cargo, TODO, or fixture file changed.
+- Added exported recovery values: opaque `RecoveryKey`; typed
+  `RecoveryObservation`, non-secret `RecoveryJournalState` and
+  `RecoveryDetails`; server-authoritative `RecoveryDisposition`; and additive
+  `RecoveryObservationRequest` / `RecoveryObservationResponse` values. Both
+  enclosing values and the details object preserve unknown additive fields.
+- Disposition invariants: only `process_stopped` is compatible with the
+  necessary public preconditions for `safe_pre_spawn_requeue`; it maps the
+  attempt to `lost` and request to `queued`. `needs_operator` maps active
+  attempts/requests to `needs_operator`; `already_terminal` has no transition
+  and is compatible only with terminal attempts. The safe disposition remains
+  necessary-but-not-sufficient: B2 must verify authoritative process and
+  `started_at` absence before applying it.
+- Verification: the tack-orch test/clippy/fmt/diff commands recorded by the
+  amendment commit cover exact request/response fixture round trips, additive
+  preservation, and recovery disposition/lifecycle invariants.
