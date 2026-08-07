@@ -19,6 +19,7 @@ pub enum JournalState {
     Prepared,
     ProcessObservedRunning,
     CancellationRequested,
+    TerminalReportPending,
     RecoveryObserved,
     Reported,
     Quarantined,
@@ -28,9 +29,28 @@ impl JournalState {
     pub const fn is_unresolved(self) -> bool {
         matches!(
             self,
-            Self::Prepared | Self::ProcessObservedRunning | Self::CancellationRequested
+            Self::Prepared
+                | Self::ProcessObservedRunning
+                | Self::CancellationRequested
+                | Self::TerminalReportPending
         )
     }
+}
+
+/// The exact canonical JSON terminal payload that must be replayed after a
+/// crash. It is intentionally independent from recovery observations: a
+/// terminal report is never replaced with a different recovery request.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PendingTerminalReportKind {
+    Completion,
+    Cancellation,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PendingTerminalReport {
+    pub kind: PendingTerminalReportKind,
+    pub canonical_json: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -49,6 +69,9 @@ pub struct AttemptJournal {
     pub state: JournalState,
     pub process_id: Option<String>,
     pub last_event_checkpoint: Option<Checkpoint>,
+    /// Absent in old journals; present only after exact terminal payload fsync.
+    #[serde(default)]
+    pub pending_terminal_report: Option<PendingTerminalReport>,
 }
 
 impl AttemptJournal {
@@ -61,6 +84,7 @@ impl AttemptJournal {
             state: JournalState::Prepared,
             process_id: None,
             last_event_checkpoint: None,
+            pending_terminal_report: None,
         }
     }
 }
@@ -395,6 +419,20 @@ mod tests {
             assert_eq!(mode & 0o077, 0, "journal is owner-only");
         }
         fs::remove_dir_all(root).expect("remove temporary journal root");
+    }
+
+    #[test]
+    fn legacy_journal_without_pending_terminal_report_remains_readable() {
+        let record = record();
+        let encoded = toml::to_string(&record).expect("encode journal");
+        let legacy = encoded
+            .lines()
+            .filter(|line| !line.starts_with("pending_terminal_report"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let decoded: AttemptJournal = toml::from_str(&legacy).expect("decode legacy journal");
+        assert_eq!(decoded.pending_terminal_report, None);
+        assert_eq!(decoded.state, JournalState::Prepared);
     }
 
     #[test]
