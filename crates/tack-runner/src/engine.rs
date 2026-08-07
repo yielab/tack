@@ -10,8 +10,8 @@ use thiserror::Error;
 use super::{
     ActiveAttempt, AttemptId, AttemptState, CancellationReport, CancellationRequestId,
     ClaimRequest, ClaimResult, ClaimedWork, CompletionId, CompletionReport, EnrollmentRequest,
-    EnrollmentResponse, HeartbeatRequest, ProtocolClientError, PullProtocol, RecoveryReport,
-    RunnerSession, StartPhase, StartReport,
+    EnrollmentResponse, HeartbeatRequest, ProtocolClientError, PullProtocol, RecoveryDetails,
+    RecoveryReport, RefreshRequest, RefreshResponse, RunnerSession, StartPhase, StartReport,
     journal::{AttemptJournal, JournalError, JournalState, OwnerOnlyJournal},
     workspace::{Workspace, WorkspaceError, WorkspaceManager, WorktreeProvisioner},
 };
@@ -54,18 +54,30 @@ pub enum CancelObservation {
     Ambiguous,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecoveryObservation {
     ProcessRunning,
     ProcessStopped,
     Ambiguous,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+impl RecoveryObservation {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::ProcessRunning => "process_running",
+            Self::ProcessStopped => "process_stopped",
+            Self::Ambiguous => "ambiguous",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct HarnessOutcome {
     pub terminal_state: AttemptState,
     pub terminal_reason: String,
     pub final_checkpoint: Option<super::Checkpoint>,
+    pub actual_execution: tack_orch::execution::ActualExecution,
+    pub usage: tack_orch::execution::Usage,
 }
 
 #[derive(Debug, Clone)]
@@ -133,6 +145,14 @@ where
         Ok(self.protocol.enroll(enrollment_credential, request).await?)
     }
 
+    pub async fn refresh(
+        &self,
+        session: &RunnerSession,
+        request: RefreshRequest,
+    ) -> Result<RefreshResponse, EngineError> {
+        Ok(self.protocol.refresh(session, request).await?)
+    }
+
     /// Performs one bounded claim/run/report cycle. The caller owns pacing;
     /// this avoids an untestable retry loop and means no work is never treated
     /// as a successful harness execution.
@@ -161,11 +181,7 @@ where
                 outcomes.push(self.report_or_retain_ambiguity(session, &record).await?);
                 continue;
             }
-            let report = RecoveryReport {
-                attempt_id: record.attempt_id.clone(),
-                fencing_token: record.fencing_token,
-                observation,
-            };
+            let report = Self::recovery_report(&record, observation);
             if self
                 .protocol
                 .observe_recovery(session, report)
@@ -328,6 +344,8 @@ where
             )),
             attempt_id: record.attempt_id.clone(),
             fencing_token: record.fencing_token,
+            actual_execution: outcome.actual_execution.clone(),
+            usage: outcome.usage.clone(),
             outcome,
         };
         if self
@@ -368,11 +386,7 @@ where
             .protocol
             .observe_recovery(
                 session,
-                RecoveryReport {
-                    attempt_id: record.attempt_id.clone(),
-                    fencing_token: record.fencing_token,
-                    observation: RecoveryObservation::Ambiguous,
-                },
+                Self::recovery_report(record, RecoveryObservation::Ambiguous),
             )
             .await
             .is_ok();
@@ -385,6 +399,27 @@ where
         Ok(RunCycle::Quarantined {
             attempt_id: record.attempt_id.clone(),
         })
+    }
+
+    fn recovery_report(
+        record: &AttemptJournal,
+        observation: RecoveryObservation,
+    ) -> RecoveryReport {
+        RecoveryReport {
+            attempt_id: record.attempt_id.clone(),
+            fencing_token: record.fencing_token,
+            observation,
+            recovery_key: format!(
+                "recovery:{}:{}:{}",
+                record.attempt_id.as_str(),
+                record.fencing_token.0,
+                observation.as_str()
+            ),
+            details: RecoveryDetails {
+                journal_state: record.state,
+                process_observed: record.process_id.is_some(),
+            },
+        }
     }
 }
 
@@ -414,9 +449,12 @@ mod tests {
         start_reports: Arc<AtomicUsize>,
         reported_starts: Arc<Mutex<Vec<StartReport>>>,
         completion_reports: Arc<AtomicUsize>,
+        reported_completions: Arc<Mutex<Vec<CompletionReport>>>,
         cancellation_reports: Arc<AtomicUsize>,
         recovery_reports: Arc<AtomicUsize>,
+        reported_recoveries: Arc<Mutex<Vec<RecoveryReport>>>,
         recovery_failures_remaining: Arc<AtomicUsize>,
+        refresh_requests: Arc<Mutex<Vec<RefreshRequest>>>,
     }
 
     #[async_trait]
@@ -430,6 +468,26 @@ mod tests {
                 session: session(),
                 heartbeat_interval: std::time::Duration::from_secs(15),
                 lease_duration: std::time::Duration::from_secs(60),
+                server_time: Timestamp::new("2026-08-06T12:00:01Z"),
+            })
+        }
+
+        async fn refresh(
+            &self,
+            _session: &RunnerSession,
+            request: RefreshRequest,
+        ) -> Result<RefreshResponse, ProtocolClientError> {
+            self.refresh_requests
+                .lock()
+                .expect("fake protocol lock")
+                .push(request);
+            Ok(RefreshResponse {
+                session: RunnerSession::new(
+                    RunnerId::new("runner"),
+                    RunnerCredential::new("rotated-never-log"),
+                    Timestamp::new("2026-08-06T13:00:00Z"),
+                ),
+                accepted_at: Timestamp::new("2026-08-06T12:30:00Z"),
             })
         }
 
@@ -487,6 +545,10 @@ mod tests {
             _report: CompletionReport,
         ) -> Result<(), ProtocolClientError> {
             self.completion_reports.fetch_add(1, Ordering::SeqCst);
+            self.reported_completions
+                .lock()
+                .expect("fake protocol lock")
+                .push(_report.clone());
             if self.stale_completion {
                 Err(ProtocolClientError::StaleLease)
             } else {
@@ -513,6 +575,10 @@ mod tests {
             _report: RecoveryReport,
         ) -> Result<(), ProtocolClientError> {
             self.recovery_reports.fetch_add(1, Ordering::SeqCst);
+            self.reported_recoveries
+                .lock()
+                .expect("fake protocol lock")
+                .push(_report.clone());
             let remaining = self.recovery_failures_remaining.load(Ordering::SeqCst);
             if remaining > 0 {
                 self.recovery_failures_remaining
@@ -560,6 +626,8 @@ mod tests {
                 terminal_state: AttemptState::Succeeded,
                 terminal_reason: "completed".into(),
                 final_checkpoint: None,
+                actual_execution: actual_execution(),
+                usage: usage(),
             })
         }
 
@@ -570,7 +638,7 @@ mod tests {
             if self.reconcile_fails {
                 Err(HarnessError::RecoveryUnavailable)
             } else {
-                Ok(self.recovery_observation.clone())
+                Ok(self.recovery_observation)
             }
         }
     }
@@ -599,7 +667,68 @@ mod tests {
     }
 
     fn session() -> RunnerSession {
-        RunnerSession::new(RunnerId::new("runner"), RunnerCredential::new("never-log"))
+        RunnerSession::new(
+            RunnerId::new("runner"),
+            RunnerCredential::new("never-log"),
+            Timestamp::new("2026-08-06T13:00:00Z"),
+        )
+    }
+
+    fn capabilities() -> tack_orch::execution::RunnerCapabilities {
+        serde_json::from_str(
+            r#"{
+                "runner_version":"test-runner",
+                "reported_at":"2026-08-06T12:00:00Z",
+                "labels":{},
+                "concurrency":{"total":1,"available":1},
+                "harnesses":[],
+                "features":{
+                    "cancel":{"support":"supported","reason":null},
+                    "resume":{"support":"unsupported","reason":"no resume"},
+                    "decisions":{"support":"supported","reason":null},
+                    "artifacts":{"support":"supported","reason":null},
+                    "usage":{"support":"advisory","reason":"partial"}
+                },
+                "limits":{"event_payload_bytes_max":65536,"artifact_content_bytes_max":52428800}
+            }"#,
+        )
+        .expect("capabilities fixture")
+    }
+
+    fn actual_execution() -> tack_orch::execution::ActualExecution {
+        serde_json::from_str(
+            r#"{
+                "harness_kind":"fake",
+                "harness_version":"1.0.0",
+                "model_provider":"test-provider",
+                "model_id":"test-model",
+                "model_observation_source":"harness_reported",
+                "capability_snapshot":{
+                    "cancel":{"support":"supported","reason":null},
+                    "resume":{"support":"unsupported","reason":"no resume"},
+                    "decisions":{"support":"supported","reason":null},
+                    "artifacts":{"support":"supported","reason":null},
+                    "usage":{"support":"advisory","reason":"partial"}
+                },
+                "workspace_id":"ws_617474656d7074",
+                "base_revision":"revision",
+                "started_at":"2026-08-06T12:20:00Z",
+                "ended_at":"2026-08-06T12:25:00Z"
+            }"#,
+        )
+        .expect("actual execution fixture")
+    }
+
+    fn usage() -> tack_orch::execution::Usage {
+        serde_json::from_str(
+            r#"{
+                "tokens_in":{"value":1,"source":"measured"},
+                "tokens_out":{"value":2,"source":"measured"},
+                "duration_ms":{"value":3,"source":"measured"},
+                "cost_usd":{"value":null,"source":"not_measured"}
+            }"#,
+        )
+        .expect("usage fixture")
     }
 
     fn work() -> ClaimedWork {
@@ -635,9 +764,12 @@ mod tests {
             start_reports: Arc::new(AtomicUsize::new(0)),
             reported_starts: Arc::new(Mutex::new(Vec::new())),
             completion_reports: Arc::new(AtomicUsize::new(0)),
+            reported_completions: Arc::new(Mutex::new(Vec::new())),
             cancellation_reports: Arc::new(AtomicUsize::new(0)),
             recovery_reports: Arc::new(AtomicUsize::new(0)),
+            reported_recoveries: Arc::new(Mutex::new(Vec::new())),
             recovery_failures_remaining: Arc::new(AtomicUsize::new(0)),
+            refresh_requests: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -657,6 +789,51 @@ mod tests {
             available_capacity: 1,
             wait: std::time::Duration::ZERO,
         }
+    }
+
+    #[tokio::test]
+    async fn refresh_carries_capabilities_and_returns_expiring_session() {
+        let root = temporary_root("refresh");
+        let journal = OwnerOnlyJournal::new(&root);
+        let protocol = protocol(work(), false, false);
+        let engine = RunnerEngine::new(
+            protocol.clone(),
+            adapter(journal.journal_path(&AttemptId::new("attempt"))),
+            journal,
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: OwnerOnlyJournal::new(&root)
+                        .journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+        );
+        let response = engine
+            .refresh(
+                &session(),
+                RefreshRequest {
+                    runner_name: "runner".into(),
+                    runner_version: "test-runner".into(),
+                    rotate_credential: true,
+                    capabilities: capabilities(),
+                },
+            )
+            .await
+            .expect("refresh");
+
+        assert_eq!(
+            response.session.credential_expires_at().as_str(),
+            "2026-08-06T13:00:00Z"
+        );
+        assert_eq!(response.accepted_at.as_str(), "2026-08-06T12:30:00Z");
+        let refreshes = protocol
+            .refresh_requests
+            .lock()
+            .expect("fake protocol lock");
+        assert_eq!(refreshes.len(), 1);
+        assert!(refreshes[0].rotate_credential);
+        assert_eq!(refreshes[0].capabilities.runner_version, "test-runner");
     }
 
     #[tokio::test]
@@ -755,6 +932,16 @@ mod tests {
             1,
             "no retry after stale fence"
         );
+        let completions = protocol
+            .reported_completions
+            .lock()
+            .expect("fake protocol lock");
+        assert_eq!(completions.len(), 1);
+        assert_eq!(
+            completions[0].actual_execution.workspace_id.as_str(),
+            "ws_617474656d7074"
+        );
+        assert_eq!(completions[0].usage.duration_ms.value, Some(3));
         assert_eq!(cancellations.load(Ordering::SeqCst), 1);
         assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 1);
         assert!(journal.unresolved().expect("scan").is_empty());
@@ -802,6 +989,17 @@ mod tests {
         let outcomes = engine.recover(&session()).await.expect("recover");
         assert!(matches!(outcomes.as_slice(), [RunCycle::Completed { .. }]));
         assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 1);
+        let recoveries = protocol
+            .reported_recoveries
+            .lock()
+            .expect("fake protocol lock");
+        assert_eq!(recoveries.len(), 1);
+        assert_eq!(
+            recoveries[0].recovery_key,
+            "recovery:attempt:7:process_stopped"
+        );
+        assert_eq!(recoveries[0].details.journal_state, JournalState::Prepared);
+        assert!(!recoveries[0].details.process_observed);
         assert_eq!(
             journal
                 .load(&AttemptId::new("attempt"))

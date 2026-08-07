@@ -1,6 +1,7 @@
 use std::{fmt, time::Duration};
 
 use async_trait::async_trait;
+use tack_orch::execution::{ActualExecution, RunnerCapabilities, Usage};
 
 use crate::{EnrollmentCredential, RunnerError, Shutdown};
 
@@ -119,18 +120,28 @@ impl fmt::Display for RunnerCredential {
 pub struct RunnerSession {
     pub runner_id: RunnerId,
     credential: RunnerCredential,
+    credential_expires_at: Timestamp,
 }
 
 impl RunnerSession {
-    pub fn new(runner_id: RunnerId, credential: RunnerCredential) -> Self {
+    pub fn new(
+        runner_id: RunnerId,
+        credential: RunnerCredential,
+        credential_expires_at: Timestamp,
+    ) -> Self {
         Self {
             runner_id,
             credential,
+            credential_expires_at,
         }
     }
 
     pub fn credential(&self) -> &RunnerCredential {
         &self.credential
+    }
+
+    pub fn credential_expires_at(&self) -> &Timestamp {
+        &self.credential_expires_at
     }
 }
 
@@ -140,6 +151,7 @@ impl fmt::Debug for RunnerSession {
             .debug_struct("RunnerSession")
             .field("runner_id", &self.runner_id)
             .field("credential", &self.credential)
+            .field("credential_expires_at", &self.credential_expires_at)
             .finish()
     }
 }
@@ -155,6 +167,7 @@ pub struct RepositorySpec {
 pub struct EnrollmentRequest {
     pub runner_name: String,
     pub runner_version: String,
+    pub capabilities: RunnerCapabilities,
 }
 
 #[derive(Debug, Clone)]
@@ -162,6 +175,23 @@ pub struct EnrollmentResponse {
     pub session: RunnerSession,
     pub heartbeat_interval: Duration,
     pub lease_duration: Duration,
+    pub server_time: Timestamp,
+}
+
+#[derive(Debug, Clone)]
+pub struct RefreshRequest {
+    pub runner_name: String,
+    pub runner_version: String,
+    pub rotate_credential: bool,
+    pub capabilities: RunnerCapabilities,
+}
+
+#[derive(Debug, Clone)]
+pub struct RefreshResponse {
+    /// Contains the retained credential when no rotation was requested and the
+    /// replacement credential when rotation succeeded.
+    pub session: RunnerSession,
+    pub accepted_at: Timestamp,
 }
 
 #[derive(Debug, Clone)]
@@ -251,6 +281,8 @@ pub struct CompletionReport {
     pub attempt_id: AttemptId,
     pub fencing_token: FencingToken,
     pub outcome: HarnessOutcome,
+    pub actual_execution: ActualExecution,
+    pub usage: Usage,
 }
 
 #[derive(Debug, Clone)]
@@ -266,6 +298,16 @@ pub struct RecoveryReport {
     pub attempt_id: AttemptId,
     pub fencing_token: FencingToken,
     pub observation: RecoveryObservation,
+    /// A deterministic idempotency key for this attempt/fence/observation.
+    pub recovery_key: String,
+    /// Non-secret local evidence that explains the recovery classification.
+    pub details: RecoveryDetails,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RecoveryDetails {
+    pub journal_state: JournalState,
+    pub process_observed: bool,
 }
 
 /// Typed transport seam. The frozen fixtures specify payloads but not an
@@ -278,6 +320,12 @@ pub trait PullProtocol: Send + Sync {
         enrollment_credential: &EnrollmentCredential,
         request: EnrollmentRequest,
     ) -> Result<EnrollmentResponse, ProtocolClientError>;
+
+    async fn refresh(
+        &self,
+        session: &RunnerSession,
+        request: RefreshRequest,
+    ) -> Result<RefreshResponse, ProtocolClientError>;
 
     async fn claim(
         &self,
