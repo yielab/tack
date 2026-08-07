@@ -52,7 +52,10 @@ function mockFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Respon
   const url = String(input);
   if (url.endsWith('/api/items/item-1')) {
     return Promise.resolve(
-      new Response(JSON.stringify({ item: ITEM, roles: [], dependencies: [] }), { status: 200 }),
+      new Response(JSON.stringify({ item: ITEM, roles: [], dependencies: [] }), {
+        status: 200,
+        headers: { ETag: '"item-1:1"' },
+      }),
     );
   }
   if (url.includes('/agent-activity')) {
