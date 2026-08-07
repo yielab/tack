@@ -1,7 +1,10 @@
 use std::{fmt, time::Duration};
 
 use async_trait::async_trait;
-use tack_orch::execution::{ActualExecution, RunnerCapabilities, Usage};
+use tack_orch::execution::{
+    ActualExecution, AttemptSnapshot, ExecutionRequestSnapshot, ExecutionState, RunnerCapabilities,
+    Usage,
+};
 
 use crate::{EnrollmentCredential, RunnerError, Shutdown};
 
@@ -82,6 +85,22 @@ pub enum AttemptState {
     Cancelled,
     Lost,
     NeedsOperator,
+}
+
+impl AttemptState {
+    const fn execution_state(self) -> ExecutionState {
+        match self {
+            Self::Leased => ExecutionState::Leased,
+            Self::Preparing => ExecutionState::Preparing,
+            Self::Running => ExecutionState::Running,
+            Self::WaitingDecision => ExecutionState::WaitingDecision,
+            Self::Succeeded => ExecutionState::Succeeded,
+            Self::Failed => ExecutionState::Failed,
+            Self::Cancelled => ExecutionState::Cancelled,
+            Self::Lost => ExecutionState::Lost,
+            Self::NeedsOperator => ExecutionState::NeedsOperator,
+        }
+    }
 }
 
 /// Runner protocol boundary retained from the B3 lifecycle skeleton.
@@ -216,12 +235,50 @@ pub struct AttemptLease {
 pub struct ClaimedWork {
     pub claim_request_id: ClaimRequestId,
     pub lease: AttemptLease,
-    pub repository: RepositorySpec,
+    /// The complete immutable request snapshot returned by the claim response.
+    pub request: ExecutionRequestSnapshot,
+    /// The complete point-in-time attempt snapshot returned by the claim response.
+    pub attempt: AttemptSnapshot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ClaimedWorkError {
+    #[error("claim attempt facts do not agree with the lease")]
+    AttemptLeaseMismatch,
+    #[error("claim attempt does not belong to its request snapshot")]
+    AttemptRequestMismatch,
+    #[error("claim repository revision does not agree with the attempt snapshot")]
+    RepositoryRevisionMismatch,
+}
+
+impl ClaimedWork {
+    /// Validates the redundant lease envelope against its preserved B1 snapshots,
+    /// then derives the only repository input a workspace may consume.
+    pub fn workspace_repository(&self) -> Result<RepositorySpec, ClaimedWorkError> {
+        if self.attempt.request_id.as_str() != self.request.request_id.as_str() {
+            return Err(ClaimedWorkError::AttemptRequestMismatch);
+        }
+        if self.attempt.attempt_id.as_str() != self.lease.attempt_id.as_str()
+            || self.attempt.runner_id.as_str() != self.lease.runner_id.as_str()
+            || self.attempt.fencing_token.0 != self.lease.fencing_token.0
+            || self.attempt.attempt_number != self.lease.attempt_number
+            || self.attempt.state != self.lease.state.execution_state()
+        {
+            return Err(ClaimedWorkError::AttemptLeaseMismatch);
+        }
+        if self.attempt.base_revision != self.request.repository.base_revision {
+            return Err(ClaimedWorkError::RepositoryRevisionMismatch);
+        }
+        Ok(RepositorySpec {
+            remote: self.request.repository.remote.clone(),
+            base_revision: self.request.repository.base_revision.clone(),
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum ClaimResult {
-    Work(ClaimedWork),
+    Work(Box<ClaimedWork>),
     NoWork {
         retry_after: Duration,
         reason: String,
@@ -248,11 +305,14 @@ pub struct HeartbeatRequest {
 pub struct LeaseResult {
     pub attempt_id: AttemptId,
     pub fencing_token: FencingToken,
+    pub lease_expires_at: Timestamp,
     pub cancellation_requested: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct HeartbeatResponse {
+    pub heartbeat_id: String,
+    pub accepted_at: Timestamp,
     pub lease_results: Vec<LeaseResult>,
 }
 
@@ -280,7 +340,9 @@ pub struct CompletionReport {
     pub completion_id: CompletionId,
     pub attempt_id: AttemptId,
     pub fencing_token: FencingToken,
-    pub outcome: HarnessOutcome,
+    pub terminal_state: AttemptState,
+    pub terminal_reason: String,
+    pub final_checkpoint: Option<Checkpoint>,
     pub actual_execution: ActualExecution,
     pub usage: Usage,
 }
