@@ -31,8 +31,6 @@
 - Known limitations or `not_measured` fields: no HTTP implementation, credential persistence,
   real Git worktree provisioner, event/artifact streaming, or real harness adapter is included.
   `UnavailableWorktreeProvisioner` is an explicit typed failure, not an empty-directory success.
-  Completion outcome carries terminal state/reason/checkpoint only until C2/C5 supplies the
-  fixture-authoritative DTO transport.
 - Secrets/logging review: runner and enrollment credentials redact `Debug`/`Display`; journal
   records have no credentials or complete environment/prompt values and are owner-only on Unix;
   errors/logging do not format credentials, prompts, URLs with queries, or raw event payloads.
@@ -69,6 +67,8 @@
   `RunnerCapabilities`; `RunnerSession` carries a preserved `credential_expires_at` timestamp;
   and `PullProtocol::refresh` returns an updated expiring session plus acceptance timestamp.
   `CompletionReport` carries B1 `ActualExecution` and `Usage`, supplied by `HarnessOutcome`.
+  The engine overwrites the adapter-supplied completion workspace identity and base revision with
+  its planned `ExecutionSpec.workspace` values before transport, preventing adapter drift.
   `RecoveryReport` carries a deterministic `recovery:{attempt}:{fence}:{observation}` key and
   typed, non-secret evidence (`journal_state`, whether a process was observed). C5 remains
   responsible for turning these types into route DTOs and scheduling refresh before expiry.

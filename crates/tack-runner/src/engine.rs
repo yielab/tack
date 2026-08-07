@@ -336,6 +336,14 @@ where
         ) {
             return self.quarantine_after_spawn(session, &record, &handle).await;
         }
+        // Workspace ownership is established by the engine before the adapter
+        // starts. Preserve adapter-observed harness/model facts, but never let
+        // an adapter substitute a different workspace identity or revision in
+        // the completion record.
+        let mut actual_execution = outcome.actual_execution.clone();
+        actual_execution.workspace_id =
+            tack_orch::execution::WorkspaceId::new(spec.workspace.id.as_str());
+        actual_execution.base_revision = spec.workspace.base_revision.clone();
         let report = CompletionReport {
             completion_id: CompletionId::new(format!(
                 "completion:{}:{}",
@@ -344,7 +352,7 @@ where
             )),
             attempt_id: record.attempt_id.clone(),
             fencing_token: record.fencing_token,
-            actual_execution: outcome.actual_execution.clone(),
+            actual_execution,
             usage: outcome.usage.clone(),
             outcome,
         };
@@ -597,6 +605,7 @@ mod tests {
         cancel_calls: Arc<AtomicUsize>,
         recovery_observation: RecoveryObservation,
         reconcile_fails: bool,
+        completion_actual_execution: tack_orch::execution::ActualExecution,
     }
 
     #[async_trait]
@@ -626,7 +635,7 @@ mod tests {
                 terminal_state: AttemptState::Succeeded,
                 terminal_reason: "completed".into(),
                 final_checkpoint: None,
-                actual_execution: actual_execution(),
+                actual_execution: self.completion_actual_execution.clone(),
                 usage: usage(),
             })
         }
@@ -731,6 +740,13 @@ mod tests {
         .expect("usage fixture")
     }
 
+    fn mismatched_actual_execution() -> tack_orch::execution::ActualExecution {
+        let mut actual = actual_execution();
+        actual.workspace_id = tack_orch::execution::WorkspaceId::new("ws_adapter_mismatch");
+        actual.base_revision = "adapter-mismatch".into();
+        actual
+    }
+
     fn work() -> ClaimedWork {
         ClaimedWork {
             claim_request_id: ClaimRequestId::new("claim"),
@@ -780,6 +796,7 @@ mod tests {
             cancel_calls: Arc::new(AtomicUsize::new(0)),
             recovery_observation: RecoveryObservation::ProcessStopped,
             reconcile_fails: false,
+            completion_actual_execution: actual_execution(),
         }
     }
 
@@ -906,7 +923,8 @@ mod tests {
         let root = temporary_root("stale");
         let journal = OwnerOnlyJournal::new(&root);
         let protocol = protocol(work(), false, true);
-        let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+        let mut adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+        adapter.completion_actual_execution = mismatched_actual_execution();
         let cancellations = Arc::clone(&adapter.cancel_calls);
         let provisioned = Arc::new(AtomicBool::new(false));
         let engine = RunnerEngine::new(
@@ -941,6 +959,7 @@ mod tests {
             completions[0].actual_execution.workspace_id.as_str(),
             "ws_617474656d7074"
         );
+        assert_eq!(completions[0].actual_execution.base_revision, "revision");
         assert_eq!(completions[0].usage.duration_ms.value, Some(3));
         assert_eq!(cancellations.load(Ordering::SeqCst), 1);
         assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 1);
