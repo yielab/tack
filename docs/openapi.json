@@ -7960,13 +7960,15 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Omitted leaves the assignee untouched; JSON `null` clears it."
           },
           "description": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Omitted leaves the description untouched; JSON `null` clears it."
           },
           "due_date": {
             "type": [
@@ -7980,7 +7982,8 @@
               "number",
               "null"
             ],
-            "format": "double"
+            "format": "double",
+            "description": "Omitted leaves the estimate untouched; JSON `null` clears it."
           },
           "estimate_unit": {
             "oneOf": [
