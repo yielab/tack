@@ -259,7 +259,8 @@ async fn structured_events_and_cancellation_observation_replay() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(replay.duplicate_event_ids, vec!["event-z"]);
+    assert_eq!(replay.accepted_event_ids, vec!["event-z"]);
+    assert!(replay.replayed);
     assert!(
         repo.request_execution_cancellation("request-z", &clock)
             .await
