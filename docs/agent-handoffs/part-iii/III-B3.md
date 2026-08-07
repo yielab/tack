@@ -42,3 +42,16 @@
   owns root workspace/dependency files through Wave 1, so later dependency requests should be
   rebased onto this commit; no conflict with B1/B2/B4 is expected outside the root lockfile.
 - Checklist: no unowned files, no live secret, no panic stub, no blind retry.
+
+## Wave 2 dependency amendment
+
+- Dependency commits: `c64e336` adds the path dependency on B1's `tack-orch` domain and
+  `serde_json` for runner tests; `cd398eb` promotes `serde_json` to a runtime dependency for
+  the durable terminal-report outbox requested by C3's crash review.
+- No model/vendor SDK, network client, or provider-specific dependency was added. The lockfile
+  changed only when `tack-orch` and `serde_json` first became direct runner dependencies.
+- Verification after each amendment: `cargo test -p tack-runner`,
+  `cargo clippy -p tack-runner --all-targets -- -D warnings`, `cargo fmt --all --check`, and
+  `git diff --check` all passed.
+- Merge before the C3 typed seam/outbox commits. C3 remains the source owner and must not edit
+  the manifest or lockfile itself.
