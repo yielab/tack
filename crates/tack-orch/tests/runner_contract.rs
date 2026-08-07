@@ -1,3 +1,5 @@
+#[path = "runner_contract/domain.rs"]
+mod domain;
 #[path = "runner_contract/fakes.rs"]
 mod fakes;
 #[path = "runner_contract/fixtures.rs"]
