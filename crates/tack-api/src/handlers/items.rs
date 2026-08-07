@@ -50,16 +50,16 @@ fn expected_version_from_if_match(
     id: Uuid,
     headers: &HeaderMap,
     current_version: i64,
-) -> Result<Option<i64>, Response> {
+) -> Result<Option<i64>, String> {
     let Some(if_match) = headers.get(header::IF_MATCH) else {
         return Ok(None);
     };
     let provided = if_match.to_str().unwrap_or("");
     if provided != item_etag(id, current_version) {
-        return Err(precondition_failed(format!(
+        return Err(format!(
             "item {id} was modified since it was fetched (If-Match did not match); \
              refresh and retry"
-        )));
+        ));
     }
     Ok(Some(current_version))
 }
@@ -227,7 +227,7 @@ pub async fn update_item(
         .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
     let expected_version = match expected_version_from_if_match(id, &headers, snapshot.version) {
         Ok(expected_version) => expected_version,
-        Err(response) => return Ok(response),
+        Err(message) => return Ok(precondition_failed(message)),
     };
     let project = state
         .repo
