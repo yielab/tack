@@ -226,7 +226,16 @@ export interface paths {
         delete: operations["delete_control_plane"];
         options?: never;
         head?: never;
-        /** `PATCH /api/control-planes/{id}`. */
+        /**
+         * `PATCH /api/control-planes/{id}`. Supports optimistic concurrency (card
+         *     G1, TODO.md §3b D4): an `If-Match: "<version>"` header, taken from a
+         *     previous response's `ETag`, must match the row's current version or the
+         *     request is rejected with `412` and nothing is written. **Omitting
+         *     `If-Match` behaves exactly as before this card** — the precondition
+         *     check is skipped entirely; the version still moves forward on every
+         *     successful write either way, so a later conditional request from a
+         *     different client can always detect this one.
+         */
         patch: operations["update_control_plane"];
         trace?: never;
     };
@@ -778,7 +787,15 @@ export interface paths {
         };
         /** `GET /api/projects/{id}/orch-link`. */
         get: operations["get_orch_link"];
-        /** `PUT /api/projects/{id}/orch-link` — create or replace the project's link. */
+        /**
+         * `PUT /api/projects/{id}/orch-link` — create or replace the project's
+         *     link. Supports optimistic concurrency (card G1, TODO.md §3b D4) the same
+         *     way `PATCH /api/control-planes/{id}` does — see that handler's doc
+         *     comment for the `If-Match`/`ETag` contract. One difference: this is a
+         *     create-or-replace endpoint, so a nonexistent link and a version mismatch
+         *     both surface as `412` here (see `bump_orch_link_version_if_match`'s doc
+         *     comment for why that collapse is correct, not a shortcut).
+         */
         put: operations["put_orch_link"];
         post?: never;
         delete?: never;
@@ -1001,6 +1018,37 @@ export interface paths {
         get: operations["get_backup_settings"];
         /** PUT /api/settings/backup — save cloud-backup configuration. */
         put: operations["put_backup_settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/orchestration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GET /api/settings/orchestration — current orchestration settings.
+         * @description Deliberately reachable regardless of whether orchestration is enabled
+         *     (registered outside `orch_routes`' gate in `router.rs`) — a UI on a
+         *     server where orchestration has never been turned on must still be able
+         *     to read this and offer to turn it on. See `router.rs`'s route comment.
+         */
+        get: operations["get_orch_settings"];
+        /**
+         * PUT /api/settings/orchestration — save the orchestration enable flag and
+         *     start/stop the reconciler to match, immediately, without a restart.
+         * @description Order matters: persist first, then reconcile the runtime. If the process
+         *     restarts between the two (crash, deploy), the stored value is already
+         *     correct and the next boot's `server.rs` picks it up — the only thing lost
+         *     is this one instant's runtime state, not the setting itself.
+         */
+        put: operations["put_orch_settings"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1254,6 +1302,25 @@ export interface components {
             board: components["schemas"]["Board"];
             columns: components["schemas"]["BoardColumnWithItems"][];
         };
+        /**
+         * @description Wire mirror of `tack_orch::Capabilities` — what a control plane can
+         *     actually do, so the UI can disable a control and explain why instead of
+         *     checking `kind` (TODO.md §II.0 rule 6).
+         */
+        CapabilitiesResponse: {
+            artifacts: boolean;
+            cancel: boolean;
+            decisions: components["schemas"]["DecisionsCapability"];
+            dispatch: boolean;
+            event_scope: components["schemas"]["EventScopeCapability"];
+            model_selection: components["schemas"]["ModelSelectionCapability"];
+            pause: components["schemas"]["SupportCapability"];
+            plane_metrics: boolean;
+            provisioning: boolean;
+            resume: components["schemas"]["SupportCapability"];
+            runtimes: boolean;
+            usage: components["schemas"]["UsageCapability"];
+        };
         Comment: {
             author?: string | null;
             comment_type: components["schemas"]["CommentType"];
@@ -1276,14 +1343,19 @@ export interface components {
         ControlPlaneResponse: {
             api_version?: string | null;
             base_url: string;
+            capabilities?: null | components["schemas"]["CapabilitiesResponse"];
             /** Format: int64 */
             consecutive_failures: number;
             /** Format: date-time */
             created_at: string;
             /**
-             * @description `"unknown"` | `"healthy"` | `"degraded"` | `"unreachable"` — driven by
-             *     the reconciler's health state machine (`tack-orch::reconciler`),
-             *     persisted verbatim.
+             * @description `"unknown"` (pre-first-poll default) | `"healthy"` | `"degraded"` |
+             *     `"unreachable"` (the reconciler's health state machine,
+             *     `tack-orch::reconciler`, persisted verbatim) | `"unconfigured"` (card
+             *     G1 — this build of Tack could not even build a live adapter for
+             *     `kind`, so the reconciler's state machine never ran against this
+             *     plane at all; see `orch_store::RepoControlPlaneStore::
+             *     mark_unconfigured`'s doc comment).
              */
             health: string;
             /** Format: uuid */
@@ -1437,6 +1509,15 @@ export interface components {
         DecideApprovalResponse: {
             state: string;
             token: string;
+        };
+        /**
+         * @description Wire mirror of `tack_orch::DecisionSupport`.
+         * @enum {string}
+         */
+        DecisionSupportLevel: "none" | "poll" | "push";
+        DecisionsCapability: {
+            level: components["schemas"]["DecisionSupportLevel"];
+            reason: string;
         };
         Dependency: {
             /** Format: date-time */
@@ -1649,6 +1730,15 @@ export interface components {
         };
         ErrorBody: {
             /**
+             * @description Stable, machine-readable error code. Present on a narrow set of
+             *     responses where a caller needs to branch on *why* without parsing
+             *     `message` — e.g. `orchestration_disabled` on the 409 every
+             *     orchestration route returns while the feature is switched off (see
+             *     `handlers::orch::require_orch_enabled`). Absent on ordinary errors.
+             * @example orchestration_disabled
+             */
+            code?: string | null;
+            /**
              * @description Human-readable, end-user-facing message.
              * @example Item not found
              */
@@ -1670,6 +1760,15 @@ export interface components {
         EstimateUnit: "story_points" | "hours" | "days" | {
             custom: string;
         };
+        EventScopeCapability: {
+            level: components["schemas"]["EventScopeLevel"];
+            reason: string;
+        };
+        /**
+         * @description Wire mirror of `tack_orch::EventScope`.
+         * @enum {string}
+         */
+        EventScopeLevel: "none" | "run" | "project" | "plane";
         /**
          * @description One row per Tack project that has an `orch_links` row, joining: the link,
          *     its control plane's reconciler-observed health, and mirrored cost/token/
@@ -1693,6 +1792,7 @@ export interface components {
              * @description User-set cap, not a derived figure — deliberately unsuffixed.
              */
             budget_usd?: number | null;
+            capabilities?: null | components["schemas"]["CapabilitiesResponse"];
             /** Format: int64 */
             consecutive_failures: number;
             /** Format: uuid */
@@ -1714,7 +1814,11 @@ export interface components {
              *     later wave that mirrors `FleetStatus.gateway` populates this for real.
              */
             gateway: string;
-            /** @description `"unknown"` | `"healthy"` | `"degraded"` | `"unreachable"`. */
+            /**
+             * @description `"unknown"` | `"healthy"` | `"degraded"` | `"unreachable"` |
+             *     `"unconfigured"` — see [`ControlPlaneResponse::health`]'s doc
+             *     comment for what each means.
+             */
             health: string;
             /**
              * Format: date-time
@@ -1998,6 +2102,15 @@ export interface components {
              */
             team_id?: string | null;
         };
+        ModelSelectionCapability: {
+            level: components["schemas"]["ModelSelectionLevel"];
+            reason: string;
+        };
+        /**
+         * @description Wire mirror of `tack_orch::ModelSelection`.
+         * @enum {string}
+         */
+        ModelSelectionLevel: "unsupported" | "advisory" | "honoured";
         /**
          * @description docket pod blueprint names (`core/blueprints.py`, verified 2026-08-05).
          * @enum {string}
@@ -2474,6 +2587,20 @@ export interface components {
             on_waiting_approval?: string | null;
         };
         /**
+         * @description `pause`/`resume`'s wire shape — level plus why, not a bare enum. See
+         *     `tack_orch::Capabilities`'s own doc comment: the reason is
+         *     adapter-authored data, never a string this API layer invents.
+         */
+        SupportCapability: {
+            level: components["schemas"]["SupportLevel"];
+            reason: string;
+        };
+        /**
+         * @description Wire mirror of `tack_orch::Support`.
+         * @enum {string}
+         */
+        SupportLevel: "unsupported" | "advisory" | "supported";
+        /**
          * @description Agent-fleet defaults captured on a template (Phase 37 / card D3, tasks
          *     37.1 + 37.3). Nothing in this struct is applied automatically anywhere —
          *     `create_project_from_template` stores it and moves on. Turning it into a
@@ -2626,11 +2753,16 @@ export interface components {
             validation?: unknown;
         };
         UpdateItem: {
+            /** @description Omitted leaves the assignee untouched; JSON `null` clears it. */
             assignee?: string | null;
+            /** @description Omitted leaves the description untouched; JSON `null` clears it. */
             description?: string | null;
             /** Format: date-time */
             due_date?: string | null;
-            /** Format: double */
+            /**
+             * Format: double
+             * @description Omitted leaves the estimate untouched; JSON `null` clears it.
+             */
             estimate?: number | null;
             estimate_unit?: null | components["schemas"]["EstimateUnit"];
             item_type?: null | components["schemas"]["ItemType"];
@@ -2642,6 +2774,16 @@ export interface components {
             status?: string | null;
             tags?: string[] | null;
             title?: string | null;
+        };
+        /**
+         * @description Incoming update — just the one field the contract defines. No tri-state
+         *     "unset back to env default" path exists yet (nothing in this cycle needs
+         *     it); once stored, `source` stays `"database"` until a future card adds
+         *     one, mirroring how Cloud Backup's string fields already behave for their
+         *     own overrides.
+         */
+        UpdateOrchSettings: {
+            enabled: boolean;
         };
         UpdateProject: {
             archived?: boolean | null;
@@ -2665,6 +2807,15 @@ export interface components {
             remote_project: string;
             status_map?: components["schemas"]["StatusMap"];
         };
+        UsageCapability: {
+            level: components["schemas"]["UsageSupportLevel"];
+            reason: string;
+        };
+        /**
+         * @description Wire mirror of `tack_orch::UsageSupport`.
+         * @enum {string}
+         */
+        UsageSupportLevel: "not_measured" | "from_provider" | "from_gateway";
         /** @description Full workflow configuration for a project. */
         WorkflowConfig: {
             statuses: components["schemas"]["StatusDef"][];
@@ -3282,7 +3433,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Updated control plane (token never returned) */
+            /** @description Updated control plane (token never returned); carries an ETag header naming the new version */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3293,6 +3444,15 @@ export interface operations {
             };
             /** @description Not found, or orchestration disabled */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description If-Match did not match the control plane's current version — nothing was written */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4684,7 +4844,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Saved link */
+            /** @description Saved link; carries an ETag header naming the new version */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4704,6 +4864,15 @@ export interface operations {
             };
             /** @description Project or control plane not found, or orchestration disabled */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description If-Match did not match (or no link exists yet to match) — nothing was written */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5296,6 +5465,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_orch_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Orchestration settings: effective enabled flag, where it came from, and reconciler/link counts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    put_orch_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateOrchSettings"];
+            };
+        };
+        responses: {
+            /** @description Updated orchestration settings (same shape as GET) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
