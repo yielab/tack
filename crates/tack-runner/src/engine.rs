@@ -129,14 +129,15 @@ pub enum RunCycle {
     TerminalReportPending { attempt_id: AttemptId },
 }
 
-pub struct RunnerEngine<P, A, W> {
+pub struct RunnerEngine<P, A, W, C = crate::SystemClock> {
     protocol: P,
     adapter: A,
     journal: OwnerOnlyJournal,
     workspaces: WorkspaceManager<W>,
+    clock: C,
 }
 
-impl<P, A, W> RunnerEngine<P, A, W>
+impl<P, A, W> RunnerEngine<P, A, W, crate::SystemClock>
 where
     P: PullProtocol,
     A: HarnessAdapter,
@@ -148,11 +149,32 @@ where
         journal: OwnerOnlyJournal,
         workspaces: WorkspaceManager<W>,
     ) -> Self {
+        Self::with_clock(protocol, adapter, journal, workspaces, crate::SystemClock)
+    }
+}
+
+impl<P, A, W, C> RunnerEngine<P, A, W, C>
+where
+    P: PullProtocol,
+    A: HarnessAdapter,
+    W: WorktreeProvisioner,
+    C: crate::Clock,
+{
+    /// Injects the local clock so heartbeat timestamps can be deterministic in
+    /// tests without introducing lifecycle sleeps.
+    pub fn with_clock(
+        protocol: P,
+        adapter: A,
+        journal: OwnerOnlyJournal,
+        workspaces: WorkspaceManager<W>,
+        clock: C,
+    ) -> Self {
         Self {
             protocol,
             adapter,
             journal,
             workspaces,
+            clock,
         }
     }
 
@@ -194,10 +216,22 @@ where
                 record.pending_terminal_report.is_some(),
             ) {
                 (true, true) => {
-                    outcomes.push(
-                        self.send_pending_terminal_report(session, &mut record)
-                            .await?,
-                    );
+                    let outcome = self
+                        .send_pending_terminal_report(session, &mut record)
+                        .await?;
+                    if matches!(
+                        outcome,
+                        RunCycle::Completed { .. } | RunCycle::Cancelled { .. }
+                    ) {
+                        // A terminal replay may only clean up after its
+                        // acknowledgement has been fsynced as `Reported`.
+                        // `cleanup` revalidates this journal-derived path,
+                        // marker, and deterministic attempt location.
+                        let _ = self
+                            .workspaces
+                            .cleanup(&Self::workspace_from_journal(&record));
+                    }
+                    outcomes.push(outcome);
                     continue;
                 }
                 (true, false) | (false, true) => {
@@ -277,25 +311,20 @@ where
             return self.quarantine_after_spawn(session, &record, &handle).await;
         }
 
-        let heartbeat = HeartbeatRequest {
-            heartbeat_id: format!(
-                "heartbeat:{}:{}",
-                record.attempt_id.as_str(),
-                record.fencing_token.0
-            ),
-            available_capacity: 0,
-            active_attempts: vec![ActiveAttempt {
-                attempt_id: record.attempt_id.clone(),
-                fencing_token: record.fencing_token,
-                state: AttemptState::Running,
-                journal_state: record.state,
-                last_event_checkpoint: record.last_event_checkpoint.clone(),
-            }],
-        };
-        let heartbeat = match self.protocol.heartbeat(session, heartbeat).await {
+        let heartbeat_request = self.heartbeat_request(session, &record);
+        let heartbeat = match self
+            .protocol
+            .heartbeat(session, heartbeat_request.clone())
+            .await
+        {
             Ok(response) => response,
             Err(_) => return self.quarantine_after_spawn(session, &record, &handle).await,
         };
+        if heartbeat.protocol_version != ProtocolVersion::v1()
+            || heartbeat.heartbeat_id != heartbeat_request.heartbeat_id
+        {
+            return self.quarantine_after_spawn(session, &record, &handle).await;
+        }
         let lease = heartbeat.lease_results.into_iter().find(|result| {
             result.attempt_id == record.attempt_id && result.fencing_token == record.fencing_token
         });
@@ -388,6 +417,33 @@ where
         Ok(cycle)
     }
 
+    fn heartbeat_request(
+        &self,
+        session: &RunnerSession,
+        record: &AttemptJournal,
+    ) -> HeartbeatRequest {
+        let sent_at = chrono::DateTime::<chrono::Utc>::from(self.clock.now())
+            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        HeartbeatRequest {
+            protocol_version: ProtocolVersion::v1(),
+            runner_id: session.runner_id.clone(),
+            heartbeat_id: format!(
+                "heartbeat:{}:{}",
+                record.attempt_id.as_str(),
+                record.fencing_token.0
+            ),
+            sent_at: Timestamp::new(sent_at),
+            available_capacity: 0,
+            active_attempts: vec![ActiveAttempt {
+                attempt_id: record.attempt_id.clone(),
+                fencing_token: record.fencing_token,
+                state: AttemptState::Running,
+                journal_state: record.state,
+                last_event_checkpoint: record.last_event_checkpoint.clone(),
+            }],
+        }
+    }
+
     fn persist_pending_terminal_report<T: serde::Serialize>(
         &self,
         record: &mut AttemptJournal,
@@ -414,6 +470,9 @@ where
         session: &RunnerSession,
         record: &mut AttemptJournal,
     ) -> Result<RunCycle, EngineError> {
+        if record.runner_id != session.runner_id {
+            return Err(EngineError::Journal(JournalError::Malformed));
+        }
         let Some(pending) = record.pending_terminal_report.as_ref() else {
             return Err(EngineError::Journal(JournalError::Malformed));
         };
@@ -425,6 +484,15 @@ where
                     || report.runner_id != session.runner_id
                     || report.attempt_id != record.attempt_id
                     || report.fencing_token != record.fencing_token
+                    || report.completion_id
+                        != CompletionId::new(format!(
+                            "completion:{}:{}",
+                            record.attempt_id.as_str(),
+                            record.fencing_token.0
+                        ))
+                    || report.actual_execution.workspace_id.as_str()
+                        != record.workspace.workspace_id.as_str()
+                    || report.actual_execution.base_revision != record.workspace.base_revision
                     || !matches!(
                         report.terminal_state,
                         AttemptState::Succeeded | AttemptState::Failed | AttemptState::Cancelled
@@ -464,6 +532,12 @@ where
                     || report.runner_id != session.runner_id
                     || report.attempt_id != record.attempt_id
                     || report.fencing_token != record.fencing_token
+                    || report.cancellation_request_id
+                        != CancellationRequestId::new(format!(
+                            "cancel:{}:{}",
+                            record.attempt_id.as_str(),
+                            record.fencing_token.0
+                        ))
                     || report.observation != CancelObservation::ProcessStopped
                 {
                     return Err(EngineError::Journal(JournalError::Malformed));
@@ -508,6 +582,15 @@ where
         }
         *record = acknowledged;
         Ok(cycle)
+    }
+
+    fn workspace_from_journal(record: &AttemptJournal) -> Workspace {
+        Workspace {
+            attempt_id: record.attempt_id.clone(),
+            id: record.workspace.workspace_id.clone(),
+            path: record.workspace.path.clone(),
+            base_revision: record.workspace.base_revision.clone(),
+        }
     }
 
     async fn quarantine_after_spawn(
@@ -653,6 +736,7 @@ mod tests {
             Arc, Mutex,
             atomic::{AtomicBool, AtomicUsize, Ordering},
         },
+        time::SystemTime,
     };
 
     use super::*;
@@ -702,15 +786,26 @@ mod tests {
         mismatch: CompletionAckMismatch,
     }
 
+    #[derive(Clone, Copy)]
+    struct FixedClock(SystemTime);
+
+    impl crate::Clock for FixedClock {
+        fn now(&self) -> SystemTime {
+            self.0
+        }
+    }
+
     #[derive(Clone)]
     struct FakeProtocol {
         claim: Arc<Mutex<Option<ClaimResult>>>,
         cancellation_requested: bool,
+        heartbeat_echo_matches: Arc<AtomicBool>,
         stale_completion: Arc<AtomicBool>,
         fail_running_start: bool,
         fail_cancellation_report: Arc<AtomicBool>,
         start_reports: Arc<AtomicUsize>,
         reported_starts: Arc<Mutex<Vec<StartReport>>>,
+        received_heartbeats: Arc<Mutex<Vec<HeartbeatRequest>>>,
         reported_heartbeats: Arc<Mutex<Vec<super::super::HeartbeatResponse>>>,
         completion_reports: Arc<AtomicUsize>,
         reported_completions: Arc<Mutex<Vec<CompletionReport>>>,
@@ -780,13 +875,22 @@ mod tests {
             _session: &RunnerSession,
             request: HeartbeatRequest,
         ) -> Result<super::super::HeartbeatResponse, ProtocolClientError> {
+            self.received_heartbeats
+                .lock()
+                .expect("fake protocol lock")
+                .push(request.clone());
             let active = request
                 .active_attempts
                 .into_iter()
                 .next()
                 .expect("active attempt");
             let response = super::super::HeartbeatResponse {
-                heartbeat_id: request.heartbeat_id,
+                protocol_version: ProtocolVersion::v1(),
+                heartbeat_id: if self.heartbeat_echo_matches.load(Ordering::SeqCst) {
+                    request.heartbeat_id
+                } else {
+                    "mismatched-heartbeat".into()
+                },
                 accepted_at: Timestamp::new("2026-08-06T12:20:16Z"),
                 lease_results: vec![LeaseResult {
                     attempt_id: active.attempt_id,
@@ -1184,11 +1288,13 @@ mod tests {
         FakeProtocol {
             claim: Arc::new(Mutex::new(Some(ClaimResult::Work(Box::new(work))))),
             cancellation_requested,
+            heartbeat_echo_matches: Arc::new(AtomicBool::new(true)),
             stale_completion: Arc::new(AtomicBool::new(stale_completion)),
             fail_running_start: false,
             fail_cancellation_report: Arc::new(AtomicBool::new(false)),
             start_reports: Arc::new(AtomicUsize::new(0)),
             reported_starts: Arc::new(Mutex::new(Vec::new())),
+            received_heartbeats: Arc::new(Mutex::new(Vec::new())),
             reported_heartbeats: Arc::new(Mutex::new(Vec::new())),
             completion_reports: Arc::new(AtomicUsize::new(0)),
             reported_completions: Arc::new(Mutex::new(Vec::new())),
@@ -1313,6 +1419,247 @@ mod tests {
             fixture,
             "outbox JSON field names and values remain fixture-authoritative"
         );
+    }
+
+    #[test]
+    fn heartbeat_dtos_round_trip_the_frozen_v1_payloads_and_reject_other_versions() {
+        let request_fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../docs/contracts/runner-v1/heartbeat.request.json"
+        ))
+        .expect("heartbeat request fixture");
+        let request: HeartbeatRequest =
+            serde_json::from_value(request_fixture.clone()).expect("typed heartbeat request");
+        assert_eq!(
+            serde_json::to_value(request).expect("serialize heartbeat request"),
+            request_fixture
+        );
+
+        let response_fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../docs/contracts/runner-v1/heartbeat.response.json"
+        ))
+        .expect("heartbeat response fixture");
+        let response: super::super::HeartbeatResponse =
+            serde_json::from_value(response_fixture.clone()).expect("typed heartbeat response");
+        assert_eq!(
+            serde_json::to_value(response).expect("serialize heartbeat response"),
+            response_fixture
+        );
+
+        let mut unsupported = response_fixture;
+        unsupported["protocol_version"] = serde_json::json!(2);
+        assert!(serde_json::from_value::<super::super::HeartbeatResponse>(unsupported).is_err());
+    }
+
+    #[test]
+    fn heartbeat_retries_keep_a_canonical_payload_for_the_same_clock_instant() {
+        let root = temporary_root("heartbeat-canonical-retry");
+        let journal = OwnerOnlyJournal::new(&root);
+        let fixed_at: SystemTime = chrono::DateTime::parse_from_rfc3339("2026-08-06T12:20:15Z")
+            .expect("timestamp")
+            .into();
+        let engine = RunnerEngine::with_clock(
+            protocol(work(), false, false),
+            adapter(journal.journal_path(&AttemptId::new("attempt"))),
+            journal,
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: OwnerOnlyJournal::new(&root)
+                        .journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+            FixedClock(fixed_at),
+        );
+        let claimed = work();
+        let record = AttemptJournal::prepared(
+            &claimed.lease,
+            super::super::WorkspaceJournal {
+                workspace_id: super::super::WorkspaceId::new("ws_617474656d7074"),
+                path: root.join("workspaces/617474656d7074"),
+                base_revision: "revision".into(),
+            },
+        );
+        let first = engine.heartbeat_request(&session(), &record);
+        let retry = engine.heartbeat_request(&session(), &record);
+        assert_eq!(
+            serde_json::to_string(&first).expect("first heartbeat"),
+            serde_json::to_string(&retry).expect("retry heartbeat")
+        );
+        assert_eq!(first.sent_at.as_str(), "2026-08-06T12:20:15Z");
+    }
+
+    #[tokio::test]
+    async fn heartbeat_sent_at_comes_from_the_injected_clock() {
+        let root = temporary_root("heartbeat-clock");
+        let journal = OwnerOnlyJournal::new(&root);
+        let protocol = protocol(work(), false, false);
+        let fixed_at: SystemTime = chrono::DateTime::parse_from_rfc3339("2026-08-06T12:20:15Z")
+            .expect("timestamp")
+            .into();
+        let engine = RunnerEngine::with_clock(
+            protocol.clone(),
+            adapter(journal.journal_path(&AttemptId::new("attempt"))),
+            journal,
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: OwnerOnlyJournal::new(&root)
+                        .journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+            FixedClock(fixed_at),
+        );
+        assert!(matches!(
+            engine
+                .run_once(&session(), claim_request())
+                .await
+                .expect("cycle"),
+            RunCycle::Completed { .. }
+        ));
+        let heartbeats = protocol
+            .received_heartbeats
+            .lock()
+            .expect("fake protocol lock");
+        assert_eq!(heartbeats[0].protocol_version, ProtocolVersion::v1());
+        assert_eq!(heartbeats[0].runner_id.as_str(), "runner");
+        assert_eq!(heartbeats[0].sent_at.as_str(), "2026-08-06T12:20:15Z");
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+
+    #[tokio::test]
+    async fn mismatched_heartbeat_echo_quarantines_before_applying_lease_facts() {
+        let root = temporary_root("heartbeat-echo-mismatch");
+        let journal = OwnerOnlyJournal::new(&root);
+        let protocol = protocol(work(), true, false);
+        protocol
+            .heartbeat_echo_matches
+            .store(false, Ordering::SeqCst);
+        let cancellations = Arc::new(AtomicUsize::new(0));
+        let mut fake_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+        fake_adapter.cancel_calls = Arc::clone(&cancellations);
+        let engine = RunnerEngine::new(
+            protocol.clone(),
+            fake_adapter,
+            journal,
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: OwnerOnlyJournal::new(&root)
+                        .journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+        );
+        assert!(matches!(
+            engine
+                .run_once(&session(), claim_request())
+                .await
+                .expect("cycle"),
+            RunCycle::Quarantined { .. }
+        ));
+        assert_eq!(cancellations.load(Ordering::SeqCst), 1);
+        assert_eq!(protocol.cancellation_reports.load(Ordering::SeqCst), 0);
+        assert_eq!(protocol.completion_reports.load(Ordering::SeqCst), 0);
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+
+    #[tokio::test]
+    async fn tampered_terminal_outbox_bindings_are_rejected_before_replay_transport() {
+        for tamper in [
+            "journal_runner",
+            "runner",
+            "completion_id",
+            "workspace",
+            "cancellation_id",
+        ] {
+            let root = temporary_root(tamper);
+            let journal = OwnerOnlyJournal::new(&root);
+            let lease = work().lease;
+            let mut record = AttemptJournal::prepared(
+                &lease,
+                super::super::WorkspaceJournal {
+                    workspace_id: super::super::WorkspaceId::new("ws_617474656d7074"),
+                    path: root.join("workspaces/617474656d7074"),
+                    base_revision: "revision".into(),
+                },
+            );
+            record.state = JournalState::TerminalReportPending;
+            if tamper == "journal_runner" {
+                record.runner_id = RunnerId::new("other-runner");
+            }
+            record.pending_terminal_report = Some(match tamper {
+                "cancellation_id" => {
+                    let report = CancellationReport {
+                        protocol_version: ProtocolVersion::v1(),
+                        runner_id: session().runner_id,
+                        cancellation_request_id: CancellationRequestId::new("wrong-cancel"),
+                        attempt_id: record.attempt_id.clone(),
+                        fencing_token: record.fencing_token,
+                        observation: CancelObservation::ProcessStopped,
+                        observed_at: Timestamp::new("2026-08-06T12:24:00Z"),
+                        details: serde_json::Map::new(),
+                    };
+                    PendingTerminalReport {
+                        kind: PendingTerminalReportKind::Cancellation,
+                        canonical_json: serde_json::to_string(&report).expect("cancel payload"),
+                    }
+                }
+                _ => {
+                    let mut report = CompletionReport {
+                        protocol_version: ProtocolVersion::v1(),
+                        runner_id: session().runner_id,
+                        completion_id: CompletionId::new("completion:attempt:7"),
+                        attempt_id: record.attempt_id.clone(),
+                        fencing_token: record.fencing_token,
+                        terminal_state: AttemptState::Succeeded,
+                        terminal_reason: serde_json::json!({"code":"completed"}),
+                        final_event_checkpoint: None,
+                        actual_execution: actual_execution(),
+                        usage: usage(),
+                    };
+                    match tamper {
+                        "journal_runner" => {}
+                        "runner" => report.runner_id = RunnerId::new("other-runner"),
+                        "completion_id" => report.completion_id = CompletionId::new("wrong"),
+                        "workspace" => {
+                            report.actual_execution.workspace_id =
+                                tack_orch::execution::WorkspaceId::new("ws_wrong")
+                        }
+                        _ => unreachable!(),
+                    }
+                    PendingTerminalReport {
+                        kind: PendingTerminalReportKind::Completion,
+                        canonical_json: serde_json::to_string(&report).expect("completion payload"),
+                    }
+                }
+            });
+            journal
+                .persist_before_spawn(&record)
+                .expect("tampered pending journal");
+            let protocol = protocol(work(), false, false);
+            let engine = RunnerEngine::new(
+                protocol.clone(),
+                adapter(journal.journal_path(&AttemptId::new("attempt"))),
+                journal,
+                WorkspaceManager::new(
+                    root.join("workspaces"),
+                    FakeWorktree {
+                        expected_journal: OwnerOnlyJournal::new(&root)
+                            .journal_path(&AttemptId::new("attempt")),
+                        provision_after_journal: Arc::new(AtomicBool::new(false)),
+                    },
+                ),
+            );
+            assert!(matches!(
+                engine.recover(&session()).await,
+                Err(EngineError::Journal(JournalError::Malformed))
+            ));
+            assert_eq!(protocol.completion_reports.load(Ordering::SeqCst), 0);
+            assert_eq!(protocol.cancellation_reports.load(Ordering::SeqCst), 0);
+            std::fs::remove_dir_all(root).expect("remove temporary root");
+        }
     }
 
     fn claim_request() -> ClaimRequest {
@@ -1678,6 +2025,11 @@ mod tests {
                 .expect("first delivery"),
             RunCycle::TerminalReportPending { .. }
         ));
+        let workspace_path = root.join("workspaces/617474656d7074");
+        assert!(
+            workspace_path.exists(),
+            "pending replay retains the workspace"
+        );
         assert!(
             protocol.terminal_payload_was_durable.load(Ordering::SeqCst),
             "terminal payload is fsynced before the first send"
@@ -1738,6 +2090,10 @@ mod tests {
             .expect("settled journal");
         assert_eq!(settled.state, JournalState::Reported);
         assert!(settled.pending_terminal_report.is_none());
+        assert!(
+            !workspace_path.exists(),
+            "restart replay cleans only after the Reported acknowledgement"
+        );
         std::fs::remove_dir_all(root).expect("remove temporary root");
     }
 
@@ -1817,6 +2173,11 @@ mod tests {
                 .expect("ack write failure"),
             RunCycle::TerminalReportPending { .. }
         ));
+        let workspace_path = root.join("workspaces/617474656d7074");
+        assert!(
+            workspace_path.exists(),
+            "pending replay retains the workspace"
+        );
         assert_eq!(protocol.completion_reports.load(Ordering::SeqCst), 1);
         assert_eq!(
             journal
@@ -1846,6 +2207,10 @@ mod tests {
             [RunCycle::Completed { .. }]
         ));
         assert_eq!(protocol.completion_reports.load(Ordering::SeqCst), 2);
+        assert!(
+            !workspace_path.exists(),
+            "restart replay cleans only after the Reported acknowledgement"
+        );
         std::fs::remove_dir_all(root).expect("remove temporary root");
     }
 
@@ -2236,6 +2601,11 @@ mod tests {
                 .expect("first delivery"),
             RunCycle::TerminalReportPending { .. }
         ));
+        let workspace_path = root.join("workspaces/617474656d7074");
+        assert!(
+            workspace_path.exists(),
+            "pending replay retains the workspace"
+        );
         assert!(protocol.terminal_payload_was_durable.load(Ordering::SeqCst));
         let first_payload = journal
             .load(&AttemptId::new("attempt"))
@@ -2294,6 +2664,10 @@ mod tests {
             .expect("settled journal");
         assert_eq!(settled.state, JournalState::Reported);
         assert!(settled.pending_terminal_report.is_none());
+        assert!(
+            !workspace_path.exists(),
+            "restart replay cleans only after the Reported acknowledgement"
+        );
         std::fs::remove_dir_all(root).expect("remove temporary root");
     }
 
@@ -2335,6 +2709,11 @@ mod tests {
                 .state,
             JournalState::TerminalReportPending
         );
+        let workspace_path = root.join("workspaces/617474656d7074");
+        assert!(
+            workspace_path.exists(),
+            "ack write failure retains the workspace"
+        );
         let restarted = RunnerEngine::new(
             protocol.clone(),
             adapter(journal.journal_path(&AttemptId::new("attempt"))),
@@ -2356,6 +2735,10 @@ mod tests {
             [RunCycle::Cancelled { .. }]
         ));
         assert_eq!(protocol.cancellation_reports.load(Ordering::SeqCst), 2);
+        assert!(
+            !workspace_path.exists(),
+            "restart replay cleans only after the Reported acknowledgement"
+        );
         std::fs::remove_dir_all(root).expect("remove temporary root");
     }
 

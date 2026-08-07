@@ -81,3 +81,27 @@
   running-process recovery quarantine, duplicate quarantined claim prevention, post-spawn
   journal-update ambiguity/cancel, directory symlinks, workspace-path symlink, and marker
   tampering.
+
+## Final C3 closure
+
+- Heartbeat is now an exact serde v1 DTO: request carries `protocol_version`, `runner_id`,
+  deterministic `heartbeat_id`, clock-originated RFC 3339 `sent_at`, capacity, and active
+  attempt facts; response carries version, echoed ID, acceptance time, and full lease results.
+  The engine uses its injected `Clock` (no sleep) and quarantines before using any lease or
+  cancellation fact when the response ID or version is not acceptable. Unsupported response
+  versions fail at typed deserialization.
+- The durable terminal outbox is additionally bound to its journal before replay transport:
+  journal runner equals session; deterministic completion/cancellation IDs are recomputed;
+  completion workspace facts equal the journal; and a record is rejected when its filename does
+  not encode its attempt ID. Tampered records never reach transport.
+- Restart terminal replay now reconstructs the journal workspace and invokes the existing
+  guarded cleanup only after the terminal acknowledgement is durably recorded as `Reported`.
+  Acknowledge-write failure retains both outbox and workspace for the next replay.
+- Final verification: `cargo test -p tack-runner` — 46 library tests and 2 CLI tests passed;
+  `cargo clippy -p tack-runner --all-targets -- -D warnings`, `cargo fmt --all -- --check`, and
+  `git diff --check` passed.
+- Dependency ownership: B3 clock/chrono integration is separate commits `0e6731f` and
+  `934bc80` (the latter owns `Cargo.lock`); this final C3 source commit has no manifest or lock
+  edits.
+- Remaining C3 blocker: none. C2/C5 still own the authenticated concrete HTTP transport and
+  heartbeat scheduling; C3 intentionally supplies the typed `PullProtocol` boundary only.
