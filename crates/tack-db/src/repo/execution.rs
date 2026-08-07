@@ -386,6 +386,7 @@ fn replay_response(serialized: &str) -> Result<CompletionResponse, sqlx::Error> 
 fn heartbeat_fingerprint(
     runner_id: &str,
     heartbeat_id: &str,
+    sent_at: DateTime<Utc>,
     available_capacity: i64,
     leases: &[HeartbeatLease<'_>],
     lease_duration: Duration,
@@ -401,6 +402,7 @@ fn heartbeat_fingerprint(
     serde_json::to_string(&serde_json::json!({
         "runner_id": runner_id,
         "heartbeat_id": heartbeat_id,
+        "sent_at": sent_at.to_rfc3339(),
         "available_capacity": available_capacity,
         "lease_duration_nanoseconds": lease_duration_nanoseconds,
         "leases": leases
@@ -736,10 +738,12 @@ impl Repository {
         tx.commit().await?;
         Ok(OperatorRequeueResult::Requeued)
     }
+    #[allow(clippy::too_many_arguments)] // protocol batch fields must fingerprint together
     pub async fn heartbeat_batch(
         &self,
         runner_id: &str,
         heartbeat_id: &str,
+        sent_at: DateTime<Utc>,
         available_capacity: i64,
         leases: &[HeartbeatLease<'_>],
         lease_duration: Duration,
@@ -751,6 +755,7 @@ impl Repository {
         let fingerprint = heartbeat_fingerprint(
             runner_id,
             heartbeat_id,
+            sent_at,
             available_capacity,
             leases,
             lease_duration,
@@ -785,10 +790,9 @@ impl Repository {
             return Ok(HeartbeatBatchResult::Replayed(response));
         }
         let active_reservations: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM execution_attempts WHERE runner_id=? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at>?",
+            "SELECT COUNT(*) FROM execution_attempts WHERE runner_id=? AND state IN ('leased','preparing','running','waiting_decision')",
         )
         .bind(runner_id)
-        .bind(&now_s)
         .fetch_one(&mut *tx)
         .await?;
         let expected_available_capacity = capacity - active_reservations;

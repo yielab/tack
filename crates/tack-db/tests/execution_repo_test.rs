@@ -164,10 +164,12 @@ async fn heartbeat_replays_and_recovery_is_audited_once() {
         attempt_id: "attempt-a",
         fencing_token: lease.fencing_token,
     }];
+    let sent_at = clock.now();
     assert!(matches!(
         repo.heartbeat_batch(
             "runner-a",
             "hb-1",
+            sent_at,
             0,
             &leases,
             Duration::seconds(60),
@@ -181,6 +183,7 @@ async fn heartbeat_replays_and_recovery_is_audited_once() {
         repo.heartbeat_batch(
             "runner-a",
             "hb-1",
+            sent_at,
             0,
             &leases,
             Duration::seconds(60),
@@ -1005,6 +1008,7 @@ async fn heartbeat_rejects_false_free_capacity_while_a_lease_is_active() {
         repo.heartbeat_batch(
             "runner-a",
             "heartbeat-free",
+            clock.now(),
             1,
             &[HeartbeatLease {
                 attempt_id: "attempt-heartbeat-free",
@@ -1060,10 +1064,12 @@ async fn heartbeat_multi_lease_replay_is_canonical_and_authoritative() {
             fencing_token: second_fence,
         },
     ];
+    let sent_at = clock.now();
     let accepted = repo
         .heartbeat_batch(
             "runner-a",
             "heartbeat-multi",
+            sent_at,
             0,
             &leases,
             Duration::seconds(60),
@@ -1079,6 +1085,7 @@ async fn heartbeat_multi_lease_replay_is_canonical_and_authoritative() {
         .heartbeat_batch(
             "runner-a",
             "heartbeat-multi",
+            sent_at,
             0,
             &[leases[1].clone(), leases[0].clone()],
             Duration::seconds(60),
@@ -1107,10 +1114,12 @@ async fn heartbeat_exact_replay_after_clock_advance_returns_original_fields() {
         attempt_id: "attempt-heartbeat-time",
         fencing_token: fence,
     }];
+    let sent_at = clock.now();
     let accepted = repo
         .heartbeat_batch(
             "runner-a",
             "heartbeat-time",
+            sent_at,
             0,
             &leases,
             Duration::seconds(60),
@@ -1126,6 +1135,7 @@ async fn heartbeat_exact_replay_after_clock_advance_returns_original_fields() {
         .heartbeat_batch(
             "runner-a",
             "heartbeat-time",
+            sent_at,
             0,
             &leases,
             Duration::seconds(60),
@@ -1140,7 +1150,7 @@ async fn heartbeat_exact_replay_after_clock_advance_returns_original_fields() {
 }
 
 #[tokio::test]
-async fn heartbeat_changed_same_id_conflicts_without_write() {
+async fn heartbeat_changed_same_id_sent_at_conflicts_without_write() {
     let (repo, item_id, clock) = ready_repo().await;
     let fence = ready_completion_attempt(
         &repo,
@@ -1154,9 +1164,11 @@ async fn heartbeat_changed_same_id_conflicts_without_write() {
         attempt_id: "attempt-heartbeat-conflict",
         fencing_token: fence,
     }];
+    let sent_at = clock.now();
     repo.heartbeat_batch(
         "runner-a",
         "heartbeat-conflict",
+        sent_at,
         0,
         &leases,
         Duration::seconds(60),
@@ -1175,7 +1187,8 @@ async fn heartbeat_changed_same_id_conflicts_without_write() {
         repo.heartbeat_batch(
             "runner-a",
             "heartbeat-conflict",
-            1,
+            sent_at + Duration::seconds(1),
+            0,
             &leases,
             Duration::seconds(60),
             &clock,
@@ -1209,7 +1222,8 @@ async fn heartbeat_stale_lease_returns_typed_stale_result() {
         repo.heartbeat_batch(
             "runner-a",
             "heartbeat-stale",
-            1,
+            clock.now(),
+            0,
             &[HeartbeatLease {
                 attempt_id: "attempt-heartbeat-stale",
                 fencing_token: fence,
@@ -1221,6 +1235,63 @@ async fn heartbeat_stale_lease_returns_typed_stale_result() {
         .unwrap(),
         HeartbeatBatchResult::StaleLease("attempt-heartbeat-stale".into())
     );
+}
+
+#[tokio::test]
+async fn expired_unrecovered_attempt_cannot_restore_capacity_or_admit_a_claim() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-heartbeat-expired",
+        "attempt-heartbeat-expired",
+    )
+    .await;
+    clock.advance(Duration::seconds(61));
+    assert_eq!(
+        repo.heartbeat_batch(
+            "runner-a",
+            "heartbeat-expired",
+            clock.now(),
+            1,
+            &[],
+            Duration::seconds(60),
+            &clock,
+        )
+        .await
+        .unwrap(),
+        HeartbeatBatchResult::Conflict
+    );
+    let capacity: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(capacity, 0);
+    repo.enqueue_execution(
+        request(
+            "request-heartbeat-blocked",
+            &item_id,
+            "key-heartbeat-blocked",
+            "same",
+        ),
+        &clock,
+    )
+    .await
+    .unwrap();
+    assert!(
+        repo.claim_execution(
+            "runner-a",
+            "attempt-heartbeat-blocked",
+            Duration::seconds(60),
+            &clock,
+        )
+        .await
+        .unwrap()
+        .is_none()
+    );
+    let _ = fence;
 }
 
 #[tokio::test]
@@ -1242,6 +1313,7 @@ async fn heartbeat_replay_insert_failure_rolls_back_all_updates() {
         .heartbeat_batch(
             "runner-a",
             "heartbeat-rollback",
+            clock.now(),
             0,
             &[HeartbeatLease {
                 attempt_id: "attempt-heartbeat-rollback",
