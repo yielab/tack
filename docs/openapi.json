@@ -1072,7 +1072,15 @@
         ],
         "responses": {
           "200": {
-            "description": "Item with roles and dependencies",
+            "description": "Item with roles and dependencies; carries an ETag header for a later conditional PATCH",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Version-derived entity tag; echo verbatim in If-Match when updating this item"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1146,6 +1154,18 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Optional ETag from GET /api/items/{id}; a stale or malformed value returns 412 and writes nothing",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "requestBody": {
@@ -1160,7 +1180,15 @@
         },
         "responses": {
           "200": {
-            "description": "Updated item",
+            "description": "Updated item; carries the ETag for the exact returned snapshot",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Version-derived entity tag for the returned item snapshot"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1181,6 +1209,16 @@
           },
           "404": {
             "description": "Item not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "If-Match did not match the current item version — nothing was written",
             "content": {
               "application/json": {
                 "schema": {

@@ -3716,9 +3716,11 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Item with roles and dependencies */
+            /** @description Item with roles and dependencies; carries an ETag header for a later conditional PATCH */
             200: {
                 headers: {
+                    /** @description Version-derived entity tag; echo verbatim in If-Match when updating this item */
+                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -3771,7 +3773,10 @@ export interface operations {
     update_item: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional ETag from GET /api/items/{id}; a stale or malformed value returns 412 and writes nothing */
+                "If-Match"?: string | null;
+            };
             path: {
                 /** @description Item ID */
                 id: string;
@@ -3784,9 +3789,11 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Updated item */
+            /** @description Updated item; carries the ETag for the exact returned snapshot */
             200: {
                 headers: {
+                    /** @description Version-derived entity tag for the returned item snapshot */
+                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -3804,6 +3811,15 @@ export interface operations {
             };
             /** @description Item not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description If-Match did not match the current item version — nothing was written */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };
