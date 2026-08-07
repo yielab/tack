@@ -2,7 +2,7 @@ use std::{fmt, time::Duration};
 
 use async_trait::async_trait;
 use tack_orch::execution::{
-    ActualExecution, AttemptSnapshot, ExecutionRequestSnapshot, ExecutionState,
+    ActualExecution, AttemptSnapshot, ExecutionRequestSnapshot, ExecutionState, ProtocolVersion,
     RecoveryObservationRequest, RecoveryObservationResponse, RunnerCapabilities, Usage,
 };
 
@@ -16,8 +16,8 @@ pub mod journal;
 pub mod workspace;
 
 pub use engine::{
-    CancelObservation, EngineError, HarnessAdapter, HarnessError, HarnessOutcome, LocalRunHandle,
-    RunCycle, RunnerEngine,
+    CancelObservation, CancellationEvidence, EngineError, HarnessAdapter, HarnessError,
+    HarnessOutcome, LocalRunHandle, RunCycle, RunnerEngine,
 };
 pub use journal::{AttemptJournal, JournalError, JournalState, OwnerOnlyJournal, WorkspaceJournal};
 pub use tack_orch::execution::RecoveryObservation;
@@ -350,10 +350,26 @@ pub struct CompletionReport {
 
 #[derive(Debug, Clone)]
 pub struct CancellationReport {
+    pub protocol_version: ProtocolVersion,
+    pub runner_id: RunnerId,
     pub cancellation_request_id: CancellationRequestId,
     pub attempt_id: AttemptId,
     pub fencing_token: FencingToken,
     pub observation: CancelObservation,
+    /// Preserved adapter observation time; the engine never fabricates it.
+    pub observed_at: Timestamp,
+    /// Non-secret adapter evidence carried verbatim to the protocol boundary.
+    pub details: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CancellationResponse {
+    pub protocol_version: ProtocolVersion,
+    pub attempt_id: AttemptId,
+    pub cancellation_request_id: CancellationRequestId,
+    pub state: AttemptState,
+    pub replayed: bool,
+    pub committed_at: Timestamp,
 }
 
 /// Typed transport seam. The frozen fixtures specify payloads but not an
@@ -401,7 +417,7 @@ pub trait PullProtocol: Send + Sync {
         &self,
         session: &RunnerSession,
         report: CancellationReport,
-    ) -> Result<(), ProtocolClientError>;
+    ) -> Result<CancellationResponse, ProtocolClientError>;
 
     async fn observe_recovery(
         &self,
