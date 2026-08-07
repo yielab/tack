@@ -130,3 +130,18 @@
   `Conflict`; their incomplete historical response is not treated as authoritative. Focused
   coverage includes false-free capacity, multi-lease canonical replay, stale lease, response
   loss after clock advance, changed-input no-write, and replay-insert rollback.
+
+### Cancellation observation correction
+
+- Migration 057 gives cancellation replay records a canonical fingerprint and authoritative
+  response. `CancellationObservationInput` binds runner/fence, cancellation ID, `observed_at`,
+  and canonical JSON `details` plus `observation`; the response records attempt, ID, state and
+  committed timestamp. Authentication occurs before replay lookup, so a foreign/stale fence
+  cannot obtain a replay response, while an authenticated terminal retry can.
+- The typed outcome separates `Cancelled` and `Replayed` from `Conflict`, `Stale`,
+  `AlreadyTerminal`, and `Ambiguous`; terminal or unsupported/missing-cancellation states are
+  never reported as a successful cancellation. Capacity restoration is capped at total capacity.
+- Pre-057 cancellation rows have empty fingerprint/response defaults and return `Conflict` on a
+  retry rather than fabricating a response. Focused coverage includes response-loss replay after
+  time advance, semantic JSON replay, changed-input no-write, foreign fence, corrupt response,
+  capped capacity, transaction rollback, and terminal/ambiguous classifications.

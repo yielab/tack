@@ -229,10 +229,31 @@ pub enum RecoveryClassification {
     SafePreSpawnRequeue,
     NeedsOperator,
 }
+#[derive(Debug, Clone)]
+pub struct CancellationObservationInput<'a> {
+    pub runner_id: &'a str,
+    pub attempt_id: &'a str,
+    pub fencing_token: i64,
+    pub cancellation_request_id: &'a str,
+    pub observed_at: DateTime<Utc>,
+    pub details: &'a str,
+    pub observation: &'a str,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CancellationResponse {
+    pub attempt_id: String,
+    pub cancellation_request_id: String,
+    pub state: String,
+    pub committed_at: String,
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CancellationObservation {
-    Cancelled { replayed: bool },
+    Cancelled(CancellationResponse),
+    Replayed(CancellationResponse),
+    Conflict,
     Stale,
+    AlreadyTerminal { state: String },
+    Ambiguous { state: String },
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompletionResponse {
@@ -453,6 +474,50 @@ fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, sqlx::
         heartbeat_id: required_string(object, "heartbeat_id")?,
         accepted_at,
         leases,
+    })
+}
+
+fn cancellation_fingerprint(
+    input: &CancellationObservationInput<'_>,
+) -> Result<String, sqlx::Error> {
+    let details: serde_json::Value = serde_json::from_str(input.details)
+        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+    let observation: serde_json::Value = serde_json::from_str(input.observation)
+        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+    serde_json::to_string(&serde_json::json!({
+        "runner_id": input.runner_id,
+        "attempt_id": input.attempt_id,
+        "fencing_token": input.fencing_token,
+        "cancellation_request_id": input.cancellation_request_id,
+        "observed_at": input.observed_at.to_rfc3339(),
+        "details": canonical_json(details),
+        "observation": canonical_json(observation),
+    }))
+    .map_err(|error| sqlx::Error::Protocol(error.to_string()))
+}
+
+fn cancellation_response(serialized: &str) -> Result<CancellationResponse, sqlx::Error> {
+    let value: serde_json::Value = serde_json::from_str(serialized)
+        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| sqlx::Error::Protocol("invalid cancellation replay response".into()))?;
+    let required = |field: &str| {
+        object
+            .get(field)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                sqlx::Error::Protocol(format!(
+                    "invalid cancellation replay response field: {field}"
+                ))
+            })
+    };
+    Ok(CancellationResponse {
+        attempt_id: required("attempt_id")?,
+        cancellation_request_id: required("cancellation_request_id")?,
+        state: required("state")?,
+        committed_at: required("committed_at")?,
     })
 }
 
@@ -820,32 +885,83 @@ impl Repository {
 
     pub async fn observe_cancellation(
         &self,
-        runner_id: &str,
-        attempt_id: &str,
-        fence: i64,
-        cancellation_request_id: &str,
+        input: CancellationObservationInput<'_>,
         clock: &dyn ExecutionClock,
     ) -> Result<CancellationObservation, sqlx::Error> {
         let now = stamp(clock);
+        let fingerprint = cancellation_fingerprint(&input)?;
         let mut tx = self.pool().begin().await?;
-        if sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM execution_cancellation_replays WHERE attempt_id=? AND cancellation_request_id=?)").bind(attempt_id).bind(cancellation_request_id).fetch_one(&mut *tx).await? { tx.commit().await?; return Ok(CancellationObservation::Cancelled{replayed:true}); }
-        let row=sqlx::query("SELECT a.request_id,a.runner_id FROM execution_attempts a JOIN execution_requests r ON r.id=a.request_id WHERE a.id=? AND a.runner_id=? AND a.fencing_token=? AND a.state IN ('leased','preparing','running','waiting_decision') AND a.lease_expires_at>? AND r.cancellation_requested_at IS NOT NULL").bind(attempt_id).bind(runner_id).bind(fence).bind(&now).fetch_optional(&mut *tx).await?;
+        let row = sqlx::query("SELECT a.request_id,a.runner_id,a.state,a.lease_expires_at,r.cancellation_requested_at FROM execution_attempts a JOIN execution_requests r ON r.id=a.request_id WHERE a.id=? AND a.runner_id=? AND a.fencing_token=?")
+            .bind(input.attempt_id).bind(input.runner_id).bind(input.fencing_token).fetch_optional(&mut *tx).await?;
         let Some(row) = row else {
             tx.commit().await?;
             return Ok(CancellationObservation::Stale);
         };
+        if let Some(row) = sqlx::query("SELECT fingerprint,response FROM execution_cancellation_replays WHERE attempt_id=? AND cancellation_request_id=?")
+            .bind(input.attempt_id).bind(input.cancellation_request_id).fetch_optional(&mut *tx).await? {
+            let stored_fingerprint: String = row.get("fingerprint");
+            if stored_fingerprint != fingerprint {
+                tx.commit().await?;
+                return Ok(CancellationObservation::Conflict);
+            }
+            let response: String = row.get("response");
+            let response = cancellation_response(&response)?;
+            tx.commit().await?;
+            return Ok(CancellationObservation::Replayed(response));
+        }
         let request: String = row.get("request_id");
         let owner: String = row.get("runner_id");
-        sqlx::query("UPDATE execution_attempts SET state='cancelled',completion_id=?,ended_at=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=?").bind(cancellation_request_id).bind(&now).bind(&now).bind(attempt_id).bind(runner_id).bind(fence).execute(&mut *tx).await?;
+        let state: String = row.get("state");
+        if terminal(&state) {
+            tx.commit().await?;
+            return Ok(CancellationObservation::AlreadyTerminal { state });
+        }
+        if !matches!(
+            state.as_str(),
+            "leased" | "preparing" | "running" | "waiting_decision"
+        ) {
+            tx.commit().await?;
+            return Ok(CancellationObservation::Ambiguous { state });
+        }
+        let expires: String = row.get("lease_expires_at");
+        if expires <= now {
+            tx.commit().await?;
+            return Ok(CancellationObservation::Stale);
+        }
+        let cancellation_requested_at: Option<String> = row.get("cancellation_requested_at");
+        if cancellation_requested_at.is_none() {
+            tx.commit().await?;
+            return Ok(CancellationObservation::Ambiguous { state });
+        }
+        let updated = sqlx::query("UPDATE execution_attempts SET state='cancelled',completion_id=?,ended_at=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at>?")
+            .bind(input.cancellation_request_id).bind(&now).bind(&now).bind(input.attempt_id).bind(input.runner_id).bind(input.fencing_token).bind(&now).execute(&mut *tx).await?;
+        if updated.rows_affected() != 1 {
+            tx.rollback().await?;
+            return Ok(CancellationObservation::Ambiguous { state });
+        }
         sqlx::query("UPDATE execution_requests SET state='cancelled',updated_at=? WHERE id=?")
             .bind(&now)
             .bind(request)
             .execute(&mut *tx)
             .await?;
-        sqlx::query("UPDATE agent_runners SET available_capacity=available_capacity+1,updated_at=? WHERE id=?").bind(&now).bind(owner).execute(&mut *tx).await?;
-        sqlx::query("INSERT INTO execution_cancellation_replays(attempt_id,cancellation_request_id,state,created_at) VALUES(?,?, 'cancelled',?)").bind(attempt_id).bind(cancellation_request_id).bind(&now).execute(&mut *tx).await?;
+        sqlx::query("UPDATE agent_runners SET available_capacity=MIN(total_capacity,available_capacity+1),updated_at=? WHERE id=?").bind(&now).bind(owner).execute(&mut *tx).await?;
+        let response = CancellationResponse {
+            attempt_id: input.attempt_id.into(),
+            cancellation_request_id: input.cancellation_request_id.into(),
+            state: "cancelled".into(),
+            committed_at: now.clone(),
+        };
+        let serialized_response = serde_json::json!({
+            "attempt_id": response.attempt_id,
+            "cancellation_request_id": response.cancellation_request_id,
+            "state": response.state,
+            "committed_at": response.committed_at,
+        })
+        .to_string();
+        sqlx::query("INSERT INTO execution_cancellation_replays(attempt_id,cancellation_request_id,state,fingerprint,response,created_at) VALUES(?,?, 'cancelled',?,?,?)")
+            .bind(input.attempt_id).bind(input.cancellation_request_id).bind(fingerprint).bind(serialized_response).bind(&now).execute(&mut *tx).await?;
         tx.commit().await?;
-        Ok(CancellationObservation::Cancelled { replayed: false })
+        Ok(CancellationObservation::Cancelled(response))
     }
     /// Store only a token hash. Tokens are tied to a pre-created runner so a
     /// redemption can atomically consume the token and activate that identity.

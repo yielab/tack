@@ -7,10 +7,10 @@ use sqlx::Row;
 use tack_db::{
     Repository, init_pool, migrations,
     repo::execution::{
-        ClaimReplayResult, Completion, CompletionResult, EnqueueResult, EnrollmentToken,
-        EventApplyResult, EventBatch, ExecutionClock, HeartbeatBatchResult, HeartbeatLease,
-        NewAgentProfile, NewEvent, NewExecutionRequest, NewRunner, RecoveryClassification,
-        RedeemEnrollmentResult,
+        CancellationObservation, CancellationObservationInput, ClaimReplayResult, Completion,
+        CompletionResult, EnqueueResult, EnrollmentToken, EventApplyResult, EventBatch,
+        ExecutionClock, HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewEvent,
+        NewExecutionRequest, NewRunner, RecoveryClassification, RedeemEnrollmentResult,
     },
 };
 
@@ -271,30 +271,40 @@ async fn structured_events_and_cancellation_observation_replay() {
             .await
             .unwrap()
     );
-    assert_eq!(
+    assert!(matches!(
         repo.observe_cancellation(
-            "runner-a",
-            "attempt-z",
-            lease.fencing_token,
-            "cancel-z",
+            CancellationObservationInput {
+                runner_id: "runner-a",
+                attempt_id: "attempt-z",
+                fencing_token: lease.fencing_token,
+                cancellation_request_id: "cancel-z",
+                observed_at: clock.now(),
+                details: "{}",
+                observation: "{}",
+            },
             &clock
         )
         .await
         .unwrap(),
-        tack_db::repo::execution::CancellationObservation::Cancelled { replayed: false }
-    );
-    assert_eq!(
+        CancellationObservation::Cancelled(_)
+    ));
+    assert!(matches!(
         repo.observe_cancellation(
-            "runner-a",
-            "attempt-z",
-            lease.fencing_token,
-            "cancel-z",
+            CancellationObservationInput {
+                runner_id: "runner-a",
+                attempt_id: "attempt-z",
+                fencing_token: lease.fencing_token,
+                cancellation_request_id: "cancel-z",
+                observed_at: clock.now(),
+                details: "{}",
+                observation: "{}",
+            },
             &clock
         )
         .await
         .unwrap(),
-        tack_db::repo::execution::CancellationObservation::Cancelled { replayed: true }
-    );
+        CancellationObservation::Replayed(_)
+    ));
 }
 
 #[tokio::test]
@@ -662,6 +672,322 @@ fn completion_input<'a>(
         actual_execution: r#"{"result":{"b":2,"a":1}}"#,
         usage: r#"{"output_tokens":2,"input_tokens":1}"#,
     }
+}
+
+fn cancellation_input<'a>(
+    attempt_id: &'a str,
+    fencing_token: i64,
+    cancellation_request_id: &'a str,
+    observed_at: DateTime<Utc>,
+) -> CancellationObservationInput<'a> {
+    CancellationObservationInput {
+        runner_id: "runner-a",
+        attempt_id,
+        fencing_token,
+        cancellation_request_id,
+        observed_at,
+        details: r#"{"detail":{"b":2,"a":1}}"#,
+        observation: r#"{"status":"cancelled","signals":["runner"]}"#,
+    }
+}
+
+#[tokio::test]
+async fn cancellation_response_loss_replays_authoritative_response_after_time_advance() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-cancellation-loss",
+        "attempt-cancellation-loss",
+    )
+    .await;
+    assert!(
+        repo.request_execution_cancellation("request-cancellation-loss", &clock)
+            .await
+            .unwrap()
+    );
+    let observed_at = clock.now();
+    let input = cancellation_input(
+        "attempt-cancellation-loss",
+        fence,
+        "cancellation-loss",
+        observed_at,
+    );
+    let first = repo
+        .observe_cancellation(input.clone(), &clock)
+        .await
+        .unwrap();
+    let CancellationObservation::Cancelled(first) = first else {
+        panic!("first cancellation observation must commit");
+    };
+    clock.advance(Duration::seconds(61));
+    let semantic_retry = CancellationObservationInput {
+        details: r#"{"detail":{"a":1,"b":2}}"#,
+        observation: r#"{"signals":["runner"],"status":"cancelled"}"#,
+        ..input
+    };
+    let replay = repo
+        .observe_cancellation(semantic_retry, &clock)
+        .await
+        .unwrap();
+    let CancellationObservation::Replayed(replay) = replay else {
+        panic!("lost response retry must replay");
+    };
+    assert_eq!(replay, first);
+}
+
+#[tokio::test]
+async fn cancellation_changed_same_id_conflicts_without_write() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-cancellation-conflict",
+        "attempt-cancellation-conflict",
+    )
+    .await;
+    repo.request_execution_cancellation("request-cancellation-conflict", &clock)
+        .await
+        .unwrap();
+    let input = cancellation_input(
+        "attempt-cancellation-conflict",
+        fence,
+        "cancellation-conflict",
+        clock.now(),
+    );
+    repo.observe_cancellation(input.clone(), &clock)
+        .await
+        .unwrap();
+    let changed = CancellationObservationInput {
+        details: r#"{"detail":"changed"}"#,
+        ..input
+    };
+    assert_eq!(
+        repo.observe_cancellation(changed, &clock).await.unwrap(),
+        CancellationObservation::Conflict
+    );
+    let completion_id: String = sqlx::query_scalar(
+        "SELECT completion_id FROM execution_attempts WHERE id = 'attempt-cancellation-conflict'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    let capacity: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(completion_id, "cancellation-conflict");
+    assert_eq!(capacity, 1);
+}
+
+#[tokio::test]
+async fn cancellation_foreign_fence_is_stale_before_replay_lookup() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-cancellation-stale",
+        "attempt-cancellation-stale",
+    )
+    .await;
+    repo.request_execution_cancellation("request-cancellation-stale", &clock)
+        .await
+        .unwrap();
+    let input = cancellation_input(
+        "attempt-cancellation-stale",
+        fence,
+        "cancellation-stale",
+        clock.now(),
+    );
+    repo.observe_cancellation(input.clone(), &clock)
+        .await
+        .unwrap();
+    let foreign = CancellationObservationInput {
+        fencing_token: fence + 1,
+        ..input
+    };
+    assert_eq!(
+        repo.observe_cancellation(foreign, &clock).await.unwrap(),
+        CancellationObservation::Stale
+    );
+}
+
+#[tokio::test]
+async fn cancellation_corrupt_replay_response_fails_closed() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-cancellation-corrupt",
+        "attempt-cancellation-corrupt",
+    )
+    .await;
+    repo.request_execution_cancellation("request-cancellation-corrupt", &clock)
+        .await
+        .unwrap();
+    let input = cancellation_input(
+        "attempt-cancellation-corrupt",
+        fence,
+        "cancellation-corrupt",
+        clock.now(),
+    );
+    repo.observe_cancellation(input.clone(), &clock)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE execution_cancellation_replays SET response = '{}' WHERE attempt_id = 'attempt-cancellation-corrupt'")
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    assert!(repo.observe_cancellation(input, &clock).await.is_err());
+}
+
+#[tokio::test]
+async fn cancellation_capacity_restore_is_capped_and_replay_safe() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-cancellation-cap",
+        "attempt-cancellation-cap",
+    )
+    .await;
+    repo.request_execution_cancellation("request-cancellation-cap", &clock)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE agent_runners SET available_capacity = total_capacity WHERE id = 'runner-a'",
+    )
+    .execute(repo.pool())
+    .await
+    .unwrap();
+    let input = cancellation_input(
+        "attempt-cancellation-cap",
+        fence,
+        "cancellation-cap",
+        clock.now(),
+    );
+    repo.observe_cancellation(input.clone(), &clock)
+        .await
+        .unwrap();
+    repo.observe_cancellation(input, &clock).await.unwrap();
+    let capacity: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(capacity, 1);
+}
+
+#[tokio::test]
+async fn cancellation_replay_insert_failure_rolls_back_terminal_transition() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-cancellation-rollback",
+        "attempt-cancellation-rollback",
+    )
+    .await;
+    repo.request_execution_cancellation("request-cancellation-rollback", &clock)
+        .await
+        .unwrap();
+    sqlx::query("CREATE TRIGGER fail_cancellation_replay BEFORE INSERT ON execution_cancellation_replays BEGIN SELECT RAISE(ABORT, 'forced cancellation replay failure'); END")
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    assert!(
+        repo.observe_cancellation(
+            cancellation_input(
+                "attempt-cancellation-rollback",
+                fence,
+                "cancellation-rollback",
+                clock.now(),
+            ),
+            &clock,
+        )
+        .await
+        .is_err()
+    );
+    let attempt_state: String = sqlx::query_scalar(
+        "SELECT state FROM execution_attempts WHERE id = 'attempt-cancellation-rollback'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    let request_state: String = sqlx::query_scalar(
+        "SELECT state FROM execution_requests WHERE id = 'request-cancellation-rollback'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    let capacity: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(attempt_state, "leased");
+    assert_eq!(request_state, "leased");
+    assert_eq!(capacity, 0);
+}
+
+#[tokio::test]
+async fn cancellation_terminal_and_missing_request_are_not_cancelled_success() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-cancellation-outcomes",
+        "attempt-cancellation-outcomes",
+    )
+    .await;
+    let ambiguous = repo
+        .observe_cancellation(
+            cancellation_input(
+                "attempt-cancellation-outcomes",
+                fence,
+                "cancellation-ambiguous",
+                clock.now(),
+            ),
+            &clock,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        ambiguous,
+        CancellationObservation::Ambiguous {
+            state: "leased".into()
+        }
+    );
+    sqlx::query("UPDATE execution_attempts SET state = 'succeeded' WHERE id = 'attempt-cancellation-outcomes'")
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    let terminal = repo
+        .observe_cancellation(
+            cancellation_input(
+                "attempt-cancellation-outcomes",
+                fence,
+                "cancellation-terminal",
+                clock.now(),
+            ),
+            &clock,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        terminal,
+        CancellationObservation::AlreadyTerminal {
+            state: "succeeded".into()
+        }
+    );
 }
 
 #[tokio::test]
