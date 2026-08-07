@@ -105,7 +105,7 @@
   required final event checkpoint, and the terminal compare-and-set validates attempt, runner,
   fence, active lease and that checkpoint in one statement. Completion fingerprints bind every
   immutable request field (including runner/fence/checkpoint) and recursively canonicalize the
-  structured execution and usage JSON.
+  structured terminal-reason, execution and usage JSON.
 - Authentication precedes replay lookup. A matching authenticated terminal retry returns the
   parsed stored response; malformed stored data fails closed. A stale or foreign runner/fence
   cannot read a response. Pre-055 terminal attempts with no durable response are `Conflict`,
