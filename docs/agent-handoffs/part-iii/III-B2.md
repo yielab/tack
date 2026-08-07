@@ -48,3 +48,18 @@
 - Remaining blocker, deliberately not guessed: the requested all-in-one heartbeat batch and C4
   recovery transition/audit APIs still need their dedicated repository methods and fault tests.
   The tables are present but C2/C4 must not treat their absence as a completed recovery protocol.
+
+### Reporting/recovery follow-up
+
+- Added migration 052 and atomic `heartbeat_batch`: runner capacity/heartbeat, every fenced
+  lease renewal and cancellation flags commit with a durable runner+heartbeat-id replay record;
+  a stale lease rolls the whole transaction back.
+- Added `recover_attempt` with a keyed durable audit. `SafePreSpawnRequeue` is accepted only
+  for expired attempts with no `started_at`; all ambiguous/post-spawn recovery must request
+  `NeedsOperator`. Each successful recovery normalizes capacity and writes exactly one audit.
+- New fake-clock test proves heartbeat replay and recovery audit idempotency (focused DB suite:
+  9 passed; Clippy and format passed).
+- Still required before C2/C4 treats the repository as feature-complete: structured event-batch
+  accepted-vs-duplicate result and durable cancellation-observation replay APIs. Existing event
+  checkpoint and completion-id persistence remain safe compatibility paths, but do not expose
+  the richer protocol result yet.

@@ -101,6 +101,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("049_runner_credentials_and_enrollment", &MIGRATION_049[..]),
         ordinary("050_execution_claim_replays", &MIGRATION_050[..]),
         ordinary("051_execution_recovery_audits", &MIGRATION_051[..]),
+        ordinary("052_execution_report_replays", &MIGRATION_052[..]),
     ]
 }
 
@@ -1511,4 +1512,9 @@ const MIGRATION_050: [&str; 2] = [
 const MIGRATION_051: [&str; 2] = [
     "CREATE TABLE execution_recovery_audits (attempt_id TEXT NOT NULL REFERENCES execution_attempts(id) ON DELETE CASCADE, recovery_key TEXT NOT NULL, classification TEXT NOT NULL, details TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, PRIMARY KEY (attempt_id, recovery_key))",
     "CREATE INDEX idx_execution_recovery_audits_attempt ON execution_recovery_audits(attempt_id)",
+];
+
+const MIGRATION_052: [&str; 2] = [
+    "CREATE TABLE execution_heartbeat_replays (runner_id TEXT NOT NULL REFERENCES agent_runners(id) ON DELETE CASCADE, heartbeat_id TEXT NOT NULL, response TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (runner_id, heartbeat_id))",
+    "CREATE TABLE execution_cancellation_replays (attempt_id TEXT NOT NULL REFERENCES execution_attempts(id) ON DELETE CASCADE, cancellation_request_id TEXT NOT NULL, state TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (attempt_id, cancellation_request_id))",
 ];
