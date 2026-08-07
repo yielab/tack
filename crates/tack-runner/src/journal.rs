@@ -86,11 +86,17 @@ pub enum JournalError {
 #[derive(Debug, Clone)]
 pub struct OwnerOnlyJournal {
     root: PathBuf,
+    #[cfg(test)]
+    fail_next_update: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl OwnerOnlyJournal {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+            #[cfg(test)]
+            fail_next_update: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
     }
 
     pub fn root(&self) -> &Path {
@@ -104,11 +110,21 @@ impl OwnerOnlyJournal {
 
     pub fn persist_before_spawn(&self, record: &AttemptJournal) -> Result<(), JournalError> {
         self.ensure_layout()?;
+        if self.quarantine_path(&record.attempt_id).exists() {
+            return Err(JournalError::AlreadyExists);
+        }
         let bytes = toml::to_string(record).map_err(|_| JournalError::Serialization)?;
         atomic_create_private(&self.journal_path(&record.attempt_id), bytes.as_bytes())
     }
 
     pub fn update(&self, record: &AttemptJournal) -> Result<(), JournalError> {
+        #[cfg(test)]
+        if self
+            .fail_next_update
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err(JournalError::Io);
+        }
         self.ensure_layout()?;
         let path = self.journal_path(&record.attempt_id);
         if !path.exists() {
@@ -116,6 +132,12 @@ impl OwnerOnlyJournal {
         }
         let bytes = toml::to_string(record).map_err(|_| JournalError::Serialization)?;
         atomic_replace_private(&path, bytes.as_bytes())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fail_next_update_for_test(&self) {
+        self.fail_next_update
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub fn load(&self, attempt_id: &AttemptId) -> Result<AttemptJournal, JournalError> {
@@ -147,15 +169,21 @@ impl OwnerOnlyJournal {
         Ok(records)
     }
 
-    /// Preserve uncertain process ownership evidence rather than deleting it.
-    pub fn quarantine(&self, mut record: AttemptJournal) -> Result<(), JournalError> {
-        record.state = JournalState::Quarantined;
-        self.update(&record)?;
-        let destination = self
-            .quarantine_dir()
-            .join(format!("{}.toml", encode_id(record.attempt_id.as_str())));
-        fs::rename(self.journal_path(&record.attempt_id), destination)
-            .map_err(|_| JournalError::Io)?;
+    /// Moves only server-acknowledged ambiguous evidence out of restart scans.
+    /// The source is deliberately left untouched until the non-overwriting move
+    /// is durable, so a failed delivery remains retryable on the next restart.
+    pub fn quarantine(&self, record: &AttemptJournal) -> Result<(), JournalError> {
+        self.ensure_layout()?;
+        let source = self.journal_path(&record.attempt_id);
+        let destination = self.quarantine_path(&record.attempt_id);
+        if destination.exists() {
+            return Err(JournalError::AlreadyExists);
+        }
+        fs::rename(&source, &destination).map_err(|_| JournalError::Io)?;
+        // `journal` and `quarantine` are sibling directories. Sync both so a
+        // cross-directory rename survives a crash without silently losing the
+        // last recoverable record.
+        sync_directory(&self.journal_dir())?;
         sync_directory(&self.quarantine_dir())
     }
 
@@ -178,13 +206,31 @@ impl OwnerOnlyJournal {
         self.root.join("quarantine")
     }
 
+    fn quarantine_path(&self, attempt_id: &AttemptId) -> PathBuf {
+        self.quarantine_dir()
+            .join(format!("{}.toml", encode_id(attempt_id.as_str())))
+    }
+
     fn ensure_layout(&self) -> Result<(), JournalError> {
-        for directory in [&self.root, &self.journal_dir(), &self.quarantine_dir()] {
-            fs::create_dir_all(directory).map_err(|_| JournalError::Initialization)?;
-            make_owner_only(directory).map_err(|_| JournalError::Initialization)?;
-        }
+        create_secure_directory(&self.root)?;
+        create_secure_directory(&self.journal_dir())?;
+        create_secure_directory(&self.quarantine_dir())?;
         Ok(())
     }
+}
+
+fn create_secure_directory(path: &Path) -> Result<(), JournalError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            return Err(JournalError::Initialization);
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir(path).map_err(|_| JournalError::Initialization)?;
+        }
+        Err(_) => return Err(JournalError::Initialization),
+    }
+    make_owner_only(path).map_err(|_| JournalError::Initialization)
 }
 
 fn encode_id(value: &str) -> String {
@@ -227,15 +273,33 @@ fn write_private_temporary(path: &Path, bytes: &[u8]) -> Result<PathBuf, Journal
         name.to_string_lossy(),
         std::process::id()
     ));
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temporary)
-        .map_err(|_| JournalError::Io)?;
-    make_owner_only(&temporary).map_err(|_| JournalError::Io)?;
+    let mut file = open_private_new(&temporary)?;
     file.write_all(bytes).map_err(|_| JournalError::Io)?;
     file.sync_all().map_err(|_| JournalError::Io)?;
     Ok(temporary)
+}
+
+#[cfg(unix)]
+fn open_private_new(path: &Path) -> Result<File, JournalError> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(|_| JournalError::Io)
+}
+
+#[cfg(not(unix))]
+fn open_private_new(path: &Path) -> Result<File, JournalError> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|_| JournalError::Io)?;
+    make_owner_only(path).map_err(|_| JournalError::Io)?;
+    Ok(file)
 }
 
 fn sync_directory(path: &Path) -> Result<(), JournalError> {
@@ -331,5 +395,58 @@ mod tests {
             assert_eq!(mode & 0o077, 0, "journal is owner-only");
         }
         fs::remove_dir_all(root).expect("remove temporary journal root");
+    }
+
+    #[test]
+    fn quarantined_attempt_cannot_be_persisted_for_a_second_spawn() {
+        let root = temporary_root();
+        let journal = OwnerOnlyJournal::new(&root);
+        let record = record();
+        journal
+            .persist_before_spawn(&record)
+            .expect("persist journal");
+        journal.quarantine(&record).expect("quarantine journal");
+
+        assert!(matches!(
+            journal.quarantine(&record),
+            Err(JournalError::AlreadyExists)
+        ));
+        assert!(matches!(
+            journal.persist_before_spawn(&record),
+            Err(JournalError::AlreadyExists)
+        ));
+        fs::remove_dir_all(root).expect("remove temporary journal root");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_journal_directories_are_rejected() {
+        use std::os::unix::fs::symlink;
+
+        for name in ["root", "journal", "quarantine"] {
+            let root = temporary_root();
+            let target = root.with_extension(format!("{name}-target"));
+            fs::create_dir_all(&target).expect("target directory");
+            match name {
+                "root" => symlink(&target, &root).expect("root symlink"),
+                "journal" => {
+                    fs::create_dir(&root).expect("root directory");
+                    symlink(&target, root.join("journal")).expect("journal symlink");
+                }
+                "quarantine" => {
+                    fs::create_dir_all(root.join("journal")).expect("journal directory");
+                    symlink(&target, root.join("quarantine")).expect("quarantine symlink");
+                }
+                _ => unreachable!(),
+            }
+            let journal = OwnerOnlyJournal::new(&root);
+            assert!(matches!(
+                journal.persist_before_spawn(&record()),
+                Err(JournalError::Initialization)
+            ));
+            let _ = fs::remove_file(&root);
+            let _ = fs::remove_dir_all(&root);
+            fs::remove_dir_all(target).expect("remove target");
+        }
     }
 }

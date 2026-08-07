@@ -42,3 +42,26 @@
   commit. C2/C5 may implement `PullProtocol` without changing engine ownership; D1–D3 implement
   `HarnessAdapter` in adapter-owned files. Do not alter root Cargo or `lib.rs` as part of C3.
 - Checklist: no unowned files, no live secret, no panic stub, no blind retry.
+
+## Follow-up hardening
+
+- Scope: `client`, `journal`, `workspace`, and `engine` only; no Cargo, fixtures, API, or C4
+  test edits.
+- Recovery delivery is now ordered: keep the unresolved local record → report the exact safe or
+  ambiguous observation → move to quarantine only after the server accepts ambiguity. A failed
+  report yields `RecoveryPending`, leaving evidence in the restart scan; it never becomes an
+  unscanned local quarantine by itself. `ProcessRunning`, `Ambiguous`, and reconcile failure all
+  use the ambiguous path. `ProcessStopped` alone may record a safe recovery observation.
+- Every post-spawn journal/report/heartbeat/cancellation failure attempts ambiguous recovery and
+  process cancellation. A failed post-spawn journal update cannot escape directly while a local
+  process may still live.
+- Journal hardening: duplicate quarantine destinations are rejected; a quarantine move syncs both
+  sibling directories; a quarantined attempt blocks a later pre-spawn create; Unix temporary
+  journal files are opened with mode `0600`; and symlinked state-root/journal/quarantine paths
+  are rejected before use.
+- Workspace hardening: an existing attempt directory symlink is rejected before provisioning,
+  and cleanup requires both normal root/path checks and a matching `.tack-attempt` marker.
+- Additional adversarial tests cover failed recovery delivery then retry with no respawn,
+  running-process recovery quarantine, duplicate quarantined claim prevention, post-spawn
+  journal-update ambiguity/cancel, directory symlinks, workspace-path symlink, and marker
+  tampering.
