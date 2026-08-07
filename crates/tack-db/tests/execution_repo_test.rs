@@ -52,6 +52,12 @@ async fn enrollment_token_is_single_use_expiry_and_revocation_fail_closed() {
             "credential-hash",
             clock.now() + Duration::days(1),
             "0.1",
+            "Runner A",
+            "{}",
+            1,
+            1,
+            "{}",
+            1,
             &clock
         )
         .await
@@ -64,6 +70,12 @@ async fn enrollment_token_is_single_use_expiry_and_revocation_fail_closed() {
             "other",
             clock.now() + Duration::days(1),
             "0.1",
+            "Runner A",
+            "{}",
+            1,
+            1,
+            "{}",
+            1,
             &clock
         )
         .await
@@ -92,6 +104,12 @@ async fn enrollment_token_is_single_use_expiry_and_revocation_fail_closed() {
             "other",
             clock.now() + Duration::days(1),
             "0.1",
+            "Runner A",
+            "{}",
+            1,
+            1,
+            "{}",
+            1,
             &clock
         )
         .await
@@ -203,6 +221,76 @@ async fn heartbeat_replays_and_recovery_is_audited_once() {
     assert_eq!(audits, 1);
 }
 
+#[tokio::test]
+async fn structured_events_and_cancellation_observation_replay() {
+    let (repo, item_id, clock) = ready_repo().await;
+    repo.enqueue_execution(request("request-z", &item_id, "key-z", "same"), &clock)
+        .await
+        .unwrap();
+    let lease = repo
+        .claim_execution("runner-a", "attempt-z", Duration::seconds(60), &clock)
+        .await
+        .unwrap()
+        .unwrap();
+    let event = NewEvent {
+        id: "row-z",
+        event_id: "event-z",
+        sequence: 1,
+        source: "runner",
+        kind: "progress",
+        payload: "{}",
+        occurred_at: clock.now(),
+    };
+    let batch = EventBatch {
+        runner_id: "runner-a",
+        attempt_id: "attempt-z",
+        fencing_token: lease.fencing_token,
+        previous_checkpoint: None,
+        checkpoint: "checkpoint-z",
+    };
+    let first = repo
+        .append_execution_events_result(batch.clone(), std::slice::from_ref(&event), &clock)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.accepted_event_ids, vec!["event-z"]);
+    let replay = repo
+        .append_execution_events_result(batch, &[event], &clock)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(replay.duplicate_event_ids, vec!["event-z"]);
+    assert!(
+        repo.request_execution_cancellation("request-z", &clock)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        repo.observe_cancellation(
+            "runner-a",
+            "attempt-z",
+            lease.fencing_token,
+            "cancel-z",
+            &clock
+        )
+        .await
+        .unwrap(),
+        tack_db::repo::execution::CancellationObservation::Cancelled { replayed: false }
+    );
+    assert_eq!(
+        repo.observe_cancellation(
+            "runner-a",
+            "attempt-z",
+            lease.fencing_token,
+            "cancel-z",
+            &clock
+        )
+        .await
+        .unwrap(),
+        tack_db::repo::execution::CancellationObservation::Cancelled { replayed: true }
+    );
+}
+
 impl ExecutionClock for FakeClock {
     fn now(&self) -> DateTime<Utc> {
         *self.0.lock().unwrap()
@@ -271,6 +359,7 @@ fn request<'a>(
         status_map_policy_id: None,
         environment: "{}",
         metadata: "{}",
+        request_snapshot: r#"{"created_by":{"source":"operator","subject_id":"test"},"selector":{"kind":"exact_runner","runner_id":"runner-a"},"repository":{}}"#,
     }
 }
 

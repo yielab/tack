@@ -63,3 +63,15 @@
   accepted-vs-duplicate result and durable cancellation-observation replay APIs. Existing event
   checkpoint and completion-id persistence remain safe compatibility paths, but do not expose
   the richer protocol result yet.
+
+### Final hardening follow-up
+
+- Migration 053 stores the canonical immutable runner-v1 request snapshot. Claim fresh/replay
+  reads the same JSON fallibly and fails closed for the legacy `{}` default rather than silently
+  reconstructing a lossy payload.
+- Enrollment redemption now atomically consumes its hash-only token and persists runner name,
+  version, labels, capacity, capabilities, protocol, credential hash and expiry; revocation is
+  never cleared by enrollment.
+- Added structured event checkpoint results and durable cancellation observation replay, with
+  focused fake-clock repository coverage. Final focused command: `cargo test -p tack-db --test
+  execution_repo_test` (10 passed), plus `cargo fmt -p tack-db` and focused Clippy.
