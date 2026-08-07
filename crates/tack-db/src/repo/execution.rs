@@ -158,6 +158,14 @@ pub struct EnrollmentTokenMetadata {
     pub consumed_at: Option<String>,
     pub revoked_at: Option<String>,
 }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OperatorRequeueResult {
+    Requeued,
+    Replayed,
+    Conflict,
+    InvalidTransition,
+    NotFound,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RedeemEnrollmentResult {
@@ -258,6 +266,16 @@ impl Repository {
         token: EnrollmentToken<'_>,
         clock: &dyn ExecutionClock,
     ) -> Result<(), sqlx::Error> {
+        if token.runner_id != runner.id
+            || token.expires_at <= clock.now()
+            || runner.total_capacity < 0
+            || runner.available_capacity < 0
+            || runner.available_capacity > runner.total_capacity
+        {
+            return Err(sqlx::Error::Protocol(
+                "invalid pending runner/token input".into(),
+            ));
+        }
         let now = stamp(clock);
         let mut tx = self.pool().begin().await?;
         sqlx::query("INSERT INTO agent_runners(id,name,credential_hash,state,labels,total_capacity,available_capacity,capability_snapshot,protocol_version,created_at,updated_at) VALUES(?,?,?,'pending_enrollment',?,?,?,?,?,?,?)").bind(runner.id).bind(runner.name).bind("pending:no-credential").bind(runner.labels).bind(runner.total_capacity).bind(runner.available_capacity).bind(runner.capability_snapshot).bind(runner.protocol_version).bind(&now).bind(&now).execute(&mut *tx).await?;
@@ -306,20 +324,34 @@ impl Repository {
         actor: &str,
         reason_fingerprint: &str,
         clock: &dyn ExecutionClock,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<OperatorRequeueResult, sqlx::Error> {
         let now = stamp(clock);
         let mut tx = self.pool().begin().await?;
-        let key = format!("operator:{actor}:{reason_fingerprint}:{recovery_key}");
         let attempt:Option<String>=sqlx::query_scalar("SELECT id FROM execution_attempts WHERE request_id=? AND state='needs_operator' ORDER BY attempt_number DESC LIMIT 1").bind(request_id).fetch_optional(&mut *tx).await?;
         let Some(attempt) = attempt else {
             tx.commit().await?;
-            return Ok(false);
+            return Ok(OperatorRequeueResult::InvalidTransition);
         };
-        if sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM execution_recovery_audits WHERE attempt_id=? AND recovery_key=?)").bind(&attempt).bind(&key).fetch_one(&mut *tx).await?{tx.commit().await?;return Ok(true)};
-        if sqlx::query("UPDATE execution_requests SET state='queued',updated_at=? WHERE id=? AND state='needs_operator'").bind(&now).bind(request_id).execute(&mut *tx).await?.rows_affected()!=1{tx.rollback().await?;return Ok(false)};
-        sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,created_at) VALUES(?,?, 'operator_requeue', ?,?)").bind(&attempt).bind(&key).bind(reason_fingerprint).bind(&now).execute(&mut *tx).await?;
+        let details = format!("actor={actor};reason_fingerprint={reason_fingerprint}");
+        if let Some(old) = sqlx::query_scalar::<_, String>(
+            "SELECT details FROM execution_recovery_audits WHERE attempt_id=? AND recovery_key=?",
+        )
+        .bind(&attempt)
+        .bind(recovery_key)
+        .fetch_optional(&mut *tx)
+        .await?
+        {
+            tx.commit().await?;
+            return Ok(if old == details {
+                OperatorRequeueResult::Replayed
+            } else {
+                OperatorRequeueResult::Conflict
+            });
+        };
+        if sqlx::query("UPDATE execution_requests SET state='queued',cancellation_requested_at=NULL,updated_at=? WHERE id=? AND state='needs_operator'").bind(&now).bind(request_id).execute(&mut *tx).await?.rows_affected()!=1{tx.rollback().await?;return Ok(OperatorRequeueResult::InvalidTransition)};
+        sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,created_at) VALUES(?,?, 'operator_requeue', ?,?)").bind(&attempt).bind(recovery_key).bind(details).bind(&now).execute(&mut *tx).await?;
         tx.commit().await?;
-        Ok(true)
+        Ok(OperatorRequeueResult::Requeued)
     }
     pub async fn heartbeat_batch(
         &self,
