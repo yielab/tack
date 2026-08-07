@@ -8,7 +8,8 @@ use tack_db::{
     Repository, init_pool, migrations,
     repo::execution::{
         ClaimReplayResult, Completion, EnqueueResult, EnrollmentToken, EventBatch, ExecutionClock,
-        NewAgentProfile, NewEvent, NewExecutionRequest, NewRunner, RedeemEnrollmentResult,
+        HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewEvent, NewExecutionRequest,
+        NewRunner, RecoveryClassification, RedeemEnrollmentResult,
     },
 };
 
@@ -127,6 +128,79 @@ async fn claim_request_replay_returns_the_original_lease() {
         .unwrap();
     assert_eq!(first, replay);
     assert!(matches!(replay, ClaimReplayResult::Lease(_)));
+}
+
+#[tokio::test]
+async fn heartbeat_replays_and_recovery_is_audited_once() {
+    let (repo, item_id, clock) = ready_repo().await;
+    repo.enqueue_execution(request("request-a", &item_id, "key-a", "same"), &clock)
+        .await
+        .unwrap();
+    let lease = repo
+        .claim_execution("runner-a", "attempt-a", Duration::seconds(60), &clock)
+        .await
+        .unwrap()
+        .unwrap();
+    let leases = [HeartbeatLease {
+        attempt_id: "attempt-a",
+        fencing_token: lease.fencing_token,
+    }];
+    assert!(matches!(
+        repo.heartbeat_batch(
+            "runner-a",
+            "hb-1",
+            0,
+            &leases,
+            Duration::seconds(60),
+            &clock
+        )
+        .await
+        .unwrap(),
+        HeartbeatBatchResult::Accepted(_)
+    ));
+    assert!(matches!(
+        repo.heartbeat_batch(
+            "runner-a",
+            "hb-1",
+            0,
+            &leases,
+            Duration::seconds(60),
+            &clock
+        )
+        .await
+        .unwrap(),
+        HeartbeatBatchResult::Replayed(_)
+    ));
+    clock.advance(Duration::seconds(61));
+    assert!(
+        repo.recover_attempt(
+            "attempt-a",
+            "recover-1",
+            RecoveryClassification::SafePreSpawnRequeue,
+            "proven not spawned",
+            &clock
+        )
+        .await
+        .unwrap()
+    );
+    assert!(
+        repo.recover_attempt(
+            "attempt-a",
+            "recover-1",
+            RecoveryClassification::SafePreSpawnRequeue,
+            "proven not spawned",
+            &clock
+        )
+        .await
+        .unwrap()
+    );
+    let audits: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_recovery_audits WHERE attempt_id='attempt-a'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(audits, 1);
 }
 
 impl ExecutionClock for FakeClock {
