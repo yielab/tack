@@ -9101,8 +9101,8 @@ acceptance gate that can be verified without trusting its author's handoff.
 
 | Wave | Cards | Phases | Status |
 |---|---|---|---|
-| 0 — Clean boundary and safety | III-A0 · A1 · A2 · A3 · A4 | 50 | in progress — A0-A4 integrated; Rust, clippy/fmt, frontend unit/type/build/token lint, Chromium and Firefox green; WebKit blocked on host `libavif16`/`libwoff1` |
-| 1 — Domain, schema and runner skeleton | III-B1 · B2 · B3 · B4 | 51, 52 | blocked on the remaining Wave 0 WebKit gate |
+| 0 — Clean boundary and safety | III-A0 · A1 · A2 · A3 · A4 | 50 | complete — accepted integration SHA `f042085`; full Rust/frontend/docs/contracts and all three Playwright projects green |
+| 1 — Domain, schema and runner skeleton | III-B1 · B2 · B3 · B4 | 51, 52 | in progress — all branches start from accepted Wave 0 SHA `f042085` |
 | 2 — Pull protocol vertical slice | III-C1 · C2 · C3 · C4 · C5 | 52 | blocked on Wave 1 |
 | 3 — Real harness proof | III-D1 · D2 · D3 · D4 · D5 | 53 | blocked on mock vertical slice |
 | 4 — Fleet scheduling and PM UX | III-E1 · E2 · E3 · E4 · E5 · E6 | 54 | blocked on two proven harnesses |
