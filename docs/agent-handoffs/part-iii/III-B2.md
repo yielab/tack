@@ -64,6 +64,15 @@
   checkpoint and completion-id persistence remain safe compatibility paths, but do not expose
   the richer protocol result yet.
 
+### Runner-admin follow-up
+
+- Added transactionally-created pending runner plus token issuance, runner/token-id-scoped token
+  metadata and revocation, and runner revocation that revokes outstanding tokens. Redemption now
+  requires `pending_enrollment` and writes the full identity/capability exchange atomically.
+- Added idempotent audited operator requeue for `needs_operator`; its key includes recovery key,
+  actor and reason fingerprint and it never increments capacity.
+- Focused `execution_repo_test` passed 10 tests; format, focused Clippy and diff checks passed.
+
 ### Final hardening follow-up
 
 - Migration 053 stores the canonical immutable runner-v1 request snapshot. Claim fresh/replay
