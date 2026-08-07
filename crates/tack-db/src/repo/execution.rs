@@ -180,6 +180,38 @@ pub struct ClaimedExecution {
     pub request_snapshot: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttemptTransitionPhase {
+    Preparing,
+    Running,
+}
+
+#[derive(Debug, Clone)]
+pub struct AttemptTransitionInput<'a> {
+    pub runner_id: &'a str,
+    pub attempt_id: &'a str,
+    pub fencing_token: i64,
+    pub phase: AttemptTransitionPhase,
+    pub workspace_id: &'a str,
+    pub base_revision: &'a str,
+    pub process_id: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttemptTransitionResponse {
+    pub attempt_id: String,
+    pub state: String,
+    pub committed_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AttemptTransitionResult {
+    Applied(AttemptTransitionResponse),
+    Replayed(AttemptTransitionResponse),
+    Conflict,
+    Stale,
+}
+
 #[derive(Debug, Clone)]
 pub struct HeartbeatLease<'a> {
     pub attempt_id: &'a str,
@@ -1099,6 +1131,148 @@ impl Repository {
         tx.commit().await?;
         Ok(OperatorRequeueResult::Requeued)
     }
+    /// Persist the two runner start acknowledgements with natural idempotency.
+    /// Workspace facts are immutable once preparation is accepted; observing
+    /// a process is the only transition that may add `process_id`.
+    pub async fn transition_attempt_with_facts(
+        &self,
+        input: AttemptTransitionInput<'_>,
+        clock: &dyn ExecutionClock,
+    ) -> Result<AttemptTransitionResult, sqlx::Error> {
+        if input.workspace_id.is_empty()
+            || input.base_revision.is_empty()
+            || matches!(input.phase, AttemptTransitionPhase::Preparing)
+                && input.process_id.is_some()
+            || matches!(input.phase, AttemptTransitionPhase::Running)
+                && (input.process_id.is_none() || input.process_id.is_some_and(str::is_empty))
+        {
+            return Ok(AttemptTransitionResult::Conflict);
+        }
+
+        let now = stamp(clock);
+        let mut tx = self.pool().begin().await?;
+        let row = sqlx::query(
+            "SELECT a.state,a.workspace_id,a.base_revision,a.process_id,a.prepared_at,a.started_at \
+             FROM execution_attempts a JOIN agent_runners r ON r.id=a.runner_id \
+             WHERE a.id=? AND a.runner_id=? AND a.fencing_token=? \
+             AND a.lease_expires_at>? AND r.state='active' AND r.revoked_at IS NULL",
+        )
+        .bind(input.attempt_id)
+        .bind(input.runner_id)
+        .bind(input.fencing_token)
+        .bind(&now)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some(row) = row else {
+            tx.commit().await?;
+            return Ok(AttemptTransitionResult::Stale);
+        };
+
+        let state: String = row.get("state");
+        let workspace_id: Option<String> = row.get("workspace_id");
+        let base_revision: Option<String> = row.get("base_revision");
+        let process_id: Option<String> = row.get("process_id");
+        let prepared_at: Option<String> = row.get("prepared_at");
+        let started_at: Option<String> = row.get("started_at");
+        let exact_workspace = workspace_id.as_deref() == Some(input.workspace_id)
+            && base_revision.as_deref() == Some(input.base_revision);
+
+        match input.phase {
+            AttemptTransitionPhase::Preparing if exact_workspace && prepared_at.is_some() => {
+                tx.commit().await?;
+                let Some(committed_at) = prepared_at else {
+                    return Ok(AttemptTransitionResult::Conflict);
+                };
+                return Ok(AttemptTransitionResult::Replayed(
+                    AttemptTransitionResponse {
+                        attempt_id: input.attempt_id.into(),
+                        state: "preparing".into(),
+                        committed_at,
+                    },
+                ));
+            }
+            AttemptTransitionPhase::Running
+                if exact_workspace
+                    && process_id.as_deref() == input.process_id
+                    && started_at.is_some() =>
+            {
+                tx.commit().await?;
+                let Some(committed_at) = started_at else {
+                    return Ok(AttemptTransitionResult::Conflict);
+                };
+                return Ok(AttemptTransitionResult::Replayed(
+                    AttemptTransitionResponse {
+                        attempt_id: input.attempt_id.into(),
+                        state: "running".into(),
+                        committed_at,
+                    },
+                ));
+            }
+            AttemptTransitionPhase::Preparing if state == "leased" => {
+                let updated = sqlx::query(
+                    "UPDATE execution_attempts SET state='preparing',workspace_id=?,base_revision=?,prepared_at=?,updated_at=? \
+                     WHERE id=? AND runner_id=? AND fencing_token=? AND state='leased' AND lease_expires_at>?",
+                )
+                .bind(input.workspace_id)
+                .bind(input.base_revision)
+                .bind(&now)
+                .bind(&now)
+                .bind(input.attempt_id)
+                .bind(input.runner_id)
+                .bind(input.fencing_token)
+                .bind(&now)
+                .execute(&mut *tx)
+                .await?;
+                if updated.rows_affected() != 1 {
+                    tx.rollback().await?;
+                    return Ok(AttemptTransitionResult::Stale);
+                }
+                tx.commit().await?;
+                return Ok(AttemptTransitionResult::Applied(
+                    AttemptTransitionResponse {
+                        attempt_id: input.attempt_id.into(),
+                        state: "preparing".into(),
+                        committed_at: now,
+                    },
+                ));
+            }
+            AttemptTransitionPhase::Running if state == "preparing" && exact_workspace => {
+                let updated = sqlx::query(
+                    "UPDATE execution_attempts SET state='running',process_id=?,started_at=?,updated_at=? \
+                     WHERE id=? AND runner_id=? AND fencing_token=? AND state='preparing' \
+                     AND workspace_id=? AND base_revision=? AND lease_expires_at>?",
+                )
+                .bind(input.process_id)
+                .bind(&now)
+                .bind(&now)
+                .bind(input.attempt_id)
+                .bind(input.runner_id)
+                .bind(input.fencing_token)
+                .bind(input.workspace_id)
+                .bind(input.base_revision)
+                .bind(&now)
+                .execute(&mut *tx)
+                .await?;
+                if updated.rows_affected() != 1 {
+                    tx.rollback().await?;
+                    return Ok(AttemptTransitionResult::Stale);
+                }
+                tx.commit().await?;
+                return Ok(AttemptTransitionResult::Applied(
+                    AttemptTransitionResponse {
+                        attempt_id: input.attempt_id.into(),
+                        state: "running".into(),
+                        committed_at: now,
+                    },
+                ));
+            }
+            _ => {}
+        }
+
+        tx.commit().await?;
+        Ok(AttemptTransitionResult::Conflict)
+    }
+
     #[allow(clippy::too_many_arguments)] // protocol batch fields must fingerprint together
     pub async fn heartbeat_batch(
         &self,

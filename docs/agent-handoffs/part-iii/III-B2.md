@@ -209,3 +209,16 @@
 - Capacity restoration remains capped by `total_capacity` and is owned by terminal/recovery
   transitions only. Recovering to `needs_operator` releases one reservation; the subsequent
   operator requeue only changes request state and cannot release capacity again.
+
+### Runner start-transition integration amendment
+
+- Migration 061 adds durable `prepared_at` and `process_id` facts to execution attempts. The
+  typed `transition_attempt_with_facts` repository API is the sole C2 seam for accepting the
+  frozen `preparing` and `running` acknowledgements without route-owned lifecycle SQL.
+- The transition authenticates runner, attempt and fence against an active, non-revoked runner
+  and a strictly unexpired lease. Preparation freezes workspace and base revision; start may
+  only add a non-empty process ID after matching preparation. Exact natural retries return the
+  original committed timestamp, while changed facts, wrong ordering and stale authority cannot
+  write.
+- Focused coverage proves both transitions, response-loss replay after clock advance, immutable
+  fact conflicts, wrong-order rejection, stale fence/expiry rejection, and no-write behavior.
