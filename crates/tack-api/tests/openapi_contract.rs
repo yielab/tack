@@ -101,6 +101,44 @@ fn generated_spec_is_well_formed() {
     );
 }
 
+/// Item optimistic concurrency is a browser-visible wire contract. Keep the
+/// source annotations honest even while the generated artifacts are updated by
+/// their designated owner: a future handler edit must not silently omit the
+/// header or 412 semantics from `ApiDoc`.
+#[test]
+fn item_conditional_patch_contract_documents_etags_and_precondition_failure() {
+    let raw = serde_json::to_value(ApiDoc::openapi()).expect("serialize OpenAPI");
+    let item = &raw["paths"]["/api/items/{id}"];
+
+    let get_ok = &item["get"]["responses"]["200"];
+    assert!(
+        get_ok["headers"]["ETag"].is_object(),
+        "GET item 200 must document its ETag response header"
+    );
+
+    let patch = &item["patch"];
+    let if_match = patch["parameters"]
+        .as_array()
+        .expect("PATCH item parameters")
+        .iter()
+        .find(|parameter| parameter["name"] == "If-Match" && parameter["in"] == "header");
+    assert!(
+        if_match.is_some(),
+        "PATCH item must document the optional If-Match request header"
+    );
+
+    let patch_ok = &patch["responses"]["200"];
+    assert!(
+        patch_ok["headers"]["ETag"].is_object(),
+        "PATCH item 200 must document the ETag for its returned snapshot"
+    );
+    assert_eq!(
+        patch["responses"]["412"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/ErrorEnvelope",
+        "PATCH item 412 must use the standard error envelope"
+    );
+}
+
 #[tokio::test]
 async fn openapi_json_endpoint_serves_valid_spec() {
     let (app, _) = common::test_app().await;

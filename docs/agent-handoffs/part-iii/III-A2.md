@@ -11,3 +11,11 @@
 - Secrets/logging review: no credentials, prompts, query strings, or complete environment values were added to logs/tests.
 - Safe merge order and likely conflicts: merge after/with A1 only if its handler edits are rebased; this changes the owned item handler/repository/model and frontend shared API surfaces, not router/migrations/openapi.
 - Checklist: no unowned files, no live secret, no panic stub, no blind retry.
+
+## Wave 0 wire-contract follow-up
+
+- Base SHA / branch / final SHA: `bf7aec2` / `agent/iii-a2-wave0-followup` / the commit containing this handoff.
+- Files changed: `crates/tack-api/src/handlers/items.rs`, `crates/tack-api/tests/openapi_contract.rs`, and this handoff only.
+- Behavior implemented: source Utoipa annotations now document the GET item `ETag`, optional PATCH `If-Match`, PATCH response `ETag`, and PATCH `412` standard error envelope. A focused `ApiDoc` assertion fails if any of those four semantics disappears.
+- Tests and checks: `cargo test -p tack-api --test openapi_contract item_conditional_patch_contract_documents_etags_and_precondition_failure` — passed; `cargo test -p tack-api --test item_concurrency_test` — 11 passed; `cargo clippy -p tack-api --test openapi_contract -- -D warnings` — passed; `rustfmt --check --edition 2024 crates/tack-api/src/handlers/items.rs crates/tack-api/tests/openapi_contract.rs` and `git diff --check` — passed. The ordinary committed-spec drift test is intentionally expected to fail until the generated OpenAPI/schema owner regenerates artifacts; this card does not hand-edit generated files.
+- Schema/API/contract change requested from another owner: regenerate `docs/openapi.json` and `frontend/src/shared/api/schema.gen.ts` from these annotations, then run `cargo test -p tack-api --test openapi_contract` without `UPDATE_OPENAPI` to close the committed-artifact drift gate.
