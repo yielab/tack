@@ -7,7 +7,8 @@
     "unknown_optional_fields": "ignore_and_preserve_when_round_tripping",
     "unknown_enum_values": "reject_with_invalid_request",
     "missing_required_fields": "reject_with_invalid_request",
-    "semantic_changes": "require_new_protocol_version"
+    "semantic_changes": "require_new_protocol_version",
+    "additive_operations": "a new separately authenticated operation may be added in v1 only when it does not change any existing operation's fields, enums, limits, or semantics"
   },
   "authentication": {
     "enrollment": "single_use_enrollment_token_in_request_body",
@@ -15,6 +16,15 @@
     "operator_routes": "operator_session_or_api_token",
     "decision_resolution": "separately_scoped_operator_credential",
     "credentials_are_not_substitutable": true
+  },
+  "additive_operations": {
+    "recovery_observation": {
+      "method": "POST",
+      "path": "/attempts/{attempt_id}/recovery-observation",
+      "authentication": "runner_bearer_credential",
+      "request_fixture": "recovery-observation.request.json",
+      "response_fixture": "recovery-observation.response.json"
+    }
   },
   "stable_error_codes": [
     "invalid_request",
@@ -34,4 +44,3 @@
     "internal_error"
   ]
 }
-

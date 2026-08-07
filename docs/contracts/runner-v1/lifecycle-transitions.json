@@ -100,5 +100,36 @@
       "deny": ["leased", "preparing", "running", "waiting_decision", "succeeded", "cancelled", "lost", "needs_operator"]
     }
   ],
-  "replay_rule": "A byte-equivalent report with the same idempotency key returns the original success without invoking the transition validator"
+  "replay_rule": "A byte-equivalent report with the same idempotency key returns the original success without invoking the transition validator",
+  "recovery_observation": {
+    "actor": "recovery_service",
+    "idempotency_key": "recovery_key",
+    "observations": ["process_stopped", "process_running", "ambiguous"],
+    "details": {
+      "journal_state": "non_secret_runner_journal_state",
+      "process_observed": "boolean"
+    },
+    "dispositions": {
+      "safe_pre_spawn_requeue": {
+        "allowed_from": ["leased", "preparing", "running", "waiting_decision"],
+        "requires": ["observation=process_stopped", "authoritative_process_absent", "authoritative_started_at_absent"],
+        "attempt_transition": "lost",
+        "request_transition": "queued"
+      },
+      "needs_operator": {
+        "allowed_from": ["leased", "preparing", "running", "waiting_decision"],
+        "requires": ["authoritative_process_absence_not_proven_or_observation_is_process_running_or_ambiguous"],
+        "attempt_transition": "needs_operator",
+        "request_transition": "needs_operator"
+      },
+      "already_terminal": {
+        "allowed_from": ["succeeded", "failed", "cancelled"],
+        "requires": ["no_state_transition"],
+        "attempt_transition": "none",
+        "request_transition": "none"
+      }
+    },
+    "authority": "Server disposition is determined from the authenticated runner/fence and authoritative attempt state. Runner details are audit evidence only and cannot justify safe requeue.",
+    "replay_rule": "The same recovery_key with a byte-equivalent request returns the original disposition and committed_at. Reusing the key with different observation or details returns idempotency_conflict without transition."
+  }
 }
