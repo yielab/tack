@@ -750,6 +750,40 @@ async fn enqueue_rejects_incomplete_malformed_and_contradictory_snapshots_withou
             .is_err()
     );
 
+    for (suffix, from, to) in [
+        (
+            "created-by",
+            r#""created_by":{"source":"operator","subject_id":"test"}"#,
+            r#""created_by":"operator""#,
+        ),
+        (
+            "profile-policy",
+            r#""tool_policy":{"mode":"safe"}"#,
+            r#""tool_policy":"safe""#,
+        ),
+        ("budgets", r#""budgets":{"limit":1}"#, r#""budgets":1"#),
+        ("repository-kind", r#""kind":"git""#, r#""kind":1"#),
+        (
+            "metadata",
+            r#""metadata":{"source":"test"}"#,
+            r#""metadata":false"#,
+        ),
+        (
+            "environment",
+            r#""value":"test","secret_reference":null"#,
+            r#""value":"test","secret_reference":"secret://mode""#,
+        ),
+    ] {
+        let id = Box::leak(format!("snapshot-{suffix}").into_boxed_str());
+        let mut invalid = request(id, &item_id, id, "same");
+        invalid.request_snapshot =
+            Box::leak(invalid.request_snapshot.replace(from, to).into_boxed_str());
+        assert!(
+            repo.enqueue_execution(invalid, &clock).await.is_err(),
+            "{suffix}"
+        );
+    }
+
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_requests")
         .fetch_one(repo.pool())
         .await
@@ -758,7 +792,7 @@ async fn enqueue_rejects_incomplete_malformed_and_contradictory_snapshots_withou
 }
 
 #[tokio::test]
-async fn m059_quarantines_queued_legacy_snapshot_after_m053_upgrade() {
+async fn m060_quarantines_all_nonterminal_malformed_legacy_snapshots() {
     let pool = init_pool("sqlite::memory:").await.unwrap();
     migrations::run_up_to(&pool, "052_execution_report_replays")
         .await
@@ -772,32 +806,45 @@ async fn m059_quarantines_queued_legacy_snapshot_after_m053_upgrade() {
         .execute(&mut *connection)
         .await
         .unwrap();
+    for (id, key, state) in [
+        ("legacy-partial", "legacy-partial-key", "leased"),
+        ("legacy-malformed", "legacy-malformed-key", "running"),
+        ("legacy-terminal", "legacy-terminal-key", "succeeded"),
+    ] {
+        sqlx::query("INSERT INTO execution_requests(id,item_id,idempotency_scope,idempotency_key,request_fingerprint,state,selector_kind,selector_id,agent_profile_snapshot,repository_snapshot,permission_policy,created_at,updated_at) VALUES(?, 'legacy-item', 'legacy', ?, 'legacy-fingerprint', ?, 'exact_runner', 'runner-a', '{}', '{}', '{}', '2026-08-07T12:00:00Z', '2026-08-07T12:00:00Z')")
+            .bind(id)
+            .bind(key)
+            .bind(state)
+            .execute(&mut *connection)
+            .await
+            .unwrap();
+    }
     drop(connection);
     migrations::run_up_to(&pool, "058_execution_recovery_replay_response")
         .await
         .unwrap();
-    let before: (String, String) = sqlx::query_as(
-        "SELECT state, request_snapshot FROM execution_requests WHERE id = 'legacy-request'",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(before, ("queued".into(), "{}".into()));
+    sqlx::query("UPDATE execution_requests SET request_snapshot = '{\"created_by\":{},\"selector\":{},\"repository\":{}}' WHERE id = 'legacy-partial'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE execution_requests SET request_snapshot = '{not-json' WHERE id IN ('legacy-malformed', 'legacy-terminal')")
+        .execute(&pool)
+        .await
+        .unwrap();
     migrations::run_all(&pool).await.unwrap();
-    let after: (String, String, String, String) = sqlx::query_as(
-        "SELECT state, request_snapshot, item_id, idempotency_key FROM execution_requests WHERE id = 'legacy-request'",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let after: Vec<(String, String)> =
+        sqlx::query_as("SELECT id, state FROM execution_requests ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
     assert_eq!(
         after,
-        (
-            "needs_operator".into(),
-            "{}".into(),
-            "legacy-item".into(),
-            "legacy-key".into()
-        )
+        vec![
+            ("legacy-malformed".into(), "needs_operator".into()),
+            ("legacy-partial".into(), "needs_operator".into()),
+            ("legacy-request".into(), "needs_operator".into()),
+            ("legacy-terminal".into(), "succeeded".into()),
+        ]
     );
 }
 
@@ -2316,7 +2363,7 @@ async fn enqueue_is_idempotent_and_conflicting_reuse_is_rejected() {
         EnqueueResult::Created("request-a".into())
     );
     assert_eq!(
-        repo.enqueue_execution(request("request-b", &item_id, "key-a", "same"), &clock)
+        repo.enqueue_execution(request("request-a", &item_id, "key-a", "same"), &clock)
             .await
             .unwrap(),
         EnqueueResult::Replayed("request-a".into())
@@ -2332,6 +2379,39 @@ async fn enqueue_is_idempotent_and_conflicting_reuse_is_rejected() {
         .await
         .unwrap();
     assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn enqueue_replay_compares_the_frozen_snapshot_before_current_time() {
+    let (repo, item_id, clock) = ready_repo().await;
+    assert_eq!(
+        repo.enqueue_execution(request("request-a", &item_id, "key-a", "same"), &clock)
+            .await
+            .unwrap(),
+        EnqueueResult::Created("request-a".into())
+    );
+    clock.advance(Duration::seconds(1));
+    assert_eq!(
+        repo.enqueue_execution(request("request-a", &item_id, "key-a", "same"), &clock)
+            .await
+            .unwrap(),
+        EnqueueResult::Replayed("request-a".into()),
+        "an exact retry uses the original frozen snapshot rather than the new clock"
+    );
+    let mut changed_timestamp = request("request-a", &item_id, "key-a", "same");
+    changed_timestamp.request_snapshot = Box::leak(
+        changed_timestamp
+            .request_snapshot
+            .replace("2026-08-07T12:00:00Z", "2026-08-07T12:00:01Z")
+            .into_boxed_str(),
+    );
+    assert_eq!(
+        repo.enqueue_execution(changed_timestamp, &clock)
+            .await
+            .unwrap(),
+        EnqueueResult::Conflict,
+        "same idempotency key with a changed frozen timestamp is not an exact replay"
+    );
 }
 
 #[tokio::test]
