@@ -9,9 +9,10 @@ use tack_core::{
 use tack_db::{
     Repository, init_pool, migrations,
     repo::execution::{
-        Completion, EventApplyResult, EventBatch, ExecutionClock, NewAgentProfile, NewEvent,
-        NewExecutionRequest, NewRunner, RecoveryDisposition, RecoveryObservation,
-        RecoveryObservationInput, RecoveryObservationResult,
+        Completion, EnrollmentToken, EventApplyResult, EventBatch, ExecutionClock,
+        HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewEvent, NewExecutionRequest,
+        NewRunner, RecoveryDisposition, RecoveryObservation, RecoveryObservationInput,
+        RecoveryObservationResult, RedeemEnrollmentResult,
     },
 };
 use uuid::Uuid;
@@ -557,5 +558,172 @@ async fn crash_during_cancellation_request_is_retryable_without_false_terminal_s
         row.get::<Option<String>, _>("cancellation_requested_at")
             .is_some(),
         "requesting cancellation must not pretend the attempt is terminal"
+    );
+}
+
+#[tokio::test]
+async fn enrollment_redemption_has_one_concurrent_winner_and_consumes_the_hash_only_token() {
+    let fixture = fixture().await;
+    fixture
+        .repo
+        .create_pending_runner_and_issue_token(
+            NewRunner {
+                id: "runner-enroll-crash",
+                name: "Pending crash runner",
+                credential_hash: "ignored-for-pending",
+                labels: "{}",
+                total_capacity: 1,
+                available_capacity: 1,
+                capability_snapshot: "{}",
+                protocol_version: 1,
+            },
+            EnrollmentToken {
+                id: "token-enroll-crash",
+                runner_id: "runner-enroll-crash",
+                token_hash: "hash:enroll-crash",
+                expires_at: fixture.clock.now() + Duration::minutes(5),
+            },
+            &fixture.clock,
+        )
+        .await
+        .expect("pending runner and token");
+    let redeem = || {
+        fixture.repo.redeem_enrollment_token(
+            "hash:enroll-crash",
+            "credential-hash-only",
+            fixture.clock.now() + Duration::hours(1),
+            "test-runner",
+            "Enrolled crash runner",
+            "{}",
+            1,
+            1,
+            "{}",
+            1,
+            &fixture.clock,
+        )
+    };
+    let (left, right) = tokio::join!(redeem(), redeem());
+    let results = [
+        left.expect("left redemption"),
+        right.expect("right redemption"),
+    ];
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| matches!(result, RedeemEnrollmentResult::Redeemed(_)))
+            .count(),
+        1,
+        "only one concurrent redemption can consume the token"
+    );
+    let metadata = fixture
+        .repo
+        .enrollment_token_metadata("runner-enroll-crash", "token-enroll-crash")
+        .await
+        .expect("token metadata")
+        .expect("token row");
+    assert!(metadata.consumed_at.is_some());
+    let token_rows: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM agent_enrollment_tokens WHERE token_hash = 'hash:enroll-crash'",
+    )
+    .fetch_one(fixture.repo.pool())
+    .await
+    .expect("hash-only token row");
+    assert_eq!(token_rows, 1);
+}
+
+#[tokio::test]
+async fn heartbeat_fault_rolls_back_then_replays_the_authoritative_response_once() {
+    let fixture = fixture().await;
+    enqueue(&fixture).await;
+    claim(&fixture).await;
+    let lease = [HeartbeatLease {
+        attempt_id: "attempt-crash",
+        fencing_token: 1,
+        state: "running",
+        journal_state: "process_observed_running",
+        last_event_checkpoint: None,
+    }];
+    sqlx::query(
+        "CREATE TRIGGER inject_heartbeat_crash BEFORE UPDATE OF last_heartbeat_at \
+         ON execution_attempts BEGIN SELECT RAISE(ABORT, 'injected heartbeat crash'); END",
+    )
+    .execute(fixture.repo.pool())
+    .await
+    .expect("heartbeat fault trigger");
+    assert!(
+        fixture
+            .repo
+            .heartbeat_batch(
+                "runner-crash",
+                "hb-crash-1",
+                fixture.clock.now(),
+                0,
+                &lease,
+                Duration::seconds(60),
+                &fixture.clock,
+            )
+            .await
+            .is_err()
+    );
+    let replays: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_heartbeat_replays")
+        .fetch_one(fixture.repo.pool())
+        .await
+        .expect("no failed replay row");
+    assert_eq!(replays, 0);
+    sqlx::query("DROP TRIGGER inject_heartbeat_crash")
+        .execute(fixture.repo.pool())
+        .await
+        .expect("drop heartbeat fault");
+    let accepted = fixture
+        .repo
+        .heartbeat_batch(
+            "runner-crash",
+            "hb-crash-1",
+            fixture.clock.now(),
+            0,
+            &lease,
+            Duration::seconds(60),
+            &fixture.clock,
+        )
+        .await
+        .expect("heartbeat");
+    let replay = fixture
+        .repo
+        .heartbeat_batch(
+            "runner-crash",
+            "hb-crash-1",
+            fixture.clock.now(),
+            0,
+            &lease,
+            Duration::seconds(60),
+            &fixture.clock,
+        )
+        .await
+        .expect("heartbeat replay");
+    assert!(matches!(accepted, HeartbeatBatchResult::Accepted(_)));
+    assert!(matches!(replay, HeartbeatBatchResult::Replayed(_)));
+    let conflict = fixture
+        .repo
+        .heartbeat_batch(
+            "runner-crash",
+            "hb-crash-1",
+            fixture.clock.now() + Duration::seconds(1),
+            0,
+            &lease,
+            Duration::seconds(60),
+            &fixture.clock,
+        )
+        .await
+        .expect("heartbeat replay conflict");
+    assert!(matches!(conflict, HeartbeatBatchResult::Conflict));
+    let capacity: i64 = sqlx::query_scalar(
+        "SELECT available_capacity FROM agent_runners WHERE id = 'runner-crash'",
+    )
+    .fetch_one(fixture.repo.pool())
+    .await
+    .expect("capacity after replay");
+    assert_eq!(
+        capacity, 0,
+        "replay must not restore or double-write capacity"
     );
 }
