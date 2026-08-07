@@ -9,9 +9,10 @@ use thiserror::Error;
 
 use super::{
     ActiveAttempt, AttemptId, AttemptState, CancellationReport, CancellationRequestId,
-    ClaimRequest, ClaimResult, ClaimedWork, CompletionId, CompletionReport, EnrollmentRequest,
-    EnrollmentResponse, HeartbeatRequest, ProtocolClientError, PullProtocol, RecoveryDetails,
-    RecoveryReport, RefreshRequest, RefreshResponse, RunnerSession, StartPhase, StartReport,
+    ClaimRequest, ClaimResult, ClaimedWork, ClaimedWorkError, CompletionId, CompletionReport,
+    EnrollmentRequest, EnrollmentResponse, HeartbeatRequest, ProtocolClientError, PullProtocol,
+    RecoveryDetails, RecoveryReport, RefreshRequest, RefreshResponse, RunnerSession, StartPhase,
+    StartReport,
     journal::{AttemptJournal, JournalError, JournalState, OwnerOnlyJournal},
     workspace::{Workspace, WorkspaceError, WorkspaceManager, WorktreeProvisioner},
 };
@@ -34,6 +35,8 @@ pub enum EngineError {
     Journal(#[from] JournalError),
     #[error(transparent)]
     Workspace(#[from] WorkspaceError),
+    #[error(transparent)]
+    Claim(#[from] ClaimedWorkError),
     #[error(transparent)]
     Harness(#[from] HarnessError),
     #[error("claimed lease belongs to another runner")]
@@ -78,6 +81,18 @@ pub struct HarnessOutcome {
     pub final_checkpoint: Option<super::Checkpoint>,
     pub actual_execution: tack_orch::execution::ActualExecution,
     pub usage: tack_orch::execution::Usage,
+}
+
+impl HarnessOutcome {
+    /// Workspace ownership belongs to the engine, not a harness adapter. Normalize
+    /// the adapter outcome before it is projected into the transport report so the
+    /// report has exactly one source for actual execution and usage facts.
+    fn normalize_workspace_facts(mut self, workspace: &Workspace) -> Self {
+        self.actual_execution.workspace_id =
+            tack_orch::execution::WorkspaceId::new(workspace.id.as_str());
+        self.actual_execution.base_revision = workspace.base_revision.clone();
+        self
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -163,7 +178,7 @@ where
     ) -> Result<RunCycle, EngineError> {
         match self.protocol.claim(session, claim).await? {
             ClaimResult::NoWork { .. } => Ok(RunCycle::NoWork),
-            ClaimResult::Work(work) => self.run_claimed(session, work).await,
+            ClaimResult::Work(work) => self.run_claimed(session, *work).await,
         }
     }
 
@@ -209,11 +224,12 @@ where
         session: &RunnerSession,
         work: ClaimedWork,
     ) -> Result<RunCycle, EngineError> {
+        let repository = work.workspace_repository()?;
         if work.lease.runner_id != session.runner_id {
             return Err(EngineError::RunnerMismatch);
         }
 
-        let workspace = self.workspaces.plan(&work.lease, &work.repository)?;
+        let workspace = self.workspaces.plan(&work.lease, &repository)?;
         let mut record = AttemptJournal::prepared(&work.lease, workspace.journal());
         // This is the hard ownership boundary: no worktree or adapter method
         // with a local side effect is called before create+fsync succeeds.
@@ -231,9 +247,7 @@ where
                 },
             )
             .await?;
-        self.workspaces
-            .provision(&workspace, &work.repository)
-            .await?;
+        self.workspaces.provision(&workspace, &repository).await?;
 
         let spec = ExecutionSpec {
             work: work.clone(),
@@ -336,14 +350,7 @@ where
         ) {
             return self.quarantine_after_spawn(session, &record, &handle).await;
         }
-        // Workspace ownership is established by the engine before the adapter
-        // starts. Preserve adapter-observed harness/model facts, but never let
-        // an adapter substitute a different workspace identity or revision in
-        // the completion record.
-        let mut actual_execution = outcome.actual_execution.clone();
-        actual_execution.workspace_id =
-            tack_orch::execution::WorkspaceId::new(spec.workspace.id.as_str());
-        actual_execution.base_revision = spec.workspace.base_revision.clone();
+        let outcome = outcome.normalize_workspace_facts(&spec.workspace);
         let report = CompletionReport {
             completion_id: CompletionId::new(format!(
                 "completion:{}:{}",
@@ -352,9 +359,11 @@ where
             )),
             attempt_id: record.attempt_id.clone(),
             fencing_token: record.fencing_token,
-            actual_execution,
-            usage: outcome.usage.clone(),
-            outcome,
+            terminal_state: outcome.terminal_state,
+            terminal_reason: outcome.terminal_reason,
+            final_checkpoint: outcome.final_checkpoint,
+            actual_execution: outcome.actual_execution,
+            usage: outcome.usage,
         };
         if self
             .protocol
@@ -444,7 +453,11 @@ mod tests {
     use super::*;
     use crate::client::{
         AttemptLease, ClaimRequestId, ClaimResult, ClaimedWork, FencingToken, LeaseResult,
-        ProtocolClientError, RepositorySpec, RunnerCredential, RunnerId, Timestamp,
+        ProtocolClientError, RunnerCredential, RunnerId, Timestamp,
+    };
+    use tack_orch::execution::{
+        AttemptId as DomainAttemptId, AttemptSnapshot, ExecutionRequestSnapshot,
+        RunnerId as DomainRunnerId,
     };
 
     #[derive(Clone)]
@@ -456,6 +469,7 @@ mod tests {
         fail_cancellation_report: bool,
         start_reports: Arc<AtomicUsize>,
         reported_starts: Arc<Mutex<Vec<StartReport>>>,
+        reported_heartbeats: Arc<Mutex<Vec<super::super::HeartbeatResponse>>>,
         completion_reports: Arc<AtomicUsize>,
         reported_completions: Arc<Mutex<Vec<CompletionReport>>>,
         cancellation_reports: Arc<AtomicUsize>,
@@ -521,13 +535,21 @@ mod tests {
                 .into_iter()
                 .next()
                 .expect("active attempt");
-            Ok(super::super::HeartbeatResponse {
+            let response = super::super::HeartbeatResponse {
+                heartbeat_id: request.heartbeat_id,
+                accepted_at: Timestamp::new("2026-08-06T12:20:16Z"),
                 lease_results: vec![LeaseResult {
                     attempt_id: active.attempt_id,
                     fencing_token: active.fencing_token,
+                    lease_expires_at: Timestamp::new("2026-08-06T12:21:16Z"),
                     cancellation_requested: self.cancellation_requested,
                 }],
-            })
+            };
+            self.reported_heartbeats
+                .lock()
+                .expect("fake protocol lock")
+                .push(response.clone());
+            Ok(response)
         }
 
         async fn report_start(
@@ -748,6 +770,20 @@ mod tests {
     }
 
     fn work() -> ClaimedWork {
+        let claim: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../docs/contracts/runner-v1/claim.response.json"
+        ))
+        .expect("claim fixture");
+        let mut request: ExecutionRequestSnapshot =
+            serde_json::from_value(claim["request"].clone()).expect("request fixture");
+        let mut attempt: AttemptSnapshot =
+            serde_json::from_value(claim["attempt"].clone()).expect("attempt fixture");
+        // Keep the production fixture's full shape while aligning the shared
+        // facts with this focused engine fixture.
+        request.repository.base_revision = "revision".into();
+        attempt.attempt_id = DomainAttemptId::new("attempt");
+        attempt.runner_id = DomainRunnerId::new("runner");
+        attempt.base_revision = request.repository.base_revision.clone();
         ClaimedWork {
             claim_request_id: ClaimRequestId::new("claim"),
             lease: AttemptLease {
@@ -759,10 +795,8 @@ mod tests {
                 issued_at: Timestamp::new("2026-08-06T12:20:00Z"),
                 expires_at: Timestamp::new("2026-08-06T12:21:00Z"),
             },
-            repository: RepositorySpec {
-                remote: "https://example.invalid/repo.git".into(),
-                base_revision: "revision".into(),
-            },
+            request,
+            attempt,
         }
     }
 
@@ -772,13 +806,14 @@ mod tests {
         stale_completion: bool,
     ) -> FakeProtocol {
         FakeProtocol {
-            claim: Arc::new(Mutex::new(Some(ClaimResult::Work(work)))),
+            claim: Arc::new(Mutex::new(Some(ClaimResult::Work(Box::new(work))))),
             cancellation_requested,
             stale_completion,
             fail_running_start: false,
             fail_cancellation_report: false,
             start_reports: Arc::new(AtomicUsize::new(0)),
             reported_starts: Arc::new(Mutex::new(Vec::new())),
+            reported_heartbeats: Arc::new(Mutex::new(Vec::new())),
             completion_reports: Arc::new(AtomicUsize::new(0)),
             reported_completions: Arc::new(Mutex::new(Vec::new())),
             cancellation_reports: Arc::new(AtomicUsize::new(0)),
@@ -798,6 +833,43 @@ mod tests {
             reconcile_fails: false,
             completion_actual_execution: actual_execution(),
         }
+    }
+
+    #[test]
+    fn fixture_shaped_claim_preserves_snapshots_and_rejects_divergent_workspace_facts() {
+        let work = work();
+        assert_eq!(
+            work.request
+                .requested_model_id
+                .as_ref()
+                .map(|id| id.as_str()),
+            Some("opaque/model-alpha")
+        );
+        assert_eq!(
+            work.attempt.request_id.as_str(),
+            work.request.request_id.as_str()
+        );
+        assert_eq!(
+            work.attempt.attempt_id.as_str(),
+            work.lease.attempt_id.as_str()
+        );
+        let repository = work.workspace_repository().expect("matching claim facts");
+        assert_eq!(repository.remote, "https://example.invalid/org/repo.git");
+        assert_eq!(repository.base_revision, "revision");
+
+        let mut revision_mismatch = work.clone();
+        revision_mismatch.attempt.base_revision = "other-revision".into();
+        assert!(matches!(
+            revision_mismatch.workspace_repository(),
+            Err(super::super::ClaimedWorkError::RepositoryRevisionMismatch)
+        ));
+
+        let mut lease_mismatch = work;
+        lease_mismatch.lease.fencing_token = FencingToken(8);
+        assert!(matches!(
+            lease_mismatch.workspace_repository(),
+            Err(super::super::ClaimedWorkError::AttemptLeaseMismatch)
+        ));
     }
 
     fn claim_request() -> ClaimRequest {
@@ -912,6 +984,17 @@ mod tests {
         );
         assert_eq!(running.base_revision.as_deref(), Some("revision"));
         assert_eq!(running.process_id.as_deref(), Some("fake-process"));
+        let heartbeats = protocol
+            .reported_heartbeats
+            .lock()
+            .expect("fake protocol lock");
+        assert_eq!(heartbeats.len(), 1);
+        assert_eq!(heartbeats[0].heartbeat_id, "heartbeat:attempt:7");
+        assert_eq!(heartbeats[0].accepted_at.as_str(), "2026-08-06T12:20:16Z");
+        assert_eq!(
+            heartbeats[0].lease_results[0].lease_expires_at.as_str(),
+            "2026-08-06T12:21:16Z"
+        );
         assert_eq!(cancellations.load(Ordering::SeqCst), 1);
         assert_eq!(protocol.cancellation_reports.load(Ordering::SeqCst), 1);
         assert_eq!(protocol.completion_reports.load(Ordering::SeqCst), 0);
@@ -961,6 +1044,9 @@ mod tests {
         );
         assert_eq!(completions[0].actual_execution.base_revision, "revision");
         assert_eq!(completions[0].usage.duration_ms.value, Some(3));
+        assert_eq!(completions[0].terminal_state, AttemptState::Succeeded);
+        assert_eq!(completions[0].terminal_reason, "completed");
+        assert_eq!(completions[0].final_checkpoint, None);
         assert_eq!(cancellations.load(Ordering::SeqCst), 1);
         assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 1);
         assert!(journal.unresolved().expect("scan").is_empty());
