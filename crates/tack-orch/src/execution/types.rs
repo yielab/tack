@@ -53,6 +53,10 @@ opaque_id!(
     CancellationRequestId,
     "An opaque cancellation idempotency identity."
 );
+opaque_id!(
+    RecoveryKey,
+    "An opaque recovery-observation idempotency identity."
+);
 opaque_id!(Checkpoint, "An opaque event-stream checkpoint.");
 opaque_id!(IdempotencyKey, "An opaque caller-scoped idempotency key.");
 opaque_id!(
@@ -147,6 +151,122 @@ impl ExecutionState {
     pub const fn is_terminal(self) -> bool {
         matches!(self, Self::Succeeded | Self::Failed | Self::Cancelled)
     }
+}
+
+/// The non-secret local journal state a runner may attach as recovery evidence.
+///
+/// This evidence is useful for audit and diagnosis only; it never authorizes a
+/// safe requeue. The server decides that disposition from the authenticated
+/// runner/fence and its authoritative attempt state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryJournalState {
+    Prepared,
+    ProcessObservedRunning,
+    CancellationRequested,
+    RecoveryObserved,
+    Reported,
+    Quarantined,
+}
+
+/// What the runner observed while reconciling a prior local process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryObservation {
+    ProcessStopped,
+    ProcessRunning,
+    Ambiguous,
+}
+
+/// Non-secret runner-local evidence attached to a recovery observation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecoveryDetails {
+    pub journal_state: RecoveryJournalState,
+    pub process_observed: bool,
+    #[serde(flatten, default)]
+    pub additional: BTreeMap<String, serde_json::Value>,
+}
+
+/// The server-authoritative outcome of a recovery observation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryDisposition {
+    SafePreSpawnRequeue,
+    NeedsOperator,
+    AlreadyTerminal,
+}
+
+impl RecoveryDisposition {
+    /// The attempt transition implied by this disposition, if it is not a
+    /// terminal acknowledgement.
+    pub const fn attempt_transition(self) -> Option<ExecutionState> {
+        match self {
+            Self::SafePreSpawnRequeue => Some(ExecutionState::Lost),
+            Self::NeedsOperator => Some(ExecutionState::NeedsOperator),
+            Self::AlreadyTerminal => None,
+        }
+    }
+
+    /// The request transition implied by this disposition, if it is not a
+    /// terminal acknowledgement.
+    pub const fn request_transition(self) -> Option<ExecutionState> {
+        match self {
+            Self::SafePreSpawnRequeue => Some(ExecutionState::Queued),
+            Self::NeedsOperator => Some(ExecutionState::NeedsOperator),
+            Self::AlreadyTerminal => None,
+        }
+    }
+
+    /// Checks only the public lifecycle/observation preconditions. A true
+    /// result for safe requeue is necessary, not sufficient: authoritative
+    /// process absence and `started_at` absence remain server-side checks.
+    pub const fn is_compatible_with(
+        self,
+        state: ExecutionState,
+        observation: RecoveryObservation,
+    ) -> bool {
+        let active = matches!(
+            state,
+            ExecutionState::Leased
+                | ExecutionState::Preparing
+                | ExecutionState::Running
+                | ExecutionState::WaitingDecision
+        );
+        match self {
+            Self::SafePreSpawnRequeue => {
+                active && matches!(observation, RecoveryObservation::ProcessStopped)
+            }
+            Self::NeedsOperator => active,
+            Self::AlreadyTerminal => state.is_terminal(),
+        }
+    }
+}
+
+/// The additive runner-v1 recovery-observation request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecoveryObservationRequest {
+    pub protocol_version: ProtocolVersion,
+    pub runner_id: RunnerId,
+    pub attempt_id: AttemptId,
+    pub fencing_token: FencingToken,
+    pub recovery_key: RecoveryKey,
+    pub observation: RecoveryObservation,
+    pub details: RecoveryDetails,
+    #[serde(flatten, default)]
+    pub additional: BTreeMap<String, serde_json::Value>,
+}
+
+/// The authoritative response to a recovery observation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecoveryObservationResponse {
+    pub protocol_version: ProtocolVersion,
+    pub attempt_id: AttemptId,
+    pub recovery_key: RecoveryKey,
+    pub disposition: RecoveryDisposition,
+    pub replayed: bool,
+    pub committed_at: DateTime<Utc>,
+    #[serde(flatten, default)]
+    pub additional: BTreeMap<String, serde_json::Value>,
 }
 
 /// A requested runner/fleet placement. This is intentionally tagged so a
@@ -451,6 +571,8 @@ mod tests {
             include_str!("../../../../docs/contracts/runner-v1/heartbeat.response.json"),
             include_str!("../../../../docs/contracts/runner-v1/limits.json"),
             include_str!("../../../../docs/contracts/runner-v1/protocol.json"),
+            include_str!("../../../../docs/contracts/runner-v1/recovery-observation.request.json"),
+            include_str!("../../../../docs/contracts/runner-v1/recovery-observation.response.json"),
             include_str!("../../../../docs/contracts/runner-v1/refresh.request.json"),
             include_str!("../../../../docs/contracts/runner-v1/refresh.response.json"),
         ] {
@@ -531,6 +653,152 @@ mod tests {
         assert_eq!(
             serde_json::to_value(usage).expect("serialize usage"),
             completion["usage"]
+        );
+    }
+
+    #[test]
+    fn recovery_observation_fixtures_round_trip_exactly_and_preserve_additions() {
+        let request_json: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../docs/contracts/runner-v1/recovery-observation.request.json"
+        ))
+        .expect("recovery request fixture JSON");
+        let request: RecoveryObservationRequest =
+            serde_json::from_value(request_json.clone()).expect("typed recovery request");
+        assert_eq!(
+            serde_json::to_value(&request).expect("serialize recovery request"),
+            request_json
+        );
+        assert_eq!(request.observation, RecoveryObservation::ProcessStopped);
+        assert_eq!(
+            request.details.journal_state,
+            RecoveryJournalState::Prepared
+        );
+        assert!(!request.details.process_observed);
+
+        let response_json: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../docs/contracts/runner-v1/recovery-observation.response.json"
+        ))
+        .expect("recovery response fixture JSON");
+        let response: RecoveryObservationResponse =
+            serde_json::from_value(response_json.clone()).expect("typed recovery response");
+        assert_eq!(
+            serde_json::to_value(&response).expect("serialize recovery response"),
+            response_json
+        );
+        assert_eq!(
+            response.disposition,
+            RecoveryDisposition::SafePreSpawnRequeue
+        );
+        assert!(!response.replayed);
+
+        let mut additive_request = serde_json::to_value(request).expect("serialize request");
+        additive_request["future_request_field"] = serde_json::json!({"kept": true});
+        additive_request["details"]["future_evidence"] = serde_json::json!("kept");
+        let parsed: RecoveryObservationRequest =
+            serde_json::from_value(additive_request.clone()).expect("parse additive request");
+        assert_eq!(
+            serde_json::to_value(parsed).expect("serialize additive request"),
+            additive_request
+        );
+
+        let mut additive_response = serde_json::to_value(response).expect("serialize response");
+        additive_response["future_response_field"] = serde_json::json!(42);
+        let parsed: RecoveryObservationResponse =
+            serde_json::from_value(additive_response.clone()).expect("parse additive response");
+        assert_eq!(
+            serde_json::to_value(parsed).expect("serialize additive response"),
+            additive_response
+        );
+    }
+
+    #[test]
+    fn recovery_dispositions_follow_lifecycle_and_observation_invariants() {
+        use crate::execution::{TransitionActor, validate_transition};
+
+        let active = [
+            ExecutionState::Leased,
+            ExecutionState::Preparing,
+            ExecutionState::Running,
+            ExecutionState::WaitingDecision,
+        ];
+        for state in active {
+            assert!(
+                RecoveryDisposition::SafePreSpawnRequeue
+                    .is_compatible_with(state, RecoveryObservation::ProcessStopped)
+            );
+            assert!(
+                validate_transition(
+                    state,
+                    RecoveryDisposition::SafePreSpawnRequeue
+                        .attempt_transition()
+                        .expect("safe recovery transitions attempt"),
+                    TransitionActor::RecoveryService,
+                )
+                .is_ok()
+            );
+            assert!(
+                RecoveryDisposition::NeedsOperator
+                    .is_compatible_with(state, RecoveryObservation::ProcessStopped)
+            );
+            assert!(
+                RecoveryDisposition::NeedsOperator
+                    .is_compatible_with(state, RecoveryObservation::ProcessRunning)
+            );
+            assert!(
+                RecoveryDisposition::NeedsOperator
+                    .is_compatible_with(state, RecoveryObservation::Ambiguous)
+            );
+            assert!(
+                validate_transition(
+                    state,
+                    RecoveryDisposition::NeedsOperator
+                        .attempt_transition()
+                        .expect("needs-operator recovery transitions attempt"),
+                    TransitionActor::RecoveryService,
+                )
+                .is_ok()
+            );
+        }
+
+        assert!(
+            !RecoveryDisposition::SafePreSpawnRequeue
+                .is_compatible_with(ExecutionState::Running, RecoveryObservation::ProcessRunning)
+        );
+        assert!(
+            !RecoveryDisposition::SafePreSpawnRequeue.is_compatible_with(
+                ExecutionState::Succeeded,
+                RecoveryObservation::ProcessStopped
+            )
+        );
+        for state in [
+            ExecutionState::Succeeded,
+            ExecutionState::Failed,
+            ExecutionState::Cancelled,
+        ] {
+            assert!(
+                RecoveryDisposition::AlreadyTerminal
+                    .is_compatible_with(state, RecoveryObservation::Ambiguous)
+            );
+        }
+        assert!(
+            !RecoveryDisposition::AlreadyTerminal
+                .is_compatible_with(ExecutionState::Leased, RecoveryObservation::ProcessStopped)
+        );
+        assert_eq!(
+            RecoveryDisposition::SafePreSpawnRequeue.request_transition(),
+            Some(ExecutionState::Queued)
+        );
+        assert_eq!(
+            RecoveryDisposition::NeedsOperator.request_transition(),
+            Some(ExecutionState::NeedsOperator)
+        );
+        assert_eq!(
+            RecoveryDisposition::AlreadyTerminal.attempt_transition(),
+            None
+        );
+        assert_eq!(
+            RecoveryDisposition::AlreadyTerminal.request_transition(),
+            None
         );
     }
 }

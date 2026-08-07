@@ -20,6 +20,8 @@ pub use types::{
     CompletionId, DecisionId, EnvironmentValue, EventId, ExecutionError, ExecutionRequestId,
     ExecutionRequestSnapshot, ExecutionState, FencingToken, HarnessKind, IdempotencyKey, ItemId,
     Measurement, MeasurementSource, ModelId, ModelProvider, PermissionPolicy, ProtocolError,
-    ProtocolErrorEnvelope, ProtocolVersion, RepositorySnapshot, RequestedModelId,
-    RequestedModelProvider, RunnerId, RunnerSelector, StableErrorCode, Usage, WorkspaceId,
+    ProtocolErrorEnvelope, ProtocolVersion, RecoveryDetails, RecoveryDisposition,
+    RecoveryJournalState, RecoveryKey, RecoveryObservation, RecoveryObservationRequest,
+    RecoveryObservationResponse, RepositorySnapshot, RequestedModelId, RequestedModelProvider,
+    RunnerId, RunnerSelector, StableErrorCode, Usage, WorkspaceId,
 };
