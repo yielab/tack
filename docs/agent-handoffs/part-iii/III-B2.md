@@ -170,3 +170,17 @@
   `Conflict`; their historical audit is not fabricated into a recovery response. Focused tests
   cover every disposition, semantic replay and changed input, foreign/revoked access, capped
   release, and rollback of lifecycle, capacity, and audit together.
+
+### Request snapshot hardening
+
+- Enqueue now parses the complete runner-v1 frozen execution request shape before opening a
+  transaction: required nested objects and scalar types, RFC3339 `created_at`, selector/profile,
+  repository, policy, budget, environment, and metadata fields are validated and cross-checked
+  against every normalized request column. The snapshot `created_at` must be the same injected
+  clock instant written to the row, and the validated JSON is what is persisted.
+- Migration 059 quarantines queued legacy M053-default `{}` snapshots as `needs_operator` while
+  preserving the row and all original data. It never invents a `created_by` or a replacement
+  immutable snapshot. Claim continues to fail closed for any incomplete persisted snapshot.
+- Focused coverage uses full fixtures and proves removed, malformed, cross-field, and clock
+  mismatch snapshots create no row; it upgrades through migrations 049–058 then proves M059
+  quarantines the legacy queued record without data loss.
