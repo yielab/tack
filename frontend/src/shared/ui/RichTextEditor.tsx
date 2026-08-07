@@ -8,13 +8,68 @@ export interface RichTextEditorProps {
   disabled?: boolean;
 }
 
+const ALLOWED_ELEMENTS = new Set([
+  'p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'blockquote', 'pre', 'code', 'a',
+]);
+
+function safeLink(value: string): string | null {
+  try {
+    const url = new URL(value, window.location.href);
+    return ['http:', 'https:', 'mailto:'].includes(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Sanitise rich content both before rendering saved HTML and before emitting a
+ * change. The editor has a deliberately small formatting vocabulary; unknown
+ * elements are unwrapped, while executable/embedded elements are removed.
+ */
+export function sanitizeRichText(value: string): string {
+  const documentFragment = new DOMParser().parseFromString(value, 'text/html');
+  const output = document.createElement('div');
+  const blockedElements = new Set(['script', 'style', 'iframe', 'object', 'embed', 'svg', 'math', 'template']);
+
+  const appendClean = (node: Node, parent: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      parent.appendChild(document.createTextNode(node.textContent ?? ''));
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+    const element = node as HTMLElement;
+    const tag = element.tagName.toLowerCase();
+    if (blockedElements.has(tag)) return;
+    if (!ALLOWED_ELEMENTS.has(tag)) {
+      for (const child of Array.from(element.childNodes)) appendClean(child, parent);
+      return;
+    }
+
+    const clean = document.createElement(tag);
+    if (tag === 'a') {
+      const href = element.getAttribute('href');
+      const safeHref = href && safeLink(href);
+      if (safeHref) {
+        clean.setAttribute('href', safeHref);
+        clean.setAttribute('rel', 'noopener noreferrer');
+      }
+    }
+    for (const child of Array.from(element.childNodes)) appendClean(child, clean);
+    parent.appendChild(clean);
+  };
+
+  for (const child of Array.from(documentFragment.body.childNodes)) appendClean(child, output);
+  return output.innerHTML;
+}
+
 const RichTextEditor: Component<RichTextEditorProps> = (props) => {
   let editorRef: HTMLDivElement | undefined;
   const [isFocused, setIsFocused] = createSignal(false);
 
   onMount(() => {
     if (editorRef && props.value) {
-      editorRef.innerHTML = props.value;
+      editorRef.innerHTML = sanitizeRichText(props.value);
     }
   });
 
@@ -26,7 +81,9 @@ const RichTextEditor: Component<RichTextEditorProps> = (props) => {
 
   const updateContent = () => {
     if (editorRef) {
-      props.onChange(editorRef.innerHTML);
+      const sanitized = sanitizeRichText(editorRef.innerHTML);
+      if (editorRef.innerHTML !== sanitized) editorRef.innerHTML = sanitized;
+      props.onChange(sanitized);
     }
   };
 

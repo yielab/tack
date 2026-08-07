@@ -140,13 +140,13 @@ const ApprovalsPage: Component = () => {
 
   // The operator's own copy of TACK_ORCH_APPROVAL_TOKEN — never sent
   // anywhere except on an actual decide call (see api.ts's approvalTokenStore
-  // doc comment). Signal seeded from the persisted value so a returning
-  // operator doesn't have to re-enter it every visit.
+  // doc comment). Signal is session-scoped so a returning tab can decide,
+  // but a long-lived browser secret is never retained.
   const [tokenInput, setTokenInput] = createSignal(approvalTokenStore.get() ?? '');
 
   const saveToken = () => {
     approvalTokenStore.set(tokenInput().trim() || null);
-    toast.success('Approval token saved for this browser.');
+    toast.success('Approval token saved for this browser session.');
   };
 
   const [confirming, setConfirming] = createSignal<{

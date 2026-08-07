@@ -8,29 +8,80 @@
  * served from the `tack` binary or behind a reverse proxy. */
 const BASE = import.meta.env.VITE_API_URL ?? '/api';
 
+const TOKEN_STORAGE_KEY = 'tack_api_token';
+const TOKEN_ORIGIN_KEY = 'tack_api_token_origin';
+
+/** Parse the configured API base once at the network boundary. Credentials,
+ * query strings and non-HTTP schemes are never valid API origins. */
+export function apiBaseUrl(): URL {
+  const base = new URL(BASE, window.location.href);
+  if (
+    !['http:', 'https:'].includes(base.protocol) ||
+    base.username ||
+    base.password ||
+    base.search ||
+    base.hash
+  ) {
+    throw new Error('VITE_API_URL must be a credential-free http(s) API base without query or fragment');
+  }
+  return base;
+}
+
+/** Origin used to scope an in-memory browser session credential. */
+export function apiOrigin(): string {
+  return apiBaseUrl().origin;
+}
+
+function scopedTokenKey(origin: string): string {
+  return `${TOKEN_STORAGE_KEY}:${origin}`;
+}
+
+function browserSessionStorage(): Storage | null {
+  try {
+    return sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ensure an API token can never follow a changed API origin. The legacy
+ * localStorage key is deleted rather than migrated: long-lived privileged
+ * browser credentials are not part of the new session strategy.
+ */
+function scopedStorage(): { storage: Storage; key: string } | null {
+  const storage = browserSessionStorage();
+  if (!storage) return null;
+  const origin = apiOrigin();
+  const previousOrigin = storage.getItem(TOKEN_ORIGIN_KEY);
+  if (previousOrigin && previousOrigin !== origin) {
+    storage.removeItem(scopedTokenKey(previousOrigin));
+  }
+  storage.setItem(TOKEN_ORIGIN_KEY, origin);
+  try {
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+  } catch {
+    // A browser may disable persistent storage independently of sessionStorage.
+  }
+  return { storage, key: scopedTokenKey(origin) };
+}
+
 /**
  * Optional bearer token store. The backend can gate the API with
  * `TACK_API_TOKEN`; when set, every request must carry
- * `Authorization: Bearer <token>`. The token may be empty (no auth).
+ * `Authorization: Bearer <token>`. Tokens live only for the current browser
+ * session and are bound to the configured API origin.
  */
 export const tokenStore = {
   get(): string | null {
-    // env override first, then persisted value; tolerate absent localStorage
-    const fromEnv = import.meta.env.VITE_API_TOKEN as string | undefined;
-    if (fromEnv) return fromEnv;
-    try {
-      return localStorage.getItem('tack_api_token');
-    } catch {
-      return null;
-    }
+    const scoped = scopedStorage();
+    return scoped?.storage.getItem(scoped.key) ?? null;
   },
   set(token: string | null): void {
-    try {
-      if (token) localStorage.setItem('tack_api_token', token);
-      else localStorage.removeItem('tack_api_token');
-    } catch {
-      /* ignore — localStorage may be unavailable */
-    }
+    const scoped = scopedStorage();
+    if (!scoped) return;
+    if (token) scoped.storage.setItem(scoped.key, token);
+    else scoped.storage.removeItem(scoped.key);
   },
 };
 
@@ -162,7 +213,7 @@ export async function requestWithHeaders<T>(
     headers.set('Content-Type', 'application/json');
   }
 
-  const res = await fetch(apiUrl(path), { ...init, headers });
+  const res = await fetch(apiUrl(path), { ...init, headers, redirect: 'error' });
 
   if (!res.ok) throw await toApiError(res);
   if (res.status === 204) return { data: undefined as T, headers: res.headers };
@@ -172,7 +223,7 @@ export async function requestWithHeaders<T>(
 /** Fetch a binary payload (downloads, exports, backups). */
 export async function requestBlob(path: string, init?: RequestInit): Promise<Blob> {
   const headers = authHeaders(init?.headers);
-  const res = await fetch(apiUrl(path), { ...init, headers });
+  const res = await fetch(apiUrl(path), { ...init, headers, redirect: 'error' });
   if (!res.ok) throw await toApiError(res);
   return res.blob();
 }
@@ -183,7 +234,7 @@ export async function requestBlob(path: string, init?: RequestInit): Promise<Blo
  */
 export async function requestForm<T>(path: string, form: FormData): Promise<T> {
   const headers = authHeaders();
-  const res = await fetch(apiUrl(path), { method: 'POST', body: form, headers });
+  const res = await fetch(apiUrl(path), { method: 'POST', body: form, headers, redirect: 'error' });
   if (!res.ok) throw await toApiError(res);
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

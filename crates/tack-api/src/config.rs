@@ -215,11 +215,53 @@ fn default_allowed_origins() -> Vec<String> {
     vec![
         "http://localhost:8080".into(),
         "http://127.0.0.1:8080".into(),
+        "http://localhost:3210".into(),
+        "http://127.0.0.1:3210".into(),
         "https://tack.test".into(),
     ]
 }
 
 impl AppConfig {
+    /// True when this bind address is restricted to the local machine.
+    pub fn binds_loopback(&self) -> bool {
+        let host = self.host.as_str();
+        matches!(host, "127.0.0.1" | "::1" | "localhost")
+            || host.starts_with("127.")
+            || host.eq_ignore_ascii_case("::ffff:127.0.0.1")
+    }
+
+    /// Reject a configuration that would expose an unauthenticated API or
+    /// send credentials to a malformed configured endpoint.
+    pub fn validate_security(&self) -> anyhow::Result<()> {
+        if !self.binds_loopback() && self.api_token.as_deref().is_none_or(str::is_empty) {
+            anyhow::bail!(
+                "refusing to bind {} without TACK_API_TOKEN; bind to loopback or configure authentication",
+                self.host
+            );
+        }
+        if self.alexa_skill_id.is_some()
+            && self
+                .alexa_shared_secret
+                .as_deref()
+                .is_none_or(str::is_empty)
+        {
+            anyhow::bail!(
+                "refusing to enable Alexa without TACK_ALEXA_SHARED_SECRET; skill IDs are public"
+            );
+        }
+        for origin in &self.allowed_origins {
+            validate_origin(origin)?;
+        }
+        validate_outbound_url("github_api_base", &self.github_api_base)?;
+        if let Some(url) = &self.webhook_url {
+            validate_outbound_url("webhook_url", url)?;
+        }
+        if let Some(url) = &self.backup_endpoint {
+            validate_outbound_url("backup_endpoint", url)?;
+        }
+        Ok(())
+    }
+
     /// Returns true when all three required remote-backup fields are set.
     pub fn remote_backup_enabled(&self) -> bool {
         self.backup_bucket.is_some()
@@ -244,13 +286,13 @@ impl AppConfig {
 
     /// Load config from file, falling back to defaults.
     pub fn load() -> Self {
-        if let Ok(content) = std::fs::read_to_string("tack.toml")
+        let mut config = if let Ok(content) = std::fs::read_to_string("tack.toml")
             && let Ok(config) = toml::from_str(&content)
         {
-            return config;
-        }
-
-        let mut config = Self::default();
+            config
+        } else {
+            Self::default()
+        };
         if let Ok(v) = std::env::var("TACK_HOST") {
             config.host = v;
         }
@@ -369,5 +411,57 @@ impl AppConfig {
             config.orch_approval_token = Some(v);
         }
         config
+    }
+}
+
+fn validate_origin(origin: &str) -> anyhow::Result<()> {
+    let parsed = reqwest::Url::parse(origin)
+        .map_err(|_| anyhow::anyhow!("allowed origin must be an absolute http(s) origin"))?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.path() != "/"
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        anyhow::bail!("allowed origin must be a bare http(s) origin: {origin}");
+    }
+    Ok(())
+}
+
+fn validate_outbound_url(name: &str, value: &str) -> anyhow::Result<()> {
+    let parsed = reqwest::Url::parse(value)
+        .map_err(|_| anyhow::anyhow!("{name} must be an absolute http(s) URL"))?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        anyhow::bail!("{name} must be a credential-free http(s) URL without query or fragment");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unsafe_non_loopback_startup_is_rejected() {
+        let config = AppConfig {
+            host: "0.0.0.0".into(),
+            ..AppConfig::default()
+        };
+        assert!(config.validate_security().is_err());
+    }
+
+    #[test]
+    fn origin_validation_is_exact_and_rejects_lookalike_shapes() {
+        assert!(validate_origin("https://tack.example.test").is_ok());
+        assert!(validate_origin("https://tack.example.test/path").is_err());
+        assert!(validate_origin("https://user:t@tack.example.test").is_err());
     }
 }

@@ -13,7 +13,7 @@
 // — not a guess (unlike A5's original Fleet draft, this file was written
 // after the backend landed in the same session).
 
-import { request, ApiError, isOrchestrationDisabledError } from '../../shared/api/client';
+import { apiOrigin, request, ApiError, isOrchestrationDisabledError } from '../../shared/api/client';
 
 /** One row of the fleet-wide approvals inbox, oldest-requested first.
  *  `item_id`/`item_title`/`item_status`/`project_id`/`project_name` are all
@@ -80,9 +80,9 @@ const APPROVAL_TOKEN_STORAGE_KEY = 'tack_orch_approval_token';
 /**
  * The operator's own copy of `TACK_ORCH_APPROVAL_TOKEN` — a **second**,
  * higher-privilege secret the server holds, deliberately separate from the
- * ordinary `TACK_API_TOKEN` `tokenStore` (`shared/api/client.ts`). Mirrors
- * that store's shape exactly (get/set, `localStorage`-backed, tolerant of
- * an unavailable store) but is never sent automatically the way the Bearer
+ * ordinary `TACK_API_TOKEN` `tokenStore` (`shared/api/client.ts`). It is
+ * session-only and scoped to the configured API origin; it is never sent
+ * automatically the way the Bearer
  * token is — `approvalsApi.decide` is the only thing that ever reads it,
  * and only when actually deciding an approval, never on a plain `list()`.
  * Nothing about this value is ever logged or echoed back by the server —
@@ -94,17 +94,20 @@ const APPROVAL_TOKEN_STORAGE_KEY = 'tack_orch_approval_token';
 export const approvalTokenStore = {
   get(): string | null {
     try {
-      return localStorage.getItem(APPROVAL_TOKEN_STORAGE_KEY);
+      return sessionStorage.getItem(`${APPROVAL_TOKEN_STORAGE_KEY}:${apiOrigin()}`);
     } catch {
       return null;
     }
   },
   set(token: string | null): void {
     try {
-      if (token) localStorage.setItem(APPROVAL_TOKEN_STORAGE_KEY, token);
-      else localStorage.removeItem(APPROVAL_TOKEN_STORAGE_KEY);
+      const key = `${APPROVAL_TOKEN_STORAGE_KEY}:${apiOrigin()}`;
+      // Do not migrate the legacy persistent secret into the session.
+      localStorage.removeItem(APPROVAL_TOKEN_STORAGE_KEY);
+      if (token) sessionStorage.setItem(key, token);
+      else sessionStorage.removeItem(key);
     } catch {
-      /* ignore — localStorage may be unavailable */
+      /* ignore — sessionStorage may be unavailable */
     }
   },
 };

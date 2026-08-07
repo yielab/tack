@@ -26,8 +26,8 @@ pub async fn serve() -> anyhow::Result<()> {
     // Initialize logging/tracing
     init_tracing(&config);
 
-    // Shout about insecure configurations before doing anything else.
-    security_preflight(&config);
+    // Reject unsafe exposure before opening a database or listener.
+    security_preflight(&config)?;
 
     info!(
         version = env!("CARGO_PKG_VERSION"),
@@ -194,47 +194,9 @@ pub async fn serve() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Loudly flag insecure-by-default configurations at startup. Does not refuse to
-/// boot (a non-loopback bind without a token can be intentional behind a trusted
-/// reverse proxy), but makes the exposure impossible to miss in the logs.
-fn security_preflight(config: &AppConfig) {
-    let host = config.host.as_str();
-    let loopback = matches!(host, "127.0.0.1" | "::1" | "localhost")
-        || host.starts_with("127.")
-        || host.eq_ignore_ascii_case("::ffff:127.0.0.1");
-
-    if !loopback && config.api_token.is_none() {
-        let opted_in = std::env::var("TACK_INSECURE_NO_AUTH")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-
-        warn!("═══════════════════════════════════════════════════════════════════════");
-        warn!(
-            host = %host,
-            "SECURITY: Tack is bound to a NON-LOOPBACK address with NO API token."
-        );
-        warn!("Every project, item and attachment is reachable by anyone who can reach");
-        warn!("this host. Set TACK_API_TOKEN to require a Bearer token on all requests,");
-        warn!("or bind to 127.0.0.1 for local-only use.");
-        if opted_in {
-            warn!("Proceeding anyway because TACK_INSECURE_NO_AUTH is set.");
-        } else {
-            warn!(
-                "Proceeding anyway. Set TACK_INSECURE_NO_AUTH=1 to acknowledge and silence-flag this."
-            );
-        }
-        warn!("═══════════════════════════════════════════════════════════════════════");
-    }
-
-    // The Alexa endpoint is only skill-ID-authenticated (forgeable) unless a
-    // shared secret is configured — warn when it is exposed without one.
-    if config.alexa_skill_id.is_some() && config.alexa_shared_secret.is_none() {
-        warn!(
-            "SECURITY: /api/alexa is enabled without TACK_ALEXA_SHARED_SECRET. The skill \
-             ID is not a secret, so requests are forgeable. Set TACK_ALEXA_SHARED_SECRET \
-             and append ?token=<secret> to the skill's endpoint URL (see docs/ALEXA.md)."
-        );
-    }
+/// Validate the security boundary before any network-facing resources start.
+fn security_preflight(config: &AppConfig) -> anyhow::Result<()> {
+    config.validate_security()
 }
 
 fn init_tracing(config: &AppConfig) {
