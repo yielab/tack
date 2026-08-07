@@ -13,7 +13,7 @@ use chrono::Utc;
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
     Repository, init_pool, migrations,
-    repo::execution::{NewRunner, SystemExecutionClock},
+    repo::execution::{NewAgentProfile, NewRunner, RedeemEnrollmentResult, SystemExecutionClock},
 };
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -76,19 +76,58 @@ async fn setup() -> (axum::Router, Repository, String) {
     )
     .await
     .expect("runner");
-    let state = executions::OperatorExecutionState::new(repo.clone());
+    repo.create_agent_profile(
+        NewAgentProfile {
+            id: "profile-c1",
+            name: "C1",
+            instructions: "work safely",
+            tool_policy: r#"{"mode":"safe"}"#,
+            limits: r#"{"tokens":1000}"#,
+        },
+        &clock,
+    )
+    .await
+    .expect("profile");
+    let state = executions::OperatorExecutionState::with_clock(
+        repo.clone(),
+        std::sync::Arc::new(SystemExecutionClock),
+    );
     let app = executions::routes(state.clone()).merge(runner_admin::routes(state));
     (app, repo, item.id.to_string())
 }
 
 fn create_body(item_id: &str) -> String {
-    serde_json::json!({"item_id":item_id,"idempotency_key":"same-key","selector_kind":"exact_runner","selector_id":"runner-active"}).to_string()
+    serde_json::json!({
+        "item_id":item_id,
+        "idempotency_key":"same-key",
+        "selector_kind":"exact_runner",
+        "selector_id":"runner-active",
+        "agent_profile_id":"profile-c1",
+        "requested_harness_kind":"codex",
+        "agent_profile_snapshot":{"name":"C1","instructions":"work safely","tool_policy":{"mode":"safe"},"timeout_seconds":60,"budgets":{"tokens":1000}},
+        "repository_snapshot":{"kind":"git","remote":"https://example.test/c1.git","base_revision":"abc123","subdirectory":null},
+        "permission_policy":{"tools":["shell"],"network":false},
+        "timeout_seconds":60,
+        "budgets":{"tokens":1000},
+        "environment":{"MODE":{"value":"test","secret_reference":null}},
+        "metadata":{"source":"c1-test"}
+    }).to_string()
 }
 async fn send(
     app: &axum::Router,
     method: &str,
     uri: &str,
     body: String,
+) -> (StatusCode, serde_json::Value) {
+    send_as(app, method, uri, body, "operator-1").await
+}
+
+async fn send_as(
+    app: &axum::Router,
+    method: &str,
+    uri: &str,
+    body: String,
+    principal: &str,
 ) -> (StatusCode, serde_json::Value) {
     let response = app
         .clone()
@@ -97,6 +136,7 @@ async fn send(
                 .method(method)
                 .uri(uri)
                 .header("content-type", "application/json")
+                .header("x-tack-principal", principal)
                 .body(Body::from(body))
                 .unwrap(),
         )
@@ -113,17 +153,40 @@ async fn duplicate_create_replays_same_request_and_revoked_runner_is_rejected() 
     let (app, repo, item_id) = setup().await;
     let (first_status, first) = send(&app, "POST", "/executions", create_body(&item_id)).await;
     let (second_status, second) = send(&app, "POST", "/executions", create_body(&item_id)).await;
-    assert_eq!(first_status, StatusCode::OK);
+    assert_eq!(first_status, StatusCode::OK, "{first}");
     assert_eq!(second_status, StatusCode::OK);
     assert_eq!(first["request_id"], second["request_id"]);
     assert_eq!(second["replayed"], true);
+
+    let (other_status, other) = send_as(
+        &app,
+        "POST",
+        "/executions",
+        create_body(&item_id),
+        "operator-2",
+    )
+    .await;
+    assert_eq!(other_status, StatusCode::OK);
+    assert_ne!(first["request_id"], other["request_id"]);
+    assert_eq!(other["replayed"], false);
+
+    let changed = create_body(&item_id).replace("\"timeout_seconds\":60", "\"timeout_seconds\":61");
+    let (conflict, conflict_body) = send(&app, "POST", "/executions", changed).await;
+    assert_eq!(conflict, StatusCode::CONFLICT);
+    assert_eq!(conflict_body["error"]["code"], "idempotency_conflict");
 
     sqlx::query("UPDATE agent_runners SET state='revoked', revoked_at=? WHERE id='runner-active'")
         .bind(Utc::now().to_rfc3339())
         .execute(repo.pool())
         .await
         .unwrap();
-    let (status, body) = send(&app, "POST", "/executions", serde_json::json!({"item_id":item_id,"idempotency_key":"new-key","selector_kind":"exact_runner","selector_id":"runner-active"}).to_string()).await;
+    let (replay_after_revoke, replay_body) =
+        send(&app, "POST", "/executions", create_body(&item_id)).await;
+    assert_eq!(replay_after_revoke, StatusCode::OK);
+    assert_eq!(replay_body["request_id"], first["request_id"]);
+    assert_eq!(replay_body["replayed"], true);
+    let unavailable = create_body(&item_id).replace("same-key", "new-key");
+    let (status, body) = send(&app, "POST", "/executions", unavailable).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["error"]["code"], "runner_revoked");
 }
@@ -162,7 +225,7 @@ async fn only_needs_operator_can_be_requeued_and_recovery_is_audited() {
         &app,
         "POST",
         &format!("/executions/{request_id}/requeue"),
-        r#"{"reason":"operator reviewed"}"#.into(),
+        r#"{"recovery_key":"operator-recovery-1","reason":"operator reviewed"}"#.into(),
     )
     .await;
     assert_eq!(denied, StatusCode::CONFLICT);
@@ -170,15 +233,131 @@ async fn only_needs_operator_can_be_requeued_and_recovery_is_audited() {
         .execute(repo.pool())
         .await
         .unwrap();
+    sqlx::query("UPDATE execution_requests SET state='needs_operator' WHERE id=?")
+        .bind(&request_id)
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,fingerprint,response,created_at) VALUES ('attempt-1','runner-recovery-1','needs_operator','{}','fingerprint','{}',?)")
+        .bind(&now)
+        .execute(repo.pool())
+        .await
+        .unwrap();
     let (allowed, body) = send(
         &app,
         "POST",
         &format!("/executions/{request_id}/requeue"),
-        r#"{"reason":"operator reviewed"}"#.into(),
+        r#"{"recovery_key":"operator-recovery-1","reason":"operator reviewed"}"#.into(),
     )
     .await;
     assert_eq!(allowed, StatusCode::OK);
     assert_eq!(body["state"], "queued");
-    let audits: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_events WHERE attempt_id='attempt-1' AND kind='requeue_confirmed'").fetch_one(repo.pool()).await.unwrap();
+    let audits: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_recovery_audits WHERE attempt_id='attempt-1' AND classification='operator_requeue'").fetch_one(repo.pool()).await.unwrap();
     assert_eq!(audits, 1);
+}
+
+#[tokio::test]
+async fn enrollment_token_is_returned_once_hash_only_and_revoke_or_redeem_blocks_reuse() {
+    let (app, repo, _) = setup().await;
+    let enrollment = serde_json::json!({
+        "name":"Pending runner",
+        "labels":{"region":"test"},
+        "total_capacity":1,
+        "available_capacity":1,
+        "capability_snapshot":{"runner_version":"test"}
+    });
+    let (status, created) = send(&app, "POST", "/runners/enrollment", enrollment.to_string()).await;
+    assert_eq!(status, StatusCode::OK);
+    let runner_id = created["runner_id"].as_str().unwrap().to_owned();
+    let token_id = created["token_id"].as_str().unwrap().to_owned();
+    let raw_token = created["enrollment_token"].as_str().unwrap().to_owned();
+    let stored_hash: String =
+        sqlx::query_scalar("SELECT token_hash FROM agent_enrollment_tokens WHERE id=?")
+            .bind(&token_id)
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_ne!(stored_hash, raw_token);
+    assert!(!created.to_string().contains(&stored_hash));
+
+    let clock = SystemExecutionClock;
+    let redeemed = repo
+        .redeem_enrollment_token(
+            &stored_hash,
+            "runner-credential-hash",
+            Utc::now() + chrono::Duration::hours(1),
+            "test-runner",
+            "Pending runner",
+            "{}",
+            1,
+            1,
+            "{}",
+            1,
+            &clock,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        redeemed,
+        RedeemEnrollmentResult::Redeemed(runner_id.clone())
+    );
+    assert_eq!(
+        repo.redeem_enrollment_token(
+            &stored_hash,
+            "another",
+            Utc::now() + chrono::Duration::hours(1),
+            "test-runner",
+            "Pending runner",
+            "{}",
+            1,
+            1,
+            "{}",
+            1,
+            &clock,
+        )
+        .await
+        .unwrap(),
+        RedeemEnrollmentResult::InvalidOrExpired
+    );
+
+    let second_enrollment = enrollment
+        .to_string()
+        .replace("Pending runner", "Second pending runner");
+    let (status, second) = send(&app, "POST", "/runners/enrollment", second_enrollment).await;
+    assert_eq!(status, StatusCode::OK);
+    let second_runner = second["runner_id"].as_str().unwrap();
+    let second_token_id = second["token_id"].as_str().unwrap();
+    let (revoked, revoke_body) = send(
+        &app,
+        "POST",
+        &format!("/runners/{second_runner}/enrollment-tokens/{second_token_id}/revoke"),
+        "{}".into(),
+    )
+    .await;
+    assert_eq!(revoked, StatusCode::OK);
+    assert!(revoke_body.get("enrollment_token").is_none());
+    let second_hash: String =
+        sqlx::query_scalar("SELECT token_hash FROM agent_enrollment_tokens WHERE id=?")
+            .bind(second_token_id)
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(
+        repo.redeem_enrollment_token(
+            &second_hash,
+            "runner-credential-hash",
+            Utc::now() + chrono::Duration::hours(1),
+            "test-runner",
+            "Pending runner",
+            "{}",
+            1,
+            1,
+            "{}",
+            1,
+            &clock,
+        )
+        .await
+        .unwrap(),
+        RedeemEnrollmentResult::InvalidOrExpired
+    );
 }
