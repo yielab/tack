@@ -32,6 +32,67 @@ enum CommitResult {
     IdempotencyConflict,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum RecoveryResult {
+    Applied {
+        disposition: String,
+        committed_at: u64,
+    },
+    Replay {
+        disposition: String,
+        committed_at: u64,
+    },
+    IdempotencyConflict,
+}
+
+#[derive(Debug)]
+struct FakeRecoveryLedger {
+    clock: FakeClock,
+    reports: HashMap<String, (String, String, u64)>,
+}
+
+impl FakeRecoveryLedger {
+    fn new(now_millis: u64) -> Self {
+        Self {
+            clock: FakeClock::new(now_millis),
+            reports: HashMap::new(),
+        }
+    }
+
+    fn observe(
+        &mut self,
+        recovery_key: &str,
+        canonical_request: &str,
+        disposition: &str,
+    ) -> RecoveryResult {
+        if let Some((original_request, original_disposition, committed_at)) =
+            self.reports.get(recovery_key)
+        {
+            return if original_request == canonical_request {
+                RecoveryResult::Replay {
+                    disposition: original_disposition.clone(),
+                    committed_at: *committed_at,
+                }
+            } else {
+                RecoveryResult::IdempotencyConflict
+            };
+        }
+        let committed_at = self.clock.now_millis();
+        self.reports.insert(
+            recovery_key.to_owned(),
+            (
+                canonical_request.to_owned(),
+                disposition.to_owned(),
+                committed_at,
+            ),
+        );
+        RecoveryResult::Applied {
+            disposition: disposition.to_owned(),
+            committed_at,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct FakeRunner {
     clock: FakeClock,
@@ -156,4 +217,44 @@ fn byte_equivalent_replay_returns_original_and_conflicting_reuse_fails() {
         CommitResult::IdempotencyConflict
     );
     assert_eq!(runner.completions.len(), 1);
+}
+
+#[test]
+fn recovery_replay_key_is_stable_and_ledgers_share_no_global_state() {
+    let key = "recovery:attempt:7:process_stopped";
+    let request = r#"{"observation":"process_stopped","process_observed":false}"#;
+    let mut first = FakeRecoveryLedger::new(1_000);
+    assert_eq!(
+        first.observe(key, request, "safe_pre_spawn_requeue"),
+        RecoveryResult::Applied {
+            disposition: "safe_pre_spawn_requeue".to_owned(),
+            committed_at: 1_000,
+        }
+    );
+    first.clock.advance(500);
+    assert_eq!(
+        first.observe(key, request, "needs_operator"),
+        RecoveryResult::Replay {
+            disposition: "safe_pre_spawn_requeue".to_owned(),
+            committed_at: 1_000,
+        }
+    );
+    assert_eq!(
+        first.observe(
+            key,
+            r#"{"observation":"ambiguous","process_observed":true}"#,
+            "needs_operator",
+        ),
+        RecoveryResult::IdempotencyConflict
+    );
+
+    let mut independent = FakeRecoveryLedger::new(2_000);
+    assert_eq!(
+        independent.observe(key, request, "safe_pre_spawn_requeue"),
+        RecoveryResult::Applied {
+            disposition: "safe_pre_spawn_requeue".to_owned(),
+            committed_at: 2_000,
+        },
+        "a separate deterministic test ledger must not share mutable replay state"
+    );
 }
