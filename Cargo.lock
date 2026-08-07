@@ -3120,6 +3120,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "tack-runner"
+version = "0.1.0-beta.6"
+dependencies = [
+ "async-trait",
+ "clap",
+ "serde",
+ "thiserror",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "tar"
 version = "0.4.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
