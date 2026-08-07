@@ -237,6 +237,11 @@ pub struct StartReport {
     pub attempt_id: AttemptId,
     pub fencing_token: FencingToken,
     pub phase: StartPhase,
+    /// The planned isolated workspace, required while the server accepts preparation.
+    pub workspace_id: Option<WorkspaceId>,
+    /// The repository revision reserved for that workspace.
+    pub base_revision: Option<String>,
+    /// Present only after a local process has been observed running.
     pub process_id: Option<String>,
 }
 

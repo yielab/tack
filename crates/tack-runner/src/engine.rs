@@ -209,6 +209,8 @@ where
                     attempt_id: record.attempt_id.clone(),
                     fencing_token: record.fencing_token,
                     phase: StartPhase::Preparing,
+                    workspace_id: Some(workspace.id.clone()),
+                    base_revision: Some(workspace.base_revision.clone()),
                     process_id: None,
                 },
             )
@@ -236,6 +238,8 @@ where
                     attempt_id: record.attempt_id.clone(),
                     fencing_token: record.fencing_token,
                     phase: StartPhase::ProcessObservedRunning,
+                    workspace_id: Some(spec.workspace.id.clone()),
+                    base_revision: Some(spec.workspace.base_revision.clone()),
                     process_id: record.process_id.clone(),
                 },
             )
@@ -408,6 +412,7 @@ mod tests {
         fail_running_start: bool,
         fail_cancellation_report: bool,
         start_reports: Arc<AtomicUsize>,
+        reported_starts: Arc<Mutex<Vec<StartReport>>>,
         completion_reports: Arc<AtomicUsize>,
         cancellation_reports: Arc<AtomicUsize>,
         recovery_reports: Arc<AtomicUsize>,
@@ -465,6 +470,10 @@ mod tests {
             report: StartReport,
         ) -> Result<(), ProtocolClientError> {
             self.start_reports.fetch_add(1, Ordering::SeqCst);
+            self.reported_starts
+                .lock()
+                .expect("fake protocol lock")
+                .push(report.clone());
             if self.fail_running_start && report.phase == StartPhase::ProcessObservedRunning {
                 Err(ProtocolClientError::Transport)
             } else {
@@ -624,6 +633,7 @@ mod tests {
             fail_running_start: false,
             fail_cancellation_report: false,
             start_reports: Arc::new(AtomicUsize::new(0)),
+            reported_starts: Arc::new(Mutex::new(Vec::new())),
             completion_reports: Arc::new(AtomicUsize::new(0)),
             cancellation_reports: Arc::new(AtomicUsize::new(0)),
             recovery_reports: Arc::new(AtomicUsize::new(0)),
@@ -687,6 +697,27 @@ mod tests {
             "journal existed before worktree provision"
         );
         assert_eq!(protocol.start_reports.load(Ordering::SeqCst), 2);
+        let start_reports = protocol.reported_starts.lock().expect("fake protocol lock");
+        let preparing = start_reports
+            .iter()
+            .find(|report| report.phase == StartPhase::Preparing)
+            .expect("preparing report");
+        assert_eq!(
+            preparing.workspace_id.as_ref().map(|id| id.as_str()),
+            Some("ws_617474656d7074")
+        );
+        assert_eq!(preparing.base_revision.as_deref(), Some("revision"));
+        assert_eq!(preparing.process_id, None);
+        let running = start_reports
+            .iter()
+            .find(|report| report.phase == StartPhase::ProcessObservedRunning)
+            .expect("running report");
+        assert_eq!(
+            running.workspace_id.as_ref().map(|id| id.as_str()),
+            Some("ws_617474656d7074")
+        );
+        assert_eq!(running.base_revision.as_deref(), Some("revision"));
+        assert_eq!(running.process_id.as_deref(), Some("fake-process"));
         assert_eq!(cancellations.load(Ordering::SeqCst), 1);
         assert_eq!(protocol.cancellation_reports.load(Ordering::SeqCst), 1);
         assert_eq!(protocol.completion_reports.load(Ordering::SeqCst), 0);
