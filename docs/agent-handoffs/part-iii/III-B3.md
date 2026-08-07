@@ -47,7 +47,9 @@
 
 - Dependency commits: `c64e336` adds the path dependency on B1's `tack-orch` domain and
   `serde_json` for runner tests; `cd398eb` promotes `serde_json` to a runtime dependency for
-  the durable terminal-report outbox requested by C3's crash review.
+  the durable terminal-report outbox requested by C3's crash review. The subsequent clock
+  amendment adds direct `chrono` access so C3 can turn the injected `SystemTime` into the
+  fixture-required RFC3339 heartbeat `sent_at` without asking C5 to fabricate runner time.
 - No model/vendor SDK, network client, or provider-specific dependency was added. The lockfile
   changed only when `tack-orch` and `serde_json` first became direct runner dependencies.
 - Verification after each amendment: `cargo test -p tack-runner`,
