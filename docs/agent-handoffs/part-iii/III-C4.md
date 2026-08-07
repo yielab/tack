@@ -1,12 +1,15 @@
 # III-C4 handoff
 
-- Base SHA / branch / final SHA: `f14019b` / `agent/iii-c4-crash-matrix` /
-  the commit containing this handoff. The branch was rebased onto C3 through
-  `1b6dede`; C3 source files in ancestry are not C4-owned changes.
-- C4 commits: `fbc2b12` adds the repository crash matrix, `e9ee884` injects
-  both partial-event and checkpoint-update faults, `3ece27f` adds runner
-  process-boundary tests, and `54bce23` adds recovery-report retry,
-  ProcessRunning, and quarantined-reoffer coverage.
+- Base SHA / branch: `422b751` / `agent/iii-c4-crash-matrix`. This C4 branch
+  is cleanly rebased onto the integrated base; inherited C3/B2 source in
+  ancestry is not C4-owned. This handoff intentionally does not predict its
+  own future documentation-only commit SHA.
+- C4 commits: `d0320d6` adds the repository crash matrix, `f33bd83` injects
+  both partial-event and checkpoint-update faults, `5b9bac5` adds runner
+  process-boundary tests, `342a4eb` adds recovery-report retry, ProcessRunning,
+  and quarantined-reoffer coverage, `ff58f42` records the initial handoff,
+  `d955db6` rebases the matrix onto the strong B2/C3 APIs, and `f154114` adds
+  enrollment concurrency plus heartbeat replay-fault coverage.
 - Files owned: `crates/tack-api/tests/runner_vertical_slice.rs`,
   `crates/tack-api/tests/runner_vertical_slice/repository_crash.rs`,
   `crates/tack-runner/tests/crash_matrix.rs`, and this handoff. No production
