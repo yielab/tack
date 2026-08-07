@@ -304,6 +304,13 @@ fn canonical_json(value: serde_json::Value) -> serde_json::Value {
     }
 }
 
+fn canonical_json_or_string(value: &str) -> serde_json::Value {
+    match serde_json::from_str(value) {
+        Ok(value) => canonical_json(value),
+        Err(_) => serde_json::Value::String(value.into()),
+    }
+}
+
 fn completion_fingerprint(completion: &Completion<'_>) -> Result<String, sqlx::Error> {
     let actual_execution: serde_json::Value = serde_json::from_str(completion.actual_execution)
         .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
@@ -316,7 +323,7 @@ fn completion_fingerprint(completion: &Completion<'_>) -> Result<String, sqlx::E
         "completion_id": completion.completion_id,
         "final_event_checkpoint": completion.final_event_checkpoint,
         "terminal_state": completion.terminal_state,
-        "terminal_reason": completion.terminal_reason,
+        "terminal_reason": canonical_json_or_string(completion.terminal_reason),
         "actual_execution": canonical_json(actual_execution),
         "usage": canonical_json(usage),
     }))

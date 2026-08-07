@@ -1038,6 +1038,41 @@ async fn completion_replay_canonicalizes_structured_json() {
 }
 
 #[tokio::test]
+async fn completion_replay_canonicalizes_structured_terminal_reason() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-completion-reason",
+        "attempt-completion-reason",
+    )
+    .await;
+    let completion = Completion {
+        terminal_reason: r#"{"detail":{"b":2,"a":1},"code":"done"}"#,
+        ..completion_input(
+            "attempt-completion-reason",
+            fence,
+            "completion-reason",
+            None,
+        )
+    };
+    repo.complete_execution_result(completion.clone(), &clock)
+        .await
+        .unwrap();
+    let semantic_retry = Completion {
+        terminal_reason: r#"{"code":"done","detail":{"a":1,"b":2}}"#,
+        ..completion
+    };
+    assert!(matches!(
+        repo.complete_execution_result(semantic_retry, &clock)
+            .await
+            .unwrap(),
+        CompletionResult::Replayed(_)
+    ));
+}
+
+#[tokio::test]
 async fn completion_changed_fields_or_checkpoint_conflict_without_write() {
     let (repo, item_id, clock) = ready_repo().await;
     let fence = ready_completion_attempt(
