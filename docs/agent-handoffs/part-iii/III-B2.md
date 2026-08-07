@@ -84,3 +84,17 @@
 - Added structured event checkpoint results and durable cancellation observation replay, with
   focused fake-clock repository coverage. Final focused command: `cargo test -p tack-db --test
   execution_repo_test` (10 passed), plus `cargo fmt -p tack-db` and focused Clippy.
+
+### Event replay correction
+
+- Migration 054 persists each event-batch replay keyed by `(attempt_id, checkpoint)` with an
+  authenticated request fingerprint and the authoritative accepted/duplicate response. The
+  strong event API now returns `Applied`, `ReplayConflict`, or `Stale`; runner/fence/lease
+  validation happens before a replay record may be used.
+- Payload JSON is recursively canonicalized before fingerprinting, so object-key order does not
+  turn an equivalent retry into a conflict. Malformed replay rows fail closed with a database
+  protocol error. A legacy pre-054 attempt whose checkpoint already advanced but has no replay
+  row is a `ReplayConflict`; no response is fabricated from incomplete historical state.
+- Focused coverage proves canonical retries, changed-payload conflict with no extra write, and
+  foreign-fence stale rejection. The compatibility boolean event API remains unchanged for
+  callers that have not adopted the typed result.

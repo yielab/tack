@@ -204,6 +204,12 @@ pub struct EventBatchResult {
     pub replayed: bool,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EventApplyResult {
+    Applied(EventBatchResult),
+    ReplayConflict,
+    Stale,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecoveryClassification {
     SafePreSpawnRequeue,
     NeedsOperator,
@@ -233,11 +239,47 @@ fn event_batch_fingerprint(
     batch: &EventBatch<'_>,
     events: &[NewEvent<'_>],
 ) -> Result<String, sqlx::Error> {
-    let values: Vec<serde_json::Value> = events.iter().map(|event| serde_json::json!({"event_id":event.event_id,"sequence":event.sequence,"source":event.source,"kind":event.kind,"payload":event.payload,"occurred_at":event.occurred_at.to_rfc3339()})).collect();
-    serde_json::to_string(
-        &serde_json::json!({"previous_checkpoint":batch.previous_checkpoint,"events":values}),
-    )
-    .map_err(|e| sqlx::Error::Protocol(e.to_string()))
+    let values: Result<Vec<serde_json::Value>, sqlx::Error> = events
+        .iter()
+        .map(|event| {
+            let payload: serde_json::Value = serde_json::from_str(event.payload)
+                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+            Ok(serde_json::json!({
+                "event_id": event.event_id,
+                "sequence": event.sequence,
+                "source": event.source,
+                "kind": event.kind,
+                "payload": canonical_json(payload),
+                "occurred_at": event.occurred_at.to_rfc3339(),
+            }))
+        })
+        .collect();
+    serde_json::to_string(&serde_json::json!({
+        "runner_id": batch.runner_id,
+        "fencing_token": batch.fencing_token,
+        "previous_checkpoint": batch.previous_checkpoint,
+        "events": values?,
+    }))
+    .map_err(|error| sqlx::Error::Protocol(error.to_string()))
+}
+
+fn canonical_json(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut entries: Vec<_> = map.into_iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            serde_json::Value::Object(
+                entries
+                    .into_iter()
+                    .map(|(k, v)| (k, canonical_json(v)))
+                    .collect(),
+            )
+        }
+        serde_json::Value::Array(v) => {
+            serde_json::Value::Array(v.into_iter().map(canonical_json).collect())
+        }
+        v => v,
+    }
 }
 
 fn lease_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Lease, sqlx::Error> {
@@ -872,34 +914,70 @@ impl Repository {
         batch: EventBatch<'_>,
         events: &[NewEvent<'_>],
         clock: &dyn ExecutionClock,
-    ) -> Result<Option<EventBatchResult>, sqlx::Error> {
+    ) -> Result<EventApplyResult, sqlx::Error> {
         let now = stamp(clock);
         let fingerprint = event_batch_fingerprint(&batch, events)?;
         let mut tx = self.pool().begin().await?;
-        if let Some(row) = sqlx::query("SELECT fingerprint,response FROM execution_event_batch_replays WHERE attempt_id=? AND checkpoint=?")
-            .bind(batch.attempt_id).bind(batch.checkpoint).fetch_optional(&mut *tx).await? {
-            let stored: String = row.get("fingerprint");
-            if stored != fingerprint { tx.commit().await?; return Ok(None); }
-            let response: String = row.get("response");
-            let value: serde_json::Value = serde_json::from_str(&response).map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
-            let accepted = value["accepted_event_ids"].as_array().ok_or_else(|| sqlx::Error::Protocol("invalid event replay response".into()))?.iter().map(|v|v.as_str().unwrap_or_default().to_string()).collect();
-            let duplicate = value["duplicate_event_ids"].as_array().ok_or_else(|| sqlx::Error::Protocol("invalid event replay response".into()))?.iter().map(|v|v.as_str().unwrap_or_default().to_string()).collect();
-            tx.commit().await?;
-            return Ok(Some(EventBatchResult { accepted_event_ids: accepted, duplicate_event_ids: duplicate, committed_checkpoint: batch.checkpoint.into(), replayed: true }));
-        }
-        let row=sqlx::query("SELECT event_checkpoint FROM execution_attempts WHERE id=? AND runner_id=? AND fencing_token=? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at>?").bind(batch.attempt_id).bind(batch.runner_id).bind(batch.fencing_token).bind(&now).fetch_optional(&mut *tx).await?;
+        let row = sqlx::query("SELECT event_checkpoint FROM execution_attempts WHERE id=? AND runner_id=? AND fencing_token=? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at>?")
+            .bind(batch.attempt_id).bind(batch.runner_id).bind(batch.fencing_token).bind(&now).fetch_optional(&mut *tx).await?;
         let Some(row) = row else {
             tx.commit().await?;
-            return Ok(None);
+            return Ok(EventApplyResult::Stale);
         };
+        if let Some(row) = sqlx::query(
+            "SELECT fingerprint,response FROM execution_event_batch_replays WHERE attempt_id=? AND checkpoint=?",
+        )
+        .bind(batch.attempt_id)
+        .bind(batch.checkpoint)
+        .fetch_optional(&mut *tx)
+        .await?
+        {
+            let stored: String = row.get("fingerprint");
+            if stored != fingerprint {
+                tx.commit().await?;
+                return Ok(EventApplyResult::ReplayConflict);
+            }
+            let response: String = row.get("response");
+            let value: serde_json::Value = serde_json::from_str(&response)
+                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+            let accepted = value["accepted_event_ids"]
+                .as_array()
+                .ok_or_else(|| sqlx::Error::Protocol("invalid event replay response".into()))?
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .ok_or_else(|| sqlx::Error::Protocol("invalid event replay id".into()))
+                        .map(str::to_owned)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let duplicate = value["duplicate_event_ids"]
+                .as_array()
+                .ok_or_else(|| sqlx::Error::Protocol("invalid event replay response".into()))?
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .ok_or_else(|| sqlx::Error::Protocol("invalid event replay id".into()))
+                        .map(str::to_owned)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            tx.commit().await?;
+            return Ok(EventApplyResult::Applied(EventBatchResult {
+                accepted_event_ids: accepted,
+                duplicate_event_ids: duplicate,
+                committed_checkpoint: batch.checkpoint.into(),
+                replayed: true,
+            }));
+        }
         let current: Option<String> = row.get("event_checkpoint");
         if current.as_deref() == Some(batch.checkpoint) {
             tx.commit().await?;
-            return Ok(None);
+            return Ok(EventApplyResult::ReplayConflict);
         }
         if current.as_deref() != batch.previous_checkpoint {
             tx.commit().await?;
-            return Ok(None);
+            return Ok(EventApplyResult::ReplayConflict);
         }
         let mut accepted = Vec::new();
         let mut duplicate = Vec::new();
@@ -921,7 +999,7 @@ impl Repository {
         let changed=sqlx::query("UPDATE execution_attempts SET event_checkpoint=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND event_checkpoint IS ?").bind(batch.checkpoint).bind(&now).bind(batch.attempt_id).bind(batch.runner_id).bind(batch.fencing_token).bind(batch.previous_checkpoint).execute(&mut *tx).await?;
         if changed.rows_affected() != 1 {
             tx.rollback().await?;
-            return Ok(None);
+            return Ok(EventApplyResult::ReplayConflict);
         }
         let result = EventBatchResult {
             accepted_event_ids: accepted,
@@ -932,7 +1010,7 @@ impl Repository {
         let response=serde_json::json!({"accepted_event_ids":result.accepted_event_ids,"duplicate_event_ids":result.duplicate_event_ids}).to_string();
         sqlx::query("INSERT INTO execution_event_batch_replays(attempt_id,checkpoint,fingerprint,response,created_at) VALUES(?,?,?,?,?)").bind(batch.attempt_id).bind(batch.checkpoint).bind(fingerprint).bind(response).bind(&now).execute(&mut *tx).await?;
         tx.commit().await?;
-        Ok(Some(result))
+        Ok(EventApplyResult::Applied(result))
     }
 
     #[instrument(skip(self, events, clock))]
