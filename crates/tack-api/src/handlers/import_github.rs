@@ -117,6 +117,9 @@ pub async fn import_github(
     let client = reqwest::Client::builder()
         .user_agent("Tack/1.0 (github.com/yielab/tack)")
         .timeout(std::time::Duration::from_secs(15))
+        // The API endpoint can point at GitHub Enterprise. Redirect targets
+        // are untrusted remote input and must not receive user-supplied PATs.
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| ApiError::Internal(anyhow::anyhow!("HTTP client error: {e}")))?;
 

@@ -1570,6 +1570,52 @@ async fn github_imported_item_source_is_untrusted_and_survives_export_import_rou
 }
 
 #[tokio::test]
+async fn github_import_redirect_does_not_leak_user_token_to_private_destination() {
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let origin = MockServer::start().await;
+    let private_destination = MockServer::start().await;
+    let redirect_target = format!("{}/instance-metadata", private_destination.uri());
+
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/widgets/issues"))
+        .and(header("authorization", "Bearer user-pat"))
+        .respond_with(ResponseTemplate::new(302).insert_header("Location", redirect_target))
+        .mount(&origin)
+        .await;
+
+    let config = AppConfig {
+        github_api_base: origin.uri(),
+        ..AppConfig::default()
+    };
+    let (app, _) = common::test_app_with_config(config).await;
+    let pid = make_project(&app).await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("/api/projects/{pid}/import-github"))
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"repo":"acme/widgets","token":"user-pat"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(
+        private_destination
+            .received_requests()
+            .await
+            .expect("inspect private destination")
+            .is_empty(),
+        "a redirect must never forward a user-supplied GitHub token"
+    );
+}
+
+#[tokio::test]
 async fn csv_import_marks_items_with_csv_import_source() {
     use axum::body::to_bytes;
 

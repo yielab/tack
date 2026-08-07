@@ -32,6 +32,9 @@ pub async fn push_issue_state(
     let client = reqwest::Client::builder()
         .user_agent("Tack/1.0 (github.com/yielab/tack)")
         .timeout(std::time::Duration::from_secs(15))
+        // GitHub Enterprise endpoints are configurable. A redirect is remote
+        // input, so never forward the repository token to its target.
+        .redirect(reqwest::redirect::Policy::none())
         .build()?;
 
     let url = format!(
@@ -126,5 +129,34 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.to_string().contains("404"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn redirect_does_not_leak_github_token_to_private_destination() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let origin = MockServer::start().await;
+        let private_destination = MockServer::start().await;
+        let redirect_target = format!("{}/instance-metadata", private_destination.uri());
+
+        Mock::given(method("PATCH"))
+            .and(path("/repos/acme/widgets/issues/42"))
+            .respond_with(ResponseTemplate::new(302).insert_header("Location", redirect_target))
+            .mount(&origin)
+            .await;
+
+        let err = push_issue_state(&origin.uri(), "tok-123", "acme/widgets", 42, true)
+            .await
+            .expect_err("a redirect is not a successful GitHub update");
+        assert!(err.to_string().contains("302"), "got: {err}");
+        assert!(
+            private_destination
+                .received_requests()
+                .await
+                .expect("inspect private destination")
+                .is_empty(),
+            "a redirect must never forward the GitHub authorization token"
+        );
     }
 }
