@@ -30,3 +30,17 @@
 - Safe merge order and likely conflicts: merge accepted B1 first, then the two B4-only
   commits. B4 does not edit `lib.rs`, Cargo files, fixtures or any shared source.
 - Checklist: no unowned source files, no live secret, no panic stub, no blind retry.
+
+## Recovery-observation amendment
+
+- Base / contract / final: this B4-only amendment starts on B1 recovery-domain
+  commit `9d6da9a`; its final commit records the conformance coverage.
+- Owned changes: only `crates/tack-orch/tests/runner_contract/{fixtures,domain,fakes}.rs`
+  and this handoff. No shared source, contract fixture, Cargo, or TODO file changed.
+- Added coverage: byte-pinned and exact B1 domain round trips for both recovery
+  fixtures; every required request/response field and each new enum rejects a
+  mutation; recovery dispositions are checked against the frozen lifecycle
+  rules; a local fake ledger proves stable-key original-response replay,
+  conflicting reuse, and no cross-test/global mutable state.
+- Verification: focused B4 runner-contract test, clippy, formatting, and diff
+  checks are recorded by the amendment commit.

@@ -8,8 +8,9 @@ use std::fmt::Debug;
 use std::fs;
 use tack_orch::execution::{
     ActualExecution, ActualModelId, ActualModelProvider, AttemptSnapshot, ExecutionRequestSnapshot,
-    ExecutionState, ProtocolErrorEnvelope, RequestedModelId, RequestedModelProvider,
-    RunnerCapabilities, TransitionActor, Usage, validate_transition,
+    ExecutionState, ProtocolErrorEnvelope, RecoveryDisposition, RecoveryObservation,
+    RecoveryObservationRequest, RecoveryObservationResponse, RequestedModelId,
+    RequestedModelProvider, RunnerCapabilities, TransitionActor, Usage, validate_transition,
 };
 
 fn assert_exact_round_trip<T>(name: &str, value: &Value)
@@ -42,6 +43,17 @@ fn frozen_domain_fragments_round_trip_exactly() {
     );
     assert_exact_round_trip::<Usage>("completion.request.json.usage", &completion["usage"]);
 
+    let recovery_request = load_value("recovery-observation.request.json");
+    assert_exact_round_trip::<RecoveryObservationRequest>(
+        "recovery-observation.request.json",
+        &recovery_request,
+    );
+    let recovery_response = load_value("recovery-observation.response.json");
+    assert_exact_round_trip::<RecoveryObservationResponse>(
+        "recovery-observation.response.json",
+        &recovery_response,
+    );
+
     for path in fixture_paths()
         .into_iter()
         .filter(|path| fixture_name(path).starts_with("errors/"))
@@ -51,6 +63,137 @@ fn frozen_domain_fragments_round_trip_exactly() {
         let value: Value = serde_json::from_slice(&bytes).expect("error fixture must be JSON");
         assert_exact_round_trip::<ProtocolErrorEnvelope>(&name, &value);
     }
+}
+
+#[test]
+fn recovery_observation_requires_every_field_and_rejects_unknown_enums() {
+    let request = load_value("recovery-observation.request.json");
+    for field in [
+        "protocol_version",
+        "runner_id",
+        "attempt_id",
+        "fencing_token",
+        "recovery_key",
+        "observation",
+        "details",
+    ] {
+        let mut mutated = request.clone();
+        mutated
+            .as_object_mut()
+            .expect("recovery request fixture must be an object")
+            .remove(field);
+        assert!(
+            serde_json::from_value::<RecoveryObservationRequest>(mutated).is_err(),
+            "missing recovery request field {field} must be rejected"
+        );
+    }
+    for (path, invalid) in [
+        (vec!["observation"], "unknown_observation"),
+        (vec!["details", "journal_state"], "secret_material"),
+    ] {
+        let mut mutated = request.clone();
+        let mut value = &mut mutated;
+        for key in path {
+            value = value
+                .get_mut(key)
+                .expect("recovery request fixture path must exist");
+        }
+        *value = Value::String(invalid.to_owned());
+        assert!(
+            serde_json::from_value::<RecoveryObservationRequest>(mutated).is_err(),
+            "invalid recovery request enum {invalid} must be rejected"
+        );
+    }
+
+    let response = load_value("recovery-observation.response.json");
+    for field in [
+        "protocol_version",
+        "attempt_id",
+        "recovery_key",
+        "disposition",
+        "replayed",
+        "committed_at",
+    ] {
+        let mut mutated = response.clone();
+        mutated
+            .as_object_mut()
+            .expect("recovery response fixture must be an object")
+            .remove(field);
+        assert!(
+            serde_json::from_value::<RecoveryObservationResponse>(mutated).is_err(),
+            "missing recovery response field {field} must be rejected"
+        );
+    }
+    let mut invalid_disposition = response;
+    invalid_disposition["disposition"] = Value::String("retry_forever".to_owned());
+    assert!(
+        serde_json::from_value::<RecoveryObservationResponse>(invalid_disposition).is_err(),
+        "unknown recovery disposition must be rejected"
+    );
+}
+
+#[test]
+fn recovery_dispositions_match_the_frozen_lifecycle_contract() {
+    let lifecycle = load_value("lifecycle-transitions.json");
+    let recovery = &lifecycle["recovery_observation"];
+    assert_eq!(recovery["actor"], "recovery_service");
+    assert_eq!(
+        recovery["observations"],
+        serde_json::json!(["process_stopped", "process_running", "ambiguous"])
+    );
+
+    let active = [
+        ExecutionState::Leased,
+        ExecutionState::Preparing,
+        ExecutionState::Running,
+        ExecutionState::WaitingDecision,
+    ];
+    for state in active {
+        assert!(
+            RecoveryDisposition::SafePreSpawnRequeue
+                .is_compatible_with(state, RecoveryObservation::ProcessStopped)
+        );
+        assert!(
+            validate_transition(
+                state,
+                RecoveryDisposition::SafePreSpawnRequeue
+                    .attempt_transition()
+                    .expect("safe recovery has an attempt transition"),
+                TransitionActor::RecoveryService,
+            )
+            .is_ok()
+        );
+        assert!(
+            RecoveryDisposition::NeedsOperator
+                .is_compatible_with(state, RecoveryObservation::ProcessRunning)
+        );
+        assert!(
+            validate_transition(
+                state,
+                RecoveryDisposition::NeedsOperator
+                    .attempt_transition()
+                    .expect("needs-operator recovery has an attempt transition"),
+                TransitionActor::RecoveryService,
+            )
+            .is_ok()
+        );
+    }
+    assert!(
+        !RecoveryDisposition::SafePreSpawnRequeue
+            .is_compatible_with(ExecutionState::Running, RecoveryObservation::Ambiguous)
+    );
+    assert!(
+        RecoveryDisposition::AlreadyTerminal
+            .is_compatible_with(ExecutionState::Succeeded, RecoveryObservation::Ambiguous)
+    );
+    assert_eq!(
+        RecoveryDisposition::AlreadyTerminal.attempt_transition(),
+        None
+    );
+    assert_eq!(
+        RecoveryDisposition::AlreadyTerminal.request_transition(),
+        None
+    );
 }
 
 #[test]
