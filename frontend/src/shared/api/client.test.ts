@@ -150,7 +150,13 @@ describe('shared/api/client', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('binary', { status: 200 })
     );
-    await expect(requestBlob('/backup')).resolves.toBeInstanceOf(Blob);
+    const blob = await requestBlob('/backup');
+    // Fetch and jsdom may construct Blobs in different realms. Assert the
+    // complete browser Blob protocol and payload instead of same-realm
+    // `instanceof`, which rejects a valid cross-realm Blob.
+    expect(Object.prototype.toString.call(blob)).toBe('[object Blob]');
+    expect(blob).toMatchObject({ size: 6, type: 'text/plain;charset=utf-8' });
+    await expect(blob.text()).resolves.toBe('binary');
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('nope', { status: 500 })
