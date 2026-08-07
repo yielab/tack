@@ -9102,8 +9102,8 @@ acceptance gate that can be verified without trusting its author's handoff.
 | Wave | Cards | Phases | Status |
 |---|---|---|---|
 | 0 — Clean boundary and safety | III-A0 · A1 · A2 · A3 · A4 | 50 | complete — accepted integration SHA `f042085`; full Rust/frontend/docs/contracts and all three Playwright projects green |
-| 1 — Domain, schema and runner skeleton | III-B1 · B2 · B3 · B4 | 51, 52 | in progress — all branches start from accepted Wave 0 SHA `f042085` |
-| 2 — Pull protocol vertical slice | III-C1 · C2 · C3 · C4 · C5 | 52 | blocked on Wave 1 |
+| 1 — Domain, schema and runner skeleton | III-B1 · B2 · B3 · B4 | 51, 52 | complete — accepted integration SHA `f14019b`; domain/schema/runner/contracts and legacy golden gate green |
+| 2 — Pull protocol vertical slice | III-C1 · C2 · C3 · C4 · C5 | 52 | in progress — C1-C4 branch from accepted Wave 1 SHA `f14019b`; C5 waits for their integration |
 | 3 — Real harness proof | III-D1 · D2 · D3 · D4 · D5 | 53 | blocked on mock vertical slice |
 | 4 — Fleet scheduling and PM UX | III-E1 · E2 · E3 · E4 · E5 · E6 | 54 | blocked on two proven harnesses |
 | 5 — Decisions, artifacts, models and usage | III-F1 · F2 · F3 · F4 · F5 | 55, 56 | blocked on Wave 4 shared state/API |
