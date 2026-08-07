@@ -13,7 +13,8 @@
   all JSON was parsed with `jq empty` (pass); a local validation script checked that every
   ordered state pair appears exactly once in allow/deny (pass), error fixtures equal
   `protocol.json`'s stable-code set (pass), and no JSON field is named bare `provider`
-  (pass); `mdbook build docs/book` (recorded below after execution).
+  (pass); `mdbook build docs/book` passed on the integrated tree and emitted no `error` or
+  `broken` link diagnostic (the CI broken-link gate).
 - Failure/adversarial case proved: terminal states have no outbound transition; stale
   fencing tokens have a stable non-retryable error; a self-transition is denied even though
   byte-equivalent endpoint replay remains idempotent; revoked runner credentials cannot be
@@ -55,4 +56,3 @@ frontend schema, migration rebuild crash states, and three cross-realm Blob/obje
 Vitest failures. `cargo test --workspace` passed from the baseline with local mock-server
 socket permission; `cargo fmt --all --check` passed; the frontend suite passed 475/478 and
 the three failures are card A4's explicit starting fixtures.
-
