@@ -18,7 +18,7 @@ use super::{
     ActiveAttempt, AttemptId, AttemptState, CancellationReport, CancellationRequestId,
     ClaimRequest, ClaimResult, ClaimedWork, ClaimedWorkError, CompletionId, CompletionReport,
     EnrollmentRequest, EnrollmentResponse, HeartbeatRequest, ProtocolClientError, PullProtocol,
-    RefreshRequest, RefreshResponse, RunnerSession, StartPhase, StartReport,
+    RefreshRequest, RefreshResponse, RunnerSession, StartPhase, StartReport, Timestamp,
     journal::{AttemptJournal, JournalError, JournalState, OwnerOnlyJournal},
     workspace::{Workspace, WorkspaceError, WorkspaceManager, WorktreeProvisioner},
 };
@@ -56,11 +56,22 @@ pub struct LocalRunHandle {
     pub process_id: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CancelObservation {
     ProcessStopped,
     AlreadyTerminal,
     Ambiguous,
+}
+
+/// Typed, non-secret evidence supplied by the harness after a cancellation
+/// attempt. The adapter owns the observation time and details; the engine only
+/// carries them to the cancellation transport unchanged.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CancellationEvidence {
+    pub observation: CancelObservation,
+    pub observed_at: Timestamp,
+    pub details: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -97,7 +108,7 @@ pub struct ExecutionSpec {
 pub trait HarnessAdapter: Send + Sync {
     async fn validate(&self, spec: &ExecutionSpec) -> Result<(), HarnessError>;
     async fn start(&self, spec: &ExecutionSpec) -> Result<LocalRunHandle, HarnessError>;
-    async fn cancel(&self, handle: &LocalRunHandle) -> Result<CancelObservation, HarnessError>;
+    async fn cancel(&self, handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError>;
     async fn wait(&self, handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError>;
     async fn reconcile(
         &self,
@@ -277,11 +288,20 @@ where
             if self.journal.update(&record).is_err() {
                 return self.quarantine_after_spawn(session, &record, &handle).await;
             }
-            let observation = match self.adapter.cancel(&handle).await {
-                Ok(observation) => observation,
+            let evidence = match self.adapter.cancel(&handle).await {
+                Ok(evidence) => evidence,
                 Err(_) => return self.quarantine_after_spawn(session, &record, &handle).await,
             };
+            if evidence.observation != CancelObservation::ProcessStopped {
+                // A terminal acknowledgement or an ambiguous adapter result
+                // is not proof that this cancellation committed. Keep the
+                // local record on the recovery/quarantine path instead of
+                // fabricating a cancelled success.
+                return self.report_or_retain_ambiguity(session, &record).await;
+            }
             let report = CancellationReport {
+                protocol_version: ProtocolVersion::v1(),
+                runner_id: session.runner_id.clone(),
                 cancellation_request_id: CancellationRequestId::new(format!(
                     "cancel:{}:{}",
                     record.attempt_id.as_str(),
@@ -289,15 +309,21 @@ where
                 )),
                 attempt_id: record.attempt_id.clone(),
                 fencing_token: record.fencing_token,
-                observation,
+                observation: evidence.observation,
+                observed_at: evidence.observed_at,
+                details: evidence.details,
             };
-            if self
+            match self
                 .protocol
-                .report_cancellation(session, report)
+                .report_cancellation(session, report.clone())
                 .await
-                .is_err()
             {
-                return self.quarantine_after_spawn(session, &record, &handle).await;
+                Ok(response)
+                    if response.protocol_version == ProtocolVersion::v1()
+                        && response.attempt_id == report.attempt_id
+                        && response.cancellation_request_id == report.cancellation_request_id
+                        && response.state == AttemptState::Cancelled => {}
+                Ok(_) | Err(_) => return self.report_or_retain_ambiguity(session, &record).await,
             }
             record.state = JournalState::Reported;
             self.journal.update(&record)?;
@@ -493,8 +519,8 @@ mod tests {
 
     use super::*;
     use crate::client::{
-        AttemptLease, ClaimRequestId, ClaimResult, ClaimedWork, FencingToken, LeaseResult,
-        ProtocolClientError, RunnerCredential, RunnerId, Timestamp,
+        AttemptLease, CancellationResponse, ClaimRequestId, ClaimResult, ClaimedWork, FencingToken,
+        LeaseResult, ProtocolClientError, RunnerCredential, RunnerId, Timestamp,
     };
     use tack_orch::execution::{
         AttemptId as DomainAttemptId, AttemptSnapshot, ExecutionRequestSnapshot,
@@ -507,6 +533,20 @@ mod tests {
         disposition: RecoveryDisposition,
         replayed: bool,
         additional: BTreeMap<String, serde_json::Value>,
+    }
+
+    #[derive(Clone, Copy)]
+    enum CancellationAckMismatch {
+        None,
+        Attempt,
+        Request,
+        State,
+    }
+
+    #[derive(Clone, Copy)]
+    struct CancellationResponseConfig {
+        replayed: bool,
+        mismatch: CancellationAckMismatch,
     }
 
     #[derive(Clone)]
@@ -522,6 +562,8 @@ mod tests {
         completion_reports: Arc<AtomicUsize>,
         reported_completions: Arc<Mutex<Vec<CompletionReport>>>,
         cancellation_reports: Arc<AtomicUsize>,
+        reported_cancellations: Arc<Mutex<Vec<CancellationReport>>>,
+        cancellation_response: Arc<Mutex<CancellationResponseConfig>>,
         recovery_reports: Arc<AtomicUsize>,
         reported_recoveries: Arc<Mutex<Vec<RecoveryObservationRequest>>>,
         recovery_failures_remaining: Arc<AtomicUsize>,
@@ -639,13 +681,40 @@ mod tests {
         async fn report_cancellation(
             &self,
             _session: &RunnerSession,
-            _report: CancellationReport,
-        ) -> Result<(), ProtocolClientError> {
+            report: CancellationReport,
+        ) -> Result<CancellationResponse, ProtocolClientError> {
             self.cancellation_reports.fetch_add(1, Ordering::SeqCst);
+            self.reported_cancellations
+                .lock()
+                .expect("fake protocol lock")
+                .push(report.clone());
             if self.fail_cancellation_report {
                 Err(ProtocolClientError::StaleLease)
             } else {
-                Ok(())
+                let config = *self
+                    .cancellation_response
+                    .lock()
+                    .expect("fake protocol lock");
+                let mut response = CancellationResponse {
+                    protocol_version: ProtocolVersion::v1(),
+                    attempt_id: report.attempt_id,
+                    cancellation_request_id: report.cancellation_request_id,
+                    state: AttemptState::Cancelled,
+                    replayed: config.replayed,
+                    committed_at: Timestamp::new("2026-08-06T12:24:01Z"),
+                };
+                match config.mismatch {
+                    CancellationAckMismatch::None => {}
+                    CancellationAckMismatch::Attempt => {
+                        response.attempt_id = AttemptId::new("wrong-attempt")
+                    }
+                    CancellationAckMismatch::Request => {
+                        response.cancellation_request_id =
+                            CancellationRequestId::new("wrong-cancel")
+                    }
+                    CancellationAckMismatch::State => response.state = AttemptState::Running,
+                }
+                Ok(response)
             }
         }
 
@@ -689,6 +758,7 @@ mod tests {
         expected_journal: PathBuf,
         start_after_journal: Arc<AtomicBool>,
         cancel_calls: Arc<AtomicUsize>,
+        cancellation_evidence: CancellationEvidence,
         recovery_observation: RecoveryObservation,
         reconcile_fails: bool,
         completion_actual_execution: tack_orch::execution::ActualExecution,
@@ -711,9 +781,9 @@ mod tests {
         async fn cancel(
             &self,
             _handle: &LocalRunHandle,
-        ) -> Result<CancelObservation, HarnessError> {
+        ) -> Result<CancellationEvidence, HarnessError> {
             self.cancel_calls.fetch_add(1, Ordering::SeqCst);
-            Ok(CancelObservation::ProcessStopped)
+            Ok(self.cancellation_evidence.clone())
         }
 
         async fn wait(&self, _handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError> {
@@ -881,6 +951,11 @@ mod tests {
             completion_reports: Arc::new(AtomicUsize::new(0)),
             reported_completions: Arc::new(Mutex::new(Vec::new())),
             cancellation_reports: Arc::new(AtomicUsize::new(0)),
+            reported_cancellations: Arc::new(Mutex::new(Vec::new())),
+            cancellation_response: Arc::new(Mutex::new(CancellationResponseConfig {
+                replayed: false,
+                mismatch: CancellationAckMismatch::None,
+            })),
             recovery_reports: Arc::new(AtomicUsize::new(0)),
             reported_recoveries: Arc::new(Mutex::new(Vec::new())),
             recovery_failures_remaining: Arc::new(AtomicUsize::new(0)),
@@ -898,6 +973,14 @@ mod tests {
             expected_journal,
             start_after_journal: Arc::new(AtomicBool::new(false)),
             cancel_calls: Arc::new(AtomicUsize::new(0)),
+            cancellation_evidence: CancellationEvidence {
+                observation: CancelObservation::ProcessStopped,
+                observed_at: Timestamp::new("2026-08-06T12:24:00Z"),
+                details: serde_json::Map::from_iter([
+                    ("exit_code".into(), serde_json::json!(130)),
+                    ("signal".into(), serde_json::json!("SIGTERM")),
+                ]),
+            },
             recovery_observation: RecoveryObservation::ProcessStopped,
             reconcile_fails: false,
             completion_actual_execution: actual_execution(),
@@ -1066,8 +1149,150 @@ mod tests {
         );
         assert_eq!(cancellations.load(Ordering::SeqCst), 1);
         assert_eq!(protocol.cancellation_reports.load(Ordering::SeqCst), 1);
+        let cancellation_reports = protocol
+            .reported_cancellations
+            .lock()
+            .expect("fake protocol lock");
+        assert_eq!(cancellation_reports.len(), 1);
+        let report = &cancellation_reports[0];
+        assert_eq!(report.protocol_version.as_u16(), 1);
+        assert_eq!(report.runner_id.as_str(), "runner");
+        assert_eq!(report.attempt_id.as_str(), "attempt");
+        assert_eq!(report.fencing_token.0, 7);
+        assert_eq!(report.cancellation_request_id.as_str(), "cancel:attempt:7");
+        assert_eq!(report.observation, CancelObservation::ProcessStopped);
+        assert_eq!(report.observed_at.as_str(), "2026-08-06T12:24:00Z");
+        assert_eq!(report.details["exit_code"], serde_json::json!(130));
+        assert_eq!(report.details["signal"], serde_json::json!("SIGTERM"));
         assert_eq!(protocol.completion_reports.load(Ordering::SeqCst), 0);
         std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+
+    #[tokio::test]
+    async fn replayed_cancellation_ack_settles_stopped_evidence() {
+        let root = temporary_root("replayed-cancellation");
+        let journal = OwnerOnlyJournal::new(&root);
+        let protocol = protocol(work(), true, false);
+        protocol
+            .cancellation_response
+            .lock()
+            .expect("fake protocol lock")
+            .replayed = true;
+        let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+        let engine = RunnerEngine::new(
+            protocol.clone(),
+            adapter,
+            journal.clone(),
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: journal.journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+        );
+
+        assert!(matches!(
+            engine
+                .run_once(&session(), claim_request())
+                .await
+                .expect("cycle"),
+            RunCycle::Cancelled { .. }
+        ));
+        assert_eq!(protocol.cancellation_reports.load(Ordering::SeqCst), 1);
+        assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            journal
+                .load(&AttemptId::new("attempt"))
+                .expect("journal")
+                .state,
+            JournalState::Reported
+        );
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+
+    #[tokio::test]
+    async fn mismatched_cancellation_ack_is_never_cancelled_success() {
+        for (label, mismatch) in [
+            ("cancel-mismatch-attempt", CancellationAckMismatch::Attempt),
+            ("cancel-mismatch-request", CancellationAckMismatch::Request),
+            ("cancel-mismatch-state", CancellationAckMismatch::State),
+        ] {
+            let root = temporary_root(label);
+            let journal = OwnerOnlyJournal::new(&root);
+            let protocol = protocol(work(), true, false);
+            protocol
+                .cancellation_response
+                .lock()
+                .expect("fake protocol lock")
+                .mismatch = mismatch;
+            let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+            let engine = RunnerEngine::new(
+                protocol.clone(),
+                adapter,
+                journal.clone(),
+                WorkspaceManager::new(
+                    root.join("workspaces"),
+                    FakeWorktree {
+                        expected_journal: journal.journal_path(&AttemptId::new("attempt")),
+                        provision_after_journal: Arc::new(AtomicBool::new(false)),
+                    },
+                ),
+            );
+
+            assert!(matches!(
+                engine
+                    .run_once(&session(), claim_request())
+                    .await
+                    .expect("cycle"),
+                RunCycle::Quarantined { .. }
+            ));
+            assert_eq!(protocol.cancellation_reports.load(Ordering::SeqCst), 1);
+            assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 1);
+            assert!(journal.unresolved().expect("scanned journal").is_empty());
+            std::fs::remove_dir_all(root).expect("remove temporary root");
+        }
+    }
+
+    #[tokio::test]
+    async fn non_stopped_cancellation_evidence_skips_cancellation_transport() {
+        for (label, observation) in [
+            (
+                "cancel-already-terminal",
+                CancelObservation::AlreadyTerminal,
+            ),
+            ("cancel-ambiguous", CancelObservation::Ambiguous),
+        ] {
+            let root = temporary_root(label);
+            let journal = OwnerOnlyJournal::new(&root);
+            let protocol = protocol(work(), true, false);
+            let mut adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
+            adapter.cancellation_evidence.observation = observation;
+            let engine = RunnerEngine::new(
+                protocol.clone(),
+                adapter,
+                journal.clone(),
+                WorkspaceManager::new(
+                    root.join("workspaces"),
+                    FakeWorktree {
+                        expected_journal: journal.journal_path(&AttemptId::new("attempt")),
+                        provision_after_journal: Arc::new(AtomicBool::new(false)),
+                    },
+                ),
+            );
+
+            assert!(matches!(
+                engine
+                    .run_once(&session(), claim_request())
+                    .await
+                    .expect("cycle"),
+                RunCycle::Quarantined { .. }
+            ));
+            assert_eq!(protocol.cancellation_reports.load(Ordering::SeqCst), 0);
+            assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 1);
+            assert!(journal.unresolved().expect("scanned journal").is_empty());
+            std::fs::remove_dir_all(root).expect("remove temporary root");
+        }
     }
 
     #[tokio::test]
