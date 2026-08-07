@@ -1,0 +1,37 @@
+{
+  "protocol_version": 1,
+  "minimum_supported_version": 1,
+  "maximum_supported_version": 1,
+  "base_path": "/api/runner/v1",
+  "compatibility": {
+    "unknown_optional_fields": "ignore_and_preserve_when_round_tripping",
+    "unknown_enum_values": "reject_with_invalid_request",
+    "missing_required_fields": "reject_with_invalid_request",
+    "semantic_changes": "require_new_protocol_version"
+  },
+  "authentication": {
+    "enrollment": "single_use_enrollment_token_in_request_body",
+    "runner_routes": "runner_bearer_credential",
+    "operator_routes": "operator_session_or_api_token",
+    "decision_resolution": "separately_scoped_operator_credential",
+    "credentials_are_not_substitutable": true
+  },
+  "stable_error_codes": [
+    "invalid_request",
+    "unauthorized",
+    "forbidden",
+    "not_found",
+    "conflict",
+    "idempotency_conflict",
+    "invalid_transition",
+    "stale_lease",
+    "runner_revoked",
+    "decision_expired",
+    "artifact_checksum_mismatch",
+    "payload_too_large",
+    "rate_limited",
+    "unsupported_protocol",
+    "internal_error"
+  ]
+}
+

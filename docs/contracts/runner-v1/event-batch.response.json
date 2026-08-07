@@ -1,0 +1,7 @@
+{
+  "protocol_version": 1,
+  "attempt_id": "att_01J00000000000000000000001",
+  "accepted_event_ids": ["evt_01J000000000000000000000001", "evt_01J000000000000000000000002"],
+  "duplicate_event_ids": [],
+  "committed_checkpoint": "checkpoint-0004"
+}

@@ -1,0 +1,34 @@
+{
+  "protocol_version": 1,
+  "runner_version": "0.1.0",
+  "reported_at": "2026-08-06T12:00:00Z",
+  "labels": {"os": "linux", "arch": "x86_64", "trust": "local"},
+  "concurrency": {"total": 2, "available": 1},
+  "harnesses": [
+    {
+      "harness_kind": "codex",
+      "installed_version": "1.2.3",
+      "probe_error": null,
+      "probed_at": "2026-08-06T11:59:55Z",
+      "model_combinations": [
+        {
+          "model_provider": "openai",
+          "model_ids": ["opaque/model-alpha", "opaque:model-beta"],
+          "discovery": "reported"
+        }
+      ]
+    }
+  ],
+  "features": {
+    "cancel": {"support": "supported", "reason": null},
+    "resume": {"support": "unsupported", "reason": "installed harness has no resumable session contract"},
+    "decisions": {"support": "supported", "reason": null},
+    "artifacts": {"support": "supported", "reason": null},
+    "usage": {"support": "advisory", "reason": "token totals may be absent from harness output"}
+  },
+  "limits": {
+    "event_payload_bytes_max": 65536,
+    "artifact_content_bytes_max": 52428800
+  }
+}
+

@@ -1,0 +1,35 @@
+{
+  "protocol_version": 1,
+  "runner_id": "runr_01J00000000000000000000001",
+  "attempt_id": "att_01J00000000000000000000001",
+  "fencing_token": 7,
+  "completion_id": "complete_01J00000000000000000001",
+  "terminal_state": "succeeded",
+  "terminal_reason": {"code": "completed", "message": "Harness exited successfully"},
+  "actual_execution": {
+    "harness_kind": "codex",
+    "harness_version": "1.2.3",
+    "model_provider": "openai",
+    "model_id": "opaque/model-alpha",
+    "model_observation_source": "harness_reported",
+    "capability_snapshot": {
+      "cancel": {"support": "supported", "reason": null},
+      "resume": {"support": "unsupported", "reason": "no resumable session contract"},
+      "decisions": {"support": "supported", "reason": null},
+      "artifacts": {"support": "supported", "reason": null},
+      "usage": {"support": "advisory", "reason": "usage may be absent"}
+    },
+    "workspace_id": "ws_01J0000000000000000000000001",
+    "base_revision": "0123456789abcdef0123456789abcdef01234567",
+    "started_at": "2026-08-06T12:20:05Z",
+    "ended_at": "2026-08-06T12:25:00Z"
+  },
+  "usage": {
+    "tokens_in": {"value": 1234, "source": "measured"},
+    "tokens_out": {"value": 456, "source": "measured"},
+    "duration_ms": {"value": 295000, "source": "measured"},
+    "cost_usd": {"value": null, "source": "not_measured"}
+  },
+  "final_event_checkpoint": "checkpoint-0012"
+}
+

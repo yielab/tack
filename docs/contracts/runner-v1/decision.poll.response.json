@@ -1,0 +1,14 @@
+{
+  "protocol_version": 1,
+  "decisions": [
+    {
+      "decision_id": "dec_01J000000000000000000000001",
+      "state": "resolved",
+      "answer": {"option_id": "allow_once", "text": null},
+      "resolved_at": "2026-08-06T12:21:30Z",
+      "resolved_by": {"kind": "operator", "subject_id": "local-admin"}
+    }
+  ],
+  "next_after": "2026-08-06T12:21:30Z"
+}
+

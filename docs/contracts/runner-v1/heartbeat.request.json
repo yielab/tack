@@ -1,0 +1,17 @@
+{
+  "protocol_version": 1,
+  "runner_id": "runr_01J00000000000000000000001",
+  "heartbeat_id": "hb_01J000000000000000000000001",
+  "sent_at": "2026-08-06T12:20:15Z",
+  "available_capacity": 1,
+  "active_attempts": [
+    {
+      "attempt_id": "att_01J00000000000000000000001",
+      "fencing_token": 7,
+      "state": "running",
+      "journal_state": "process_observed_running",
+      "last_event_checkpoint": "checkpoint-0003"
+    }
+  ]
+}
+

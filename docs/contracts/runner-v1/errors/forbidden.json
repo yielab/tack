@@ -1,0 +1,1 @@
+{"error":{"code":"forbidden","message":"This credential cannot perform the operation","request_id":"req_http_03","retryable":false,"details":{"required_scope":"operator:decisions"}}}

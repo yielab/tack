@@ -1,0 +1,53 @@
+{
+  "protocol_version": 1,
+  "claim_request_id": "claim_01J00000000000000000000001",
+  "lease": {
+    "attempt_id": "att_01J00000000000000000000001",
+    "runner_id": "runr_01J00000000000000000000001",
+    "fencing_token": 7,
+    "issued_at": "2026-08-06T12:20:00Z",
+    "expires_at": "2026-08-06T12:21:00Z"
+  },
+  "request": {
+    "request_id": "exec_01J00000000000000000000001",
+    "item_id": "018f0000-0000-7000-8000-000000000001",
+    "idempotency_key": "item-018f/request-001",
+    "created_by": {"source": "operator", "subject_id": "local-admin"},
+    "created_at": "2026-08-06T12:19:00Z",
+    "selector": {"kind": "exact_runner", "runner_id": "runr_01J00000000000000000000001"},
+    "agent_profile_id": "ap_01J000000000000000000000001",
+    "resolved_agent_profile": {
+      "name": "Rust implementer",
+      "instructions": "Implement the assigned item and run focused tests.",
+      "tool_policy": {"filesystem": "workspace_write", "network": "deny", "shell": "allowlisted"},
+      "timeout_seconds": 3600,
+      "budgets": {"tokens": 200000, "cost_usd": null}
+    },
+    "requested_harness_kind": "codex",
+    "requested_model_provider": "openai",
+    "requested_model_id": "opaque/model-alpha",
+    "repository": {
+      "kind": "git",
+      "remote": "https://example.invalid/org/repo.git",
+      "base_revision": "0123456789abcdef0123456789abcdef01234567",
+      "subdirectory": null
+    },
+    "permission_policy": {"tools": ["shell", "filesystem"], "network": false},
+    "timeout_seconds": 3600,
+    "budgets": {"tokens": 200000, "cost_usd": null},
+    "status_map_policy_id": null,
+    "environment": {"RUST_LOG": {"value": "info", "secret_reference": null}},
+    "metadata": {"ticket": "TACK-123"}
+  },
+  "attempt": {
+    "attempt_id": "att_01J00000000000000000000001",
+    "request_id": "exec_01J00000000000000000000001",
+    "attempt_number": 1,
+    "runner_id": "runr_01J00000000000000000000001",
+    "fencing_token": 7,
+    "state": "leased",
+    "workspace_id": null,
+    "base_revision": "0123456789abcdef0123456789abcdef01234567"
+  }
+}
+

@@ -1,0 +1,31 @@
+{
+  "protocol_version": 1,
+  "enrollment_token": "example_enrollment_token_never_valid",
+  "runner_name": "dev-runner-01",
+  "runner_version": "0.1.0",
+  "capabilities": {
+    "reported_at": "2026-08-06T12:00:00Z",
+    "labels": {"os": "linux", "trust": "local"},
+    "concurrency": {"total": 2, "available": 2},
+    "harnesses": [
+      {
+        "harness_kind": "codex",
+        "installed_version": "1.2.3",
+        "probe_error": null,
+        "probed_at": "2026-08-06T11:59:55Z",
+        "model_combinations": [
+          {"model_provider": "openai", "model_ids": ["opaque/model-alpha"], "discovery": "reported"}
+        ]
+      }
+    ],
+    "features": {
+      "cancel": {"support": "supported", "reason": null},
+      "resume": {"support": "unsupported", "reason": "no resumable session contract"},
+      "decisions": {"support": "supported", "reason": null},
+      "artifacts": {"support": "supported", "reason": null},
+      "usage": {"support": "advisory", "reason": "usage may be absent"}
+    },
+    "limits": {"event_payload_bytes_max": 65536, "artifact_content_bytes_max": 52428800}
+  }
+}
+

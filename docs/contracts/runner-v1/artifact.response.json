@@ -1,0 +1,12 @@
+{
+  "protocol_version": 1,
+  "attempt_id": "att_01J00000000000000000000001",
+  "artifacts": [
+    {
+      "artifact_id": "art_01J000000000000000000000001",
+      "state": "manifest_accepted",
+      "upload": {"method": "PUT", "path": "/api/runner/v1/artifacts/art_01J000000000000000000000001/content", "expires_at": "2026-08-06T12:26:00Z"}
+    }
+  ]
+}
+

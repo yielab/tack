@@ -1,0 +1,14 @@
+{
+  "protocol_version": 1,
+  "heartbeat_id": "hb_01J000000000000000000000001",
+  "accepted_at": "2026-08-06T12:20:16Z",
+  "lease_results": [
+    {
+      "attempt_id": "att_01J00000000000000000000001",
+      "fencing_token": 7,
+      "lease_expires_at": "2026-08-06T12:21:16Z",
+      "cancellation_requested": false
+    }
+  ]
+}
+
