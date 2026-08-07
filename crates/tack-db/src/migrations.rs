@@ -98,6 +98,9 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("046_execution_events", &MIGRATION_046[..]),
         ordinary("047_execution_artifacts", &MIGRATION_047[..]),
         ordinary("048_execution_decisions", &MIGRATION_048[..]),
+        ordinary("049_runner_credentials_and_enrollment", &MIGRATION_049[..]),
+        ordinary("050_execution_claim_replays", &MIGRATION_050[..]),
+        ordinary("051_execution_recovery_audits", &MIGRATION_051[..]),
     ]
 }
 
@@ -1489,4 +1492,23 @@ const MIGRATION_048: [&str; 3] = [
     )",
     "CREATE INDEX idx_execution_decisions_pending ON execution_decisions(state, expires_at)",
     "CREATE INDEX idx_execution_decisions_attempt ON execution_decisions(attempt_id)",
+];
+
+// Wave-2 B2 amendment: durable credential/token and protocol idempotency seams.
+const MIGRATION_049: [&str; 5] = [
+    "ALTER TABLE agent_runners ADD COLUMN runner_version TEXT",
+    "ALTER TABLE agent_runners ADD COLUMN credential_expires_at TEXT",
+    "ALTER TABLE agent_runners ADD COLUMN credential_rotated_at TEXT",
+    "CREATE TABLE agent_enrollment_tokens (id TEXT PRIMARY KEY NOT NULL, runner_id TEXT REFERENCES agent_runners(id) ON DELETE CASCADE, token_hash TEXT NOT NULL UNIQUE, expires_at TEXT NOT NULL, consumed_at TEXT, revoked_at TEXT, created_at TEXT NOT NULL)",
+    "CREATE INDEX idx_agent_enrollment_tokens_redeem ON agent_enrollment_tokens(token_hash, expires_at)",
+];
+
+const MIGRATION_050: [&str; 2] = [
+    "CREATE TABLE execution_claim_replays (runner_id TEXT NOT NULL REFERENCES agent_runners(id) ON DELETE CASCADE, claim_request_id TEXT NOT NULL, attempt_id TEXT NOT NULL REFERENCES execution_attempts(id) ON DELETE CASCADE, created_at TEXT NOT NULL, PRIMARY KEY (runner_id, claim_request_id))",
+    "CREATE INDEX idx_execution_claim_replays_attempt ON execution_claim_replays(attempt_id)",
+];
+
+const MIGRATION_051: [&str; 2] = [
+    "CREATE TABLE execution_recovery_audits (attempt_id TEXT NOT NULL REFERENCES execution_attempts(id) ON DELETE CASCADE, recovery_key TEXT NOT NULL, classification TEXT NOT NULL, details TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, PRIMARY KEY (attempt_id, recovery_key))",
+    "CREATE INDEX idx_execution_recovery_audits_attempt ON execution_recovery_audits(attempt_id)",
 ];

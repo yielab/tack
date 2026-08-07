@@ -7,8 +7,8 @@ use sqlx::Row;
 use tack_db::{
     Repository, init_pool, migrations,
     repo::execution::{
-        Completion, EnqueueResult, EventBatch, ExecutionClock, NewAgentProfile, NewEvent,
-        NewExecutionRequest, NewRunner,
+        ClaimReplayResult, Completion, EnqueueResult, EnrollmentToken, EventBatch, ExecutionClock,
+        NewAgentProfile, NewEvent, NewExecutionRequest, NewRunner, RedeemEnrollmentResult,
     },
 };
 
@@ -25,6 +25,108 @@ impl FakeClock {
     fn advance(&self, duration: Duration) {
         *self.0.lock().unwrap() += duration;
     }
+}
+
+#[tokio::test]
+async fn enrollment_token_is_single_use_expiry_and_revocation_fail_closed() {
+    let (repo, _, clock) = ready_repo().await;
+    sqlx::query("UPDATE agent_runners SET state = 'pending_enrollment' WHERE id = 'runner-a'")
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    repo.issue_enrollment_token(
+        EnrollmentToken {
+            id: "token-1",
+            runner_id: "runner-a",
+            token_hash: "token-hash",
+            expires_at: clock.now() + Duration::minutes(5),
+        },
+        &clock,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        repo.redeem_enrollment_token(
+            "token-hash",
+            "credential-hash",
+            clock.now() + Duration::days(1),
+            "0.1",
+            &clock
+        )
+        .await
+        .unwrap(),
+        RedeemEnrollmentResult::Redeemed("runner-a".into())
+    );
+    assert_eq!(
+        repo.redeem_enrollment_token(
+            "token-hash",
+            "other",
+            clock.now() + Duration::days(1),
+            "0.1",
+            &clock
+        )
+        .await
+        .unwrap(),
+        RedeemEnrollmentResult::InvalidOrExpired
+    );
+    repo.issue_enrollment_token(
+        EnrollmentToken {
+            id: "token-2",
+            runner_id: "runner-a",
+            token_hash: "revoked",
+            expires_at: clock.now() + Duration::minutes(5),
+        },
+        &clock,
+    )
+    .await
+    .unwrap();
+    assert!(
+        repo.revoke_enrollment_token("revoked", &clock)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        repo.redeem_enrollment_token(
+            "revoked",
+            "other",
+            clock.now() + Duration::days(1),
+            "0.1",
+            &clock
+        )
+        .await
+        .unwrap(),
+        RedeemEnrollmentResult::InvalidOrExpired
+    );
+}
+
+#[tokio::test]
+async fn claim_request_replay_returns_the_original_lease() {
+    let (repo, item_id, clock) = ready_repo().await;
+    repo.enqueue_execution(request("request-a", &item_id, "key-a", "same"), &clock)
+        .await
+        .unwrap();
+    let first = repo
+        .claim_execution_idempotent(
+            "runner-a",
+            "claim-a",
+            "attempt-a",
+            Duration::seconds(60),
+            &clock,
+        )
+        .await
+        .unwrap();
+    let replay = repo
+        .claim_execution_idempotent(
+            "runner-a",
+            "claim-a",
+            "attempt-b",
+            Duration::seconds(60),
+            &clock,
+        )
+        .await
+        .unwrap();
+    assert_eq!(first, replay);
+    assert!(matches!(replay, ClaimReplayResult::Lease(_)));
 }
 
 impl ExecutionClock for FakeClock {
