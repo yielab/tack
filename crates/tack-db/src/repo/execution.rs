@@ -150,6 +150,14 @@ pub struct EnrollmentToken<'a> {
     pub token_hash: &'a str,
     pub expires_at: DateTime<Utc>,
 }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnrollmentTokenMetadata {
+    pub id: String,
+    pub runner_id: String,
+    pub expires_at: String,
+    pub consumed_at: Option<String>,
+    pub revoked_at: Option<String>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RedeemEnrollmentResult {
@@ -244,6 +252,75 @@ fn snapshot(row: &sqlx::sqlite::SqliteRow) -> Result<serde_json::Value, sqlx::Er
 }
 
 impl Repository {
+    pub async fn create_pending_runner_and_issue_token(
+        &self,
+        runner: NewRunner<'_>,
+        token: EnrollmentToken<'_>,
+        clock: &dyn ExecutionClock,
+    ) -> Result<(), sqlx::Error> {
+        let now = stamp(clock);
+        let mut tx = self.pool().begin().await?;
+        sqlx::query("INSERT INTO agent_runners(id,name,credential_hash,state,labels,total_capacity,available_capacity,capability_snapshot,protocol_version,created_at,updated_at) VALUES(?,?,?,'pending_enrollment',?,?,?,?,?,?,?)").bind(runner.id).bind(runner.name).bind("pending:no-credential").bind(runner.labels).bind(runner.total_capacity).bind(runner.available_capacity).bind(runner.capability_snapshot).bind(runner.protocol_version).bind(&now).bind(&now).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO agent_enrollment_tokens(id,runner_id,token_hash,expires_at,created_at) VALUES(?,?,?,?,?)").bind(token.id).bind(token.runner_id).bind(token.token_hash).bind(token.expires_at.to_rfc3339()).bind(&now).execute(&mut *tx).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub async fn enrollment_token_metadata(
+        &self,
+        runner_id: &str,
+        token_id: &str,
+    ) -> Result<Option<EnrollmentTokenMetadata>, sqlx::Error> {
+        sqlx::query("SELECT id,runner_id,expires_at,consumed_at,revoked_at FROM agent_enrollment_tokens WHERE runner_id=? AND id=?").bind(runner_id).bind(token_id).fetch_optional(self.pool()).await?.map(|r|Ok(EnrollmentTokenMetadata{id:r.get("id"),runner_id:r.get("runner_id"),expires_at:r.get("expires_at"),consumed_at:r.get("consumed_at"),revoked_at:r.get("revoked_at")})).transpose()
+    }
+
+    pub async fn revoke_enrollment_token_by_id(
+        &self,
+        runner_id: &str,
+        token_id: &str,
+        clock: &dyn ExecutionClock,
+    ) -> Result<bool, sqlx::Error> {
+        let r=sqlx::query("UPDATE agent_enrollment_tokens SET revoked_at=COALESCE(revoked_at,?) WHERE runner_id=? AND id=? AND consumed_at IS NULL").bind(stamp(clock)).bind(runner_id).bind(token_id).execute(self.pool()).await?;
+        Ok(r.rows_affected() == 1)
+    }
+
+    pub async fn revoke_runner(
+        &self,
+        runner_id: &str,
+        clock: &dyn ExecutionClock,
+    ) -> Result<bool, sqlx::Error> {
+        let now = stamp(clock);
+        let mut tx = self.pool().begin().await?;
+        let r=sqlx::query("UPDATE agent_runners SET state='revoked',revoked_at=COALESCE(revoked_at,?),updated_at=? WHERE id=?").bind(&now).bind(&now).bind(runner_id).execute(&mut *tx).await?;
+        if r.rows_affected() == 1 {
+            sqlx::query("UPDATE agent_enrollment_tokens SET revoked_at=COALESCE(revoked_at,?) WHERE runner_id=? AND consumed_at IS NULL").bind(&now).bind(runner_id).execute(&mut *tx).await?;
+        }
+        tx.commit().await?;
+        Ok(r.rows_affected() == 1)
+    }
+
+    pub async fn operator_requeue_needs_operator(
+        &self,
+        request_id: &str,
+        recovery_key: &str,
+        actor: &str,
+        reason_fingerprint: &str,
+        clock: &dyn ExecutionClock,
+    ) -> Result<bool, sqlx::Error> {
+        let now = stamp(clock);
+        let mut tx = self.pool().begin().await?;
+        let key = format!("operator:{actor}:{reason_fingerprint}:{recovery_key}");
+        let attempt:Option<String>=sqlx::query_scalar("SELECT id FROM execution_attempts WHERE request_id=? AND state='needs_operator' ORDER BY attempt_number DESC LIMIT 1").bind(request_id).fetch_optional(&mut *tx).await?;
+        let Some(attempt) = attempt else {
+            tx.commit().await?;
+            return Ok(false);
+        };
+        if sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM execution_recovery_audits WHERE attempt_id=? AND recovery_key=?)").bind(&attempt).bind(&key).fetch_one(&mut *tx).await?{tx.commit().await?;return Ok(true)};
+        if sqlx::query("UPDATE execution_requests SET state='queued',updated_at=? WHERE id=? AND state='needs_operator'").bind(&now).bind(request_id).execute(&mut *tx).await?.rows_affected()!=1{tx.rollback().await?;return Ok(false)};
+        sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,created_at) VALUES(?,?, 'operator_requeue', ?,?)").bind(&attempt).bind(&key).bind(reason_fingerprint).bind(&now).execute(&mut *tx).await?;
+        tx.commit().await?;
+        Ok(true)
+    }
     pub async fn heartbeat_batch(
         &self,
         runner_id: &str,
@@ -431,7 +508,7 @@ impl Repository {
             tx.rollback().await?;
             return Ok(RedeemEnrollmentResult::InvalidOrExpired);
         }
-        let runner = sqlx::query("UPDATE agent_runners SET credential_hash=?, credential_expires_at=?, credential_rotated_at=?, runner_version=?, name=?, labels=?, total_capacity=?, available_capacity=?, capability_snapshot=?, protocol_version=?, state='active', updated_at=? WHERE id=? AND revoked_at IS NULL")
+        let runner = sqlx::query("UPDATE agent_runners SET credential_hash=?, credential_expires_at=?, credential_rotated_at=?, runner_version=?, name=?, labels=?, total_capacity=?, available_capacity=?, capability_snapshot=?, protocol_version=?, state='active', updated_at=? WHERE id=? AND state='pending_enrollment' AND revoked_at IS NULL")
             .bind(credential_hash).bind(credential_expires_at.to_rfc3339()).bind(&now).bind(runner_version).bind(runner_name).bind(labels).bind(total_capacity).bind(available_capacity).bind(capability_snapshot).bind(protocol_version).bind(&now).bind(&runner_id).execute(&mut *tx).await?;
         if runner.rows_affected() != 1 {
             tx.rollback().await?;
