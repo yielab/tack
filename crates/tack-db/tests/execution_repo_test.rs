@@ -203,7 +203,7 @@ async fn claim_fence_replay_and_terminal_state_are_atomic() {
                 previous_checkpoint: None,
                 checkpoint: "checkpoint-1"
             },
-            &[event.clone()],
+            std::slice::from_ref(&event),
             &clock
         )
         .await
