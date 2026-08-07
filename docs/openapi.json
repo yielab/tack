@@ -698,7 +698,7 @@
         "tags": [
           "orchestration"
         ],
-        "summary": "`PATCH /api/control-planes/{id}`.",
+        "summary": "`PATCH /api/control-planes/{id}`. Supports optimistic concurrency (card\nG1, TODO.md §3b D4): an `If-Match: \"<version>\"` header, taken from a\nprevious response's `ETag`, must match the row's current version or the\nrequest is rejected with `412` and nothing is written. **Omitting\n`If-Match` behaves exactly as before this card** — the precondition\ncheck is skipped entirely; the version still moves forward on every\nsuccessful write either way, so a later conditional request from a\ndifferent client can always detect this one.",
         "operationId": "update_control_plane",
         "parameters": [
           {
@@ -724,7 +724,7 @@
         },
         "responses": {
           "200": {
-            "description": "Updated control plane (token never returned)",
+            "description": "Updated control plane (token never returned); carries an ETag header naming the new version",
             "content": {
               "application/json": {
                 "schema": {
@@ -735,6 +735,16 @@
           },
           "404": {
             "description": "Not found, or orchestration disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "If-Match did not match the control plane's current version — nothing was written",
             "content": {
               "application/json": {
                 "schema": {
@@ -2550,7 +2560,7 @@
         "tags": [
           "orchestration"
         ],
-        "summary": "`PUT /api/projects/{id}/orch-link` — create or replace the project's link.",
+        "summary": "`PUT /api/projects/{id}/orch-link` — create or replace the project's\nlink. Supports optimistic concurrency (card G1, TODO.md §3b D4) the same\nway `PATCH /api/control-planes/{id}` does — see that handler's doc\ncomment for the `If-Match`/`ETag` contract. One difference: this is a\ncreate-or-replace endpoint, so a nonexistent link and a version mismatch\nboth surface as `412` here (see `bump_orch_link_version_if_match`'s doc\ncomment for why that collapse is correct, not a shortcut).",
         "operationId": "put_orch_link",
         "parameters": [
           {
@@ -2576,7 +2586,7 @@
         },
         "responses": {
           "200": {
-            "description": "Saved link",
+            "description": "Saved link; carries an ETag header naming the new version",
             "content": {
               "application/json": {
                 "schema": {
@@ -2597,6 +2607,16 @@
           },
           "404": {
             "description": "Project or control plane not found, or orchestration disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "If-Match did not match (or no link exists yet to match) — nothing was written",
             "content": {
               "application/json": {
                 "schema": {
@@ -4396,6 +4416,62 @@
           }
         }
       },
+      "CapabilitiesResponse": {
+        "type": "object",
+        "description": "Wire mirror of `tack_orch::Capabilities` — what a control plane can\nactually do, so the UI can disable a control and explain why instead of\nchecking `kind` (TODO.md §II.0 rule 6).",
+        "required": [
+          "dispatch",
+          "cancel",
+          "pause",
+          "resume",
+          "event_scope",
+          "artifacts",
+          "decisions",
+          "usage",
+          "model_selection",
+          "runtimes",
+          "plane_metrics",
+          "provisioning"
+        ],
+        "properties": {
+          "artifacts": {
+            "type": "boolean"
+          },
+          "cancel": {
+            "type": "boolean"
+          },
+          "decisions": {
+            "$ref": "#/components/schemas/DecisionsCapability"
+          },
+          "dispatch": {
+            "type": "boolean"
+          },
+          "event_scope": {
+            "$ref": "#/components/schemas/EventScopeCapability"
+          },
+          "model_selection": {
+            "$ref": "#/components/schemas/ModelSelectionCapability"
+          },
+          "pause": {
+            "$ref": "#/components/schemas/SupportCapability"
+          },
+          "plane_metrics": {
+            "type": "boolean"
+          },
+          "provisioning": {
+            "type": "boolean"
+          },
+          "resume": {
+            "$ref": "#/components/schemas/SupportCapability"
+          },
+          "runtimes": {
+            "type": "boolean"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageCapability"
+          }
+        }
+      },
       "Comment": {
         "type": "object",
         "required": [
@@ -4470,6 +4546,17 @@
           "base_url": {
             "type": "string"
           },
+          "capabilities": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapabilitiesResponse",
+                "description": "What this plane can actually do — `None` only in the same\n`\"unconfigured\"` case `health` names: this build of Tack has no\nadapter for `kind`. See [`capabilities_for`]."
+              }
+            ]
+          },
           "consecutive_failures": {
             "type": "integer",
             "format": "int64"
@@ -4480,7 +4567,7 @@
           },
           "health": {
             "type": "string",
-            "description": "`\"unknown\"` | `\"healthy\"` | `\"degraded\"` | `\"unreachable\"` — driven by\nthe reconciler's health state machine (`tack-orch::reconciler`),\npersisted verbatim."
+            "description": "`\"unknown\"` (pre-first-poll default) | `\"healthy\"` | `\"degraded\"` |\n`\"unreachable\"` (the reconciler's health state machine,\n`tack-orch::reconciler`, persisted verbatim) | `\"unconfigured\"` (card\nG1 — this build of Tack could not even build a live adapter for\n`kind`, so the reconciler's state machine never ran against this\nplane at all; see `orch_store::RepoControlPlaneStore::\nmark_unconfigured`'s doc comment)."
           },
           "id": {
             "type": "string",
@@ -5072,6 +5159,30 @@
           }
         }
       },
+      "DecisionSupportLevel": {
+        "type": "string",
+        "description": "Wire mirror of `tack_orch::DecisionSupport`.",
+        "enum": [
+          "none",
+          "poll",
+          "push"
+        ]
+      },
+      "DecisionsCapability": {
+        "type": "object",
+        "required": [
+          "level",
+          "reason"
+        ],
+        "properties": {
+          "level": {
+            "$ref": "#/components/schemas/DecisionSupportLevel"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "Dependency": {
         "type": "object",
         "required": [
@@ -5578,6 +5689,31 @@
           }
         ]
       },
+      "EventScopeCapability": {
+        "type": "object",
+        "required": [
+          "level",
+          "reason"
+        ],
+        "properties": {
+          "level": {
+            "$ref": "#/components/schemas/EventScopeLevel"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "EventScopeLevel": {
+        "type": "string",
+        "description": "Wire mirror of `tack_orch::EventScope`.",
+        "enum": [
+          "none",
+          "run",
+          "project",
+          "plane"
+        ]
+      },
       "FleetEntry": {
         "type": "object",
         "description": "One row per Tack project that has an `orch_links` row, joining: the link,\nits control plane's reconciler-observed health, and mirrored cost/token/\napproval data summed from `orch_tasks`/`orch_approvals`.\n\n**Staleness must be representable.** `cost_usd_estimated` is `None`\nwhenever the plane is `unreachable` — never coerced to zero — so the UI can\ngrey the row and say \"last seen Nm ago\" instead of rendering a confident\nzero (TODO.md §0 rule 6 / this card's acceptance bar). `Some(0.0)` means the\nplane is reachable and genuinely has no mirrored cost yet. `tokens_in`/\n`tokens_out` are always a plain (never-null) sum — per A5's contract, the\nrow component gates on `health`/`isStale()`, not per-field nullability, to\ndecide whether a number is trustworthy to render.",
@@ -5621,6 +5757,17 @@
             "format": "double",
             "description": "User-set cap, not a derived figure — deliberately unsuffixed."
           },
+          "capabilities": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapabilitiesResponse",
+                "description": "What this row's control plane can actually do. `None` only in the\n`\"unconfigured\"` health case — see [`capabilities_for`]."
+              }
+            ]
+          },
           "consecutive_failures": {
             "type": "integer",
             "format": "int64"
@@ -5649,7 +5796,7 @@
           },
           "health": {
             "type": "string",
-            "description": "`\"unknown\"` | `\"healthy\"` | `\"degraded\"` | `\"unreachable\"`."
+            "description": "`\"unknown\"` | `\"healthy\"` | `\"degraded\"` | `\"unreachable\"` |\n`\"unconfigured\"` — see [`ControlPlaneResponse::health`]'s doc\ncomment for what each means."
           },
           "last_activity_at": {
             "type": [
@@ -6296,6 +6443,30 @@
             "description": "Import only issues from this team (slug or ID). When omitted, all\nissues accessible to the key are fetched."
           }
         }
+      },
+      "ModelSelectionCapability": {
+        "type": "object",
+        "required": [
+          "level",
+          "reason"
+        ],
+        "properties": {
+          "level": {
+            "$ref": "#/components/schemas/ModelSelectionLevel"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "ModelSelectionLevel": {
+        "type": "string",
+        "description": "Wire mirror of `tack_orch::ModelSelection`.",
+        "enum": [
+          "unsupported",
+          "advisory",
+          "honoured"
+        ]
       },
       "OrchBlueprint": {
         "type": "string",
@@ -7488,6 +7659,31 @@
           }
         }
       },
+      "SupportCapability": {
+        "type": "object",
+        "description": "`pause`/`resume`'s wire shape — level plus why, not a bare enum. See\n`tack_orch::Capabilities`'s own doc comment: the reason is\nadapter-authored data, never a string this API layer invents.",
+        "required": [
+          "level",
+          "reason"
+        ],
+        "properties": {
+          "level": {
+            "$ref": "#/components/schemas/SupportLevel"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "SupportLevel": {
+        "type": "string",
+        "description": "Wire mirror of `tack_orch::Support`.",
+        "enum": [
+          "unsupported",
+          "advisory",
+          "supported"
+        ]
+      },
       "TemplateOrchestration": {
         "type": "object",
         "description": "Agent-fleet defaults captured on a template (Phase 37 / card D3, tasks\n37.1 + 37.3). Nothing in this struct is applied automatically anywhere —\n`create_project_from_template` stores it and moves on. Turning it into a\nlive `orch_links` row needs a `control_plane_id` pointing at an\nalready-registered, specific docket instance, which cannot exist yet at\ntemplate-apply time; that wiring is card D4's (blocked on docket\nprovisioning), not this one's. This block is the *offer* a future\nprovisioning flow reads defaults from — inert data until then, which is\nwhat keeps it correct under TODO.md §0 rule 8 (off by default) without\nneeding `TACK_ORCH_ENABLE` to gate anything here: there is no route, no\nreconciler, no dispatch — just a JSON blob riding along with the template.",
@@ -7960,6 +8156,30 @@
             "$ref": "#/components/schemas/StatusMap"
           }
         }
+      },
+      "UsageCapability": {
+        "type": "object",
+        "required": [
+          "level",
+          "reason"
+        ],
+        "properties": {
+          "level": {
+            "$ref": "#/components/schemas/UsageSupportLevel"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "UsageSupportLevel": {
+        "type": "string",
+        "description": "Wire mirror of `tack_orch::UsageSupport`.",
+        "enum": [
+          "not_measured",
+          "from_provider",
+          "from_gateway"
+        ]
       },
       "WorkflowConfig": {
         "type": "object",

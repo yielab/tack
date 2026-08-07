@@ -1,0 +1,66 @@
+{
+  "method": "metrics",
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/metrics",
+      "query": [],
+      "header_names": [
+        "accept",
+        "host",
+        "user-agent"
+      ],
+      "body": null
+    }
+  ],
+  "result": {
+    "outcome": "ok",
+    "value": [
+      {
+        "labels": {},
+        "name": "docket_agents_total",
+        "value": 1.0
+      },
+      {
+        "labels": {
+          "agent": "demo-lead",
+          "model": "anthropic/claude-sonnet-4-6"
+        },
+        "name": "docket_agent_cost_usd",
+        "value": 0.0
+      },
+      {
+        "labels": {
+          "agent": "demo-lead"
+        },
+        "name": "docket_agent_turns_total",
+        "value": 0.0
+      },
+      {
+        "labels": {},
+        "name": "docket_cost_usd_total",
+        "value": 0.0
+      },
+      {
+        "labels": {},
+        "name": "docket_gateway_up",
+        "value": 0.0
+      },
+      {
+        "labels": {},
+        "name": "docket_approvals_pending_total",
+        "value": 1.0
+      },
+      {
+        "labels": {},
+        "name": "docket_turn_duration_seconds_sum",
+        "value": 0.0
+      },
+      {
+        "labels": {},
+        "name": "docket_turn_duration_seconds_count",
+        "value": 0.0
+      }
+    ]
+  }
+}

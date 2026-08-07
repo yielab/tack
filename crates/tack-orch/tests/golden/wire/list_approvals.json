@@ -1,0 +1,34 @@
+{
+  "method": "list_approvals",
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/approvals",
+      "query": [],
+      "header_names": [
+        "accept",
+        "authorization",
+        "host",
+        "user-agent"
+      ],
+      "body": null
+    }
+  ],
+  "result": {
+    "outcome": "ok",
+    "value": [
+      {
+        "action": "pod dispatch — task enqueue for 'demo-lead': run rm -rf build/ during cleanup hop",
+        "context": {
+          "pipelineIndex": 2,
+          "taskId": "task-1"
+        },
+        "created": "2026-08-04T19:50:50Z",
+        "project": "demo-lead",
+        "role": "implementer",
+        "state": "pending",
+        "token": "apr-59c355ad-38e3-4e98-b71b-bf970bf9ccbf"
+      }
+    ]
+  }
+}

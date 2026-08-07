@@ -1,0 +1,75 @@
+[
+  {
+    "method": "GET",
+    "path": "/health",
+    "query": {},
+    "headers": [
+      "accept",
+      "host",
+      "user-agent"
+    ],
+    "body": null
+  },
+  {
+    "method": "GET",
+    "path": "/status.json",
+    "query": {},
+    "headers": [
+      "accept",
+      "host",
+      "user-agent"
+    ],
+    "body": null
+  },
+  {
+    "method": "GET",
+    "path": "/runs",
+    "query": {
+      "project": "demo"
+    },
+    "headers": [
+      "accept",
+      "authorization",
+      "host",
+      "user-agent"
+    ],
+    "body": null
+  },
+  {
+    "method": "GET",
+    "path": "/approvals",
+    "query": {},
+    "headers": [
+      "accept",
+      "authorization",
+      "host",
+      "user-agent"
+    ],
+    "body": null
+  },
+  {
+    "method": "GET",
+    "path": "/metrics",
+    "query": {},
+    "headers": [
+      "accept",
+      "host",
+      "user-agent"
+    ],
+    "body": null
+  },
+  {
+    "method": "GET",
+    "path": "/traces/demo",
+    "query": {
+      "since": "2020-01-01T00:00:00Z:0"
+    },
+    "headers": [
+      "accept",
+      "authorization",
+      "host",
+      "user-agent"
+    ],
+    "body": null
+  }
+]

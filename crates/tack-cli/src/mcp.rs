@@ -171,12 +171,12 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
             if !touched {
                 return Err("update_item: provide at least one field to change".into());
             }
-            call(client.patch(&format!("/items/{id}"), &body))
+            write_item(client, &id, &body)
         }
         "move_item" => {
             let id = require_str(args, "id")?;
             let status = require_str(args, "status")?;
-            call(client.patch(&format!("/items/{id}"), &json!({ "status": status })))
+            write_item(client, &id, &json!({ "status": status }))
         }
         "add_comment" => {
             let item_id = require_str(args, "item_id")?;
@@ -189,8 +189,30 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
 }
 
 /// Map an HTTP-client result into a tool result, flattening the error to text.
-fn call(result: anyhow::Result<Value>) -> Result<Value, String> {
+/// Generic (not `Value`-only) so `get_with_etag`'s `(Value, Option<String>)`
+/// pair goes through the same `?`-friendly path as every other client call.
+fn call<T>(result: anyhow::Result<T>) -> Result<T, String> {
     result.map_err(|e| e.to_string())
+}
+
+/// Read-modify-write an item with an `If-Match` precondition, so the two MCP
+/// tools that mutate an existing item (`update_item`, `move_item`) can never
+/// clobber a change made by a human in the UI or another agent between the
+/// read and the write — the exact agent-versus-human race card G3 added
+/// `version`/`ETag`/`If-Match` to catch, on exactly the write path that
+/// previously had no way to send the header at all. When the server sends
+/// no `ETag` (no concurrency support on this route yet, or an older server),
+/// `if_match` is `None` and `patch_if_match` sends no header — identical to
+/// today's unconditional write, never a new failure mode.
+///
+/// A `412` surfaces through `patch_if_match`'s own error text, which already
+/// names the precondition failure and tells the caller to re-read — this
+/// function does not need to special-case it further; the point is only
+/// that the agent sees that message instead of a generic one, and it does
+/// because nothing here swallows or rewrites the error.
+fn write_item(client: &TackClient, id: &str, body: &Value) -> Result<Value, String> {
+    let (_, etag) = call(client.get_with_etag(&format!("/items/{id}")))?;
+    call(client.patch_if_match(&format!("/items/{id}"), body, etag.as_deref()))
 }
 
 // ── Argument helpers ─────────────────────────────────────────────────────────
@@ -519,6 +541,195 @@ mod tests {
         .unwrap();
         let v: Value = serde_json::from_str(&resp).unwrap();
         assert_eq!(v["result"]["isError"], true);
+    }
+
+    // ── MCP write path: If-Match (card G4) ──────────────────────────────────
+    //
+    // `update_item`/`move_item` now read the item before writing it so they
+    // can send back its `ETag` as `If-Match` — closing the race named in
+    // `docs/plans/agnostic-control-plane.md` trap T2: an agent write via MCP
+    // was the one path in the whole system with no way to attach a header
+    // at all, so it was unconditionally last-write-wins even after G3 gave
+    // every other writer a precondition to send.
+
+    // Run a blocking closure on a thread allowed to block. `TackClient` is
+    // synchronous `reqwest`; calling it directly from a `#[tokio::test]`
+    // body would block that test's own runtime thread against itself,
+    // since `wiremock`'s server answers requests on that same runtime.
+    async fn run_blocking<F, T>(f: F) -> T
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static,
+    {
+        tokio::task::spawn_blocking(f)
+            .await
+            .expect("blocking task panicked")
+    }
+
+    fn mock_client(base_url: &str) -> TackClient {
+        TackClient::new(&Config {
+            base_url: base_url.to_string(),
+            token: None,
+        })
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn mcp_update_item_sends_if_match() {
+        let server = wiremock::MockServer::start().await;
+        let item_id = "11111111-0000-0000-0000-000000000000";
+
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path(format!("/api/items/{item_id}")))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .insert_header("ETag", "\"4\"")
+                    .set_body_json(json!({ "id": item_id, "title": "before" })),
+            )
+            .mount(&server)
+            .await;
+        wiremock::Mock::given(wiremock::matchers::method("PATCH"))
+            .and(wiremock::matchers::path(format!("/api/items/{item_id}")))
+            .and(wiremock::matchers::header("If-Match", "\"4\""))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+                "id": item_id, "title": "after"
+            })))
+            .mount(&server)
+            .await;
+
+        let uri = server.uri();
+        let line = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"update_item","arguments":{{"id":"{item_id}","title":"after"}}}}}}"#
+        );
+        let resp = run_blocking(move || handle_line(&mock_client(&uri), &line))
+            .await
+            .unwrap();
+        let v: Value = serde_json::from_str(&resp).unwrap();
+        assert_eq!(
+            v["result"]["isError"], false,
+            "unexpected error: {v}\n(a wiremock 404 here means the PATCH did \
+             not carry the expected If-Match header)"
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_move_item_sends_if_match() {
+        let server = wiremock::MockServer::start().await;
+        let item_id = "22222222-0000-0000-0000-000000000000";
+
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path(format!("/api/items/{item_id}")))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .insert_header("ETag", "\"9\"")
+                    .set_body_json(json!({ "id": item_id, "status": "todo" })),
+            )
+            .mount(&server)
+            .await;
+        wiremock::Mock::given(wiremock::matchers::method("PATCH"))
+            .and(wiremock::matchers::path(format!("/api/items/{item_id}")))
+            .and(wiremock::matchers::header("If-Match", "\"9\""))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+                "id": item_id, "status": "in_progress"
+            })))
+            .mount(&server)
+            .await;
+
+        let uri = server.uri();
+        let line = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"move_item","arguments":{{"id":"{item_id}","status":"in_progress"}}}}}}"#
+        );
+        let resp = run_blocking(move || handle_line(&mock_client(&uri), &line))
+            .await
+            .unwrap();
+        let v: Value = serde_json::from_str(&resp).unwrap();
+        assert_eq!(v["result"]["isError"], false, "unexpected error: {v}");
+    }
+
+    /// D4: an absent `ETag` on the read must produce an unconditional write
+    /// (no `If-Match` at all), never a failure — the precondition is
+    /// opt-in from the server's side, and a route/server that doesn't send
+    /// an `ETag` yet must keep working exactly as it did before this card.
+    #[tokio::test]
+    async fn mcp_update_item_omits_if_match_when_server_sends_no_etag() {
+        struct NoIfMatch;
+        impl wiremock::Match for NoIfMatch {
+            fn matches(&self, request: &wiremock::Request) -> bool {
+                !request.headers.contains_key("if-match")
+            }
+        }
+
+        let server = wiremock::MockServer::start().await;
+        let item_id = "33333333-0000-0000-0000-000000000000";
+
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path(format!("/api/items/{item_id}")))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_body_json(json!({ "id": item_id, "title": "before" })),
+            )
+            .mount(&server)
+            .await;
+        wiremock::Mock::given(wiremock::matchers::method("PATCH"))
+            .and(wiremock::matchers::path(format!("/api/items/{item_id}")))
+            .and(NoIfMatch)
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+                "id": item_id, "title": "after"
+            })))
+            .mount(&server)
+            .await;
+
+        let uri = server.uri();
+        let line = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"update_item","arguments":{{"id":"{item_id}","title":"after"}}}}}}"#
+        );
+        let resp = run_blocking(move || handle_line(&mock_client(&uri), &line))
+            .await
+            .unwrap();
+        let v: Value = serde_json::from_str(&resp).unwrap();
+        assert_eq!(v["result"]["isError"], false, "unexpected error: {v}");
+    }
+
+    /// The failure mode this whole path is designed against: a 412 must
+    /// read as "you raced, re-read and retry," not as an opaque failure an
+    /// agent might retry blindly and clobber the change that won.
+    #[tokio::test]
+    async fn mcp_update_item_412_tells_the_agent_to_reread() {
+        let server = wiremock::MockServer::start().await;
+        let item_id = "44444444-0000-0000-0000-000000000000";
+
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path(format!("/api/items/{item_id}")))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .insert_header("ETag", "\"1\"")
+                    .set_body_json(json!({ "id": item_id, "title": "stale" })),
+            )
+            .mount(&server)
+            .await;
+        wiremock::Mock::given(wiremock::matchers::method("PATCH"))
+            .and(wiremock::matchers::path(format!("/api/items/{item_id}")))
+            .respond_with(wiremock::ResponseTemplate::new(412).set_body_json(json!({
+                "error": { "status": 412, "message": "version mismatch" }
+            })))
+            .mount(&server)
+            .await;
+
+        let uri = server.uri();
+        let line = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"update_item","arguments":{{"id":"{item_id}","title":"new"}}}}}}"#
+        );
+        let resp = run_blocking(move || handle_line(&mock_client(&uri), &line))
+            .await
+            .unwrap();
+        let v: Value = serde_json::from_str(&resp).unwrap();
+        assert_eq!(v["result"]["isError"], true);
+        let text = v["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("412"), "unexpected: {text}");
+        assert!(
+            text.to_lowercase().contains("re-read"),
+            "must tell the agent to re-read, not just fail: {text}"
+        );
     }
 
     #[test]

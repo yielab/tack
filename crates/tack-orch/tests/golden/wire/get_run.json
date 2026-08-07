@@ -1,0 +1,33 @@
+{
+  "method": "get_run",
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/runs/run-25d46fd9-04d4-4257-8b82-1d2cf5167cbb",
+      "query": [],
+      "header_names": [
+        "accept",
+        "authorization",
+        "host",
+        "user-agent"
+      ],
+      "body": null
+    }
+  ],
+  "result": {
+    "outcome": "ok",
+    "value": {
+      "created": "2026-08-04T19:50:43.129083+00:00",
+      "error": "",
+      "finishedAt": "2026-08-04T19:50:43.130194+00:00",
+      "id": "run-25d46fd9-04d4-4257-8b82-1d2cf5167cbb",
+      "pids": [],
+      "project": "demo-lead",
+      "source": "cli",
+      "startedAt": "2026-08-04T19:50:43.129674+00:00",
+      "state": "succeeded",
+      "taskIds": [],
+      "variables": {}
+    }
+  }
+}

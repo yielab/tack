@@ -1,7 +1,15 @@
-//! Tests for migrations 019–024 (the Agent-Factory Control Center schema: `control_planes`,
-//! `orch_links`, `orch_tasks`, `orch_runs`, `orch_events`, `orch_approvals`).
+//! Tests for migrations 019–038: the Agent-Factory Control Center schema
+//! (`control_planes`, `orch_links`, `orch_tasks`, `orch_runs`, `orch_events`,
+//! `orch_approvals`) plus the Agnostic Control Plane cycle's card G5a additive
+//! columns — 032 `control_planes.config`, 033 `control_planes.secrets`, 034
+//! `items.version`, 035 `orch_links.version`, 036 `control_planes.version` — and
+//! card G5b's two table rebuilds, 037 (`orch_runs`) and 038 (`orch_approvals`).
+//! See `docs/plans/agnostic-control-plane.md` §4 Phase 1/2/3 and §10.3, and
+//! `TODO.md` §II, for the design; `crates/tack-db/src/migrations.rs`'s own
+//! comments above `MIGRATION_032` and `MIGRATION_037` are authoritative for why
+//! 032-036 are single-statement ALTERs while 037/038 are not.
 //!
-//! Covers the W0-B acceptance bar:
+//! Covers the W0-B acceptance bar for 019-024:
 //!   - a fresh database migrates cleanly and ends up with all six new tables;
 //!   - an existing database stopped at "018_github_links" upgrades in place when
 //!     `run_all` is called again (simulating an installed `tack.db` picking up a new
@@ -11,6 +19,28 @@
 //!     every new table that has an incoming FK. `control_planes` is the root of this
 //!     schema's FK graph — it has no FK columns of its own — so there is nothing to
 //!     orphan and no test for it here.
+//!
+//! Plus the card G5a acceptance bar for 032-036:
+//!   - each new column exists after its migration and does not exist before it;
+//!   - a fresh database migrates cleanly all the way through 036;
+//!   - an existing database stopped at "031_items_completed_at_index" (the last
+//!     migration before this batch) upgrades in place;
+//!   - the `NOT NULL DEFAULT` columns (`config`, the three `version` columns)
+//!     populate correctly on rows that existed *before* the migration ran, not
+//!     just on freshly inserted ones — a `DEFAULT` only fires for a value the
+//!     `ALTER` statement backfills into existing rows, not for a value an
+//!     application layer would need to supply.
+//!
+//! Plus the card G5b acceptance bar for 037-038 — the table rebuilds. This is
+//! the one migration batch in the whole cycle that rewrites existing rows
+//! rather than only adding columns, so "the table exists afterwards" is not
+//! enough; every test below checks one of the four things the card brief
+//! demands: identical row counts and per-row field equality across the
+//! rebuild, an empty `PRAGMA foreign_key_check`, the old primary key's
+//! uniqueness still holding under the new composite key, and a deliberately
+//! half-applied rebuild refusing to boot with a named error instead of
+//! silently retrying `DROP TABLE` against data that might be all that
+//! survived a crash.
 
 mod common;
 
@@ -35,6 +65,18 @@ async fn table_exists(pool: &sqlx::SqlitePool, table: &str) -> bool {
         .await
         .expect("query sqlite_master")
         .is_some()
+}
+
+/// Whether `table` has a column named `column`, via `PRAGMA table_info` — the
+/// only reliable way to ask SQLite "does this column exist" without attempting
+/// a query against it and pattern-matching the error text.
+async fn column_exists(pool: &sqlx::SqlitePool, table: &str, column: &str) -> bool {
+    sqlx::query(&format!("PRAGMA table_info({table})"))
+        .fetch_all(pool)
+        .await
+        .expect("query table_info")
+        .iter()
+        .any(|row| row.get::<String, _>("name") == column)
 }
 
 /// Inserts a single `control_planes` row directly (no repository layer exists yet —
@@ -273,5 +315,908 @@ async fn test_orch_tasks_composite_pk_allows_redispatch_same_item() {
     assert_eq!(
         count, 2,
         "two distinct dispatches for the same item should both persist"
+    );
+}
+
+// ─── Card G5a: migrations 032-036, additive columns only ──────────────────
+//
+// Each column-existence test pins the migration *immediately before* the one
+// under test as the "column must not exist yet" checkpoint, and the migration
+// under test itself as the "column must exist now" checkpoint — the same
+// `run_up_to` boundary-simulation pattern the 018-vs-full-set test above uses,
+// just one migration name at a time instead of five at once.
+
+#[tokio::test]
+async fn test_migration_032_adds_control_planes_config_column() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+
+    migrations::run_up_to(&pool, "031_items_completed_at_index")
+        .await
+        .expect("apply migrations up to 031");
+    assert!(
+        !column_exists(&pool, "control_planes", "config").await,
+        "control_planes.config must not exist before migration 032"
+    );
+
+    migrations::run_up_to(&pool, "032_control_plane_config")
+        .await
+        .expect("apply migration 032");
+    assert!(
+        column_exists(&pool, "control_planes", "config").await,
+        "control_planes.config must exist after migration 032"
+    );
+}
+
+#[tokio::test]
+async fn test_migration_033_adds_control_planes_secrets_column() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+
+    migrations::run_up_to(&pool, "032_control_plane_config")
+        .await
+        .expect("apply migrations up to 032");
+    assert!(
+        !column_exists(&pool, "control_planes", "secrets").await,
+        "control_planes.secrets must not exist before migration 033"
+    );
+
+    migrations::run_up_to(&pool, "033_control_plane_secrets")
+        .await
+        .expect("apply migration 033");
+    assert!(
+        column_exists(&pool, "control_planes", "secrets").await,
+        "control_planes.secrets must exist after migration 033"
+    );
+}
+
+#[tokio::test]
+async fn test_migration_034_adds_items_version_column() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+
+    migrations::run_up_to(&pool, "033_control_plane_secrets")
+        .await
+        .expect("apply migrations up to 033");
+    assert!(
+        !column_exists(&pool, "items", "version").await,
+        "items.version must not exist before migration 034"
+    );
+
+    migrations::run_up_to(&pool, "034_items_version")
+        .await
+        .expect("apply migration 034");
+    assert!(
+        column_exists(&pool, "items", "version").await,
+        "items.version must exist after migration 034"
+    );
+}
+
+#[tokio::test]
+async fn test_migration_035_adds_orch_links_version_column() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+
+    migrations::run_up_to(&pool, "034_items_version")
+        .await
+        .expect("apply migrations up to 034");
+    assert!(
+        !column_exists(&pool, "orch_links", "version").await,
+        "orch_links.version must not exist before migration 035"
+    );
+
+    migrations::run_up_to(&pool, "035_orch_links_version")
+        .await
+        .expect("apply migration 035");
+    assert!(
+        column_exists(&pool, "orch_links", "version").await,
+        "orch_links.version must exist after migration 035"
+    );
+}
+
+#[tokio::test]
+async fn test_migration_036_adds_control_planes_version_column() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+
+    migrations::run_up_to(&pool, "035_orch_links_version")
+        .await
+        .expect("apply migrations up to 035");
+    assert!(
+        !column_exists(&pool, "control_planes", "version").await,
+        "control_planes.version must not exist before migration 036"
+    );
+
+    migrations::run_up_to(&pool, "036_control_planes_version")
+        .await
+        .expect("apply migration 036");
+    assert!(
+        column_exists(&pool, "control_planes", "version").await,
+        "control_planes.version must exist after migration 036"
+    );
+}
+
+#[tokio::test]
+async fn test_fresh_db_migrates_all_the_way_through_036() {
+    let repo = setup_test_db().await;
+
+    for (table, column) in [
+        ("control_planes", "config"),
+        ("control_planes", "secrets"),
+        ("control_planes", "version"),
+        ("items", "version"),
+        ("orch_links", "version"),
+    ] {
+        assert!(
+            column_exists(repo.pool(), table, column).await,
+            "expected {table}.{column} to exist after a fresh migration run"
+        );
+    }
+
+    let applied: Vec<String> = sqlx::query("SELECT name FROM _migrations ORDER BY id")
+        .fetch_all(repo.pool())
+        .await
+        .expect("select migrations")
+        .into_iter()
+        .map(|row| row.get::<String, _>("name"))
+        .collect();
+
+    assert!(
+        applied.iter().any(|m| m == "036_control_planes_version"),
+        "036_control_planes_version must have been applied on a fresh db"
+    );
+}
+
+#[tokio::test]
+async fn test_upgrade_from_031_applies_card_g5a_migrations_in_place() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+
+    // Simulate an installed tack.db that has only ever seen migrations 001-031 —
+    // i.e. everything up to but not including this card's batch.
+    migrations::run_up_to(&pool, "031_items_completed_at_index")
+        .await
+        .expect("apply migrations up to 031");
+
+    for (table, column) in [
+        ("control_planes", "config"),
+        ("control_planes", "secrets"),
+        ("control_planes", "version"),
+        ("items", "version"),
+        ("orch_links", "version"),
+    ] {
+        assert!(
+            !column_exists(&pool, table, column).await,
+            "{table}.{column} must not exist before the upgrade runs"
+        );
+    }
+
+    // Now run the full migration set again, as `tack serve` does on every startup.
+    migrations::run_all(&pool).await.expect("upgrade in place");
+
+    for (table, column) in [
+        ("control_planes", "config"),
+        ("control_planes", "secrets"),
+        ("control_planes", "version"),
+        ("items", "version"),
+        ("orch_links", "version"),
+    ] {
+        assert!(
+            column_exists(&pool, table, column).await,
+            "{table}.{column} must exist after upgrading an existing db in place"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_preexisting_rows_backfill_default_config_and_version() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+
+    // Stop at 031 — one migration short of this card's batch — and insert one
+    // row per table the batch touches, via raw SQL (no repository layer call,
+    // so nothing here depends on tack-db's Rust API already knowing about
+    // columns this same migration run is about to add).
+    migrations::run_up_to(&pool, "031_items_completed_at_index")
+        .await
+        .expect("apply migrations up to 031");
+
+    let workspace_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO workspaces (id, name) VALUES (?, 'Pre-existing Workspace')")
+        .bind(workspace_id.to_string())
+        .execute(&pool)
+        .await
+        .expect("insert workspace");
+
+    let project_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO projects (id, workspace_id, name) VALUES (?, ?, 'Pre-existing Project')",
+    )
+    .bind(project_id.to_string())
+    .bind(workspace_id.to_string())
+    .execute(&pool)
+    .await
+    .expect("insert project");
+
+    let item_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO items (id, project_id, title, status) VALUES (?, ?, 'Pre-existing Item', 'todo')",
+    )
+    .bind(item_id.to_string())
+    .bind(project_id.to_string())
+    .execute(&pool)
+    .await
+    .expect("insert item");
+
+    let plane_id = insert_control_plane(&pool).await;
+
+    sqlx::query(
+        "INSERT INTO orch_links (project_id, control_plane_id, remote_project) VALUES (?, ?, 'demo')",
+    )
+    .bind(project_id.to_string())
+    .bind(plane_id.to_string())
+    .execute(&pool)
+    .await
+    .expect("insert orch_link");
+
+    // Now bring every pre-existing row through migrations 032-036.
+    migrations::run_all(&pool).await.expect("upgrade in place");
+
+    let item_version: i64 = sqlx::query_scalar("SELECT version FROM items WHERE id = ?")
+        .bind(item_id.to_string())
+        .fetch_one(&pool)
+        .await
+        .expect("select item version");
+    assert_eq!(
+        item_version, 1,
+        "a pre-existing item must backfill to version 1, not 0 or NULL"
+    );
+
+    let link_version: i64 =
+        sqlx::query_scalar("SELECT version FROM orch_links WHERE project_id = ?")
+            .bind(project_id.to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("select orch_link version");
+    assert_eq!(
+        link_version, 1,
+        "a pre-existing orch_link must backfill to version 1, not 0 or NULL"
+    );
+
+    let (plane_version, plane_config, plane_secrets): (i64, String, Option<String>) =
+        sqlx::query_as("SELECT version, config, secrets FROM control_planes WHERE id = ?")
+            .bind(plane_id.to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("select control_plane row");
+    assert_eq!(
+        plane_version, 1,
+        "a pre-existing control_plane must backfill to version 1, not 0 or NULL"
+    );
+    assert_eq!(
+        plane_config, "{}",
+        "a pre-existing control_plane must backfill config to the empty-object default"
+    );
+    assert_eq!(
+        plane_secrets, None,
+        "a pre-existing control_plane must backfill secrets to NULL, never an empty value \
+         that could be mistaken for 'no secrets configured yet' vs 'checked and empty'"
+    );
+}
+
+// ─── Card G5b: migrations 037-038, the two table rebuilds ─────────────────
+//
+// Unlike 032-036, these rewrite existing rows rather than only adding a
+// column, so "the column/table exists afterwards" is not the bar — see the
+// module doc comment above for the four things every test group here checks.
+
+/// Inserts a bare workspace → project → item chain via raw SQL (mirroring
+/// `test_preexisting_rows_backfill_default_config_and_version` above) and
+/// returns the item id, for use as a valid `orch_runs`/`orch_approvals`
+/// `item_id` FK target that predates the rebuild migrations.
+async fn seed_item(pool: &sqlx::SqlitePool) -> Uuid {
+    let workspace_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO workspaces (id, name) VALUES (?, 'G5b Workspace')")
+        .bind(workspace_id.to_string())
+        .execute(pool)
+        .await
+        .expect("insert workspace");
+
+    let project_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO projects (id, workspace_id, name) VALUES (?, ?, 'G5b Project')")
+        .bind(project_id.to_string())
+        .bind(workspace_id.to_string())
+        .execute(pool)
+        .await
+        .expect("insert project");
+
+    let item_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO items (id, project_id, title, status) VALUES (?, ?, 'G5b Item', 'todo')",
+    )
+    .bind(item_id.to_string())
+    .bind(project_id.to_string())
+    .execute(pool)
+    .await
+    .expect("insert item");
+
+    item_id
+}
+
+// ─── 037: orch_runs ────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_migration_037_renames_run_id_to_external_run_id_and_widens_the_pk() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+
+    migrations::run_up_to(&pool, "036_control_planes_version")
+        .await
+        .expect("apply migrations up to 036");
+    assert!(
+        column_exists(&pool, "orch_runs", "run_id").await,
+        "orch_runs.run_id must still exist before migration 037"
+    );
+    for column in ["external_run_id", "run_attempt", "correlation_id"] {
+        assert!(
+            !column_exists(&pool, "orch_runs", column).await,
+            "orch_runs.{column} must not exist before migration 037"
+        );
+    }
+
+    migrations::run_up_to(&pool, "037_orch_runs_rebuild")
+        .await
+        .expect("apply migration 037");
+
+    assert!(
+        !column_exists(&pool, "orch_runs", "run_id").await,
+        "orch_runs.run_id must be gone after migration 037 — it is renamed, not duplicated \
+         alongside external_run_id"
+    );
+    for column in ["external_run_id", "run_attempt", "correlation_id"] {
+        assert!(
+            column_exists(&pool, "orch_runs", column).await,
+            "orch_runs.{column} must exist after migration 037"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_migration_037_rebuild_preserves_every_row_and_field_equality() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+    migrations::run_up_to(&pool, "036_control_planes_version")
+        .await
+        .expect("apply migrations up to 036");
+
+    let plane_id = insert_control_plane(&pool).await;
+    let item_id = seed_item(&pool).await;
+
+    // One run correlated to an item, one unattributed (the pre-Phase-35 "CLI
+    // dispatch" case migration 022's own comment documents) — both must
+    // survive the rebuild with every non-renamed column byte-for-byte intact.
+    sqlx::query(
+        "INSERT INTO orch_runs
+            (run_id, control_plane_id, item_id, remote_project, source, state,
+             started_at, ended_at, error, created_at, updated_at)
+         VALUES ('run-attributed', ?, ?, 'demo', 'webhook', 'running',
+                 '2026-01-01T00:00:00+00:00', NULL, NULL,
+                 '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')",
+    )
+    .bind(plane_id.to_string())
+    .bind(item_id.to_string())
+    .execute(&pool)
+    .await
+    .expect("insert attributed run");
+
+    sqlx::query(
+        "INSERT INTO orch_runs
+            (run_id, control_plane_id, item_id, remote_project, source, state,
+             started_at, ended_at, error, created_at, updated_at)
+         VALUES ('run-cli', ?, NULL, 'demo', 'cli', 'succeeded',
+                 '2026-01-02T00:00:00+00:00', '2026-01-02T00:10:00+00:00', NULL,
+                 '2026-01-02T00:00:00+00:00', '2026-01-02T00:10:00+00:00')",
+    )
+    .bind(plane_id.to_string())
+    .execute(&pool)
+    .await
+    .expect("insert unattributed run");
+
+    let count_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM orch_runs")
+        .fetch_one(&pool)
+        .await
+        .expect("count before");
+    assert_eq!(count_before, 2);
+
+    migrations::run_up_to(&pool, "037_orch_runs_rebuild")
+        .await
+        .expect("apply migration 037");
+
+    let count_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM orch_runs")
+        .fetch_one(&pool)
+        .await
+        .expect("count after");
+    assert_eq!(
+        count_after, 2,
+        "the rebuild must not drop or duplicate any row"
+    );
+
+    #[derive(sqlx::FromRow, Debug)]
+    struct Row {
+        external_run_id: String,
+        control_plane_id: String,
+        run_attempt: i64,
+        correlation_id: Option<String>,
+        item_id: Option<String>,
+        remote_project: String,
+        source: String,
+        state: String,
+        started_at: Option<String>,
+        ended_at: Option<String>,
+        error: Option<String>,
+        created_at: String,
+        updated_at: String,
+    }
+
+    const COLUMNS: &str = "external_run_id, control_plane_id, run_attempt, correlation_id, \
+         item_id, remote_project, source, state, started_at, ended_at, error, created_at, \
+         updated_at";
+
+    let attributed: Row = sqlx::query_as(&format!(
+        "SELECT {COLUMNS} FROM orch_runs WHERE external_run_id = 'run-attributed'"
+    ))
+    .fetch_one(&pool)
+    .await
+    .expect("fetch attributed run");
+
+    assert_eq!(
+        attributed.external_run_id, "run-attributed",
+        "external_run_id must survive the migration 037 rebuild unchanged, got: {:?}",
+        attributed.external_run_id
+    );
+    assert_eq!(
+        attributed.control_plane_id,
+        plane_id.to_string(),
+        "control_plane_id must survive the migration 037 rebuild unchanged, got: {:?}",
+        attributed.control_plane_id
+    );
+    assert_eq!(
+        attributed.run_attempt, 1,
+        "a row that predates the attempt concept must backfill to attempt 1, not 0"
+    );
+    assert_eq!(
+        attributed.correlation_id, None,
+        "a row that predates Tack minting correlation ids must backfill to NULL, not an empty \
+         string that could be mistaken for a minted-but-blank id"
+    );
+    assert_eq!(
+        attributed.item_id.as_deref(),
+        Some(item_id.to_string()).as_deref(),
+        "item_id must still correlate the run to its item after the migration 037 rebuild, \
+         got: {:?}",
+        attributed.item_id
+    );
+    assert_eq!(
+        attributed.remote_project, "demo",
+        "remote_project must survive the migration 037 rebuild unchanged, got: {:?}",
+        attributed.remote_project
+    );
+    assert_eq!(
+        attributed.source, "webhook",
+        "source must survive the migration 037 rebuild unchanged, got: {:?}",
+        attributed.source
+    );
+    assert_eq!(
+        attributed.state, "running",
+        "state must survive the migration 037 rebuild unchanged, got: {:?}",
+        attributed.state
+    );
+    assert_eq!(
+        attributed.started_at.as_deref(),
+        Some("2026-01-01T00:00:00+00:00"),
+        "started_at must survive the migration 037 rebuild unchanged, got: {:?}",
+        attributed.started_at
+    );
+    assert_eq!(
+        attributed.ended_at, None,
+        "ended_at must stay NULL across the migration 037 rebuild for a still-running row, \
+         got: {:?}",
+        attributed.ended_at
+    );
+    assert_eq!(
+        attributed.error, None,
+        "error must stay NULL across the migration 037 rebuild for a run with no error, \
+         got: {:?}",
+        attributed.error
+    );
+    assert_eq!(
+        attributed.created_at, "2026-01-01T00:00:00+00:00",
+        "created_at must survive the migration 037 rebuild unchanged, got: {:?}",
+        attributed.created_at
+    );
+    assert_eq!(
+        attributed.updated_at, "2026-01-01T00:00:00+00:00",
+        "updated_at must survive the migration 037 rebuild unchanged, got: {:?}",
+        attributed.updated_at
+    );
+
+    let cli_run: Row = sqlx::query_as(&format!(
+        "SELECT {COLUMNS} FROM orch_runs WHERE external_run_id = 'run-cli'"
+    ))
+    .fetch_one(&pool)
+    .await
+    .expect("fetch cli run");
+    assert_eq!(
+        cli_run.item_id, None,
+        "an unattributed run must stay unattributed across the rebuild"
+    );
+    assert_eq!(
+        cli_run.source, "cli",
+        "source must survive the migration 037 rebuild unchanged for the unattributed run, \
+         got: {:?}",
+        cli_run.source
+    );
+    assert_eq!(
+        cli_run.state, "succeeded",
+        "state must survive the migration 037 rebuild unchanged for the unattributed run, \
+         got: {:?}",
+        cli_run.state
+    );
+    assert_eq!(
+        cli_run.ended_at.as_deref(),
+        Some("2026-01-02T00:10:00+00:00"),
+        "ended_at must survive the migration 037 rebuild unchanged for the unattributed run, \
+         got: {:?}",
+        cli_run.ended_at
+    );
+}
+
+#[tokio::test]
+async fn test_migration_037_foreign_key_check_is_empty_after_rebuild() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+    migrations::run_up_to(&pool, "036_control_planes_version")
+        .await
+        .expect("apply migrations up to 036");
+
+    let plane_id = insert_control_plane(&pool).await;
+    let item_id = seed_item(&pool).await;
+    sqlx::query(
+        "INSERT INTO orch_runs (run_id, control_plane_id, item_id, remote_project) \
+         VALUES ('run-1', ?, ?, 'demo')",
+    )
+    .bind(plane_id.to_string())
+    .bind(item_id.to_string())
+    .execute(&pool)
+    .await
+    .expect("insert run");
+
+    migrations::run_all(&pool).await.expect("upgrade in place");
+
+    let violations = sqlx::query("PRAGMA foreign_key_check")
+        .fetch_all(&pool)
+        .await
+        .expect("run foreign_key_check");
+    assert!(
+        violations.is_empty(),
+        "PRAGMA foreign_key_check must report no violations after the 037/038 rebuilds, got \
+         {} row(s)",
+        violations.len()
+    );
+}
+
+#[tokio::test]
+async fn test_migration_037_old_pk_uniqueness_still_enforced_for_a_single_attempt() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+    migrations::run_up_to(&pool, "037_orch_runs_rebuild")
+        .await
+        .expect("apply migrations through 037");
+
+    let plane_id = insert_control_plane(&pool).await;
+
+    sqlx::query(
+        "INSERT INTO orch_runs (control_plane_id, external_run_id, run_attempt, remote_project) \
+         VALUES (?, 'run-dup', 1, 'demo')",
+    )
+    .bind(plane_id.to_string())
+    .execute(&pool)
+    .await
+    .expect("first insert");
+
+    let dup = sqlx::query(
+        "INSERT INTO orch_runs (control_plane_id, external_run_id, run_attempt, remote_project) \
+         VALUES (?, 'run-dup', 1, 'demo')",
+    )
+    .bind(plane_id.to_string())
+    .execute(&pool)
+    .await;
+    assert!(
+        dup.is_err(),
+        "a second row with the same (control_plane_id, external_run_id, run_attempt) must be \
+         rejected — this is exactly what the old single-column run_id PRIMARY KEY rejected for \
+         the same (plane, run) pair, just expressed over the widened key"
+    );
+
+    // A genuinely different attempt of the same external run id is now
+    // representable — proving the key was actually widened, not merely renamed.
+    let retry = sqlx::query(
+        "INSERT INTO orch_runs (control_plane_id, external_run_id, run_attempt, remote_project) \
+         VALUES (?, 'run-dup', 2, 'demo')",
+    )
+    .bind(plane_id.to_string())
+    .execute(&pool)
+    .await;
+    assert!(
+        retry.is_ok(),
+        "a second attempt of the same external_run_id must now be representable — that is the \
+         entire point of widening the primary key: {retry:?}"
+    );
+}
+
+// ─── 038: orch_approvals ────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_migration_038_control_plane_id_becomes_nullable_and_gains_new_columns() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+    migrations::run_up_to(&pool, "037_orch_runs_rebuild")
+        .await
+        .expect("apply migrations through 037");
+
+    for column in ["kind", "external_id", "provider_metadata"] {
+        assert!(
+            !column_exists(&pool, "orch_approvals", column).await,
+            "orch_approvals.{column} must not exist before migration 038"
+        );
+    }
+
+    migrations::run_up_to(&pool, "038_orch_approvals_rebuild")
+        .await
+        .expect("apply migration 038");
+
+    for column in ["kind", "external_id", "provider_metadata"] {
+        assert!(
+            column_exists(&pool, "orch_approvals", column).await,
+            "orch_approvals.{column} must exist after migration 038"
+        );
+    }
+
+    // The entire point of the rebuild: a decision with no control plane
+    // behind it yet (a hook-raised decision from a never-dispatched run) must
+    // now be insertable.
+    let result = sqlx::query(
+        "INSERT INTO orch_approvals (token, control_plane_id) VALUES ('tok-no-plane', NULL)",
+    )
+    .execute(&pool)
+    .await;
+    assert!(
+        result.is_ok(),
+        "control_plane_id must be nullable after migration 038: {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_migration_038_rebuild_preserves_every_row_and_field_equality() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+    migrations::run_up_to(&pool, "037_orch_runs_rebuild")
+        .await
+        .expect("apply migrations through 037");
+
+    let plane_id = insert_control_plane(&pool).await;
+    let item_id = seed_item(&pool).await;
+
+    sqlx::query(
+        "INSERT INTO orch_approvals
+            (token, control_plane_id, item_id, remote_task_id, agent, action, state,
+             requested_at, decided_at, created_at, updated_at)
+         VALUES ('apr-1', ?, ?, 'task-1', 'implementer', 'delete prod table', 'pending',
+                 '2026-01-01T00:00:00+00:00', NULL,
+                 '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')",
+    )
+    .bind(plane_id.to_string())
+    .bind(item_id.to_string())
+    .execute(&pool)
+    .await
+    .expect("insert approval");
+
+    migrations::run_up_to(&pool, "038_orch_approvals_rebuild")
+        .await
+        .expect("apply migration 038");
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM orch_approvals")
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+    assert_eq!(count, 1, "the rebuild must not drop or duplicate any row");
+
+    #[derive(sqlx::FromRow, Debug)]
+    struct Row {
+        token: String,
+        control_plane_id: Option<String>,
+        kind: String,
+        external_id: Option<String>,
+        provider_metadata: String,
+        item_id: Option<String>,
+        remote_task_id: Option<String>,
+        agent: Option<String>,
+        action: Option<String>,
+        state: String,
+        requested_at: String,
+        decided_at: Option<String>,
+    }
+
+    let row: Row = sqlx::query_as(
+        "SELECT token, control_plane_id, kind, external_id, provider_metadata, item_id, \
+                remote_task_id, agent, action, state, requested_at, decided_at \
+         FROM orch_approvals WHERE token = 'apr-1'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("fetch approval");
+
+    assert_eq!(row.token, "apr-1");
+    assert_eq!(
+        row.control_plane_id.as_deref(),
+        Some(plane_id.to_string()).as_deref()
+    );
+    assert_eq!(
+        row.kind, "approval",
+        "every pre-existing approval predates any other kind and must backfill to 'approval'"
+    );
+    assert_eq!(row.external_id, None);
+    assert_eq!(row.provider_metadata, "{}");
+    assert_eq!(row.item_id.as_deref(), Some(item_id.to_string()).as_deref());
+    assert_eq!(row.remote_task_id.as_deref(), Some("task-1"));
+    assert_eq!(row.agent.as_deref(), Some("implementer"));
+    assert_eq!(row.action.as_deref(), Some("delete prod table"));
+    assert_eq!(row.state, "pending");
+    assert_eq!(row.requested_at, "2026-01-01T00:00:00+00:00");
+    assert_eq!(row.decided_at, None);
+}
+
+// ─── Upgrade-in-place and fresh-install coverage for both rebuilds ────────
+
+#[tokio::test]
+async fn test_upgrade_from_036_applies_card_g5b_rebuilds_in_place() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+
+    migrations::run_up_to(&pool, "036_control_planes_version")
+        .await
+        .expect("apply migrations up to 036");
+
+    assert!(column_exists(&pool, "orch_runs", "run_id").await);
+    assert!(!column_exists(&pool, "orch_runs", "external_run_id").await);
+    assert!(!column_exists(&pool, "orch_approvals", "kind").await);
+
+    migrations::run_all(&pool).await.expect("upgrade in place");
+
+    assert!(!column_exists(&pool, "orch_runs", "run_id").await);
+    for column in ["external_run_id", "run_attempt", "correlation_id"] {
+        assert!(column_exists(&pool, "orch_runs", column).await);
+    }
+    for column in ["kind", "external_id", "provider_metadata"] {
+        assert!(column_exists(&pool, "orch_approvals", column).await);
+    }
+}
+
+#[tokio::test]
+async fn test_fresh_db_migrates_all_the_way_through_038() {
+    let repo = setup_test_db().await;
+
+    for (table, column) in [
+        ("orch_runs", "external_run_id"),
+        ("orch_runs", "run_attempt"),
+        ("orch_runs", "correlation_id"),
+        ("orch_approvals", "kind"),
+        ("orch_approvals", "external_id"),
+        ("orch_approvals", "provider_metadata"),
+    ] {
+        assert!(
+            column_exists(repo.pool(), table, column).await,
+            "expected {table}.{column} to exist after a fresh migration run"
+        );
+    }
+
+    let applied: Vec<String> = sqlx::query("SELECT name FROM _migrations ORDER BY id")
+        .fetch_all(repo.pool())
+        .await
+        .expect("select migrations")
+        .into_iter()
+        .map(|row| row.get::<String, _>("name"))
+        .collect();
+
+    assert!(
+        applied.iter().any(|m| m == "038_orch_approvals_rebuild"),
+        "038_orch_approvals_rebuild must have been applied on a fresh db"
+    );
+}
+
+// ─── Boot-safety guard: refuse to boot on a half-applied rebuild ──────────
+
+#[tokio::test]
+async fn test_a_half_applied_orch_runs_rebuild_refuses_to_boot_with_a_named_error() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+    migrations::run_up_to(&pool, "036_control_planes_version")
+        .await
+        .expect("apply migrations up to 036");
+
+    // Simulate a crash between migration 037's CREATE TABLE orch_runs_new and
+    // its DROP TABLE orch_runs: both tables present, and "037_orch_runs_rebuild"
+    // was never recorded — `apply_migrations` only inserts that row after every
+    // statement in the migration has succeeded, and this deliberately stops
+    // short of that.
+    sqlx::query("CREATE TABLE orch_runs_new (external_run_id TEXT)")
+        .execute(&pool)
+        .await
+        .expect("simulate the half-applied intermediate table");
+
+    let result = migrations::run_all(&pool).await;
+    let err = result
+        .expect_err("run_all must refuse to boot when both orch_runs and orch_runs_new exist");
+    let message = err.to_string();
+    assert!(
+        message.contains("orch_runs") && message.contains("orch_runs_new"),
+        "the error must name both tables so an operator knows what to look at: {message}"
+    );
+    assert!(
+        message.to_lowercase().contains("backup"),
+        "the error must name the recovery path (a backup), not just refuse silently: {message}"
+    );
+
+    let recorded: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM _migrations WHERE name = '037_orch_runs_rebuild')",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("check _migrations");
+    assert!(
+        !recorded,
+        "the rebuild must not be recorded as applied when boot was refused"
+    );
+
+    // And the original table must still be intact — refusing must happen
+    // *before* any destructive statement runs, not after DROP TABLE orch_runs.
+    assert!(
+        table_exists(&pool, "orch_runs").await,
+        "orch_runs must still exist — refusing to boot must not itself destroy data"
+    );
+}
+
+#[tokio::test]
+async fn test_a_half_applied_orch_approvals_rebuild_refuses_to_boot_with_a_named_error() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+    migrations::run_up_to(&pool, "037_orch_runs_rebuild")
+        .await
+        .expect("apply migrations through 037");
+
+    sqlx::query("CREATE TABLE orch_approvals_new (token TEXT)")
+        .execute(&pool)
+        .await
+        .expect("simulate the half-applied intermediate table");
+
+    let result = migrations::run_all(&pool).await;
+    let err = result.expect_err(
+        "run_all must refuse to boot when both orch_approvals and orch_approvals_new exist",
+    );
+    let message = err.to_string();
+    assert!(
+        message.contains("orch_approvals") && message.contains("orch_approvals_new"),
+        "the error must name both tables: {message}"
+    );
+
+    let recorded: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM _migrations WHERE name = '038_orch_approvals_rebuild')",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("check _migrations");
+    assert!(!recorded);
+
+    // 037 already landed cleanly before this test manufactured the 038
+    // half-applied state — the guard must not un-record or re-attempt it.
+    let migration_037_recorded: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM _migrations WHERE name = '037_orch_runs_rebuild')",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("check _migrations");
+    assert!(
+        migration_037_recorded,
+        "037 was already applied before this test created the half-applied 038 state, and \
+         must stay recorded"
+    );
+
+    assert!(
+        table_exists(&pool, "orch_approvals").await,
+        "orch_approvals must still exist — refusing to boot must not itself destroy data"
     );
 }

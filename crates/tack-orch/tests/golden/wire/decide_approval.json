@@ -1,0 +1,26 @@
+{
+  "method": "decide_approval",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/approvals/apr-1",
+      "query": [],
+      "header_names": [
+        "accept",
+        "authorization",
+        "content-length",
+        "content-type",
+        "host",
+        "user-agent"
+      ],
+      "body": {
+        "action": "grant",
+        "channel": "tack"
+      }
+    }
+  ],
+  "result": {
+    "outcome": "ok",
+    "value": "granted"
+  }
+}

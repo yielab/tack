@@ -601,6 +601,173 @@ pub struct RemoteEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Capabilities — what an adapter can actually do (TODO.md §II.1.2, card G1)
+// ---------------------------------------------------------------------------
+//
+// Why this exists: with one adapter, every UI control could safely assume
+// "docket can do this" (or hard-code the one case it can't, e.g. the budget-
+// pause note `frontend/src/features/settings/orchestration/format.ts` used
+// to carry as a prose string). A second adapter with a genuinely different
+// shape (no pods, no roles, no approval store) breaks that assumption
+// silently unless "what can this plane do" becomes a value the caller reads,
+// not a fact baked into a component. TODO.md §II.0 rule 6: "a capability is
+// a value, never a provider check" — `rg -n "kind === 'docket'"` in
+// `frontend/src` must stay empty.
+
+/// Three-state support level for a capability that isn't a plain yes/no —
+/// `pause`/`resume`/`model_selection` all have a middle ground a bare `bool`
+/// can't express (docket ignoring a model override is not the same failure
+/// mode as GitHub Actions having no pause endpoint at all).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Support {
+    /// No mechanism exists on this provider, in either direction.
+    Unsupported,
+    /// A mechanism exists but the provider may not honour it (e.g. a
+    /// caller-supplied model the provider's own routing can still override).
+    Advisory,
+    /// The provider does exactly what was asked.
+    Supported,
+}
+
+/// How narrowly an adapter's event stream can be scoped. Not a ranking —
+/// `Project` and `Run` are incomparable, not one "better" than the other —
+/// each adapter serves whatever its own provider's event API actually
+/// offers. See [`ControlPlane::capabilities`]'s doc comment for why this
+/// can't be widened or narrowed by a caller: docket's `RemoteEvent` carries
+/// no run id (`reconciler.rs`'s `persist_events` says so directly), so a
+/// `Run`-scoped read is unimplementable for it, not just unimplemented.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EventScope {
+    /// No event/trace stream exists on this provider at all.
+    None,
+    Run,
+    Project,
+    Plane,
+}
+
+/// How a caller learns about a decision (approval, deployment gate, …)
+/// waiting on a human.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DecisionSupport {
+    /// The provider has no concept of a decision blocking progress.
+    None,
+    /// The reconciler's regular poll cadence is the only way to discover a
+    /// pending decision (docket's `GET /approvals` today).
+    Poll,
+    /// The provider can notify Tack the moment a decision opens, without
+    /// waiting for the next poll tick.
+    Push,
+}
+
+/// Where a usage/cost figure downstream of this adapter actually comes from
+/// — see the crate doc's "Money is always an estimate" note. This is the
+/// field that turns that crate-wide caveat into something the UI can name
+/// per plane instead of applying blanket distrust everywhere.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageSupport {
+    /// No token/cost figure exists for this provider (e.g. GitHub Actions
+    /// reports runner minutes, not model usage — TODO.md §II.0 rule 7: two
+    /// meters are never one number).
+    NotMeasured,
+    /// The provider's own driver estimates its cost/token usage and reports
+    /// it directly (docket today — its own driver, not a metering gateway).
+    FromProvider,
+    /// A separate LLM gateway in front of the provider meters usage.
+    FromGateway,
+}
+
+/// Whether a caller-supplied model identifier actually reaches the work.
+/// TODO.md §II.0 rule 2: model identifiers are opaque strings Tack never
+/// parses or classifies — this only records what the *provider* does with
+/// one once Tack hands it over.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelSelection {
+    /// The provider owns its own routing and may silently ignore an
+    /// externally supplied model.
+    Unsupported,
+    /// The provider accepts a model hint but isn't guaranteed to use it.
+    Advisory,
+    /// The provider passes the identifier straight through, unexamined.
+    Honoured,
+}
+
+/// Pairs a non-boolean capability's level with a human-readable reason —
+/// the whole point of this module. A bare `Support::Unsupported` tells a UI
+/// *that* a control is off; `reason` is what lets it say *why* without a
+/// provider-specific string hand-written into a component (TODO.md §II.0
+/// rule 6). The reason is always adapter-authored data, produced by the
+/// same code that decided the level — never a caller-side literal invented
+/// after the fact.
+///
+/// **`Serialize` only, deliberately no `Deserialize`.** `reason: &'static
+/// str` can only ever borrow from a `&'static` string literal an adapter's
+/// own source wrote — there is no way to produce one from parsed input
+/// without leaking memory, and nothing in this crate ever needs to decode a
+/// `Capabilities` back in from JSON: it is always constructed by an
+/// adapter and only ever crosses the wire outbound.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct Rated<T> {
+    pub level: T,
+    pub reason: &'static str,
+}
+
+impl<T> Rated<T> {
+    pub const fn new(level: T, reason: &'static str) -> Self {
+        Self { level, reason }
+    }
+}
+
+/// What one control plane can actually do — derived from the adapter's own
+/// static configuration, never guessed from `kind` by a caller (TODO.md
+/// §II.0 rule 6). Two ad-hoc capability bits this struct retires:
+/// `PendingApprovalListResponse.grant_available` and
+/// `useAgentActivityMap`'s `orchAvailable()` used as a dispatch gate — both
+/// really meant "orchestration is on," not "this provider can do this,"
+/// which stops being a safe conflation the moment a second provider exists.
+///
+/// Every non-boolean field is a [`Rated`] pairing its level with a reason —
+/// see that type's doc comment. The boolean fields don't carry one: they
+/// answer a plain yes/no question a UI can act on directly (show/hide a
+/// control), where the six [`Rated`] fields answer "yes, but…" questions a
+/// UI needs to explain.
+///
+/// `Serialize` only — see [`Rated`]'s doc comment for why this type never
+/// needs (and cannot cleanly support) `Deserialize`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Capabilities {
+    /// Can this plane accept new work at all?
+    pub dispatch: bool,
+    /// Can an in-flight run be stopped?
+    pub cancel: bool,
+    pub pause: Rated<Support>,
+    pub resume: Rated<Support>,
+    pub event_scope: Rated<EventScope>,
+    /// Can build/run artifacts be retrieved after the fact?
+    pub artifacts: bool,
+    pub decisions: Rated<DecisionSupport>,
+    pub usage: Rated<UsageSupport>,
+    pub model_selection: Rated<ModelSelection>,
+    /// Does this plane expose a roster of available agent runtimes/models?
+    pub runtimes: bool,
+    /// Does this plane expose a plane-wide metrics scrape (docket's
+    /// `/metrics`, read by [`ControlPlane::metrics`])? Plane-wide, not
+    /// per-run or per-project — `GET /api/projects/{id}/orch-policy` is
+    /// built entirely from it, including a server-computed denial rate, so
+    /// a caller needs to know up front whether that figure can exist at all
+    /// for this plane.
+    pub plane_metrics: bool,
+    /// Can this plane provision a fresh execution environment (docket's
+    /// `POST /pods`) rather than only running against one that already
+    /// exists?
+    pub provisioning: bool,
+}
+
+// ---------------------------------------------------------------------------
 // The ControlPlane trait
 // ---------------------------------------------------------------------------
 
@@ -621,6 +788,18 @@ pub struct RemoteEvent {
 #[async_trait::async_trait]
 pub trait ControlPlane: Send + Sync {
     fn kind(&self) -> &'static str; // "docket"
+
+    /// What this adapter can actually do. **Synchronous and does no I/O** —
+    /// derived from the adapter's own static configuration (the same values
+    /// it was built with), never from a live request. This is what lets a
+    /// caller render a capability-gated control (or compute it for an API
+    /// response) without waiting on a network round trip, and means a
+    /// plane that's currently `unreachable` still reports honest
+    /// capabilities — "what this provider can do" and "is it up right now"
+    /// are different questions. See [`Capabilities`]'s own doc comment for
+    /// the discipline every field follows.
+    fn capabilities(&self) -> Capabilities;
+
     async fn health(&self) -> Result<Health, OrchError>;
     async fn status(&self) -> Result<FleetStatus, OrchError>;
     async fn metrics(&self) -> Result<Vec<MetricSample>, OrchError>;
@@ -910,5 +1089,113 @@ mod tests {
         let page: TracesPage = serde_json::from_str(r#"{"events":[]}"#).unwrap();
         assert_eq!(page.next, None);
         assert!(page.events.is_empty());
+    }
+
+    // ── Capabilities (card G1) ──────────────────────────────────────────
+
+    #[test]
+    fn support_serializes_to_the_wire_strings_the_openapi_contract_promises() {
+        // `docs/plans/agnostic-control-plane.md`'s acceptance check reads
+        // this back with `jq '.capabilities.pause'` and expects exactly
+        // `"unsupported"` — pin the wire form here, not just at the API
+        // layer, since a `#[serde(rename_all)]` typo would otherwise only
+        // surface as a much harder-to-place openapi-contract diff.
+        assert_eq!(
+            serde_json::to_string(&Support::Unsupported).unwrap(),
+            "\"unsupported\""
+        );
+        assert_eq!(
+            serde_json::to_string(&Support::Advisory).unwrap(),
+            "\"advisory\""
+        );
+        assert_eq!(
+            serde_json::to_string(&Support::Supported).unwrap(),
+            "\"supported\""
+        );
+    }
+
+    #[test]
+    fn rated_serializes_level_and_reason_together() {
+        // `Rated` is `Serialize`-only (see its own doc comment: `reason:
+        // &'static str` cannot support `Deserialize` in general) — assert
+        // the wire shape directly instead of a round trip.
+        let r = Rated::new(EventScope::Project, "scoped per project");
+        let json = serde_json::to_value(r).unwrap();
+        assert_eq!(json["level"], "project");
+        assert_eq!(json["reason"], "scoped per project");
+    }
+
+    #[test]
+    fn docket_capabilities_match_the_verified_facts() {
+        // Field-by-field against TODO.md card G1 / the plan's §II.1.4 table —
+        // a docket instance with no token configured is enough, since
+        // `capabilities()` does no I/O and never reads the stored
+        // credential.
+        let adapter = crate::adapters::docket::DocketAdapter::new("http://127.0.0.1:7331", None)
+            .expect("adapter must construct");
+        let caps = adapter.capabilities();
+
+        assert!(
+            caps.dispatch,
+            "docket accepts new work via enqueue_task (POST /tasks/{{project}})"
+        );
+        assert!(!caps.cancel, "docket exposes no cancel route over HTTP");
+        assert_eq!(
+            caps.pause.level,
+            Support::Unsupported,
+            "pause's level must be Unsupported (docket exposes no HTTP pause route), got: {:?}",
+            caps.pause.level
+        );
+        assert!(
+            caps.pause.reason.contains("docket profile"),
+            "pause's reason must name the docket CLI remedy, got: {:?}",
+            caps.pause.reason
+        );
+        assert_eq!(
+            caps.resume.level,
+            Support::Unsupported,
+            "resume's level must be Unsupported (docket exposes no HTTP resume route), got: {:?}",
+            caps.resume.level
+        );
+        assert!(
+            caps.resume.reason.contains("docket profile"),
+            "resume's reason must name the docket CLI remedy, got: {:?}",
+            caps.resume.reason
+        );
+        assert_eq!(
+            caps.event_scope.level,
+            EventScope::Project,
+            "event_scope's level must be Project (docket's /status.json scopes events per \
+             project, not per run), got: {:?}",
+            caps.event_scope.level
+        );
+        assert!(
+            !caps.artifacts,
+            "docket exposes no artifact-retrieval route"
+        );
+        assert_eq!(
+            caps.decisions.level,
+            DecisionSupport::Poll,
+            "decisions' level must be Poll (docket's approvals are discovered by polling \
+             GET /approvals, not pushed), got: {:?}",
+            caps.decisions.level
+        );
+        assert_eq!(
+            caps.usage.level,
+            UsageSupport::FromProvider,
+            "usage's level must be FromProvider (docket's own driver reports its usage \
+             estimate, not a separate metering gateway), got: {:?}",
+            caps.usage.level
+        );
+        assert_eq!(
+            caps.model_selection.level,
+            ModelSelection::Unsupported,
+            "model_selection's level must be Unsupported (docket owns its own model routing \
+             and may ignore an externally supplied model), got: {:?}",
+            caps.model_selection.level
+        );
+        assert!(caps.runtimes, "docket's /status.json agents[] is a roster");
+        assert!(caps.plane_metrics, "docket exposes GET /metrics");
+        assert!(caps.provisioning, "docket exposes POST /pods (card D4)");
     }
 }

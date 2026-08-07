@@ -1,0 +1,125 @@
+[
+  {
+    "method": "GET",
+    "path": "/health",
+    "query": {},
+    "headers": [
+      "accept",
+      "host",
+      "user-agent"
+    ],
+    "body": null
+  },
+  {
+    "method": "GET",
+    "path": "/status.json",
+    "query": {},
+    "headers": [
+      "accept",
+      "host",
+      "user-agent"
+    ],
+    "body": null
+  },
+  {
+    "method": "GET",
+    "path": "/runs",
+    "query": {
+      "project": "demo-a"
+    },
+    "headers": [
+      "accept",
+      "authorization",
+      "host",
+      "user-agent"
+    ],
+    "body": null
+  },
+  {
+    "method": "GET",
+    "path": "/runs",
+    "query": {
+      "project": "demo-b"
+    },
+    "headers": [
+      "accept",
+      "authorization",
+      "host",
+      "user-agent"
+    ],
+    "body": null
+  },
+  {
+    "method": "GET",
+    "path": "/runs",
+    "query": {
+      "project": "demo-c"
+    },
+    "headers": [
+      "accept",
+      "authorization",
+      "host",
+      "user-agent"
+    ],
+    "body": null
+  },
+  {
+    "method": "GET",
+    "path": "/approvals",
+    "query": {},
+    "headers": [
+      "accept",
+      "authorization",
+      "host",
+      "user-agent"
+    ],
+    "body": null
+  },
+  {
+    "method": "GET",
+    "path": "/metrics",
+    "query": {},
+    "headers": [
+      "accept",
+      "host",
+      "user-agent"
+    ],
+    "body": null
+  },
+  {
+    "method": "GET",
+    "path": "/traces/demo-a",
+    "query": {},
+    "headers": [
+      "accept",
+      "authorization",
+      "host",
+      "user-agent"
+    ],
+    "body": null
+  },
+  {
+    "method": "GET",
+    "path": "/traces/demo-b",
+    "query": {},
+    "headers": [
+      "accept",
+      "authorization",
+      "host",
+      "user-agent"
+    ],
+    "body": null
+  },
+  {
+    "method": "GET",
+    "path": "/traces/demo-c",
+    "query": {},
+    "headers": [
+      "accept",
+      "authorization",
+      "host",
+      "user-agent"
+    ],
+    "body": null
+  }
+]

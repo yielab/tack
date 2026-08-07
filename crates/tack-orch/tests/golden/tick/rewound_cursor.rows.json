@@ -1,0 +1,28 @@
+{
+  "orch_runs": [],
+  "orch_approvals": [],
+  "orch_events": [
+    {
+      "control_plane_id": "<CONTROL_PLANE_ID>",
+      "created_at": "<NOW>",
+      "event_type": "tool_call",
+      "id": "<EVENT_ID_1>",
+      "item_id": null,
+      "occurred_at": "2026-08-04T12:00:00+00:00",
+      "payload": {
+        "command": "cargo test",
+        "tool": "bash"
+      },
+      "run_id": null
+    }
+  ],
+  "orch_metrics": [],
+  "orch_trace_cursors": [
+    {
+      "control_plane_id": "<CONTROL_PLANE_ID>",
+      "cursor": "2026-08-04T12:00:00Z:1",
+      "remote_project": "demo",
+      "updated_at": "<NOW>"
+    }
+  ]
+}

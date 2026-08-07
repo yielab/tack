@@ -1,7 +1,9 @@
 //! Wires the orchestration reconciler (`tack-orch::reconciler`) to real
 //! persistence (`tack-db::Repository`, card A3's `repo/orch.rs`) and to a
-//! live per-plane adapter (today only `tack_orch::adapters::docket::
-//! DocketAdapter`, card A1).
+//! live per-plane adapter, built via `tack_orch::adapters::registry::build`
+//! (card G1) — today the registry only ever hands back a
+//! `tack_orch::adapters::docket::DocketAdapter`, but this module no longer
+//! needs to know that.
 //!
 //! This is the glue A2's `reconciler.rs` module doc / TODO.md §6 handoff
 //! deliberately scoped out of `tack-orch` itself: `ControlPlaneStore` is a
@@ -17,6 +19,16 @@
 //! reason to change (a new control-plane `kind` needs a new adapter, or the
 //! persistence mapping shifts), not entangled with request routing or config
 //! parsing.
+//!
+//! **`registry::build`'s `config`/`secrets` parameters are placeholders
+//! here** (`&serde_json::json!({})` and `None`) — `tack_db::repo::orch::
+//! ControlPlane`, the read struct `list_registered` loops over below, does
+//! not yet surface the `config`/`secrets` columns migrations 032/033 added
+//! (repo/orch.rs is outside this card's file ownership — see TODO.md's
+//! file-ownership map). Harmless today: the only registered `kind`,
+//! `"docket"`, ignores both parameters (see `registry::build`'s own doc
+//! comment). Whoever gives those columns a typed field in the repo layer
+//! should thread the real values through here instead of the placeholders.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -30,7 +42,7 @@ use tokio::sync::broadcast;
 use tack_core::models::Item;
 use tack_db::Repository;
 use tack_db::repo::orch::{NewOrchApproval, NewOrchEvent, NewOrchMetric, NewOrchRun};
-use tack_orch::adapters::docket::DocketAdapter;
+use tack_orch::adapters::registry::{self, RegistryError};
 use tack_orch::reconciler::{
     ControlPlaneStore, HealthRecord, RegisteredPlane, RetentionStore, RollupOutcome,
 };
@@ -165,6 +177,51 @@ impl RepoControlPlaneStore {
     fn broadcast(&self, event: BoardEvent) {
         let _ = self.broadcast_tx.send(event);
     }
+
+    /// Card G1 (TODO.md): record `health = "unconfigured"` for a plane
+    /// `list_registered` could not even build an adapter for this cycle
+    /// (unknown `kind`, or a known `kind`'s own constructor failing).
+    ///
+    /// Without this, such a plane is silently invisible to the operator:
+    /// it never enters the reconciler's `healthy`/`degraded`/`unreachable`
+    /// state machine at all — that machine only runs against a plane whose
+    /// adapter *did* construct — so it would sit at the pre-poll
+    /// `"unknown"` column default forever, with nothing but a `warn!` log
+    /// line marking the problem. The motivating case: a restored backup has
+    /// `secrets IS NULL` (`remote_backup::scrub_snapshot_secrets` nulls it
+    /// deliberately), which is harmless for docket today (its token is
+    /// optional — `DocketAdapter::new` degrades to whatever docket's own
+    /// 401 says) but would be silent and fatal for any future plane whose
+    /// credentials are required to even construct a client.
+    ///
+    /// Best-effort: a failure to persist this is logged, not propagated —
+    /// this already runs from inside a `continue`-then-skip branch of a
+    /// batch loop that must never abort polling for every other plane over
+    /// one row's problem (see this trait impl's own doc comment).
+    /// `consecutive_failures` is passed through unchanged rather than reset
+    /// or bumped — `"unconfigured"` isn't a point on the reachability
+    /// failure count's scale, it's an orthogonal "this plane cannot even be
+    /// tried" signal, the same way the column's pre-poll `"unknown"`
+    /// default isn't either.
+    async fn mark_unconfigured(&self, control_plane_id: Uuid, consecutive_failures: i64) {
+        if let Err(e) = self
+            .repo
+            .update_control_plane_health(
+                control_plane_id,
+                "unconfigured",
+                None,
+                consecutive_failures,
+                None,
+            )
+            .await
+        {
+            warn!(
+                control_plane_id = %control_plane_id,
+                error = %e,
+                "failed to persist unconfigured health state"
+            );
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -189,25 +246,33 @@ impl ControlPlaneStore for RepoControlPlaneStore {
                 }
             };
 
-            let control_plane: Arc<dyn ControlPlane> = match row.kind.as_str() {
-                "docket" => match DocketAdapter::new(row.base_url.clone(), token) {
-                    Ok(adapter) => Arc::new(adapter),
-                    Err(e) => {
-                        warn!(
-                            control_plane_id = %row.id,
-                            kind = %row.kind,
-                            error = %e,
-                            "failed to construct control-plane adapter; skipping this plane"
-                        );
-                        continue;
-                    }
-                },
-                other => {
+            let control_plane: Arc<dyn ControlPlane> = match registry::build(
+                &row.kind,
+                &row.base_url,
+                token,
+                &serde_json::json!({}),
+                None,
+            ) {
+                Ok(adapter) => adapter,
+                Err(RegistryError::UnknownKind(kind)) => {
                     warn!(
                         control_plane_id = %row.id,
-                        kind = %other,
+                        kind = %kind,
                         "unknown control-plane kind; skipping this plane"
                     );
+                    self.mark_unconfigured(row.id, row.consecutive_failures)
+                        .await;
+                    continue;
+                }
+                Err(RegistryError::Construction(e)) => {
+                    warn!(
+                        control_plane_id = %row.id,
+                        kind = %row.kind,
+                        error = %e,
+                        "failed to construct control-plane adapter; skipping this plane"
+                    );
+                    self.mark_unconfigured(row.id, row.consecutive_failures)
+                        .await;
                     continue;
                 }
             };

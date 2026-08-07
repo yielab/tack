@@ -140,7 +140,7 @@ use uuid::Uuid;
 use tack_core::models::{OrchBlueprint, Project, TemplateOrchestration};
 use tack_db::repo;
 use tack_db::repo::orch::UpsertOrchLink;
-use tack_orch::adapters::docket::DocketAdapter;
+use tack_orch::adapters::registry::{self, RegistryError};
 use tack_orch::{ControlPlane as OrchControlPlane, OrchError, ProvisionPodParams};
 
 use crate::error::{ApiError, ApiResult};
@@ -310,11 +310,15 @@ fn resolve_status_map(
 }
 
 /// Resolve `control_plane_id` into a live adapter, 404ing distinctly if
-/// the id doesn't exist. Deliberately duplicated from
-/// `dispatcher::build_control_plane` / `handlers::orch::
-/// build_control_plane_for_decision` (card D1's precedent, disclosed there
-/// too) rather than exporting a three-caller helper across file
-/// boundaries this cycle's ownership map keeps separate.
+/// the id doesn't exist. Built on `adapters::registry::build` (card G1,
+/// which also deleted the "if a third caller ever needs this, that's the
+/// point to actually share it" comment this function and its two siblings —
+/// `dispatcher::build_control_plane`, `handlers::orch::
+/// build_control_plane_for_decision` — used to carry: there were already
+/// three callers, not a hypothetical third, so the registry is that shared
+/// point). Each of the three keeps its own request-scoped error mapping —
+/// see `registry::build`'s own doc comment for why that duplication (not
+/// the adapter-construction logic itself) is the part staying separate.
 async fn resolve_control_plane(
     state: &AppState,
     control_plane_id: Uuid,
@@ -329,17 +333,19 @@ async fn resolve_control_plane(
         Err(e) => return Err(e.into()),
     };
     let token = state.repo.get_control_plane_token(control_plane_id).await?;
-    match row.kind.as_str() {
-        "docket" => {
-            let adapter = DocketAdapter::new(row.base_url.clone(), token).map_err(|e| {
-                ApiError::Internal(anyhow::anyhow!(
-                    "failed to construct control-plane adapter: {e}"
-                ))
-            })?;
-            Ok(std::sync::Arc::new(adapter))
-        }
-        other => Err(ApiError::Internal(anyhow::anyhow!(
-            "unsupported control-plane kind {other:?}"
+    match registry::build(
+        &row.kind,
+        &row.base_url,
+        token,
+        &serde_json::json!({}),
+        None,
+    ) {
+        Ok(adapter) => Ok(adapter),
+        Err(RegistryError::Construction(e)) => Err(ApiError::Internal(anyhow::anyhow!(
+            "failed to construct control-plane adapter: {e}"
+        ))),
+        Err(RegistryError::UnknownKind(kind)) => Err(ApiError::Internal(anyhow::anyhow!(
+            "unsupported control-plane kind {kind:?}"
         ))),
     }
 }

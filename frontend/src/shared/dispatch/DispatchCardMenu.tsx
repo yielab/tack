@@ -10,7 +10,15 @@ export interface DispatchCardMenuProps {
    *  overwhelmingly common "orchestration not enabled" case (TODO.md §0 rule
    *  8) — the menu trigger itself doesn't mount, rather than mounting and
    *  failing when clicked ("no dispatch controls," this card's own brief,
-   *  not "a control that errors"). */
+   *  not "a control that errors"). Today's only caller (`Board.tsx`) feeds
+   *  this from `useAgentActivityMap`'s `orchAvailable()`, which card G1
+   *  found is the wrong signal — see that function's doc comment for why
+   *  and for the real one (`Capabilities.dispatch`) this prop should read
+   *  once a per-project capability value is reachable at that call site.
+   *  `dispatch` itself carries no `reason` on the wire (it's a plain
+   *  boolean, unlike `pause`/`resume`/...), so unlike `shared/orch
+   *  /CapabilityNote.tsx` there is nothing to *show* here even once fixed —
+   *  only whether the trigger mounts. */
   available: boolean;
   /** Called after a dispatch attempt settles (success or failure) so the
    *  caller can refresh its own agent-activity badge data. */

@@ -255,7 +255,9 @@ pub fn restore_conflicts(local_generation: u64, snapshot_generation: u64, force:
 ///
 /// This list only covers `app_meta`. **This is not the only thing
 /// [`scrub_snapshot_secrets`] scrubs** — any other table that grows a
-/// secret-bearing column (like `control_planes.token`, migration 019) needs its
+/// secret-bearing column (like `control_planes.token`, migration 019, or
+/// `control_planes.secrets`, migration 033 — a GitHub Actions plane's API
+/// credential and webhook signing secret, packed into one JSON blob) needs its
 /// own dedicated block in that function, following the same
 /// null-before-VACUUM shape. Read that function's doc comment before adding a
 /// new secret column anywhere in the schema.
@@ -274,6 +276,11 @@ const SENSITIVE_META_KEYS: &[&str] = &["backup_config", "install_id"];
 ///   which control planes were registered — the operator just re-enters the
 ///   token afterwards. See `crates/tack-db/src/repo/orch.rs` for why the token
 ///   never leaves the DB layer in a read DTO either.
+/// - `control_planes.secrets` (migration 033, write-only provider-credentials
+///   JSON — for a GitHub Actions plane, an API credential *and* a webhook
+///   signing secret in one blob): same treatment as `token` and for the same
+///   reason — `NULL`, not row deletion, so a restore still shows which planes
+///   were registered and the operator re-enters both secrets.
 ///
 /// Because `install_id` is removed, a restored database has no identity row and
 /// [`install_id`] regenerates a fresh UUID on first use — restores no longer
@@ -322,6 +329,30 @@ pub async fn scrub_snapshot_secrets(db_file: &Path) -> Result<(), BackupError> {
         sqlx::query("UPDATE control_planes SET token = NULL WHERE token IS NOT NULL")
             .execute(&mut conn)
             .await?;
+    }
+
+    // control_planes.secrets (migration 033) is newer than the table itself
+    // (migration 019), so `has_control_planes` alone is not a sufficient guard:
+    // a snapshot taken from a pre-033 database has the table but not yet this
+    // column, and an UPDATE naming an absent column is a hard sqlx error, not a
+    // no-op — it would abort the whole scrub function before the VACUUM below
+    // ever runs, which would leave the app_meta secrets deleted above but the
+    // freed pages never rewritten. Check the column's presence via
+    // pragma_table_info before touching it, same defensive posture as guarding
+    // the table's presence via sqlite_master above. Null, not delete, for the
+    // same reason as token: the row must survive so a restore still shows which
+    // planes were registered — the operator re-enters both secrets afterwards.
+    if has_control_planes.is_some() {
+        let has_secrets_column: Option<String> = sqlx::query_scalar(
+            "SELECT name FROM pragma_table_info('control_planes') WHERE name = 'secrets'",
+        )
+        .fetch_optional(&mut conn)
+        .await?;
+        if has_secrets_column.is_some() {
+            sqlx::query("UPDATE control_planes SET secrets = NULL WHERE secrets IS NOT NULL")
+                .execute(&mut conn)
+                .await?;
+        }
     }
 
     // A plain DELETE/UPDATE leaves the secret bytes in freed/overwritten pages
@@ -1269,6 +1300,166 @@ mod tests {
 
         pool.close().await;
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // ── Card G2: control_planes.secrets (migration 033) must be scrubbed too —
+    // the write-only provider-credentials blob a GitHub Actions plane packs its
+    // API credential and webhook signing secret into. Same shape as the token
+    // test above, and the same reason it matters: a test that only checked
+    // `secrets IS NULL` would still pass against an implementation that forgot
+    // the VACUUM, because a plain UPDATE leaves the old bytes sitting in freed
+    // pages. This asserts the secret string is physically absent from the raw
+    // snapshot bytes, which only a real VACUUM (not just the UPDATE) achieves.
+    #[tokio::test]
+    async fn scrub_removes_control_plane_secrets_from_snapshot() {
+        use sqlx::ConnectOptions;
+        use sqlx::Connection;
+        use sqlx::sqlite::SqliteConnectOptions;
+
+        let (pool, cfg, dir) = file_backed().await;
+        let repo = tack_db::repo::Repository::new(pool.clone());
+
+        // `CreateControlPlane` has no `secrets` field yet (that lands with the
+        // registry, a different card) — seed the column directly, exactly as an
+        // adapter's write path will once it exists.
+        let secret_blob = r#"{"api_token":"GHA-PAT-9f8e7d6c5b4a3f2e1d0c","webhook_secret":"WHSEC-1a2b3c4d5e6f7a8b9c0d"}"#;
+        let plane = repo
+            .create_control_plane(tack_db::repo::orch::CreateControlPlane {
+                name: "gha-prod".into(),
+                kind: Some("github_actions".into()),
+                base_url: "https://api.github.com".into(),
+                token: None,
+            })
+            .await
+            .unwrap();
+        sqlx::query("UPDATE control_planes SET secrets = ? WHERE id = ?")
+            .bind(secret_blob)
+            .bind(plane.id.to_string())
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let (bundle, _manifest) = create_bundle(&pool, &cfg).await.unwrap();
+
+        // Decompress + extract database.db exactly as a restore would.
+        let (db_bytes, _attachments) = tokio::task::spawn_blocking(move || {
+            parse_bundle(&bundle, Path::new("/nonexistent-cp-secrets-scrub-test"))
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        // Neither secret substring — nor the whole blob — survives in the raw
+        // snapshot bytes. Checking both halves guards against an implementation
+        // that scrubs one key of a two-secret JSON blob and not the other.
+        for needle in ["GHA-PAT-9f8e7d6c5b4a3f2e1d0c", "WHSEC-1a2b3c4d5e6f7a8b9c0d"] {
+            assert!(
+                !db_bytes
+                    .windows(needle.len())
+                    .any(|w| w == needle.as_bytes()),
+                "control plane secret material ({needle}) still present in snapshot bytes"
+            );
+        }
+
+        // The row itself must still exist (scrubbing nulls secrets, it must not
+        // delete the row — a restored backup should still show which planes
+        // were registered, just forget their credentials).
+        let extracted_path = dir.join("extracted-secrets-check.db");
+        tokio::fs::write(&extracted_path, &db_bytes).await.unwrap();
+        let mut conn = SqliteConnectOptions::new()
+            .filename(&extracted_path)
+            .connect()
+            .await
+            .unwrap();
+        let (row_count, secrets_null_count): (i64, i64) = sqlx::query_as(
+            "SELECT COUNT(*), SUM(CASE WHEN secrets IS NULL THEN 1 ELSE 0 END) \
+             FROM control_planes WHERE id = ?",
+        )
+        .bind(plane.id.to_string())
+        .fetch_one(&mut conn)
+        .await
+        .unwrap();
+        conn.close().await.unwrap();
+
+        assert_eq!(row_count, 1, "control_planes row must survive the scrub");
+        assert_eq!(
+            secrets_null_count, 1,
+            "control_planes.secrets must be nulled by the scrub"
+        );
+
+        pool.close().await;
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // ── Card G2: scrubbing must not fail against a snapshot whose control_planes
+    // table predates migration 033 (has the table, not yet the `secrets`
+    // column). Without the pragma_table_info guard, the UPDATE below would be a
+    // hard sqlx error ("no such column: secrets") that aborts the whole
+    // function before the VACUUM runs — meaning a database that has not yet
+    // been migrated to 033 could never produce a scrubbed backup at all.
+    #[tokio::test]
+    async fn scrub_tolerates_a_control_planes_table_without_the_secrets_column() {
+        use sqlx::ConnectOptions;
+        use sqlx::Connection;
+        use sqlx::sqlite::SqliteConnectOptions;
+
+        let path = std::env::temp_dir().join(format!("tack-scrub-pre033-{}.db", Uuid::new_v4()));
+
+        {
+            let mut conn = SqliteConnectOptions::new()
+                .filename(&path)
+                .create_if_missing(true)
+                .connect()
+                .await
+                .unwrap();
+            // Migration 019's shape, deliberately without 033's `secrets` column.
+            sqlx::query(
+                "CREATE TABLE control_planes (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    name TEXT NOT NULL,
+                    kind TEXT NOT NULL DEFAULT 'docket',
+                    base_url TEXT NOT NULL,
+                    token TEXT,
+                    health TEXT NOT NULL DEFAULT 'unknown',
+                    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )",
+            )
+            .execute(&mut conn)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO control_planes
+                    (id, name, kind, base_url, token, health, consecutive_failures, created_at, updated_at)
+                 VALUES ('p1', 'legacy', 'docket', 'https://example.com', 'still-here', 'unknown', 0, '2026-01-01', '2026-01-01')",
+            )
+            .execute(&mut conn)
+            .await
+            .unwrap();
+            conn.close().await.unwrap();
+        }
+
+        // Must not error, and must still reach the token scrub and the VACUUM.
+        scrub_snapshot_secrets(&path).await.unwrap();
+
+        let mut conn = SqliteConnectOptions::new()
+            .filename(&path)
+            .connect()
+            .await
+            .unwrap();
+        let token: Option<String> =
+            sqlx::query_scalar("SELECT token FROM control_planes WHERE id = 'p1'")
+                .fetch_one(&mut conn)
+                .await
+                .unwrap();
+        conn.close().await.unwrap();
+        assert_eq!(
+            token, None,
+            "the token block must still run even when the secrets column is absent"
+        );
+
+        std::fs::remove_file(&path).ok();
     }
 
     // ── prune is a no-op when below retention ─────────────────────────────────

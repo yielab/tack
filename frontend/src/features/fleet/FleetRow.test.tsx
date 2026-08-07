@@ -3,6 +3,7 @@ import { render } from 'solid-js/web';
 import { MemoryRouter, Route } from '@solidjs/router';
 import FleetRow from './FleetRow';
 import type { FleetRow as FleetRowData } from './api';
+import type { Capabilities } from '../../shared/orch/capabilities';
 
 const disposers: Array<() => void> = [];
 
@@ -35,6 +36,30 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
+/** A realistic docket capabilities payload, matching
+ *  `crates/tack-orch/src/adapters/docket.rs::capabilities()`'s real reasons —
+ *  a drifted fixture here would silently defeat the "reason came from the
+ *  payload" assertions below. */
+const docketCapabilities: Capabilities = {
+  dispatch: true,
+  cancel: false,
+  pause: {
+    level: 'unsupported',
+    reason:
+      'docket exposes no pause endpoint over HTTP in either direction; from the docket ' +
+      'CLI, run `docket profile <pod-id> --resume` to clear a budget-triggered pause',
+  },
+  resume: { level: 'unsupported', reason: 'docket exposes no resume endpoint over HTTP' },
+  event_scope: { level: 'project', reason: "docket's trace stream is scoped per project" },
+  artifacts: false,
+  decisions: { level: 'poll', reason: 'read via GET /approvals on the poll cadence' },
+  usage: { level: 'from_provider', reason: 'docket estimates cost/token usage itself' },
+  model_selection: { level: 'unsupported', reason: 'docket owns its own model routing' },
+  runtimes: true,
+  plane_metrics: true,
+  provisioning: true,
+};
+
 const baseRow: FleetRowData = {
   project_id: 'proj-1',
   project_name: 'Adapta',
@@ -44,6 +69,7 @@ const baseRow: FleetRowData = {
   health: 'healthy',
   last_seen_at: new Date().toISOString(),
   consecutive_failures: 0,
+  capabilities: docketCapabilities,
   gateway: 'active',
   roster: [
     { id: 'a1', name: 'Backend Dev', role: 'backend', model: 'claude-sonnet-5' },
@@ -156,6 +182,69 @@ describe('FleetRow — unreachable state (never a confident-looking zero)', () =
     // reading must not be present for this row.
     const approvalsCell = c.querySelectorAll('td')[6];
     expect(approvalsCell.textContent?.trim()).toBe('—');
+  });
+});
+
+describe('FleetRow — capability negotiation (card G1)', () => {
+  it("renders docket's real pause reason from the capability payload, not a hard-coded string", () => {
+    const c = mount(baseRow);
+    expect(c.textContent).toContain('Pause:');
+    expect(c.textContent).toContain('docket profile <pod-id> --resume');
+  });
+
+  it('renders a DIFFERENT reason verbatim for a different payload — proving the text traces to the capability, not to control_plane_kind', () => {
+    const rowWithDifferentReason: FleetRowData = {
+      ...baseRow,
+      capabilities: {
+        ...docketCapabilities,
+        pause: { level: 'unsupported', reason: 'a hypothetical adapter-specific reason' },
+      },
+    };
+    const c = mount(rowWithDifferentReason);
+    expect(c.textContent).toContain('a hypothetical adapter-specific reason');
+    expect(c.textContent).not.toContain('docket profile');
+  });
+
+  it('renders no Pause note once the capability reports Supported', () => {
+    const rowWithSupportedPause: FleetRowData = {
+      ...baseRow,
+      capabilities: { ...docketCapabilities, pause: { level: 'supported', reason: 'moot' } },
+    };
+    const c = mount(rowWithSupportedPause);
+    expect(c.textContent).not.toContain('Pause:');
+  });
+
+  it('renders no Pause note at all when capabilities is null (the unconfigured case)', () => {
+    const rowWithNoCapabilities: FleetRowData = { ...baseRow, capabilities: null };
+    const c = mount(rowWithNoCapabilities);
+    expect(c.textContent).not.toContain('Pause:');
+  });
+});
+
+describe('FleetRow — unconfigured state (credentials missing, never polled)', () => {
+  const unconfiguredRow: FleetRowData = {
+    ...baseRow,
+    health: 'unconfigured',
+    last_seen_at: null,
+    consecutive_failures: 0,
+    tokens_in: 0,
+    tokens_out: 0,
+    cost_usd_estimated: null,
+    roster: [],
+    capabilities: null,
+  };
+
+  it('reads a credentials-missing caption rather than "Not yet connected" or a fabricated "last seen"', () => {
+    const c = mount(unconfiguredRow);
+    expect(c.textContent).toContain('Credentials missing');
+    expect(c.textContent).not.toContain('Not yet connected');
+    expect(c.textContent).not.toContain('Last seen');
+  });
+
+  it('applies the same muted background as unreachable/unknown — no trustworthy data to show', () => {
+    const c = mount(unconfiguredRow);
+    const tr = c.querySelector('tr')!;
+    expect(tr.style.background).toBe('var(--color-bg-subtle)');
   });
 });
 

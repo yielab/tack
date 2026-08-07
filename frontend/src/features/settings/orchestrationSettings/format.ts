@@ -31,6 +31,7 @@ export const HEALTH_LABEL: Record<ControlPlaneHealth, string> = {
   degraded: 'Degraded',
   unreachable: 'Unreachable',
   unknown: 'Not yet connected',
+  unconfigured: 'Missing credentials',
 };
 
 export const HEALTH_TONE: Record<ControlPlaneHealth, BadgeTone> = {
@@ -38,6 +39,9 @@ export const HEALTH_TONE: Record<ControlPlaneHealth, BadgeTone> = {
   degraded: 'warning',
   unreachable: 'danger',
   unknown: 'neutral',
+  // Shares degraded's tone — see `features/fleet/format.ts#HEALTH_TONE`'s
+  // identical choice and its doc comment for the reasoning.
+  unconfigured: 'warning',
 };
 
 /** Copy explaining what "not yet connected" actually means — the state
@@ -56,6 +60,9 @@ export function healthExplanation(health: ControlPlaneHealth, pollSecs: number):
       return 'The last few polls failed, but Tack hasn’t given up yet.';
     case 'unreachable':
       return 'Ten or more consecutive polls have failed. Check the base URL and token.';
+    case 'unconfigured':
+      return 'Tack has no usable credentials for this plane — often a restored backup, ' +
+        'whose secrets are cleared on export. Re-enter the token below to resume polling.';
     default:
       return '';
   }

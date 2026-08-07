@@ -146,7 +146,29 @@ pub fn build_router(state: AppState) -> Router {
             header::CONTENT_TYPE,
             header::AUTHORIZATION,
             header::ACCEPT,
+            // `If-Match` — card G3's optimistic-concurrency precondition on
+            // items/orch-links/control-planes PATCH/PUT. Without this, any
+            // cross-origin browser client (anything through
+            // `TACK_ALLOWED_ORIGINS` that isn't same-origin `embed-spa`)
+            // fails preflight on every conditional write and silently falls
+            // back to unconditional last-write-wins.
+            header::IF_MATCH,
+            // `X-Tack-Approval-Token` — pre-existing bug, not something this
+            // cycle introduced: `frontend/src/features/approvals/api.ts`
+            // sends this on every grant/deny and it has only ever worked
+            // because production is same-origin via `embed-spa`. Reusing
+            // the handler's own constant (rather than a hand-copied
+            // literal) so this list can't drift from the header
+            // `handlers::orch::decide_approval` actually reads.
+            header::HeaderName::from_static(orch::APPROVAL_TOKEN_HEADER),
         ]))
+        // No `expose_headers` call existed before this card — a browser
+        // could read zero non-safelisted response headers from this API.
+        // `ETag` is the first one anything needs: cards G1/G3 add it to
+        // `GET` responses so a client can send it back as `If-Match`, and
+        // an unexposed response header is invisible to `fetch()`/`XHR`
+        // regardless of what the server sends on the wire.
+        .expose_headers([header::ETAG])
         .max_age(Duration::from_secs(3600));
 
     // ── API routes ───────────────────────────────────────────────────────────

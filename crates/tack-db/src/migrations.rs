@@ -37,6 +37,13 @@ fn all_migrations() -> Vec<(&'static str, &'static [&'static str])> {
         ("029_item_source", &MIGRATION_029[..]),
         ("030_template_orchestration", &MIGRATION_030[..]),
         ("031_items_completed_at_index", &MIGRATION_031[..]),
+        ("032_control_plane_config", &MIGRATION_032[..]),
+        ("033_control_plane_secrets", &MIGRATION_033[..]),
+        ("034_items_version", &MIGRATION_034[..]),
+        ("035_orch_links_version", &MIGRATION_035[..]),
+        ("036_control_planes_version", &MIGRATION_036[..]),
+        ("037_orch_runs_rebuild", &MIGRATION_037[..]),
+        ("038_orch_approvals_rebuild", &MIGRATION_038[..]),
     ]
 }
 
@@ -45,8 +52,64 @@ fn all_migrations() -> Vec<(&'static str, &'static [&'static str])> {
 pub async fn run_all(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     info!("Running database migrations...");
     ensure_migrations_table(pool).await?;
+    guard_against_half_applied_rebuild(pool).await?;
     apply_migrations(pool, &all_migrations()).await?;
     info!("All migrations applied");
+    Ok(())
+}
+
+/// Whether a table named `table` currently exists, via `sqlite_master` — the
+/// same "ask SQLite directly" discipline `orch_migrations_test.rs`'s own
+/// `table_exists` test helper uses, kept here as a real (non-test) function
+/// because [`guard_against_half_applied_rebuild`] needs it at boot time, not
+/// just in tests.
+async fn table_exists(pool: &SqlitePool, table: &str) -> Result<bool, sqlx::Error> {
+    let found: Option<i64> =
+        sqlx::query_scalar("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+            .bind(table)
+            .fetch_optional(pool)
+            .await?;
+    Ok(found.is_some())
+}
+
+/// Refuses to boot if migration 037 or 038's table rebuild (see their doc
+/// comments) crashed between creating its `_new` sibling and dropping/
+/// renaming the original — the one moment in this file where a statement
+/// failure leaves genuinely irreplaceable rows sitting in a table
+/// `apply_migrations` has not yet recorded as migrated, because the crash
+/// landed after `_new` was populated but before the un-recorded migration's
+/// later statements (`DROP`, `RENAME`) ran.
+///
+/// Why this cannot just let `apply_migrations` retry: on the next boot,
+/// `_migrations` still has no row for the rebuild, so a naive retry resumes
+/// at that migration's *first* statement — `CREATE TABLE ..._new`, which
+/// either fails outright (the table already exists, now with the rows that
+/// already made it across) or, if written `IF NOT EXISTS` to tolerate that,
+/// sails through to the un-run `DROP TABLE <original>` — discarding whatever
+/// the crash left standing, which is exactly the outcome this guard exists to
+/// prevent (see docs/plans/agnostic-control-plane.md §10.3: "the only
+/// irreversible step ... the recovery path is a backup the operator may not
+/// have taken"). Refusing outright, before `apply_migrations` touches
+/// anything, is the only response that cannot make the loss worse.
+async fn guard_against_half_applied_rebuild(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    for (table, staging) in [
+        ("orch_runs", "orch_runs_new"),
+        ("orch_approvals", "orch_approvals_new"),
+    ] {
+        if table_exists(pool, table).await? && table_exists(pool, staging).await? {
+            return Err(sqlx::Error::Protocol(format!(
+                "refusing to start: both '{table}' and '{staging}' exist, which means a \
+                 previous upgrade crashed midway through rebuilding '{table}' (after the copy \
+                 into '{staging}' but before '{table}' was dropped and '{staging}' renamed in \
+                 its place). Restarting normally would replay that migration from its first \
+                 statement, which risks re-running DROP TABLE '{table}' and discarding \
+                 whichever rows did not make it into '{staging}' before the crash. Restore \
+                 tack.db from a backup taken via GET /api/backup before upgrading again; do \
+                 not drop either table by hand without first confirming which one holds the \
+                 rows you want to keep."
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -92,15 +155,33 @@ async fn apply_migrations(
 
         if !already_applied {
             info!(migration = *name, "Applying migration");
+            // One connection for every statement in this migration, not a bare
+            // `.execute(pool)` per statement. `PRAGMA foreign_keys` is a
+            // per-connection SQLite setting (see `lib.rs::init_pool`'s own
+            // comment on this) and migrations 037/038's 12-step table rebuild
+            // toggles it off for the DROP/RENAME steps and back on before
+            // this connection returns to the pool — handing statements to
+            // whichever connection the pool has free would let that toggle
+            // land on one connection while the DROP runs on another,
+            // silently losing it. No transaction is opened here on purpose:
+            // rule 4 (see this file's own comments on migrations 029/030/032)
+            // deliberately leaves a failed migration's completed statements
+            // in place rather than wrapping them atomically, so a crash
+            // partway still records nothing and the operator gets a named
+            // error on the next boot instead of a rolled-back no-op.
+            let mut conn = pool.acquire().await?;
             for statement in *statements {
-                sqlx::query(statement).execute(pool).await.map_err(|e| {
-                    tracing::error!(migration = *name, statement, error = %e, "Migration failed");
-                    e
-                })?;
+                sqlx::query(statement)
+                    .execute(&mut *conn)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(migration = *name, statement, error = %e, "Migration failed");
+                        e
+                    })?;
             }
             sqlx::query("INSERT INTO _migrations (name) VALUES (?)")
                 .bind(*name)
-                .execute(pool)
+                .execute(&mut *conn)
                 .await?;
             info!(migration = *name, "Migration applied successfully");
         }
@@ -675,4 +756,218 @@ const MIGRATION_030: [&str; 1] = ["ALTER TABLE project_templates ADD COLUMN orch
 const MIGRATION_031: [&str; 1] = [
     "CREATE INDEX IF NOT EXISTS idx_items_completed_at ON items(completed_at) \
      WHERE completed_at IS NOT NULL",
+];
+
+// ─── Agnostic Control Plane — Wave B additive columns (card G5a, tasks 40.2, 41.1) ─
+//
+// Five single-statement ALTERs. §II.0 rule 4 (docs/plans/agnostic-control-plane.md
+// §4, "Two conventions throughout") is why each of these is its own migration name
+// with exactly one statement: `apply_migrations` above runs every statement in a
+// migration with no wrapping transaction and only records the name once every
+// statement in it has succeeded. A migration carrying more than one ALTER that
+// fails partway records nothing, so the next boot replays the statements that
+// already applied, hits SQLite's "duplicate column name", and the server never
+// boots again — there is no down-migration to fall back to. 029 and 030 already
+// established the one-ALTER precedent; these five follow it without exception.
+//
+// The two table rebuilds this same design needs (037 `orch_runs`, 038
+// `orch_approvals` — see docs/plans/agnostic-control-plane.md §3b D6 and §4 Phase
+// 3) are deliberately NOT in this batch. A `CREATE …_new` / copy / `DROP` /
+// `RENAME` sequence is exactly the kind of multi-statement, non-atomic operation
+// rule 4 warns about, just with higher stakes (existing rows, not just an empty
+// column) — it ships as its own migration-runner release, with its own
+// half-applied-boot guard, so a partial rebuild is never silently retried.
+
+// Card G2 (Wave B) reads `control_planes.config` before it ever needs scrubbing —
+// this column is never a secret, so it is intentionally absent from
+// `remote_backup.rs::SENSITIVE_META_KEYS`/`scrub_snapshot_secrets`. A GitHub
+// Actions plane needs `{owner, repo, workflow_file, ref, api_base}`; today
+// `control_planes` (migration 019) has only `base_url` and one `token`, with
+// nowhere to put provider-shaped configuration that isn't a credential. `config`
+// is opaque JSON at this layer — the registry (`tack-orch::adapters::registry`,
+// card G1) is what gives it a per-`kind` shape; this migration only makes room.
+// `NOT NULL DEFAULT '{}'` so every row that predates this column — including
+// every docket plane already registered — reads back as "no extra config," which
+// is exactly what a docket plane has today.
+const MIGRATION_032: [&str; 1] =
+    ["ALTER TABLE control_planes ADD COLUMN config TEXT NOT NULL DEFAULT '{}'"];
+
+// Write-only credentials JSON, alongside the existing single `token` column
+// (migration 019). One column, not two: a GitHub Actions plane needs *two*
+// secrets — a PAT/App credential to call the Actions API, and a webhook signing
+// secret for `POST /api/webhooks/github/{id}` (Phase 8) — and a provider-shaped
+// JSON blob is cheaper to extend than a new ALTER every time a future provider
+// needs a third. Nullable, not `DEFAULT '{}'`: `NULL` means "no secrets stored,"
+// distinct from `'{}'` ("a secrets block whose provider-specific keys are all
+// absent") — same discipline migration 030 used for `orchestration TEXT`.
+//
+// THIS COLUMN MUST STAY UNUSED — nothing may write to it — until card G2 adds a
+// `control_planes.secrets` block to `remote_backup.rs::scrub_snapshot_secrets`
+// (that function's own doc comment states the rule: every secret-bearing column
+// gets its own null-before-VACUUM block there, run before the trailing `VACUUM`).
+// Writing this column before G2 lands ships raw provider credentials inside every
+// downloadable and uploadable backup snapshot. G2 is a separate card in this same
+// wave; this migration only reserves the column.
+const MIGRATION_033: [&str; 1] = ["ALTER TABLE control_planes ADD COLUMN secrets TEXT"];
+
+// ─── Optimistic concurrency columns (D4) ──────────────────────────────────────
+//
+// `version INTEGER NOT NULL DEFAULT 1` on the three tables an HTTP client can
+// read an ETag from and later PATCH: items, orch_links, control_planes. This
+// card only reserves the column and its default — bumping it on write and
+// wiring `ETag`/`If-Match` is card G3 (Phase 2, tasks 40.3+). `DEFAULT 1` (not
+// 0): a row that predates this column has been written exactly once (its
+// `INSERT`), so its version number under the new scheme is 1, matching what a
+// freshly created row gets going forward — an `If-Match: 1` sent by a client
+// that fetched the row *before* this migration ran is still correct against the
+// row *after* the migration ran.
+
+// items is the highest-traffic write target in the schema and the one the plan's
+// T2 trap (concurrent HTTP PATCH vs. an MCP write vs. the reconciler's own
+// `apply_mapped_status` call) is about — see docs/plans/agnostic-control-plane.md
+// §7 T2.
+const MIGRATION_034: [&str; 1] =
+    ["ALTER TABLE items ADD COLUMN version INTEGER NOT NULL DEFAULT 1"];
+
+// orch_links (migration 020): one row per project-to-plane link, edited from the
+// Settings UI. Same lost-update risk as items — two browser tabs editing the same
+// project's link — just lower traffic.
+const MIGRATION_035: [&str; 1] =
+    ["ALTER TABLE orch_links ADD COLUMN version INTEGER NOT NULL DEFAULT 1"];
+
+// control_planes (migration 019): edited from the same Settings UI, and now also
+// the row `secrets` (033) lands on — a stale-read-then-write race here is a
+// credential clobber, not just a config clobber.
+const MIGRATION_036: [&str; 1] =
+    ["ALTER TABLE control_planes ADD COLUMN version INTEGER NOT NULL DEFAULT 1"];
+
+// ─── Table rebuilds (D6, card G5b, Phase 42) — THE IRREVERSIBLE MIGRATIONS ────
+//
+// 037 and 038 are the one place in this file that breaks the "every migration
+// is a single-statement ALTER" rule (§II.0 rule 4) on purpose, because the
+// change each needs cannot be expressed as an ALTER at all:
+//
+// `orch_runs.run_id` (migration 022) is a *global* primary key with
+// `control_plane_id` sitting outside that key. A future adapter (docket today,
+// a second provider later) needs to mint a Tack-side correlation id *before*
+// it knows the provider's own run id — the whole point of the nonce-exchange
+// handshake this schema exists to support — and later attach the provider id
+// once the run reports in. Doing that against a single-column PK means
+// inserting a placeholder row keyed on the correlation id and then
+// "backfilling" the provider's real id once it's known — which is a *second*
+// row under a different primary key, because `ON CONFLICT(run_id)`
+// (`repo/orch.rs::upsert_orch_runs`) has no way to notice the two rows are the
+// same run. Every run dispatched this way would double from that point on.
+// Rebuilding the primary key around `(control_plane_id, external_run_id,
+// run_attempt)` with a separate, nullable `correlation_id` column sidesteps
+// this entirely: the correlation id and the provider id are different columns
+// from the start, never competing for the same uniqueness slot.
+//
+// `orch_approvals.control_plane_id` (migration 024) is `NOT NULL REFERENCES
+// control_planes(id)`. A decision raised by a `PreToolUse` hook inside a run
+// that was never dispatched through a *registered* plane (see D5's per-run
+// credential) has no control-plane row to reference at the moment it's
+// raised. `NOT NULL` makes that insert fail outright; only a column-level
+// rebuild can widen it to nullable.
+//
+// Both rebuilds follow SQLite's own documented 12-step ALTER TABLE procedure
+// (https://www.sqlite.org/lang_altertable.html#otheralter), one table per
+// migration name so a failure in one never touches the other: disable foreign
+// key enforcement on this connection, create the `_new` table with the target
+// shape, copy every row across with an explicit column-for-column
+// `INSERT ... SELECT` (never `SELECT *` — a query that silently reflows if a
+// later migration adds a column to either table), drop the original, rename
+// `_new` into its place, recreate the indexes DROP TABLE took with it, run
+// `PRAGMA foreign_key_check` as a live assertion that nothing was left
+// dangling, then re-enable foreign key enforcement before this connection
+// goes back to the pool. `apply_migrations` (above) acquiring one connection
+// per migration is what makes the foreign-key toggle reliable here — see its
+// own comment.
+//
+// **This is the only step in the whole cycle that rewrites existing rows.**
+// `run_all`'s `guard_against_half_applied_rebuild` (above) is the safety net
+// for a crash between DROP and RENAME; §10.3 of the plan is the honest
+// statement of what that guard does and does not protect against. See
+// CHANGELOG.md for the operator-facing backup warning this migration ships
+// with, per §II.0 rule text in TODO.md §II ("take a backup first").
+
+// Every existing column is carried across unchanged; `run_id` is copied into
+// the new `external_run_id` (positionally, not by name, in the INSERT below)
+// and every pre-existing row gets `run_attempt = 1` (it has only ever had one
+// attempt under the old schema, which had no attempt concept at all) and
+// `correlation_id = NULL` (it predates Tack minting one). `run_attempt`
+// defaults to 1 for the same reason `items.version` (034) defaults to 1, not
+// 0: a row that predates the column has implicitly already had exactly one
+// "version" of whatever the column now counts.
+const MIGRATION_037: [&str; 8] = [
+    "PRAGMA foreign_keys=OFF",
+    "CREATE TABLE IF NOT EXISTS orch_runs_new (
+        control_plane_id TEXT NOT NULL REFERENCES control_planes(id) ON DELETE CASCADE,
+        external_run_id TEXT NOT NULL,
+        run_attempt INTEGER NOT NULL DEFAULT 1,
+        correlation_id TEXT UNIQUE,
+        item_id TEXT REFERENCES items(id) ON DELETE CASCADE,
+        remote_project TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'cli',
+        state TEXT NOT NULL DEFAULT 'queued',
+        started_at TEXT,
+        ended_at TEXT,
+        error TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (control_plane_id, external_run_id, run_attempt)
+    )",
+    "INSERT INTO orch_runs_new
+        (control_plane_id, external_run_id, run_attempt, correlation_id, item_id,
+         remote_project, source, state, started_at, ended_at, error, created_at, updated_at)
+     SELECT control_plane_id, run_id, 1, NULL, item_id, remote_project, source, state,
+            started_at, ended_at, error, created_at, updated_at
+     FROM orch_runs",
+    "DROP TABLE orch_runs",
+    "ALTER TABLE orch_runs_new RENAME TO orch_runs",
+    "CREATE INDEX IF NOT EXISTS idx_orch_runs_plane_state ON orch_runs(control_plane_id, state)",
+    "PRAGMA foreign_key_check",
+    "PRAGMA foreign_keys=ON",
+];
+
+// `control_plane_id` drops its `NOT NULL` (a hook-raised decision may have no
+// registered plane behind it yet — see the section doc comment above).
+// `token` is untouched as the primary key and stays the URL path segment of
+// `POST /api/approvals/{token}`: renaming a column that already lives in a
+// user's database, and in a URL clients already call, buys nothing — the
+// value doesn't change, only what can now point at NULL. `kind` defaults to
+// `'approval'` so every pre-existing row — every one of them was, definitionally,
+// docket's approval-of-an-irreversible-action shape, the only kind this
+// schema could represent before today — keeps reading as exactly that.
+// `external_id`/`provider_metadata` are additive, empty on every existing row.
+const MIGRATION_038: [&str; 9] = [
+    "PRAGMA foreign_keys=OFF",
+    "CREATE TABLE IF NOT EXISTS orch_approvals_new (
+        token TEXT PRIMARY KEY NOT NULL,
+        control_plane_id TEXT REFERENCES control_planes(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL DEFAULT 'approval',
+        external_id TEXT,
+        provider_metadata TEXT NOT NULL DEFAULT '{}',
+        item_id TEXT REFERENCES items(id) ON DELETE CASCADE,
+        remote_task_id TEXT,
+        agent TEXT,
+        action TEXT,
+        state TEXT NOT NULL DEFAULT 'pending',
+        requested_at TEXT NOT NULL DEFAULT (datetime('now')),
+        decided_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )",
+    "INSERT INTO orch_approvals_new
+        (token, control_plane_id, kind, external_id, provider_metadata, item_id,
+         remote_task_id, agent, action, state, requested_at, decided_at, created_at, updated_at)
+     SELECT token, control_plane_id, 'approval', NULL, '{}', item_id, remote_task_id, agent,
+            action, state, requested_at, decided_at, created_at, updated_at
+     FROM orch_approvals",
+    "DROP TABLE orch_approvals",
+    "ALTER TABLE orch_approvals_new RENAME TO orch_approvals",
+    "CREATE INDEX IF NOT EXISTS idx_orch_approvals_item ON orch_approvals(item_id)",
+    "CREATE INDEX IF NOT EXISTS idx_orch_approvals_state ON orch_approvals(state)",
+    "PRAGMA foreign_key_check",
+    "PRAGMA foreign_keys=ON",
 ];

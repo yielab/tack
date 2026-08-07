@@ -31,14 +31,20 @@
 // target, not a spec to match blindly.
 
 import { request, isOrchestrationDisabledError } from '../../shared/api/client';
+import type { Capabilities } from '../../shared/orch/capabilities';
 
 /** Mirrors the reconciler's health state machine (TODO.md card A2):
  *  `healthy` → `degraded` (3 consecutive poll failures) → `unreachable` (10).
  *  Recovery is immediate on a single success. `unknown` covers a plane that
  *  has been registered but has not completed a first poll yet — it is
  *  visually treated the same as `unreachable` (no trustworthy data), just
- *  with different copy ("not yet connected" vs "last seen …"). */
-export type ControlPlaneHealth = 'healthy' | 'degraded' | 'unreachable' | 'unknown';
+ *  with different copy ("not yet connected" vs "last seen …"). `unconfigured`
+ *  (card G1) is the fifth state: this build of Tack could not build a live
+ *  adapter for the plane's `kind` at all — most commonly a restored backup,
+ *  whose `secrets` column comes back `NULL` — so the reconciler never even
+ *  attempted a poll. Distinct from `unknown` (registered, poll pending) and
+ *  from `unreachable` (polled, failing): here nothing was ever tried. */
+export type ControlPlaneHealth = 'healthy' | 'degraded' | 'unreachable' | 'unknown' | 'unconfigured';
 
 /** docket's `/status.json` → `FleetStatus.gateway` ("active"/"inactive"),
  *  mirrored through the reconciled `control_planes` row. `unknown` is the
@@ -70,6 +76,13 @@ export interface FleetRow {
    *  never completed a poll (fresh registration). */
   last_seen_at: string | null;
   consecutive_failures: number;
+  /** What this row's control plane can actually do — `null` only in the
+   *  `'unconfigured'` health case (`ControlPlaneResponse.capabilities` /
+   *  `FleetEntry.capabilities` on the wire): this build of Tack has no
+   *  adapter for the plane's `kind` at all, so there was nothing to ask.
+   *  Card G1's whole point — every gated control in this row reads THIS
+   *  field, never the `control_plane_kind` string above it. */
+  capabilities: Capabilities | null;
   gateway: FleetGatewayState;
   roster: FleetRosterAgent[];
   /** Most recent `FleetAgent.last_activity` across the roster, RFC3339, or

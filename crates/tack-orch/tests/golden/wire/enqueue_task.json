@@ -1,0 +1,26 @@
+{
+  "method": "enqueue_task",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/tasks/demo",
+      "query": [],
+      "header_names": [
+        "accept",
+        "authorization",
+        "content-length",
+        "content-type",
+        "host",
+        "user-agent"
+      ],
+      "body": {
+        "description": "GitHub-imported title",
+        "trusted": false
+      }
+    }
+  ],
+  "result": {
+    "outcome": "ok",
+    "value": "task-untrusted"
+  }
+}

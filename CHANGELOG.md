@@ -69,6 +69,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Items gained optimistic concurrency** — `GET /api/items/{id}` now returns an
+  `ETag`; `PATCH /api/items/{id}` honors a matching `If-Match` and rejects a stale
+  one with `412 Precondition Failed`. An absent `If-Match` behaves exactly as
+  before, so no existing client (the MCP tools, the Alexa skill, any pre-upgrade
+  caller) is affected. **Behavior change:** the auto-dispatch hook's enable check
+  now reads the *effective* orchestration setting (the Settings UI toggle,
+  falling back to `TACK_ORCH_ENABLE`) instead of the raw env flag alone — an
+  operator who started the server with `TACK_ORCH_ENABLE=1` and then switched
+  orchestration off in Settings previously still got auto-dispatch on every
+  eligible status change; it now correctly stays off. (Phase 41, card G3.)
+
+- **`orch_runs` and `orch_approvals` were rebuilt in place — back up first.**
+  `orch_runs.run_id` is renamed to `external_run_id` and the primary key widens to
+  `(control_plane_id, external_run_id, run_attempt)`, with a new, Tack-minted
+  `correlation_id` column (`NULL` on every pre-existing row); `orch_approvals.
+  control_plane_id` becomes nullable and the table gains `kind`, `external_id`, and
+  `provider_metadata`. Every existing row is carried across unchanged — `run_attempt`
+  backfills to `1`, `kind` backfills to `'approval'` — but this is the **only**
+  migration in the cycle that rewrites existing rows rather than just adding a
+  column, and it is not reversible. **If your database has ever registered a
+  control plane, take a backup (`GET /api/backup`) before upgrading.** `run_all`
+  now also refuses to start if either rebuild is left half-applied (both the
+  original table and its `_new` staging table present, e.g. after a crash
+  mid-upgrade), naming the backup endpoint in the error, rather than replaying
+  `DROP TABLE` against whichever rows survived. (Phase 42, card G5b.)
+
 - **Per-project vocabulary now covers every surface** — the "+ New" modal, Sprints
   view, tabs, command palette, and first-run guide resolve project terms, so a
   construction project reads "Phase"/"Work Order" everywhere. Error responses share

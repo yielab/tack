@@ -767,12 +767,31 @@ impl OrchRunRow {
     }
 }
 
-const ORCH_RUN_COLUMNS: &str = "run_id, control_plane_id, item_id, remote_project, source, \
-     state, started_at, ended_at, error, created_at, updated_at";
+// `run_id` here is a SELECT alias, not the physical column — migration 037
+// (card G5b, docs/plans/agnostic-control-plane.md §II D6) renamed the real
+// column to `external_run_id` as part of widening the primary key to
+// `(control_plane_id, external_run_id, run_attempt)`. Aliasing it back to
+// `run_id` in every read keeps [`OrchRun`]/[`NewOrchRun`]'s Rust-level shape
+// — and therefore every caller in `tack-api`/`tack-orch` that only ever
+// touches `.run_id`, never the raw column name — unchanged. `run_attempt`
+// and `correlation_id` are deliberately not read or written here yet: no
+// caller has a value for either until the reshape that actually dispatches
+// retries and mints correlation ids lands (Wave C), so this layer keeps
+// treating every run as attempt 1 with no correlation id, which is exactly
+// what migration 037 backfilled onto every pre-existing row.
+const ORCH_RUN_COLUMNS: &str = "external_run_id AS run_id, control_plane_id, item_id, \
+     remote_project, source, state, started_at, ended_at, error, created_at, updated_at";
 
 impl Repository {
-    /// Batch upsert (`ON CONFLICT(run_id)`), one transaction for the whole slice.
-    /// Idempotent: re-polling the same run just refreshes `state`/`ended_at`/etc.
+    /// Batch upsert, one transaction for the whole slice. Idempotent: re-polling the
+    /// same run just refreshes `state`/`ended_at`/etc. Conflicts on
+    /// `(control_plane_id, external_run_id, run_attempt)` — the widened primary key
+    /// from migration 037 — but every row this function writes still pins
+    /// `run_attempt` to `1`, so for any run this has ever upserted the dedup key is
+    /// still, in effect, `(control_plane_id, external_run_id)`: identical to the old
+    /// single-column `run_id` PK for the common case of one `control_plane_id` per
+    /// external run id, which is the only case this function's caller (the
+    /// reconciler, one batch per plane) has ever produced.
     #[instrument(skip(self, runs), fields(count = runs.len()))]
     pub async fn upsert_orch_runs(
         &self,
@@ -789,10 +808,10 @@ impl Repository {
         for r in runs {
             sqlx::query(
                 "INSERT INTO orch_runs
-                    (run_id, control_plane_id, item_id, remote_project, source, state,
-                     started_at, ended_at, error, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                 ON CONFLICT(run_id) DO UPDATE SET
+                    (control_plane_id, external_run_id, run_attempt, item_id, remote_project,
+                     source, state, started_at, ended_at, error, created_at, updated_at)
+                 VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(control_plane_id, external_run_id, run_attempt) DO UPDATE SET
                     -- item_id is only ever set going forward (a later poll may learn
                     -- the attribution a CLI-dispatched run didn't have); never clear
                     -- a known attribution back to NULL.
@@ -805,8 +824,8 @@ impl Repository {
                     error = excluded.error,
                     updated_at = excluded.updated_at",
             )
-            .bind(&r.run_id)
             .bind(control_plane_id.to_string())
+            .bind(&r.run_id)
             .bind(r.item_id.map(|i| i.to_string()))
             .bind(&r.remote_project)
             .bind(&r.source)
@@ -828,7 +847,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn get_orch_run(&self, run_id: &str) -> Result<Option<OrchRun>, sqlx::Error> {
         let row: Option<OrchRunRow> = sqlx::query_as(&format!(
-            "SELECT {ORCH_RUN_COLUMNS} FROM orch_runs WHERE run_id = ?"
+            "SELECT {ORCH_RUN_COLUMNS} FROM orch_runs WHERE external_run_id = ?"
         ))
         .bind(run_id)
         .fetch_optional(self.pool())

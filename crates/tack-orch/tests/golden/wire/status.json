@@ -1,0 +1,40 @@
+{
+  "method": "status",
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/status.json",
+      "query": [],
+      "header_names": [
+        "accept",
+        "host",
+        "user-agent"
+      ],
+      "body": null
+    }
+  ],
+  "result": {
+    "outcome": "ok",
+    "value": {
+      "agents": [
+        {
+          "bindings": [],
+          "budgetUsd": 25.0,
+          "costUsd": 0.0,
+          "id": "demo-lead",
+          "kind": "project",
+          "lastActivity": "never",
+          "model": "anthropic/claude-sonnet-4-6",
+          "name": "demo-lead",
+          "registered": false,
+          "scope": "project"
+        }
+      ],
+      "apiVersion": "2",
+      "channels": [],
+      "gateway": "inactive",
+      "timestamp": "2026-08-04T19:51:00Z",
+      "totalCostUsd": 0.0
+    }
+  }
+}

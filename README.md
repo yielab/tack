@@ -4,17 +4,27 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
 
-**Tack** is a self-hosted project management tool that runs entirely from a single binary. Drop it on any machine, run it, and you have a full-featured project manager — web UI, REST API, and database all in one file. No Docker, no database server, no cloud accounts, no subscriptions.
+**Local-first project management with a harness-agnostic control plane for agent work.**
 
-Most project management tools force you into their workflow. Tack works the other way: you define the vocabulary and status columns that match your domain, and every surface — the UI, the CLI, and the API — adapts to your terms. The same tool works for a software sprint, a construction phase plan, a thesis outline, or a home renovation, without switching apps or losing context between projects.
+Tack is a self-hosted project manager delivered as one Rust binary with an embedded
+web UI, REST API, CLI, MCP server, and SQLite database. It is being extended so a
+project item can become a durable execution request assigned to a fleet of agents,
+without making the project depend on one agent CLI, model provider, or model.
 
-**Your data stays on your machine.** Everything is stored in a single SQLite file next to the binary. Back it up by copying one file. Migrate by moving two files. No vendor lock-in, no sync, no network required to use your own data.
+The intended product is one place where a person can:
 
-**AI-agent-ready.** `tack mcp` exposes the board to Claude Code, Codex, and any [MCP](https://modelcontextprotocol.io) client, so an agent can read, search, and update work — with the same workflow rules your team relies on.
+1. plan work using configurable projects, workflows, and vocabulary;
+2. decide which work may be executed by agents;
+3. choose an eligible fleet and, when policy allows it, a harness, provider, and model;
+4. review attempts, decisions, artifacts, failures, and measured usage on the item; and
+5. retain an auditable history even when a runner disconnects or a harness is replaced.
 
-**Optional factory control center.** Link a project to a [docket](https://github.com/yielab/docket) agent pod and Tack can dispatch work, mirror runs and approvals back onto the board, and show what each item cost in tokens. This is a client integration — Tack never runs agents itself, and the whole thing is off until you set `TACK_ORCH_ENABLE`. See [Factory control center](#factory-control-center-optional) below.
+> **Development status:** Tack's project-management foundation is available today.
+> The native runner fleet described below is the active **Phases 50–57** roadmap and
+> is not yet a released feature. The existing Docket integration is retained as a
+> legacy optional bridge, not as the architecture of the new control plane.
 
-Built with Rust (Axum + sqlx) and SolidJS.
+Built with Rust (Axum + sqlx), SolidJS, and SQLite.
 
 ![Board, Timeline, command palette, and vocabulary editor](docs/screenshots/hero.gif)
 
@@ -31,96 +41,115 @@ Built with Rust (Axum + sqlx) and SolidJS.
 
 ---
 
-## Why Tack
+## Product direction
 
-Most self-hosted PM tools are built on heavy multi-service stacks. Tack is one Rust
-binary and one SQLite file — and it's **AI-agent-ready** out of the box.
+Tack remains the plan of record and owns scheduling, policy, leases, and execution
+history. A lightweight `tack-runner` runs near the source repository and credentials,
+claims eligible work, and invokes a local harness through an adapter.
 
-| | **Tack** | Plane | Vikunja | Huly |
-| --- | --- | --- | --- | --- |
-| Built in | Rust | Python/Django | Go | TypeScript |
-| Deploy | **single binary** | Docker Compose (multi-service) | single binary or Docker | Docker Compose (multi-service) |
-| Runtime deps | **none** (embedded SQLite) | Postgres + Redis | SQLite / Postgres / MySQL | MongoDB + others |
-| Idle footprint | **~12 MiB RSS** | hundreds of MiB | tens of MiB | hundreds of MiB |
-| License | **MIT** | AGPL-3.0 | AGPL-3.0 | EPL-2.0 |
-| First-class CLI | **yes** | no | partial | no |
-| MCP server (AI agents) | **yes** (`tack mcp`) | yes | no | no |
-| Per-project vocabulary | **yes** | no | no | no |
-| Agent-fleet control center (optional) | **yes** (via [docket](https://github.com/yielab/docket)) | no | no | no |
+```text
+PM item
+   │ create execution request
+   ▼
+Tack scheduler ── policy + capability matching ──► eligible fleet
+   │                                                   │
+   │ lease with fencing token                          │ runner claims work
+   ▼                                                   ▼
+durable attempt ◄── events / decisions / artifacts ─ tack-runner
+                                                        │
+                                   HarnessAdapter ──────┼──────┐
+                                                        │      │
+                                                   Codex CLI  Claude Code
+                                                        │      │
+                                                    OpenCode  future harnesses
+```
 
-_Competitor details are best-effort from public docs/repos as of 2026-06; stacks
-change. Footprints are order-of-magnitude. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md)
-for Tack's measured, reproducible numbers._
+This separates concepts that must not be conflated:
 
----
-
-## Features
-
-### Deployment
-
-- **Single binary** — the web UI, REST API, and SQLite engine are all embedded in one ~10 MB statically-linked file
-- **Zero dependencies** — no runtime, no database server, no container required; starts in milliseconds
-- **Local data** — everything stored in `tack.db` + `storage/` next to the binary; back up by copying two files
-
-### Views & Interface
-
-| View | Description |
+| Concept | Responsibility |
 | --- | --- |
-| **Board** | Kanban-style drag-and-drop with configurable columns and WIP limits |
-| **List** | Sortable, hierarchy-aware list with inline editing and bulk operations |
-| **Table** | Spreadsheet-style grid: inline-edit title/status/priority/assignee/due, sort, filter, and show/hide columns |
-| **Calendar** | Items by due date — drag to reschedule |
-| **Timeline** | Gantt-style view with dependency overlay — drag to reschedule |
-| **Dashboard** | Throughput charts, status distribution, and sprint burndown |
-| **Sprints** | Two-pane sprint planning (Backlog ↔ Sprint), capacity tracking |
+| **PM item** | Human-facing unit of planned work. |
+| **Execution request** | Durable request to perform an item, with policy and eligibility constraints. |
+| **Fleet** | Schedulable pool of runners with declared capabilities. |
+| **Runner** | Worker process that leases work and executes it near its repo and credentials. |
+| **Harness** | Agent runtime such as Codex CLI, Claude Code, or OpenCode. |
+| **Provider / model** | Model endpoint and model selected only when the harness supports that choice. |
+| **Attempt** | Immutable execution history for one lease and run. |
+| **Decision** | Structured request for human input or authorization. |
 
-- **Command palette** (Ctrl+K) and **global search** (Ctrl+/) available everywhere
-- **Themes & palettes** — light/dark plus three accent palettes (Teal, Clay, Graphite), switched from the sidebar; WCAG AA contrast, verified in CI
-- **Real-time updates** via WebSocket — open the same board in multiple tabs
-- **Optimistic UI** — changes apply instantly, roll back on error
-- Dark mode, skeleton loading screens, toast notifications
+The core rules are deliberately conservative:
 
-### Workflow & Project Types
+- Runners pull work; Tack does not send arbitrary callbacks into developer machines.
+- Compatibility is capability-driven. Tack does not pretend every harness supports
+  every provider, model, resume mode, usage metric, or approval mechanism.
+- A request has at most one valid active lease in v1, enforced by a fencing token.
+- Delivery is not advertised as exactly-once. Ambiguous outcomes stop for operator
+  review instead of being retried blindly.
+- Missing usage is shown as **not measured**, never as zero and never as observed cost.
+- Docket can survive as an optional adapter, but native execution does not depend on it.
+- Multi-agent fan-out inside one request is deferred until single-runner recovery and
+  audit semantics are proven.
 
-- **10 project types** with pre-built workflows and vocabulary out of the box:
+The complete design and acceptance gates are in the
+[roadmap](docs/book/src/roadmap.md#next--harness-agnostic-runner-fleet-phases-5057).
+Implementation cards intended for independent Terra agents are in
+[TODO Part III](TODO.md#part-iii--harness-agnostic-runner-fleet-phases-5057).
 
-| Type | Default workflow | Vocabulary highlights |
+## Delivery status
+
+Tack is in beta. Completed work is preserved in the roadmap; superseded phases remain
+there as design history instead of being rewritten as completed work.
+
+| Phases | Status | What that means |
 | --- | --- | --- |
-| `software` / `web` / `mobile` | Scrum | Epic, Feature, Task, Sprint |
-| `construction` | Phase-based (Permit → Procurement → Build → Inspect → Handover) | Building, Work Order, Phase |
-| `personal` | Simple (To Do → Doing → Done) | Goal, Action, Step |
-| `homework` | Simple | Course, Assignment, Module, Week |
-| `maintenance` | Kanban | System, Ticket, Job |
-| `legal` | Phase-based (Intake → Discovery → Drafting → Review → Closed) | Matter, Case, Filing, Counsel |
-| `research` | Kanban (Hypothesis → Design → Experiment → Analysis → Published) | Study, Experiment, Protocol, Researcher |
-| `event` | Phase-based (Ideas → Booked → In Progress → Confirmed → Done) | Event, Track, Run Sheet |
+| **0–32** | **Complete** | Core PM product, integrations, hardening, and audit-driven work are documented as done. |
+| **33–38** | **Complete** | The optional Docket-based factory control-center cycle is done. It is now a legacy integration path. |
+| **39–40** | **Implemented, unreleased** | Regression oracle plus capability/adapter foundations exist in the current working tree. |
+| **41** | **Partial; acceptance reopened** | Optimistic concurrency exists, but atomic-write and browser ETag acceptance still need closure. |
+| **42** | **Transitional; acceptance reopened** | Run/decision persistence exists, but provider-scoped identity still needs correction. |
+| **43–49** | **Superseded or frozen** | Do not implement this old control-plane sequence; its useful outcomes were re-scoped into Phases 50–57. |
+| **50–57** | **Planned; active cycle** | Native harness-agnostic runner fleet. No part of this row should be treated as shipped yet. |
 
-- **Custom vocabulary** — rename any of 16 terms per project; the UI, CLI, and API all follow your terms
-- **Custom workflows** — define any columns, WIP limits per column, and explicit transition rules
-- **Dependency graph** — DAG with cycle detection; parent item auto-closes when all children reach done
+The active cycle is:
 
-### Data & Fields
+| Phase | Outcome |
+| --- | --- |
+| **50** | Boundary, safety, migration, and contract freeze. |
+| **51** | Durable execution domain and schema. |
+| **52** | Pull-based runner protocol and `tack-runner` skeleton. |
+| **53** | Real Codex, Claude Code, and OpenCode harness proofs. |
+| **54** | Fleet scheduler and item-assignment UX. |
+| **55** | Decisions, artifacts, and realtime execution activity. |
+| **56** | Model profiles, policy enforcement, and honest measured usage. |
+| **57** | Optional Docket bridge, recovery testing, and release hardening. |
 
-- **Custom fields** — 9 types: Text, LongText, Number, Date, Boolean, Select, MultiSelect, URL, Email; with pattern / min / max validation
-- **File attachments** — up to 50 MB per file, stored locally
-- **Full-text search** — SQLite FTS5, scoped per project or global
-- **Project templates** — built-in templates per type; save any project as a reusable template
+## What works today
 
-### API & Integrations
+### Project management
 
-- **89 REST operations across 60 paths, + WebSocket** — full CRUD for all entities, search, export, diagnostics, and (optional) agent-fleet orchestration; see the [OpenAPI spec](docs/openapi.json)
-- **CLI client** — the same `tack` binary with `tack add`, `tack list`, `tack move`, `tack branch` (git branch from an item), and more; `--json` output and shell completions (bash/zsh/fish)
-- **MCP server for AI agents** — `tack mcp` exposes the board to Claude Code, Codex, and any MCP client (list/search/read items, create/update/move, comment) over stdio; writes still pass through workflow validation. See [docs/MCP.md](docs/MCP.md)
-- **Import** — GitHub Issues (public or private repos, label filter, PAT), Linear (GraphQL API, team/project filter), JSON/YAML round-trip, CSV
-- **GitHub push sync** — set `TACK_GITHUB_TOKEN` and completing an imported item closes its GitHub issue (push-only v1). See [docs/GITHUB-SYNC.md](docs/GITHUB-SYNC.md)
-- **Export** — JSON snapshot, plaintext **YAML** (git-diffable), and CSV per project
-- **Backup / restore** — hot backup via `VACUUM INTO`; cloud backup to any S3-compatible bucket (Cloudflare R2, Backblaze B2, AWS S3); configurable from **Settings → Cloud Backup**
-- **Webhooks** — outbound POST events on item changes and sprint transitions; HMAC-SHA256 payload signing
-- **Agent-fleet control center (optional)** — link a project to a [docket](https://github.com/yielab/docket) pod and dispatch, mirror, and govern agent work from the board; off by default. See [Factory control center](#factory-control-center-optional)
+- Configurable workflows, columns, transition rules, and WIP limits.
+- Per-project vocabulary so the UI, CLI, and API use the terms of the domain.
+- Board, list, table, calendar, timeline, dashboard, and sprint-planning views.
+- Hierarchical items, dependency DAGs with cycle detection, custom fields, comments,
+  attachments, full-text search, templates, and bulk operations.
+- Realtime WebSocket updates and optimistic UI behavior.
+- JSON, YAML, and CSV export; GitHub Issues and Linear import; hot and S3-compatible
+  backup/restore.
 
----
+### Automation surfaces
 
-## Quick Start
+- A REST API described by the checked-in [OpenAPI specification](docs/openapi.json).
+- A CLI with JSON output and shell completions.
+- `tack mcp`, which lets Claude Code, Codex, and other MCP clients read and update the
+  project board through normal workflow validation.
+- Outbound signed webhooks and optional GitHub push sync.
+- An optional, feature-gated Docket integration from the completed Phases 33–38.
+
+`tack mcp` and the planned runner fleet solve different problems: MCP gives an
+interactive agent tools for managing the board; the runner fleet lets Tack durably
+schedule, lease, observe, and recover agent execution.
+
+## Quick start
 
 **One line (Linux / macOS):**
 
@@ -135,194 +164,146 @@ tack            # starts the server + web UI at http://localhost:3210
 cargo install --git https://github.com/yielab/tack tack-cli --features embed-spa
 ```
 
-**Or download** the archive for your system from the [releases page](https://github.com/yielab/tack/releases):
+**Or download** the archive for your system from the
+[releases page](https://github.com/yielab/tack/releases):
 
 ```bash
 # Linux / macOS
-tar xzf tack-*.tar.gz && cd tack-*/
+tar xzf tack-*.tar.gz
+cd tack-*/
 ./tack
 ```
 
-**Windows:** extract the zip and double-click `tack.exe`.
+**Windows:** extract the zip and run `tack.exe`.
 
-Open **`http://localhost:3210`** in your browser. Your data lives in `tack.db` and a `storage/` folder next to the binary — back those two up and you've backed up everything.
+Open **`http://localhost:3210`**. Project data lives in `tack.db`; attachments live in
+`storage/`. Back up both.
 
-> **First-run note:** the binary is not code-signed yet. On macOS, right-click → **Open** the first time (or `xattr -d com.apple.quarantine tack`). On Windows, click **More info → Run anyway** if SmartScreen appears.
+> The binary is not code-signed yet. On macOS, right-click **Open** the first time
+> (or run `xattr -d com.apple.quarantine tack`). On Windows, use
+> **More info → Run anyway** if SmartScreen appears.
 
----
-
-## Status & Limitations
-
-Tack is in **beta**. Core features are complete; a few constraints to know upfront:
+## Current limitations
 
 | Area | Current state |
 | --- | --- |
-| Authentication | One shared optional Bearer token — no per-user accounts. Suited for solo use or a small trusted group on the same network. |
-| Multi-user | No per-user identities or permissions. All API clients share the same access level. |
-| Multi-device sync | Single server, single database. Cross-device use is **snapshot replication** via S3-compatible cloud backup — one active writer, last-upload-wins, with generation-counter conflict detection and integrity-checked restores. Not live/concurrent multi-writer sync. |
-| Mobile | Responsive web UI works on mobile browsers; no native app. |
-| Binary signing | Not code-signed yet. See first-run note above. Roadmap item. |
-| Offline | Browser UI requires the local server to be running. |
-| Agent-fleet control (optional) | Requires a reachable [docket](https://github.com/yielab/docket) instance — Tack doesn't run agents itself, only dispatches to and mirrors state from one. No pause control from Tack in either direction: docket exposes no pause/resume over HTTP. Cost figures are **estimates** from a snapshotted price table, never observed spend. |
+| Authentication | One optional shared Bearer token; no per-user identities or permissions. |
+| Multi-device data | One active SQLite writer. S3 backup is snapshot replication, not live multi-writer sync. |
+| Offline UI | The browser UI requires its Tack server to be running. |
+| Native runner fleet | Planned in Phases 50–57; it is not available in the current release. |
+| Existing orchestration | Docket-specific and disabled by default. It is a legacy bridge, not proof of harness-agnostic execution. |
+| Usage and cost | Existing imported values may be estimates or absent. Native telemetry must label measurement source; absent usage is not zero. |
+| Mobile | Responsive web UI only; no native mobile application. |
+| Binary signing | Release binaries are not code-signed yet. |
 
----
+## Build from source
 
-## Build from Source
-
-**Prerequisites:** [Rust 1.85+](https://rustup.rs/) (the workspace uses the 2024 edition) · [Node.js 20+](https://nodejs.org/)
+**Prerequisites:** [Rust 1.85+](https://rustup.rs/) (2024 edition) and
+[Node.js 20+](https://nodejs.org/).
 
 ```bash
 git clone https://github.com/yielab/tack.git
 cd tack
-make build   # builds the frontend then embeds it into the release binary
-make run     # starts the pre-built binary at http://127.0.0.1:3210
+make build   # builds the frontend and embeds it into the release binary
+make run     # starts Tack at http://127.0.0.1:3210
 ```
 
 For development with hot reload:
 
 ```bash
-make dev     # starts API + Vite dev server; open http://localhost:5173
+make dev     # API + Vite dev server at http://localhost:5173
 ```
 
-Other commands:
+Useful verification commands:
 
 ```bash
-make test         # all Rust tests (581 tests) — frontend has 406 more (npm run test, in frontend/)
-make e2e          # Playwright end-to-end tests (auto-starts servers)
-make e2e-install  # one-time: download browser engines
-make audit        # CVE scan (cargo audit + npm audit)
-make lint         # clippy --workspace -- -D warnings
-make fmt          # rustfmt --all
-make help         # full command list
+make test
+make e2e
+make audit
+make lint
+make fmt
+make help
 ```
-
----
 
 ## Configuration
 
-Configuration is loaded from `tack.toml` in the working directory, or from environment variables.
+Configuration is loaded from `tack.toml` in the working directory or from environment
+variables.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `TACK_HOST` | `127.0.0.1` | Bind address |
-| `TACK_PORT` | `3210` | Port |
-| `TACK_DATABASE_URL` | `sqlite:tack.db?mode=rwc` | SQLite path |
-| `TACK_LOG_LEVEL` | `info` | `trace` · `debug` · `info` · `warn` · `error` |
-| `TACK_STORAGE_DIR` | `./storage` | Attachment storage directory |
-| `TACK_API_TOKEN` | _(none)_ | Bearer token — required on all `/api/*` requests when set |
-| `TACK_WEBHOOK_URL` | _(none)_ | Outbound webhook destination |
-| `TACK_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 signing key for webhook payloads |
-| `TACK_BACKUP_BUCKET` | _(none)_ | S3 bucket name — required to enable cloud backup |
-| `TACK_ORCH_ENABLE` | `false` | Enables the agent-fleet control center (reconciler + `/api/control-planes`, `/api/fleet`, dispatch, approvals, etc.). Unset ⇒ no reconciler task spawned, every orchestration route 404s |
-| `TACK_ORCH_APPROVAL_TOKEN` | _(none)_ | Separate shared secret required to grant/deny a docket approval — deliberately distinct from `TACK_API_TOKEN` |
+| `TACK_HOST` | `127.0.0.1` | Bind address. |
+| `TACK_PORT` | `3210` | HTTP port. |
+| `TACK_DATABASE_URL` | `sqlite:tack.db?mode=rwc` | SQLite connection URL. |
+| `TACK_LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, or `error`. |
+| `TACK_STORAGE_DIR` | `./storage` | Attachment storage directory. |
+| `TACK_API_TOKEN` | _(none)_ | Bearer token required for `/api/*` when configured. |
+| `TACK_WEBHOOK_URL` | _(none)_ | Outbound webhook destination. |
+| `TACK_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 webhook signing key. |
+| `TACK_BACKUP_BUCKET` | _(none)_ | S3 bucket used for cloud backup. |
+| `TACK_ORCH_ENABLE` | `false` | Enables the current legacy Docket orchestration routes and reconciler. |
+| `TACK_ORCH_APPROVAL_TOKEN` | _(none)_ | Separate secret for current Docket approval actions. |
 
-See the full variable reference in the [Configuration guide](docs/book/src/user-guide/configuration.md), or [Administration & Security](docs/book/src/user-guide/administration.md) for tokens, CORS, webhooks, and cloud backup. Every `TACK_ORCH_*` variable (including `TACK_ORCH_POLL_SECS` and `TACK_ORCH_EVENT_RETENTION_DAYS`) is documented there and in [Factory control center](#factory-control-center-optional) below.
-
----
-
-## Factory control center (optional)
-
-Tack can act as the control center for a whole factory of products, each with its own
-board and its own governed agent pod running under [docket](https://github.com/yielab/docket),
-an agent-fleet orchestrator. Tack is a **client** of docket — it never runs agents
-itself; docket does that. Tack dispatches work to a pod and mirrors what comes back
-(runs, approvals, traces, token counts) onto the board.
-
-**Off by default.** None of this runs, and none of these routes exist, unless you set
-`TACK_ORCH_ENABLE=true`. A plain `tack` install never makes an outbound call to
-anything but its own SQLite file.
-
-Once enabled and a control plane is registered:
-
-- **Register & link** — add a docket control plane (base URL + Bearer token, token
-  write-only over the API) and link a Tack project to one of its pods.
-- **Fleet view** — one row per product: pod health, roster (roles + models), last
-  activity, burn vs. budget. Health is a real state machine per control plane —
-  `healthy` → `degraded` after 3 consecutive poll failures → `unreachable` after 10 —
-  not a flag flipped on the first timeout.
-- **Agent activity per item** — a timeline on the item detail view: runs, hops,
-  approvals, traces, and token counts for that item's dispatches.
-- **Dispatch** — send a single item or a whole sprint to the pod. Sprint dispatch
-  walks the dependency graph and enqueues items in topological order, with a
-  dry-run preview before anything actually runs.
-- **Approvals inbox** — a fleet-wide list of pending approvals with grant/deny,
-  gated behind a **separate** `TACK_ORCH_APPROVAL_TOKEN` — deliberately distinct from
-  the ordinary `TACK_API_TOKEN`, because granting a docket approval is a higher-
-  privilege action than editing a card.
-- **Budget & policy panels** — burn vs. cap per pod, policy-hit and denial rates,
-  approval/tool-call volume, mirrored from docket's own metrics.
-- **Unit economics** — tokens in/out, **estimated** cost, agent lead time, and rework
-  rate, per item and per product line. Token counts are the primary figure; Tack
-  never sees a real bill — any dollar figure is derived from a snapshotted price
-  table and is always labelled "estimated," never spend.
-- **Provisioning** — create a Tack project and its docket pod together from a
-  template, with rollback if either half fails partway through.
-
-**Known limits, stated plainly:** docket exposes no pause/resume over HTTP in either
-direction, so Tack has no pause control — resuming a budget-paused pod is still
-`docket profile <id> --resume` on the docket side. Orchestration requires a reachable
-docket instance; if it goes away, the fleet view degrades gracefully and the rest of
-Tack keeps working. See [docs/book/src/user-guide/orchestration.md](docs/book/src/user-guide/orchestration.md)
-and [docs/book/src/developer/orchestration.md](docs/book/src/developer/orchestration.md)
-for the full reference.
-
----
+See the [configuration guide](docs/book/src/user-guide/configuration.md) and
+[administration guide](docs/book/src/user-guide/administration.md) for the full
+reference. Configuration for `tack-runner` will be added as the Phase 52 contract is
+implemented; it is intentionally not invented here ahead of that work.
 
 ## Architecture
 
+The current application is a modular monolith:
+
 ```text
-tack-core   Pure domain logic — models, workflow engine, vocabulary, dependency graph (no I/O)
+tack-core   Domain models, workflow rules, vocabulary, and dependency graph (no I/O)
     ↑
-tack-db     SQLite persistence via sqlx — 31 migrations, FTS5, repository pattern
+tack-db     SQLite persistence through sqlx, FTS5, and repositories
     ↑
-tack-orch   Agent-fleet control-plane client — ControlPlane trait, docket adapter, reconciler
-            (off by default; gated behind TACK_ORCH_ENABLE)
+tack-orch   Current optional Docket client and reconciliation boundary
     ↑
-tack-api    Axum HTTP server + WebSocket — 89 REST operations across 60 paths, config, webhooks
-            (library crate)
+tack-api    Axum HTTP/WebSocket server, configuration, and integrations
     ↑
-tack-cli    The `tack` binary — embeds tack-api to run the server; also the CLI client
+tack-cli    Server binary, CLI client, embedded SolidJS application, and MCP server
 ```
 
-The frontend is a SolidJS SPA embedded into the release binary via `--features embed-spa`. See the [Architecture overview](docs/book/src/developer/README.md) for details.
-
----
+Phases 50–57 add a pull runner protocol and harness adapters without moving PM domain
+logic into the worker. See the
+[developer architecture overview](docs/book/src/developer/README.md) for the current
+code and the [roadmap](docs/book/src/roadmap.md) for the target boundary.
 
 ## Documentation
 
-Full documentation is in [`docs/book/`](docs/book/). Build it locally with [mdBook](https://rust-lang.github.io/mdBook/):
+Full documentation is in [`docs/book/`](docs/book/). Build it locally with
+[mdBook](https://rust-lang.github.io/mdBook/):
 
 ```bash
 cargo install mdbook
-mdbook serve docs/book   # opens http://localhost:3000
+mdbook serve docs/book
 ```
 
 | Guide | Description |
 | --- | --- |
-| [Quick Start](docs/book/src/user-guide/quick-start.md) | First-run walkthrough |
-| [API Reference](docs/book/src/developer/api-reference.md) | Auth model + examples; the machine-generated [OpenAPI spec](docs/openapi.json) (served live at `/api/openapi.json`) is the source of truth |
-| [CLI Reference](docs/book/src/user-guide/cli.md) | Every `tack` subcommand |
-| [MCP Server](docs/MCP.md) | Wire Tack into Claude Code / AI agents via `tack mcp` |
-| [Orchestration (user guide)](docs/book/src/user-guide/orchestration.md) | Link a project to docket, dispatch, approvals, budgets, unit economics |
-| [Configuration](docs/book/src/user-guide/configuration.md) | Full variable reference and `tack.toml` |
-| [Architecture](docs/book/src/developer/README.md) | Crate boundaries, design decisions |
-| [Benchmarks](docs/BENCHMARKS.md) | Measured footprint and latency, with repro steps |
-| [Testing](docs/TESTING.md) | Unit, integration, E2E, load, and security tests |
-| [Roadmap](docs/book/src/roadmap.md) | Planned features and known gaps |
-
----
+| [Quick Start](docs/book/src/user-guide/quick-start.md) | First-run walkthrough. |
+| [API Reference](docs/book/src/developer/api-reference.md) | Auth and API examples; OpenAPI is the machine-readable source of truth. |
+| [CLI Reference](docs/book/src/user-guide/cli.md) | `tack` subcommands. |
+| [MCP Server](docs/MCP.md) | Connect Tack to an interactive MCP-capable agent. |
+| [Current Docket integration](docs/book/src/user-guide/orchestration.md) | Existing optional orchestration behavior and limitations. |
+| [Configuration](docs/book/src/user-guide/configuration.md) | Environment and `tack.toml` reference. |
+| [Architecture](docs/book/src/developer/README.md) | Current crate boundaries and design decisions. |
+| [Benchmarks](docs/BENCHMARKS.md) | Reproducible footprint and latency measurements. |
+| [Testing](docs/TESTING.md) | Unit, integration, E2E, load, and security tests. |
+| [Roadmap](docs/book/src/roadmap.md) | Historical phase status and active Phases 50–57. |
+| [Execution TODO](TODO.md#part-iii--harness-agnostic-runner-fleet-phases-5057) | Parallel-agent implementation cards for the active cycle. |
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for how to report bugs, propose features, and submit pull requests.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to report bugs, propose features, and
+submit pull requests.
 
-Before pushing, activate the pre-push hook that runs `fmt` and `clippy`:
+Before pushing, activate the pre-push hook that runs formatting and Clippy:
 
 ```bash
 git config core.hooksPath .githooks
 ```
-
----
 
 ## License
 

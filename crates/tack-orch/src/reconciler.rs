@@ -1850,8 +1850,9 @@ pub async fn spawn_reconcilers_supervised(
 mod tests {
     use super::*;
     use crate::{
-        ApprovalState, NewRemoteTask, RemoteApproval, RemoteEvent, RemoteRun, RemoteTask,
-        RunSource, RunState, TaskStatus,
+        ApprovalState, Capabilities, DecisionSupport, EventScope, ModelSelection, NewRemoteTask,
+        Rated, RemoteApproval, RemoteEvent, RemoteRun, RemoteTask, RunSource, RunState, Support,
+        TaskStatus, UsageSupport,
     };
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -2245,6 +2246,30 @@ mod tests {
     impl ControlPlane for FakeControlPlane {
         fn kind(&self) -> &'static str {
             "fake"
+        }
+
+        /// Not exercised by any test in this module (every test here
+        /// scripts `health`/`status`/`list_runs`/`list_approvals`/etc., not
+        /// capability negotiation) — a plausible, internally-consistent
+        /// value so the trait is satisfied, nothing more.
+        fn capabilities(&self) -> Capabilities {
+            Capabilities {
+                dispatch: true,
+                cancel: false,
+                pause: Rated::new(Support::Unsupported, "fake plane: no pause mechanism"),
+                resume: Rated::new(Support::Unsupported, "fake plane: no resume mechanism"),
+                event_scope: Rated::new(EventScope::Project, "fake plane: scripted per project"),
+                artifacts: false,
+                decisions: Rated::new(DecisionSupport::Poll, "fake plane: scripted approvals"),
+                usage: Rated::new(UsageSupport::NotMeasured, "fake plane: no usage source"),
+                model_selection: Rated::new(
+                    ModelSelection::Unsupported,
+                    "fake plane: no model routing",
+                ),
+                runtimes: false,
+                plane_metrics: true,
+                provisioning: false,
+            }
         }
 
         async fn health(&self) -> Result<Health, OrchError> {
@@ -3356,6 +3381,55 @@ mod tests {
         assert_ne!(
             derive_event_id(cp_id, "demo", &a),
             derive_event_id(cp_id, "demo", &b)
+        );
+    }
+
+    /// Pins `derive_event_id`'s output to a literal UUID (TODO.md §Wave A,
+    /// card O2, task 39.3) — the determinism tests just above this one only
+    /// prove the function returns the same id for the same input *within
+    /// one build*. They would not notice a changed field separator, a
+    /// reordered field in the `format!` (`:1058-1066`), or a changed
+    /// [`ORCH_EVENT_ID_NAMESPACE`] byte constant, because both the "before"
+    /// and "after" id in that comparison would move together and still
+    /// match each other.
+    ///
+    /// That distinction matters because `ORCH_EVENT_ID_NAMESPACE`'s own doc
+    /// comment states the real stake: this id is `orch_events.id`, and
+    /// `upsert_orch_events`'s `ON CONFLICT(id) DO UPDATE` is what makes
+    /// re-ingesting an already-seen docket trace event a no-op. Change the
+    /// derivation and every event a deployment already ingested gets a
+    /// *different* id computed for it on the next poll after the upgrade —
+    /// not rejected as a duplicate, but inserted again as if new. Every
+    /// user's event timeline doubles its history and every cost rollup
+    /// built from `orch_events` counts the same spend twice, silently,
+    /// with a fully green test suite (see
+    /// `docs/plans/agnostic-control-plane.md` §6's regression table, third
+    /// row, for the exact refactor this catches).
+    ///
+    /// If this test fails, the correct response is almost always to
+    /// **revert whatever changed `derive_event_id`'s output**, not to
+    /// update the literal below to match the new value — updating the
+    /// literal is only correct if every already-deployed instance's
+    /// `orch_events` table is being intentionally, knowingly re-keyed (a
+    /// decision far above what a code change should make silently).
+    #[test]
+    fn derive_event_id_matches_the_pinned_literal() {
+        let control_plane_id =
+            Uuid::parse_str("11111111-1111-1111-1111-111111111111").expect("valid fixed uuid");
+        let event = RemoteEvent {
+            ts: "2026-08-04T19:52:27Z".to_string(),
+            project: "proj".to_string(),
+            session_id: "agent:proj:task-1".to_string(),
+            agent_role: "lead".to_string(),
+            event_type: "tool_call".to_string(),
+            payload: serde_json::json!({"tool": "bash", "command": "cargo test"}),
+            cost_usd_estimated: Some(0.0021),
+            duration_ms: Some(842),
+        };
+        assert_eq!(
+            derive_event_id(control_plane_id, "proj", &event).to_string(),
+            "4808170d-9797-561e-8fbb-dd8e9b94a9fe",
+            "derive_event_id's output for this exact fixed input must never move — see this test's doc comment"
         );
     }
 

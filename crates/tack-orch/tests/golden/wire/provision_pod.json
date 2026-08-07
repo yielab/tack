@@ -1,0 +1,45 @@
+{
+  "method": "provision_pod",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/pods",
+      "query": [],
+      "header_names": [
+        "accept",
+        "authorization",
+        "content-length",
+        "content-type",
+        "host",
+        "user-agent"
+      ],
+      "body": {
+        "blueprint": "software",
+        "budget": 25.0,
+        "path": "/home/ox/code/blog-api",
+        "pod": "full",
+        "project": "blog-api",
+        "verifyCmd": "cargo test --workspace"
+      }
+    }
+  ],
+  "result": {
+    "outcome": "ok",
+    "value": {
+      "blueprint": "software",
+      "members": [
+        {
+          "id": "blog-api-lead",
+          "model": "anthropic/claude-opus-4-5",
+          "role": "lead"
+        },
+        {
+          "id": "blog-api-impl-1",
+          "model": "anthropic/claude-sonnet-4-5",
+          "role": "implementer"
+        }
+      ],
+      "project": "blog-api"
+    }
+  }
+}

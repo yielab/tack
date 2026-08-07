@@ -168,6 +168,44 @@ async fn list_registered_skips_an_unknown_kind_without_failing() {
     );
 }
 
+// ─── Card G1: a plane list_registered could not build an adapter for is ───
+// marked "unconfigured", not left at the pre-poll "unknown" default forever.
+
+#[tokio::test]
+async fn unconfigured_plane_reports_unconfigured_not_unknown() {
+    let repo = test_repo().await;
+    let mystery = repo
+        .create_control_plane(CreateControlPlane {
+            name: "mystery-orchestrator".into(),
+            kind: Some("some-future-thing".into()),
+            base_url: "http://127.0.0.1:9999".into(),
+            token: None,
+        })
+        .await
+        .expect("create unknown-kind plane");
+    assert_eq!(
+        mystery.health, "unknown",
+        "sanity: a freshly created row starts at the column default"
+    );
+
+    let (broadcast_tx, _) = tokio::sync::broadcast::channel(100);
+    let store = RepoControlPlaneStore::new(repo.clone(), broadcast_tx);
+    store
+        .list_registered()
+        .await
+        .expect("an unknown kind must be skipped, not surfaced as an Err");
+
+    let after = repo
+        .get_control_plane(mystery.id)
+        .await
+        .expect("plane must still exist — list_registered only skips it, never deletes it");
+    assert_eq!(
+        after.health, "unconfigured",
+        "a no-op implementation that leaves health untouched must fail this — the whole \
+         point is that the plane no longer reads as the pre-poll \"unknown\" default"
+    );
+}
+
 // ─── 3. End-to-end: spawn_reconcilers against a real store + wiremock ─────
 
 #[tokio::test]

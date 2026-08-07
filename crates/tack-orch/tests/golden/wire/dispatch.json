@@ -1,0 +1,8 @@
+{
+  "method": "dispatch",
+  "requests": [],
+  "result": {
+    "outcome": "err",
+    "error": "control plane feature disabled"
+  }
+}

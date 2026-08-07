@@ -60,6 +60,44 @@ describe('useAgentActivityMap', () => {
     dispose();
   });
 
+  // Card G1: `orchAvailable()`'s own behavior is unchanged by this card —
+  // only its doc comment's claim about what it's safe to gate on moved (see
+  // the doc comment above `orchAvailable` in `useAgentActivityMap.ts`). This
+  // locks in the one thing every remaining caller (e.g. `Sprints.tsx`,
+  // gating "is there bulk activity data to show at all") still needs true.
+  it('orchAvailable reflects only "did the bulk fetch resolve without error" — false while loading, true once it succeeds', async () => {
+    let orchAvailableNow: () => boolean = () => false;
+    function HostWithAvailability() {
+      const map = useAgentActivityMap(() => 'proj-1');
+      orchAvailableNow = map.orchAvailable;
+      return <div data-testid="out">{map.stateFor('item-1')?.state ?? 'none'}</div>;
+    }
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    mockFetch(200, { rows: [] });
+    expect(orchAvailableNow()).toBe(false);
+    const dispose = render(() => <HostWithAvailability />, container);
+    await flush();
+    expect(orchAvailableNow()).toBe(true);
+    dispose();
+  });
+
+  it('orchAvailable stays false on a 404 (orchestration disabled) — never a signal to gate a privileged control on', async () => {
+    let orchAvailableNow: () => boolean = () => true;
+    function HostWithAvailability() {
+      const map = useAgentActivityMap(() => 'proj-1');
+      orchAvailableNow = map.orchAvailable;
+      return <div data-testid="out">{map.stateFor('item-1')?.state ?? 'none'}</div>;
+    }
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    mockFetch(404, { error: { status: 404, message: 'not found' } });
+    const dispose = render(() => <HostWithAvailability />, container);
+    await flush();
+    expect(orchAvailableNow()).toBe(false);
+    dispose();
+  });
+
   // Card B4 (Wave 2, realtime broadcast): callers wire `refetch` to
   // `AgentRunUpdated`/`ApprovalPending` WebSocket events so a badge updates
   // without a page refresh — this proves `refetch` actually re-hits the
