@@ -37,11 +37,15 @@ impl OperatorExecutionState {
 
 type HandlerResult = Result<Json<Value>, (StatusCode, Json<Value>)>;
 
+/// C5 replaces this non-secret sentinel with the request correlation ID once it
+/// mounts these card-local routes in the global API router.
+const OPERATOR_REQUEST_ID: &str = "req_operator";
+
 fn error(status: StatusCode, code: &str, message: &str) -> (StatusCode, Json<Value>) {
     (
         status,
         Json(
-            json!({"error":{"code":code,"message":message,"request_id":"operator" ,"retryable":false,"details":{}}}),
+            json!({"error":{"code":code,"message":message,"request_id":OPERATOR_REQUEST_ID,"retryable":false,"details":{}}}),
         ),
     )
 }

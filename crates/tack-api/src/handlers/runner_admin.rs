@@ -17,11 +17,16 @@ use uuid::Uuid;
 use super::executions::OperatorExecutionState;
 
 type HandlerResult = Result<Json<Value>, (StatusCode, Json<Value>)>;
+
+/// C5 replaces this non-secret sentinel with the request correlation ID once it
+/// mounts these card-local routes in the global API router.
+const OPERATOR_REQUEST_ID: &str = "req_operator";
+
 fn error(status: StatusCode, code: &str, message: &str) -> (StatusCode, Json<Value>) {
     (
         status,
         Json(
-            json!({"error":{"code":code,"message":message,"request_id":"operator","retryable":false,"details":{}}}),
+            json!({"error":{"code":code,"message":message,"request_id":OPERATOR_REQUEST_ID,"retryable":false,"details":{}}}),
         ),
     )
 }
@@ -182,7 +187,21 @@ pub async fn create_pending_runner(
     let token_id = format!("ent_{}", Uuid::new_v4());
     let raw_token = format!("enr_{}", Uuid::new_v4());
     let now = state.clock.now();
-    let expires_at = now + Duration::seconds(input.enrollment_lifetime_seconds);
+    let enrollment_lifetime =
+        Duration::try_seconds(input.enrollment_lifetime_seconds).ok_or_else(|| {
+            error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "enrollment_lifetime_seconds is out of range",
+            )
+        })?;
+    let expires_at = now.checked_add_signed(enrollment_lifetime).ok_or_else(|| {
+        error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "enrollment_lifetime_seconds is out of range",
+        )
+    })?;
     let labels = serde_json::to_string(&input.labels).map_err(|_| {
         error(
             StatusCode::BAD_REQUEST,

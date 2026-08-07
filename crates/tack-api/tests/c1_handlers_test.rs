@@ -174,6 +174,7 @@ async fn duplicate_create_replays_same_request_and_revoked_runner_is_rejected() 
     let (conflict, conflict_body) = send(&app, "POST", "/executions", changed).await;
     assert_eq!(conflict, StatusCode::CONFLICT);
     assert_eq!(conflict_body["error"]["code"], "idempotency_conflict");
+    assert_eq!(conflict_body["error"]["request_id"], "req_operator");
 
     sqlx::query("UPDATE agent_runners SET state='revoked', revoked_at=? WHERE id='runner-active'")
         .bind(Utc::now().to_rfc3339())
@@ -266,6 +267,23 @@ async fn enrollment_token_is_returned_once_hash_only_and_revoke_or_redeem_blocks
         "available_capacity":1,
         "capability_snapshot":{"runner_version":"test"}
     });
+    let overflowing_enrollment = serde_json::json!({
+        "name":"Overflowing pending runner",
+        "total_capacity":1,
+        "available_capacity":1,
+        "enrollment_lifetime_seconds": i64::MAX
+    });
+    let (overflow_status, overflow_body) = send(
+        &app,
+        "POST",
+        "/runners/enrollment",
+        overflowing_enrollment.to_string(),
+    )
+    .await;
+    assert_eq!(overflow_status, StatusCode::BAD_REQUEST);
+    assert_eq!(overflow_body["error"]["code"], "invalid_request");
+    assert_eq!(overflow_body["error"]["request_id"], "req_operator");
+
     let (status, created) = send(&app, "POST", "/runners/enrollment", enrollment.to_string()).await;
     assert_eq!(status, StatusCode::OK);
     let runner_id = created["runner_id"].as_str().unwrap().to_owned();
