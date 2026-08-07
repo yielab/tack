@@ -1560,8 +1560,10 @@ const MIGRATION_059: [&str; 1] = [
     "UPDATE execution_requests SET state = 'needs_operator', updated_at = created_at WHERE state = 'queued' AND request_snapshot = '{}'",
 ];
 const MIGRATION_060: [&str; 1] = [
-    "UPDATE execution_requests SET state = 'needs_operator', updated_at = created_at WHERE state NOT IN ('succeeded','failed','cancelled') AND CASE
-        WHEN json_valid(request_snapshot) = 0 THEN 1
+    "WITH safe_snapshot AS MATERIALIZED (SELECT id, state, CASE WHEN json_valid(request_snapshot) THEN request_snapshot ELSE '{}' END AS request_snapshot, json_valid(request_snapshot) AS snapshot_valid FROM execution_requests)
+        UPDATE execution_requests SET state = 'needs_operator', updated_at = created_at WHERE id IN (
+        SELECT id FROM safe_snapshot WHERE state NOT IN ('succeeded','failed','cancelled') AND CASE
+        WHEN snapshot_valid = 0 THEN 1
         WHEN json_type(request_snapshot) IS NOT 'object' THEN 1
         WHEN json_type(request_snapshot, '$.request_id') IS NOT 'text' THEN 1
         WHEN json_type(request_snapshot, '$.item_id') IS NOT 'text' THEN 1
@@ -1571,6 +1573,8 @@ const MIGRATION_060: [&str; 1] = [
         WHEN json_type(request_snapshot, '$.created_by.subject_id') IS NOT 'text' THEN 1
         WHEN json_type(request_snapshot, '$.created_at') IS NOT 'text' THEN 1
         WHEN datetime(json_extract(request_snapshot, '$.created_at')) IS NULL THEN 1
+        WHEN json_extract(request_snapshot, '$.created_at') NOT GLOB '????-??-??T??:??:??*' THEN 1
+        WHEN substr(json_extract(request_snapshot, '$.created_at'), -1) IS NOT 'Z' AND substr(json_extract(request_snapshot, '$.created_at'), -6, 1) NOT IN ('+', '-') THEN 1
         WHEN json_type(request_snapshot, '$.selector') IS NOT 'object' THEN 1
         WHEN json_type(request_snapshot, '$.selector.kind') IS NOT 'text' THEN 1
         WHEN json_extract(request_snapshot, '$.selector.kind') NOT IN ('exact_runner','fleet','any') THEN 1
@@ -1584,7 +1588,7 @@ const MIGRATION_060: [&str; 1] = [
         WHEN json_type(request_snapshot, '$.resolved_agent_profile.name') IS NOT 'text' THEN 1
         WHEN json_type(request_snapshot, '$.resolved_agent_profile.instructions') IS NOT 'text' THEN 1
         WHEN json_type(request_snapshot, '$.resolved_agent_profile.tool_policy') IS NOT 'object' THEN 1
-        WHEN json_type(request_snapshot, '$.resolved_agent_profile.timeout_seconds') NOT IN ('integer','real') THEN 1
+        WHEN json_type(request_snapshot, '$.resolved_agent_profile.timeout_seconds') IS NOT 'integer' OR json_extract(request_snapshot, '$.resolved_agent_profile.timeout_seconds') < 0 THEN 1
         WHEN json_type(request_snapshot, '$.resolved_agent_profile.budgets') IS NOT 'object' THEN 1
         WHEN json_type(request_snapshot, '$.repository') IS NOT 'object' THEN 1
         WHEN json_type(request_snapshot, '$.repository.kind') IS NOT 'text' THEN 1
@@ -1594,12 +1598,12 @@ const MIGRATION_060: [&str; 1] = [
         WHEN json_type(request_snapshot, '$.permission_policy') IS NOT 'object' THEN 1
         WHEN json_type(request_snapshot, '$.permission_policy.tools') IS NOT 'array' THEN 1
         WHEN json_type(request_snapshot, '$.permission_policy.network') IS NOT 'true' AND json_type(request_snapshot, '$.permission_policy.network') IS NOT 'false' THEN 1
-        WHEN json_type(request_snapshot, '$.timeout_seconds') NOT IN ('integer','real') THEN 1
+        WHEN json_type(request_snapshot, '$.timeout_seconds') IS NOT 'integer' OR json_extract(request_snapshot, '$.timeout_seconds') < 0 THEN 1
         WHEN json_type(request_snapshot, '$.budgets') IS NOT 'object' THEN 1
         WHEN json_type(request_snapshot, '$.status_map_policy_id') IS NOT 'text' AND json_type(request_snapshot, '$.status_map_policy_id') IS NOT 'null' THEN 1
         WHEN json_type(request_snapshot, '$.environment') IS NOT 'object' THEN 1
         WHEN json_type(request_snapshot, '$.metadata') IS NOT 'object' THEN 1
-        WHEN EXISTS (SELECT 1 FROM json_each(request_snapshot, '$.permission_policy.tools') AS tool WHERE json_type(tool.value) IS NOT 'text') THEN 1
-        WHEN EXISTS (SELECT 1 FROM json_each(request_snapshot, '$.environment') AS environment WHERE json_type(environment.value) IS NOT 'object' OR ((json_type(environment.value, '$.value') = 'text') + (json_type(environment.value, '$.secret_reference') = 'text')) != 1) THEN 1
-        ELSE 0 END = 1",
+        WHEN EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(request_snapshot) THEN request_snapshot ELSE '{}' END, '$.permission_policy.tools') AS tool WHERE tool.type IS NOT 'text') THEN 1
+        WHEN EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(request_snapshot) THEN request_snapshot ELSE '{}' END, '$.environment') AS environment WHERE environment.type IS NOT 'object' OR ((json_type(environment.value, '$.value') = 'text') + (json_type(environment.value, '$.secret_reference') = 'text')) != 1) THEN 1
+        ELSE 0 END = 1)",
 ];

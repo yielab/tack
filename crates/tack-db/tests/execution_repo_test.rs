@@ -7,12 +7,11 @@ use sqlx::Row;
 use tack_db::{
     Repository, init_pool, migrations,
     repo::execution::{
-        CancellationObservation, CancellationObservationInput, ClaimReplayResult, Completion,
-        CompletionResult, EnqueueResult, EnrollmentToken, EventApplyResult, EventBatch,
-        ExecutionClock, HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewArtifact,
-        NewDecision, NewEvent, NewExecutionRequest, NewRunner, RecoveryDisposition,
-        RecoveryObservation, RecoveryObservationInput, RecoveryObservationResult,
-        RedeemEnrollmentResult,
+        CancellationObservation, CancellationObservationInput, Completion, CompletionResult,
+        EnqueueResult, EnrollmentToken, EventApplyResult, EventBatch, ExecutionClock,
+        HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewArtifact, NewDecision, NewEvent,
+        NewExecutionRequest, NewRunner, RecoveryDisposition, RecoveryObservation,
+        RecoveryObservationInput, RecoveryObservationResult, RedeemEnrollmentResult,
     },
 };
 
@@ -128,7 +127,7 @@ async fn claim_request_replay_returns_the_original_lease() {
         .await
         .unwrap();
     let first = repo
-        .claim_execution_idempotent(
+        .claim_execution_idempotent_with_snapshot(
             "runner-a",
             "claim-a",
             "attempt-a",
@@ -138,7 +137,7 @@ async fn claim_request_replay_returns_the_original_lease() {
         .await
         .unwrap();
     let replay = repo
-        .claim_execution_idempotent(
+        .claim_execution_idempotent_with_snapshot(
             "runner-a",
             "claim-a",
             "attempt-b",
@@ -148,7 +147,7 @@ async fn claim_request_replay_returns_the_original_lease() {
         .await
         .unwrap();
     assert_eq!(first, replay);
-    assert!(matches!(replay, ClaimReplayResult::Lease(_)));
+    assert!(matches!(replay, Some(claim) if claim.request_snapshot["request_id"] == "request-a"));
 }
 
 #[tokio::test]
@@ -157,11 +156,16 @@ async fn heartbeat_replays_and_recovery_is_audited_once() {
     repo.enqueue_execution(request("request-a", &item_id, "key-a", "same"), &clock)
         .await
         .unwrap();
-    let lease = repo
-        .claim_execution("runner-a", "attempt-a", Duration::seconds(60), &clock)
-        .await
-        .unwrap()
-        .unwrap();
+    let lease = claim_lease(
+        &repo,
+        "runner-a",
+        "attempt-a",
+        Duration::seconds(60),
+        &clock,
+    )
+    .await
+    .unwrap()
+    .unwrap();
     let leases = [HeartbeatLease {
         attempt_id: "attempt-a",
         fencing_token: lease.fencing_token,
@@ -232,11 +236,16 @@ async fn structured_events_and_cancellation_observation_replay() {
     repo.enqueue_execution(request("request-z", &item_id, "key-z", "same"), &clock)
         .await
         .unwrap();
-    let lease = repo
-        .claim_execution("runner-a", "attempt-z", Duration::seconds(60), &clock)
-        .await
-        .unwrap()
-        .unwrap();
+    let lease = claim_lease(
+        &repo,
+        "runner-a",
+        "attempt-z",
+        Duration::seconds(60),
+        &clock,
+    )
+    .await
+    .unwrap()
+    .unwrap();
     let event = NewEvent {
         id: "row-z",
         event_id: "event-z",
@@ -320,16 +329,16 @@ async fn event_replay_canonicalizes_equivalent_json_payloads() {
     )
     .await
     .unwrap();
-    let lease = repo
-        .claim_execution(
-            "runner-a",
-            "attempt-canonical",
-            Duration::seconds(60),
-            &clock,
-        )
-        .await
-        .unwrap()
-        .unwrap();
+    let lease = claim_lease(
+        &repo,
+        "runner-a",
+        "attempt-canonical",
+        Duration::seconds(60),
+        &clock,
+    )
+    .await
+    .unwrap()
+    .unwrap();
     let batch = EventBatch {
         runner_id: "runner-a",
         attempt_id: "attempt-canonical",
@@ -374,16 +383,16 @@ async fn event_replay_changed_payload_is_conflict_and_does_not_write() {
     )
     .await
     .unwrap();
-    let lease = repo
-        .claim_execution(
-            "runner-a",
-            "attempt-conflict",
-            Duration::seconds(60),
-            &clock,
-        )
-        .await
-        .unwrap()
-        .unwrap();
+    let lease = claim_lease(
+        &repo,
+        "runner-a",
+        "attempt-conflict",
+        Duration::seconds(60),
+        &clock,
+    )
+    .await
+    .unwrap()
+    .unwrap();
     let batch = EventBatch {
         runner_id: "runner-a",
         attempt_id: "attempt-conflict",
@@ -439,11 +448,16 @@ async fn event_replay_foreign_fence_is_stale_and_does_not_write() {
     )
     .await
     .unwrap();
-    let lease = repo
-        .claim_execution("runner-a", "attempt-stale", Duration::seconds(60), &clock)
-        .await
-        .unwrap()
-        .unwrap();
+    let lease = claim_lease(
+        &repo,
+        "runner-a",
+        "attempt-stale",
+        Duration::seconds(60),
+        &clock,
+    )
+    .await
+    .unwrap()
+    .unwrap();
     let result = repo
         .append_execution_events_result(
             EventBatch {
@@ -507,11 +521,16 @@ async fn token_guards_and_operator_requeue_are_idempotent() {
     repo.enqueue_execution(request("request-r", &item_id, "key-r", "same"), &clock)
         .await
         .unwrap();
-    let lease = repo
-        .claim_execution("runner-a", "attempt-r", Duration::seconds(60), &clock)
-        .await
-        .unwrap()
-        .unwrap();
+    let lease = claim_lease(
+        &repo,
+        "runner-a",
+        "attempt-r",
+        Duration::seconds(60),
+        &clock,
+    )
+    .await
+    .unwrap()
+    .unwrap();
     assert!(matches!(
         repo.recover_attempt(
             recovery_input(
@@ -589,10 +608,16 @@ async fn operator_requeue_rejects_needs_operator_without_authoritative_recovery(
     repo.enqueue_execution(request("request-r", &item_id, "key-r", "same"), &clock)
         .await
         .unwrap();
-    repo.claim_execution("runner-a", "attempt-r", Duration::seconds(60), &clock)
-        .await
-        .unwrap()
-        .unwrap();
+    claim_lease(
+        &repo,
+        "runner-a",
+        "attempt-r",
+        Duration::seconds(60),
+        &clock,
+    )
+    .await
+    .unwrap()
+    .unwrap();
     sqlx::query("UPDATE execution_attempts SET state='needs_operator' WHERE id='attempt-r'")
         .execute(repo.pool())
         .await
@@ -810,6 +835,18 @@ async fn m060_quarantines_all_nonterminal_malformed_legacy_snapshots() {
         ("legacy-partial", "legacy-partial-key", "leased"),
         ("legacy-malformed", "legacy-malformed-key", "running"),
         ("legacy-terminal", "legacy-terminal-key", "succeeded"),
+        ("legacy-created-at", "legacy-created-at-key", "queued"),
+        (
+            "legacy-negative-timeout",
+            "legacy-negative-timeout-key",
+            "queued",
+        ),
+        (
+            "legacy-fractional-timeout",
+            "legacy-fractional-timeout-key",
+            "queued",
+        ),
+        ("legacy-valid", "legacy-valid-key", "queued"),
     ] {
         sqlx::query("INSERT INTO execution_requests(id,item_id,idempotency_scope,idempotency_key,request_fingerprint,state,selector_kind,selector_id,agent_profile_snapshot,repository_snapshot,permission_policy,created_at,updated_at) VALUES(?, 'legacy-item', 'legacy', ?, 'legacy-fingerprint', ?, 'exact_runner', 'runner-a', '{}', '{}', '{}', '2026-08-07T12:00:00Z', '2026-08-07T12:00:00Z')")
             .bind(id)
@@ -831,6 +868,79 @@ async fn m060_quarantines_all_nonterminal_malformed_legacy_snapshots() {
         .execute(&pool)
         .await
         .unwrap();
+    for (id, key, snapshot) in [
+        (
+            "legacy-created-at",
+            "legacy-created-at-key",
+            request(
+                "legacy-created-at",
+                "legacy-item",
+                "legacy-created-at-key",
+                "same",
+            )
+            .request_snapshot
+            .replace("2026-08-07T12:00:00Z", "2026-08-07 12:00:00"),
+        ),
+        (
+            "legacy-negative-timeout",
+            "legacy-negative-timeout-key",
+            request(
+                "legacy-negative-timeout",
+                "legacy-item",
+                "legacy-negative-timeout-key",
+                "same",
+            )
+            .request_snapshot
+            .replace("\"timeout_seconds\":60", "\"timeout_seconds\":-1"),
+        ),
+        (
+            "legacy-fractional-timeout",
+            "legacy-fractional-timeout-key",
+            request(
+                "legacy-fractional-timeout",
+                "legacy-item",
+                "legacy-fractional-timeout-key",
+                "same",
+            )
+            .request_snapshot
+            .replace("\"timeout_seconds\":60", "\"timeout_seconds\":60.5"),
+        ),
+        (
+            "legacy-valid",
+            "legacy-valid-key",
+            request("legacy-valid", "legacy-item", "legacy-valid-key", "same")
+                .request_snapshot
+                .to_owned(),
+        ),
+    ] {
+        sqlx::query(
+            "UPDATE execution_requests SET request_snapshot=? WHERE id=? AND idempotency_key=?",
+        )
+        .bind(snapshot)
+        .bind(id)
+        .bind(key)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    migrations::run_up_to(&pool, "059_quarantine_legacy_execution_request_snapshots")
+        .await
+        .unwrap();
+    let m059_cohort: Vec<(String, String)> = sqlx::query_as(
+        "SELECT id, state FROM execution_requests WHERE id LIKE 'legacy-%timeout' OR id = 'legacy-created-at' OR id = 'legacy-valid' ORDER BY id",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        m059_cohort,
+        vec![
+            ("legacy-created-at".into(), "queued".into()),
+            ("legacy-fractional-timeout".into(), "queued".into()),
+            ("legacy-negative-timeout".into(), "queued".into()),
+            ("legacy-valid".into(), "queued".into()),
+        ]
+    );
     migrations::run_all(&pool).await.unwrap();
     let after: Vec<(String, String)> =
         sqlx::query_as("SELECT id, state FROM execution_requests ORDER BY id")
@@ -840,12 +950,45 @@ async fn m060_quarantines_all_nonterminal_malformed_legacy_snapshots() {
     assert_eq!(
         after,
         vec![
+            ("legacy-created-at".into(), "needs_operator".into()),
+            ("legacy-fractional-timeout".into(), "needs_operator".into()),
             ("legacy-malformed".into(), "needs_operator".into()),
+            ("legacy-negative-timeout".into(), "needs_operator".into()),
             ("legacy-partial".into(), "needs_operator".into()),
             ("legacy-request".into(), "needs_operator".into()),
             ("legacy-terminal".into(), "succeeded".into()),
+            ("legacy-valid".into(), "queued".into()),
         ]
     );
+    let repo = Repository::new(pool);
+    let clock = FakeClock::new();
+    repo.register_runner(
+        NewRunner {
+            id: "runner-a",
+            name: "Runner A",
+            credential_hash: "hash-only",
+            labels: "{}",
+            total_capacity: 1,
+            available_capacity: 1,
+            capability_snapshot: "{}",
+            protocol_version: 1,
+        },
+        &clock,
+    )
+    .await
+    .unwrap();
+    let claimed = repo
+        .claim_execution_idempotent_with_snapshot(
+            "runner-a",
+            "claim-legacy-valid",
+            "attempt-legacy-valid",
+            Duration::seconds(60),
+            &clock,
+        )
+        .await
+        .unwrap()
+        .expect("the later valid queued row remains claimable");
+    assert_eq!(claimed.lease.request_id, "legacy-valid");
 }
 
 async fn ready_completion_attempt(
@@ -858,11 +1001,30 @@ async fn ready_completion_attempt(
     repo.enqueue_execution(request(request_id, item_id, request_id, "same"), clock)
         .await
         .unwrap();
-    repo.claim_execution("runner-a", attempt_id, Duration::seconds(60), clock)
+    claim_lease(repo, "runner-a", attempt_id, Duration::seconds(60), clock)
         .await
         .unwrap()
         .unwrap()
         .fencing_token
+}
+
+async fn claim_lease(
+    repo: &Repository,
+    runner_id: &str,
+    attempt_id: &str,
+    lease_duration: Duration,
+    clock: &FakeClock,
+) -> Result<Option<tack_db::repo::execution::Lease>, sqlx::Error> {
+    let claim = repo
+        .claim_execution_idempotent_with_snapshot(
+            runner_id,
+            attempt_id,
+            attempt_id,
+            lease_duration,
+            clock,
+        )
+        .await?;
+    Ok(claim.map(|claim| claim.lease))
 }
 
 fn completion_input<'a>(
@@ -1912,7 +2074,8 @@ async fn expired_unrecovered_attempt_cannot_restore_capacity_or_admit_a_claim() 
     );
     repo.enqueue_execution(blocked, &clock).await.unwrap();
     assert!(
-        repo.claim_execution(
+        claim_lease(
+            &repo,
             "runner-a",
             "attempt-heartbeat-blocked",
             Duration::seconds(60),
@@ -2420,17 +2583,28 @@ async fn claim_fence_replay_and_terminal_state_are_atomic() {
     repo.enqueue_execution(request("request-a", &item_id, "key-a", "same"), &clock)
         .await
         .unwrap();
-    let lease = repo
-        .claim_execution("runner-a", "attempt-a", Duration::seconds(60), &clock)
-        .await
-        .unwrap()
-        .expect("first claim");
+    let lease = claim_lease(
+        &repo,
+        "runner-a",
+        "attempt-a",
+        Duration::seconds(60),
+        &clock,
+    )
+    .await
+    .unwrap()
+    .expect("first claim");
     assert_eq!(lease.fencing_token, 1);
     assert!(
-        repo.claim_execution("runner-a", "attempt-b", Duration::seconds(60), &clock)
-            .await
-            .unwrap()
-            .is_none(),
+        claim_lease(
+            &repo,
+            "runner-a",
+            "attempt-b",
+            Duration::seconds(60),
+            &clock
+        )
+        .await
+        .unwrap()
+        .is_none(),
         "capacity/request state prevent a second valid lease"
     );
     assert_eq!(
@@ -2577,13 +2751,46 @@ async fn concurrent_claimers_receive_exactly_one_valid_lease() {
     let left = repo.clone();
     let right = repo.clone();
     let (first, second) = tokio::join!(
-        left.claim_execution("runner-a", "attempt-a", Duration::seconds(60), &clock),
-        right.claim_execution("runner-a", "attempt-b", Duration::seconds(60), &clock),
+        claim_lease(
+            &left,
+            "runner-a",
+            "attempt-a",
+            Duration::seconds(60),
+            &clock
+        ),
+        claim_lease(
+            &right,
+            "runner-a",
+            "attempt-b",
+            Duration::seconds(60),
+            &clock
+        ),
     );
-    let leases = [first.unwrap(), second.unwrap()]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
+    let first = match first {
+        Ok(lease) => lease,
+        Err(_) => claim_lease(
+            &left,
+            "runner-a",
+            "attempt-a",
+            Duration::seconds(60),
+            &clock,
+        )
+        .await
+        .unwrap(),
+    };
+    let second = match second {
+        Ok(lease) => lease,
+        Err(_) => claim_lease(
+            &right,
+            "runner-a",
+            "attempt-b",
+            Duration::seconds(60),
+            &clock,
+        )
+        .await
+        .unwrap(),
+    };
+    let leases = [first, second].into_iter().flatten().collect::<Vec<_>>();
     assert_eq!(
         leases.len(),
         1,
@@ -2601,8 +2808,7 @@ async fn foreign_keys_and_expiry_recovery_fail_closed() {
     repo.enqueue_execution(request("request-a", &item_id, "key-a", "same"), &clock)
         .await
         .unwrap();
-    let lease = repo
-        .claim_execution("runner-a", "attempt-a", Duration::seconds(5), &clock)
+    let lease = claim_lease(&repo, "runner-a", "attempt-a", Duration::seconds(5), &clock)
         .await
         .unwrap()
         .unwrap();
@@ -2639,16 +2845,16 @@ async fn artifact_and_decision_reject_lease_expiry_equality_without_writes() {
     )
     .await
     .unwrap();
-    let lease = repo
-        .claim_execution(
-            "runner-a",
-            "attempt-boundary",
-            Duration::seconds(60),
-            &clock,
-        )
-        .await
-        .unwrap()
-        .unwrap();
+    let lease = claim_lease(
+        &repo,
+        "runner-a",
+        "attempt-boundary",
+        Duration::seconds(60),
+        &clock,
+    )
+    .await
+    .unwrap()
+    .unwrap();
     sqlx::query(
         "UPDATE execution_attempts SET state='running', lease_expires_at=? WHERE id='attempt-boundary'",
     )
@@ -2724,11 +2930,16 @@ async fn queue_and_history_indexes_are_used() {
         row.get::<String, _>(3)
             .contains("idx_execution_requests_queue")
     }));
-    let lease = repo
-        .claim_execution("runner-a", "attempt-a", Duration::seconds(60), &clock)
-        .await
-        .unwrap()
-        .unwrap();
+    let lease = claim_lease(
+        &repo,
+        "runner-a",
+        "attempt-a",
+        Duration::seconds(60),
+        &clock,
+    )
+    .await
+    .unwrap()
+    .unwrap();
     let event = NewEvent {
         id: "row-1",
         event_id: "event-1",
