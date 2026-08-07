@@ -1071,6 +1071,16 @@ impl Repository {
                 OperatorRequeueResult::Conflict
             });
         };
+        let authoritative_recovery: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM execution_recovery_audits WHERE attempt_id=? AND classification='needs_operator' AND fingerprint <> '' AND response <> '')",
+        )
+        .bind(&attempt)
+        .fetch_one(&mut *tx)
+        .await?;
+        if !authoritative_recovery {
+            tx.commit().await?;
+            return Ok(OperatorRequeueResult::InvalidTransition);
+        }
         if sqlx::query("UPDATE execution_requests SET state='queued',cancellation_requested_at=NULL,updated_at=? WHERE id=? AND state='needs_operator'").bind(&now).bind(request_id).execute(&mut *tx).await?.rows_affected()!=1{tx.rollback().await?;return Ok(OperatorRequeueResult::InvalidTransition)};
         sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,created_at) VALUES(?,?, 'operator_requeue', ?,?)").bind(&attempt).bind(recovery_key).bind(details).bind(&now).execute(&mut *tx).await?;
         tx.commit().await?;
@@ -1655,7 +1665,7 @@ impl Repository {
              ORDER BY r.created_at LIMIT 1",
         ).bind(runner_id).bind(runner_id).fetch_optional(&mut *tx).await?;
         let Some(request_id) = request else {
-            sqlx::query("UPDATE agent_runners SET available_capacity = available_capacity + 1, updated_at = ? WHERE id = ?")
+            sqlx::query("UPDATE agent_runners SET available_capacity = MIN(total_capacity, available_capacity + 1), updated_at = ? WHERE id = ?")
                 .bind(&now_s).bind(runner_id).execute(&mut *tx).await?;
             tx.commit().await?;
             return Ok(None);
@@ -1683,22 +1693,6 @@ impl Repository {
             issued_at: now,
             expires_at: expires,
         }))
-    }
-
-    #[instrument(skip(self, clock))]
-    pub async fn heartbeat_execution(
-        &self,
-        runner_id: &str,
-        attempt_id: &str,
-        fence: i64,
-        lease_duration: Duration,
-        clock: &dyn ExecutionClock,
-    ) -> Result<bool, sqlx::Error> {
-        let now = clock.now();
-        let result = sqlx::query("UPDATE execution_attempts SET last_heartbeat_at = ?, lease_expires_at = ?, updated_at = ? WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at > ?")
-            .bind(now.to_rfc3339()).bind((now + lease_duration).to_rfc3339()).bind(now.to_rfc3339())
-            .bind(attempt_id).bind(runner_id).bind(fence).bind(now.to_rfc3339()).execute(self.pool()).await?;
-        Ok(result.rows_affected() == 1)
     }
 
     #[instrument(skip(self, events, clock))]
@@ -1806,44 +1800,6 @@ impl Repository {
         Ok(EventApplyResult::Applied(result))
     }
 
-    #[instrument(skip(self, events, clock))]
-    pub async fn append_execution_events(
-        &self,
-        batch: EventBatch<'_>,
-        events: &[NewEvent<'_>],
-        clock: &dyn ExecutionClock,
-    ) -> Result<bool, sqlx::Error> {
-        let now = stamp(clock);
-        let mut tx = self.pool().begin().await?;
-        let row = sqlx::query("SELECT event_checkpoint FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at > ?")
-            .bind(batch.attempt_id).bind(batch.runner_id).bind(batch.fencing_token).bind(&now).fetch_optional(&mut *tx).await?;
-        let Some(row) = row else {
-            tx.commit().await?;
-            return Ok(false);
-        };
-        let current: Option<String> = row.get("event_checkpoint");
-        if current.as_deref() == Some(batch.checkpoint) {
-            tx.commit().await?;
-            return Ok(true);
-        }
-        if current.as_deref() != batch.previous_checkpoint {
-            tx.commit().await?;
-            return Ok(false);
-        }
-        for event in events {
-            sqlx::query("INSERT INTO execution_events (id, attempt_id, event_id, sequence, source, kind, payload, occurred_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(attempt_id, event_id) DO NOTHING")
-                .bind(event.id).bind(batch.attempt_id).bind(event.event_id).bind(event.sequence).bind(event.source).bind(event.kind).bind(event.payload).bind(event.occurred_at.to_rfc3339()).bind(&now).execute(&mut *tx).await?;
-        }
-        let updated = sqlx::query("UPDATE execution_attempts SET event_checkpoint = ?, updated_at = ? WHERE id = ? AND runner_id = ? AND fencing_token = ? AND event_checkpoint IS ?")
-            .bind(batch.checkpoint).bind(&now).bind(batch.attempt_id).bind(batch.runner_id).bind(batch.fencing_token).bind(batch.previous_checkpoint).execute(&mut *tx).await?;
-        if updated.rows_affected() != 1 {
-            tx.rollback().await?;
-            return Ok(false);
-        }
-        tx.commit().await?;
-        Ok(true)
-    }
-
     #[instrument(skip(self, clock))]
     pub async fn complete_execution(
         &self,
@@ -1868,22 +1824,6 @@ impl Repository {
         Ok(result.rows_affected() == 1)
     }
 
-    #[instrument(skip(self, clock))]
-    pub async fn classify_expired_attempt(
-        &self,
-        attempt_id: &str,
-        classification: &str,
-        clock: &dyn ExecutionClock,
-    ) -> Result<bool, sqlx::Error> {
-        if !matches!(classification, "lost" | "needs_operator") {
-            return Ok(false);
-        }
-        let now = stamp(clock);
-        let result = sqlx::query("UPDATE execution_attempts SET state = ?, updated_at = ? WHERE id = ? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at < ?")
-            .bind(classification).bind(&now).bind(attempt_id).bind(&now).execute(self.pool()).await?;
-        Ok(result.rows_affected() == 1)
-    }
-
     #[instrument(skip(self, artifact, clock))]
     pub async fn record_execution_artifact(
         &self,
@@ -1894,8 +1834,8 @@ impl Repository {
         clock: &dyn ExecutionClock,
     ) -> Result<bool, sqlx::Error> {
         let now = stamp(clock);
-        let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state NOT IN ('succeeded','failed','cancelled') AND lease_expires_at >= ?)")
-            .bind(attempt_id).bind(runner_id).bind(fence).bind(stamp(clock)).fetch_one(self.pool()).await?;
+        let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state NOT IN ('succeeded','failed','cancelled') AND lease_expires_at > ?)")
+            .bind(attempt_id).bind(runner_id).bind(fence).bind(&now).fetch_one(self.pool()).await?;
         if !valid {
             return Ok(false);
         }
@@ -1914,8 +1854,8 @@ impl Repository {
         clock: &dyn ExecutionClock,
     ) -> Result<bool, sqlx::Error> {
         let now = stamp(clock);
-        let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state IN ('running','waiting_decision') AND lease_expires_at >= ?)")
-            .bind(attempt_id).bind(runner_id).bind(fence).bind(stamp(clock)).fetch_one(self.pool()).await?;
+        let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state IN ('running','waiting_decision') AND lease_expires_at > ?)")
+            .bind(attempt_id).bind(runner_id).bind(fence).bind(&now).fetch_one(self.pool()).await?;
         if !valid {
             return Ok(false);
         }

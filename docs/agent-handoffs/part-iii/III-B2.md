@@ -96,8 +96,7 @@
   protocol error. A legacy pre-054 attempt whose checkpoint already advanced but has no replay
   row is a `ReplayConflict`; no response is fabricated from incomplete historical state.
 - Focused coverage proves canonical retries, changed-payload conflict with no extra write, and
-  foreign-fence stale rejection. The compatibility boolean event API remains unchanged for
-  callers that have not adopted the typed result.
+  foreign-fence stale rejection.
 
 ### Completion replay correction
 
@@ -184,3 +183,18 @@
 - Focused coverage uses full fixtures and proves removed, malformed, cross-field, and clock
   mismatch snapshots create no row; it upgrades through migrations 049–058 then proves M059
   quarantines the legacy queued record without data loss.
+
+### Legacy boundary cleanup
+
+- The unsafe public single-lease heartbeat, boolean event append, and expiry-classification
+  compatibility paths are removed. C2 and C4 must use `heartbeat_batch`,
+  `append_execution_events_result`, and `recover_attempt`; their typed outcomes preserve the
+  authenticated fence, replay, and conservative-recovery semantics that the old shortcuts
+  could bypass.
+- Artifact and decision creation require `lease_expires_at > now`; equality is expired and
+  creates no row. Operator requeue additionally requires a durable authoritative
+  `needs_operator` recovery audit for that exact attempt, so a manually corrupted lifecycle
+  state cannot release or requeue work.
+- Capacity restoration remains capped by `total_capacity` and is owned by terminal/recovery
+  transitions only. Recovering to `needs_operator` releases one reservation; the subsequent
+  operator requeue only changes request state and cannot release capacity again.

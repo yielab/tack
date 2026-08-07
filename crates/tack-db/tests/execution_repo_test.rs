@@ -9,9 +9,10 @@ use tack_db::{
     repo::execution::{
         CancellationObservation, CancellationObservationInput, ClaimReplayResult, Completion,
         CompletionResult, EnqueueResult, EnrollmentToken, EventApplyResult, EventBatch,
-        ExecutionClock, HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewEvent,
-        NewExecutionRequest, NewRunner, RecoveryDisposition, RecoveryObservation,
-        RecoveryObservationInput, RecoveryObservationResult, RedeemEnrollmentResult,
+        ExecutionClock, HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewArtifact,
+        NewDecision, NewEvent, NewExecutionRequest, NewRunner, RecoveryDisposition,
+        RecoveryObservation, RecoveryObservationInput, RecoveryObservationResult,
+        RedeemEnrollmentResult,
     },
 };
 
@@ -511,11 +512,25 @@ async fn token_guards_and_operator_requeue_are_idempotent() {
         .await
         .unwrap()
         .unwrap();
-    sqlx::query("UPDATE execution_attempts SET state='needs_operator' WHERE id='attempt-r'")
+    assert!(matches!(
+        repo.recover_attempt(
+            recovery_input(
+                "attempt-r",
+                lease.fencing_token,
+                "recovery-r",
+                RecoveryObservation::Ambiguous,
+            ),
+            &clock,
+        )
+        .await
+        .unwrap(),
+        RecoveryObservationResult::Applied(response)
+            if response.disposition == RecoveryDisposition::NeedsOperator
+    ));
+    sqlx::query("UPDATE execution_requests SET cancellation_requested_at='x' WHERE id='request-r'")
         .execute(repo.pool())
         .await
         .unwrap();
-    sqlx::query("UPDATE execution_requests SET state='needs_operator',cancellation_requested_at='x' WHERE id='request-r'").execute(repo.pool()).await.unwrap();
     let capacity: i64 =
         sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id='runner-a'")
             .fetch_one(repo.pool())
@@ -559,14 +574,59 @@ async fn token_guards_and_operator_requeue_are_idempotent() {
     .fetch_one(repo.pool())
     .await
     .unwrap();
-    assert_eq!(audits, 1);
+    assert_eq!(audits, 2);
     let after: i64 =
         sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id='runner-a'")
             .fetch_one(repo.pool())
             .await
             .unwrap();
     assert_eq!(capacity, after);
-    let _ = lease;
+}
+
+#[tokio::test]
+async fn operator_requeue_rejects_needs_operator_without_authoritative_recovery() {
+    let (repo, item_id, clock) = ready_repo().await;
+    repo.enqueue_execution(request("request-r", &item_id, "key-r", "same"), &clock)
+        .await
+        .unwrap();
+    repo.claim_execution("runner-a", "attempt-r", Duration::seconds(60), &clock)
+        .await
+        .unwrap()
+        .unwrap();
+    sqlx::query("UPDATE execution_attempts SET state='needs_operator' WHERE id='attempt-r'")
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE execution_requests SET state='needs_operator' WHERE id='request-r'")
+        .execute(repo.pool())
+        .await
+        .unwrap();
+
+    use tack_db::repo::execution::OperatorRequeueResult;
+    assert_eq!(
+        repo.operator_requeue_needs_operator(
+            "request-r",
+            "client-key",
+            "operator-a",
+            "reason-a",
+            &clock,
+        )
+        .await
+        .unwrap(),
+        OperatorRequeueResult::InvalidTransition
+    );
+    let state: String =
+        sqlx::query_scalar("SELECT state FROM execution_requests WHERE id='request-r'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    let capacity: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id='runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(state, "needs_operator");
+    assert_eq!(capacity, 0);
 }
 
 impl ExecutionClock for FakeClock {
@@ -2293,11 +2353,25 @@ async fn claim_fence_replay_and_terminal_state_are_atomic() {
             .is_none(),
         "capacity/request state prevent a second valid lease"
     );
-    assert!(
-        !repo
-            .heartbeat_execution("runner-a", "attempt-a", 999, Duration::seconds(60), &clock)
-            .await
-            .unwrap(),
+    assert_eq!(
+        repo.heartbeat_batch(
+            "runner-a",
+            "heartbeat-stale",
+            clock.now(),
+            0,
+            &[HeartbeatLease {
+                attempt_id: "attempt-a",
+                fencing_token: 999,
+                state: "leased",
+                journal_state: "prepared",
+                last_event_checkpoint: None,
+            }],
+            Duration::seconds(60),
+            &clock,
+        )
+        .await
+        .unwrap(),
+        HeartbeatBatchResult::StaleLease("attempt-a".into()),
         "stale fence writes nothing"
     );
     let event = NewEvent {
@@ -2309,8 +2383,8 @@ async fn claim_fence_replay_and_terminal_state_are_atomic() {
         payload: "{}",
         occurred_at: clock.now(),
     };
-    assert!(
-        repo.append_execution_events(
+    assert!(matches!(
+        repo.append_execution_events_result(
             EventBatch {
                 runner_id: "runner-a",
                 attempt_id: "attempt-a",
@@ -2322,22 +2396,26 @@ async fn claim_fence_replay_and_terminal_state_are_atomic() {
             &clock
         )
         .await
-        .unwrap()
-    );
-    assert!(
-        repo.append_execution_events(
-            EventBatch {
-                runner_id: "runner-a",
-                attempt_id: "attempt-a",
-                fencing_token: 1,
-                previous_checkpoint: None,
-                checkpoint: "checkpoint-1"
-            },
-            &[event],
-            &clock
-        )
-        .await
         .unwrap(),
+        EventApplyResult::Applied(result) if !result.replayed
+    ));
+    assert!(
+        matches!(
+            repo.append_execution_events_result(
+                EventBatch {
+                    runner_id: "runner-a",
+                    attempt_id: "attempt-a",
+                    fencing_token: 1,
+                    previous_checkpoint: None,
+                    checkpoint: "checkpoint-1"
+                },
+                &[event],
+                &clock
+            )
+            .await
+            .unwrap(),
+            EventApplyResult::Applied(result) if result.replayed
+        ),
         "same checkpoint is a replay"
     );
     let event_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_events")
@@ -2448,25 +2526,110 @@ async fn foreign_keys_and_expiry_recovery_fail_closed() {
         .await
         .unwrap()
         .unwrap();
-    assert!(
-        !repo
-            .classify_expired_attempt("attempt-a", "queued", &clock)
-            .await
-            .unwrap(),
-        "ambiguous work never auto-requeues"
-    );
     clock.advance(Duration::seconds(6));
-    assert!(
-        repo.classify_expired_attempt("attempt-a", "needs_operator", &clock)
-            .await
-            .unwrap()
-    );
+    assert!(matches!(
+        repo.recover_attempt(
+            recovery_input(
+                "attempt-a",
+                lease.fencing_token,
+                "recovery-expiry",
+                RecoveryObservation::Ambiguous,
+            ),
+            &clock,
+        )
+        .await
+        .unwrap(),
+        RecoveryObservationResult::Applied(response)
+            if response.disposition == RecoveryDisposition::NeedsOperator
+    ));
     let state: String = sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id = ?")
         .bind(&lease.attempt_id)
         .fetch_one(repo.pool())
         .await
         .unwrap();
     assert_eq!(state, "needs_operator");
+}
+
+#[tokio::test]
+async fn artifact_and_decision_reject_lease_expiry_equality_without_writes() {
+    let (repo, item_id, clock) = ready_repo().await;
+    repo.enqueue_execution(
+        request("request-boundary", &item_id, "key-boundary", "same"),
+        &clock,
+    )
+    .await
+    .unwrap();
+    let lease = repo
+        .claim_execution(
+            "runner-a",
+            "attempt-boundary",
+            Duration::seconds(60),
+            &clock,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    sqlx::query(
+        "UPDATE execution_attempts SET state='running', lease_expires_at=? WHERE id='attempt-boundary'",
+    )
+    .bind(clock.now().to_rfc3339())
+    .execute(repo.pool())
+    .await
+    .unwrap();
+
+    assert!(
+        !repo
+            .record_execution_artifact(
+                "runner-a",
+                "attempt-boundary",
+                lease.fencing_token,
+                NewArtifact {
+                    id: "artifact-row",
+                    artifact_id: "artifact-boundary",
+                    kind: "log",
+                    name: "log",
+                    media_type: None,
+                    size_bytes: 0,
+                    sha256: "hash",
+                    content_disposition: None,
+                    content_reference: None,
+                    metadata: "{}",
+                },
+                &clock,
+            )
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repo
+            .create_execution_decision(
+                "runner-a",
+                "attempt-boundary",
+                lease.fencing_token,
+                NewDecision {
+                    id: "decision-row",
+                    decision_id: "decision-boundary",
+                    kind: "approval",
+                    prompt: "Continue?",
+                    options: "[]",
+                    metadata: "{}",
+                    expires_at: None,
+                },
+                &clock,
+            )
+            .await
+            .unwrap()
+    );
+    let artifact_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_artifacts")
+        .fetch_one(repo.pool())
+        .await
+        .unwrap();
+    let decision_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_decisions")
+        .fetch_one(repo.pool())
+        .await
+        .unwrap();
+    assert_eq!(artifact_count, 0);
+    assert_eq!(decision_count, 0);
 }
 
 #[tokio::test]
@@ -2495,19 +2658,22 @@ async fn queue_and_history_indexes_are_used() {
         payload: "{}",
         occurred_at: clock.now(),
     };
-    repo.append_execution_events(
-        EventBatch {
-            runner_id: "runner-a",
-            attempt_id: "attempt-a",
-            fencing_token: lease.fencing_token,
-            previous_checkpoint: None,
-            checkpoint: "checkpoint-1",
-        },
-        &[event],
-        &clock,
-    )
-    .await
-    .unwrap();
+    assert!(matches!(
+        repo.append_execution_events_result(
+            EventBatch {
+                runner_id: "runner-a",
+                attempt_id: "attempt-a",
+                fencing_token: lease.fencing_token,
+                previous_checkpoint: None,
+                checkpoint: "checkpoint-1",
+            },
+            &[event],
+            &clock,
+        )
+        .await
+        .unwrap(),
+        EventApplyResult::Applied(_)
+    ));
     let history_plan = sqlx::query("EXPLAIN QUERY PLAN SELECT * FROM execution_events WHERE attempt_id = 'attempt-a' ORDER BY sequence")
         .fetch_all(repo.pool()).await.unwrap();
     assert!(history_plan.iter().any(|row| {
