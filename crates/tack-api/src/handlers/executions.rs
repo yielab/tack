@@ -5,17 +5,20 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::{Path, State},
+    http::HeaderMap,
     http::StatusCode,
     routing::{get, post},
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use sqlx::Row;
 use tack_db::{
     Repository,
-    repo::execution::{EnqueueResult, NewExecutionRequest, SystemExecutionClock},
+    repo::execution::{EnqueueResult, ExecutionClock, NewExecutionRequest, OperatorRequeueResult},
 };
+use tack_orch::execution::ExecutionRequestSnapshot;
 use uuid::Uuid;
 
 /// State for C1's card-local router. C5 can construct this from the shared API
@@ -23,15 +26,12 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct OperatorExecutionState {
     pub repo: Repository,
-    pub clock: Arc<SystemExecutionClock>,
+    pub clock: Arc<dyn ExecutionClock>,
 }
 
 impl OperatorExecutionState {
-    pub fn new(repo: Repository) -> Self {
-        Self {
-            repo,
-            clock: Arc::new(SystemExecutionClock),
-        }
+    pub fn with_clock(repo: Repository, clock: Arc<dyn ExecutionClock>) -> Self {
+        Self { repo, clock }
     }
 }
 
@@ -46,39 +46,86 @@ fn error(status: StatusCode, code: &str, message: &str) -> (StatusCode, Json<Val
     )
 }
 
+#[derive(Clone)]
+struct FixedExecutionClock(DateTime<Utc>);
+
+impl ExecutionClock for FixedExecutionClock {
+    fn now(&self) -> DateTime<Utc> {
+        self.0
+    }
+}
+
+fn principal(headers: &HeaderMap) -> Result<String, (StatusCode, Json<Value>)> {
+    headers
+        .get("x-tack-principal")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            error(
+                StatusCode::UNAUTHORIZED,
+                "unauthorized",
+                "An authenticated operator principal is required",
+            )
+        })
+}
+
+fn canonical_json(value: Value) -> Value {
+    match value {
+        Value::Array(values) => Value::Array(values.into_iter().map(canonical_json).collect()),
+        Value::Object(values) => Value::Object(
+            values
+                .into_iter()
+                .map(|(key, value)| (key, canonical_json(value)))
+                .collect(),
+        ),
+        value => value,
+    }
+}
+
+fn canonical_string(value: Value) -> Result<String, (StatusCode, Json<Value>)> {
+    serde_json::to_string(&canonical_json(value)).map_err(|_| {
+        error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "Request cannot be canonicalized",
+        )
+    })
+}
+
+fn stable_request_id(scope: &str, key: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(scope.as_bytes());
+    hasher.update([0]);
+    hasher.update(key.as_bytes());
+    format!("exec_{}", hex::encode(hasher.finalize()))
+}
+
+fn fingerprint(value: &str) -> String {
+    hex::encode(Sha256::digest(value.as_bytes()))
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CreateExecution {
     pub item_id: Uuid,
     pub idempotency_key: String,
     pub selector_kind: String,
     pub selector_id: String,
-    #[serde(default)]
-    pub agent_profile_id: Option<String>,
-    #[serde(default)]
-    pub requested_harness_kind: Option<String>,
+    pub agent_profile_id: String,
+    pub requested_harness_kind: String,
     #[serde(default)]
     pub requested_model_provider: Option<String>,
     #[serde(default)]
     pub requested_model_id: Option<String>,
-    #[serde(default = "empty_object")]
     pub agent_profile_snapshot: Value,
-    #[serde(default = "empty_object")]
     pub repository_snapshot: Value,
-    #[serde(default = "empty_object")]
     pub permission_policy: Value,
-    #[serde(default = "empty_object")]
     pub budgets: Value,
-    #[serde(default = "empty_object")]
     pub environment: Value,
-    #[serde(default = "empty_object")]
     pub metadata: Value,
-    #[serde(default)]
-    pub timeout_seconds: Option<i64>,
+    pub timeout_seconds: u64,
     #[serde(default)]
     pub status_map_policy_id: Option<String>,
-}
-fn empty_object() -> Value {
-    json!({})
 }
 
 pub fn routes(state: OperatorExecutionState) -> Router {
@@ -98,8 +145,11 @@ pub fn routes(state: OperatorExecutionState) -> Router {
 
 pub async fn create_execution(
     State(state): State<OperatorExecutionState>,
+    headers: HeaderMap,
     Json(input): Json<CreateExecution>,
 ) -> HandlerResult {
+    let authenticated_principal = principal(&headers)?;
+    let idempotency_scope = format!("operator:{authenticated_principal}");
     if state
         .repo
         .get_item(input.item_id)
@@ -119,7 +169,17 @@ pub async fn create_execution(
             "Item does not exist",
         ));
     }
-    if input.selector_kind == "exact_runner" {
+    let existing_snapshot: Option<String> = sqlx::query_scalar(
+        "SELECT request_snapshot FROM execution_requests WHERE idempotency_scope=? AND idempotency_key=?",
+    )
+    .bind(&idempotency_scope)
+    .bind(&input.idempotency_key)
+    .fetch_optional(state.repo.pool())
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", "Could not load idempotency replay"))?;
+    // An exact retry must be allowed to reach B2's durable replay record even
+    // if a mutable runner status changed after the original create.
+    if existing_snapshot.is_none() && input.selector_kind == "exact_runner" {
         let eligible: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agent_runners WHERE id = ? AND state = 'active' AND revoked_at IS NULL)")
             .bind(&input.selector_id).fetch_one(state.repo.pool()).await
             .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", "Could not verify runner"))?;
@@ -138,82 +198,149 @@ pub async fn create_execution(
             "selector_kind must be exact_runner or fleet",
         ));
     }
-    let fingerprint = serde_json::to_string(&input).map_err(|_| {
-        error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "Request cannot be canonicalized",
-        )
-    })?;
-    let request_id = format!("exec_{}", Uuid::new_v4());
+    let (request_id, created_at) = match existing_snapshot {
+        Some(snapshot) => {
+            let value: Value = serde_json::from_str(&snapshot).map_err(|_| {
+                error(
+                    StatusCode::CONFLICT,
+                    "idempotency_conflict",
+                    "Stored request snapshot is invalid",
+                )
+            })?;
+            let object = value.as_object().ok_or_else(|| {
+                error(
+                    StatusCode::CONFLICT,
+                    "idempotency_conflict",
+                    "Stored request snapshot is invalid",
+                )
+            })?;
+            let request_id = object
+                .get("request_id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    error(
+                        StatusCode::CONFLICT,
+                        "idempotency_conflict",
+                        "Stored request snapshot is invalid",
+                    )
+                })?;
+            let created_at = object
+                .get("created_at")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    error(
+                        StatusCode::CONFLICT,
+                        "idempotency_conflict",
+                        "Stored request snapshot is invalid",
+                    )
+                })?;
+            let created_at = DateTime::parse_from_rfc3339(created_at)
+                .map(|time| time.with_timezone(&Utc))
+                .map_err(|_| {
+                    error(
+                        StatusCode::CONFLICT,
+                        "idempotency_conflict",
+                        "Stored request snapshot is invalid",
+                    )
+                })?;
+            (request_id.to_owned(), created_at)
+        }
+        None => (
+            stable_request_id(&idempotency_scope, &input.idempotency_key),
+            state.clock.now(),
+        ),
+    };
     let item_id = input.item_id.to_string();
-    let snapshot = serde_json::to_string(&input.agent_profile_snapshot).map_err(|_| {
+    let selector = match input.selector_kind.as_str() {
+        "exact_runner" => json!({"kind":"exact_runner","runner_id":input.selector_id}),
+        "fleet" => json!({"kind":"fleet","fleet_id":input.selector_id}),
+        _ => unreachable!("selector kind was validated"),
+    };
+    let snapshot_value = json!({
+        "request_id": request_id,
+        "item_id": item_id,
+        "idempotency_key": input.idempotency_key,
+        "created_by": {"source":"operator_api","subject_id":authenticated_principal},
+        "created_at": created_at.to_rfc3339(),
+        "selector": selector,
+        "agent_profile_id": input.agent_profile_id,
+        "resolved_agent_profile": input.agent_profile_snapshot,
+        "requested_harness_kind": input.requested_harness_kind,
+        "requested_model_provider": input.requested_model_provider,
+        "requested_model_id": input.requested_model_id,
+        "repository": input.repository_snapshot,
+        "permission_policy": input.permission_policy,
+        "timeout_seconds": input.timeout_seconds,
+        "budgets": input.budgets,
+        "status_map_policy_id": input.status_map_policy_id,
+        "environment": input.environment,
+        "metadata": input.metadata,
+    });
+    let typed_snapshot: ExecutionRequestSnapshot =
+        serde_json::from_value(snapshot_value).map_err(|_| {
+            error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "Execution request snapshot is incomplete or invalid",
+            )
+        })?;
+    let snapshot_value = serde_json::to_value(typed_snapshot).map_err(|_| {
         error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
-            "Profile snapshot cannot be serialized",
+            "Execution request snapshot is invalid",
         )
     })?;
-    let repository = serde_json::to_string(&input.repository_snapshot).map_err(|_| {
+    let request_snapshot = canonical_string(snapshot_value.clone())?;
+    let request_fingerprint = fingerprint(&request_snapshot);
+    let root = snapshot_value.as_object().ok_or_else(|| {
         error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
-            "Repository snapshot cannot be serialized",
+            "Execution request snapshot is invalid",
         )
     })?;
-    let policy = serde_json::to_string(&input.permission_policy).map_err(|_| {
+    let serialized_field = |name: &str| canonical_string(root[name].clone());
+    let agent_profile_snapshot = serialized_field("resolved_agent_profile")?;
+    let repository_snapshot = serialized_field("repository")?;
+    let permission_policy = serialized_field("permission_policy")?;
+    let budgets = serialized_field("budgets")?;
+    let environment = serialized_field("environment")?;
+    let metadata = serialized_field("metadata")?;
+    let timeout_seconds = i64::try_from(input.timeout_seconds).map_err(|_| {
         error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
-            "Permission policy cannot be serialized",
+            "timeout_seconds is out of range",
         )
     })?;
-    let budgets = serde_json::to_string(&input.budgets).map_err(|_| {
-        error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "Budgets cannot be serialized",
-        )
-    })?;
-    let environment = serde_json::to_string(&input.environment).map_err(|_| {
-        error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "Environment cannot be serialized",
-        )
-    })?;
-    let metadata = serde_json::to_string(&input.metadata).map_err(|_| {
-        error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "Metadata cannot be serialized",
-        )
-    })?;
+    let request_clock = FixedExecutionClock(created_at);
     let result = state
         .repo
         .enqueue_execution(
             NewExecutionRequest {
                 id: &request_id,
                 item_id: &item_id,
-                idempotency_scope: "operator:item",
+                idempotency_scope: &idempotency_scope,
                 idempotency_key: &input.idempotency_key,
-                request_fingerprint: &fingerprint,
+                request_fingerprint: &request_fingerprint,
                 selector_kind: &input.selector_kind,
                 selector_id: &input.selector_id,
-                agent_profile_id: input.agent_profile_id.as_deref(),
-                agent_profile_snapshot: &snapshot,
-                requested_harness_kind: input.requested_harness_kind.as_deref(),
+                agent_profile_id: Some(&input.agent_profile_id),
+                agent_profile_snapshot: &agent_profile_snapshot,
+                requested_harness_kind: Some(&input.requested_harness_kind),
                 requested_model_provider: input.requested_model_provider.as_deref(),
                 requested_model_id: input.requested_model_id.as_deref(),
-                repository_snapshot: &repository,
-                permission_policy: &policy,
-                timeout_seconds: input.timeout_seconds,
+                repository_snapshot: &repository_snapshot,
+                permission_policy: &permission_policy,
+                timeout_seconds: Some(timeout_seconds),
                 budgets: &budgets,
                 status_map_policy_id: input.status_map_policy_id.as_deref(),
                 environment: &environment,
                 metadata: &metadata,
+                request_snapshot: &request_snapshot,
             },
-            state.clock.as_ref(),
+            &request_clock,
         )
         .await
         .map_err(|_| {
@@ -292,47 +419,47 @@ pub async fn request_cancellation(
 
 #[derive(Deserialize)]
 pub struct RecoveryConfirmation {
+    pub recovery_key: String,
     pub reason: String,
 }
 pub async fn requeue_needs_operator(
     State(state): State<OperatorExecutionState>,
+    headers: HeaderMap,
     Path(request_id): Path<String>,
     Json(input): Json<RecoveryConfirmation>,
 ) -> HandlerResult {
-    let mut tx = state.repo.pool().begin().await.map_err(|_| {
-        error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "internal_error",
-            "Could not begin recovery",
+    let actor = principal(&headers)?;
+    let reason_fingerprint = fingerprint(&input.reason);
+    let result = state
+        .repo
+        .operator_requeue_needs_operator(
+            &request_id,
+            &input.recovery_key,
+            &actor,
+            &reason_fingerprint,
+            state.clock.as_ref(),
         )
-    })?;
-    let attempt = sqlx::query("SELECT id, runner_id, state FROM execution_attempts WHERE request_id = ? ORDER BY attempt_number DESC LIMIT 1").bind(&request_id).fetch_optional(&mut *tx).await.map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", "Could not load attempt"))?;
-    let Some(attempt) = attempt else {
-        return Err(error(
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal_error",
+                "Could not requeue execution",
+            )
+        })?;
+    match result {
+        OperatorRequeueResult::Requeued | OperatorRequeueResult::Replayed => Ok(Json(
+            json!({"protocol_version":1,"request_id":request_id,"state":"queued","recovered_from":"needs_operator","replayed":matches!(result, OperatorRequeueResult::Replayed)}),
+        )),
+        OperatorRequeueResult::Conflict => Err(error(
+            StatusCode::CONFLICT,
+            "idempotency_conflict",
+            "The recovery key was used with a different confirmation",
+        )),
+        OperatorRequeueResult::InvalidTransition | OperatorRequeueResult::NotFound => Err(error(
             StatusCode::CONFLICT,
             "invalid_transition",
-            "Only needs_operator attempts may be requeued",
-        ));
-    };
-    if attempt.get::<String, _>("state") != "needs_operator" {
-        return Err(error(
-            StatusCode::CONFLICT,
-            "invalid_transition",
-            "Only needs_operator attempts may be requeued",
-        ));
+            "Only authoritatively recovered needs_operator attempts may be requeued",
+        )),
     }
-    let now = Utc::now().to_rfc3339();
-    sqlx::query("UPDATE execution_requests SET state = 'queued', cancellation_requested_at = NULL, updated_at = ? WHERE id = ?").bind(&now).bind(&request_id).execute(&mut *tx).await.map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", "Could not requeue execution"))?;
-    sqlx::query("INSERT INTO execution_events (id, attempt_id, event_id, sequence, source, kind, payload, occurred_at, created_at) VALUES (?, ?, ?, COALESCE((SELECT MAX(sequence) + 1 FROM execution_events WHERE attempt_id = ?), 1), 'operator', 'requeue_confirmed', ?, ?, ?)")
-        .bind(Uuid::new_v4().to_string()).bind(attempt.get::<String,_>("id")).bind(Uuid::new_v4().to_string()).bind(attempt.get::<String,_>("id")).bind(json!({"reason":input.reason}).to_string()).bind(&now).bind(&now).execute(&mut *tx).await.map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", "Could not audit recovery"))?;
-    tx.commit().await.map_err(|_| {
-        error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "internal_error",
-            "Could not commit recovery",
-        )
-    })?;
-    Ok(Json(
-        json!({"protocol_version":1,"request_id":request_id,"state":"queued","recovered_from":"needs_operator"}),
-    ))
 }
