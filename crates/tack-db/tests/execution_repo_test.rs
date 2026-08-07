@@ -7,9 +7,9 @@ use sqlx::Row;
 use tack_db::{
     Repository, init_pool, migrations,
     repo::execution::{
-        ClaimReplayResult, Completion, EnqueueResult, EnrollmentToken, EventBatch, ExecutionClock,
-        HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewEvent, NewExecutionRequest,
-        NewRunner, RecoveryClassification, RedeemEnrollmentResult,
+        ClaimReplayResult, Completion, EnqueueResult, EnrollmentToken, EventApplyResult,
+        EventBatch, ExecutionClock, HeartbeatBatchResult, HeartbeatLease, NewAgentProfile,
+        NewEvent, NewExecutionRequest, NewRunner, RecoveryClassification, RedeemEnrollmentResult,
     },
 };
 
@@ -251,14 +251,18 @@ async fn structured_events_and_cancellation_observation_replay() {
     let first = repo
         .append_execution_events_result(batch.clone(), std::slice::from_ref(&event), &clock)
         .await
-        .unwrap()
         .unwrap();
+    let EventApplyResult::Applied(first) = first else {
+        panic!("first event batch must apply");
+    };
     assert_eq!(first.accepted_event_ids, vec!["event-z"]);
     let replay = repo
         .append_execution_events_result(batch, &[event], &clock)
         .await
-        .unwrap()
         .unwrap();
+    let EventApplyResult::Applied(replay) = replay else {
+        panic!("matching event batch must replay");
+    };
     assert_eq!(replay.accepted_event_ids, vec!["event-z"]);
     assert!(replay.replayed);
     assert!(
@@ -290,6 +294,171 @@ async fn structured_events_and_cancellation_observation_replay() {
         .unwrap(),
         tack_db::repo::execution::CancellationObservation::Cancelled { replayed: true }
     );
+}
+
+#[tokio::test]
+async fn event_replay_canonicalizes_equivalent_json_payloads() {
+    let (repo, item_id, clock) = ready_repo().await;
+    repo.enqueue_execution(
+        request("request-canonical", &item_id, "key-canonical", "same"),
+        &clock,
+    )
+    .await
+    .unwrap();
+    let lease = repo
+        .claim_execution(
+            "runner-a",
+            "attempt-canonical",
+            Duration::seconds(60),
+            &clock,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    let batch = EventBatch {
+        runner_id: "runner-a",
+        attempt_id: "attempt-canonical",
+        fencing_token: lease.fencing_token,
+        previous_checkpoint: None,
+        checkpoint: "checkpoint-canonical",
+    };
+    let initial = NewEvent {
+        id: "row-canonical",
+        event_id: "event-canonical",
+        sequence: 1,
+        source: "runner",
+        kind: "progress",
+        payload: r#"{"outer":{"b":2,"a":1},"z":0}"#,
+        occurred_at: clock.now(),
+    };
+    let replay = NewEvent {
+        id: "row-canonical-retry",
+        payload: r#"{"z":0,"outer":{"a":1,"b":2}}"#,
+        ..initial
+    };
+    assert!(matches!(
+        repo.append_execution_events_result(batch.clone(), &[initial], &clock)
+            .await
+            .unwrap(),
+        EventApplyResult::Applied(result) if !result.replayed
+    ));
+    assert!(matches!(
+        repo.append_execution_events_result(batch, &[replay], &clock)
+            .await
+            .unwrap(),
+        EventApplyResult::Applied(result) if result.replayed
+    ));
+}
+
+#[tokio::test]
+async fn event_replay_changed_payload_is_conflict_and_does_not_write() {
+    let (repo, item_id, clock) = ready_repo().await;
+    repo.enqueue_execution(
+        request("request-conflict", &item_id, "key-conflict", "same"),
+        &clock,
+    )
+    .await
+    .unwrap();
+    let lease = repo
+        .claim_execution(
+            "runner-a",
+            "attempt-conflict",
+            Duration::seconds(60),
+            &clock,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    let batch = EventBatch {
+        runner_id: "runner-a",
+        attempt_id: "attempt-conflict",
+        fencing_token: lease.fencing_token,
+        previous_checkpoint: None,
+        checkpoint: "checkpoint-conflict",
+    };
+    let initial = NewEvent {
+        id: "row-conflict",
+        event_id: "event-conflict",
+        sequence: 1,
+        source: "runner",
+        kind: "progress",
+        payload: r#"{"state":"original"}"#,
+        occurred_at: clock.now(),
+    };
+    let changed = NewEvent {
+        id: "row-conflict-retry",
+        payload: r#"{"state":"changed"}"#,
+        ..initial
+    };
+    repo.append_execution_events_result(batch.clone(), &[initial], &clock)
+        .await
+        .unwrap();
+    assert_eq!(
+        repo.append_execution_events_result(batch, &[changed], &clock)
+            .await
+            .unwrap(),
+        EventApplyResult::ReplayConflict
+    );
+    let event_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_events WHERE attempt_id = 'attempt-conflict'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    let checkpoint: Option<String> = sqlx::query_scalar(
+        "SELECT event_checkpoint FROM execution_attempts WHERE id = 'attempt-conflict'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(event_count, 1);
+    assert_eq!(checkpoint.as_deref(), Some("checkpoint-conflict"));
+}
+
+#[tokio::test]
+async fn event_replay_foreign_fence_is_stale_and_does_not_write() {
+    let (repo, item_id, clock) = ready_repo().await;
+    repo.enqueue_execution(
+        request("request-stale", &item_id, "key-stale", "same"),
+        &clock,
+    )
+    .await
+    .unwrap();
+    let lease = repo
+        .claim_execution("runner-a", "attempt-stale", Duration::seconds(60), &clock)
+        .await
+        .unwrap()
+        .unwrap();
+    let result = repo
+        .append_execution_events_result(
+            EventBatch {
+                runner_id: "runner-a",
+                attempt_id: "attempt-stale",
+                fencing_token: lease.fencing_token + 1,
+                previous_checkpoint: None,
+                checkpoint: "checkpoint-stale",
+            },
+            &[NewEvent {
+                id: "row-stale",
+                event_id: "event-stale",
+                sequence: 1,
+                source: "runner",
+                kind: "progress",
+                payload: "{}",
+                occurred_at: clock.now(),
+            }],
+            &clock,
+        )
+        .await
+        .unwrap();
+    assert_eq!(result, EventApplyResult::Stale);
+    let event_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_events WHERE attempt_id = 'attempt-stale'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(event_count, 0);
 }
 
 #[tokio::test]
