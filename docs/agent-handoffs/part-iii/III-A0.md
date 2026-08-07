@@ -1,7 +1,7 @@
 # III-A0 handoff
 
-- Base SHA / branch / final SHA: `1d71785` / `agent/iii-a0-contract` / branch tip (the
-  integrator records the cherry-picked SHA because cherry-picking changes it).
+- Base SHA / branch / card SHA / accepted Wave 0 integration SHA: `1d71785` /
+  `agent/iii-a0-contract` / `ce50316` / `f042085`.
 - Files changed: `TODO.md` Part III Wave 0 status row;
   `docs/adr/0050-runner-control-plane.md`; `docs/contracts/runner-v1/**`;
   `docs/agent-handoffs/part-iii/{README,III-A0}.md`.
@@ -56,3 +56,18 @@ frontend schema, migration rebuild crash states, and three cross-realm Blob/obje
 Vitest failures. `cargo test --workspace` passed from the baseline with local mock-server
 socket permission; `cargo fmt --all --check` passed; the frontend suite passed 475/478 and
 the three failures are card A4's explicit starting fixtures.
+
+## Wave 0 integration acceptance
+
+The wave integrator accepted `f042085d585adfdd8386a2120c7429649883e5df` as the exact
+Wave 1 branch point after the combined tree passed:
+
+- `cargo test --workspace`, `cargo clippy --all-targets -- -D warnings` and
+  `cargo fmt --all -- --check`;
+- 60 frontend test files / 482 tests, TypeScript production build with seven emitted fonts,
+  and the design-token lint;
+- the complete Playwright matrix: Chromium 49, Firefox 14 and WebKit 14 enabled tests
+  passed; 70 non-Chromium a11y/API cases skipped by the existing project policy;
+- OpenAPI source/drift tests, migration crash/retry tests, trust redirect and split-origin
+  WebSocket adversarial tests, zero docket-golden drift, fixture parsing/lifecycle coverage,
+  and `mdbook build docs/book`.
