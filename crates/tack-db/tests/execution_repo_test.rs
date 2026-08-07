@@ -617,6 +617,12 @@ fn request<'a>(
     key: &'a str,
     fingerprint: &'a str,
 ) -> NewExecutionRequest<'a> {
+    let request_snapshot: &'static str = Box::leak(
+        format!(
+            r#"{{"request_id":"{id}","item_id":"{item_id}","idempotency_key":"{key}","created_by":{{"source":"operator","subject_id":"test"}},"created_at":"2026-08-07T12:00:00Z","selector":{{"kind":"exact_runner","runner_id":"runner-a"}},"agent_profile_id":"profile-a","resolved_agent_profile":{{"name":"Profile A","instructions":"test","tool_policy":{{"mode":"safe"}},"timeout_seconds":60,"budgets":{{"limit":1}}}},"requested_harness_kind":"codex","requested_model_provider":"openai","requested_model_id":"opaque/model","repository":{{"kind":"git","remote":"https://example.test/repo.git","base_revision":"abc123","subdirectory":null}},"permission_policy":{{"tools":["shell"],"network":false}},"timeout_seconds":60,"budgets":{{"limit":1}},"status_map_policy_id":null,"environment":{{"MODE":{{"value":"test","secret_reference":null}}}},"metadata":{{"source":"test"}}}}"#
+        )
+        .into_boxed_str(),
+    );
     NewExecutionRequest {
         id,
         item_id,
@@ -626,19 +632,113 @@ fn request<'a>(
         selector_kind: "exact_runner",
         selector_id: "runner-a",
         agent_profile_id: Some("profile-a"),
-        agent_profile_snapshot: "{}",
+        agent_profile_snapshot: r#"{"name":"Profile A","instructions":"test","tool_policy":{"mode":"safe"},"timeout_seconds":60,"budgets":{"limit":1}}"#,
         requested_harness_kind: Some("codex"),
         requested_model_provider: Some("openai"),
         requested_model_id: Some("opaque/model"),
-        repository_snapshot: "{}",
-        permission_policy: "{}",
+        repository_snapshot: r#"{"kind":"git","remote":"https://example.test/repo.git","base_revision":"abc123","subdirectory":null}"#,
+        permission_policy: r#"{"tools":["shell"],"network":false}"#,
         timeout_seconds: Some(60),
-        budgets: "{}",
+        budgets: r#"{"limit":1}"#,
         status_map_policy_id: None,
-        environment: "{}",
-        metadata: "{}",
-        request_snapshot: r#"{"created_by":{"source":"operator","subject_id":"test"},"selector":{"kind":"exact_runner","runner_id":"runner-a"},"repository":{}}"#,
+        environment: r#"{"MODE":{"value":"test","secret_reference":null}}"#,
+        metadata: r#"{"source":"test"}"#,
+        request_snapshot,
     }
+}
+
+#[tokio::test]
+async fn enqueue_rejects_incomplete_malformed_and_contradictory_snapshots_without_rows() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let mut missing = request("snapshot-missing", &item_id, "snapshot-missing", "same");
+    missing.request_snapshot = Box::leak(
+        missing
+            .request_snapshot
+            .replace("\"metadata\":{\"source\":\"test\"}", "")
+            .replace(",,", ",")
+            .replace(",}", "}")
+            .into_boxed_str(),
+    );
+    assert!(repo.enqueue_execution(missing, &clock).await.is_err());
+
+    let mut malformed = request("snapshot-malformed", &item_id, "snapshot-malformed", "same");
+    malformed.request_snapshot = "{not-json";
+    assert!(repo.enqueue_execution(malformed, &clock).await.is_err());
+
+    let mut contradictory = request("snapshot-cross", &item_id, "snapshot-cross", "same");
+    contradictory.request_snapshot = Box::leak(
+        contradictory
+            .request_snapshot
+            .replace(
+                "\"request_id\":\"snapshot-cross\"",
+                "\"request_id\":\"other\"",
+            )
+            .into_boxed_str(),
+    );
+    assert!(repo.enqueue_execution(contradictory, &clock).await.is_err());
+
+    let mut wrong_created_at = request("snapshot-clock", &item_id, "snapshot-clock", "same");
+    wrong_created_at.request_snapshot = Box::leak(
+        wrong_created_at
+            .request_snapshot
+            .replace("2026-08-07T12:00:00Z", "2026-08-07T12:00:01Z")
+            .into_boxed_str(),
+    );
+    assert!(
+        repo.enqueue_execution(wrong_created_at, &clock)
+            .await
+            .is_err()
+    );
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_requests")
+        .fetch_one(repo.pool())
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[tokio::test]
+async fn m059_quarantines_queued_legacy_snapshot_after_m053_upgrade() {
+    let pool = init_pool("sqlite::memory:").await.unwrap();
+    migrations::run_up_to(&pool, "052_execution_report_replays")
+        .await
+        .unwrap();
+    let mut connection = pool.acquire().await.unwrap();
+    sqlx::query("PRAGMA foreign_keys = OFF")
+        .execute(&mut *connection)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO execution_requests(id,item_id,idempotency_scope,idempotency_key,request_fingerprint,state,selector_kind,selector_id,agent_profile_snapshot,repository_snapshot,permission_policy,created_at,updated_at) VALUES('legacy-request','legacy-item','legacy','legacy-key','legacy-fingerprint','queued','exact_runner','runner-a','{}','{}','{}','2026-08-07T12:00:00Z','2026-08-07T12:00:00Z')")
+        .execute(&mut *connection)
+        .await
+        .unwrap();
+    drop(connection);
+    migrations::run_up_to(&pool, "058_execution_recovery_replay_response")
+        .await
+        .unwrap();
+    let before: (String, String) = sqlx::query_as(
+        "SELECT state, request_snapshot FROM execution_requests WHERE id = 'legacy-request'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(before, ("queued".into(), "{}".into()));
+    migrations::run_all(&pool).await.unwrap();
+    let after: (String, String, String, String) = sqlx::query_as(
+        "SELECT state, request_snapshot, item_id, idempotency_key FROM execution_requests WHERE id = 'legacy-request'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        after,
+        (
+            "needs_operator".into(),
+            "{}".into(),
+            "legacy-item".into(),
+            "legacy-key".into()
+        )
+    );
 }
 
 async fn ready_completion_attempt(
@@ -1691,17 +1791,19 @@ async fn expired_unrecovered_attempt_cannot_restore_capacity_or_admit_a_claim() 
             .await
             .unwrap();
     assert_eq!(capacity, 0);
-    repo.enqueue_execution(
-        request(
-            "request-heartbeat-blocked",
-            &item_id,
-            "key-heartbeat-blocked",
-            "same",
-        ),
-        &clock,
-    )
-    .await
-    .unwrap();
+    let mut blocked = request(
+        "request-heartbeat-blocked",
+        &item_id,
+        "key-heartbeat-blocked",
+        "same",
+    );
+    blocked.request_snapshot = Box::leak(
+        blocked
+            .request_snapshot
+            .replace("2026-08-07T12:00:00Z", &clock.now().to_rfc3339())
+            .into_boxed_str(),
+    );
+    repo.enqueue_execution(blocked, &clock).await.unwrap();
     assert!(
         repo.claim_execution(
             "runner-a",

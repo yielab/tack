@@ -672,6 +672,209 @@ fn recovery_response(serialized: &str) -> Result<RecoveryResponse, sqlx::Error> 
     })
 }
 
+fn snapshot_error(message: impl Into<String>) -> sqlx::Error {
+    sqlx::Error::Protocol(format!(
+        "invalid execution request snapshot: {}",
+        message.into()
+    ))
+}
+
+fn snapshot_object<'a>(
+    value: &'a serde_json::Value,
+    field: &str,
+) -> Result<&'a serde_json::Map<String, serde_json::Value>, sqlx::Error> {
+    value
+        .as_object()
+        .ok_or_else(|| snapshot_error(format!("{field} must be an object")))
+}
+
+fn snapshot_field<'a>(
+    object: &'a serde_json::Map<String, serde_json::Value>,
+    field: &str,
+) -> Result<&'a serde_json::Value, sqlx::Error> {
+    object
+        .get(field)
+        .ok_or_else(|| snapshot_error(format!("missing {field}")))
+}
+
+fn snapshot_string(
+    object: &serde_json::Map<String, serde_json::Value>,
+    field: &str,
+) -> Result<String, sqlx::Error> {
+    snapshot_field(object, field)?
+        .as_str()
+        .map(str::to_owned)
+        .ok_or_else(|| snapshot_error(format!("{field} must be a string")))
+}
+
+fn snapshot_nullable_string(
+    object: &serde_json::Map<String, serde_json::Value>,
+    field: &str,
+) -> Result<Option<String>, sqlx::Error> {
+    match snapshot_field(object, field)? {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::String(value) => Ok(Some(value.clone())),
+        _ => Err(snapshot_error(format!("{field} must be string or null"))),
+    }
+}
+
+fn parse_execution_request_snapshot(serialized: &str) -> Result<serde_json::Value, sqlx::Error> {
+    let value: serde_json::Value =
+        serde_json::from_str(serialized).map_err(|error| snapshot_error(error.to_string()))?;
+    let root = snapshot_object(&value, "snapshot")?;
+    for field in [
+        "request_id",
+        "item_id",
+        "idempotency_key",
+        "agent_profile_id",
+        "requested_harness_kind",
+    ] {
+        snapshot_string(root, field)?;
+    }
+    snapshot_field(root, "created_by")?;
+    DateTime::parse_from_rfc3339(&snapshot_string(root, "created_at")?)
+        .map_err(|error| snapshot_error(format!("created_at must be RFC3339: {error}")))?;
+    let selector = snapshot_object(snapshot_field(root, "selector")?, "selector")?;
+    match snapshot_string(selector, "kind")?.as_str() {
+        "exact_runner" => {
+            snapshot_string(selector, "runner_id")?;
+        }
+        "fleet" => {
+            snapshot_string(selector, "fleet_id")?;
+        }
+        "any" => {}
+        _ => return Err(snapshot_error("selector.kind is unsupported")),
+    }
+    let profile = snapshot_object(
+        snapshot_field(root, "resolved_agent_profile")?,
+        "resolved_agent_profile",
+    )?;
+    snapshot_string(profile, "name")?;
+    snapshot_string(profile, "instructions")?;
+    snapshot_field(profile, "tool_policy")?;
+    snapshot_field(profile, "budgets")?;
+    snapshot_field(profile, "timeout_seconds")?
+        .as_u64()
+        .ok_or_else(|| snapshot_error("resolved_agent_profile.timeout_seconds must be u64"))?;
+    snapshot_nullable_string(root, "requested_model_provider")?;
+    snapshot_nullable_string(root, "requested_model_id")?;
+    let repository = snapshot_object(snapshot_field(root, "repository")?, "repository")?;
+    for field in ["kind", "remote", "base_revision"] {
+        snapshot_string(repository, field)?;
+    }
+    snapshot_nullable_string(repository, "subdirectory")?;
+    let policy = snapshot_object(
+        snapshot_field(root, "permission_policy")?,
+        "permission_policy",
+    )?;
+    let tools = snapshot_field(policy, "tools")?
+        .as_array()
+        .ok_or_else(|| snapshot_error("permission_policy.tools must be an array"))?;
+    if tools.iter().any(|tool| tool.as_str().is_none()) {
+        return Err(snapshot_error(
+            "permission_policy.tools entries must be strings",
+        ));
+    }
+    snapshot_field(policy, "network")?
+        .as_bool()
+        .ok_or_else(|| snapshot_error("permission_policy.network must be bool"))?;
+    snapshot_field(root, "timeout_seconds")?
+        .as_u64()
+        .ok_or_else(|| snapshot_error("timeout_seconds must be u64"))?;
+    snapshot_field(root, "budgets")?;
+    snapshot_nullable_string(root, "status_map_policy_id")?;
+    let environment = snapshot_object(snapshot_field(root, "environment")?, "environment")?;
+    for value in environment.values() {
+        let environment_value = snapshot_object(value, "environment value")?;
+        snapshot_nullable_string(environment_value, "value")?;
+        snapshot_nullable_string(environment_value, "secret_reference")?;
+    }
+    snapshot_field(root, "metadata")?;
+    Ok(value)
+}
+
+fn validate_execution_request_snapshot(
+    input: &NewExecutionRequest<'_>,
+    created_at: &str,
+) -> Result<String, sqlx::Error> {
+    let snapshot = parse_execution_request_snapshot(input.request_snapshot)?;
+    let root = snapshot_object(&snapshot, "snapshot")?;
+    let matches = |field: &str, expected: &str| -> Result<(), sqlx::Error> {
+        if snapshot_string(root, field)? == expected {
+            Ok(())
+        } else {
+            Err(snapshot_error(format!(
+                "{field} contradicts normalized request"
+            )))
+        }
+    };
+    matches("request_id", input.id)?;
+    matches("item_id", input.item_id)?;
+    matches("idempotency_key", input.idempotency_key)?;
+    let snapshot_created_at =
+        DateTime::parse_from_rfc3339(&snapshot_string(root, "created_at")?)
+            .map_err(|error| snapshot_error(format!("created_at must be RFC3339: {error}")))?;
+    let normalized_created_at = DateTime::parse_from_rfc3339(created_at).map_err(|error| {
+        snapshot_error(format!("normalized created_at must be RFC3339: {error}"))
+    })?;
+    if snapshot_created_at != normalized_created_at {
+        return Err(snapshot_error("created_at contradicts normalized request"));
+    }
+    let selector = snapshot_object(snapshot_field(root, "selector")?, "selector")?;
+    if snapshot_string(selector, "kind")? != input.selector_kind {
+        return Err(snapshot_error("selector contradicts normalized request"));
+    }
+    let selector_matches = match input.selector_kind {
+        "exact_runner" => snapshot_string(selector, "runner_id")? == input.selector_id,
+        "fleet" => snapshot_string(selector, "fleet_id")? == input.selector_id,
+        "any" => input.selector_id.is_empty(),
+        _ => false,
+    };
+    if !selector_matches {
+        return Err(snapshot_error("selector contradicts normalized request"));
+    }
+    if input.agent_profile_id != Some(snapshot_string(root, "agent_profile_id")?.as_str())
+        || input.requested_harness_kind
+            != Some(snapshot_string(root, "requested_harness_kind")?.as_str())
+        || input.requested_model_provider.map(str::to_owned)
+            != snapshot_nullable_string(root, "requested_model_provider")?
+        || input.requested_model_id.map(str::to_owned)
+            != snapshot_nullable_string(root, "requested_model_id")?
+        || input.status_map_policy_id.map(str::to_owned)
+            != snapshot_nullable_string(root, "status_map_policy_id")?
+    {
+        return Err(snapshot_error(
+            "requested fields contradict normalized request",
+        ));
+    }
+    let timeout = input
+        .timeout_seconds
+        .filter(|value| *value >= 0)
+        .map(|value| value as u64);
+    if timeout != snapshot_field(root, "timeout_seconds")?.as_u64() {
+        return Err(snapshot_error(
+            "timeout_seconds contradicts normalized request",
+        ));
+    }
+    for (snapshot_field_name, normalized) in [
+        ("resolved_agent_profile", input.agent_profile_snapshot),
+        ("repository", input.repository_snapshot),
+        ("permission_policy", input.permission_policy),
+        ("budgets", input.budgets),
+        ("environment", input.environment),
+        ("metadata", input.metadata),
+    ] {
+        let normalized: serde_json::Value =
+            serde_json::from_str(normalized).map_err(|error| snapshot_error(error.to_string()))?;
+        if snapshot_field(root, snapshot_field_name)? != &normalized {
+            return Err(snapshot_error(format!(
+                "{snapshot_field_name} contradicts normalized request"
+            )));
+        }
+    }
+    serde_json::to_string(&snapshot).map_err(|error| snapshot_error(error.to_string()))
+}
+
 fn lease_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Lease, sqlx::Error> {
     let issued: String = row.get("lease_issued_at");
     let expires: String = row.get("lease_expires_at");
@@ -692,21 +895,7 @@ fn lease_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Lease, sqlx::Error> {
 }
 
 fn snapshot(row: &sqlx::sqlite::SqliteRow) -> Result<serde_json::Value, sqlx::Error> {
-    let value =
-        serde_json::from_str::<serde_json::Value>(&row.get::<String, _>("request_snapshot"))
-            .map_err(|error| {
-                sqlx::Error::Protocol(format!("invalid persisted request_snapshot: {error}"))
-            })?;
-    if !value.as_object().is_some_and(|object| {
-        object.contains_key("created_by")
-            && object.contains_key("selector")
-            && object.contains_key("repository")
-    }) {
-        return Err(sqlx::Error::Protocol(
-            "persisted request_snapshot is incomplete".into(),
-        ));
-    }
-    Ok(value)
+    parse_execution_request_snapshot(&row.get::<String, _>("request_snapshot"))
 }
 
 impl Repository {
@@ -1396,6 +1585,7 @@ impl Repository {
         clock: &dyn ExecutionClock,
     ) -> Result<EnqueueResult, sqlx::Error> {
         let now = stamp(clock);
+        let request_snapshot = validate_execution_request_snapshot(&input, &now)?;
         let mut tx = self.pool().begin().await?;
         let existing: Option<(String, String)> = sqlx::query_as(
             "SELECT id, request_fingerprint FROM execution_requests \
@@ -1425,7 +1615,7 @@ impl Repository {
         .bind(input.agent_profile_id).bind(input.agent_profile_snapshot).bind(input.requested_harness_kind)
         .bind(input.requested_model_provider).bind(input.requested_model_id).bind(input.repository_snapshot)
         .bind(input.permission_policy).bind(input.timeout_seconds).bind(input.budgets)
-        .bind(input.status_map_policy_id).bind(input.environment).bind(input.metadata).bind(input.request_snapshot).bind(&now).bind(&now)
+        .bind(input.status_map_policy_id).bind(input.environment).bind(input.metadata).bind(request_snapshot).bind(&now).bind(&now)
         .execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(EnqueueResult::Created(input.id.to_string()))
