@@ -130,6 +130,10 @@
   `Conflict`; their incomplete historical response is not treated as authoritative. Focused
   coverage includes false-free capacity, multi-lease canonical replay, stale lease, response
   loss after clock advance, changed-input no-write, and replay-insert rollback.
+- Heartbeats now also bind a frozen client `sent_at` timestamp into that fingerprint. Existing
+  pre-`sent_at` fingerprints therefore conflict rather than replaying. Capacity reservations
+  count every unresolved active attempt even after its lease expires: expiry alone cannot make a
+  slot available; a recovery/terminal transition must release it.
 
 ### Cancellation observation correction
 
