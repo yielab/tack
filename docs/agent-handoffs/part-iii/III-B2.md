@@ -191,14 +191,17 @@
   pre-existing three-key cohorts, without altering terminal historical rows. Snapshot validation
   now requires typed `created_by`, object-valued budgets/metadata/profile policies, a string
   repository kind, and exactly one literal value or secret reference for each environment entry.
+  It also rejects SQLite-lenient timestamps lacking RFC3339 `T`/offset syntax and negative or
+  fractional root/profile timeouts, so those rows cannot remain queued and starve valid work.
 
 ### Legacy boundary cleanup
 
-- The unsafe public single-lease heartbeat, boolean event append, and expiry-classification
-  compatibility paths are removed. C2 and C4 must use `heartbeat_batch`,
-  `append_execution_events_result`, and `recover_attempt`; their typed outcomes preserve the
-  authenticated fence, replay, and conservative-recovery semantics that the old shortcuts
-  could bypass.
+- The unsafe public single-lease heartbeat, boolean event append, expiry-classification, and
+  lease-only claim compatibility paths are removed. C2 and C4 must use `heartbeat_batch`,
+  `append_execution_events_result`, `recover_attempt`, and
+  `claim_execution_idempotent_with_snapshot`; their typed outcomes preserve the authenticated
+  fence, durable replay, frozen snapshot, and conservative-recovery semantics that the old
+  shortcuts could bypass.
 - Artifact and decision creation require `lease_expires_at > now`; equality is expired and
   creates no row. Operator requeue additionally requires a durable authoritative
   `needs_operator` recovery audit for that exact attempt, so a manually corrupted lifecycle

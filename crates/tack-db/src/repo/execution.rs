@@ -174,12 +174,6 @@ pub enum RedeemEnrollmentResult {
     InvalidOrExpired,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ClaimReplayResult {
-    Lease(Lease),
-    NoWork,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClaimedExecution {
     pub lease: Lease,
@@ -1538,31 +1532,6 @@ impl Repository {
         }))
     }
 
-    /// Compatibility form for callers that only need lease facts.
-    pub async fn claim_execution_idempotent(
-        &self,
-        runner_id: &str,
-        claim_request_id: &str,
-        attempt_id: &str,
-        lease_duration: Duration,
-        clock: &dyn ExecutionClock,
-    ) -> Result<ClaimReplayResult, sqlx::Error> {
-        Ok(
-            match self
-                .claim_execution_idempotent_with_snapshot(
-                    runner_id,
-                    claim_request_id,
-                    attempt_id,
-                    lease_duration,
-                    clock,
-                )
-                .await?
-            {
-                Some(claim) => ClaimReplayResult::Lease(claim.lease),
-                None => ClaimReplayResult::NoWork,
-            },
-        )
-    }
     #[instrument(skip(self, input, clock))]
     pub async fn register_runner(
         &self,
@@ -1651,70 +1620,6 @@ impl Repository {
         .execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(EnqueueResult::Created(input.id.to_string()))
-    }
-
-    /// Atomically reserves one eligible queued request.  The request state,
-    /// attempt number/fence, and runner capacity are one transaction, so two
-    /// claimers cannot obtain valid leases for the same request.
-    #[instrument(skip(self, clock))]
-    pub async fn claim_execution(
-        &self,
-        runner_id: &str,
-        attempt_id: &str,
-        lease_duration: Duration,
-        clock: &dyn ExecutionClock,
-    ) -> Result<Option<Lease>, sqlx::Error> {
-        let now = clock.now();
-        let now_s = now.to_rfc3339();
-        let expires = now + lease_duration;
-        let mut tx = self.pool().begin().await?;
-        let capacity = sqlx::query(
-            "UPDATE agent_runners SET available_capacity = available_capacity - 1, updated_at = ? \
-             WHERE id = ? AND state = 'active' AND revoked_at IS NULL AND available_capacity > 0",
-        )
-        .bind(&now_s)
-        .bind(runner_id)
-        .execute(&mut *tx)
-        .await?;
-        if capacity.rows_affected() != 1 {
-            tx.commit().await?;
-            return Ok(None);
-        }
-        let request: Option<String> = sqlx::query_scalar(
-            "SELECT r.id FROM execution_requests r WHERE r.state = 'queued' AND \
-             ( (r.selector_kind = 'exact_runner' AND r.selector_id = ?) OR \
-               (r.selector_kind = 'fleet' AND EXISTS (SELECT 1 FROM agent_fleet_members m WHERE m.fleet_id = r.selector_id AND m.runner_id = ?)) ) \
-             ORDER BY r.created_at LIMIT 1",
-        ).bind(runner_id).bind(runner_id).fetch_optional(&mut *tx).await?;
-        let Some(request_id) = request else {
-            sqlx::query("UPDATE agent_runners SET available_capacity = MIN(total_capacity, available_capacity + 1), updated_at = ? WHERE id = ?")
-                .bind(&now_s).bind(runner_id).execute(&mut *tx).await?;
-            tx.commit().await?;
-            return Ok(None);
-        };
-        let claimed = sqlx::query("UPDATE execution_requests SET state = 'leased', updated_at = ? WHERE id = ? AND state = 'queued'")
-            .bind(&now_s).bind(&request_id).execute(&mut *tx).await?;
-        if claimed.rows_affected() != 1 {
-            tx.rollback().await?;
-            return Ok(None);
-        }
-        let attempt_number: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(attempt_number), 0) + 1 FROM execution_attempts WHERE request_id = ?")
-            .bind(&request_id).fetch_one(&mut *tx).await?;
-        let fence: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(fencing_token), 0) + 1 FROM execution_attempts WHERE request_id = ?")
-            .bind(&request_id).fetch_one(&mut *tx).await?;
-        sqlx::query("INSERT INTO execution_attempts (id, request_id, attempt_number, runner_id, fencing_token, lease_issued_at, lease_expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(attempt_id).bind(&request_id).bind(attempt_number).bind(runner_id).bind(fence)
-            .bind(&now_s).bind(expires.to_rfc3339()).bind(&now_s).bind(&now_s).execute(&mut *tx).await?;
-        tx.commit().await?;
-        Ok(Some(Lease {
-            attempt_id: attempt_id.into(),
-            request_id,
-            attempt_number,
-            runner_id: runner_id.into(),
-            fencing_token: fence,
-            issued_at: now,
-            expires_at: expires,
-        }))
     }
 
     #[instrument(skip(self, events, clock))]
