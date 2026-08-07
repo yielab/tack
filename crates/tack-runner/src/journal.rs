@@ -219,7 +219,13 @@ impl OwnerOnlyJournal {
                 JournalError::Io
             }
         })?;
-        toml::from_str(&contents).map_err(|_| JournalError::Malformed)
+        let record: AttemptJournal =
+            toml::from_str(&contents).map_err(|_| JournalError::Malformed)?;
+        let expected_name = format!("{}.toml", encode_id(record.attempt_id.as_str()));
+        if path.file_name().and_then(|name| name.to_str()) != Some(expected_name.as_str()) {
+            return Err(JournalError::Malformed);
+        }
+        Ok(record)
     }
 
     fn journal_dir(&self) -> PathBuf {
@@ -433,6 +439,29 @@ mod tests {
         let decoded: AttemptJournal = toml::from_str(&legacy).expect("decode legacy journal");
         assert_eq!(decoded.pending_terminal_report, None);
         assert_eq!(decoded.state, JournalState::Prepared);
+    }
+
+    #[test]
+    fn load_and_recovery_reject_a_filename_that_disagrees_with_the_record_attempt() {
+        let root = temporary_root();
+        let journal = OwnerOnlyJournal::new(&root);
+        let record = record();
+        journal
+            .persist_before_spawn(&record)
+            .expect("persist journal");
+        let substituted_name = AttemptId::new("another-attempt");
+        fs::rename(
+            journal.journal_path(&record.attempt_id),
+            journal.journal_path(&substituted_name),
+        )
+        .expect("tamper filename");
+
+        assert!(matches!(
+            journal.load(&substituted_name),
+            Err(JournalError::Malformed)
+        ));
+        assert!(matches!(journal.unresolved(), Err(JournalError::Malformed)));
+        fs::remove_dir_all(root).expect("remove temporary journal root");
     }
 
     #[test]

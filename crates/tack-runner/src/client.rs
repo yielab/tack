@@ -289,7 +289,8 @@ pub enum ClaimResult {
     },
 }
 
-#[derive(Debug, Clone)]
+/// The exact v1 heartbeat attempt fact sent to the runner API.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ActiveAttempt {
     pub attempt_id: AttemptId,
     pub fencing_token: FencingToken,
@@ -298,14 +299,19 @@ pub struct ActiveAttempt {
     pub last_event_checkpoint: Option<Checkpoint>,
 }
 
-#[derive(Debug, Clone)]
+/// The exact v1 heartbeat request payload.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HeartbeatRequest {
+    pub protocol_version: ProtocolVersion,
+    pub runner_id: RunnerId,
     pub heartbeat_id: String,
+    /// RFC 3339 instant originated from the runner's injected `Clock`.
+    pub sent_at: Timestamp,
     pub available_capacity: u32,
     pub active_attempts: Vec<ActiveAttempt>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LeaseResult {
     pub attempt_id: AttemptId,
     pub fencing_token: FencingToken,
@@ -313,8 +319,10 @@ pub struct LeaseResult {
     pub cancellation_requested: bool,
 }
 
-#[derive(Debug, Clone)]
+/// The exact v1 heartbeat response payload.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HeartbeatResponse {
+    pub protocol_version: ProtocolVersion,
     pub heartbeat_id: String,
     pub accepted_at: Timestamp,
     pub lease_results: Vec<LeaseResult>,
