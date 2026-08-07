@@ -1,6 +1,6 @@
 # III-C1 handoff
 
-- Integrated base / branch / C1 commits: `422b751` / `agent/iii-c1-operator-api` / `a44dca1`, `cef3324`.
+- Integrated base / branch / C1 commits: `422b751` / `agent/iii-c1-operator-api` / `a44dca1`, `cef3324`, `5109931`.
 - Files changed (must equal ownership list): new `crates/tack-api/src/handlers/{executions,runner_admin}.rs`, focused `crates/tack-api/tests/c1_handlers_test.rs`, and this handoff.
 - Contract fixtures consumed: `protocol.json`, `lifecycle-transitions.json`, cancellation and stable-error envelopes. IDs remain opaque and all responses use the v1 error envelope shape; no fixture changed.
 - Behavior implemented: card-local operator routers for execution create/list/get/cancellation/requeue plus fleet, pending-runner enrollment, enrollment-token revocation, runner revocation, agent-profile, and model-profile management. Creation requires the C5-provided authenticated-principal header, scopes idempotency to that principal, constructs a complete canonical B1 `ExecutionRequestSnapshot`, and uses a fixed per-request B2 clock so `created_at` is exactly the persisted instant. New creates validate the Tack item and exact-runner availability; exact durable replays remain available after mutable runner status changes. Cancellation records a request only. Requeue delegates to B2's typed, authoritative-recovery-gated `operator_requeue_needs_operator` API with the client recovery key, principal actor, and a reason fingerprint.
