@@ -19,7 +19,10 @@ pub use engine::{
     CancelObservation, CancellationEvidence, EngineError, HarnessAdapter, HarnessError,
     HarnessOutcome, LocalRunHandle, RunCycle, RunnerEngine,
 };
-pub use journal::{AttemptJournal, JournalError, JournalState, OwnerOnlyJournal, WorkspaceJournal};
+pub use journal::{
+    AttemptJournal, JournalError, JournalState, OwnerOnlyJournal, PendingTerminalReport,
+    PendingTerminalReportKind, WorkspaceJournal,
+};
 pub use tack_orch::execution::RecoveryObservation;
 pub use workspace::{
     CleanupResult, UnavailableWorktreeProvisioner, Workspace, WorkspaceError, WorkspaceManager,
@@ -336,19 +339,21 @@ pub struct StartReport {
     pub process_id: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CompletionReport {
+    pub protocol_version: ProtocolVersion,
+    pub runner_id: RunnerId,
     pub completion_id: CompletionId,
     pub attempt_id: AttemptId,
     pub fencing_token: FencingToken,
     pub terminal_state: AttemptState,
-    pub terminal_reason: String,
-    pub final_checkpoint: Option<Checkpoint>,
+    pub terminal_reason: serde_json::Value,
+    pub final_event_checkpoint: Option<Checkpoint>,
     pub actual_execution: ActualExecution,
     pub usage: Usage,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CancellationReport {
     pub protocol_version: ProtocolVersion,
     pub runner_id: RunnerId,
@@ -367,6 +372,16 @@ pub struct CancellationResponse {
     pub protocol_version: ProtocolVersion,
     pub attempt_id: AttemptId,
     pub cancellation_request_id: CancellationRequestId,
+    pub state: AttemptState,
+    pub replayed: bool,
+    pub committed_at: Timestamp,
+}
+
+#[derive(Debug, Clone)]
+pub struct CompletionResponse {
+    pub protocol_version: ProtocolVersion,
+    pub attempt_id: AttemptId,
+    pub completion_id: CompletionId,
     pub state: AttemptState,
     pub replayed: bool,
     pub committed_at: Timestamp,
@@ -411,7 +426,7 @@ pub trait PullProtocol: Send + Sync {
         &self,
         session: &RunnerSession,
         report: CompletionReport,
-    ) -> Result<(), ProtocolClientError>;
+    ) -> Result<CompletionResponse, ProtocolClientError>;
 
     async fn report_cancellation(
         &self,
