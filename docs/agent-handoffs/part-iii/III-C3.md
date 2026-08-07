@@ -11,7 +11,7 @@
   restart recovery observation; cancellation coordination through a fake adapter; and no-retry
   stale/failed-fence quarantine.
 - Tests added and exact commands/results:
-  - `cargo test -p tack-runner` — 17 tests passed: atomic private journal/restart scan;
+  - `cargo test -p tack-runner` — 23 library tests and 2 CLI tests passed: atomic private journal/restart scan;
     deterministic isolated workspace; root, unresolved-path and symlink cleanup refusal;
     journal-before-provision/start; cancellation; post-spawn-before-ack ambiguity;
     cancellation-report ambiguity; stale completion fence; and restart observation.
@@ -45,6 +45,9 @@
 
 ## Follow-up hardening
 
+- Hardening baseline SHA: `d9156ab97ae09399e61ff0592e60d36ead7f3061`. Re-ran `cargo test -p
+  tack-runner` (23 library tests and 2 CLI tests), `cargo clippy -p tack-runner --all-targets
+  -- -D warnings`, `cargo fmt --all -- --check`, and `git diff --check`; all passed.
 - Scope: `client`, `journal`, `workspace`, and `engine` only; no Cargo, fixtures, API, or C4
   test edits.
 - Recovery delivery is now ordered: keep the unresolved local record → report the exact safe or
@@ -61,6 +64,9 @@
   are rejected before use.
 - Workspace hardening: an existing attempt directory symlink is rejected before provisioning,
   and cleanup requires both normal root/path checks and a matching `.tack-attempt` marker.
+- The preparation start report carries the planned `workspace_id` and `base_revision`, allowing
+  C2/C5 to map it to the accept endpoint without hidden state. The running report preserves
+  those facts and additionally carries the local `process_id`; preparation has no process ID.
 - Additional adversarial tests cover failed recovery delivery then retry with no respawn,
   running-process recovery quarantine, duplicate quarantined claim prevention, post-spawn
   journal-update ambiguity/cancel, directory symlinks, workspace-path symlink, and marker
