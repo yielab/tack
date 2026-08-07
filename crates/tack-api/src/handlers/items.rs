@@ -164,7 +164,9 @@ pub async fn list_items(
         ("id" = Uuid, Path, description = "Item ID"),
     ),
     responses(
-        (status = 200, description = "Item with roles and dependencies", body = crate::openapi::ItemDetail),
+        (status = 200, description = "Item with roles and dependencies; carries an ETag header for a later conditional PATCH", body = crate::openapi::ItemDetail,
+            headers(("ETag" = String, description = "Version-derived entity tag; echo verbatim in If-Match when updating this item"))
+        ),
         (status = 404, description = "Item not found", body = crate::openapi::ErrorEnvelope),
     ),
 )]
@@ -199,12 +201,16 @@ pub async fn get_item(State(state): State<AppState>, Path(id): Path<Uuid>) -> Ap
     tag = "items",
     params(
         ("id" = Uuid, Path, description = "Item ID"),
+        ("If-Match" = Option<String>, Header, description = "Optional ETag from GET /api/items/{id}; a stale or malformed value returns 412 and writes nothing"),
     ),
     request_body = tack_core::models::UpdateItem,
     responses(
-        (status = 200, description = "Updated item", body = tack_core::models::Item),
+        (status = 200, description = "Updated item; carries the ETag for the exact returned snapshot", body = tack_core::models::Item,
+            headers(("ETag" = String, description = "Version-derived entity tag for the returned item snapshot"))
+        ),
         (status = 400, description = "Invalid transition / validation error", body = crate::openapi::ErrorEnvelope),
         (status = 404, description = "Item not found", body = crate::openapi::ErrorEnvelope),
+        (status = 412, description = "If-Match did not match the current item version — nothing was written", body = crate::openapi::ErrorEnvelope),
     ),
 )]
 pub async fn update_item(
