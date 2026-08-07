@@ -51,6 +51,17 @@ impl AppState {
 
 const ATTACH_LIMIT: usize = 50 * 1024 * 1024; // 50 MB for file uploads
 
+fn content_security_policy(config: &AppConfig) -> HeaderValue {
+    // `allowed_origins` is validated at startup. Keeping it in connect-src
+    // permits an intentionally split frontend/API deployment without opening
+    // the page to arbitrary script, frame, or object sources.
+    let connect_sources = config.allowed_origins.join(" ");
+    let policy = format!(
+        "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' {connect_sources}; form-action 'self'"
+    );
+    HeaderValue::from_str(&policy).expect("configured CSP must be a valid header value")
+}
+
 /// Agent-Factory Control Center routes (Phases 33–38). Every route this cycle
 /// needs is batched into this one function (card A4 / TODO.md §2: `router.rs`
 /// is a chokepoint file, touched once) — later-wave agents add their route to
@@ -365,6 +376,10 @@ pub fn build_router(state: AppState) -> Router {
             header::HeaderName::from_static("x-frame-options"),
             HeaderValue::from_static("DENY"),
         ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CONTENT_SECURITY_POLICY,
+            content_security_policy(&state.config),
+        ))
         // ── CORS ─────────────────────────────────────────────────────────
         .layer(cors)
         // ── Request tracing ──────────────────────────────────────────────
@@ -373,7 +388,10 @@ pub fn build_router(state: AppState) -> Router {
                 tracing::info_span!(
                     "http_request",
                     method = %request.method(),
-                    uri = %request.uri(),
+                    // Query strings can carry external callback credentials
+                    // (notably Alexa's compatibility token). Never put them
+                    // in a tracing field or span.
+                    path = %request.uri().path(),
                 )
             }),
         )

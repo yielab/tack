@@ -1,5 +1,9 @@
 import { createSignal, type Accessor } from 'solid-js';
+import { apiBaseUrl, tokenStore } from '../api/client';
 import type { BoardEvent } from '../types';
+
+const BOARD_PROTOCOL = 'tack.v1';
+const AUTH_PROTOCOL_PREFIX = 'tack.auth.';
 
 export type SocketStatus = 'connecting' | 'open' | 'reconnecting' | 'closed';
 
@@ -13,7 +17,7 @@ export interface BoardSocket {
 }
 
 export interface BoardSocketOptions {
-  /** Override the WebSocket URL (defaults to same-origin `/api/.../boards/live`). */
+  /** Override the WebSocket URL (defaults to the configured API base). */
   url?: string;
   /** Inject a WebSocket implementation (for tests). */
   WebSocketImpl?: typeof WebSocket;
@@ -23,10 +27,18 @@ export interface BoardSocketOptions {
   maxDelay?: number;
 }
 
-/** Same-origin board-live URL: ws(s)://<host>/api/projects/<id>/boards/live. */
+/** Board-live URL derived from the configured HTTP API base, including an
+ * intentionally split API origin and any configured base path. */
 export function boardLiveUrl(projectId: string): string {
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${location.host}/api/projects/${projectId}/boards/live`;
+  const api = apiBaseUrl();
+  const protocol = api.protocol === 'https:' ? 'wss:' : 'ws:';
+  const basePath = api.pathname.replace(/\/$/, '');
+  return `${protocol}//${api.host}${basePath}/projects/${encodeURIComponent(projectId)}/boards/live`;
+}
+
+function websocketTokenProtocol(token: string): string {
+  const binary = Array.from(new TextEncoder().encode(token), (byte) => String.fromCharCode(byte)).join('');
+  return `${AUTH_PROTOCOL_PREFIX}${btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')}`;
 }
 
 /**
@@ -81,7 +93,12 @@ export function createBoardSocket(
 
   const connect = () => {
     if (closed) return;
-    ws = new WebSocketImpl(url);
+    const token = tokenStore.get();
+    // Browser WebSockets cannot set Authorization. A base64url subprotocol is
+    // request-header data (not a query string) and the server replies only
+    // with the fixed `tack.v1` protocol, never echoing this credential.
+    const protocols = token ? [BOARD_PROTOCOL, websocketTokenProtocol(token)] : [BOARD_PROTOCOL];
+    ws = new WebSocketImpl(url, protocols);
 
     ws.onopen = () => {
       delay = initialDelay; // reset backoff on a healthy connection

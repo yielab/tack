@@ -6,14 +6,16 @@ import type { BoardEvent } from '../types';
 class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
   url: string;
+  protocols: string | string[] | undefined;
   onopen: (() => void) | null = null;
   onmessage: ((ev: { data: string }) => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
   closed = false;
 
-  constructor(url: string) {
+  constructor(url: string, protocols?: string | string[]) {
     this.url = url;
+    this.protocols = protocols;
     FakeWebSocket.instances.push(this);
   }
   // test drivers
@@ -57,6 +59,17 @@ describe('createBoardSocket', () => {
     latest().open();
     expect(sock.status()).toBe('open');
     sock.close();
+  });
+
+  it('offers the fixed board protocol and an auth subprotocol without using a query token', () => {
+    const sessionKey = `tack_api_token:${location.origin}`;
+    sessionStorage.setItem(sessionKey, 'operator-token');
+    const sock = createBoardSocket('p1', { WebSocketImpl: WS });
+
+    expect(latest().url).not.toContain('?');
+    expect(latest().protocols).toEqual(['tack.v1', 'tack.auth.b3BlcmF0b3ItdG9rZW4']);
+    sock.close();
+    sessionStorage.removeItem(sessionKey);
   });
 
   it('dispatches matching-project events and filters out other projects', () => {

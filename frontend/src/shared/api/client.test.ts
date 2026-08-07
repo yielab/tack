@@ -134,6 +134,15 @@ describe('shared/api/client', () => {
     expect(headers.get('Authorization')).toBe('Bearer secret');
   });
 
+  it('keeps a bearer token only in the current session and never migrates the legacy local value', () => {
+    localStorage.setItem('tack_api_token', 'legacy-secret');
+    tokenStore.set('session-secret');
+
+    expect(tokenStore.get()).toBe('session-secret');
+    expect(localStorage.getItem('tack_api_token')).toBeNull();
+    expect(sessionStorage.getItem(`tack_api_token:${location.origin}`)).toBe('session-secret');
+  });
+
   it('omits Authorization when no token is set', async () => {
     vi.spyOn(tokenStore, 'get').mockReturnValue(null);
     const fetchMock = vi
@@ -175,6 +184,7 @@ describe('shared/api/client', () => {
 
     const headers = fetchMock.mock.calls[0][1]!.headers as Headers;
     expect(headers.has('Content-Type')).toBe(false);
+    expect((fetchMock.mock.calls[0][1] as RequestInit).redirect).toBe('error');
   });
 });
 
