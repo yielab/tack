@@ -291,6 +291,100 @@ async fn structured_events_and_cancellation_observation_replay() {
     );
 }
 
+#[tokio::test]
+async fn token_guards_and_operator_requeue_are_idempotent() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let bad = repo
+        .create_pending_runner_and_issue_token(
+            NewRunner {
+                id: "pending",
+                name: "pending",
+                credential_hash: "ignored",
+                labels: "{}",
+                total_capacity: 1,
+                available_capacity: 2,
+                capability_snapshot: "{}",
+                protocol_version: 1,
+            },
+            EnrollmentToken {
+                id: "token",
+                runner_id: "other",
+                token_hash: "hash",
+                expires_at: clock.now(),
+            },
+            &clock,
+        )
+        .await;
+    assert!(
+        bad.is_err(),
+        "mismatched/expired/invalid capacity token issue fails before writes"
+    );
+    repo.enqueue_execution(request("request-r", &item_id, "key-r", "same"), &clock)
+        .await
+        .unwrap();
+    let lease = repo
+        .claim_execution("runner-a", "attempt-r", Duration::seconds(60), &clock)
+        .await
+        .unwrap()
+        .unwrap();
+    sqlx::query("UPDATE execution_attempts SET state='needs_operator' WHERE id='attempt-r'")
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE execution_requests SET state='needs_operator',cancellation_requested_at='x' WHERE id='request-r'").execute(repo.pool()).await.unwrap();
+    let capacity: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id='runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    use tack_db::repo::execution::OperatorRequeueResult;
+    assert_eq!(
+        repo.operator_requeue_needs_operator(
+            "request-r",
+            "client-key",
+            "operator-a",
+            "reason-a",
+            &clock
+        )
+        .await
+        .unwrap(),
+        OperatorRequeueResult::Requeued
+    );
+    assert_eq!(
+        repo.operator_requeue_needs_operator(
+            "request-r",
+            "client-key",
+            "operator-a",
+            "reason-a",
+            &clock
+        )
+        .await
+        .unwrap(),
+        OperatorRequeueResult::Replayed
+    );
+    let cleared: Option<String> = sqlx::query_scalar(
+        "SELECT cancellation_requested_at FROM execution_requests WHERE id='request-r'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert!(cleared.is_none());
+    let audits: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_recovery_audits WHERE attempt_id='attempt-r'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(audits, 1);
+    let after: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id='runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(capacity, after);
+    let _ = lease;
+}
+
 impl ExecutionClock for FakeClock {
     fn now(&self) -> DateTime<Utc> {
         *self.0.lock().unwrap()
