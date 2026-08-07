@@ -1,49 +1,93 @@
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 use tracing::{info, instrument};
+
+/// A migration is either ordinary, all of whose SQL runs in one transaction, or
+/// a table rebuild. Rebuilds are still transactional, but additionally prove the
+/// copy before the source table is removed.
+#[derive(Clone, Copy)]
+enum MigrationKind {
+    Ordinary(&'static [&'static str]),
+    Rebuild(RebuildMigration),
+}
+
+#[derive(Clone, Copy)]
+struct Migration {
+    name: &'static str,
+    kind: MigrationKind,
+}
+
+#[derive(Clone, Copy)]
+struct RebuildMigration {
+    source: &'static str,
+    staging: &'static str,
+    statements: &'static [&'static str],
+    copy_step: usize,
+    /// Paired source/new-table projections. The first query is evaluated
+    /// against the source and the second against the staging table. The sets
+    /// must be identical after the copy; count equality separately preserves
+    /// duplicate detection too.
+    source_projection: &'static str,
+    staging_projection: &'static str,
+}
+
+fn ordinary(name: &'static str, statements: &'static [&'static str]) -> Migration {
+    Migration {
+        name,
+        kind: MigrationKind::Ordinary(statements),
+    }
+}
+
+fn rebuild(name: &'static str, spec: RebuildMigration) -> Migration {
+    Migration {
+        name,
+        kind: MigrationKind::Rebuild(spec),
+    }
+}
 
 /// The full, ordered migration list. Order matters: e.g. sprints before items
 /// (items references sprints), and control_planes before the orch_* tables that
-/// reference it.
-fn all_migrations() -> Vec<(&'static str, &'static [&'static str])> {
+/// reference it. The name plus exact SQL are checksummed before any work begins,
+/// so a reordered or edited already-recorded migration cannot silently run.
+fn all_migrations() -> Vec<Migration> {
     vec![
-        ("001_workspaces", &MIGRATION_001[..]),
-        ("002_projects", &MIGRATION_002[..]),
-        ("003_sprints", &MIGRATION_003_SPRINTS[..]),
-        ("004_items", &MIGRATION_004_ITEMS[..]),
-        ("005_dependencies", &MIGRATION_005[..]),
-        ("006_roles", &MIGRATION_006[..]),
-        ("007_comments", &MIGRATION_007[..]),
-        ("008_attachments", &MIGRATION_008[..]),
-        ("009_board_views", &MIGRATION_009[..]),
-        ("010_fts", &MIGRATION_010[..]),
-        ("011_project_templates", &MIGRATION_011[..]),
-        ("012_custom_fields", &MIGRATION_012[..]),
-        ("013_boards", &MIGRATION_013[..]),
-        ("014_consolidate_boards", &MIGRATION_014[..]),
-        ("015_item_assignee", &MIGRATION_015[..]),
-        ("016_perf_indexes", &MIGRATION_016[..]),
-        ("017_app_meta", &MIGRATION_017[..]),
-        ("018_github_links", &MIGRATION_018[..]),
-        ("019_control_planes", &MIGRATION_019[..]),
-        ("020_orch_links", &MIGRATION_020[..]),
-        ("021_orch_tasks", &MIGRATION_021[..]),
-        ("022_orch_runs", &MIGRATION_022[..]),
-        ("023_orch_events", &MIGRATION_023[..]),
-        ("024_orch_approvals", &MIGRATION_024[..]),
-        ("025_orch_metrics", &MIGRATION_025[..]),
-        ("026_orch_events_daily", &MIGRATION_026[..]),
-        ("027_orch_metrics_daily", &MIGRATION_027[..]),
-        ("028_orch_trace_cursors", &MIGRATION_028[..]),
-        ("029_item_source", &MIGRATION_029[..]),
-        ("030_template_orchestration", &MIGRATION_030[..]),
-        ("031_items_completed_at_index", &MIGRATION_031[..]),
-        ("032_control_plane_config", &MIGRATION_032[..]),
-        ("033_control_plane_secrets", &MIGRATION_033[..]),
-        ("034_items_version", &MIGRATION_034[..]),
-        ("035_orch_links_version", &MIGRATION_035[..]),
-        ("036_control_planes_version", &MIGRATION_036[..]),
-        ("037_orch_runs_rebuild", &MIGRATION_037[..]),
-        ("038_orch_approvals_rebuild", &MIGRATION_038[..]),
+        ordinary("001_workspaces", &MIGRATION_001[..]),
+        ordinary("002_projects", &MIGRATION_002[..]),
+        ordinary("003_sprints", &MIGRATION_003_SPRINTS[..]),
+        ordinary("004_items", &MIGRATION_004_ITEMS[..]),
+        ordinary("005_dependencies", &MIGRATION_005[..]),
+        ordinary("006_roles", &MIGRATION_006[..]),
+        ordinary("007_comments", &MIGRATION_007[..]),
+        ordinary("008_attachments", &MIGRATION_008[..]),
+        ordinary("009_board_views", &MIGRATION_009[..]),
+        ordinary("010_fts", &MIGRATION_010[..]),
+        ordinary("011_project_templates", &MIGRATION_011[..]),
+        ordinary("012_custom_fields", &MIGRATION_012[..]),
+        ordinary("013_boards", &MIGRATION_013[..]),
+        ordinary("014_consolidate_boards", &MIGRATION_014[..]),
+        ordinary("015_item_assignee", &MIGRATION_015[..]),
+        ordinary("016_perf_indexes", &MIGRATION_016[..]),
+        ordinary("017_app_meta", &MIGRATION_017[..]),
+        ordinary("018_github_links", &MIGRATION_018[..]),
+        ordinary("019_control_planes", &MIGRATION_019[..]),
+        ordinary("020_orch_links", &MIGRATION_020[..]),
+        ordinary("021_orch_tasks", &MIGRATION_021[..]),
+        ordinary("022_orch_runs", &MIGRATION_022[..]),
+        ordinary("023_orch_events", &MIGRATION_023[..]),
+        ordinary("024_orch_approvals", &MIGRATION_024[..]),
+        ordinary("025_orch_metrics", &MIGRATION_025[..]),
+        ordinary("026_orch_events_daily", &MIGRATION_026[..]),
+        ordinary("027_orch_metrics_daily", &MIGRATION_027[..]),
+        ordinary("028_orch_trace_cursors", &MIGRATION_028[..]),
+        ordinary("029_item_source", &MIGRATION_029[..]),
+        ordinary("030_template_orchestration", &MIGRATION_030[..]),
+        ordinary("031_items_completed_at_index", &MIGRATION_031[..]),
+        ordinary("032_control_plane_config", &MIGRATION_032[..]),
+        ordinary("033_control_plane_secrets", &MIGRATION_033[..]),
+        ordinary("034_items_version", &MIGRATION_034[..]),
+        ordinary("035_orch_links_version", &MIGRATION_035[..]),
+        ordinary("036_control_planes_version", &MIGRATION_036[..]),
+        rebuild("037_orch_runs_rebuild", MIGRATION_037),
+        rebuild("038_orch_approvals_rebuild", MIGRATION_038),
     ]
 }
 
@@ -52,64 +96,11 @@ fn all_migrations() -> Vec<(&'static str, &'static [&'static str])> {
 pub async fn run_all(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     info!("Running database migrations...");
     ensure_migrations_table(pool).await?;
-    guard_against_half_applied_rebuild(pool).await?;
-    apply_migrations(pool, &all_migrations()).await?;
+    let migrations = all_migrations();
+    verify_applied_migration_invariant(pool, &migrations).await?;
+    create_pre_upgrade_backup_if_needed(pool, &migrations).await?;
+    apply_migrations(pool, &migrations, None).await?;
     info!("All migrations applied");
-    Ok(())
-}
-
-/// Whether a table named `table` currently exists, via `sqlite_master` — the
-/// same "ask SQLite directly" discipline `orch_migrations_test.rs`'s own
-/// `table_exists` test helper uses, kept here as a real (non-test) function
-/// because [`guard_against_half_applied_rebuild`] needs it at boot time, not
-/// just in tests.
-async fn table_exists(pool: &SqlitePool, table: &str) -> Result<bool, sqlx::Error> {
-    let found: Option<i64> =
-        sqlx::query_scalar("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
-            .bind(table)
-            .fetch_optional(pool)
-            .await?;
-    Ok(found.is_some())
-}
-
-/// Refuses to boot if migration 037 or 038's table rebuild (see their doc
-/// comments) crashed between creating its `_new` sibling and dropping/
-/// renaming the original — the one moment in this file where a statement
-/// failure leaves genuinely irreplaceable rows sitting in a table
-/// `apply_migrations` has not yet recorded as migrated, because the crash
-/// landed after `_new` was populated but before the un-recorded migration's
-/// later statements (`DROP`, `RENAME`) ran.
-///
-/// Why this cannot just let `apply_migrations` retry: on the next boot,
-/// `_migrations` still has no row for the rebuild, so a naive retry resumes
-/// at that migration's *first* statement — `CREATE TABLE ..._new`, which
-/// either fails outright (the table already exists, now with the rows that
-/// already made it across) or, if written `IF NOT EXISTS` to tolerate that,
-/// sails through to the un-run `DROP TABLE <original>` — discarding whatever
-/// the crash left standing, which is exactly the outcome this guard exists to
-/// prevent (see docs/plans/agnostic-control-plane.md §10.3: "the only
-/// irreversible step ... the recovery path is a backup the operator may not
-/// have taken"). Refusing outright, before `apply_migrations` touches
-/// anything, is the only response that cannot make the loss worse.
-async fn guard_against_half_applied_rebuild(pool: &SqlitePool) -> Result<(), sqlx::Error> {
-    for (table, staging) in [
-        ("orch_runs", "orch_runs_new"),
-        ("orch_approvals", "orch_approvals_new"),
-    ] {
-        if table_exists(pool, table).await? && table_exists(pool, staging).await? {
-            return Err(sqlx::Error::Protocol(format!(
-                "refusing to start: both '{table}' and '{staging}' exist, which means a \
-                 previous upgrade crashed midway through rebuilding '{table}' (after the copy \
-                 into '{staging}' but before '{table}' was dropped and '{staging}' renamed in \
-                 its place). Restarting normally would replay that migration from its first \
-                 statement, which risks re-running DROP TABLE '{table}' and discarding \
-                 whichever rows did not make it into '{staging}' before the crash. Restore \
-                 tack.db from a backup taken via GET /api/backup before upgrading again; do \
-                 not drop either table by hand without first confirming which one holds the \
-                 rows you want to keep."
-            )));
-        }
-    }
     Ok(())
 }
 
@@ -124,9 +115,10 @@ pub async fn run_up_to(pool: &SqlitePool, cutoff: &str) -> Result<(), sqlx::Erro
     let migrations = all_migrations();
     let idx = migrations
         .iter()
-        .position(|(name, _)| *name == cutoff)
+        .position(|migration| migration.name == cutoff)
         .unwrap_or_else(|| panic!("run_up_to: unknown migration name {cutoff:?}"));
-    apply_migrations(pool, &migrations[..=idx]).await
+    verify_applied_migration_invariant(pool, &migrations).await?;
+    apply_migrations(pool, &migrations[..=idx], None).await
 }
 
 async fn ensure_migrations_table(pool: &SqlitePool) -> Result<(), sqlx::Error> {
@@ -134,58 +126,362 @@ async fn ensure_migrations_table(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         "CREATE TABLE IF NOT EXISTS _migrations (
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL UNIQUE,
+            checksum TEXT,
             applied_at TEXT NOT NULL DEFAULT (datetime('now'))
         )",
     )
     .execute(pool)
     .await?;
+    let has_checksum = sqlx::query("PRAGMA table_info(_migrations)")
+        .fetch_all(pool)
+        .await?
+        .iter()
+        .any(|row| row.get::<String, _>("name") == "checksum");
+    if !has_checksum {
+        // Existing installs predate the invariant. This is an internal metadata
+        // upgrade, intentionally completed before the ordered migration stream.
+        sqlx::query("ALTER TABLE _migrations ADD COLUMN checksum TEXT")
+            .execute(pool)
+            .await?;
+    }
     Ok(())
+}
+
+/// A deliberately tiny deterministic checksum, used as an integrity fingerprint
+/// rather than a cryptographic signature. It detects accidental edit/reorder of
+/// migration definitions without adding a new dependency to the DB crate.
+fn migration_checksum(migration: Migration) -> String {
+    let mut hash = 0xcbf29ce484222325_u64; // FNV-1a offset basis
+    let mut write = |value: &str| {
+        for byte in value.bytes() {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        hash ^= 0xff;
+        hash = hash.wrapping_mul(0x100000001b3);
+    };
+    write(migration.name);
+    match migration.kind {
+        MigrationKind::Ordinary(statements) => {
+            write("ordinary");
+            for statement in statements {
+                write(statement);
+            }
+        }
+        MigrationKind::Rebuild(spec) => {
+            write("rebuild");
+            write(spec.source);
+            write(spec.staging);
+            for statement in spec.statements {
+                write(statement);
+            }
+            write(&spec.copy_step.to_string());
+            write(spec.source_projection);
+            write(spec.staging_projection);
+        }
+    }
+    format!("fnv1a64:{hash:016x}")
+}
+
+/// Ensures the recorded migrations are an exact prefix of this binary's ordered
+/// list. Old databases with NULL checksums are adopted once, then all future
+/// boots verify both order and contents before issuing any schema SQL.
+async fn verify_applied_migration_invariant(
+    pool: &SqlitePool,
+    migrations: &[Migration],
+) -> Result<(), sqlx::Error> {
+    let applied = sqlx::query("SELECT id, name, checksum FROM _migrations ORDER BY id")
+        .fetch_all(pool)
+        .await?;
+
+    for (index, row) in applied.iter().enumerate() {
+        let id: i64 = row.get("id");
+        let name: String = row.get("name");
+        let stored_checksum: Option<String> = row.get("checksum");
+        let expected = migrations.get(index).ok_or_else(|| {
+            sqlx::Error::Protocol(format!(
+                "migration history contains unexpected entry {name:?} at position {index}"
+            ))
+        })?;
+        if name != expected.name {
+            return Err(sqlx::Error::Protocol(format!(
+                "migration history is out of order at position {index}: recorded {name:?}, \
+                 expected {:?}; restore a database with an intact _migrations history",
+                expected.name
+            )));
+        }
+        let checksum = migration_checksum(*expected);
+        match stored_checksum {
+            Some(stored) if stored != checksum => {
+                return Err(sqlx::Error::Protocol(format!(
+                    "migration {:?} checksum changed (recorded {stored}, expected {checksum}); \
+                     refusing to run edited migration history",
+                    expected.name
+                )));
+            }
+            Some(_) => {}
+            None => {
+                sqlx::query("UPDATE _migrations SET checksum = ? WHERE id = ?")
+                    .bind(checksum)
+                    .bind(id)
+                    .execute(pool)
+                    .await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn create_pre_upgrade_backup_if_needed(
+    pool: &SqlitePool,
+    migrations: &[Migration],
+) -> Result<(), sqlx::Error> {
+    let applied: Vec<String> = sqlx::query_scalar("SELECT name FROM _migrations")
+        .fetch_all(pool)
+        .await?;
+    let Some(rebuild) = migrations.iter().find(|migration| {
+        matches!(migration.kind, MigrationKind::Rebuild(_))
+            && !applied.iter().any(|name| name == migration.name)
+    }) else {
+        return Ok(());
+    };
+
+    let database_list = sqlx::query("PRAGMA database_list").fetch_all(pool).await?;
+    let database_file = database_list
+        .iter()
+        .find(|row| row.get::<String, _>("name") == "main")
+        .map(|row| row.get::<String, _>("file"))
+        .unwrap_or_default();
+    if database_file.is_empty() {
+        // In-memory databases have no durable source file and are used by tests;
+        // there is nothing useful for SQLite to snapshot.
+        return Ok(());
+    }
+
+    let backup_path = format!("{database_file}.before-{}.sqlite", rebuild.name);
+    // VACUUM INTO creates a transactionally consistent SQLite snapshot. Do not
+    // overwrite it: after a failed attempt the first pre-upgrade image is the
+    // recovery artifact, not disposable cache. A pre-existing file therefore
+    // fulfils the contract on retry.
+    match sqlx::query("VACUUM main INTO ?")
+        .bind(&backup_path)
+        .execute(pool)
+        .await
+    {
+        Ok(_) => info!(
+            migration = rebuild.name,
+            backup_path, "Created automatic pre-upgrade backup"
+        ),
+        Err(error) if error.to_string().contains("already exists") => {
+            info!(
+                migration = rebuild.name,
+                backup_path, "Reusing automatic pre-upgrade backup"
+            )
+        }
+        Err(error) => return Err(error),
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct FailureInjection {
+    migration: &'static str,
+    step: usize,
+}
+
+/// Test-only control surface used by integration tests to prove every rebuild
+/// boundary rolls back. It deliberately injects before a named rebuild step;
+/// production callers must use [`run_all`].
+#[doc(hidden)]
+pub async fn run_all_with_rebuild_failure(
+    pool: &SqlitePool,
+    migration: &'static str,
+    step: usize,
+) -> Result<(), sqlx::Error> {
+    ensure_migrations_table(pool).await?;
+    let migrations = all_migrations();
+    verify_applied_migration_invariant(pool, &migrations).await?;
+    apply_migrations(
+        pool,
+        &migrations,
+        Some(FailureInjection { migration, step }),
+    )
+    .await
 }
 
 async fn apply_migrations(
     pool: &SqlitePool,
-    migrations: &[(&str, &[&str])],
+    migrations: &[Migration],
+    failure: Option<FailureInjection>,
 ) -> Result<(), sqlx::Error> {
-    for (name, statements) in migrations {
+    for migration in migrations {
         let already_applied: bool =
             sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM _migrations WHERE name = ?)")
-                .bind(*name)
+                .bind(migration.name)
                 .fetch_one(pool)
                 .await?;
 
         if !already_applied {
-            info!(migration = *name, "Applying migration");
-            // One connection for every statement in this migration, not a bare
-            // `.execute(pool)` per statement. `PRAGMA foreign_keys` is a
-            // per-connection SQLite setting (see `lib.rs::init_pool`'s own
-            // comment on this) and migrations 037/038's 12-step table rebuild
-            // toggles it off for the DROP/RENAME steps and back on before
-            // this connection returns to the pool — handing statements to
-            // whichever connection the pool has free would let that toggle
-            // land on one connection while the DROP runs on another,
-            // silently losing it. No transaction is opened here on purpose:
-            // rule 4 (see this file's own comments on migrations 029/030/032)
-            // deliberately leaves a failed migration's completed statements
-            // in place rather than wrapping them atomically, so a crash
-            // partway still records nothing and the operator gets a named
-            // error on the next boot instead of a rolled-back no-op.
-            let mut conn = pool.acquire().await?;
-            for statement in *statements {
-                sqlx::query(statement)
-                    .execute(&mut *conn)
-                    .await
-                    .map_err(|e| {
-                        tracing::error!(migration = *name, statement, error = %e, "Migration failed");
-                        e
-                    })?;
+            info!(migration = migration.name, "Applying migration");
+            match migration.kind {
+                MigrationKind::Ordinary(statements) => {
+                    apply_ordinary_migration(pool, *migration, statements).await?
+                }
+                MigrationKind::Rebuild(spec) => {
+                    apply_rebuild_migration(pool, *migration, spec, failure).await?
+                }
             }
-            sqlx::query("INSERT INTO _migrations (name) VALUES (?)")
-                .bind(*name)
-                .execute(&mut *conn)
-                .await?;
-            info!(migration = *name, "Migration applied successfully");
+            info!(migration = migration.name, "Migration applied successfully");
         }
     }
+    Ok(())
+}
+
+async fn apply_ordinary_migration(
+    pool: &SqlitePool,
+    migration: Migration,
+    statements: &[&str],
+) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let result = async {
+        for statement in statements {
+            sqlx::query(statement).execute(&mut *tx).await.map_err(|error| {
+                tracing::error!(migration = migration.name, statement, error = %error, "Migration failed");
+                error
+            })?;
+        }
+        record_migration(&mut tx, migration).await
+    }
+    .await;
+    match result {
+        Ok(()) => tx.commit().await,
+        Err(error) => {
+            tx.rollback().await?;
+            Err(error)
+        }
+    }
+}
+
+async fn apply_rebuild_migration(
+    pool: &SqlitePool,
+    migration: Migration,
+    spec: RebuildMigration,
+    failure: Option<FailureInjection>,
+) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let result = async {
+        // Keep FK enforcement enabled, but defer it long enough to inspect every
+        // violation ourselves. Otherwise a corrupt historical source can make the
+        // INSERT fail before `foreign_key_check` is fetched and asserted.
+        sqlx::query("PRAGMA defer_foreign_keys=ON")
+            .execute(&mut *tx)
+            .await?;
+        for (step, statement) in spec.statements.iter().enumerate() {
+            inject_failure(failure, migration.name, step)?;
+            sqlx::query(statement).execute(&mut *tx).await.map_err(|error| {
+                tracing::error!(migration = migration.name, statement, error = %error, "Rebuild migration failed");
+                error
+            })?;
+            if step == spec.copy_step {
+                inject_failure(failure, migration.name, spec.statements.len())?;
+                verify_copy(&mut tx, migration.name, spec).await?;
+            }
+        }
+        let fk_step = spec.statements.len() + 1;
+        inject_failure(failure, migration.name, fk_step)?;
+        assert_foreign_key_check(&mut tx, migration.name).await?;
+        record_migration(&mut tx, migration).await
+    }
+    .await;
+
+    match result {
+        Ok(()) => tx.commit().await,
+        Err(error) => {
+            // A retry may happen immediately. Complete rollback before
+            // releasing the connection instead of relying on drop's async
+            // cleanup, which can otherwise leave a transient schema lock.
+            tx.rollback().await?;
+            Err(error)
+        }
+    }
+}
+
+fn inject_failure(
+    failure: Option<FailureInjection>,
+    migration: &str,
+    step: usize,
+) -> Result<(), sqlx::Error> {
+    if failure.is_some_and(|failure| failure.migration == migration && failure.step == step) {
+        return Err(sqlx::Error::Protocol(format!(
+            "injected failure before rebuild migration {migration} step {step}"
+        )));
+    }
+    Ok(())
+}
+
+async fn verify_copy(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    migration: &str,
+    spec: RebuildMigration,
+) -> Result<(), sqlx::Error> {
+    let source_count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {}", spec.source))
+        .fetch_one(&mut **tx)
+        .await?;
+    let staging_count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {}", spec.staging))
+        .fetch_one(&mut **tx)
+        .await?;
+    if source_count != staging_count {
+        return Err(sqlx::Error::Protocol(format!(
+            "rebuild migration {migration} copy verification failed: {} has {source_count} rows, \
+             {} has {staging_count}; source table was not removed",
+            spec.source, spec.staging
+        )));
+    }
+    let difference_sql = format!(
+        "SELECT COUNT(*) FROM ({} EXCEPT {} UNION ALL {} EXCEPT {})",
+        spec.source_projection,
+        spec.staging_projection,
+        spec.staging_projection,
+        spec.source_projection
+    );
+    let differences: i64 = sqlx::query_scalar(&difference_sql)
+        .fetch_one(&mut **tx)
+        .await?;
+    if differences != 0 {
+        return Err(sqlx::Error::Protocol(format!(
+            "rebuild migration {migration} copy verification found {differences} differing row(s); \
+             source table was not removed"
+        )));
+    }
+    Ok(())
+}
+
+async fn assert_foreign_key_check(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    migration: &str,
+) -> Result<(), sqlx::Error> {
+    let violations = sqlx::query("PRAGMA foreign_key_check")
+        .fetch_all(&mut **tx)
+        .await?;
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        Err(sqlx::Error::Protocol(format!(
+            "rebuild migration {migration} failed foreign_key_check with {} violation(s)",
+            violations.len()
+        )))
+    }
+}
+
+async fn record_migration(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    migration: Migration,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("INSERT INTO _migrations (name, checksum) VALUES (?, ?)")
+        .bind(migration.name)
+        .bind(migration_checksum(migration))
+        .execute(&mut **tx)
+        .await?;
     Ok(())
 }
 
@@ -870,26 +1166,19 @@ const MIGRATION_036: [&str; 1] =
 // raised. `NOT NULL` makes that insert fail outright; only a column-level
 // rebuild can widen it to nullable.
 //
-// Both rebuilds follow SQLite's own documented 12-step ALTER TABLE procedure
-// (https://www.sqlite.org/lang_altertable.html#otheralter), one table per
-// migration name so a failure in one never touches the other: disable foreign
-// key enforcement on this connection, create the `_new` table with the target
-// shape, copy every row across with an explicit column-for-column
-// `INSERT ... SELECT` (never `SELECT *` — a query that silently reflows if a
-// later migration adds a column to either table), drop the original, rename
-// `_new` into its place, recreate the indexes DROP TABLE took with it, run
-// `PRAGMA foreign_key_check` as a live assertion that nothing was left
-// dangling, then re-enable foreign key enforcement before this connection
-// goes back to the pool. `apply_migrations` (above) acquiring one connection
-// per migration is what makes the foreign-key toggle reliable here — see its
-// own comment.
+// Both rebuilds use SQLite's documented copy/swap procedure inside one
+// transaction. Foreign keys remain enabled: neither table is a parent of a
+// foreign key, so the old OFF/ON toggle was unnecessary and made a crash
+// recoverable only by an operator. The runner creates the `_new` table, copies
+// with explicit columns (never `SELECT *`), proves count and field equality
+// before DROP, swaps, recreates indexes, fetches `PRAGMA foreign_key_check`
+// and commits the migration record last. A statement failure rolls the whole
+// transaction back, leaving a retryable original table and no staging residue.
 //
 // **This is the only step in the whole cycle that rewrites existing rows.**
-// `run_all`'s `guard_against_half_applied_rebuild` (above) is the safety net
-// for a crash between DROP and RENAME; §10.3 of the plan is the honest
-// statement of what that guard does and does not protect against. See
-// CHANGELOG.md for the operator-facing backup warning this migration ships
-// with, per §II.0 rule text in TODO.md §II ("take a backup first").
+// Before a file-backed database enters its first pending rebuild, `run_all`
+// creates a consistent `VACUUM INTO` snapshot beside it. That snapshot is an
+// additional recovery artifact, not a substitute for the atomic copy/swap.
 
 // Every existing column is carried across unchanged; `run_id` is copied into
 // the new `external_run_id` (positionally, not by name, in the INSERT below)
@@ -899,8 +1188,11 @@ const MIGRATION_036: [&str; 1] =
 // defaults to 1 for the same reason `items.version` (034) defaults to 1, not
 // 0: a row that predates the column has implicitly already had exactly one
 // "version" of whatever the column now counts.
-const MIGRATION_037: [&str; 8] = [
-    "PRAGMA foreign_keys=OFF",
+const MIGRATION_037_STATEMENTS: [&str; 6] = [
+    // 037/038 were never released. Remove only their reserved staging name;
+    // the source remains authoritative and this is inside the surrounding
+    // transaction, so an interrupted retry cannot leave an orphan or lose rows.
+    "DROP TABLE IF EXISTS orch_runs_new",
     "CREATE TABLE IF NOT EXISTS orch_runs_new (
         control_plane_id TEXT NOT NULL REFERENCES control_planes(id) ON DELETE CASCADE,
         external_run_id TEXT NOT NULL,
@@ -926,9 +1218,20 @@ const MIGRATION_037: [&str; 8] = [
     "DROP TABLE orch_runs",
     "ALTER TABLE orch_runs_new RENAME TO orch_runs",
     "CREATE INDEX IF NOT EXISTS idx_orch_runs_plane_state ON orch_runs(control_plane_id, state)",
-    "PRAGMA foreign_key_check",
-    "PRAGMA foreign_keys=ON",
 ];
+
+const MIGRATION_037: RebuildMigration = RebuildMigration {
+    source: "orch_runs",
+    staging: "orch_runs_new",
+    statements: &MIGRATION_037_STATEMENTS,
+    copy_step: 2,
+    source_projection: "SELECT control_plane_id, run_id AS external_run_id, 1 AS run_attempt, \
+        NULL AS correlation_id, item_id, remote_project, source, state, started_at, ended_at, \
+        error, created_at, updated_at FROM orch_runs",
+    staging_projection: "SELECT control_plane_id, external_run_id, run_attempt, correlation_id, \
+        item_id, remote_project, source, state, started_at, ended_at, error, created_at, \
+        updated_at FROM orch_runs_new",
+};
 
 // `control_plane_id` drops its `NOT NULL` (a hook-raised decision may have no
 // registered plane behind it yet — see the section doc comment above).
@@ -940,8 +1243,8 @@ const MIGRATION_037: [&str; 8] = [
 // docket's approval-of-an-irreversible-action shape, the only kind this
 // schema could represent before today — keeps reading as exactly that.
 // `external_id`/`provider_metadata` are additive, empty on every existing row.
-const MIGRATION_038: [&str; 9] = [
-    "PRAGMA foreign_keys=OFF",
+const MIGRATION_038_STATEMENTS: [&str; 7] = [
+    "DROP TABLE IF EXISTS orch_approvals_new",
     "CREATE TABLE IF NOT EXISTS orch_approvals_new (
         token TEXT PRIMARY KEY NOT NULL,
         control_plane_id TEXT REFERENCES control_planes(id) ON DELETE CASCADE,
@@ -968,6 +1271,17 @@ const MIGRATION_038: [&str; 9] = [
     "ALTER TABLE orch_approvals_new RENAME TO orch_approvals",
     "CREATE INDEX IF NOT EXISTS idx_orch_approvals_item ON orch_approvals(item_id)",
     "CREATE INDEX IF NOT EXISTS idx_orch_approvals_state ON orch_approvals(state)",
-    "PRAGMA foreign_key_check",
-    "PRAGMA foreign_keys=ON",
 ];
+
+const MIGRATION_038: RebuildMigration = RebuildMigration {
+    source: "orch_approvals",
+    staging: "orch_approvals_new",
+    statements: &MIGRATION_038_STATEMENTS,
+    copy_step: 2,
+    source_projection: "SELECT token, control_plane_id, 'approval' AS kind, NULL AS external_id, \
+        '{}' AS provider_metadata, item_id, remote_task_id, agent, action, state, requested_at, \
+        decided_at, created_at, updated_at FROM orch_approvals",
+    staging_projection: "SELECT token, control_plane_id, kind, external_id, provider_metadata, \
+        item_id, remote_task_id, agent, action, state, requested_at, decided_at, created_at, \
+        updated_at FROM orch_approvals_new",
+};
