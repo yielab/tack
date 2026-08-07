@@ -393,8 +393,12 @@ test('item detail drawer after a blocked dispatch outcome has no accessibility v
   await page.getByRole('button', { name: 'Dispatch to agents' }).click();
   // The blocked outcome names the policy — the card's own correctness bar
   // ("show WHICH policy blocked it"), and a visible marker the note actually
-  // rendered before scanning.
-  await expect(page.getByText('prompt-injection')).toBeVisible();
+  // rendered in the item-details surface before scanning. The same policy is
+  // also repeated in a transient notification, so keep this locator scoped to
+  // the dialog rather than relying on a globally unique text match.
+  await expect(
+    page.getByRole('dialog', { name: 'Item details' }).getByText('prompt-injection'),
+  ).toBeVisible();
 
   const violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
