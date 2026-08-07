@@ -2,7 +2,7 @@
 
 - Base SHA / branch / final SHA: `f14019b` / `agent/iii-c3-runner-engine` / the commit
   containing this handoff.
-- Files changed (must equal ownership list): `crates/tack-runner/src/{client,journal,workspace,engine}.rs`, focused tests embedded in those owned modules, and this handoff.
+- Files changed (must equal ownership list): `crates/tack-runner/src/{client,journal,workspace,engine}.rs`, focused tests embedded in those owned modules, and this handoff. The manifest/lock dependency amendment is the separate B3/integrator commit `d8300e4`.
 - Contract fixtures consumed: enrollment, claim, heartbeat, completion, cancellation, limits,
   lifecycle and stable-error fixtures under `docs/contracts/runner-v1/`; no fixture changed.
 - Behavior implemented: a typed pull-protocol seam; enrollment, claim, heartbeat,
@@ -11,7 +11,7 @@
   restart recovery observation; cancellation coordination through a fake adapter; and no-retry
   stale/failed-fence quarantine.
 - Tests added and exact commands/results:
-  - `cargo test -p tack-runner` — 23 library tests and 2 CLI tests passed: atomic private journal/restart scan;
+  - `cargo test -p tack-runner` — 24 library tests and 2 CLI tests passed: atomic private journal/restart scan;
     deterministic isolated workspace; root, unresolved-path and symlink cleanup refusal;
     journal-before-provision/start; cancellation; post-spawn-before-ack ambiguity;
     cancellation-report ambiguity; stale completion fence; and restart observation.
@@ -23,13 +23,11 @@
   `RecoveryObservation::Ambiguous`, then best-effort cancels; it does not retry or report again.
   A journal intent is fsynced before worktree provisioning, and cleanup rejects a symlink before
   resolving it so it cannot delete another workspace.
-- Schema/API/contract change requested from another owner: no C3 schema/API/fixture edit.
-  The frozen protocol establishes only the `/api/runner/v1` base path, not per-operation route
-  paths, so C3 deliberately exposes `PullProtocol` rather than inventing an HTTP route map.
-  C2/C5 should supply the concrete authenticated transport. To consume B1's richer shared
-  domain objects directly, the B3 dependency owner/integrator must explicitly approve adding
-  `tack-orch`, `chrono`, and `serde_json` to `tack-runner`; this card was instructed not to edit
-  its Cargo manifest and therefore uses narrow C3-local opaque runtime IDs at the client seam.
+- Schema/API/contract change requested from another owner: the frozen protocol establishes only
+  the `/api/runner/v1` base path, not per-operation route paths, so C3 deliberately exposes
+  `PullProtocol` rather than inventing an HTTP route map. C2/C5 should supply the concrete
+  authenticated transport. The B3/integrator dependency amendment `d8300e4` provides B1's
+  `tack-orch` types to C3; C3 itself did not edit the manifest or lockfile.
 - Known limitations or `not_measured` fields: no HTTP implementation, credential persistence,
   real Git worktree provisioner, event/artifact streaming, or real harness adapter is included.
   `UnavailableWorktreeProvisioner` is an explicit typed failure, not an empty-directory success.
@@ -67,6 +65,18 @@
 - The preparation start report carries the planned `workspace_id` and `base_revision`, allowing
   C2/C5 to map it to the accept endpoint without hidden state. The running report preserves
   those facts and additionally carries the local `process_id`; preparation has no process ID.
+- Typed transport completion: `EnrollmentRequest` and `RefreshRequest` now carry B1
+  `RunnerCapabilities`; `RunnerSession` carries a preserved `credential_expires_at` timestamp;
+  and `PullProtocol::refresh` returns an updated expiring session plus acceptance timestamp.
+  `CompletionReport` carries B1 `ActualExecution` and `Usage`, supplied by `HarnessOutcome`.
+  `RecoveryReport` carries a deterministic `recovery:{attempt}:{fence}:{observation}` key and
+  typed, non-secret evidence (`journal_state`, whether a process was observed). C5 remains
+  responsible for turning these types into route DTOs and scheduling refresh before expiry.
+- Dependency and verification: B3/integrator commit `d8300e4` adds the runtime `tack-orch`
+  dependency and test-only `serde_json`; no direct `chrono` or production `serde_json` use was
+  added to C3. After the typed seam change, `cargo test -p tack-runner` (24 library + 2 CLI
+  tests) passed. `cargo clippy -p tack-runner --all-targets -- -D warnings`,
+  `cargo fmt --all -- --check`, and `git diff --check` are the final required checks.
 - Additional adversarial tests cover failed recovery delivery then retry with no respawn,
   running-process recovery quarantine, duplicate quarantined claim prevention, post-spawn
   journal-update ambiguity/cancel, directory symlinks, workspace-path symlink, and marker
