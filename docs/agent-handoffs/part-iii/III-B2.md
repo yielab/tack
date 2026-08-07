@@ -98,3 +98,20 @@
 - Focused coverage proves canonical retries, changed-payload conflict with no extra write, and
   foreign-fence stale rejection. The compatibility boolean event API remains unchanged for
   callers that have not adopted the typed result.
+
+### Completion replay correction
+
+- Migration 055's completion replay record is now authoritative: `Completion` carries the
+  required final event checkpoint, and the terminal compare-and-set validates attempt, runner,
+  fence, active lease and that checkpoint in one statement. Completion fingerprints bind every
+  immutable request field (including runner/fence/checkpoint) and recursively canonicalize the
+  structured execution and usage JSON.
+- Authentication precedes replay lookup. A matching authenticated terminal retry returns the
+  parsed stored response; malformed stored data fails closed. A stale or foreign runner/fence
+  cannot read a response. Pre-055 terminal attempts with no durable response are `Conflict`,
+  even if their historical completion ID matches: the repository deliberately does not invent a
+  response from incomplete state.
+- Focused tests cover response-loss replay, foreign-fence rejection, semantic JSON replay,
+  changed fields/checkpoint conflicts, corrupt response handling, exactly-once capped capacity,
+  and rollback when persisting the replay record fails. The boolean compatibility completion API
+  delegates to the hardened typed path.

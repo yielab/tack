@@ -7,9 +7,10 @@ use sqlx::Row;
 use tack_db::{
     Repository, init_pool, migrations,
     repo::execution::{
-        ClaimReplayResult, Completion, EnqueueResult, EnrollmentToken, EventApplyResult,
-        EventBatch, ExecutionClock, HeartbeatBatchResult, HeartbeatLease, NewAgentProfile,
-        NewEvent, NewExecutionRequest, NewRunner, RecoveryClassification, RedeemEnrollmentResult,
+        ClaimReplayResult, Completion, CompletionResult, EnqueueResult, EnrollmentToken,
+        EventApplyResult, EventBatch, ExecutionClock, HeartbeatBatchResult, HeartbeatLease,
+        NewAgentProfile, NewEvent, NewExecutionRequest, NewRunner, RecoveryClassification,
+        RedeemEnrollmentResult,
     },
 };
 
@@ -627,6 +628,347 @@ fn request<'a>(
     }
 }
 
+async fn ready_completion_attempt(
+    repo: &Repository,
+    item_id: &str,
+    clock: &FakeClock,
+    request_id: &str,
+    attempt_id: &str,
+) -> i64 {
+    repo.enqueue_execution(request(request_id, item_id, request_id, "same"), clock)
+        .await
+        .unwrap();
+    repo.claim_execution("runner-a", attempt_id, Duration::seconds(60), clock)
+        .await
+        .unwrap()
+        .unwrap()
+        .fencing_token
+}
+
+fn completion_input<'a>(
+    attempt_id: &'a str,
+    fencing_token: i64,
+    completion_id: &'a str,
+    final_event_checkpoint: Option<&'a str>,
+) -> Completion<'a> {
+    Completion {
+        runner_id: "runner-a",
+        attempt_id,
+        fencing_token,
+        completion_id,
+        final_event_checkpoint,
+        terminal_state: "succeeded",
+        terminal_reason: "completed",
+        actual_execution: r#"{"result":{"b":2,"a":1}}"#,
+        usage: r#"{"output_tokens":2,"input_tokens":1}"#,
+    }
+}
+
+#[tokio::test]
+async fn completion_response_loss_replays_authoritative_response() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-completion-loss",
+        "attempt-completion-loss",
+    )
+    .await;
+    let completion = completion_input("attempt-completion-loss", fence, "completion-loss", None);
+    let committed = repo
+        .complete_execution_result(completion.clone(), &clock)
+        .await
+        .unwrap();
+    let CompletionResult::Committed(committed) = committed else {
+        panic!("first completion must commit");
+    };
+    let replayed = repo
+        .complete_execution_result(completion, &clock)
+        .await
+        .unwrap();
+    let CompletionResult::Replayed(replayed) = replayed else {
+        panic!("lost response retry must replay");
+    };
+    assert_eq!(replayed, committed);
+}
+
+#[tokio::test]
+async fn completion_replay_foreign_fence_is_stale() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-completion-stale",
+        "attempt-completion-stale",
+    )
+    .await;
+    let completion = completion_input("attempt-completion-stale", fence, "completion-stale", None);
+    repo.complete_execution_result(completion.clone(), &clock)
+        .await
+        .unwrap();
+    let foreign = Completion {
+        fencing_token: fence + 1,
+        ..completion
+    };
+    assert_eq!(
+        repo.complete_execution_result(foreign, &clock)
+            .await
+            .unwrap(),
+        CompletionResult::Stale
+    );
+}
+
+#[tokio::test]
+async fn completion_replay_canonicalizes_structured_json() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-completion-canonical",
+        "attempt-completion-canonical",
+    )
+    .await;
+    let completion = completion_input(
+        "attempt-completion-canonical",
+        fence,
+        "completion-canonical",
+        None,
+    );
+    repo.complete_execution_result(completion.clone(), &clock)
+        .await
+        .unwrap();
+    let canonical_retry = Completion {
+        actual_execution: r#"{"result":{"a":1,"b":2}}"#,
+        usage: r#"{"input_tokens":1,"output_tokens":2}"#,
+        ..completion
+    };
+    assert!(matches!(
+        repo.complete_execution_result(canonical_retry, &clock)
+            .await
+            .unwrap(),
+        CompletionResult::Replayed(_)
+    ));
+}
+
+#[tokio::test]
+async fn completion_changed_fields_or_checkpoint_conflict_without_write() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-completion-conflict",
+        "attempt-completion-conflict",
+    )
+    .await;
+    let base = completion_input(
+        "attempt-completion-conflict",
+        fence,
+        "completion-conflict",
+        None,
+    );
+    let wrong_checkpoint = Completion {
+        final_event_checkpoint: Some("not-current"),
+        ..base.clone()
+    };
+    assert_eq!(
+        repo.complete_execution_result(wrong_checkpoint, &clock)
+            .await
+            .unwrap(),
+        CompletionResult::Conflict
+    );
+    let state: String = sqlx::query_scalar(
+        "SELECT state FROM execution_attempts WHERE id = 'attempt-completion-conflict'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(state, "leased");
+    repo.complete_execution_result(base.clone(), &clock)
+        .await
+        .unwrap();
+    let changed_fields = Completion {
+        terminal_reason: "changed",
+        ..base.clone()
+    };
+    let changed_checkpoint = Completion {
+        final_event_checkpoint: Some("changed"),
+        ..base
+    };
+    assert_eq!(
+        repo.complete_execution_result(changed_fields, &clock)
+            .await
+            .unwrap(),
+        CompletionResult::Conflict
+    );
+    assert_eq!(
+        repo.complete_execution_result(changed_checkpoint, &clock)
+            .await
+            .unwrap(),
+        CompletionResult::Conflict
+    );
+    let completion_id: String = sqlx::query_scalar(
+        "SELECT completion_id FROM execution_attempts WHERE id = 'attempt-completion-conflict'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(completion_id, "completion-conflict");
+}
+
+#[tokio::test]
+async fn completion_replay_corrupt_response_fails_closed() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-completion-corrupt",
+        "attempt-completion-corrupt",
+    )
+    .await;
+    let completion = completion_input(
+        "attempt-completion-corrupt",
+        fence,
+        "completion-corrupt",
+        None,
+    );
+    repo.complete_execution_result(completion.clone(), &clock)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE execution_completion_replays SET response = '{}' WHERE attempt_id = 'attempt-completion-corrupt'")
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    assert!(
+        repo.complete_execution_result(completion, &clock)
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn completion_replay_restores_capacity_once_and_never_above_cap() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-completion-capacity",
+        "attempt-completion-capacity",
+    )
+    .await;
+    sqlx::query(
+        "UPDATE agent_runners SET available_capacity = total_capacity WHERE id = 'runner-a'",
+    )
+    .execute(repo.pool())
+    .await
+    .unwrap();
+    let completion = completion_input(
+        "attempt-completion-capacity",
+        fence,
+        "completion-capacity",
+        None,
+    );
+    repo.complete_execution_result(completion.clone(), &clock)
+        .await
+        .unwrap();
+    repo.complete_execution_result(completion, &clock)
+        .await
+        .unwrap();
+    let capacity: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(capacity, 1);
+
+    let second_fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-completion-once",
+        "attempt-completion-once",
+    )
+    .await;
+    let second = completion_input(
+        "attempt-completion-once",
+        second_fence,
+        "completion-once",
+        None,
+    );
+    repo.complete_execution_result(second.clone(), &clock)
+        .await
+        .unwrap();
+    let after_commit: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    repo.complete_execution_result(second, &clock)
+        .await
+        .unwrap();
+    let after_replay: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(after_commit, 1);
+    assert_eq!(after_replay, 1);
+}
+
+#[tokio::test]
+async fn completion_replay_insert_failure_rolls_back_terminal_transition() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-completion-rollback",
+        "attempt-completion-rollback",
+    )
+    .await;
+    sqlx::query("CREATE TRIGGER fail_completion_replay BEFORE INSERT ON execution_completion_replays BEGIN SELECT RAISE(ABORT, 'forced completion replay failure'); END")
+        .execute(repo.pool())
+        .await
+        .unwrap();
+    let error = repo
+        .complete_execution_result(
+            completion_input(
+                "attempt-completion-rollback",
+                fence,
+                "completion-rollback",
+                None,
+            ),
+            &clock,
+        )
+        .await;
+    assert!(error.is_err());
+    let attempt_state: String = sqlx::query_scalar(
+        "SELECT state FROM execution_attempts WHERE id = 'attempt-completion-rollback'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    let request_state: String = sqlx::query_scalar(
+        "SELECT state FROM execution_requests WHERE id = 'request-completion-rollback'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    let capacity: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(attempt_state, "leased");
+    assert_eq!(request_state, "leased");
+    assert_eq!(capacity, 0);
+}
+
 #[tokio::test]
 async fn old_schema_upgrades_to_all_ten_execution_tables() {
     let pool = init_pool("sqlite::memory:").await.unwrap();
@@ -766,6 +1108,7 @@ async fn claim_fence_replay_and_terminal_state_are_atomic() {
                 attempt_id: "attempt-a",
                 fencing_token: 1,
                 completion_id: "complete-1",
+                final_event_checkpoint: Some("checkpoint-1"),
                 terminal_state: "succeeded",
                 terminal_reason: "completed",
                 actual_execution: "{}",
@@ -783,6 +1126,7 @@ async fn claim_fence_replay_and_terminal_state_are_atomic() {
                 attempt_id: "attempt-a",
                 fencing_token: 1,
                 completion_id: "complete-1",
+                final_event_checkpoint: Some("checkpoint-1"),
                 terminal_state: "succeeded",
                 terminal_reason: "completed",
                 actual_execution: "{}",
@@ -802,6 +1146,7 @@ async fn claim_fence_replay_and_terminal_state_are_atomic() {
                     attempt_id: "attempt-a",
                     fencing_token: 1,
                     completion_id: "complete-2",
+                    final_event_checkpoint: Some("checkpoint-1"),
                     terminal_state: "failed",
                     terminal_reason: "changed",
                     actual_execution: "{}",

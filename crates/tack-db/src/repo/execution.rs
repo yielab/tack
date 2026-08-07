@@ -112,6 +112,7 @@ pub struct Completion<'a> {
     pub attempt_id: &'a str,
     pub fencing_token: i64,
     pub completion_id: &'a str,
+    pub final_event_checkpoint: Option<&'a str>,
     pub terminal_state: &'a str,
     pub terminal_reason: &'a str,
     pub actual_execution: &'a str,
@@ -220,9 +221,16 @@ pub enum CancellationObservation {
     Stale,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompletionResponse {
+    pub completion_id: String,
+    pub terminal_state: String,
+    pub final_event_checkpoint: Option<String>,
+    pub committed_at: String,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompletionResult {
-    Committed { committed_at: String },
-    Replayed { committed_at: String },
+    Committed(CompletionResponse),
+    Replayed(CompletionResponse),
     Conflict,
     Stale,
 }
@@ -282,6 +290,57 @@ fn canonical_json(value: serde_json::Value) -> serde_json::Value {
     }
 }
 
+fn completion_fingerprint(completion: &Completion<'_>) -> Result<String, sqlx::Error> {
+    let actual_execution: serde_json::Value = serde_json::from_str(completion.actual_execution)
+        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+    let usage: serde_json::Value = serde_json::from_str(completion.usage)
+        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+    serde_json::to_string(&serde_json::json!({
+        "runner_id": completion.runner_id,
+        "attempt_id": completion.attempt_id,
+        "fencing_token": completion.fencing_token,
+        "completion_id": completion.completion_id,
+        "final_event_checkpoint": completion.final_event_checkpoint,
+        "terminal_state": completion.terminal_state,
+        "terminal_reason": completion.terminal_reason,
+        "actual_execution": canonical_json(actual_execution),
+        "usage": canonical_json(usage),
+    }))
+    .map_err(|error| sqlx::Error::Protocol(error.to_string()))
+}
+
+fn replay_response(serialized: &str) -> Result<CompletionResponse, sqlx::Error> {
+    let value: serde_json::Value = serde_json::from_str(serialized)
+        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| sqlx::Error::Protocol("invalid completion replay response".into()))?;
+    let required = |field: &str| {
+        object
+            .get(field)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                sqlx::Error::Protocol(format!("invalid completion replay response field: {field}"))
+            })
+    };
+    let final_event_checkpoint = match object.get("final_event_checkpoint") {
+        Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(value)) => Some(value.clone()),
+        _ => {
+            return Err(sqlx::Error::Protocol(
+                "invalid completion replay response field: final_event_checkpoint".into(),
+            ));
+        }
+    };
+    Ok(CompletionResponse {
+        completion_id: required("completion_id")?,
+        terminal_state: required("terminal_state")?,
+        final_event_checkpoint,
+        committed_at: required("committed_at")?,
+    })
+}
+
 fn lease_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Lease, sqlx::Error> {
     let issued: String = row.get("lease_issued_at");
     let expires: String = row.get("lease_expires_at");
@@ -327,31 +386,59 @@ impl Repository {
     ) -> Result<CompletionResult, sqlx::Error> {
         if !terminal(completion.terminal_state) {
             return Ok(CompletionResult::Conflict);
-        };
+        }
         let now = stamp(clock);
-        let fingerprint = format!(
-            "{}\u{1f}{}\u{1f}{}\u{1f}{}",
-            completion.terminal_state,
-            completion.terminal_reason,
-            completion.actual_execution,
-            completion.usage
-        );
+        let fingerprint = completion_fingerprint(&completion)?;
         let mut tx = self.pool().begin().await?;
-        if let Some(row)=sqlx::query("SELECT fingerprint,committed_at FROM execution_completion_replays WHERE attempt_id=? AND completion_id=?").bind(completion.attempt_id).bind(completion.completion_id).fetch_optional(&mut *tx).await? {let old:String=row.get("fingerprint");let at:String=row.get("committed_at");tx.commit().await?;return Ok(if old==fingerprint{CompletionResult::Replayed{committed_at:at}}else{CompletionResult::Conflict})}
-        let row=sqlx::query("SELECT request_id,runner_id,state,lease_expires_at FROM execution_attempts WHERE id=? AND runner_id=? AND fencing_token=?").bind(completion.attempt_id).bind(completion.runner_id).bind(completion.fencing_token).fetch_optional(&mut *tx).await?;
+        let row = sqlx::query(
+            "SELECT request_id,runner_id,state,lease_expires_at,event_checkpoint FROM execution_attempts WHERE id=? AND runner_id=? AND fencing_token=?",
+        )
+        .bind(completion.attempt_id)
+        .bind(completion.runner_id)
+        .bind(completion.fencing_token)
+        .fetch_optional(&mut *tx)
+        .await?;
         let Some(row) = row else {
             tx.commit().await?;
             return Ok(CompletionResult::Stale);
         };
+        if let Some(row) = sqlx::query(
+            "SELECT fingerprint,response FROM execution_completion_replays WHERE attempt_id=? AND completion_id=?",
+        )
+        .bind(completion.attempt_id)
+        .bind(completion.completion_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        {
+            let stored_fingerprint: String = row.get("fingerprint");
+            if stored_fingerprint != fingerprint {
+                tx.commit().await?;
+                return Ok(CompletionResult::Conflict);
+            }
+            let response: String = row.get("response");
+            let response = replay_response(&response)?;
+            tx.commit().await?;
+            return Ok(CompletionResult::Replayed(response));
+        }
         let state: String = row.get("state");
         let expires: String = row.get("lease_expires_at");
-        if terminal(&state) || expires <= now {
+        if terminal(&state) {
+            // Pre-M055 terminal attempts have no authoritative response to replay.
+            tx.commit().await?;
+            return Ok(CompletionResult::Conflict);
+        }
+        if expires <= now {
             tx.commit().await?;
             return Ok(CompletionResult::Stale);
-        };
+        }
         let request: String = row.get("request_id");
         let runner: String = row.get("runner_id");
-        if sqlx::query("UPDATE execution_attempts SET state=?,completion_id=?,terminal_reason=?,actual_execution=?,usage=?,ended_at=?,updated_at=? WHERE id=? AND state NOT IN ('succeeded','failed','cancelled')").bind(completion.terminal_state).bind(completion.completion_id).bind(completion.terminal_reason).bind(completion.actual_execution).bind(completion.usage).bind(&now).bind(&now).bind(completion.attempt_id).execute(&mut *tx).await?.rows_affected()!=1{tx.rollback().await?;return Ok(CompletionResult::Conflict)};
+        let updated = sqlx::query("UPDATE execution_attempts SET state=?,completion_id=?,terminal_reason=?,actual_execution=?,usage=?,ended_at=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND event_checkpoint IS ? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at > ?")
+            .bind(completion.terminal_state).bind(completion.completion_id).bind(completion.terminal_reason).bind(completion.actual_execution).bind(completion.usage).bind(&now).bind(&now).bind(completion.attempt_id).bind(completion.runner_id).bind(completion.fencing_token).bind(completion.final_event_checkpoint).bind(&now).execute(&mut *tx).await?;
+        if updated.rows_affected() != 1 {
+            tx.rollback().await?;
+            return Ok(CompletionResult::Conflict);
+        }
         sqlx::query("UPDATE execution_requests SET state=?,updated_at=? WHERE id=?")
             .bind(completion.terminal_state)
             .bind(&now)
@@ -359,10 +446,22 @@ impl Repository {
             .execute(&mut *tx)
             .await?;
         sqlx::query("UPDATE agent_runners SET available_capacity=MIN(total_capacity,available_capacity+1),updated_at=? WHERE id=?").bind(&now).bind(runner).execute(&mut *tx).await?;
-        let response=serde_json::json!({"state":completion.terminal_state,"completion_id":completion.completion_id,"committed_at":now}).to_string();
-        sqlx::query("INSERT INTO execution_completion_replays(attempt_id,completion_id,fingerprint,response,committed_at) VALUES(?,?,?,?,?)").bind(completion.attempt_id).bind(completion.completion_id).bind(fingerprint).bind(response).bind(&now).execute(&mut *tx).await?;
+        let response = CompletionResponse {
+            completion_id: completion.completion_id.into(),
+            terminal_state: completion.terminal_state.into(),
+            final_event_checkpoint: completion.final_event_checkpoint.map(str::to_owned),
+            committed_at: now.clone(),
+        };
+        let serialized_response = serde_json::json!({
+            "completion_id": response.completion_id,
+            "terminal_state": response.terminal_state,
+            "final_event_checkpoint": response.final_event_checkpoint,
+            "committed_at": response.committed_at,
+        })
+        .to_string();
+        sqlx::query("INSERT INTO execution_completion_replays(attempt_id,completion_id,fingerprint,response,committed_at) VALUES(?,?,?,?,?)").bind(completion.attempt_id).bind(completion.completion_id).bind(fingerprint).bind(serialized_response).bind(&now).execute(&mut *tx).await?;
         tx.commit().await?;
-        Ok(CompletionResult::Committed { committed_at: now })
+        Ok(CompletionResult::Committed(response))
     }
     pub async fn create_pending_runner_and_issue_token(
         &self,
@@ -1057,48 +1156,10 @@ impl Repository {
         completion: Completion<'_>,
         clock: &dyn ExecutionClock,
     ) -> Result<bool, sqlx::Error> {
-        if !terminal(completion.terminal_state) {
-            return Ok(false);
-        }
-        let now = stamp(clock);
-        let mut tx = self.pool().begin().await?;
-        let row = sqlx::query("SELECT request_id, runner_id, state, completion_id, lease_expires_at FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ?")
-            .bind(completion.attempt_id).bind(completion.runner_id).bind(completion.fencing_token).fetch_optional(&mut *tx).await?;
-        let Some(row) = row else {
-            tx.commit().await?;
-            return Ok(false);
-        };
-        let request_id: String = row.get("request_id");
-        let owner_runner_id: String = row.get("runner_id");
-        let state: String = row.get("state");
-        let existing: Option<String> = row.get("completion_id");
-        if terminal(&state) {
-            tx.commit().await?;
-            return Ok(existing.as_deref() == Some(completion.completion_id));
-        }
-        let expires: String = row.get("lease_expires_at");
-        if expires <= now {
-            tx.commit().await?;
-            return Ok(false);
-        }
-        let result = sqlx::query("UPDATE execution_attempts SET state = ?, completion_id = ?, terminal_reason = ?, actual_execution = ?, usage = ?, ended_at = ?, updated_at = ? WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state NOT IN ('succeeded','failed','cancelled')")
-            .bind(completion.terminal_state).bind(completion.completion_id).bind(completion.terminal_reason).bind(completion.actual_execution).bind(completion.usage).bind(&now).bind(&now).bind(completion.attempt_id).bind(completion.runner_id).bind(completion.fencing_token).execute(&mut *tx).await?;
-        if result.rows_affected() != 1 {
-            tx.rollback().await?;
-            return Ok(false);
-        }
-        sqlx::query("UPDATE execution_requests SET state = ?, updated_at = ? WHERE id = ?")
-            .bind(completion.terminal_state)
-            .bind(&now)
-            .bind(request_id)
-            .execute(&mut *tx)
-            .await?;
-        // This is in the same transition transaction and runs only after the
-        // terminal CAS succeeded; replay returns above, so capacity restores once.
-        sqlx::query("UPDATE agent_runners SET available_capacity = available_capacity + 1, updated_at = ? WHERE id = ?")
-            .bind(&now).bind(owner_runner_id).execute(&mut *tx).await?;
-        tx.commit().await?;
-        Ok(true)
+        Ok(matches!(
+            self.complete_execution_result(completion, clock).await?,
+            CompletionResult::Committed(_) | CompletionResult::Replayed(_)
+        ))
     }
 
     #[instrument(skip(self, clock))]
