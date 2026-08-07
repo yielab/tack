@@ -222,6 +222,17 @@ fn terminal(state: &str) -> bool {
     matches!(state, "succeeded" | "failed" | "cancelled")
 }
 
+fn event_batch_fingerprint(
+    batch: &EventBatch<'_>,
+    events: &[NewEvent<'_>],
+) -> Result<String, sqlx::Error> {
+    let values: Vec<serde_json::Value> = events.iter().map(|event| serde_json::json!({"event_id":event.event_id,"sequence":event.sequence,"source":event.source,"kind":event.kind,"payload":event.payload,"occurred_at":event.occurred_at.to_rfc3339()})).collect();
+    serde_json::to_string(
+        &serde_json::json!({"previous_checkpoint":batch.previous_checkpoint,"events":values}),
+    )
+    .map_err(|e| sqlx::Error::Protocol(e.to_string()))
+}
+
 fn lease_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Lease, sqlx::Error> {
     let issued: String = row.get("lease_issued_at");
     let expires: String = row.get("lease_expires_at");
@@ -812,7 +823,19 @@ impl Repository {
         clock: &dyn ExecutionClock,
     ) -> Result<Option<EventBatchResult>, sqlx::Error> {
         let now = stamp(clock);
+        let fingerprint = event_batch_fingerprint(&batch, events)?;
         let mut tx = self.pool().begin().await?;
+        if let Some(row) = sqlx::query("SELECT fingerprint,response FROM execution_event_batch_replays WHERE attempt_id=? AND checkpoint=?")
+            .bind(batch.attempt_id).bind(batch.checkpoint).fetch_optional(&mut *tx).await? {
+            let stored: String = row.get("fingerprint");
+            if stored != fingerprint { tx.commit().await?; return Ok(None); }
+            let response: String = row.get("response");
+            let value: serde_json::Value = serde_json::from_str(&response).map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+            let accepted = value["accepted_event_ids"].as_array().ok_or_else(|| sqlx::Error::Protocol("invalid event replay response".into()))?.iter().map(|v|v.as_str().unwrap_or_default().to_string()).collect();
+            let duplicate = value["duplicate_event_ids"].as_array().ok_or_else(|| sqlx::Error::Protocol("invalid event replay response".into()))?.iter().map(|v|v.as_str().unwrap_or_default().to_string()).collect();
+            tx.commit().await?;
+            return Ok(Some(EventBatchResult { accepted_event_ids: accepted, duplicate_event_ids: duplicate, committed_checkpoint: batch.checkpoint.into(), replayed: true }));
+        }
         let row=sqlx::query("SELECT event_checkpoint FROM execution_attempts WHERE id=? AND runner_id=? AND fencing_token=? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at>?").bind(batch.attempt_id).bind(batch.runner_id).bind(batch.fencing_token).bind(&now).fetch_optional(&mut *tx).await?;
         let Some(row) = row else {
             tx.commit().await?;
@@ -820,14 +843,8 @@ impl Repository {
         };
         let current: Option<String> = row.get("event_checkpoint");
         if current.as_deref() == Some(batch.checkpoint) {
-            let ids = events.iter().map(|e| e.event_id.into()).collect();
             tx.commit().await?;
-            return Ok(Some(EventBatchResult {
-                accepted_event_ids: vec![],
-                duplicate_event_ids: ids,
-                committed_checkpoint: batch.checkpoint.into(),
-                replayed: true,
-            }));
+            return Ok(None);
         }
         if current.as_deref() != batch.previous_checkpoint {
             tx.commit().await?;
@@ -855,13 +872,16 @@ impl Repository {
             tx.rollback().await?;
             return Ok(None);
         }
-        tx.commit().await?;
-        Ok(Some(EventBatchResult {
+        let result = EventBatchResult {
             accepted_event_ids: accepted,
             duplicate_event_ids: duplicate,
             committed_checkpoint: batch.checkpoint.into(),
             replayed: false,
-        }))
+        };
+        let response=serde_json::json!({"accepted_event_ids":result.accepted_event_ids,"duplicate_event_ids":result.duplicate_event_ids}).to_string();
+        sqlx::query("INSERT INTO execution_event_batch_replays(attempt_id,checkpoint,fingerprint,response,created_at) VALUES(?,?,?,?,?)").bind(batch.attempt_id).bind(batch.checkpoint).bind(fingerprint).bind(response).bind(&now).execute(&mut *tx).await?;
+        tx.commit().await?;
+        Ok(Some(result))
     }
 
     #[instrument(skip(self, events, clock))]
