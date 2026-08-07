@@ -1,0 +1,1 @@
+{"error":{"code":"payload_too_large","message":"The payload exceeds a protocol limit","request_id":"req_http_12","retryable":false,"details":{"limit":"event_batch_bytes_max","maximum":1048576}}}

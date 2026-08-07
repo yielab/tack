@@ -1,0 +1,10 @@
+{
+  "protocol_version": 1,
+  "runner_id": "runr_01J00000000000000000000001",
+  "runner_credential": "example_runner_credential_returned_once",
+  "credential_expires_at": "2026-11-04T12:00:00Z",
+  "heartbeat_interval_seconds": 15,
+  "lease_duration_seconds": 60,
+  "server_time": "2026-08-06T12:00:01Z"
+}
+

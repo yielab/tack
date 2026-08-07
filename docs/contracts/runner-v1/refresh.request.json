@@ -1,0 +1,16 @@
+{
+  "protocol_version": 1,
+  "runner_id": "runr_01J00000000000000000000001",
+  "runner_name": "dev-runner-01",
+  "runner_version": "0.1.1",
+  "rotate_credential": false,
+  "capabilities": {
+    "reported_at": "2026-08-06T12:10:00Z",
+    "labels": {"os": "linux", "trust": "local"},
+    "concurrency": {"total": 2, "available": 1},
+    "harnesses": [],
+    "features": {},
+    "limits": {"event_payload_bytes_max": 65536, "artifact_content_bytes_max": 52428800}
+  }
+}
+

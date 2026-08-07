@@ -1,0 +1,19 @@
+{
+  "protocol_version": 1,
+  "runner_id": "runr_01J00000000000000000000001",
+  "attempt_id": "att_01J00000000000000000000001",
+  "fencing_token": 7,
+  "artifacts": [
+    {
+      "artifact_id": "art_01J000000000000000000000001",
+      "kind": "patch",
+      "name": "changes.patch",
+      "media_type": "text/x-diff",
+      "size_bytes": 12,
+      "sha256": "6f5902ac237024bdd0c176cb93063dc4c3a41a5bd51cf5f56cc4ad8d3e9afa2f",
+      "content_disposition": "inline_upload",
+      "metadata": {"base_revision": "0123456789abcdef0123456789abcdef01234567"}
+    }
+  ]
+}
+

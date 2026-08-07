@@ -1,0 +1,11 @@
+{
+  "protocol_version": 1,
+  "runner_id": "runr_01J00000000000000000000001",
+  "attempt_id": "att_01J00000000000000000000001",
+  "fencing_token": 7,
+  "cancellation_request_id": "cancel_01J0000000000000000000001",
+  "observation": "process_stopped",
+  "observed_at": "2026-08-06T12:24:00Z",
+  "details": {"exit_code": 130, "signal": "SIGTERM"}
+}
+

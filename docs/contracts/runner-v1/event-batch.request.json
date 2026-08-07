@@ -1,0 +1,27 @@
+{
+  "protocol_version": 1,
+  "runner_id": "runr_01J00000000000000000000001",
+  "attempt_id": "att_01J00000000000000000000001",
+  "fencing_token": 7,
+  "previous_checkpoint": "checkpoint-0002",
+  "checkpoint": "checkpoint-0004",
+  "events": [
+    {
+      "event_id": "evt_01J000000000000000000000001",
+      "sequence": 3,
+      "occurred_at": "2026-08-06T12:20:20Z",
+      "source": "harness",
+      "kind": "message",
+      "payload": {"stream": "summary", "text": "Focused tests started"}
+    },
+    {
+      "event_id": "evt_01J000000000000000000000002",
+      "sequence": 4,
+      "occurred_at": "2026-08-06T12:20:24Z",
+      "source": "runner",
+      "kind": "progress",
+      "payload": {"phase": "testing", "percent": null}
+    }
+  ]
+}
+

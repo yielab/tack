@@ -1,0 +1,16 @@
+{
+  "protocol_version": 1,
+  "runner_id": "runr_01J00000000000000000000001",
+  "attempt_id": "att_01J00000000000000000000001",
+  "fencing_token": 7,
+  "decision_id": "dec_01J000000000000000000000001",
+  "kind": "tool_permission",
+  "prompt": "Allow the harness to run the focused database test?",
+  "options": [
+    {"option_id": "allow_once", "label": "Allow once"},
+    {"option_id": "deny", "label": "Deny"}
+  ],
+  "expires_at": "2026-08-06T12:30:00Z",
+  "metadata": {"tool": "cargo test", "scope": "focused"}
+}
+

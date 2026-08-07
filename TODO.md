@@ -9101,7 +9101,7 @@ acceptance gate that can be verified without trusting its author's handoff.
 
 | Wave | Cards | Phases | Status |
 |---|---|---|---|
-| 0 — Clean boundary and safety | III-A0 · A1 · A2 · A3 · A4 | 50 | not started — clean-baseline gate required |
+| 0 — Clean boundary and safety | III-A0 · A1 · A2 · A3 · A4 | 50 | in progress — baseline `1d71785` recorded; A0 contract complete; A1-A4 pending integration |
 | 1 — Domain, schema and runner skeleton | III-B1 · B2 · B3 · B4 | 51, 52 | blocked on Wave 0 contracts/migration gate |
 | 2 — Pull protocol vertical slice | III-C1 · C2 · C3 · C4 · C5 | 52 | blocked on Wave 1 |
 | 3 — Real harness proof | III-D1 · D2 · D3 · D4 · D5 | 53 | blocked on mock vertical slice |

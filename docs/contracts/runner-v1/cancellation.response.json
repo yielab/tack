@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "attempt_id": "att_01J00000000000000000000001",
+  "cancellation_request_id": "cancel_01J0000000000000000000001",
+  "state": "cancelled",
+  "replayed": false,
+  "committed_at": "2026-08-06T12:24:01Z"
+}

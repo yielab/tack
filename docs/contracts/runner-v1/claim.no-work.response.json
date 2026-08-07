@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "claim_request_id": "claim_01J00000000000000000000002",
+  "lease": null,
+  "retry_after_ms": 5000,
+  "reason": "no_eligible_work"
+}
+

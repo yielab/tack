@@ -1,0 +1,104 @@
+{
+  "protocol_version": 1,
+  "states": [
+    "queued",
+    "leased",
+    "preparing",
+    "running",
+    "waiting_decision",
+    "succeeded",
+    "failed",
+    "cancelled",
+    "lost",
+    "needs_operator"
+  ],
+  "terminal_states": ["succeeded", "failed", "cancelled"],
+  "rules": [
+    {
+      "from": "queued",
+      "allow": {
+        "leased": ["scheduler"],
+        "cancelled": ["operator"]
+      },
+      "deny": ["queued", "preparing", "running", "waiting_decision", "succeeded", "failed", "lost", "needs_operator"]
+    },
+    {
+      "from": "leased",
+      "allow": {
+        "preparing": ["lease_owner"],
+        "failed": ["lease_owner"],
+        "cancelled": ["lease_owner"],
+        "lost": ["recovery_service"],
+        "needs_operator": ["recovery_service"]
+      },
+      "deny": ["queued", "leased", "running", "waiting_decision", "succeeded"]
+    },
+    {
+      "from": "preparing",
+      "allow": {
+        "running": ["lease_owner"],
+        "failed": ["lease_owner"],
+        "cancelled": ["lease_owner"],
+        "lost": ["recovery_service"],
+        "needs_operator": ["recovery_service"]
+      },
+      "deny": ["queued", "leased", "preparing", "waiting_decision", "succeeded"]
+    },
+    {
+      "from": "running",
+      "allow": {
+        "waiting_decision": ["lease_owner"],
+        "succeeded": ["lease_owner"],
+        "failed": ["lease_owner"],
+        "cancelled": ["lease_owner"],
+        "lost": ["recovery_service"],
+        "needs_operator": ["recovery_service"]
+      },
+      "deny": ["queued", "leased", "preparing", "running"]
+    },
+    {
+      "from": "waiting_decision",
+      "allow": {
+        "running": ["lease_owner"],
+        "succeeded": ["lease_owner"],
+        "failed": ["lease_owner"],
+        "cancelled": ["lease_owner"],
+        "lost": ["recovery_service"],
+        "needs_operator": ["recovery_service"]
+      },
+      "deny": ["queued", "leased", "preparing", "waiting_decision"]
+    },
+    {
+      "from": "succeeded",
+      "allow": {},
+      "deny": ["queued", "leased", "preparing", "running", "waiting_decision", "succeeded", "failed", "cancelled", "lost", "needs_operator"]
+    },
+    {
+      "from": "failed",
+      "allow": {},
+      "deny": ["queued", "leased", "preparing", "running", "waiting_decision", "succeeded", "failed", "cancelled", "lost", "needs_operator"]
+    },
+    {
+      "from": "cancelled",
+      "allow": {},
+      "deny": ["queued", "leased", "preparing", "running", "waiting_decision", "succeeded", "failed", "cancelled", "lost", "needs_operator"]
+    },
+    {
+      "from": "lost",
+      "allow": {
+        "queued": ["recovery_service", "operator"],
+        "failed": ["operator"]
+      },
+      "deny": ["leased", "preparing", "running", "waiting_decision", "succeeded", "cancelled", "lost", "needs_operator"]
+    },
+    {
+      "from": "needs_operator",
+      "allow": {
+        "queued": ["operator"],
+        "failed": ["operator"]
+      },
+      "deny": ["leased", "preparing", "running", "waiting_decision", "succeeded", "cancelled", "lost", "needs_operator"]
+    }
+  ],
+  "replay_rule": "A byte-equivalent report with the same idempotency key returns the original success without invoking the transition validator"
+}
