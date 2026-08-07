@@ -14,9 +14,9 @@ fn is_public_route(path: &str) -> bool {
     )
 }
 
-/// Browser WebSockets cannot attach `Authorization`. The board handler performs
-/// the equivalent token check during the upgrade using a dedicated subprotocol;
-/// this narrow route recognizer prevents a suffix lookalike from bypassing auth.
+/// Browser WebSockets cannot attach `Authorization`. The token middleware
+/// checks the dedicated subprotocol during the upgrade; this narrow route
+/// recognizer prevents a suffix lookalike from bypassing auth.
 fn is_board_websocket_route(path: &str) -> bool {
     let Some(project) = path
         .strip_prefix("/api/projects/")
