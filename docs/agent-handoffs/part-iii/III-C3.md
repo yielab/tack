@@ -8,8 +8,8 @@
   are `crates/tack-runner/src/{client,journal,workspace,engine}.rs`, focused tests embedded in
   those owned modules, and this handoff. The A0/B1/B3 prerequisite commits already present on
   this branch are separate owner amendments and must be merged first; A0 owns the contract
-  amendment `12989e2`, while B3 owns `d8300e4`, `0e6731f`, and `934bc80` and the Cargo
-  manifest/lock changes.
+  amendment `12989e2`, while B3 owns `bddc849`, `d8300e4`, `0e6731f`, and `934bc80` and the
+  Cargo manifest/lock changes.
 - Contract fixtures consumed: enrollment, claim, heartbeat, completion, cancellation, limits,
   lifecycle and stable-error fixtures under `docs/contracts/runner-v1/`; no fixture changed.
 - Behavior implemented: a typed pull-protocol seam; enrollment, claim, heartbeat,
