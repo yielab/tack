@@ -437,12 +437,53 @@ pub enum StableErrorCode {
     InternalError,
 }
 
+impl StableErrorCode {
+    /// Whether a conformant client may safely retry this error, taken
+    /// directly from `docs/contracts/runner-v1/errors/*.json` (the frozen
+    /// authority; see `README.md` there and `TODO.md` III.1.6). This is the
+    /// single source of truth for retryability — no other module, handler or
+    /// hand-rolled envelope may re-derive or override it.
+    ///
+    /// `true` for `conflict`, `internal_error`, `rate_limited` and
+    /// `artifact_checksum_mismatch`; `false` for every other stable code.
+    /// The conformance test below reads every fixture in that directory and
+    /// fails if this mapping and the fixtures ever disagree.
+    pub const fn retryable(self) -> bool {
+        matches!(
+            self,
+            Self::Conflict
+                | Self::InternalError
+                | Self::RateLimited
+                | Self::ArtifactChecksumMismatch
+        )
+    }
+}
+
 /// The stable runner-protocol error envelope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProtocolErrorEnvelope {
     pub error: ProtocolError,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
+}
+
+impl ProtocolErrorEnvelope {
+    /// Builds the full `{"error": {...}}` envelope via [`ProtocolError::new`],
+    /// so `retryable` is always derived from `code`. Handler cards that return
+    /// a JSON body directly (rather than a typed [`ProtocolError`]) should
+    /// call this and serialize the result instead of hand-rolling
+    /// `serde_json::json!` with a literal `retryable` value.
+    pub fn new(
+        code: StableErrorCode,
+        message: impl Into<String>,
+        request_id: impl Into<String>,
+        details: serde_json::Value,
+    ) -> Self {
+        Self {
+            error: ProtocolError::new(code, message, request_id, details),
+            additional: BTreeMap::new(),
+        }
+    }
 }
 
 /// The structured error body inside [`ProtocolErrorEnvelope`].
@@ -456,6 +497,30 @@ pub struct ProtocolError {
     pub details: serde_json::Value,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
+}
+
+impl ProtocolError {
+    /// Builds a stable protocol error with `retryable` set from
+    /// [`StableErrorCode::retryable`], so a caller cannot supply an
+    /// inconsistent value. `details` should follow the per-code shape
+    /// documented in `docs/contracts/runner-v1/README.md` (e.g. `not_found`
+    /// carries `{"resource": ...}`; `conflict`, `internal_error` and
+    /// `unauthorized` carry `{}`).
+    pub fn new(
+        code: StableErrorCode,
+        message: impl Into<String>,
+        request_id: impl Into<String>,
+        details: serde_json::Value,
+    ) -> Self {
+        Self {
+            retryable: code.retryable(),
+            code,
+            message: message.into(),
+            request_id: request_id.into(),
+            details,
+            additional: BTreeMap::new(),
+        }
+    }
 }
 
 /// Typed protocol errors. `stale_lease` remains a fixed machine-readable code
@@ -603,6 +668,138 @@ mod tests {
             assert_eq!(
                 serde_json::to_value(typed).expect("serialize error"),
                 original
+            );
+        }
+    }
+
+    /// Every file under `docs/contracts/runner-v1/errors/`, paired with its
+    /// bare filename. This is the single list the two tests below share: the
+    /// retryable/constructor conformance test walks the fixture bytes, and
+    /// the coverage test below checks this list against the real directory
+    /// so a fixture added on disk without a matching entry here is a build
+    /// failure, not a silent gap.
+    const ERROR_FIXTURES: &[(&str, &str)] = &[
+        (
+            "artifact-checksum-mismatch.json",
+            include_str!(
+                "../../../../docs/contracts/runner-v1/errors/artifact-checksum-mismatch.json"
+            ),
+        ),
+        (
+            "conflict.json",
+            include_str!("../../../../docs/contracts/runner-v1/errors/conflict.json"),
+        ),
+        (
+            "decision-expired.json",
+            include_str!("../../../../docs/contracts/runner-v1/errors/decision-expired.json"),
+        ),
+        (
+            "forbidden.json",
+            include_str!("../../../../docs/contracts/runner-v1/errors/forbidden.json"),
+        ),
+        (
+            "idempotency-conflict.json",
+            include_str!("../../../../docs/contracts/runner-v1/errors/idempotency-conflict.json"),
+        ),
+        (
+            "internal-error.json",
+            include_str!("../../../../docs/contracts/runner-v1/errors/internal-error.json"),
+        ),
+        (
+            "invalid-request.json",
+            include_str!("../../../../docs/contracts/runner-v1/errors/invalid-request.json"),
+        ),
+        (
+            "invalid-transition.json",
+            include_str!("../../../../docs/contracts/runner-v1/errors/invalid-transition.json"),
+        ),
+        (
+            "not-found.json",
+            include_str!("../../../../docs/contracts/runner-v1/errors/not-found.json"),
+        ),
+        (
+            "payload-too-large.json",
+            include_str!("../../../../docs/contracts/runner-v1/errors/payload-too-large.json"),
+        ),
+        (
+            "rate-limited.json",
+            include_str!("../../../../docs/contracts/runner-v1/errors/rate-limited.json"),
+        ),
+        (
+            "runner-revoked.json",
+            include_str!("../../../../docs/contracts/runner-v1/errors/runner-revoked.json"),
+        ),
+        (
+            "stale-lease.json",
+            include_str!("../../../../docs/contracts/runner-v1/errors/stale-lease.json"),
+        ),
+        (
+            "unauthorized.json",
+            include_str!("../../../../docs/contracts/runner-v1/errors/unauthorized.json"),
+        ),
+        (
+            "unsupported-protocol.json",
+            include_str!("../../../../docs/contracts/runner-v1/errors/unsupported-protocol.json"),
+        ),
+    ];
+
+    #[test]
+    fn every_error_fixture_file_on_disk_is_in_the_conformance_list() {
+        // Reads the real directory at test time (not compile time) so a
+        // fixture file added to disk without a matching `ERROR_FIXTURES`
+        // entry fails this test, rather than silently skipping the new code.
+        let dir = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/contracts/runner-v1/errors"
+        ));
+        let mut on_disk: Vec<String> = std::fs::read_dir(dir)
+            .expect("docs/contracts/runner-v1/errors must exist")
+            .map(|entry| {
+                entry
+                    .expect("readable directory entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .filter(|name| name.ends_with(".json"))
+            .collect();
+        on_disk.sort();
+
+        let mut listed: Vec<&str> = ERROR_FIXTURES.iter().map(|(name, _)| *name).collect();
+        listed.sort_unstable();
+
+        assert_eq!(
+            on_disk, listed,
+            "docs/contracts/runner-v1/errors/ changed; add or remove the matching \
+             entry in ERROR_FIXTURES (crates/tack-orch/src/execution/types.rs)"
+        );
+    }
+
+    #[test]
+    fn stable_error_code_retryable_matches_every_fixture_and_constructor() {
+        for (name, fixture) in ERROR_FIXTURES {
+            let envelope: ProtocolErrorEnvelope =
+                serde_json::from_str(fixture).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let parsed = envelope.error;
+
+            assert_eq!(
+                parsed.code.retryable(),
+                parsed.retryable,
+                "{name}: StableErrorCode::retryable() for {:?} must match the \
+                 fixture's `retryable` value",
+                parsed.code
+            );
+
+            let constructed = ProtocolError::new(
+                parsed.code,
+                parsed.message.clone(),
+                parsed.request_id.clone(),
+                parsed.details.clone(),
+            );
+            assert_eq!(
+                constructed, parsed,
+                "{name}: ProtocolError::new must reproduce the fixture exactly, \
+                 including `retryable`"
             );
         }
     }
