@@ -93,6 +93,7 @@
 //!    of registry-shape decision D5 owns.
 
 pub mod artifact;
+pub mod claude_code;
 pub mod codex;
 pub mod event_sink;
 pub mod fixtures;
