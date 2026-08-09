@@ -3,6 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const FROZEN_FIXTURE_FNV1A64: &[(&str, u64)] = &[
+    ("accept.request.json", 0x7c41_cf4c_5a0c_50a0),
+    ("accept.response.json", 0x9e9d_72b5_565a_783d),
     ("artifact.request.json", 0x40c1_0d30_32db_290f),
     ("artifact.response.json", 0x103d_f88e_44d9_900d),
     ("cancellation.request.json", 0x083e_61d8_a5b4_f80a),
@@ -48,6 +50,8 @@ const FROZEN_FIXTURE_FNV1A64: &[(&str, u64)] = &[
     ("recovery-observation.response.json", 0x01d2_022b_e95f_3987),
     ("refresh.request.json", 0xc418_5ef4_fc72_fcc8),
     ("refresh.response.json", 0x96eb_7891_d95e_45c7),
+    ("start.request.json", 0x26b7_1d95_5b02_3895),
+    ("start.response.json", 0x9f07_b1b7_473e_75a3),
 ];
 
 pub(crate) fn fixture_root() -> PathBuf {
@@ -104,7 +108,7 @@ pub(crate) fn fnv1a64(bytes: &[u8]) -> u64 {
 #[test]
 fn every_json_fixture_parses_and_value_round_trips_without_loss() {
     let paths = fixture_paths();
-    assert_eq!(paths.len(), 42, "the frozen fixture manifest changed");
+    assert_eq!(paths.len(), 46, "the frozen fixture manifest changed");
 
     for path in paths {
         let name = fixture_name(&path);
