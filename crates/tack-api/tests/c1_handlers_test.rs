@@ -379,3 +379,73 @@ async fn enrollment_token_is_returned_once_hash_only_and_revoke_or_redeem_blocks
         RedeemEnrollmentResult::InvalidOrExpired
     );
 }
+
+/// The B1 amendment (`tack_orch::execution::ProtocolErrorEnvelope::new`) sets
+/// `retryable` from `StableErrorCode::retryable`, which the frozen fixtures
+/// classify `true` for `conflict`. This drives a real duplicate-name request
+/// through `create_fleet` and inspects the actual response body, not the
+/// envelope constructor in isolation, so it fails if a handler ever goes back
+/// to hand-rolling `retryable` or drops `conflict`'s `{}` details shape.
+#[tokio::test]
+async fn duplicate_fleet_name_conflict_is_retryable_with_empty_details() {
+    let (app, _repo, _item_id) = setup().await;
+    let body = serde_json::json!({"name": "shared-fleet-name"}).to_string();
+    let (first_status, _) = send(&app, "POST", "/runner-fleets", body.clone()).await;
+    assert_eq!(first_status, StatusCode::OK);
+
+    let (second_status, second_body) = send(&app, "POST", "/runner-fleets", body).await;
+    assert_eq!(second_status, StatusCode::CONFLICT);
+    assert_eq!(second_body["error"]["code"], "conflict");
+    assert_eq!(second_body["error"]["retryable"], true);
+    assert_eq!(second_body["error"]["details"], serde_json::json!({}));
+    assert_eq!(second_body["error"]["request_id"], "req_operator");
+}
+
+/// Companion to the conflict test above for a non-retryable code that also
+/// carries contract-shaped structured `details` (`not_found` ->
+/// `{"resource": ...}`), rather than the `"retryable":false,"details":{}`
+/// hand-rolled for every code before the B1 amendment landed. Drives
+/// `get_execution` for a request id that was never created.
+#[tokio::test]
+async fn missing_execution_not_found_is_not_retryable_with_resource_detail() {
+    let (app, _repo, _item_id) = setup().await;
+    let (status, body) = send(
+        &app,
+        "GET",
+        "/executions/exec_does_not_exist",
+        String::new(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"]["code"], "not_found");
+    assert_eq!(body["error"]["retryable"], false);
+    assert_eq!(
+        body["error"]["details"],
+        serde_json::json!({"resource": "execution_request"})
+    );
+    assert_eq!(body["error"]["request_id"], "req_operator");
+}
+
+/// `idempotency_conflict` is non-retryable but, unlike `conflict`, carries a
+/// structured `{"idempotency_key": ...}` detail per
+/// `docs/contracts/runner-v1/errors/idempotency-conflict.json`. Drives
+/// `create_execution` with the same idempotency key and a changed payload,
+/// the same scenario `duplicate_create_replays_same_request_and_revoked_runner_is_rejected`
+/// already exercises for `code`, and additionally asserts `retryable` and
+/// `details` on the real response body.
+#[tokio::test]
+async fn changed_payload_idempotency_conflict_is_not_retryable_with_key_detail() {
+    let (app, _repo, item_id) = setup().await;
+    let (created_status, _) = send(&app, "POST", "/executions", create_body(&item_id)).await;
+    assert_eq!(created_status, StatusCode::OK);
+
+    let changed = create_body(&item_id).replace("\"timeout_seconds\":60", "\"timeout_seconds\":61");
+    let (status, body) = send(&app, "POST", "/executions", changed).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["error"]["code"], "idempotency_conflict");
+    assert_eq!(body["error"]["retryable"], false);
+    assert_eq!(
+        body["error"]["details"],
+        serde_json::json!({"idempotency_key": "same-key"})
+    );
+}

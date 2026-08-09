@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::Row;
 use tack_db::repo::execution::{EnrollmentToken, NewAgentProfile, NewRunner};
+use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
 use uuid::Uuid;
 
 use super::executions::OperatorExecutionState;
@@ -22,13 +23,32 @@ type HandlerResult = Result<Json<Value>, (StatusCode, Json<Value>)>;
 /// mounts these card-local routes in the global API router.
 const OPERATOR_REQUEST_ID: &str = "req_operator";
 
-fn error(status: StatusCode, code: &str, message: &str) -> (StatusCode, Json<Value>) {
+/// Builds the stable v1 error envelope via B1's `ProtocolErrorEnvelope::new`,
+/// which derives `retryable` from `code` (`StableErrorCode::retryable`) so it
+/// can never drift from `docs/contracts/runner-v1/errors/*.json`. `details`
+/// must follow the per-code shape documented in
+/// `docs/contracts/runner-v1/README.md`.
+fn error(
+    status: StatusCode,
+    code: StableErrorCode,
+    message: &str,
+    details: Value,
+) -> (StatusCode, Json<Value>) {
+    let envelope = ProtocolErrorEnvelope::new(code, message, OPERATOR_REQUEST_ID, details);
     (
         status,
-        Json(
-            json!({"error":{"code":code,"message":message,"request_id":OPERATOR_REQUEST_ID,"retryable":false,"details":{}}}),
-        ),
+        Json(serde_json::to_value(envelope).expect("envelope serializes")),
     )
+}
+
+/// Whether a `sqlx::Error` from an INSERT is a unique-constraint violation on
+/// a caller-chosen name, as opposed to any other database-level fault. Used
+/// so name collisions map to `conflict` and everything else maps to
+/// `internal_error`, instead of collapsing every insert failure into one code.
+fn is_unique_violation(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .is_some_and(|db_error| db_error.is_unique_violation())
 }
 
 pub fn routes(state: OperatorExecutionState) -> Router {
@@ -116,10 +136,17 @@ pub async fn create_fleet(
         Ok(_) => Ok(Json(
             json!({"protocol_version":1,"fleet_id":id,"name":input.name}),
         )),
-        Err(_) => Err(error(
+        Err(err) if is_unique_violation(&err) => Err(error(
             StatusCode::CONFLICT,
-            "conflict",
+            StableErrorCode::Conflict,
             "Fleet name already exists",
+            json!({}),
+        )),
+        Err(_) => Err(error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not create fleet",
+            json!({}),
         )),
     }
 }
@@ -132,12 +159,20 @@ pub async fn list_fleets(State(state): State<OperatorExecutionState>) -> Handler
     .map_err(|_| {
         error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "internal_error",
+            StableErrorCode::InternalError,
             "Could not list fleets",
+            json!({}),
         )
     })?;
     let data: Vec<Value> = rows.into_iter().map(|r| -> Result<Value, (StatusCode, Json<Value>)> {
-        let policy = serde_json::from_str::<Value>(&r.get::<String,_>("default_policy")).map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", "Fleet policy is corrupt"))?;
+        let policy = serde_json::from_str::<Value>(&r.get::<String,_>("default_policy")).map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Fleet policy is corrupt",
+                json!({}),
+            )
+        })?;
         Ok(json!({"fleet_id":r.get::<String,_>("id"),"name":r.get::<String,_>("name"),"concurrency_limit":r.get::<Option<i64>,_>("concurrency_limit"),"default_policy":policy}))
     }).collect::<Result<_, _>>()?;
     Ok(Json(json!({"protocol_version":1,"data":data})))
@@ -153,15 +188,17 @@ pub async fn revoke_runner(
         .map_err(|_| {
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "internal_error",
+                StableErrorCode::InternalError,
                 "Could not revoke runner",
+                json!({}),
             )
         })?;
     if !changed {
         return Err(error(
             StatusCode::NOT_FOUND,
-            "not_found",
+            StableErrorCode::NotFound,
             "Runner does not exist",
+            json!({"resource": "runner"}),
         ));
     }
     Ok(Json(
@@ -179,8 +216,9 @@ pub async fn create_pending_runner(
     if input.enrollment_lifetime_seconds <= 0 {
         return Err(error(
             StatusCode::BAD_REQUEST,
-            "invalid_request",
+            StableErrorCode::InvalidRequest,
             "enrollment_lifetime_seconds must be positive",
+            json!({"field": "enrollment_lifetime_seconds"}),
         ));
     }
     let runner_id = format!("runr_{}", Uuid::new_v4());
@@ -191,29 +229,33 @@ pub async fn create_pending_runner(
         Duration::try_seconds(input.enrollment_lifetime_seconds).ok_or_else(|| {
             error(
                 StatusCode::BAD_REQUEST,
-                "invalid_request",
+                StableErrorCode::InvalidRequest,
                 "enrollment_lifetime_seconds is out of range",
+                json!({"field": "enrollment_lifetime_seconds"}),
             )
         })?;
     let expires_at = now.checked_add_signed(enrollment_lifetime).ok_or_else(|| {
         error(
             StatusCode::BAD_REQUEST,
-            "invalid_request",
+            StableErrorCode::InvalidRequest,
             "enrollment_lifetime_seconds is out of range",
+            json!({"field": "enrollment_lifetime_seconds"}),
         )
     })?;
     let labels = serde_json::to_string(&input.labels).map_err(|_| {
         error(
             StatusCode::BAD_REQUEST,
-            "invalid_request",
+            StableErrorCode::InvalidRequest,
             "labels cannot be serialized",
+            json!({"field": "labels"}),
         )
     })?;
     let capabilities = serde_json::to_string(&input.capability_snapshot).map_err(|_| {
         error(
             StatusCode::BAD_REQUEST,
-            "invalid_request",
+            StableErrorCode::InvalidRequest,
             "capability_snapshot cannot be serialized",
+            json!({"field": "capability_snapshot"}),
         )
     })?;
     let enrollment_token_hash = token_hash(&raw_token);
@@ -239,12 +281,27 @@ pub async fn create_pending_runner(
             state.clock.as_ref(),
         )
         .await
-        .map_err(|_| {
-            error(
+        .map_err(|err| match err {
+            // The repo layer reports out-of-bounds capacity/expiry via
+            // `sqlx::Error::Protocol` — a genuine client input problem.
+            sqlx::Error::Protocol(_) => error(
                 StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "pending runner enrollment is invalid",
-            )
+                StableErrorCode::InvalidRequest,
+                "Pending runner capacity or enrollment window is invalid",
+                json!({"field": "total_capacity"}),
+            ),
+            _ if is_unique_violation(&err) => error(
+                StatusCode::CONFLICT,
+                StableErrorCode::Conflict,
+                "Runner name already exists",
+                json!({}),
+            ),
+            _ => error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not create pending runner",
+                json!({}),
+            ),
         })?;
     Ok(Json(json!({
         "protocol_version": 1,
@@ -266,16 +323,46 @@ pub async fn revoke_enrollment_token(
         .map_err(|_| {
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "internal_error",
+                StableErrorCode::InternalError,
                 "Could not revoke enrollment token",
+                json!({}),
             )
         })?;
     if !changed {
-        return Err(error(
-            StatusCode::NOT_FOUND,
-            "not_found",
-            "Enrollment token is missing, consumed, or already revoked",
-        ));
+        // `revoke_enrollment_token_by_id` also returns false for a token
+        // that exists but was already consumed; disambiguate that genuine
+        // conflict from a token id that never existed instead of reporting
+        // `not_found` for both.
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM agent_enrollment_tokens WHERE runner_id = ? AND id = ?)",
+        )
+        .bind(&runner_id)
+        .bind(&token_id)
+        .fetch_one(state.repo.pool())
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not verify enrollment token",
+                json!({}),
+            )
+        })?;
+        return Err(if exists {
+            error(
+                StatusCode::CONFLICT,
+                StableErrorCode::Conflict,
+                "Enrollment token was already consumed",
+                json!({}),
+            )
+        } else {
+            error(
+                StatusCode::NOT_FOUND,
+                StableErrorCode::NotFound,
+                "Enrollment token does not exist",
+                json!({"resource": "enrollment_token"}),
+            )
+        });
     }
     Ok(Json(
         json!({"protocol_version":1,"runner_id":runner_id,"token_id":token_id,"state":"revoked"}),
@@ -289,15 +376,17 @@ pub async fn create_profile(
     let tool_policy = serde_json::to_string(&input.tool_policy).map_err(|_| {
         error(
             StatusCode::BAD_REQUEST,
-            "invalid_request",
+            StableErrorCode::InvalidRequest,
             "tool_policy cannot be serialized",
+            json!({"field": "tool_policy"}),
         )
     })?;
     let limits = serde_json::to_string(&input.limits).map_err(|_| {
         error(
             StatusCode::BAD_REQUEST,
-            "invalid_request",
+            StableErrorCode::InvalidRequest,
             "limits cannot be serialized",
+            json!({"field": "limits"}),
         )
     })?;
     let result = state
@@ -317,10 +406,17 @@ pub async fn create_profile(
         Ok(_) => Ok(Json(
             json!({"protocol_version":1,"agent_profile_id":id,"name":input.name}),
         )),
-        Err(_) => Err(error(
+        Err(err) if is_unique_violation(&err) => Err(error(
             StatusCode::CONFLICT,
-            "conflict",
+            StableErrorCode::Conflict,
             "Agent profile name already exists",
+            json!({}),
+        )),
+        Err(_) => Err(error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not create agent profile",
+            json!({}),
         )),
     }
 }
@@ -333,13 +429,28 @@ pub async fn list_profiles(State(state): State<OperatorExecutionState>) -> Handl
     .map_err(|_| {
         error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "internal_error",
+            StableErrorCode::InternalError,
             "Could not list agent profiles",
+            json!({}),
         )
     })?;
     let data: Vec<Value> = rows.into_iter().map(|r| -> Result<Value, (StatusCode, Json<Value>)> {
-        let policy = serde_json::from_str::<Value>(&r.get::<String,_>("tool_policy")).map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", "Agent profile policy is corrupt"))?;
-        let limits = serde_json::from_str::<Value>(&r.get::<String,_>("limits")).map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", "Agent profile limits are corrupt"))?;
+        let policy = serde_json::from_str::<Value>(&r.get::<String,_>("tool_policy")).map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Agent profile policy is corrupt",
+                json!({}),
+            )
+        })?;
+        let limits = serde_json::from_str::<Value>(&r.get::<String,_>("limits")).map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Agent profile limits are corrupt",
+                json!({}),
+            )
+        })?;
         Ok(json!({"agent_profile_id":r.get::<String,_>("id"),"name":r.get::<String,_>("name"),"instructions":r.get::<String,_>("instructions"),"tool_policy":policy,"limits":limits}))
     }).collect::<Result<_, _>>()?;
     Ok(Json(json!({"protocol_version":1,"data":data})))
@@ -355,15 +466,29 @@ pub async fn create_model_profile(
         Ok(_) => Ok(Json(
             json!({"protocol_version":1,"model_profile_id":id,"name":input.name,"model_provider":input.model_provider,"model_id":input.model_id}),
         )),
-        Err(_) => Err(error(
+        Err(err) if is_unique_violation(&err) => Err(error(
             StatusCode::CONFLICT,
-            "conflict",
+            StableErrorCode::Conflict,
             "Model profile name already exists",
+            json!({}),
+        )),
+        Err(_) => Err(error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not create model profile",
+            json!({}),
         )),
     }
 }
 pub async fn list_model_profiles(State(state): State<OperatorExecutionState>) -> HandlerResult {
-    let rows=sqlx::query("SELECT id,name,model_provider,model_id,config_reference,enabled FROM model_profiles ORDER BY name").fetch_all(state.repo.pool()).await.map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR,"internal_error","Could not list model profiles"))?;
+    let rows=sqlx::query("SELECT id,name,model_provider,model_id,config_reference,enabled FROM model_profiles ORDER BY name").fetch_all(state.repo.pool()).await.map_err(|_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not list model profiles",
+            json!({}),
+        )
+    })?;
     Ok(Json(
         json!({"protocol_version":1,"data":rows.into_iter().map(|r| json!({"model_profile_id":r.get::<String,_>("id"),"name":r.get::<String,_>("name"),"model_provider":r.get::<String,_>("model_provider"),"model_id":r.get::<String,_>("model_id"),"config_reference":r.get::<Option<String>,_>("config_reference"),"enabled":r.get::<i64,_>("enabled") != 0})).collect::<Vec<_>>() }),
     ))
