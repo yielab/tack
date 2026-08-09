@@ -88,7 +88,8 @@ use tack_orch::execution::{
 
 use super::{
     AttemptJournal, CancelObservation, CancellationEvidence, ExecutionSpec, HarnessAdapter,
-    HarnessError, HarnessOutcome, HarnessProbe, LocalRunHandle, RecoveryObservation,
+    HarnessError, HarnessOutcome, HarnessProbe, LocalRunHandle, ModelObservationSource,
+    RecoveryObservation,
     process::{
         CancelOutcome, ProcessExit, ProcessLimits, ProcessResult, ProcessSpec, process_alive,
     },
@@ -193,6 +194,12 @@ struct RunningEntry {
     limits: ProcessLimits,
     requested_provider: Option<String>,
     started_at: DateTime<Utc>,
+    /// Card III-D5 finding 2: needed so `wait()` can actually stage the raw
+    /// run log it claims (`artifacts: Advisory`) — `start()` is the only
+    /// place these are known; `wait()` only ever sees the opaque
+    /// `LocalRunHandle`.
+    workspace_path: PathBuf,
+    attempt_id: String,
 }
 
 /// The Claude Code harness adapter. `C` is the injected [`Clock`] (rule 9 —
@@ -224,6 +231,22 @@ impl ClaudeCodeAdapter<SystemClock> {
     /// clock. The primary, non-test constructor.
     pub fn discover() -> Result<Self, String> {
         Ok(Self::with_binary(discover_installed_binary()?, SystemClock))
+    }
+
+    /// Card III-D5, test-only: thin wrapper over the already-`pub`
+    /// [`Self::with_binary`], named to match `codex.rs`'s/`opencode.rs`'s
+    /// identical `for_fixture` so `harness::mod::tests`'s "same fixture
+    /// completes through all three fake adapters" acceptance proof can
+    /// construct all three adapters through one uniform call shape.
+    #[cfg(test)]
+    pub(crate) fn for_fixture(program: PathBuf, prefix_args: Vec<String>) -> Self {
+        Self::with_binary(
+            HarnessBinary {
+                program,
+                prefix_args,
+            },
+            SystemClock,
+        )
     }
 }
 
@@ -351,6 +374,56 @@ impl<C: Clock> ClaudeCodeAdapter<C> {
     #[cfg(not(target_os = "linux"))]
     fn process_program_matches(&self, _pid: u32) -> Option<bool> {
         None
+    }
+
+    /// Stages the (already-scrubbed) combined stdout/stderr as a `log`
+    /// artifact inside the attempt's own workspace, via D4's
+    /// [`super::artifact::ArtifactStager`] — the exact pattern
+    /// `codex.rs`/`opencode.rs` already prove out, and this card's fix for
+    /// finding 2 (an adversarial Wave-3 review found `artifacts: Supported`
+    /// had no backing implementation: `wait()` never called this before).
+    /// Stages under the workspace's own `.artifacts` directory, matching
+    /// this adapter's live test's own choice (`ArtifactStager::new(workspace.join(".artifacts"))`)
+    /// rather than a separate external staging root — `discover()` has no
+    /// such root to give it. Best-effort: a staging failure only omits the
+    /// `artifact` key from `terminal_reason`, never fails the attempt.
+    fn stage_run_log(
+        workspace_path: &std::path::Path,
+        attempt_id: &str,
+        stdout: &str,
+        stderr: &str,
+    ) -> Option<Value> {
+        let relative = PathBuf::from(".tack-runner").join("claude-code-run.log");
+        let absolute = workspace_path.join(&relative);
+        if let Some(parent) = absolute.parent() {
+            if std::fs::create_dir_all(parent).is_err() {
+                return None;
+            }
+        }
+        let mut combined = String::new();
+        combined.push_str("=== stdout ===\n");
+        combined.push_str(stdout);
+        combined.push_str("\n=== stderr ===\n");
+        combined.push_str(stderr);
+        if std::fs::write(&absolute, combined.as_bytes()).is_err() {
+            return None;
+        }
+
+        let stager = super::artifact::ArtifactStager::new(workspace_path.join(".artifacts"));
+        match stager.stage_file(attempt_id, workspace_path, &relative, "log", "text/plain") {
+            Ok(staged) => Some(serde_json::json!({
+                "kind": staged.kind,
+                "name": staged.name,
+                "media_type": staged.media_type,
+                "size_bytes": staged.size_bytes,
+                "sha256": staged.sha256,
+                "staged_path": staged.staged_path.display().to_string(),
+            })),
+            Err(error) => {
+                tracing::warn!(?error, "claude-code wait: artifact staging failed");
+                None
+            }
+        }
     }
 }
 
@@ -503,8 +576,14 @@ fn parsed_from_result_line(
         .unwrap_or(true);
 
     let (model_id, model_observation_source) = match init_model {
-        Some(model) => (model, "harness_reported".to_string()),
-        None => (UNOBSERVED_MODEL.to_string(), "not_observed".to_string()),
+        Some(model) => (
+            model,
+            ModelObservationSource::HarnessReported.as_str().to_string(),
+        ),
+        None => (
+            UNOBSERVED_MODEL.to_string(),
+            ModelObservationSource::NotObserved.as_str().to_string(),
+        ),
     };
     let model_provider = requested_provider
         .map(str::to_ascii_lowercase)
@@ -539,7 +618,7 @@ fn malformed_outcome(result: &ProcessResult, note: &str) -> ParsedRun {
         harness_version: None,
         model_provider: "anthropic".to_string(),
         model_id: UNOBSERVED_MODEL.to_string(),
-        model_observation_source: "not_observed".to_string(),
+        model_observation_source: ModelObservationSource::NotObserved.as_str().to_string(),
         usage: not_measured_usage(),
     }
 }
@@ -581,7 +660,7 @@ fn fallback_from_exit_code(result: &ProcessResult) -> ParsedRun {
         harness_version: None,
         model_provider: "anthropic".to_string(),
         model_id: UNOBSERVED_MODEL.to_string(),
-        model_observation_source: "not_observed".to_string(),
+        model_observation_source: ModelObservationSource::NotObserved.as_str().to_string(),
         usage: not_measured_usage(),
     }
 }
@@ -682,9 +761,25 @@ fn feature_capabilities() -> FeatureCapabilities {
             ),
             additional: Default::default(),
         },
+        // Card III-D5 finding 2 (adversarial Wave-3 review): downgraded from
+        // `Supported`. Real `Write`/`Edit` tool output genuinely lands in
+        // the workspace, but before this card `wait()` never actually
+        // staged anything — `stage_run_log` below closes that gap by
+        // staging the raw, already-redacted stdout/stderr transcript, the
+        // same thing the Codex and OpenCode adapters honestly call
+        // `Advisory` rather than `Supported`. No Claude-Code-specific
+        // per-file artifact discovery (e.g. a real git diff of files it
+        // changed) is implemented, so this adapter now reports the same
+        // honest ceiling they do.
         artifacts: CapabilityValue {
-            support: CapabilitySupport::Supported,
-            reason: None,
+            support: CapabilitySupport::Advisory,
+            reason: Some(
+                "Real Write/Edit tool output lands in the workspace, but only the raw, \
+                 already-redacted stdout/stderr transcript is staged as a log artifact today \
+                 (matching what the Codex and OpenCode adapters report); no Claude-Code-specific \
+                 per-file artifact discovery is implemented."
+                    .to_string(),
+            ),
             additional: Default::default(),
         },
         usage: CapabilityValue {
@@ -731,6 +826,10 @@ impl<C: Clock + Send + Sync> HarnessProbe for ClaudeCodeAdapter<C> {
             additional,
         }
     }
+
+    fn declared_capabilities(&self) -> FeatureCapabilities {
+        feature_capabilities()
+    }
 }
 
 #[async_trait]
@@ -739,21 +838,30 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
         let request = &spec.work.request;
 
         if request.requested_harness_kind.as_str() != HARNESS_KIND {
+            let reason = format!(
+                "requested harness kind {:?} does not match this adapter's kind {HARNESS_KIND:?}",
+                request.requested_harness_kind.as_str()
+            );
             tracing::warn!(
-                requested = request.requested_harness_kind.as_str(),
+                reason,
                 "claude-code adapter received a spec requesting a different harness kind"
             );
-            return Err(HarnessError::Rejected);
+            return Err(HarnessError::Rejected { reason });
         }
 
         if let Some(provider) = &request.requested_model_provider {
             let normalized = provider.as_str().trim().to_ascii_lowercase();
             if !KNOWN_PROVIDERS.contains(&normalized.as_str()) {
+                let reason = format!(
+                    "requested model provider {:?} is not one of this adapter's known provider \
+                     families {KNOWN_PROVIDERS:?}",
+                    provider.as_str()
+                );
                 tracing::warn!(
-                    requested_model_provider = provider.as_str(),
+                    reason,
                     "claude-code adapter rejected an unsupported model provider before spawn"
                 );
-                return Err(HarnessError::Rejected);
+                return Err(HarnessError::Rejected { reason });
             }
         }
 
@@ -763,20 +871,29 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
                 NETWORK_TOOLS.contains(&lower.as_str())
             });
             if requests_network_tool {
+                let reason = "permission_policy denies network but names a network tool \
+                               (WebFetch/WebSearch), a self-contradictory request this adapter \
+                               cannot honor consistently"
+                    .to_owned();
                 tracing::warn!(
+                    reason,
                     "claude-code adapter rejected a policy allowing a network tool while network \
                      is denied"
                 );
-                return Err(HarnessError::Rejected);
+                return Err(HarnessError::Rejected { reason });
             }
         }
 
         if !self.binary.program.exists() {
+            let reason = format!(
+                "resolved claude binary at {} no longer exists",
+                self.binary.program.display()
+            );
             tracing::warn!(
-                program = %self.binary.program.display(),
+                reason,
                 "claude-code adapter's resolved binary no longer exists"
             );
-            return Err(HarnessError::Rejected);
+            return Err(HarnessError::Rejected { reason });
         }
 
         Ok(())
@@ -876,6 +993,8 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
             limits,
             requested_provider,
             started_at: DateTime::<Utc>::from(self.clock.now()),
+            workspace_path: spec.workspace.path.clone(),
+            attempt_id: spec.work.lease.attempt_id.as_str().to_owned(),
         };
         self.processes
             .lock()
@@ -962,9 +1081,26 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
         };
         let ended_at = DateTime::<Utc>::from(self.clock.now());
 
+        // Card III-D5 finding 2: `artifacts: Advisory` (downgraded from an
+        // unbacked `Supported` — see `feature_capabilities`) is only honest
+        // if `wait()` actually stages something. Best-effort, exactly like
+        // `codex.rs`/`opencode.rs`'s identical `stage_run_log`: a staging
+        // failure only omits the `artifact` key, never fails the attempt.
+        let mut terminal_reason = parsed.terminal_reason;
+        if let Some(artifact) = Self::stage_run_log(
+            &entry.workspace_path,
+            &entry.attempt_id,
+            &result.stdout.text,
+            &result.stderr.text,
+        ) {
+            if let Some(object) = terminal_reason.as_object_mut() {
+                object.insert("artifact".to_string(), artifact);
+            }
+        }
+
         Ok(HarnessOutcome {
             terminal_state,
-            terminal_reason: parsed.terminal_reason,
+            terminal_reason,
             final_checkpoint: None,
             actual_execution: ActualExecution {
                 harness_kind: DomainHarnessKind::new(HARNESS_KIND),
@@ -1209,7 +1345,7 @@ mod tests {
         );
         assert!(matches!(
             adapter.validate(&spec).await,
-            Err(HarnessError::Rejected)
+            Err(HarnessError::Rejected { .. })
         ));
         assert!(
             adapter.processes.lock().await.is_empty(),
@@ -1246,7 +1382,7 @@ mod tests {
         let spec = spec_with("codex", None, &[], true, BTreeMap::new(), workspace.clone());
         assert!(matches!(
             adapter.validate(&spec).await,
-            Err(HarnessError::Rejected)
+            Err(HarnessError::Rejected { .. })
         ));
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
@@ -1265,7 +1401,7 @@ mod tests {
         );
         assert!(matches!(
             adapter.validate(&spec).await,
-            Err(HarnessError::Rejected)
+            Err(HarnessError::Rejected { .. })
         ));
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
@@ -1288,7 +1424,7 @@ mod tests {
         );
         assert!(matches!(
             adapter.validate(&spec).await,
-            Err(HarnessError::Rejected)
+            Err(HarnessError::Rejected { .. })
         ));
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
@@ -1338,6 +1474,45 @@ mod tests {
             outcome.usage.tokens_in.source,
             MeasurementSource::NotMeasured
         );
+        std::fs::remove_dir_all(workspace).expect("cleanup");
+    }
+
+    /// Card III-D5 finding 2 (adversarial Wave-3 review): before this card,
+    /// `artifacts: Supported` had no backing implementation — `wait()` never
+    /// called `ArtifactStager::stage_file`, only the live (billed, opt-in)
+    /// test's own test body did, bypassing the adapter entirely. This proves
+    /// the fix through the adapter's own `wait()`, via the free fake-binary
+    /// path, matching `codex.rs`'s/`opencode.rs`'s identical proof shape.
+    #[tokio::test]
+    async fn fake_binary_success_stages_a_real_log_artifact() {
+        let adapter = adapter_with_fake_binary();
+        let workspace = temp_workspace("fake-success-artifact");
+        let mut environment = BTreeMap::new();
+        environment.insert("TACK_FAKE_HARNESS_MODE".to_string(), env_entry("success"));
+        let spec = spec_with(
+            "claude-code",
+            None,
+            &[],
+            true,
+            environment,
+            workspace.clone(),
+        );
+
+        adapter.validate(&spec).await.expect("validate");
+        let handle = adapter.start(&spec).await.expect("start");
+        let outcome = adapter.wait(&handle).await.expect("wait");
+
+        let artifact = &outcome.terminal_reason["artifact"];
+        assert_eq!(artifact["kind"], "log");
+        assert_eq!(artifact["media_type"], "text/plain");
+        let staged_path = artifact["staged_path"].as_str().expect("staged_path");
+        let staged_bytes = std::fs::read(staged_path).expect("read staged artifact");
+        assert!(String::from_utf8_lossy(&staged_bytes).contains("fake-harness-ok"));
+        assert_eq!(
+            artifact["sha256"].as_str().unwrap(),
+            crate::harness::sha256::sha256_hex(&staged_bytes)
+        );
+
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 
@@ -1580,6 +1755,24 @@ mod tests {
             (None, Some(reference)) => assert_eq!(reference, "vault://example/token"),
             (None, None) => panic!("this arm must not be taken either"),
         }
+    }
+
+    /// Card III-D5, direct regression guards for both capability corrections
+    /// this card made to this file: `cancel` was already `Advisory` (D2's
+    /// own, correctly evidenced finding — this card's registration-time gate
+    /// in `harness::mod` relies on it staying that way); `artifacts` is
+    /// downgraded from an unbacked `Supported` to `Advisory` (finding 2, an
+    /// adversarial Wave-3 review: `wait()` never staged anything before this
+    /// card — see `fake_binary_success_stages_a_real_log_artifact` above for
+    /// the fix itself).
+    #[test]
+    fn declared_capabilities_match_the_reconciled_iii_d5_values() {
+        let adapter = adapter_with_fake_binary();
+        let declared = HarnessProbe::declared_capabilities(&adapter);
+        assert_eq!(declared.cancel.support, CapabilitySupport::Advisory);
+        assert!(declared.cancel.reason.is_some());
+        assert_eq!(declared.artifacts.support, CapabilitySupport::Advisory);
+        assert!(declared.artifacts.reason.is_some());
     }
 
     // ---- version parsing (pure unit tests) --------------------------------

@@ -24,10 +24,28 @@ use super::{
     workspace::{Workspace, WorkspaceError, WorkspaceManager, WorktreeProvisioner},
 };
 
+/// Card III-D5 reconciliation: `Rejected` now carries a `reason`.
+///
+/// D1 and D3 (`docs/agent-handoffs/part-iii/III-D1.md`, `III-D3.md`) both
+/// independently hit the same gap: `validate`/`start` have several genuinely
+/// distinct pre-spawn rejection reasons (wrong harness kind, an
+/// auto-selected model this adapter cannot honestly confirm, an unresolvable
+/// binary, an unsupported provider, a provider/model pairing opencode itself
+/// does not offer, ...) that all collapsed to the same bare `Rejected` at
+/// this trait boundary. Both cards worked around it with a `tracing::warn!`
+/// immediately before returning the error — which means the reason reached
+/// a log line, never the caller or the operator who actually needs it to
+/// decide what to do next. This is the smallest fix that carries the reason
+/// across the boundary itself: a plain `String`, not a new taxonomy of
+/// typed sub-variants (rule 6 already made `HarnessError` a closed,
+/// deliberately small enum; widening it to a fourth *kind* of error was
+/// evaluated and rejected by D4 for the same reason — see D4's handoff,
+/// "the `engine.rs` decision"). `Process`/`RecoveryUnavailable` are
+/// untouched: neither D1/D2/D3 nor D4 reported an analogous need for them.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum HarnessError {
-    #[error("harness rejected this execution")]
-    Rejected,
+    #[error("harness rejected this execution: {reason}")]
+    Rejected { reason: String },
     #[error("harness process operation failed")]
     Process,
     #[error("harness recovery observation is unavailable")]
