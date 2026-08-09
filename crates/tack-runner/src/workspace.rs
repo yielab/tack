@@ -411,4 +411,128 @@ mod tests {
         assert!(workspace.path.exists());
         fs::remove_dir_all(root).expect("remove temporary workspace root");
     }
+
+    /// `ensure_safe_root` has two distinct refusals: "candidate equals root"
+    /// (covered above) and "this root is itself a real repository", detected
+    /// by a `.git` entry directly under it. Both `plan` and `cleanup` share
+    /// this guard; a workspace root that has been pointed at an actual
+    /// checkout must never be planned into or cleaned up, because cleanup
+    /// deletes directories.
+    #[tokio::test]
+    async fn cleanup_refuses_a_git_repository_root() {
+        let root = root();
+        fs::create_dir_all(root.join(".git")).expect("simulate a real git repository");
+        let canary = root.join("canary-attempt");
+        fs::create_dir_all(&canary).expect("canary attempt directory");
+        fs::write(canary.join(".tack-attempt"), "attempt-one").expect("canary marker");
+        fs::write(canary.join("work.txt"), "do not delete").expect("canary file");
+
+        let manager = WorkspaceManager::new(&root, FakeProvisioner);
+        let workspace = Workspace {
+            attempt_id: AttemptId::new("attempt-one"),
+            id: WorkspaceId::new("ws_canary"),
+            path: canary.clone(),
+            base_revision: "base".into(),
+        };
+
+        assert!(matches!(
+            manager.cleanup(&workspace),
+            Err(WorkspaceError::UnsafeRoot)
+        ));
+        // The guard is shared: `plan` must refuse the same root too, not only
+        // `cleanup`.
+        assert!(matches!(
+            manager.plan(&lease("attempt-two"), &repository()),
+            Err(WorkspaceError::UnsafeRoot)
+        ));
+        assert!(
+            canary.exists(),
+            "candidate directory survives a refused cleanup"
+        );
+        assert!(canary.join(".tack-attempt").exists());
+        assert!(canary.join("work.txt").exists());
+        fs::remove_dir_all(root).expect("remove temporary workspace root");
+    }
+
+    /// `cleanup` resolves the candidate with `canonicalize` and refuses
+    /// anything outside `root`. A literal `..` component is one way an
+    /// (accidentally or maliciously) constructed `Workspace` could try to
+    /// point outside the dedicated root without the final path component
+    /// itself being a symlink.
+    #[tokio::test]
+    async fn cleanup_refuses_a_dot_dot_traversal_outside_the_root() {
+        let root = root();
+        let victim = self::root();
+        fs::create_dir_all(&root).expect("workspace root");
+        fs::create_dir_all(&victim).expect("sibling victim directory");
+        fs::write(victim.join("important.txt"), "do not delete").expect("victim file");
+
+        let manager = WorkspaceManager::new(&root, FakeProvisioner);
+        let escaping_path = root
+            .join("..")
+            .join(victim.file_name().expect("victim directory name"));
+        let workspace = Workspace {
+            attempt_id: AttemptId::new("attempt-one"),
+            id: WorkspaceId::new("ws_dotdot"),
+            path: escaping_path,
+            base_revision: "base".into(),
+        };
+
+        assert_eq!(
+            manager.cleanup(&workspace).expect("refuse dot-dot escape"),
+            CleanupResult::Refused
+        );
+        assert!(
+            victim.exists(),
+            "sibling directory reached via .. survives a refused cleanup"
+        );
+        assert!(victim.join("important.txt").exists());
+        fs::remove_dir_all(&root).expect("remove temporary workspace root");
+        fs::remove_dir_all(&victim).expect("remove temporary victim directory");
+    }
+
+    /// The existing symlink test proves a symlink *as the final path
+    /// component* is refused before it is ever resolved. This proves the
+    /// complementary case: an intermediate path component that is a symlink
+    /// pointing outside `root`, where the final component itself is an
+    /// ordinary directory. `symlink_metadata` on the full path only inspects
+    /// the last component, so this can only be caught by the
+    /// `canonicalize` + `starts_with(root)` check, not the symlink check.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cleanup_refuses_traversal_through_a_symlinked_intermediate_directory() {
+        use std::os::unix::fs::symlink;
+
+        let root = root();
+        let outside = self::root();
+        fs::create_dir_all(&root).expect("workspace root");
+        let victim = outside.join("victim");
+        fs::create_dir_all(&victim).expect("victim directory");
+        fs::write(victim.join("important.txt"), "do not delete").expect("victim file");
+
+        let manager = WorkspaceManager::new(&root, FakeProvisioner);
+        let escape_link = root.join("escape");
+        symlink(&outside, &escape_link).expect("create escaping symlink");
+
+        let workspace = Workspace {
+            attempt_id: AttemptId::new("attempt-one"),
+            id: WorkspaceId::new("ws_escape"),
+            path: escape_link.join("victim"),
+            base_revision: "base".into(),
+        };
+
+        assert_eq!(
+            manager
+                .cleanup(&workspace)
+                .expect("refuse symlinked escape"),
+            CleanupResult::Refused
+        );
+        assert!(
+            victim.exists(),
+            "victim directory outside root survives a refused cleanup"
+        );
+        assert!(victim.join("important.txt").exists());
+        fs::remove_dir_all(&root).expect("remove temporary workspace root");
+        fs::remove_dir_all(&outside).expect("remove temporary outside root");
+    }
 }

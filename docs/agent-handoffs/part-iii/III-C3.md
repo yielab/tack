@@ -25,11 +25,20 @@
   - `cargo clippy -p tack-runner --all-targets -- -D warnings` — passed.
   - `cargo fmt --all -- --check` — passed.
   - `git diff --check` — passed.
-- Failure/adversarial case proved: once an adapter has started, a failed start ack, heartbeat,
-  completion or cancellation report first preserves a quarantined journal, best-effort reports
-  `RecoveryObservation::Ambiguous`, then best-effort cancels; it does not retry or report again.
-  A journal intent is fsynced before worktree provisioning, and cleanup rejects a symlink before
-  resolving it so it cannot delete another workspace.
+- Failure/adversarial case proved: once an adapter has started, a failed post-spawn start ack, a
+  failed or rejected heartbeat, or ambiguous cancellation evidence from the adapter first
+  preserves the journal, best-effort reports `RecoveryObservation::Ambiguous`, then best-effort
+  cancels the local process; it does not retry or report again (`quarantine_after_spawn` /
+  `report_or_retain_ambiguity` in `engine.rs`). This is a distinct, earlier-stage path from a
+  *delivery* failure of an already-persisted completion or cancellation report: that report was
+  written to the journal as `TerminalReportPending` before the transport call, so a failed or
+  unacknowledged send does not quarantine, does not report `Ambiguous`, and does not cancel — the
+  journal simply stays `TerminalReportPending` with the exact pending payload intact for durable
+  outbox replay on the next recovery pass, because the harness has already reached a terminal
+  state and there is nothing ambiguous left to quarantine (`completion_transport_loss_stays_in_terminal_outbox`,
+  `cancellation_transport_loss_stays_in_terminal_outbox` in `engine.rs`). A journal intent is
+  fsynced before worktree provisioning, and cleanup rejects a symlink before resolving it so it
+  cannot delete another workspace.
 - Schema/API/contract change requested from another owner: the frozen protocol establishes only
   the `/api/runner/v1` base path, not per-operation route paths, so C3 deliberately exposes
   `PullProtocol` rather than inventing an HTTP route map. C2/C5 should supply the concrete
@@ -116,3 +125,59 @@
   attempt/fence plus injected RFC 3339 `sent_at`: a later send has a new ID, while an exact retry
   of a frozen same-instant payload retains its ID. The periodic-send test proves two advanced
   clock instants are both accepted without a replay conflict.
+
+## Adversarial verification amendment (2026-08-08)
+
+An independent adversarial verifier raised two issues against this card; both were confirmed and
+addressed. Files changed: `crates/tack-runner/src/workspace.rs` (tests only) and this handoff.
+`engine.rs` was read in full to verify the second issue but required no change — the code was
+already correct; only the prose describing it was wrong.
+
+- **Untested acceptance bullet.** `ensure_safe_root` (`workspace.rs`, shared by `plan`,
+  `provision`, and `cleanup`) has two distinct refusals: "candidate equals root" (already
+  covered by `cleanup_refuses_root_and_unresolved_paths`) and "this root is itself a real
+  repository", detected by a `.git` entry directly under the configured root. The second
+  refusal, which is what the acceptance bullet "cleanup refuses repo root" actually names, had
+  no test anywhere in the crate. Added three tests to `workspace.rs`, all asserting the negative
+  (candidate/target survives the refusal) as well as the refusal itself:
+  - `cleanup_refuses_a_git_repository_root` — builds a real temp root containing a `.git`
+    directory plus a canary attempt directory (with `.tack-attempt` marker and a data file),
+    asserts `cleanup` returns `Err(WorkspaceError::UnsafeRoot)`, asserts `plan` on the same root
+    also refuses (the guard is shared, not cleanup-only), and asserts the canary directory and
+    its contents still exist on disk afterward.
+  - `cleanup_refuses_a_dot_dot_traversal_outside_the_root` — constructs a `Workspace.path`
+    containing a literal `..` component that resolves to a sibling directory outside root,
+    asserts `cleanup` returns `Ok(CleanupResult::Refused)` via the existing
+    `canonicalize` + `starts_with(root)` check, and asserts the sibling directory survives.
+  - `cleanup_refuses_traversal_through_a_symlinked_intermediate_directory` (Unix only) —
+    complements the existing final-component symlink test by making an *intermediate* path
+    component a symlink pointing outside root, so `symlink_metadata` on the full path (which
+    only inspects the last component) does not flag it as a symlink; the escape is instead
+    caught by `canonicalize` + `starts_with(root)`. Asserts the outside victim directory and its
+    file survive.
+
+  All three passed on first run against the existing production code — the `.git`/root/`..`/
+  symlink-escape guard genuinely holds under test. No production fix to `workspace.rs` was
+  needed. `cargo test -p tack-runner` — 50 library tests (was 47) and 2 CLI tests passed;
+  `cargo clippy -p tack-runner --all-targets -- -D warnings`, `cargo fmt -p tack-runner --
+  --check`, and `git diff --check` passed.
+
+- **Inaccurate handoff prose.** The "Failure/adversarial case proved" bullet stated that a
+  failed "start ack, heartbeat, completion or cancellation report" uniformly quarantines,
+  reports `RecoveryObservation::Ambiguous`, then best-effort cancels. That is true for a failed
+  post-spawn start ack, a failed/rejected heartbeat, and ambiguous cancellation evidence from
+  the adapter (`quarantine_after_spawn` / `report_or_retain_ambiguity` in `engine.rs`), but false
+  for a *transport delivery failure* of an already-persisted completion or cancellation report.
+  That report is written to the journal as `TerminalReportPending` before the transport call
+  (`persist_pending_terminal_report`); if the send in `send_pending_terminal_report` fails or is
+  not acknowledged, the function returns `RunCycle::TerminalReportPending` directly — it never
+  calls `observe_recovery`, never reports `Ambiguous`, and never calls `adapter.cancel`. The
+  journal simply stays `TerminalReportPending` with the pending payload intact for durable
+  outbox replay, which is correct: the harness already reached a terminal state, so there is
+  nothing ambiguous to quarantine. Verified directly against
+  `completion_transport_loss_stays_in_terminal_outbox` (`engine.rs`, asserts
+  `recovery_reports == 0`, `cancellations == 0`, `journal_state == TerminalReportPending`) and
+  `cancellation_transport_loss_stays_in_terminal_outbox` (same assertions). The verifier's
+  reading was correct; the "Failure/adversarial case proved" bullet above has been corrected in
+  place (not left as a superseding amendment) since the point of this fix is that the original
+  sentence was simply wrong, not that behavior changed.
