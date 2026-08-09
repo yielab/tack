@@ -9104,8 +9104,8 @@ acceptance gate that can be verified without trusting its author's handoff.
 | 0 — Clean boundary and safety | III-A0 · A1 · A2 · A3 · A4 | 50 | complete — accepted integration SHA `f042085`; full Rust/frontend/docs/contracts and all three Playwright projects green |
 | 1 — Domain, schema and runner skeleton | III-B1 · B2 · B3 · B4 | 51, 52 | complete — accepted integration SHA `f14019b`; domain/schema/runner/contracts and legacy golden gate green |
 | 2 — Pull protocol vertical slice | III-C1 · C2 · C3 · C4 · C5 | 52 | complete — accepted integration SHA `f931fc0`; 913 workspace tests, clippy `-D warnings`, fmt, OpenAPI drift and frontend gates green. Integration gate proven end-to-end through the mounted production router (`crates/tack-api/tests/wave2_gate.rs`, 10/10 stability loop) |
-| 3 — Real harness proof | III-D1 · D2 · D3 · D4 · D5 | 53 | ready — branch from accepted Wave 2 SHA `f931fc0`. Read the Wave 2 carry-forward below before starting |
-| 4 — Fleet scheduling and PM UX | III-E1 · E2 · E3 · E4 · E5 · E6 | 54 | blocked on two proven harnesses |
+| 3 — Real harness proof | III-D1 · D2 · D3 · D4 · D5 | 53 | complete — accepted integration SHA `6a53a18`; 1046 workspace tests, clippy `-D warnings`, fmt clean; B4 fixture pin and the Wave 2 gate both still green. Contract reconciled once against three independently-built adapters. **Live-proof caveats below — read before Wave 4** |
+| 4 — Fleet scheduling and PM UX | III-E1 · E2 · E3 · E4 · E5 · E6 | 54 | ready — branch from accepted Wave 3 SHA `6a53a18`. E1's scheduler must read capability values, not assume them; see the Wave 3 carry-forward |
 | 5 — Decisions, artifacts, models and usage | III-F1 · F2 · F3 · F4 · F5 | 55, 56 | blocked on Wave 4 shared state/API |
 | 6 — Legacy bridge and release | III-G1 · G2 · G3 · G4 · G5 | 57 | blocked on all product gates |
 
@@ -9659,6 +9659,40 @@ register all three without ordering behavior.
 **Acceptance:** no panic/TODO adapter; same fixture completes through all three fake adapters;
 two opt-in live adapters pass before Wave 4 and all three before release; lying capability is
 caught before invocation.
+
+### Wave 3 integration gate
+
+**Passed** at integration SHA `6a53a18`, with the live-proof caveats recorded below. A lying
+capability is now refused at registration, not discovered at dispatch: `HarnessProbe::
+declared_capabilities()` plus the ceiling check in `AdapterRegistry::register_probe` rejects any
+probe claiming `Supported` cancellation. Handoff: `docs/agent-handoffs/part-iii/III-D5.md`.
+
+### Wave 3 carry-forward — read before starting Wave 4
+
+1. **No harness supports cancellation better than `Advisory`.** All three shell-tool
+   subprocesses run in a new session outside the runner's process group — observed with `ps`
+   against real `claude` and real `opencode`, independently. Group signalling cannot reach
+   them. E1's scheduler must **read** the capability snapshot, never assume cancellation works;
+   and Part III's honest-delivery rule still holds — lease expiry never blindly launches a
+   second process.
+2. **Only Claude Code can confirm which model actually ran** (its `stream-json` `init` event).
+   Codex and OpenCode reject auto-select pre-spawn rather than fabricate a value, so a request
+   with no explicit model is unschedulable on two of three harnesses. E1 must surface that as a
+   named reason, not an empty candidate list. `opencode export <sessionID>` was found to give
+   authoritative post-hoc confirmation and is the recommended shape if this becomes a priority.
+3. **`codex` was never installed on the development machine.** D1 is proven only against the
+   shared fake binary; its seven documented assumptions about the real CLI are unverified. Its
+   live test must pass before release (D5 acceptance), and whoever first runs it should read
+   D1's assumption list first.
+4. **Claude Code's live run reported `terminal_state=Failed`** for reasons unrelated to the
+   adapter (its probe and artifact staging both succeeded). Worth one deliberate investigation
+   before release, since the live test is billed.
+5. **No adapter test captures `tracing` output** to prove redaction there. Every call site was
+   manually reviewed and none leak, but the property has no regression test — deliberately left
+   because Wave 2's C2 hit real flakiness in exactly that capture mechanism (see the Wave 2
+   carry-forward).
+6. **Artifact support is `Advisory` everywhere** — all three adapters stage raw run logs only;
+   none implement artifact discovery. Wave 5's F-cards own the real surface.
 
 ---
 
