@@ -6,6 +6,7 @@ pub mod comments;
 pub mod custom_fields;
 pub mod dependencies;
 pub mod economics;
+pub mod executions;
 pub mod export;
 pub mod import_github;
 pub mod import_linear;
@@ -14,6 +15,8 @@ pub mod orch;
 pub mod projects;
 pub mod provisioning;
 pub mod roles;
+pub mod runner_admin;
+pub mod runner_protocol;
 pub mod settings;
 #[cfg(feature = "embed-spa")]
 pub mod spa;

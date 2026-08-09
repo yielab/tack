@@ -1,9 +1,10 @@
 use axum::{
     extract::{Request, State},
-    http::{StatusCode, header},
+    http::{HeaderName, HeaderValue, StatusCode, header},
     middleware::Next,
     response::Response,
 };
+use sha2::{Digest, Sha256};
 
 use crate::router::AppState;
 
@@ -128,6 +129,56 @@ pub async fn require_token(
     }
 }
 
+/// Header card C1's operator execution/fleet handlers
+/// (`crate::handlers::executions`, `crate::handlers::runner_admin`) read to
+/// scope idempotency and audit `actor` fields. C1's own handoff calls out
+/// injecting this header as a hard prerequisite: those handlers trust it
+/// completely, so it must never be attacker-controlled.
+pub const OPERATOR_PRINCIPAL_HEADER: &str = "x-tack-principal";
+
+/// Derives the operator principal from the request's already-authenticated
+/// context rather than anything the client sent. Tack's operator-auth model
+/// (`docs/contracts/runner-v1/protocol.json`'s `operator_session_or_api_token`)
+/// is a single shared bearer token, not per-user sessions, so every request
+/// that clears `require_token` with the same configured token is
+/// structurally the same principal; a stable, non-secret identifier derived
+/// from the configured secret (or a fixed local identifier when no token is
+/// configured, i.e. `require_token` itself allows every caller through) is
+/// therefore both correct today and forward-compatible if the operator-auth
+/// model later grows real per-caller sessions — the injection point does not
+/// change, only what this function returns.
+fn operator_principal_value(config: &crate::config::AppConfig) -> String {
+    match config.api_token.as_deref() {
+        Some(token) if !token.is_empty() => {
+            let digest = Sha256::digest(token.as_bytes());
+            format!("operator:token:{}", hex::encode(&digest[..8]))
+        }
+        _ => "operator:local".to_string(),
+    }
+}
+
+/// Strips any client-supplied [`OPERATOR_PRINCIPAL_HEADER`] and replaces it
+/// with the server-derived value. Layered directly on the operator
+/// execution/fleet sub-router in `router.rs`, *inside* the `require_token`
+/// gate, so it only ever runs for a request that already cleared operator
+/// authentication (or ran in unauthenticated local-only mode, where every
+/// caller is equally trusted). A request arriving here with its own
+/// `x-tack-principal` set is not an error — it is simply overwritten, so a
+/// client cannot read or collide with another principal's idempotency scope
+/// by guessing or copying a header value.
+pub async fn inject_operator_principal(
+    State(state): State<AppState>,
+    mut req: Request,
+    next: Next,
+) -> Response {
+    let principal = operator_principal_value(&state.config);
+    let value = HeaderValue::from_str(&principal)
+        .expect("operator principal is hex/ASCII and always a valid header value");
+    req.headers_mut()
+        .insert(HeaderName::from_static(OPERATOR_PRINCIPAL_HEADER), value);
+    next.run(req).await
+}
+
 /// Byte-wise constant-time equality. Processes all bytes without early exit
 /// so the comparison time does not reveal how many bytes matched.
 pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
@@ -145,7 +196,11 @@ pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{constant_time_eq, decode_base64url, is_board_websocket_route, is_public_route};
+    use super::{
+        constant_time_eq, decode_base64url, is_board_websocket_route, is_public_route,
+        operator_principal_value,
+    };
+    use crate::config::AppConfig;
 
     #[test]
     fn equal_bytes_match() {
@@ -197,5 +252,79 @@ mod tests {
             Some(b"operator-token".to_vec())
         );
         assert_eq!(decode_base64url("not=valid"), None);
+    }
+
+    /// The runner-v1 router (card C2) and the operator execution/fleet
+    /// router (card C1) each authenticate with their own distinct
+    /// credential type and must never be listed here — `require_token`'s
+    /// exemption check must stay exact-match, and neither router is mounted
+    /// inside the `require_token`-gated sub-app in `router.rs` in the first
+    /// place (see `build_router`'s `runner_router` nest, which sits outside
+    /// the `api` router's `require_token` layer entirely). This test pins
+    /// the narrower, directly-checkable half of that guarantee: even if a
+    /// future edit accidentally added one of these paths to this list, a
+    /// suffix/prefix lookalike must still not slip through.
+    #[test]
+    fn no_runner_or_execution_path_is_publicly_exempt() {
+        for path in [
+            "/api/runner/v1/enroll",
+            "/api/runner/v1/refresh",
+            "/api/runner/v1/claim",
+            "/api/runner/v1/heartbeat",
+            "/api/runner/v1/attempts/att_1/events",
+            "/api/runner/v1/attempts/att_1/recovery-observation",
+            "/runner/v1/enroll",
+            "/api/executions",
+            "/api/executions/exec_1",
+            "/api/executions/exec_1/cancel",
+            "/api/executions/exec_1/requeue",
+            "/api/runner-fleets",
+            "/api/runners/enrollment",
+            "/api/runners/runr_1/revoke",
+            "/api/agent-profiles",
+            "/api/model-profiles",
+            "/executions",
+            "/runner-fleets",
+        ] {
+            assert!(!is_public_route(path), "unexpectedly exempt: {path}");
+        }
+        // Suffix/prefix lookalikes of the routes that genuinely *are* public
+        // must still be rejected — the existing behavior this test also
+        // guards against regressing while adding the rows above.
+        for lookalike in [
+            "/api/healthy",
+            "/api/health/",
+            "/api/openapi.json.evil",
+            "/api/alexa2",
+        ] {
+            assert!(
+                !is_public_route(lookalike),
+                "unexpectedly exempt: {lookalike}"
+            );
+        }
+    }
+
+    #[test]
+    fn operator_principal_is_stable_and_never_the_raw_token() {
+        let no_token = AppConfig::default();
+        let first = operator_principal_value(&no_token);
+        let second = operator_principal_value(&no_token);
+        assert_eq!(first, second);
+        assert_eq!(first, "operator:local");
+
+        let with_token = AppConfig {
+            api_token: Some("super-secret-value".into()),
+            ..AppConfig::default()
+        };
+        let derived = operator_principal_value(&with_token);
+        assert_ne!(derived, "operator:local");
+        assert!(!derived.contains("super-secret-value"));
+        assert_eq!(derived, operator_principal_value(&with_token));
+
+        let different_token = AppConfig {
+            api_token: Some("another-secret".into()),
+            ..AppConfig::default()
+        };
+        assert_ne!(derived, operator_principal_value(&different_token));
     }
 }
