@@ -2353,9 +2353,14 @@ three most common extension patterns.
 
 # Next — Harness-Agnostic Runner Fleet (Phases 50–57)
 
-**Status:** planned; this section supersedes the unstarted implementation work in Phases
-43–49. Phases 39–42 and every earlier section remain in this document as implementation and
-decision history.
+**Status:** in progress — Phases 50–53 delivered, Phase 54 next. This section supersedes the
+unstarted implementation work in Phases 43–49. Phases 39–42 and every earlier section remain
+in this document as implementation and decision history.
+
+Execution is tracked card-by-card on the **Part III board** in `TODO.md`, which is the
+authority for wave status, card ownership and accepted integration SHAs. Per-card evidence
+lives in `docs/agent-handoffs/part-iii/`. This section records the architectural intent; the
+board records what actually shipped.
 
 ## Product outcome
 
@@ -2561,11 +2566,11 @@ lifecycle, decisions, artifacts and usage are first-class protocol values.
 
 | Phase | Title | Status |
 |---|---|---|
-| 50 | Boundary, Safety & Contract Freeze | **planned — blocking** |
-| 51 | Durable Execution Domain & Schema | **planned** |
-| 52 | Pull Runner Protocol & `tack-runner` | **planned** |
-| 53 | Codex / Claude Code / OpenCode Harness Proof | **planned** |
-| 54 | Fleet Scheduler & Item Assignment UX | **planned** |
+| 50 | Boundary, Safety & Contract Freeze | ✅ Done — Wave 0, integration SHA `f042085` |
+| 51 | Durable Execution Domain & Schema | ✅ Done — Wave 1, integration SHA `f14019b` |
+| 52 | Pull Runner Protocol & `tack-runner` | ✅ Done — Wave 2, integration SHA `f931fc0` |
+| 53 | Codex / Claude Code / OpenCode Harness Proof | ✅ Done — Wave 3, integration SHA `6a53a18`; live-proof caveats below |
+| 54 | Fleet Scheduler & Item Assignment UX | **next** |
 | 55 | Decisions, Artifacts & Realtime Activity | **planned** |
 | 56 | Model Profiles, Policy & Honest Usage | **planned** |
 | 57 | Docket Bridge, Recovery & Release | **planned** |
@@ -2594,6 +2599,10 @@ ambiguity about which project schedules work.
 migration and router/OpenAPI file has one named integration owner; no Phase 51+ card is
 allowed to invent a field or lifecycle state independently.
 
+**Delivered** (Wave 0, `f042085`): 42 frozen fixtures under `docs/contracts/runner-v1/`, ADR
+0050, and the trust-boundary/atomicity/migration-recovery repairs. Later grown to 46 fixtures
+when Wave 3 evidence showed `accept`/`start` had been omitted.
+
 ### Phase 51 — Durable Execution Domain & Schema
 
 **Goal:** represent requests, attempts, fleets and runners without any Docket or harness
@@ -2610,6 +2619,11 @@ noun in the neutral domain.
 **Exit:** two concurrent claimers produce one lease; an expired fencing token cannot write;
 replayed events/completion are no-ops; an ambiguous attempt is not automatically retried;
 and a database opened at every supported prior migration upgrades without data loss.
+
+**Delivered** (Wave 1, `f14019b`): the I/O-free execution domain in `tack-orch`, migrations
+039–048 for the ten neutral tables, the `tack-runner` crate skeleton, and a contract-
+conformance harness that byte-pins every fixture. Wave 2 later found that ten of this
+schema's transaction sites deadlocked under concurrency — see Phase 52.
 
 ### Phase 52 — Pull Runner Protocol & `tack-runner`
 
@@ -2629,6 +2643,27 @@ harness installed.
 resumes or becomes `needs_operator`; revoked credentials fail closed; duplicate reports do
 not duplicate rows or notifications.
 
+**Delivered** (Wave 2, `f931fc0`): 13 `/api/runner/v1` endpoints plus the operator execution
+and fleet surface, mounted with structurally separate authentication — runner routes sit
+outside the operator auth layer entirely rather than in an exemption list, and
+`x-tack-principal` is overwritten from server config so a client cannot spoof the identity
+that scopes idempotency. The gate is proven by `crates/tack-api/tests/wave2_gate.rs`, which
+drives the real router through enroll → claim → accept → start → stream → **restart** →
+complete and asserts persisted SQL state at each step.
+
+Three defects worth recording, none of which the cards' own tests caught:
+
+- **Ten transaction sites deadlocked** under concurrent access — deferred SQLite transactions
+  that read then write, where two callers both upgrade from reader to writer and one gets
+  `SQLITE_LOCKED`. Claim failed 25/25 under stress. All now use `BEGIN IMMEDIATE`; two
+  write-first sites were stress-tested and deliberately left alone. The acceptance test that
+  should have caught this was swallowing the error and retrying sequentially.
+- **A fingerprint mismatch was reported as retryable `conflict`**, so a runner reusing an
+  idempotency key with different content was told to retry a request that can never succeed.
+  Now split into a non-retryable `idempotency_conflict`.
+- **`retryable` was hardcoded false** on every operator error, against fixtures marking four
+  codes retryable. The classification now lives in one contract-derived place.
+
 ### Phase 53 — Codex / Claude Code / OpenCode Harness Proof
 
 **Goal:** prove the adapter boundary against actual coding harnesses rather than a second
@@ -2646,6 +2681,33 @@ remote scheduler.
 **Exit:** the same fixture item can be completed independently through all three harnesses;
 an unsupported provider/model combination is rejected before leasing/spawn; cancelling one
 attempt cannot kill another; and no adapter contains a panic placeholder.
+
+**Delivered** (Wave 3, `6a53a18`): shared process/event infrastructure with bounded streaming
+and explicit truncation, three adapters built independently against their real CLIs, and one
+reconciliation pass. The adapter boundary held — the contract needed four small changes and
+no fixture edit.
+
+**Read this before Phase 54.** Probing real binaries falsified two assumptions the design had
+been carrying:
+
+- **No harness supports cancellation better than `Advisory`.** Claude Code's and OpenCode's
+  shell tools each spawn their execution shell in a **new session**, outside the runner's
+  process group — observed with `ps` against both real binaries, independently. Group
+  signalling cannot reach those descendants. The registry now _refuses to register_ a probe
+  claiming `Supported` cancellation, so an adapter cannot re-introduce the lie. Phase 54's
+  scheduler must read the capability snapshot rather than assume cancellation works.
+- **Only Claude Code can confirm which model actually ran** (from its `stream-json` `init`
+  event; its `--output-format json` has no reliable field — an unrequested internal model
+  appeared in `modelUsage` for a trivial prompt). Codex and OpenCode reject auto-selection
+  pre-spawn rather than fabricate a value, so a request with no explicit model is
+  unschedulable on two of three harnesses.
+
+Also observed and acted on: OpenCode does **not** reject a valid model paired with the wrong
+provider — it starts a session and fails afterwards — which is why the adapter validates
+pairings itself and keeps provider/model combinations paired rather than flattened. And
+`codex` was never installed on the development machine, so that adapter is proven only
+against the shared fake binary; its documented assumptions about the real CLI remain
+unverified until its opt-in live test runs before release.
 
 ### Phase 54 — Fleet Scheduler & Item Assignment UX
 
@@ -2740,3 +2802,17 @@ inspect verified artifacts and an idempotent event timeline; and recover from AP
 restart without silent loss or blind duplicate execution. Docket is optional, token/cost
 values are measured or explicitly `not measured`, and no historical PM item or legacy
 orchestration row is erased to achieve the cutover.
+
+**Progress against that definition, as of Phase 53:**
+
+| Capability | State |
+|---|---|
+| Separate attempts through Codex / Claude Code / OpenCode | adapters exist; Codex unproven against its real CLI |
+| Exact runner or fleet selection | data model and API exist; scheduler is Phase 54 |
+| Only a supported provider and opaque model | enforced pre-spawn, including wrong-provider pairings |
+| Requested vs. actual execution facts | recorded; actual model confirmable on Claude Code only |
+| Bounded human gate | not started — Phase 55 |
+| Verified artifacts and idempotent event timeline | events idempotent and fenced; artifacts are raw run logs only, no discovery |
+| Recover from API/runner restart | proven end-to-end by the Wave 2 gate |
+| Measured or explicitly unmeasured token/cost | OpenCode reports real token and cost figures; others report unmeasured |
+| Docket optional, no historical row erased | holds — legacy orchestration untouched, frozen until Phase 57 |
