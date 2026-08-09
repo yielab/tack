@@ -105,13 +105,60 @@ pub mod sha256;
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
-use tack_orch::execution::{HarnessCapability, HarnessKind as DomainHarnessKind};
+use tack_orch::execution::{
+    CapabilitySupport, FeatureCapabilities, HarnessCapability, HarnessKind as DomainHarnessKind,
+};
+use thiserror::Error;
 
 pub use crate::client::engine::{
     CancelObservation, CancellationEvidence, ExecutionSpec, HarnessAdapter, HarnessError,
     HarnessOutcome, LocalRunHandle,
 };
 pub use crate::client::{AttemptJournal, RecoveryObservation};
+
+/// Card III-D5 reconciliation of finding 3: a closed vocabulary for
+/// `ActualExecution.model_observation_source`.
+///
+/// `tack_orch::execution::ActualExecution.model_observation_source` is a
+/// bare `String` (`crates/tack-orch/src/**` is out of this card's
+/// ownership, so it stays that way on the wire), but three independently
+/// implemented adapters had already converged on exactly these three
+/// meanings before this card touched anything: D1 (`codex.rs`) introduced
+/// `"requested_not_confirmed"` for "this adapter cannot observe which model
+/// actually ran, so it echoes the request instead of fabricating a value";
+/// D3 (`opencode.rs`) reused that exact literal, unprompted, for the
+/// identical situation; D2 (`claude_code.rs`) independently produced
+/// `"harness_reported"` (the frozen fixture's own exemplar value, used when
+/// a real `stream-json` `system`/`init` event names the model) and
+/// `"not_observed"` (used only when neither an observation nor a request
+/// value exists to report — Claude Code is the one adapter that can honor
+/// true auto-selection at all, so it is the only one that can ever hit this
+/// case). This enum does not change what any adapter reports in what
+/// situation — it centralizes the three literals so a fourth adapter cannot
+/// silently invent a fourth, incompatible string for one of these same three
+/// situations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelObservationSource {
+    /// The value was read directly from the harness's own output (e.g.
+    /// Claude Code's `system`/`init` event `model` field).
+    HarnessReported,
+    /// The value echoes the operator's request; the harness gave no
+    /// independent confirmation it actually used it.
+    RequestedNotConfirmed,
+    /// Neither an observation nor a request value exists to report (only
+    /// reachable by an adapter that permits auto-selection at all).
+    NotObserved,
+}
+
+impl ModelObservationSource {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::HarnessReported => "harness_reported",
+            Self::RequestedNotConfirmed => "requested_not_confirmed",
+            Self::NotObserved => "not_observed",
+        }
+    }
+}
 
 /// Harness discovery/capability reporting, independent of any specific
 /// claimed attempt. See the module docs for why this is not a sixth
@@ -140,6 +187,63 @@ pub trait HarnessProbe: Send + Sync {
     /// never as an `Err` — an absent/broken installation is exactly as
     /// "successful" a probe result as a healthy one, just less capable.
     async fn probe(&self) -> HarnessCapability;
+
+    /// Card III-D5 reconciliation of finding 1: the per-feature support this
+    /// adapter honestly promises, independent of any specific attempt.
+    ///
+    /// Before this card, the only place any adapter computed its own
+    /// `FeatureCapabilities` was inside `HarnessAdapter::wait` — *after* a
+    /// process had already run — so nothing in the pre-attempt path could
+    /// ever check a claimed capability before spawning anything. Each real
+    /// adapter's own `declared_capabilities` reuses exactly the same
+    /// computation `wait` already stamps onto
+    /// `ActualExecution.capability_snapshot`, so there is exactly one source
+    /// of truth per adapter, not two that could quietly diverge.
+    ///
+    /// [`AdapterRegistry::register_probe`] calls this once, at registration,
+    /// and refuses to register a probe whose declared `cancel` support
+    /// exceeds [`PROCESS_GROUP_CANCEL_CEILING`] — the honest ceiling for the
+    /// only cancellation primitive this runner implements
+    /// (`harness::process::SupervisedProcess::cancel`, a process-group
+    /// SIGTERM/SIGKILL). D2 proved, twice, with `ps`
+    /// (`docs/agent-handoffs/part-iii/III-D2.md`), that mechanism cannot
+    /// reliably reach a descendant a harness's own shell-tool spawns into a
+    /// new OS session — and a same-shaped adversarial check against the real
+    /// `opencode` binary found the identical disjoint-session pattern for a
+    /// bash-tool subprocess, confirming this is not a Claude-Code-specific
+    /// quirk. Neither the Codex nor the OpenCode adapter has adapter-specific
+    /// evidence its own tool execution stays inside the process group
+    /// either. So a capability that lies about cancellation is caught once,
+    /// here, before any attempt is ever started — never only discovered when
+    /// a real cancellation silently fails against a live attempt.
+    fn declared_capabilities(&self) -> FeatureCapabilities;
+}
+
+/// The cancellation support ceiling for any [`HarnessProbe`] built on
+/// `harness::process::SupervisedProcess::cancel` — see
+/// [`HarnessProbe::declared_capabilities`]. Not a blanket "cancel can never
+/// be `Supported`" rule: a future adapter with a genuinely different
+/// cancellation mechanism (e.g. one that walks the full descendant tree by
+/// pid rather than relying on OS process-group membership) could justify a
+/// higher ceiling. No adapter in this tree has that mechanism today.
+pub const PROCESS_GROUP_CANCEL_CEILING: CapabilitySupport = CapabilitySupport::Advisory;
+
+/// Card III-D5: a probe rejected at registration, before it can ever back a
+/// claimed attempt. Kept distinct from [`HarnessError`] (a per-attempt,
+/// per-`HarnessAdapter`-call error) since this is a registration-time,
+/// whole-probe rejection with nothing to do with any single attempt.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum HarnessRegistrationError {
+    #[error(
+        "probe for harness kind {kind:?} declares cancel support {support:?}, which exceeds \
+         what the shared process-group cancellation primitive can honestly promise \
+         ({ceiling:?}); see docs/agent-handoffs/part-iii/III-D5.md finding 1"
+    )]
+    OverclaimedCancelSupport {
+        kind: String,
+        support: CapabilitySupport,
+        ceiling: CapabilitySupport,
+    },
 }
 
 /// Dispatches the frozen [`HarnessAdapter`] lifecycle across every
@@ -176,10 +280,30 @@ impl AdapterRegistry {
         self
     }
 
-    pub fn register_probe(&mut self, probe: Box<dyn HarnessProbe>) -> &mut Self {
+    /// Registers a probe, first checking its own [`HarnessProbe::declared_capabilities`]
+    /// against [`PROCESS_GROUP_CANCEL_CEILING`] (finding 1's "a lying
+    /// capability is caught before invocation"). A probe that overclaims is
+    /// rejected here and never inserted — `capabilities()`/dispatch never
+    /// see it — rather than silently accepted and only discovered wrong once
+    /// a real cancellation against a live attempt fails to reach a detached
+    /// descendant.
+    pub fn register_probe(
+        &mut self,
+        probe: Box<dyn HarnessProbe>,
+    ) -> Result<&mut Self, HarnessRegistrationError> {
+        let declared = probe.declared_capabilities();
+        if declared.cancel.support == CapabilitySupport::Supported
+            && PROCESS_GROUP_CANCEL_CEILING != CapabilitySupport::Supported
+        {
+            return Err(HarnessRegistrationError::OverclaimedCancelSupport {
+                kind: probe.harness_kind().as_str().to_owned(),
+                support: declared.cancel.support,
+                ceiling: PROCESS_GROUP_CANCEL_CEILING,
+            });
+        }
         self.probes
             .insert(probe.harness_kind().as_str().to_owned(), probe);
-        self
+        Ok(self)
     }
 
     /// Harness kinds with a registered adapter, in deterministic sorted
@@ -204,7 +328,9 @@ impl AdapterRegistry {
         self.adapters
             .get(kind)
             .map(|boxed| boxed.as_ref())
-            .ok_or(HarnessError::Rejected)
+            .ok_or_else(|| HarnessError::Rejected {
+                reason: format!("no adapter is registered for harness kind {kind:?}"),
+            })
     }
 }
 
@@ -295,6 +421,7 @@ mod tests {
             atomic::{AtomicUsize, Ordering},
         },
     };
+    use tack_orch::execution::{CapabilityValue, RequestedModelId, RequestedModelProvider};
 
     /// A trivial trait-level fake — deliberately not the fake *binary*: this
     /// module tests dispatch/routing logic, which does not need a real
@@ -523,11 +650,11 @@ mod tests {
 
         assert!(matches!(
             registry.validate(&spec_requesting("claude-code")).await,
-            Err(HarnessError::Rejected)
+            Err(HarnessError::Rejected { .. })
         ));
         assert!(matches!(
             registry.start(&spec_requesting("claude-code")).await,
-            Err(HarnessError::Rejected)
+            Err(HarnessError::Rejected { .. })
         ));
     }
 
@@ -579,6 +706,21 @@ mod tests {
     struct FakeProbe {
         kind: &'static str,
         installed: bool,
+        /// Card III-D5: configurable so the same fake can play both an
+        /// honest probe (the default every pre-existing test below uses) and
+        /// a deliberately lying one, for
+        /// `registering_a_probe_that_overclaims_cancel_support_is_rejected_before_any_attempt_exists`.
+        cancel_support: CapabilitySupport,
+    }
+
+    impl FakeProbe {
+        fn honest(kind: &'static str, installed: bool) -> Self {
+            Self {
+                kind,
+                installed,
+                cancel_support: CapabilitySupport::Advisory,
+            }
+        }
     }
 
     #[async_trait]
@@ -607,20 +749,40 @@ mod tests {
                 additional: Default::default(),
             }
         }
+
+        fn declared_capabilities(&self) -> FeatureCapabilities {
+            fn unsupported(reason: &str) -> CapabilityValue {
+                CapabilityValue {
+                    support: CapabilitySupport::Unsupported,
+                    reason: Some(reason.to_owned()),
+                    additional: Default::default(),
+                }
+            }
+            FeatureCapabilities {
+                cancel: CapabilityValue {
+                    support: self.cancel_support,
+                    reason: Some("fake probe for registry-dispatch tests".to_owned()),
+                    additional: Default::default(),
+                },
+                resume: unsupported("fake"),
+                decisions: unsupported("fake"),
+                artifacts: unsupported("fake"),
+                usage: unsupported("fake"),
+                additional: Default::default(),
+            }
+        }
     }
 
     #[tokio::test]
     async fn capabilities_reports_an_honest_probe_error_for_an_uninstalled_harness_never_a_fake_success()
      {
         let mut registry = AdapterRegistry::new();
-        registry.register_probe(Box::new(FakeProbe {
-            kind: "codex",
-            installed: true,
-        }));
-        registry.register_probe(Box::new(FakeProbe {
-            kind: "claude-code",
-            installed: false,
-        }));
+        registry
+            .register_probe(Box::new(FakeProbe::honest("codex", true)))
+            .expect("an honest probe registers cleanly");
+        registry
+            .register_probe(Box::new(FakeProbe::honest("claude-code", false)))
+            .expect("an honest probe registers cleanly");
 
         let reports = registry.capabilities().await;
         assert_eq!(reports.len(), 2);
@@ -634,6 +796,45 @@ mod tests {
             .find(|report| report.harness_kind.as_str() == "claude-code")
             .expect("claude-code report");
         assert_eq!(claude.probe_error.as_deref(), Some("not found on PATH"));
+    }
+
+    /// Acceptance gate: "a lying capability is caught before invocation."
+    /// Finding 1 (`docs/agent-handoffs/part-iii/III-D5.md`): the shared
+    /// cancellation primitive (`harness::process::SupervisedProcess::cancel`,
+    /// a process-group SIGTERM/SIGKILL) cannot reliably reach a descendant a
+    /// harness's own shell-tool spawns into a new OS session — D2 proved
+    /// this twice with `ps` against real Claude Code, and an equivalent
+    /// check against the real `opencode` binary found the identical
+    /// disjoint-session pattern. A probe that nonetheless claims
+    /// `cancel: Supported` is rejected here, at registration — never
+    /// silently accepted only to be discovered wrong the first time a real
+    /// cancellation against a live attempt fails to reach a detached
+    /// descendant.
+    #[tokio::test]
+    async fn registering_a_probe_that_overclaims_cancel_support_is_rejected_before_any_attempt_exists()
+     {
+        let mut registry = AdapterRegistry::new();
+        let lying = FakeProbe {
+            kind: "lying-harness",
+            installed: true,
+            cancel_support: CapabilitySupport::Supported,
+        };
+
+        let error = match registry.register_probe(Box::new(lying)) {
+            Ok(_) => panic!("a probe claiming Supported cancellation must be rejected"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            error,
+            HarnessRegistrationError::OverclaimedCancelSupport {
+                support: CapabilitySupport::Supported,
+                ceiling: CapabilitySupport::Advisory,
+                ..
+            }
+        ));
+
+        // Never inserted: dispatch/capability reporting never sees it.
+        assert!(registry.capabilities().await.is_empty());
     }
 
     #[test]
@@ -652,5 +853,348 @@ mod tests {
             None,
             "non-hex prefix is rejected"
         );
+    }
+
+    // ---- III-D5 acceptance: the real, reconciled three adapters ----------
+    //
+    // Everything above this point tests dispatch/routing with trait-level
+    // fakes (D4's own choice, unchanged). These last tests are the two
+    // acceptance-gate proofs specific to this card that need the three
+    // *real* adapters (`codex::CodexAdapter`, `claude_code::ClaudeCodeAdapter`,
+    // `opencode::OpenCodeAdapter`), not stand-ins: "the same fixture
+    // completes through all three fake adapters" and "registration of all
+    // three is order-independent." Each real adapter's own file already has
+    // its own exhaustive fixture-driven test suite (D1/D2/D3's own cards);
+    // these two tests are deliberately narrow, cross-cutting proofs that
+    // only make sense here, where all three are in scope together.
+
+    static NEXT_CROSS_ADAPTER_DIR: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    fn cross_adapter_temp_dir(label: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "tack-runner-d5-cross-adapter-{label}-{}-{}",
+            std::process::id(),
+            NEXT_CROSS_ADAPTER_DIR.fetch_add(1, Ordering::SeqCst)
+        ));
+        std::fs::create_dir_all(&path).expect("create temp dir");
+        path
+    }
+
+    /// One deterministic fixture script, driven identically by all three
+    /// real adapters. Never D4's shared `fake_harness_command()` — that
+    /// fixture is env-var-driven and single-purpose per spawn, which cannot
+    /// honestly answer OpenCode's *own* version/model-listing/run calls (three
+    /// different purposes) in one adapter instance without also faking a
+    /// probe-only environment override this cross-cutting test has no
+    /// business reaching into. Branches on its own argv instead, mirroring
+    /// `opencode.rs::tests::branching_fixture_command`'s identical technique:
+    /// a literal `--version` token prints a clean version string; a literal
+    /// `models` token prints one deterministic `provider/model` line; anything
+    /// else (every adapter's real `run`/`exec`/`-p` invocation) prints a
+    /// fixed, non-JSON marker and exits 0 — which every one of the three
+    /// adapters' own `wait()` honestly classifies as `Succeeded` from the
+    /// exit code alone (Codex always does; Claude Code and OpenCode fall
+    /// back to exit-code classification when stdout does not parse as their
+    /// own structured output, exactly as D2/D3 document).
+    fn cross_adapter_fixture_command() -> (PathBuf, Vec<String>) {
+        let dir = cross_adapter_temp_dir("script");
+        let script_path = dir.join("fixture.sh");
+        let script = r#"#!/bin/sh
+for arg in "$@"; do
+  case "$arg" in
+    --version) echo "1.0.0"; exit 0 ;;
+    models) printf 'demo/model-a\n'; exit 0 ;;
+  esac
+done
+echo "cross-adapter-fixture-complete"
+exit 0
+"#;
+        std::fs::write(&script_path, script).expect("write cross-adapter fixture script");
+        (
+            PathBuf::from("/bin/sh"),
+            vec![script_path.display().to_string()],
+        )
+    }
+
+    /// Builds a real `ExecutionSpec` for `kind`, reusing `claim.response.json`
+    /// exactly as `spec_requesting` above does, but with a real (existing)
+    /// workspace directory — the real adapters actually spawn a process
+    /// there, unlike the trait-level fakes above — and an explicit
+    /// provider/model pair valid for that specific adapter.
+    fn real_adapter_spec(
+        kind: &str,
+        provider: &str,
+        model: &str,
+        workspace_path: PathBuf,
+    ) -> ExecutionSpec {
+        let claim: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../docs/contracts/runner-v1/claim.response.json"
+        ))
+        .expect("claim fixture");
+        let mut request: tack_orch::execution::ExecutionRequestSnapshot =
+            serde_json::from_value(claim["request"].clone()).expect("request fixture");
+        request.requested_harness_kind = DomainHarnessKind::new(kind);
+        request.requested_model_provider = Some(RequestedModelProvider::new(provider));
+        request.requested_model_id = Some(RequestedModelId::new(model));
+        let attempt: tack_orch::execution::AttemptSnapshot =
+            serde_json::from_value(claim["attempt"].clone()).expect("attempt fixture");
+        ExecutionSpec {
+            work: crate::client::ClaimedWork {
+                claim_request_id: crate::client::ClaimRequestId::new("claim"),
+                lease: crate::client::AttemptLease {
+                    attempt_id: AttemptId::new("attempt"),
+                    runner_id: RunnerId::new("runner"),
+                    fencing_token: FencingToken(1),
+                    attempt_number: 1,
+                    state: crate::client::AttemptState::Leased,
+                    issued_at: crate::client::Timestamp::new("2026-08-09T12:20:00Z"),
+                    expires_at: crate::client::Timestamp::new("2026-08-09T13:20:00Z"),
+                },
+                request,
+                attempt,
+            },
+            workspace: crate::client::Workspace {
+                attempt_id: AttemptId::new("attempt"),
+                id: WorkspaceId::new("ws_cross_adapter"),
+                path: workspace_path,
+                base_revision: "revision".into(),
+            },
+        }
+    }
+
+    /// Acceptance: "the same fixture completes through all three fake
+    /// adapters — one deterministic fixture, three adapters, same
+    /// observable outcome." Drives the real `CodexAdapter`, `ClaudeCodeAdapter`
+    /// and `OpenCodeAdapter` — through the frozen `HarnessAdapter` trait only,
+    /// exactly as `AdapterRegistry` would dispatch to them — against the one
+    /// fixture script above, and asserts every one of the three reaches
+    /// `AttemptState::Succeeded` from the identical input.
+    #[tokio::test]
+    async fn the_same_fixture_completes_through_all_three_real_adapters() {
+        let (program, args) = cross_adapter_fixture_command();
+        let staging_root = cross_adapter_temp_dir("artifacts");
+
+        let codex_workspace = cross_adapter_temp_dir("codex-ws");
+        let codex = crate::harness::codex::CodexAdapter::for_fixture(
+            program.clone(),
+            args.clone(),
+            staging_root.clone(),
+        );
+        let codex_spec = real_adapter_spec(
+            "codex",
+            "openai",
+            "opaque/model-alpha",
+            codex_workspace.clone(),
+        );
+        codex.validate(&codex_spec).await.expect("codex validate");
+        let codex_handle = codex.start(&codex_spec).await.expect("codex start");
+        let codex_outcome = codex.wait(&codex_handle).await.expect("codex wait");
+        assert_eq!(
+            codex_outcome.terminal_state,
+            crate::client::AttemptState::Succeeded
+        );
+
+        let claude_workspace = cross_adapter_temp_dir("claude-ws");
+        let claude = crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
+            program.clone(),
+            args.clone(),
+        );
+        let claude_spec = real_adapter_spec(
+            "claude-code",
+            "anthropic",
+            "claude-fixture-model",
+            claude_workspace.clone(),
+        );
+        claude
+            .validate(&claude_spec)
+            .await
+            .expect("claude-code validate");
+        let claude_handle = claude.start(&claude_spec).await.expect("claude-code start");
+        let claude_outcome = claude.wait(&claude_handle).await.expect("claude-code wait");
+        assert_eq!(
+            claude_outcome.terminal_state,
+            crate::client::AttemptState::Succeeded
+        );
+
+        let opencode_workspace = cross_adapter_temp_dir("opencode-ws");
+        let opencode = crate::harness::opencode::OpenCodeAdapter::for_fixture(
+            program.clone(),
+            args.clone(),
+            staging_root.clone(),
+        );
+        let opencode_spec =
+            real_adapter_spec("opencode", "demo", "model-a", opencode_workspace.clone());
+        opencode
+            .validate(&opencode_spec)
+            .await
+            .expect("opencode validate");
+        let opencode_handle = opencode
+            .start(&opencode_spec)
+            .await
+            .expect("opencode start");
+        let opencode_outcome = opencode
+            .wait(&opencode_handle)
+            .await
+            .expect("opencode wait");
+        assert_eq!(
+            opencode_outcome.terminal_state,
+            crate::client::AttemptState::Succeeded
+        );
+
+        for workspace in [codex_workspace, claude_workspace, opencode_workspace] {
+            std::fs::remove_dir_all(workspace).expect("cleanup");
+        }
+    }
+
+    /// Acceptance: "register all three adapters without introducing
+    /// ordering-dependent behavior." Registers the three real adapters (and
+    /// their probes) into two separate `AdapterRegistry` instances in
+    /// opposite orders and proves both the registered-kind set and dispatch
+    /// itself are identical either way — `BTreeMap`-keyed registration
+    /// structurally cannot let "who registered first" become dispatch
+    /// priority, and this proves it empirically, not just by code
+    /// inspection. Also proves each real probe's declared cancellation
+    /// capability (all three now `Advisory`, card III-D5 finding 1) passes
+    /// the registration-time ceiling check this same card added.
+    #[tokio::test]
+    async fn registering_all_three_real_adapters_is_order_independent() {
+        let staging_root = cross_adapter_temp_dir("order-artifacts");
+
+        let mut forward = AdapterRegistry::new();
+        forward.register_adapter(
+            DomainHarnessKind::new("codex"),
+            Box::new(crate::harness::codex::CodexAdapter::discover(
+                crate::harness::process::ProcessLimits::new(
+                    1_000_000,
+                    1_000_000,
+                    std::time::Duration::from_secs(10),
+                ),
+                staging_root.clone(),
+            )),
+        );
+        forward.register_adapter(
+            DomainHarnessKind::new("claude-code"),
+            Box::new(
+                crate::harness::claude_code::ClaudeCodeAdapter::discover().unwrap_or_else(|_| {
+                    crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
+                        PathBuf::from("/bin/sh"),
+                        vec!["-c".to_owned(), "exit 0".to_owned()],
+                    )
+                }),
+            ),
+        );
+        forward.register_adapter(
+            DomainHarnessKind::new("opencode"),
+            Box::new(crate::harness::opencode::OpenCodeAdapter::discover(
+                crate::harness::process::ProcessLimits::new(
+                    1_000_000,
+                    1_000_000,
+                    std::time::Duration::from_secs(10),
+                ),
+                staging_root.clone(),
+            )),
+        );
+
+        let mut backward = AdapterRegistry::new();
+        backward.register_adapter(
+            DomainHarnessKind::new("opencode"),
+            Box::new(crate::harness::opencode::OpenCodeAdapter::discover(
+                crate::harness::process::ProcessLimits::new(
+                    1_000_000,
+                    1_000_000,
+                    std::time::Duration::from_secs(10),
+                ),
+                staging_root.clone(),
+            )),
+        );
+        backward.register_adapter(
+            DomainHarnessKind::new("claude-code"),
+            Box::new(
+                crate::harness::claude_code::ClaudeCodeAdapter::discover().unwrap_or_else(|_| {
+                    crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
+                        PathBuf::from("/bin/sh"),
+                        vec!["-c".to_owned(), "exit 0".to_owned()],
+                    )
+                }),
+            ),
+        );
+        backward.register_adapter(
+            DomainHarnessKind::new("codex"),
+            Box::new(crate::harness::codex::CodexAdapter::discover(
+                crate::harness::process::ProcessLimits::new(
+                    1_000_000,
+                    1_000_000,
+                    std::time::Duration::from_secs(10),
+                ),
+                staging_root.clone(),
+            )),
+        );
+
+        assert_eq!(forward.registered_kinds(), backward.registered_kinds());
+        assert_eq!(
+            forward.registered_kinds(),
+            vec!["claude-code", "codex", "opencode"]
+        );
+
+        // Dispatch itself, not only the registered-kind set, is order
+        // independent: an auto-selected (unsupported) spec is rejected the
+        // same way regardless of which registry instance handles it.
+        for kind in ["codex", "claude-code", "opencode"] {
+            let spec = spec_requesting(kind);
+            let forward_result = forward.validate(&spec).await;
+            let backward_result = backward.validate(&spec).await;
+            assert!(
+                matches!(forward_result, Err(HarnessError::Rejected { .. })),
+                "kind {kind}: forward registry"
+            );
+            assert!(
+                matches!(backward_result, Err(HarnessError::Rejected { .. })),
+                "kind {kind}: backward registry"
+            );
+        }
+
+        // Card III-D5 finding 1's registration-time gate: every one of the
+        // three real, now-reconciled probes registers cleanly (none still
+        // claims `cancel: Supported`).
+        let mut probe_registry = AdapterRegistry::new();
+        probe_registry
+            .register_probe(Box::new(
+                crate::harness::opencode::OpenCodeAdapter::discover(
+                    crate::harness::process::ProcessLimits::new(
+                        1_000_000,
+                        1_000_000,
+                        std::time::Duration::from_secs(10),
+                    ),
+                    staging_root.clone(),
+                ),
+            ))
+            .expect("opencode probe registers cleanly");
+        probe_registry
+            .register_probe(Box::new(crate::harness::codex::CodexAdapter::discover(
+                crate::harness::process::ProcessLimits::new(
+                    1_000_000,
+                    1_000_000,
+                    std::time::Duration::from_secs(10),
+                ),
+                staging_root.clone(),
+            )))
+            .expect("codex probe registers cleanly");
+        probe_registry
+            .register_probe(Box::new(
+                crate::harness::claude_code::ClaudeCodeAdapter::discover().unwrap_or_else(|_| {
+                    crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
+                        PathBuf::from("/bin/sh"),
+                        vec!["-c".to_owned(), "exit 0".to_owned()],
+                    )
+                }),
+            ))
+            .expect("claude-code probe registers cleanly");
+
+        let reports = probe_registry.capabilities().await;
+        assert_eq!(reports.len(), 3, "all three real probes registered");
+        let mut kinds: Vec<&str> = reports.iter().map(|r| r.harness_kind.as_str()).collect();
+        kinds.sort_unstable();
+        assert_eq!(kinds, vec!["claude-code", "codex", "opencode"]);
     }
 }

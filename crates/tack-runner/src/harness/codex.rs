@@ -100,7 +100,8 @@ const DEFAULT_PROBE_TIMEOUT: Duration = Duration::from_secs(15);
 /// Not part of any frozen vocabulary today — see the module docs' assumption
 /// (5) and the handoff for why this is a new, adapter-chosen value rather
 /// than the fixture-exemplified `"harness_reported"`.
-const MODEL_OBSERVATION_SOURCE: &str = "requested_not_confirmed";
+const MODEL_OBSERVATION_SOURCE: &str =
+    crate::harness::ModelObservationSource::RequestedNotConfirmed.as_str();
 
 /// Where to find the `codex` executable.
 #[derive(Clone)]
@@ -337,6 +338,32 @@ impl CodexAdapter<crate::SystemClock> {
             crate::SystemClock,
         )
     }
+
+    /// Card III-D5, `pub(crate)` and test-only: points this adapter at an
+    /// arbitrary fixture command instead of a real `codex` binary, for the
+    /// "same fixture completes through all three fake adapters" acceptance
+    /// proof in `harness::mod::tests` (which needs to construct a real
+    /// `CodexAdapter` from outside this module). Not part of the public API
+    /// — `AdapterRegistry` only ever stores `Box<dyn HarnessAdapter>`, which
+    /// never needs to know how a concrete adapter was constructed.
+    #[cfg(test)]
+    pub(crate) fn for_fixture(
+        program: PathBuf,
+        prefix_args: Vec<String>,
+        artifact_staging_root: PathBuf,
+    ) -> Self {
+        Self::with_clock(
+            CodexLocator::Fixed {
+                program,
+                prefix_args,
+            },
+            ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(10)),
+            Duration::from_secs(5),
+            BTreeMap::new(),
+            artifact_staging_root,
+            crate::SystemClock,
+        )
+    }
 }
 
 impl<C> CodexAdapter<C>
@@ -370,21 +397,26 @@ where
     /// selection.
     fn check_selection(&self, spec: &ExecutionSpec) -> Result<(), HarnessError> {
         if spec.work.request.requested_harness_kind.as_str() != CODEX_HARNESS_KIND {
+            let reason = format!(
+                "requested harness kind {:?} does not match this adapter's kind {CODEX_HARNESS_KIND:?}",
+                spec.work.request.requested_harness_kind.as_str()
+            );
             tracing::warn!(
-                requested = spec.work.request.requested_harness_kind.as_str(),
+                reason,
                 "codex: rejecting a spec requesting a different harness kind"
             );
-            return Err(HarnessError::Rejected);
+            return Err(HarnessError::Rejected { reason });
         }
         if spec.work.request.requested_model_provider.is_none()
             || spec.work.request.requested_model_id.is_none()
         {
-            tracing::warn!(
-                "codex: rejecting auto-selected model pre-spawn (this adapter cannot yet \
-                 independently confirm which model an auto-selected run actually used; \
-                 see the III-D1 handoff)"
-            );
-            return Err(HarnessError::Rejected);
+            let reason = "codex cannot independently confirm which model an auto-selected run \
+                           actually used, so ActualExecution.model_provider/model_id (non-nullable) \
+                           cannot be honestly filled; an explicit requested_model_provider and \
+                           requested_model_id are both required"
+                .to_owned();
+            tracing::warn!(reason, "codex: rejecting an auto-selected model pre-spawn");
+            return Err(HarnessError::Rejected { reason });
         }
         Ok(())
     }
@@ -492,9 +524,32 @@ where
     /// `unsupported` rather than guessed, and why `artifacts` is `advisory`.
     fn feature_capabilities(&self) -> FeatureCapabilities {
         FeatureCapabilities {
+            // Card III-D5 finding 1: downgraded from `Supported`. This
+            // adapter's only cancellation primitive is
+            // `harness::process::SupervisedProcess::cancel` (a process-group
+            // SIGTERM/SIGKILL), the exact same mechanism D2 proved (via `ps`,
+            // twice, against real Claude Code) cannot reliably reach a
+            // descendant a harness's own shell-tool spawns into a new OS
+            // session — and an equivalent check against the real `opencode`
+            // binary found the identical disjoint-session pattern, so this
+            // is not a Claude-Code-specific quirk. `codex` is not installed
+            // on any machine this adapter has been built against, so there
+            // is no adapter-specific evidence its own tool execution stays
+            // inside the process group either; claiming `Supported` on that
+            // silence would be exactly the "hidden fake success" rule 7
+            // forbids.
             cancel: CapabilityValue {
-                support: CapabilitySupport::Supported,
-                reason: None,
+                support: CapabilitySupport::Advisory,
+                reason: Some(
+                    "the top-level codex process is always signalled reliably (it is always \
+                     its own process-group leader), but a shell-tool-spawned descendant that \
+                     detaches into its own OS session (observed for Claude Code and opencode; \
+                     never independently verified for codex, since codex is not installed) \
+                     would only be reached if it exits gracefully within the SIGTERM grace \
+                     period — a SIGKILL escalation cannot reach a different session's process \
+                     group"
+                        .to_owned(),
+                ),
                 additional: BTreeMap::new(),
             },
             resume: CapabilityValue {
@@ -617,6 +672,10 @@ where
             additional,
         }
     }
+
+    fn declared_capabilities(&self) -> FeatureCapabilities {
+        self.feature_capabilities()
+    }
 }
 
 #[async_trait]
@@ -628,7 +687,7 @@ where
         self.check_selection(spec)?;
         self.command.resolve().map_err(|reason| {
             tracing::warn!(reason, "codex validate: binary unresolvable");
-            HarnessError::Rejected
+            HarnessError::Rejected { reason }
         })?;
         Ok(())
     }
@@ -637,7 +696,7 @@ where
         self.check_selection(spec)?;
         let (program, mut args) = self.command.resolve().map_err(|reason| {
             tracing::warn!(reason, "codex start: binary unresolvable");
-            HarnessError::Rejected
+            HarnessError::Rejected { reason }
         })?;
 
         let model_provider = spec
@@ -1040,7 +1099,7 @@ mod tests {
 
         assert!(matches!(
             adapter.validate(&spec).await,
-            Err(HarnessError::Rejected)
+            Err(HarnessError::Rejected { .. })
         ));
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
@@ -1053,7 +1112,7 @@ mod tests {
 
         assert!(matches!(
             adapter.validate(&spec).await,
-            Err(HarnessError::Rejected)
+            Err(HarnessError::Rejected { .. })
         ));
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
@@ -1081,7 +1140,7 @@ mod tests {
 
         assert!(matches!(
             adapter.validate(&spec).await,
-            Err(HarnessError::Rejected)
+            Err(HarnessError::Rejected { .. })
         ));
         std::fs::remove_dir_all(workspace).expect("cleanup");
         std::fs::remove_dir_all(empty_dir).expect("cleanup");
@@ -1113,7 +1172,14 @@ mod tests {
             result.is_ok(),
             "start() must reject pre-spawn, not hang waiting on a process it never launched"
         );
-        assert!(matches!(result.unwrap(), Err(HarnessError::Rejected)));
+        assert!(matches!(
+            result.unwrap(),
+            Err(HarnessError::Rejected { .. })
+        ));
+        assert!(
+            adapter.running.lock().await.is_empty(),
+            "a pre-spawn rejection must never create process bookkeeping (verifier nit 4)"
+        );
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 
@@ -1446,6 +1512,22 @@ mod tests {
             HarnessProbe::harness_kind(&adapter).as_str(),
             capability.harness_kind.as_str()
         );
+    }
+
+    /// Card III-D5 finding 1, direct regression guard: this adapter's only
+    /// cancellation primitive is `harness::process::SupervisedProcess::cancel`
+    /// (a process-group SIGTERM/SIGKILL), which D2 proved cannot reliably
+    /// reach a descendant a harness's own shell-tool spawns into a new OS
+    /// session — and this card's own registration-time gate
+    /// (`AdapterRegistry::register_probe`) refuses to register any probe
+    /// still claiming `Supported`. This pins the value directly, not only
+    /// through the registration side effect.
+    #[test]
+    fn declared_cancel_capability_is_advisory_not_supported() {
+        let adapter = adapter();
+        let declared = HarnessProbe::declared_capabilities(&adapter);
+        assert_eq!(declared.cancel.support, CapabilitySupport::Advisory);
+        assert!(declared.cancel.reason.is_some());
     }
 
     // ---- reconcile() -----------------------------------------------------

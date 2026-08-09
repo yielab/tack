@@ -149,10 +149,11 @@ const OPENCODE_PROGRAM_NAME: &str = "opencode";
 const DEFAULT_PROBE_TIMEOUT: Duration = Duration::from_secs(15);
 /// Reuses D1's exact convention for "this adapter cannot confirm which
 /// model the harness actually used, so `ActualExecution` echoes the
-/// validated request instead" — see `codex.rs`'s identical constant. Kept
-/// as the same literal value deliberately, for cross-adapter consistency
-/// ahead of D5's reconciliation, not independently invented.
-const MODEL_OBSERVATION_SOURCE: &str = "requested_not_confirmed";
+/// validated request instead" — see `codex.rs`'s identical constant. Card
+/// III-D5 centralized both adapters' shared literal into
+/// [`crate::harness::ModelObservationSource`]; this constant is unchanged.
+const MODEL_OBSERVATION_SOURCE: &str =
+    crate::harness::ModelObservationSource::RequestedNotConfirmed.as_str();
 
 /// Where to find the `opencode` executable.
 #[derive(Clone)]
@@ -551,6 +552,36 @@ impl OpenCodeAdapter<crate::SystemClock> {
             crate::SystemClock,
         )
     }
+
+    /// Card III-D5, `pub(crate)` and test-only: points this adapter at an
+    /// arbitrary fixture command instead of a real `opencode` binary, for
+    /// the "same fixture completes through all three fake adapters"
+    /// acceptance proof in `harness::mod::tests` (which needs to construct a
+    /// real `OpenCodeAdapter` from outside this module). No `probe_env`
+    /// override: unlike this adapter's own test module (which needs to
+    /// steer the shared fake binary's single-purpose
+    /// `TACK_FAKE_HARNESS_MODE`), the cross-adapter fixture script this is
+    /// built for branches on its own argv, so one fixed command serves
+    /// version probing, model listing and running alike.
+    #[cfg(test)]
+    pub(crate) fn for_fixture(
+        program: PathBuf,
+        prefix_args: Vec<String>,
+        artifact_staging_root: PathBuf,
+    ) -> Self {
+        Self::with_clock(
+            OpenCodeLocator::Fixed {
+                program,
+                prefix_args,
+            },
+            ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(10)),
+            Duration::from_secs(5),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            artifact_staging_root,
+            crate::SystemClock,
+        )
+    }
 }
 
 impl<C> OpenCodeAdapter<C>
@@ -600,11 +631,16 @@ where
     /// not).
     fn check_selection(&self, spec: &ExecutionSpec) -> Result<(String, String), HarnessError> {
         if spec.work.request.requested_harness_kind.as_str() != OPENCODE_HARNESS_KIND {
+            let reason = format!(
+                "requested harness kind {:?} does not match this adapter's kind \
+                 {OPENCODE_HARNESS_KIND:?}",
+                spec.work.request.requested_harness_kind.as_str()
+            );
             tracing::warn!(
-                requested = spec.work.request.requested_harness_kind.as_str(),
+                reason,
                 "opencode: rejecting a spec requesting a different harness kind"
             );
-            return Err(HarnessError::Rejected);
+            return Err(HarnessError::Rejected { reason });
         }
         match (
             &spec.work.request.requested_model_provider,
@@ -614,20 +650,28 @@ where
                 Ok((provider.as_str().to_owned(), model.as_str().to_owned()))
             }
             (None, None) => {
+                let reason = "opencode cannot independently confirm which provider/model an \
+                               auto-selected run actually used, so ActualExecution.model_provider/\
+                               model_id (non-nullable) cannot be honestly filled; an explicit \
+                               requested_model_provider and requested_model_id are both required"
+                    .to_owned();
                 tracing::warn!(
-                    "opencode: rejecting an auto-selected model pre-spawn (this adapter cannot \
-                     independently confirm which provider/model an auto-selected run actually \
-                     used; see the III-D3 handoff)"
+                    reason,
+                    "opencode: rejecting an auto-selected model pre-spawn"
                 );
-                Err(HarnessError::Rejected)
+                Err(HarnessError::Rejected { reason })
             }
             _ => {
+                let reason = "opencode's --model flag requires an explicit provider/model pair; \
+                               a partial selection (only one of requested_model_provider/\
+                               requested_model_id) cannot be constructed into a valid --model \
+                               argument"
+                    .to_owned();
                 tracing::warn!(
-                    "opencode: rejecting a partial provider/model selection (opencode's --model \
-                     flag requires an explicit provider/model pair; one without the other cannot \
-                     be constructed)"
+                    reason,
+                    "opencode: rejecting a partial provider/model selection"
                 );
-                Err(HarnessError::Rejected)
+                Err(HarnessError::Rejected { reason })
             }
         }
     }
@@ -645,13 +689,16 @@ where
         model: &str,
     ) -> Result<(), HarnessError> {
         let capability = self.probe().await;
-        if let Some(reason) = &capability.probe_error {
-            tracing::warn!(
-                reason = %reason,
-                "opencode: rejecting execution, capability probe failed so the requested \
-                 provider/model pairing cannot be confirmed"
+        if let Some(probe_reason) = &capability.probe_error {
+            let reason = format!(
+                "capability probe failed so the requested provider/model pairing cannot be \
+                 confirmed: {probe_reason}"
             );
-            return Err(HarnessError::Rejected);
+            tracing::warn!(
+                reason,
+                "opencode: rejecting execution, capability probe failed"
+            );
+            return Err(HarnessError::Rejected { reason });
         }
         let supported = capability.model_combinations.iter().any(|combo| {
             combo.model_provider.as_str() == provider
@@ -664,6 +711,15 @@ where
             combo.model_provider.as_str() != provider
                 && combo.model_ids.iter().any(|id| id.as_str() == model)
         });
+        let reason = format!(
+            "requested provider/model pairing {provider:?}/{model:?} is not among opencode's \
+             discovered combinations{}",
+            if known_under_a_different_provider {
+                " (this model id is known, but only under a different provider)"
+            } else {
+                ""
+            }
+        );
         tracing::warn!(
             model_provider = provider,
             model_id = model,
@@ -671,7 +727,7 @@ where
             "opencode: rejecting execution, requested provider/model pairing is not among \
              opencode's discovered combinations"
         );
-        Err(HarnessError::Rejected)
+        Err(HarnessError::Rejected { reason })
     }
 
     /// Runs `opencode --version`, bounded by `self.probe_timeout`. Never
@@ -820,9 +876,31 @@ where
     /// figures in opencode's own output — see [`summarize_events`].
     fn feature_capabilities(&self) -> FeatureCapabilities {
         FeatureCapabilities {
+            // Card III-D5 finding 1: downgraded from `Supported`. This
+            // adapter's only cancellation primitive is
+            // `harness::process::SupervisedProcess::cancel` (a process-group
+            // SIGTERM/SIGKILL) — the exact mechanism D2 proved (via `ps`,
+            // twice, against real Claude Code) cannot reliably reach a
+            // descendant a harness's own shell-tool spawns into a new OS
+            // session. An adversarial check against this card's own real
+            // `opencode` binary found the identical disjoint-session pattern
+            // for a bash-tool subprocess (`ps`: the tool subprocess and its
+            // own backgrounded child share a session/group disjoint from the
+            // top-level `opencode run` process), so `Supported` was never
+            // justified here either — observed fact 5 in this file's module
+            // docs only tested a plain conversational run with no live tool
+            // subprocess in flight at cancellation time, the easy case.
             cancel: CapabilityValue {
-                support: CapabilitySupport::Supported,
-                reason: None,
+                support: CapabilitySupport::Advisory,
+                reason: Some(
+                    "the top-level opencode process is always signalled reliably (it is always \
+                     its own process-group leader), but a bash-tool subprocess was observed \
+                     (via `ps`) running in its own session, distinct from that group — the same \
+                     pattern D2 found for Claude Code — so it is only guaranteed reached if \
+                     opencode exits gracefully within the SIGTERM grace period; a SIGKILL \
+                     escalation cannot reach a different session's process group"
+                        .to_owned(),
+                ),
                 additional: BTreeMap::new(),
             },
             resume: CapabilityValue {
@@ -985,6 +1063,10 @@ where
             }
         }
     }
+
+    fn declared_capabilities(&self) -> FeatureCapabilities {
+        self.feature_capabilities()
+    }
 }
 
 #[async_trait]
@@ -996,7 +1078,7 @@ where
         let (provider, model) = self.check_selection(spec)?;
         self.command.resolve().map_err(|reason| {
             tracing::warn!(reason, "opencode validate: binary unresolvable");
-            HarnessError::Rejected
+            HarnessError::Rejected { reason }
         })?;
         self.check_pairing_supported(&provider, &model).await
     }
@@ -1005,7 +1087,7 @@ where
         let (model_provider, model_id) = self.check_selection(spec)?;
         let (program, mut args) = self.command.resolve().map_err(|reason| {
             tracing::warn!(reason, "opencode start: binary unresolvable");
-            HarnessError::Rejected
+            HarnessError::Rejected { reason }
         })?;
 
         args.push("run".to_owned());
@@ -1474,7 +1556,7 @@ fi
 
         assert!(matches!(
             adapter.validate(&spec).await,
-            Err(HarnessError::Rejected)
+            Err(HarnessError::Rejected { .. })
         ));
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
@@ -1487,7 +1569,7 @@ fi
 
         assert!(matches!(
             adapter.validate(&spec).await,
-            Err(HarnessError::Rejected)
+            Err(HarnessError::Rejected { .. })
         ));
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
@@ -1502,7 +1584,7 @@ fi
 
         assert!(matches!(
             adapter.validate(&spec).await,
-            Err(HarnessError::Rejected)
+            Err(HarnessError::Rejected { .. })
         ));
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
@@ -1527,7 +1609,7 @@ fi
 
         assert!(matches!(
             adapter.validate(&spec).await,
-            Err(HarnessError::Rejected)
+            Err(HarnessError::Rejected { .. })
         ));
         std::fs::remove_dir_all(workspace).expect("cleanup");
         std::fs::remove_dir_all(empty_dir).expect("cleanup");
@@ -1548,7 +1630,7 @@ fi
 
         assert!(matches!(
             adapter.validate(&spec).await,
-            Err(HarnessError::Rejected)
+            Err(HarnessError::Rejected { .. })
         ));
 
         // The same model id, correctly paired, is accepted — proving the
@@ -1570,7 +1652,7 @@ fi
 
         assert!(matches!(
             adapter.validate(&spec).await,
-            Err(HarnessError::Rejected)
+            Err(HarnessError::Rejected { .. })
         ));
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
@@ -1583,7 +1665,7 @@ fi
 
         assert!(matches!(
             adapter.validate(&spec).await,
-            Err(HarnessError::Rejected)
+            Err(HarnessError::Rejected { .. })
         ));
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
@@ -1614,7 +1696,14 @@ fi
             result.is_ok(),
             "start() must reject pre-spawn, not hang waiting on a process it never launched"
         );
-        assert!(matches!(result.unwrap(), Err(HarnessError::Rejected)));
+        assert!(matches!(
+            result.unwrap(),
+            Err(HarnessError::Rejected { .. })
+        ));
+        assert!(
+            adapter.running.lock().await.is_empty(),
+            "a pre-spawn rejection must never create process bookkeeping (verifier nit 4)"
+        );
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 
@@ -2123,6 +2212,20 @@ fi
             HarnessProbe::harness_kind(&adapter).as_str(),
             capability.harness_kind.as_str()
         );
+    }
+
+    /// Card III-D5 finding 1, direct regression guard — mirrors `codex.rs`'s
+    /// identical test. An adversarial check against this card's own real
+    /// `opencode` binary found the same disjoint-session pattern D2 found
+    /// for Claude Code (a bash-tool subprocess in its own session/group,
+    /// distinct from the top-level process), so `Supported` was never
+    /// justified here either.
+    #[test]
+    fn declared_cancel_capability_is_advisory_not_supported() {
+        let adapter = adapter();
+        let declared = HarnessProbe::declared_capabilities(&adapter);
+        assert_eq!(declared.cancel.support, CapabilitySupport::Advisory);
+        assert!(declared.cancel.reason.is_some());
     }
 
     // ---- reconcile() -----------------------------------------------------
