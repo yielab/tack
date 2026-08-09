@@ -9,10 +9,11 @@ use tack_db::{
     repo::execution::{
         AttemptTransitionInput, AttemptTransitionPhase, AttemptTransitionResult,
         CancellationObservation, CancellationObservationInput, Completion, CompletionResult,
-        EnqueueResult, EnrollmentToken, EventApplyResult, EventBatch, ExecutionClock,
-        HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewArtifact, NewDecision, NewEvent,
-        NewExecutionRequest, NewRunner, RecoveryDisposition, RecoveryObservation,
-        RecoveryObservationInput, RecoveryObservationResult, RedeemEnrollmentResult,
+        CredentialRotationResult, EnqueueResult, EnrollmentToken, EventApplyResult, EventBatch,
+        ExecutionClock, HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewArtifact,
+        NewDecision, NewEvent, NewExecutionRequest, NewRunner, RecoveryDisposition,
+        RecoveryObservation, RecoveryObservationInput, RecoveryObservationResult,
+        RedeemEnrollmentResult,
     },
 };
 
@@ -118,6 +119,63 @@ async fn enrollment_token_is_single_use_expiry_and_revocation_fail_closed() {
         .await
         .unwrap(),
         RedeemEnrollmentResult::InvalidOrExpired
+    );
+}
+
+#[tokio::test]
+async fn concurrent_enrollment_redemption_has_one_authoritative_winner() {
+    let (repo, _, clock) = ready_repo().await;
+    repo.create_pending_runner_and_issue_token(
+        NewRunner {
+            id: "runner-concurrent-enrollment",
+            name: "Pending runner",
+            credential_hash: "ignored-for-pending",
+            labels: "{}",
+            total_capacity: 1,
+            available_capacity: 1,
+            capability_snapshot: "{}",
+            protocol_version: 1,
+        },
+        EnrollmentToken {
+            id: "token-concurrent-enrollment",
+            runner_id: "runner-concurrent-enrollment",
+            token_hash: "hash-concurrent-enrollment",
+            expires_at: clock.now() + Duration::minutes(5),
+        },
+        &clock,
+    )
+    .await
+    .unwrap();
+    let redeem = || {
+        repo.redeem_enrollment_token(
+            "hash-concurrent-enrollment",
+            "credential-hash",
+            clock.now() + Duration::hours(1),
+            "0.1",
+            "Concurrent runner",
+            "{}",
+            1,
+            1,
+            "{}",
+            1,
+            &clock,
+        )
+    };
+    let (left, right) = tokio::join!(redeem(), redeem());
+    let results = [left.unwrap(), right.unwrap()];
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| matches!(result, RedeemEnrollmentResult::Redeemed(_)))
+            .count(),
+        1
+    );
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| matches!(result, RedeemEnrollmentResult::InvalidOrExpired))
+            .count(),
+        1
     );
 }
 
@@ -375,8 +433,14 @@ async fn event_replay_canonicalizes_equivalent_json_payloads() {
     ));
 }
 
+// Defect 1 regression: a reused (attempt_id, checkpoint) idempotency-scoped
+// key with different content must be the non-retryable `IdempotencyConflict`
+// — never the benign, retryable `Conflict` a runner is expected to retry
+// forever against a request that can never succeed. Contrasted in the same
+// test against the genuinely benign out-of-order case (stale
+// previous_checkpoint), which must remain `Conflict`.
 #[tokio::test]
-async fn event_replay_changed_payload_is_conflict_and_does_not_write() {
+async fn event_replay_changed_payload_is_idempotency_conflict_and_does_not_write() {
     let (repo, item_id, clock) = ready_repo().await;
     repo.enqueue_execution(
         request("request-conflict", &item_id, "key-conflict", "same"),
@@ -418,11 +482,13 @@ async fn event_replay_changed_payload_is_conflict_and_does_not_write() {
     repo.append_execution_events_result(batch.clone(), &[initial], &clock)
         .await
         .unwrap();
+    // Same checkpoint (idempotency-scoped key), different event payload:
+    // fingerprint mismatch. Non-retryable.
     assert_eq!(
         repo.append_execution_events_result(batch, &[changed], &clock)
             .await
             .unwrap(),
-        EventApplyResult::ReplayConflict
+        EventApplyResult::IdempotencyConflict
     );
     let event_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM execution_events WHERE attempt_id = 'attempt-conflict'",
@@ -438,6 +504,43 @@ async fn event_replay_changed_payload_is_conflict_and_does_not_write() {
     .unwrap();
     assert_eq!(event_count, 1);
     assert_eq!(checkpoint.as_deref(), Some("checkpoint-conflict"));
+
+    // Contrast: a fresh checkpoint whose previous_checkpoint claim no longer
+    // matches the attempt's actual stream position is a benign out-of-order
+    // resync, not an idempotency-key reuse. Retryable — must stay `Conflict`,
+    // and must remain distinct from the `IdempotencyConflict` case above.
+    let out_of_order = EventBatch {
+        runner_id: "runner-a",
+        attempt_id: "attempt-conflict",
+        fencing_token: lease.fencing_token,
+        previous_checkpoint: Some("not-the-current-checkpoint"),
+        checkpoint: "checkpoint-conflict-2",
+    };
+    let next = NewEvent {
+        id: "row-conflict-next",
+        event_id: "event-conflict-next",
+        sequence: 2,
+        source: "runner",
+        kind: "progress",
+        payload: r#"{"state":"next"}"#,
+        occurred_at: clock.now(),
+    };
+    assert_eq!(
+        repo.append_execution_events_result(out_of_order, &[next], &clock)
+            .await
+            .unwrap(),
+        EventApplyResult::Conflict
+    );
+    let event_count_after_out_of_order: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_events WHERE attempt_id = 'attempt-conflict'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(
+        event_count_after_out_of_order, 1,
+        "out-of-order batch must not write"
+    );
 }
 
 #[tokio::test]
@@ -2268,8 +2371,14 @@ async fn completion_replay_canonicalizes_structured_terminal_reason() {
     ));
 }
 
+// Defect 1 regression: distinguishes the benign, retryable `Conflict` (a lost
+// optimistic-concurrency compare-and-set, before any replay row exists) from
+// the non-retryable `IdempotencyConflict` (the same completion_id — an
+// idempotency-scoped key — reused with different content once a replay row
+// exists). Collapsing these into one variant is exactly how a runner ends up
+// told to retry a request that can never succeed.
 #[tokio::test]
-async fn completion_changed_fields_or_checkpoint_conflict_without_write() {
+async fn completion_conflict_and_idempotency_conflict_distinguish_causes_without_write() {
     let (repo, item_id, clock) = ready_repo().await;
     let fence = ready_completion_attempt(
         &repo,
@@ -2285,6 +2394,9 @@ async fn completion_changed_fields_or_checkpoint_conflict_without_write() {
         "completion-conflict",
         None,
     );
+    // No replay row exists yet: this is a lost compare-and-set against the
+    // live attempt row (final_event_checkpoint doesn't match), not a reused
+    // idempotency key. Benign/retryable.
     let wrong_checkpoint = Completion {
         final_event_checkpoint: Some("not-current"),
         ..base.clone()
@@ -2305,6 +2417,9 @@ async fn completion_changed_fields_or_checkpoint_conflict_without_write() {
     repo.complete_execution_result(base.clone(), &clock)
         .await
         .unwrap();
+    // Same completion_id (idempotency-scoped key) as `base`, now that its
+    // replay row exists, but different terminal_reason/final_event_checkpoint:
+    // fingerprint mismatch. Non-retryable.
     let changed_fields = Completion {
         terminal_reason: "changed",
         ..base.clone()
@@ -2317,13 +2432,13 @@ async fn completion_changed_fields_or_checkpoint_conflict_without_write() {
         repo.complete_execution_result(changed_fields, &clock)
             .await
             .unwrap(),
-        CompletionResult::Conflict
+        CompletionResult::IdempotencyConflict
     );
     assert_eq!(
         repo.complete_execution_result(changed_checkpoint, &clock)
             .await
             .unwrap(),
-        CompletionResult::Conflict
+        CompletionResult::IdempotencyConflict
     );
     let completion_id: String = sqlx::query_scalar(
         "SELECT completion_id FROM execution_attempts WHERE id = 'attempt-completion-conflict'",
@@ -2767,36 +2882,113 @@ async fn concurrent_claimers_receive_exactly_one_valid_lease() {
             &clock
         ),
     );
-    let first = match first {
-        Ok(lease) => lease,
-        Err(_) => claim_lease(
-            &left,
-            "runner-a",
-            "attempt-a",
-            Duration::seconds(60),
-            &clock,
-        )
-        .await
-        .unwrap(),
-    };
-    let second = match second {
-        Ok(lease) => lease,
-        Err(_) => claim_lease(
-            &right,
-            "runner-a",
-            "attempt-b",
-            Duration::seconds(60),
-            &clock,
-        )
-        .await
-        .unwrap(),
-    };
-    let leases = [first, second].into_iter().flatten().collect::<Vec<_>>();
+    // BEGIN IMMEDIATE now serializes claimants at the write lock instead of
+    // letting two deferred readers race to upgrade. There is no legitimate
+    // reason for either branch to fail at the sqlx level any more, so a raw
+    // Err here (previously SQLITE_LOCKED "database is deadlocked", observed
+    // on ~100% of unfixed runs) is a hard test failure -- no retry fallback,
+    // no swallowing.
+    let first = first.expect("first claimant must succeed at the sqlx level");
+    let second = second.expect("second claimant must succeed at the sqlx level");
+
+    let leases: Vec<_> = [first.clone(), second.clone()]
+        .into_iter()
+        .flatten()
+        .collect();
     assert_eq!(
         leases.len(),
         1,
-        "two claimers cannot receive valid leases for one request"
+        "exactly one concurrent claimant receives a valid lease for one request"
     );
+    let winner = leases.into_iter().next().unwrap();
+    assert_eq!(winner.request_id, "request-a");
+    assert_eq!(winner.attempt_number, 1);
+    assert_eq!(
+        winner.fencing_token, 1,
+        "the sole winner takes the first fencing token"
+    );
+
+    // The losing branch is not a swallowed error and not a second lease: it
+    // is the typed "no eligible work" outcome (None), because the winner
+    // already consumed the queued → leased compare-and-set.
+    assert!(
+        matches!((&first, &second), (Some(_), None) | (None, Some(_))),
+        "the losing claimant must observe a well-typed no-work result, not a second lease: {first:?} / {second:?}"
+    );
+
+    // Capacity end-state must be coherent: only the winner's reservation
+    // survives. If the loser's capacity decrement (or its now-rolled-back
+    // request CAS) leaked outside its transaction, this would read 0 instead
+    // of 1 even though total_capacity started at 2.
+    let available_capacity: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(
+        available_capacity, 1,
+        "only the winning claim consumes a capacity slot"
+    );
+
+    let request_state: String =
+        sqlx::query_scalar("SELECT state FROM execution_requests WHERE id = 'request-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(request_state, "leased");
+
+    let attempt_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_attempts WHERE request_id = 'request-a'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(
+        attempt_count, 1,
+        "exactly one attempt row exists for the request"
+    );
+}
+
+#[tokio::test]
+async fn concurrent_claimers_deadlock_fix_holds_under_load() {
+    // Regression proof for the claim_execution_idempotent_with_snapshot
+    // BEGIN IMMEDIATE fix: run the same concurrent-claim shape many times in
+    // one process and demand zero sqlx-level errors and exactly one lease
+    // per iteration. A single flaky iteration means the serialization
+    // regressed back to the deferred-reader deadlock.
+    for i in 0..25 {
+        let (repo, item_id, clock) = ready_repo().await;
+        sqlx::query("UPDATE agent_runners SET total_capacity = 2, available_capacity = 2")
+            .execute(repo.pool())
+            .await
+            .unwrap();
+        let request_id = format!("request-{i}");
+        repo.enqueue_execution(
+            request(&request_id, &item_id, &format!("key-{i}"), "same"),
+            &clock,
+        )
+        .await
+        .unwrap();
+        let left = repo.clone();
+        let right = repo.clone();
+        let attempt_a = format!("attempt-{i}-a");
+        let attempt_b = format!("attempt-{i}-b");
+        let (first, second) = tokio::join!(
+            claim_lease(&left, "runner-a", &attempt_a, Duration::seconds(60), &clock),
+            claim_lease(
+                &right,
+                "runner-a",
+                &attempt_b,
+                Duration::seconds(60),
+                &clock
+            ),
+        );
+        let first = first.unwrap_or_else(|e| panic!("iteration {i}: first claimant errored: {e}"));
+        let second =
+            second.unwrap_or_else(|e| panic!("iteration {i}: second claimant errored: {e}"));
+        let leases = [first, second].into_iter().flatten().count();
+        assert_eq!(leases, 1, "iteration {i}: expected exactly one lease");
+    }
 }
 
 #[tokio::test]
@@ -2917,6 +3109,209 @@ async fn artifact_and_decision_reject_lease_expiry_equality_without_writes() {
         .unwrap();
     assert_eq!(artifact_count, 0);
     assert_eq!(decision_count, 0);
+}
+
+// Defect 2 regression: `record_execution_artifact` and
+// `create_execution_decision` used to run their eligibility SELECT and their
+// INSERT as two separate un-transacted statements, leaving a window where a
+// concurrent completion/cancellation/recovery transition could commit
+// between them and let the write land against an attempt that had already
+// gone terminal. This test proves the fix deterministically rather than
+// probabilistically.
+//
+// It deliberately does not use this suite's shared in-memory `ready_repo()`
+// harness. That harness pools several connections against one `:memory:`
+// database, which SQLite can only do via shared-cache mode — and
+// shared-cache mode imposes its own table-level read/write locking where a
+// plain SELECT blocks behind *any* pending (even uncommitted) write to the
+// same table. That accidentally serializes the SELECT-then-INSERT gap this
+// test needs to expose, on both the fixed and the unfixed code, making the
+// race unreproducible there (confirmed empirically: a first version of this
+// test built on `ready_repo()` passed 20/20 on both). A genuine file-backed
+// database — the same `sqlite:...?mode=rwc` + WAL setup production actually
+// uses — does not use shared-cache locking: a reader is never blocked by an
+// uncommitted writer, which is exactly the (correct, production-accurate)
+// locking model this defect lives under.
+//
+// Racing three futures with `tokio::join!` from the start is also not
+// enough: `join!`'s poll order controls only which future is polled first,
+// not which one's SQL reaches the SQLite engine first, since sqlx dispatches
+// each connection's work to its own worker thread. Instead, this test
+// *fully awaits* opening `BEGIN IMMEDIATE` and running the terminal UPDATE —
+// so the hold is unconditionally in place, confirmed, before either writer
+// is even constructed — and only then races the two writers against a
+// delayed commit of that held transaction. If the writers are still two
+// separate un-transacted statements, each writer's SELECT observes the
+// still-`running` state (a plain read against a file-backed WAL database is
+// never blocked by another connection's uncommitted write) but nothing
+// stops its later INSERT — which does need the write lock — from running
+// unconditionally once our commit releases it; with the fix, each writer's
+// own `BEGIN IMMEDIATE` cannot even begin until our transaction releases the
+// lock, so its SELECT observes the now-terminal state and it correctly
+// declines to write.
+#[tokio::test]
+async fn artifact_and_decision_cannot_land_against_concurrently_terminal_attempt() {
+    let db_path =
+        std::env::temp_dir().join(format!("tack-db-defect2-race-{}.db", uuid::Uuid::new_v4()));
+    let pool = init_pool(&format!("sqlite://{}?mode=rwc", db_path.display()))
+        .await
+        .expect("file-backed pool");
+    migrations::run_all(&pool).await.expect("migrations");
+    let repo = Repository::new(pool);
+    let workspace = common::create_test_workspace(&repo).await;
+    let project = common::make_project(&repo, workspace).await;
+    let item = common::make_item(&repo, &project).await;
+    let item_id = item.id.to_string();
+    let clock = FakeClock::new();
+    repo.register_runner(
+        NewRunner {
+            id: "runner-a",
+            name: "Runner A",
+            credential_hash: "hash-only",
+            labels: "{}",
+            total_capacity: 1,
+            available_capacity: 1,
+            capability_snapshot: "{}",
+            protocol_version: 1,
+        },
+        &clock,
+    )
+    .await
+    .unwrap();
+    repo.create_agent_profile(
+        NewAgentProfile {
+            id: "profile-a",
+            name: "Profile A",
+            instructions: "test",
+            tool_policy: "{}",
+            limits: "{}",
+        },
+        &clock,
+    )
+    .await
+    .unwrap();
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-race-terminal",
+        "attempt-race-terminal",
+    )
+    .await;
+    sqlx::query("UPDATE execution_attempts SET state='running' WHERE id='attempt-race-terminal'")
+        .execute(repo.pool())
+        .await
+        .unwrap();
+
+    // Fully establish the held write lock and the terminal UPDATE *before*
+    // either writer starts, so there is no race for who reaches the SQLite
+    // engine first.
+    let mut manual_tx = repo.pool().begin_with("BEGIN IMMEDIATE").await.unwrap();
+    let terminal_now = clock.now().to_rfc3339();
+    sqlx::query(
+        "UPDATE execution_attempts SET state='succeeded', ended_at=?, updated_at=? WHERE id='attempt-race-terminal'",
+    )
+    .bind(&terminal_now)
+    .bind(&terminal_now)
+    .execute(&mut *manual_tx)
+    .await
+    .unwrap();
+
+    let artifact_write = repo.record_execution_artifact(
+        "runner-a",
+        "attempt-race-terminal",
+        fence,
+        NewArtifact {
+            id: "artifact-race-row",
+            artifact_id: "artifact-race",
+            kind: "log",
+            name: "log",
+            media_type: None,
+            size_bytes: 0,
+            sha256: "hash",
+            content_disposition: None,
+            content_reference: None,
+            metadata: "{}",
+        },
+        &clock,
+    );
+    let decision_write = repo.create_execution_decision(
+        "runner-a",
+        "attempt-race-terminal",
+        fence,
+        NewDecision {
+            id: "decision-race-row",
+            decision_id: "decision-race",
+            kind: "approval",
+            prompt: "Continue?",
+            options: "[]",
+            metadata: "{}",
+            expires_at: None,
+        },
+        &clock,
+    );
+    // Give both writers time to actually issue their SELECT (pre-fix) or
+    // their own BEGIN IMMEDIATE (post-fix) against the still-held lock
+    // before we release it.
+    let delayed_release = async {
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        manual_tx.commit().await.unwrap();
+    };
+
+    let (artifact_accepted, decision_accepted, _) =
+        tokio::join!(artifact_write, decision_write, delayed_release);
+    let artifact_accepted =
+        artifact_accepted.expect("artifact write must succeed at the sqlx level");
+    let decision_accepted =
+        decision_accepted.expect("decision write must succeed at the sqlx level");
+
+    assert!(
+        !artifact_accepted,
+        "artifact must not be recorded once the attempt has gone terminal concurrently"
+    );
+    assert!(
+        !decision_accepted,
+        "decision must not be recorded once the attempt has gone terminal concurrently"
+    );
+
+    let artifact_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_artifacts WHERE attempt_id='attempt-race-terminal'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    let decision_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_decisions WHERE attempt_id='attempt-race-terminal'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(artifact_count, 0, "no artifact row may exist");
+    assert_eq!(decision_count, 0, "no decision row may exist");
+
+    let state: String =
+        sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id='attempt-race-terminal'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(state, "succeeded");
+
+    // This is a disposable per-test file, not the shared in-memory harness —
+    // clean it (WAL sidecars and any pre-upgrade migration backup included)
+    // up rather than leaking it into the temp directory.
+    drop(repo);
+    let db_file_name = db_path.file_name().unwrap().to_string_lossy().into_owned();
+    if let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) {
+        for entry in entries.flatten() {
+            if entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(&*db_file_name)
+            {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
 }
 
 #[tokio::test]
@@ -3180,4 +3575,761 @@ async fn attempt_start_transition_rejects_wrong_order_and_stale_authority_withou
     assert!(row.get::<Option<String>, _>("process_id").is_none());
     assert!(row.get::<Option<String>, _>("prepared_at").is_none());
     assert!(row.get::<Option<String>, _>("started_at").is_none());
+}
+
+// Concurrency regressions: an independent audit of every transaction in this
+// module found the same deferred-reader-upgrade deadlock hazard (SQLITE_LOCKED
+// "database is deadlocked") in three more functions, each hit by a plausible
+// duplicate/retry caller (a runner or operator resending an unacknowledged
+// request). The fencing-token/state WHERE clauses on their writes guard the
+// *result*, not the SQLite lock-upgrade race, so each needed the same
+// BEGIN IMMEDIATE fix as redeem_enrollment_token and
+// claim_execution_idempotent_with_snapshot. These tests assert both
+// concurrent branches succeed at the sqlx level (a raw Err is a hard
+// failure) and that exactly one is authoritative.
+
+#[tokio::test]
+async fn concurrent_duplicate_completion_reports_have_one_committed_writer() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-concurrent-complete",
+        "attempt-concurrent-complete",
+    )
+    .await;
+    let completion = completion_input(
+        "attempt-concurrent-complete",
+        fence,
+        "completion-concurrent",
+        None,
+    );
+    let left = repo.clone();
+    let right = repo.clone();
+    let (a, b) = tokio::join!(
+        left.complete_execution_result(completion.clone(), &clock),
+        right.complete_execution_result(completion, &clock),
+    );
+    let a = a.expect("first completion report must succeed at the sqlx level");
+    let b = b.expect("second completion report must succeed at the sqlx level");
+
+    let committed = [&a, &b]
+        .into_iter()
+        .filter(|r| matches!(r, CompletionResult::Committed(_)))
+        .count();
+    let replayed = [&a, &b]
+        .into_iter()
+        .filter(|r| matches!(r, CompletionResult::Replayed(_)))
+        .count();
+    assert_eq!(
+        committed, 1,
+        "exactly one duplicate report commits: {a:?} / {b:?}"
+    );
+    assert_eq!(
+        replayed, 1,
+        "the other duplicate report replays: {a:?} / {b:?}"
+    );
+
+    // Capacity is restored by the terminal transition exactly once, even
+    // though both branches raced to report the same completion.
+    let available_capacity: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id='runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(available_capacity, 1, "capacity is restored exactly once");
+}
+
+#[tokio::test]
+async fn concurrent_duplicate_operator_requeues_have_one_authoritative_writer() {
+    let (repo, item_id, clock) = ready_repo().await;
+    repo.enqueue_execution(
+        request(
+            "request-concurrent-requeue",
+            &item_id,
+            "key-concurrent-requeue",
+            "same",
+        ),
+        &clock,
+    )
+    .await
+    .unwrap();
+    let lease = claim_lease(
+        &repo,
+        "runner-a",
+        "attempt-concurrent-requeue",
+        Duration::seconds(60),
+        &clock,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(matches!(
+        repo.recover_attempt(
+            recovery_input(
+                "attempt-concurrent-requeue",
+                lease.fencing_token,
+                "recovery-concurrent-requeue",
+                RecoveryObservation::Ambiguous,
+            ),
+            &clock,
+        )
+        .await
+        .unwrap(),
+        RecoveryObservationResult::Applied(_)
+    ));
+    let left = repo.clone();
+    let right = repo.clone();
+    let (a, b) = tokio::join!(
+        left.operator_requeue_needs_operator(
+            "request-concurrent-requeue",
+            "client-key",
+            "operator-a",
+            "reason-a",
+            &clock,
+        ),
+        right.operator_requeue_needs_operator(
+            "request-concurrent-requeue",
+            "client-key",
+            "operator-a",
+            "reason-a",
+            &clock,
+        ),
+    );
+    let a = a.expect("first operator requeue must succeed at the sqlx level");
+    let b = b.expect("second operator requeue must succeed at the sqlx level");
+
+    use tack_db::repo::execution::OperatorRequeueResult;
+    assert!(
+        matches!(
+            (&a, &b),
+            (
+                OperatorRequeueResult::Requeued,
+                OperatorRequeueResult::Replayed
+            ) | (
+                OperatorRequeueResult::Replayed,
+                OperatorRequeueResult::Requeued
+            )
+        ),
+        "exactly one duplicate requeue is authoritative: {a:?} / {b:?}"
+    );
+
+    let request_state: String = sqlx::query_scalar(
+        "SELECT state FROM execution_requests WHERE id='request-concurrent-requeue'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(request_state, "queued");
+
+    // One audit from recover_attempt, one from the winning requeue; the
+    // replayed duplicate must not write a second requeue audit.
+    let audits: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_recovery_audits WHERE attempt_id='attempt-concurrent-requeue'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(audits, 2);
+}
+
+#[tokio::test]
+async fn concurrent_duplicate_transition_reports_have_one_applied_writer() {
+    let (repo, item_id, clock) = ready_repo().await;
+    repo.enqueue_execution(
+        request(
+            "request-concurrent-transition",
+            &item_id,
+            "key-concurrent-transition",
+            "same",
+        ),
+        &clock,
+    )
+    .await
+    .unwrap();
+    let lease = claim_lease(
+        &repo,
+        "runner-a",
+        "attempt-concurrent-transition",
+        Duration::seconds(60),
+        &clock,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let preparing = AttemptTransitionInput {
+        runner_id: "runner-a",
+        attempt_id: "attempt-concurrent-transition",
+        fencing_token: lease.fencing_token,
+        phase: AttemptTransitionPhase::Preparing,
+        workspace_id: "workspace-1",
+        base_revision: "abc123",
+        process_id: None,
+    };
+    let left = repo.clone();
+    let right = repo.clone();
+    let (a, b) = tokio::join!(
+        left.transition_attempt_with_facts(preparing.clone(), &clock),
+        right.transition_attempt_with_facts(preparing, &clock),
+    );
+    let a = a.expect("first transition report must succeed at the sqlx level");
+    let b = b.expect("second transition report must succeed at the sqlx level");
+
+    let applied = [&a, &b]
+        .into_iter()
+        .filter(|r| matches!(r, AttemptTransitionResult::Applied(_)))
+        .count();
+    let replayed = [&a, &b]
+        .into_iter()
+        .filter(|r| matches!(r, AttemptTransitionResult::Replayed(_)))
+        .count();
+    assert_eq!(
+        applied, 1,
+        "exactly one duplicate report applies: {a:?} / {b:?}"
+    );
+    assert_eq!(
+        replayed, 1,
+        "the other duplicate report replays: {a:?} / {b:?}"
+    );
+
+    let committed_at = |r: &AttemptTransitionResult| match r {
+        AttemptTransitionResult::Applied(resp) | AttemptTransitionResult::Replayed(resp) => {
+            resp.committed_at.clone()
+        }
+        other => panic!("expected applied/replayed, got {other:?}"),
+    };
+    assert_eq!(
+        committed_at(&a),
+        committed_at(&b),
+        "both branches observe the single committed timestamp"
+    );
+
+    let row = sqlx::query(
+        "SELECT state,prepared_at FROM execution_attempts WHERE id='attempt-concurrent-transition'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(row.get::<String, _>("state"), "preparing");
+    assert!(row.get::<Option<String>, _>("prepared_at").is_some());
+}
+
+#[tokio::test]
+async fn concurrent_duplicate_heartbeats_have_one_authoritative_writer() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-concurrent-heartbeat",
+        "attempt-concurrent-heartbeat",
+    )
+    .await;
+    let leases = vec![HeartbeatLease {
+        attempt_id: "attempt-concurrent-heartbeat",
+        fencing_token: fence,
+        state: "running",
+        journal_state: "running",
+        last_event_checkpoint: None,
+    }];
+    let sent_at = clock.now();
+    let left = repo.clone();
+    let right = repo.clone();
+    let (a, b) = tokio::join!(
+        left.heartbeat_batch(
+            "runner-a",
+            "heartbeat-concurrent",
+            sent_at,
+            0,
+            &leases,
+            Duration::seconds(30),
+            &clock,
+        ),
+        right.heartbeat_batch(
+            "runner-a",
+            "heartbeat-concurrent",
+            sent_at,
+            0,
+            &leases,
+            Duration::seconds(30),
+            &clock,
+        ),
+    );
+    let a = a.expect("first heartbeat report must succeed at the sqlx level");
+    let b = b.expect("second heartbeat report must succeed at the sqlx level");
+
+    let accepted = [&a, &b]
+        .into_iter()
+        .filter(|r| matches!(r, HeartbeatBatchResult::Accepted(_)))
+        .count();
+    let replayed = [&a, &b]
+        .into_iter()
+        .filter(|r| matches!(r, HeartbeatBatchResult::Replayed(_)))
+        .count();
+    assert_eq!(
+        accepted, 1,
+        "exactly one duplicate heartbeat accepts: {a:?} / {b:?}"
+    );
+    assert_eq!(
+        replayed, 1,
+        "the other duplicate heartbeat replays: {a:?} / {b:?}"
+    );
+
+    let response = |r: &HeartbeatBatchResult| match r {
+        HeartbeatBatchResult::Accepted(resp) | HeartbeatBatchResult::Replayed(resp) => resp.clone(),
+        other => panic!("expected accepted/replayed, got {other:?}"),
+    };
+    assert_eq!(
+        response(&a),
+        response(&b),
+        "both branches observe the single committed heartbeat response"
+    );
+
+    // Capacity is set exactly once, even though both branches raced to
+    // report the same duplicate heartbeat.
+    let available_capacity: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id='runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(available_capacity, 0);
+
+    let replay_rows: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_heartbeat_replays WHERE runner_id='runner-a' AND heartbeat_id='heartbeat-concurrent'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(
+        replay_rows, 1,
+        "exactly one durable replay record is written"
+    );
+}
+
+#[tokio::test]
+async fn concurrent_duplicate_recovery_observations_have_one_authoritative_writer() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-concurrent-recovery",
+        "attempt-concurrent-recovery",
+    )
+    .await;
+    let input = recovery_input(
+        "attempt-concurrent-recovery",
+        fence,
+        "recovery-concurrent",
+        RecoveryObservation::Ambiguous,
+    );
+    let left = repo.clone();
+    let right = repo.clone();
+    let (a, b) = tokio::join!(
+        left.recover_attempt(input.clone(), &clock),
+        right.recover_attempt(input, &clock),
+    );
+    let a = a.expect("first recovery report must succeed at the sqlx level");
+    let b = b.expect("second recovery report must succeed at the sqlx level");
+
+    let applied = [&a, &b]
+        .into_iter()
+        .filter(|r| matches!(r, RecoveryObservationResult::Applied(_)))
+        .count();
+    let replayed = [&a, &b]
+        .into_iter()
+        .filter(|r| matches!(r, RecoveryObservationResult::Replayed(_)))
+        .count();
+    assert_eq!(
+        applied, 1,
+        "exactly one duplicate recovery report applies: {a:?} / {b:?}"
+    );
+    assert_eq!(
+        replayed, 1,
+        "the other duplicate recovery report replays: {a:?} / {b:?}"
+    );
+
+    let response = |r: &RecoveryObservationResult| match r {
+        RecoveryObservationResult::Applied(resp) | RecoveryObservationResult::Replayed(resp) => {
+            resp.clone()
+        }
+        other => panic!("expected applied/replayed, got {other:?}"),
+    };
+    let applied_response = response(&a);
+    assert_eq!(
+        applied_response,
+        response(&b),
+        "both branches observe the single committed recovery response"
+    );
+    assert_eq!(
+        applied_response.disposition,
+        RecoveryDisposition::NeedsOperator
+    );
+
+    let attempt_state: String = sqlx::query_scalar(
+        "SELECT state FROM execution_attempts WHERE id='attempt-concurrent-recovery'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(attempt_state, "needs_operator");
+
+    // Capacity is restored by the recovery transition exactly once, even
+    // though both branches raced to report the same duplicate observation.
+    let available_capacity: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id='runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(available_capacity, 1, "capacity is restored exactly once");
+
+    let audits: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_recovery_audits WHERE attempt_id='attempt-concurrent-recovery' AND recovery_key='recovery-concurrent'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(audits, 1, "exactly one durable audit record is written");
+}
+
+#[tokio::test]
+async fn concurrent_duplicate_cancellation_observations_have_one_authoritative_writer() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-concurrent-cancel",
+        "attempt-concurrent-cancel",
+    )
+    .await;
+    repo.request_execution_cancellation("request-concurrent-cancel", &clock)
+        .await
+        .unwrap();
+    let input = cancellation_input(
+        "attempt-concurrent-cancel",
+        fence,
+        "cancel-concurrent",
+        clock.now(),
+    );
+    let left = repo.clone();
+    let right = repo.clone();
+    let (a, b) = tokio::join!(
+        left.observe_cancellation(input.clone(), &clock),
+        right.observe_cancellation(input, &clock),
+    );
+    let a = a.expect("first cancellation report must succeed at the sqlx level");
+    let b = b.expect("second cancellation report must succeed at the sqlx level");
+
+    let cancelled = [&a, &b]
+        .into_iter()
+        .filter(|r| matches!(r, CancellationObservation::Cancelled(_)))
+        .count();
+    let replayed = [&a, &b]
+        .into_iter()
+        .filter(|r| matches!(r, CancellationObservation::Replayed(_)))
+        .count();
+    assert_eq!(
+        cancelled, 1,
+        "exactly one duplicate cancellation report is authoritative: {a:?} / {b:?}"
+    );
+    assert_eq!(
+        replayed, 1,
+        "the other duplicate cancellation report replays: {a:?} / {b:?}"
+    );
+
+    let response = |r: &CancellationObservation| match r {
+        CancellationObservation::Cancelled(resp) | CancellationObservation::Replayed(resp) => {
+            resp.clone()
+        }
+        other => panic!("expected cancelled/replayed, got {other:?}"),
+    };
+    assert_eq!(
+        response(&a),
+        response(&b),
+        "both branches observe the single committed cancellation response"
+    );
+
+    let attempt_state: String = sqlx::query_scalar(
+        "SELECT state FROM execution_attempts WHERE id='attempt-concurrent-cancel'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(attempt_state, "cancelled");
+
+    // Capacity is restored by the terminal transition exactly once, even
+    // though both branches raced to report the same duplicate observation.
+    let available_capacity: i64 =
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id='runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(available_capacity, 1, "capacity is restored exactly once");
+
+    let replay_rows: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_cancellation_replays WHERE attempt_id='attempt-concurrent-cancel' AND cancellation_request_id='cancel-concurrent'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(
+        replay_rows, 1,
+        "exactly one durable replay record is written"
+    );
+}
+
+#[tokio::test]
+async fn concurrent_duplicate_enqueues_have_one_authoritative_writer() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let left = repo.clone();
+    let right = repo.clone();
+    let (a, b) = tokio::join!(
+        left.enqueue_execution(
+            request(
+                "request-concurrent-enqueue",
+                &item_id,
+                "key-concurrent-enqueue",
+                "same",
+            ),
+            &clock,
+        ),
+        right.enqueue_execution(
+            request(
+                "request-concurrent-enqueue",
+                &item_id,
+                "key-concurrent-enqueue",
+                "same",
+            ),
+            &clock,
+        ),
+    );
+    let a = a.expect("first enqueue report must succeed at the sqlx level");
+    let b = b.expect("second enqueue report must succeed at the sqlx level");
+
+    let created = [&a, &b]
+        .into_iter()
+        .filter(|r| matches!(r, EnqueueResult::Created(_)))
+        .count();
+    let replayed = [&a, &b]
+        .into_iter()
+        .filter(|r| matches!(r, EnqueueResult::Replayed(_)))
+        .count();
+    assert_eq!(
+        created, 1,
+        "exactly one duplicate enqueue creates: {a:?} / {b:?}"
+    );
+    assert_eq!(
+        replayed, 1,
+        "the other duplicate enqueue replays: {a:?} / {b:?}"
+    );
+
+    let id = |r: &EnqueueResult| match r {
+        EnqueueResult::Created(id) | EnqueueResult::Replayed(id) => id.clone(),
+        other => panic!("expected created/replayed, got {other:?}"),
+    };
+    assert_eq!(
+        id(&a),
+        id(&b),
+        "both branches observe the single committed request id"
+    );
+    assert_eq!(id(&a), "request-concurrent-enqueue");
+
+    let rows: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_requests WHERE id='request-concurrent-enqueue'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(rows, 1, "exactly one execution request row is written");
+}
+
+#[tokio::test]
+async fn concurrent_duplicate_event_batches_have_one_authoritative_writer() {
+    let (repo, item_id, clock) = ready_repo().await;
+    let fence = ready_completion_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-concurrent-events",
+        "attempt-concurrent-events",
+    )
+    .await;
+    let events = vec![NewEvent {
+        id: "event-row-concurrent",
+        event_id: "event-concurrent",
+        sequence: 1,
+        source: "runner",
+        kind: "log",
+        payload: r#"{"line":"hello"}"#,
+        occurred_at: clock.now(),
+    }];
+    let batch = EventBatch {
+        runner_id: "runner-a",
+        attempt_id: "attempt-concurrent-events",
+        fencing_token: fence,
+        previous_checkpoint: None,
+        checkpoint: "checkpoint-concurrent",
+    };
+    let left = repo.clone();
+    let right = repo.clone();
+    let (a, b) = tokio::join!(
+        left.append_execution_events_result(batch.clone(), &events, &clock),
+        right.append_execution_events_result(batch, &events, &clock),
+    );
+    let a = a.expect("first event batch report must succeed at the sqlx level");
+    let b = b.expect("second event batch report must succeed at the sqlx level");
+
+    let fresh = [&a, &b]
+        .into_iter()
+        .filter(|r| matches!(r, EventApplyResult::Applied(result) if !result.replayed))
+        .count();
+    let replayed = [&a, &b]
+        .into_iter()
+        .filter(|r| matches!(r, EventApplyResult::Applied(result) if result.replayed))
+        .count();
+    assert_eq!(
+        fresh, 1,
+        "exactly one duplicate event batch applies fresh: {a:?} / {b:?}"
+    );
+    assert_eq!(
+        replayed, 1,
+        "the other duplicate event batch replays: {a:?} / {b:?}"
+    );
+
+    let result = |r: &EventApplyResult| match r {
+        EventApplyResult::Applied(result) => result.clone(),
+        other => panic!("expected applied, got {other:?}"),
+    };
+    let a_result = result(&a);
+    let b_result = result(&b);
+    assert_eq!(a_result.accepted_event_ids, b_result.accepted_event_ids);
+    assert_eq!(a_result.duplicate_event_ids, b_result.duplicate_event_ids);
+    assert_eq!(a_result.committed_checkpoint, b_result.committed_checkpoint);
+    assert_eq!(
+        a_result.accepted_event_ids,
+        vec!["event-concurrent".to_string()]
+    );
+
+    let event_rows: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_events WHERE attempt_id='attempt-concurrent-events' AND event_id='event-concurrent'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(event_rows, 1, "the event is persisted exactly once");
+
+    let checkpoint: String = sqlx::query_scalar(
+        "SELECT event_checkpoint FROM execution_attempts WHERE id='attempt-concurrent-events'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(checkpoint, "checkpoint-concurrent");
+
+    let replay_rows: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_event_batch_replays WHERE attempt_id='attempt-concurrent-events' AND checkpoint='checkpoint-concurrent'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(
+        replay_rows, 1,
+        "exactly one durable replay record is written"
+    );
+}
+
+// Defect 3 regression: two concurrent or retried credential rotations from
+// the same runner both authenticate against the same still-valid old hash
+// (that is the whole point of a rotation race — neither has learned the
+// other's new hash yet). Without a compare-and-set against the hash that was
+// actually authenticated, last-writer-wins would silently discard one
+// rotation's result, leaving its caller holding a credential the server no
+// longer accepts and with no way to recover short of a fresh operator-issued
+// enrollment token. `rotate_runner_credential` must let exactly one of two
+// concurrent rotations against the same expected hash win.
+#[tokio::test]
+async fn concurrent_credential_rotations_have_exactly_one_winner() {
+    let (repo, _item_id, clock) = ready_repo().await;
+    // `ready_repo()` registers "runner-a" with credential_hash "hash-only".
+    let left = repo.clone();
+    let right = repo.clone();
+    let (a, b) = tokio::join!(
+        left.rotate_runner_credential(
+            "runner-a",
+            "hash-only",
+            "hash-rotated-by-left",
+            clock.now() + Duration::days(30),
+            &clock,
+        ),
+        right.rotate_runner_credential(
+            "runner-a",
+            "hash-only",
+            "hash-rotated-by-right",
+            clock.now() + Duration::days(30),
+            &clock,
+        ),
+    );
+    let a = a.expect("first rotation must succeed at the sqlx level");
+    let b = b.expect("second rotation must succeed at the sqlx level");
+
+    let rotated = [&a, &b]
+        .into_iter()
+        .filter(|r| matches!(r, CredentialRotationResult::Rotated(_)))
+        .count();
+    let mismatched = [&a, &b]
+        .into_iter()
+        .filter(|r| matches!(r, CredentialRotationResult::HashMismatch))
+        .count();
+    assert_eq!(
+        rotated, 1,
+        "exactly one concurrent rotation against the same expected hash wins: {a:?} / {b:?}"
+    );
+    assert_eq!(
+        mismatched, 1,
+        "the other concurrent rotation observes its expected hash no longer matches: {a:?} / {b:?}"
+    );
+
+    let stored_hash: String =
+        sqlx::query_scalar("SELECT credential_hash FROM agent_runners WHERE id='runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    // Whichever branch won, the stored hash must be exactly that branch's new
+    // hash — never the loser's, and never some third, corrupted value.
+    let winner_is_left = matches!(a, CredentialRotationResult::Rotated(_));
+    let expected = if winner_is_left {
+        "hash-rotated-by-left"
+    } else {
+        "hash-rotated-by-right"
+    };
+    assert_eq!(
+        stored_hash, expected,
+        "stored hash must match whichever branch's CredentialRotationResult::Rotated fired"
+    );
+
+    // A retry against the now-stale original hash (e.g. a naive client that
+    // didn't observe either response and blindly retries with what it still
+    // believes is current) must not be able to rotate again.
+    let stale_retry = repo
+        .rotate_runner_credential(
+            "runner-a",
+            "hash-only",
+            "hash-rotated-by-stale-retry",
+            clock.now() + Duration::days(30),
+            &clock,
+        )
+        .await
+        .unwrap();
+    assert_eq!(stale_retry, CredentialRotationResult::HashMismatch);
+    let stored_hash_after_retry: String =
+        sqlx::query_scalar("SELECT credential_hash FROM agent_runners WHERE id='runner-a'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(
+        stored_hash_after_retry, expected,
+        "a stale-hash retry must not overwrite the winning rotation"
+    );
 }

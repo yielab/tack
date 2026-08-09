@@ -174,6 +174,23 @@ pub enum RedeemEnrollmentResult {
     InvalidOrExpired,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RotatedCredential {
+    pub runner_id: String,
+    pub credential_expires_at: String,
+    pub rotated_at: String,
+}
+
+/// Outcome of a compare-and-set credential rotation. `HashMismatch` covers
+/// both "another rotation already won the race" and "the runner is no
+/// longer active/is revoked" — either way the caller must not treat the
+/// newly generated credential as live.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CredentialRotationResult {
+    Rotated(RotatedCredential),
+    HashMismatch,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClaimedExecution {
     pub lease: Lease,
@@ -253,7 +270,18 @@ pub struct EventBatchResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EventApplyResult {
     Applied(EventBatchResult),
-    ReplayConflict,
+    /// The stored replay fingerprint for this `(attempt_id, checkpoint)` key
+    /// differs from the new request's fingerprint: the same idempotency-scoped
+    /// key was reused with different content. This can never succeed by
+    /// retrying with the same key — the wire mapping is the non-retryable
+    /// `idempotency_conflict` stable error, never `conflict`.
+    IdempotencyConflict,
+    /// No replay row matched this checkpoint, but the attempt's event stream
+    /// position was not where this batch expected it (checkpoint already
+    /// advanced past it, `previous_checkpoint` mismatch) or a concurrent
+    /// writer won the compare-and-set. A benign out-of-order resync — the
+    /// wire mapping is the retryable `conflict` stable error.
+    Conflict,
     Stale,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -333,6 +361,17 @@ pub struct CompletionResponse {
 pub enum CompletionResult {
     Committed(CompletionResponse),
     Replayed(CompletionResponse),
+    /// The stored replay fingerprint for this `(attempt_id, completion_id)`
+    /// key differs from the new request's fingerprint: the same
+    /// idempotency-scoped key was reused with different content. This can
+    /// never succeed by retrying with the same key — the wire mapping is the
+    /// non-retryable `idempotency_conflict` stable error, never `conflict`.
+    IdempotencyConflict,
+    /// No matching replay row: either the attempt is already terminal under
+    /// a different completion (no authoritative historical response to
+    /// replay, e.g. a pre-M055 terminal attempt) or a concurrent writer won
+    /// the compare-and-set. The wire mapping is the retryable `conflict`
+    /// stable error.
     Conflict,
     Stale,
 }
@@ -954,7 +993,12 @@ impl Repository {
         }
         let now = stamp(clock);
         let fingerprint = completion_fingerprint(&completion)?;
-        let mut tx = self.pool().begin().await?;
+        // Serialize duplicate completion reports (e.g. a runner retrying an
+        // unacknowledged terminal POST) before either transaction reads this
+        // attempt row. Two deferred readers can otherwise deadlock while
+        // both try to upgrade to writers. Mirrors the redeem_enrollment_token
+        // and claim_execution_idempotent_with_snapshot fixes above.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let row = sqlx::query(
             "SELECT request_id,runner_id,state,lease_expires_at,event_checkpoint FROM execution_attempts WHERE id=? AND runner_id=? AND fencing_token=?",
         )
@@ -977,8 +1021,10 @@ impl Repository {
         {
             let stored_fingerprint: String = row.get("fingerprint");
             if stored_fingerprint != fingerprint {
+                // Same (attempt_id, completion_id) idempotency-scoped key,
+                // different content: this can never succeed by retrying.
                 tx.commit().await?;
-                return Ok(CompletionResult::Conflict);
+                return Ok(CompletionResult::IdempotencyConflict);
             }
             let response: String = row.get("response");
             let response = replay_response(&response)?;
@@ -988,7 +1034,10 @@ impl Repository {
         let state: String = row.get("state");
         let expires: String = row.get("lease_expires_at");
         if terminal(&state) {
-            // Pre-M055 terminal attempts have no authoritative response to replay.
+            // Pre-M055 terminal attempts have no authoritative response to
+            // replay. This is a distinct completion_id from whichever one
+            // terminated the attempt, not a reused idempotency key with
+            // different content, so it is the benign/retryable `Conflict`.
             tx.commit().await?;
             return Ok(CompletionResult::Conflict);
         }
@@ -1001,6 +1050,9 @@ impl Repository {
         let updated = sqlx::query("UPDATE execution_attempts SET state=?,completion_id=?,terminal_reason=?,actual_execution=?,usage=?,ended_at=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND event_checkpoint IS ? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at > ?")
             .bind(completion.terminal_state).bind(completion.completion_id).bind(completion.terminal_reason).bind(completion.actual_execution).bind(completion.usage).bind(&now).bind(&now).bind(completion.attempt_id).bind(completion.runner_id).bind(completion.fencing_token).bind(completion.final_event_checkpoint).bind(&now).execute(&mut *tx).await?;
         if updated.rows_affected() != 1 {
+            // Defensive: near-unreachable under the BEGIN IMMEDIATE this
+            // function already opens, but a lost compare-and-set is a
+            // benign/retryable `Conflict`, not an idempotency-key reuse.
             tx.rollback().await?;
             return Ok(CompletionResult::Conflict);
         }
@@ -1085,6 +1137,49 @@ impl Repository {
         Ok(r.rows_affected() == 1)
     }
 
+    /// Compare-and-set credential rotation: the write only applies if
+    /// `expected_credential_hash` still matches the runner's currently
+    /// stored hash at commit time. Two concurrent or retried rotations from
+    /// the same runner authenticate against the same still-valid old hash;
+    /// without this compare-and-set the second writer silently overwrites
+    /// the first, discarding a credential the runner may already have
+    /// cached and persisted (unrecoverable without a fresh operator-issued
+    /// enrollment token). Every other mutating path in this protocol has a
+    /// compare-and-set or a replay-dedup table — this closes the one gap.
+    pub async fn rotate_runner_credential(
+        &self,
+        runner_id: &str,
+        expected_credential_hash: &str,
+        new_credential_hash: &str,
+        credential_expires_at: DateTime<Utc>,
+        clock: &dyn ExecutionClock,
+    ) -> Result<CredentialRotationResult, sqlx::Error> {
+        let now = stamp(clock);
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
+        let updated = sqlx::query(
+            "UPDATE agent_runners SET credential_hash=?,credential_expires_at=?,credential_rotated_at=?,updated_at=? \
+             WHERE id=? AND state='active' AND revoked_at IS NULL AND credential_hash=?",
+        )
+        .bind(new_credential_hash)
+        .bind(credential_expires_at.to_rfc3339())
+        .bind(&now)
+        .bind(&now)
+        .bind(runner_id)
+        .bind(expected_credential_hash)
+        .execute(&mut *tx)
+        .await?;
+        if updated.rows_affected() != 1 {
+            tx.rollback().await?;
+            return Ok(CredentialRotationResult::HashMismatch);
+        }
+        tx.commit().await?;
+        Ok(CredentialRotationResult::Rotated(RotatedCredential {
+            runner_id: runner_id.into(),
+            credential_expires_at: credential_expires_at.to_rfc3339(),
+            rotated_at: now,
+        }))
+    }
+
     pub async fn operator_requeue_needs_operator(
         &self,
         request_id: &str,
@@ -1094,7 +1189,13 @@ impl Repository {
         clock: &dyn ExecutionClock,
     ) -> Result<OperatorRequeueResult, sqlx::Error> {
         let now = stamp(clock);
-        let mut tx = self.pool().begin().await?;
+        // Serialize duplicate operator requeues for the same request (e.g. a
+        // double-clicked retry) before either transaction reads the
+        // needs_operator attempt row. Two deferred readers can otherwise
+        // deadlock while both try to upgrade to writers. Mirrors the
+        // redeem_enrollment_token and claim_execution_idempotent_with_snapshot
+        // fixes above.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let attempt:Option<String>=sqlx::query_scalar("SELECT id FROM execution_attempts WHERE request_id=? AND state='needs_operator' ORDER BY attempt_number DESC LIMIT 1").bind(request_id).fetch_optional(&mut *tx).await?;
         let Some(attempt) = attempt else {
             tx.commit().await?;
@@ -1150,7 +1251,13 @@ impl Repository {
         }
 
         let now = stamp(clock);
-        let mut tx = self.pool().begin().await?;
+        // Serialize duplicate transition acknowledgements for the same
+        // attempt (e.g. a runner retrying an unacknowledged "preparing" or
+        // "running" report) before either transaction reads this attempt
+        // row. Two deferred readers can otherwise deadlock while both try to
+        // upgrade to writers. Mirrors the redeem_enrollment_token and
+        // claim_execution_idempotent_with_snapshot fixes above.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let row = sqlx::query(
             "SELECT a.state,a.workspace_id,a.base_revision,a.process_id,a.prepared_at,a.started_at \
              FROM execution_attempts a JOIN agent_runners r ON r.id=a.runner_id \
@@ -1295,7 +1402,13 @@ impl Repository {
             leases,
             lease_duration,
         )?;
-        let mut tx = self.pool().begin().await?;
+        // Serialize duplicate heartbeat batches for the same runner (e.g. a
+        // runner retrying an unacknowledged heartbeat POST) before either
+        // transaction reads the runner's capacity row. Two deferred readers
+        // can otherwise deadlock while both try to upgrade to writers.
+        // Mirrors the redeem_enrollment_token and
+        // claim_execution_idempotent_with_snapshot fixes above.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let capacity: Option<i64> = sqlx::query_scalar(
             "SELECT total_capacity FROM agent_runners WHERE id=? AND state='active' AND revoked_at IS NULL",
         )
@@ -1387,7 +1500,13 @@ impl Repository {
         let now = stamp(clock);
         let details = recovery_details(input.details)?;
         let fingerprint = recovery_fingerprint(&input)?;
-        let mut tx = self.pool().begin().await?;
+        // Serialize duplicate recovery observations for the same attempt
+        // (e.g. a runner or reconciler retrying an unacknowledged recovery
+        // report) before either transaction reads this attempt row. Two
+        // deferred readers can otherwise deadlock while both try to upgrade
+        // to writers. Mirrors the redeem_enrollment_token and
+        // claim_execution_idempotent_with_snapshot fixes above.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let row = sqlx::query("SELECT a.request_id,a.runner_id,a.state,a.started_at FROM execution_attempts a JOIN agent_runners r ON r.id=a.runner_id WHERE a.id=? AND a.runner_id=? AND a.fencing_token=? AND r.state='active' AND r.revoked_at IS NULL")
             .bind(input.attempt_id).bind(input.runner_id).bind(input.fencing_token).fetch_optional(&mut *tx).await?;
         let Some(row) = row else {
@@ -1507,7 +1626,13 @@ impl Repository {
     ) -> Result<CancellationObservation, sqlx::Error> {
         let now = stamp(clock);
         let fingerprint = cancellation_fingerprint(&input)?;
-        let mut tx = self.pool().begin().await?;
+        // Serialize duplicate cancellation observations for the same attempt
+        // (e.g. a runner retrying an unacknowledged cancellation report)
+        // before either transaction reads this attempt/request row. Two
+        // deferred readers can otherwise deadlock while both try to upgrade
+        // to writers. Mirrors the redeem_enrollment_token and
+        // claim_execution_idempotent_with_snapshot fixes above.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let row = sqlx::query("SELECT a.request_id,a.runner_id,a.state,a.lease_expires_at,r.cancellation_requested_at FROM execution_attempts a JOIN execution_requests r ON r.id=a.request_id WHERE a.id=? AND a.runner_id=? AND a.fencing_token=?")
             .bind(input.attempt_id).bind(input.runner_id).bind(input.fencing_token).fetch_optional(&mut *tx).await?;
         let Some(row) = row else {
@@ -1619,7 +1744,11 @@ impl Repository {
         clock: &dyn ExecutionClock,
     ) -> Result<RedeemEnrollmentResult, sqlx::Error> {
         let now = stamp(clock);
-        let mut tx = self.pool().begin().await?;
+        // Serialize token consumers before either transaction reads the
+        // single-use row. Two deferred readers can otherwise deadlock while
+        // both try to upgrade to writers, surfacing a database error instead
+        // of one authoritative winner and one invalid/expired result.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let token = sqlx::query("SELECT runner_id FROM agent_enrollment_tokens WHERE token_hash = ? AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at > ?")
             .bind(token_hash).bind(&now).fetch_optional(&mut *tx).await?;
         let Some(token) = token else {
@@ -1656,7 +1785,12 @@ impl Repository {
         let now = clock.now();
         let now_s = now.to_rfc3339();
         let expires = now + lease_duration;
-        let mut tx = self.pool().begin().await?;
+        // Serialize claimants before either transaction reads the runner's
+        // shared capacity row. Two deferred readers can otherwise deadlock
+        // while both try to upgrade to writers, surfacing a database error
+        // instead of one authoritative lease and one well-typed no-work
+        // result. Mirrors the redeem_enrollment_token fix above.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let replay=sqlx::query("SELECT a.id,a.request_id,a.attempt_number,a.runner_id,a.fencing_token,a.lease_issued_at,a.lease_expires_at,r.request_snapshot FROM execution_claim_replays c JOIN execution_attempts a ON a.id=c.attempt_id JOIN execution_requests r ON r.id=a.request_id WHERE c.runner_id=? AND c.claim_request_id=?").bind(runner_id).bind(claim_request_id).fetch_optional(&mut *tx).await?;
         if let Some(row) = replay {
             let lease = lease_from_row(&row)?;
@@ -1758,7 +1892,13 @@ impl Repository {
     ) -> Result<EnqueueResult, sqlx::Error> {
         let now = stamp(clock);
         let request_snapshot = validate_execution_request_snapshot(&input)?;
-        let mut tx = self.pool().begin().await?;
+        // Serialize duplicate enqueue requests for the same idempotency key
+        // (e.g. a client retrying an unacknowledged enqueue POST) before
+        // either transaction reads the idempotency-scope row. Two deferred
+        // readers can otherwise deadlock while both try to upgrade to
+        // writers. Mirrors the redeem_enrollment_token and
+        // claim_execution_idempotent_with_snapshot fixes above.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let existing: Option<(String, String, String)> = sqlx::query_as(
             "SELECT id, request_fingerprint, request_snapshot FROM execution_requests \
              WHERE idempotency_scope = ? AND idempotency_key = ?",
@@ -1805,7 +1945,13 @@ impl Repository {
     ) -> Result<EventApplyResult, sqlx::Error> {
         let now = stamp(clock);
         let fingerprint = event_batch_fingerprint(&batch, events)?;
-        let mut tx = self.pool().begin().await?;
+        // Serialize duplicate/replayed event batches for the same attempt
+        // (e.g. a runner retrying an unacknowledged event-batch POST) before
+        // either transaction reads this attempt row. Two deferred readers
+        // can otherwise deadlock while both try to upgrade to writers.
+        // Mirrors the redeem_enrollment_token and
+        // claim_execution_idempotent_with_snapshot fixes above.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let row = sqlx::query("SELECT event_checkpoint FROM execution_attempts WHERE id=? AND runner_id=? AND fencing_token=? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at>?")
             .bind(batch.attempt_id).bind(batch.runner_id).bind(batch.fencing_token).bind(&now).fetch_optional(&mut *tx).await?;
         let Some(row) = row else {
@@ -1822,8 +1968,10 @@ impl Repository {
         {
             let stored: String = row.get("fingerprint");
             if stored != fingerprint {
+                // Same (attempt_id, checkpoint) idempotency-scoped key,
+                // different content: this can never succeed by retrying.
                 tx.commit().await?;
-                return Ok(EventApplyResult::ReplayConflict);
+                return Ok(EventApplyResult::IdempotencyConflict);
             }
             let response: String = row.get("response");
             let value: serde_json::Value = serde_json::from_str(&response)
@@ -1860,12 +2008,18 @@ impl Repository {
         }
         let current: Option<String> = row.get("event_checkpoint");
         if current.as_deref() == Some(batch.checkpoint) {
+            // Legacy pre-054 attempt whose checkpoint already advanced but has
+            // no replay row: no fingerprint to compare, so this is not proven
+            // to be a reused key with different content. Benign/retryable.
             tx.commit().await?;
-            return Ok(EventApplyResult::ReplayConflict);
+            return Ok(EventApplyResult::Conflict);
         }
         if current.as_deref() != batch.previous_checkpoint {
+            // The batch's claimed previous_checkpoint no longer matches the
+            // attempt's actual stream position: a benign out-of-order resync,
+            // not an idempotency-key reuse. Retryable once the caller re-syncs.
             tx.commit().await?;
-            return Ok(EventApplyResult::ReplayConflict);
+            return Ok(EventApplyResult::Conflict);
         }
         let mut accepted = Vec::new();
         let mut duplicate = Vec::new();
@@ -1886,8 +2040,11 @@ impl Repository {
         }
         let changed=sqlx::query("UPDATE execution_attempts SET event_checkpoint=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND event_checkpoint IS ?").bind(batch.checkpoint).bind(&now).bind(batch.attempt_id).bind(batch.runner_id).bind(batch.fencing_token).bind(batch.previous_checkpoint).execute(&mut *tx).await?;
         if changed.rows_affected() != 1 {
+            // Defensive: near-unreachable under the BEGIN IMMEDIATE this
+            // function already opens, but a lost compare-and-set is a
+            // benign/retryable Conflict, not an idempotency-key reuse.
             tx.rollback().await?;
-            return Ok(EventApplyResult::ReplayConflict);
+            return Ok(EventApplyResult::Conflict);
         }
         let result = EventBatchResult {
             accepted_event_ids: accepted,
@@ -1935,13 +2092,23 @@ impl Repository {
         clock: &dyn ExecutionClock,
     ) -> Result<bool, sqlx::Error> {
         let now = stamp(clock);
+        // Serialize the eligibility check and the insert against a concurrent
+        // completion, cancellation, or recovery transition for the same
+        // attempt (all of which already open BEGIN IMMEDIATE). Without this,
+        // the SELECT and INSERT were two separate un-transacted statements: a
+        // concurrent terminal transition could commit between them, letting
+        // an artifact land against an attempt that has already gone
+        // terminal, lost, or needs_operator.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state NOT IN ('succeeded','failed','cancelled') AND lease_expires_at > ?)")
-            .bind(attempt_id).bind(runner_id).bind(fence).bind(&now).fetch_one(self.pool()).await?;
+            .bind(attempt_id).bind(runner_id).bind(fence).bind(&now).fetch_one(&mut *tx).await?;
         if !valid {
+            tx.commit().await?;
             return Ok(false);
         }
         sqlx::query("INSERT INTO execution_artifacts (id, attempt_id, artifact_id, kind, name, media_type, size_bytes, sha256, content_disposition, content_reference, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(attempt_id, artifact_id) DO NOTHING")
-            .bind(artifact.id).bind(attempt_id).bind(artifact.artifact_id).bind(artifact.kind).bind(artifact.name).bind(artifact.media_type).bind(artifact.size_bytes).bind(artifact.sha256).bind(artifact.content_disposition).bind(artifact.content_reference).bind(artifact.metadata).bind(now).execute(self.pool()).await?;
+            .bind(artifact.id).bind(attempt_id).bind(artifact.artifact_id).bind(artifact.kind).bind(artifact.name).bind(artifact.media_type).bind(artifact.size_bytes).bind(artifact.sha256).bind(artifact.content_disposition).bind(artifact.content_reference).bind(artifact.metadata).bind(now).execute(&mut *tx).await?;
+        tx.commit().await?;
         Ok(true)
     }
 
@@ -1955,13 +2122,23 @@ impl Repository {
         clock: &dyn ExecutionClock,
     ) -> Result<bool, sqlx::Error> {
         let now = stamp(clock);
+        // Serialize the eligibility check and the insert against a concurrent
+        // completion, cancellation, or recovery transition for the same
+        // attempt (all of which already open BEGIN IMMEDIATE). Without this,
+        // the SELECT and INSERT were two separate un-transacted statements: a
+        // concurrent terminal transition could commit between them, letting
+        // a decision land against an attempt that has already gone terminal,
+        // lost, or needs_operator.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state IN ('running','waiting_decision') AND lease_expires_at > ?)")
-            .bind(attempt_id).bind(runner_id).bind(fence).bind(&now).fetch_one(self.pool()).await?;
+            .bind(attempt_id).bind(runner_id).bind(fence).bind(&now).fetch_one(&mut *tx).await?;
         if !valid {
+            tx.commit().await?;
             return Ok(false);
         }
         sqlx::query("INSERT INTO execution_decisions (id, attempt_id, decision_id, kind, prompt, options, metadata, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(attempt_id, decision_id) DO NOTHING")
-        .bind(decision.id).bind(attempt_id).bind(decision.decision_id).bind(decision.kind).bind(decision.prompt).bind(decision.options).bind(decision.metadata).bind(decision.expires_at.map(|v| v.to_rfc3339())).bind(&now).bind(&now).execute(self.pool()).await?;
+        .bind(decision.id).bind(attempt_id).bind(decision.decision_id).bind(decision.kind).bind(decision.prompt).bind(decision.options).bind(decision.metadata).bind(decision.expires_at.map(|v| v.to_rfc3339())).bind(&now).bind(&now).execute(&mut *tx).await?;
+        tx.commit().await?;
         Ok(true)
     }
 }
