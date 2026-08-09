@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "runner_id": "runr_01J00000000000000000000001",
+  "attempt_id": "att_01J00000000000000000000001",
+  "fencing_token": 7,
+  "workspace_id": "ws_01J0000000000000000000000001",
+  "base_revision": "0123456789abcdef0123456789abcdef01234567"
+}

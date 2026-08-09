@@ -12,9 +12,14 @@ source state. An idempotent replay is not a lifecycle transition and is therefor
 the state validator while the mutation endpoint returns the original success.
 
 Canonical success exchanges are represented by paired `*.request.json` and
-`*.response.json` files. Authentication credentials are headers and never appear in a JSON
-payload, except the one-time enrollment exchange and the one-time credential response.
-Every credential-like fixture value begins with `example_` and is intentionally invalid.
+`*.response.json` files: enrollment, refresh, claim, heartbeat, accept, start, event-batch,
+decision create/poll, artifact, completion, cancellation and recovery-observation. Accept and
+start are the `lease_owner`-only `leased -> preparing` and `preparing -> running` transitions
+`lifecycle-transitions.json` names; heartbeat's `active_attempts[].state` is a runner
+self-report for reconciliation only and never itself authorizes a transition. Authentication
+credentials are headers and never appear in a JSON payload, except the one-time enrollment
+exchange and the one-time credential response. Every credential-like fixture value begins
+with `example_` and is intentionally invalid.
 
 Stable failures use one envelope:
 

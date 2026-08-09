@@ -44,3 +44,37 @@
   conflicting reuse, and no cross-test/global mutable state.
 - Verification: focused B4 runner-contract test, clippy, formatting, and diff
   checks are recorded by the amendment commit.
+
+## Accept/start fixture sync (integrator-authorized, made by A0)
+
+- **Not a B4-card edit.** A0 (the frozen-contract owner) closed the accept/start fixture gap
+  III-C2's handoff flagged (gap #5: `accept`/`start` implemented and tested against
+  `lease_owner`-only `leased -> preparing -> running` per `lifecycle-transitions.json`, but with
+  no frozen `docs/contracts/runner-v1/*.request.json`/`*.response.json` pair backing them) by
+  adding `accept.request.json`, `accept.response.json`, `start.request.json` and
+  `start.response.json`. That necessarily changed the frozen fixture manifest this card's harness
+  pins — count and byte hashes both — so keeping the tree green required a same-change sync to
+  `crates/tack-orch/tests/runner_contract/fixtures.rs`. A0 was explicitly authorized to make
+  exactly that minimal sync and nothing else in this card's harness; this section and the mirrored
+  one in `III-A0.md` record it so a later ownership audit does not mistake it for a rule-2
+  violation (an unauthorized edit to another card's owned files).
+- Exact diff made (by A0, in `crates/tack-orch/tests/runner_contract/fixtures.rs` only):
+  - `FROZEN_FIXTURE_FNV1A64` gained four entries:
+    `("accept.request.json", 0x7c41_cf4c_5a0c_50a0)` and
+    `("accept.response.json", 0x9e9d_72b5_565a_783d)`, inserted before `artifact.request.json` to
+    preserve the table's alphabetical ordering; `("start.request.json", 0x26b7_1d95_5b02_3895)`
+    and `("start.response.json", 0x9f07_b1b7_473e_75a3)`, appended after
+    `refresh.response.json` for the same reason.
+  - `every_json_fixture_parses_and_value_round_trips_without_loss`'s
+    `assert_eq!(paths.len(), 42, "the frozen fixture manifest changed")` became `46`.
+  - No other line in `fixtures.rs`, and no line in `runner_contract.rs`, `domain.rs`,
+    `lifecycle.rs` or `protocol.rs`, was touched — this card's structure, its four other test
+    modules and every existing hash/assertion are unchanged.
+- Verification (re-run after the sync): `cargo test -p tack-orch --test runner_contract` — 18
+  passed, 0 failed. The test *count* is unchanged from the recovery-observation amendment above
+  (this sync adds fixture-table rows and bumps a length literal, not a new `#[test]` function);
+  what changed is that those 18 tests now run against 46 pinned fixtures instead of 42.
+  `cargo fmt -p tack-orch -- --check` — clean.
+- No B4-owned file other than `crates/tack-orch/tests/runner_contract/fixtures.rs` changed by this
+  sync. `crates/tack-orch/src/**` was not touched (another card was concurrently mid-edit there;
+  A0 read but did not modify it).

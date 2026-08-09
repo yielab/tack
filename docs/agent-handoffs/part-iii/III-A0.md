@@ -88,3 +88,64 @@ Wave 1 branch point after the combined tree passed:
   alike; B4 adds fixture conformance. Stable existing errors cover malformed input, stale fence,
   idempotency conflict, revoked runner, invalid transition and internal failures; no error enum
   change is required.
+
+## Accept/start fixture freeze (integrator-authorized cross-card sync with B4)
+
+- Gap: every state-changing runner operation had a paired `*.request.json`/`*.response.json`
+  fixture except `accept` and `start`, even though `lifecycle-transitions.json` has always named
+  `leased -> preparing` and `preparing -> running` as `lease_owner`-only transitions needing a
+  wire mechanism, and `protocol.json`'s `additive_operations` never listed them either. Confirmed
+  an editorial omission, not a design choice: III-C2's handoff (gap #5) independently designed
+  and shipped the wire shape against B2's `transition_attempt_with_facts` /
+  `AttemptTransitionInput` / `AttemptTransitionResponse` and C2's own
+  `/attempts/{id}/accept` / `/attempts/{id}/start` handlers, but explicitly flagged that no
+  frozen fixture pair backed it and asked A0/D5 to fold it into a future revision.
+- Verified the shape directly against the live handler
+  (`crates/tack-api/src/handlers/runner_protocol.rs`, `transition_attempt` ~lines 788-856,
+  `accept_attempt`/`start_attempt` ~lines 756-786) and `crates/tack-api/tests/c2_handlers_test.rs`
+  (the `accept_body`/`start_body` literals and the full-lifecycle test), not from any brief's
+  prose. Confirmed: request is `{protocol_version, runner_id, attempt_id, fencing_token,
+  workspace_id, base_revision}`, with `start` additionally requiring a non-empty `process_id`
+  (rejected `invalid_request` when absent or empty — see `transition_attempt`'s explicit
+  `AttemptTransitionPhase::Running` check); response is `{protocol_version, attempt_id, state,
+  replayed, committed_at}` with `state` = `"preparing"`/`"running"` respectively, in exactly the
+  key order the handler's `json!(...)` construction emits.
+- Added `accept.request.json`, `accept.response.json`, `start.request.json`,
+  `start.response.json` under `docs/contracts/runner-v1/`, matching the two-space-indent,
+  single-trailing-newline style of the most recently added fixture pair
+  (`recovery-observation.{request,response}.json`) rather than the older double-trailing-newline
+  files, and reusing the same example `runr_`/`att_`/`ws_` ids and base-revision hex already used
+  throughout the fixture set. Did not add accept/start to `protocol.json`'s
+  `additive_operations`: that section is reserved for genuinely new operations layered onto v1
+  after the fact (as `recovery_observation` was in the amendment above); accept/start are core
+  canonical lifecycle operations that were always implied by `lifecycle-transitions.json`, so
+  filing them there would misrepresent them as a later addition. Updated `README.md`'s operation
+  list to name all twelve canonical exchanges and to state explicitly that heartbeat's
+  `active_attempts[].state` is a reconciliation report only, never an authoritative transition
+  driver, per `lifecycle-transitions.json`'s own recovery-observation `authority` clause.
+- Did not change any existing fixture's bytes; only the four new files were added and
+  `README.md`'s prose was extended.
+- **Cross-card sync, integrator-authorized:** adding four fixtures moved the frozen fixture count
+  from 42 to 46, which necessarily broke B4's `crates/tack-orch/tests/runner_contract.rs`
+  byte-pinned `FROZEN_FIXTURE_FNV1A64` table and its `paths.len() == 42` assertion. Per this
+  card's explicit authorization to keep the tree green, made exactly that minimal sync in
+  `crates/tack-orch/tests/runner_contract/fixtures.rs`: inserted
+  `("accept.request.json", 0x7c41_cf4c_5a0c_50a0)` and
+  `("accept.response.json", 0x9e9d_72b5_565a_783d)` before `artifact.request.json` (alphabetical
+  order), appended `("start.request.json", 0x26b7_1d95_5b02_3895)` and
+  `("start.response.json", 0x9f07_b1b7_473e_75a3)` after `refresh.response.json`, and changed the
+  `assert_eq!(paths.len(), 42, ...)` to `46`. No other line of B4's harness (its four `tests/`
+  modules) was touched — this is recorded here and in `III-B4.md` precisely so a later ownership
+  audit does not read this as a rule-2 violation.
+- Verification: `cargo test -p tack-orch --test runner_contract` — 18 passed, 0 failed (new
+  count/hashes accepted). `cargo test -p tack-orch --lib` — 104 passed, 0 failed (another agent
+  was concurrently editing `crates/tack-orch/src/execution/{capabilities,mod,types}.rs`; this
+  card read but did not touch those files, and the run was clean). `jq empty` on all four new
+  fixtures — valid. `cargo fmt -p tack-orch -- --check` — clean. `git diff --check` — clean.
+  `git status --porcelain` — only `crates/tack-orch/tests/runner_contract/fixtures.rs`,
+  `docs/contracts/runner-v1/README.md` (modified) and the four new fixture files (untracked)
+  belong to this card; every other modified/untracked path belongs to other cards' concurrent
+  work in the same shared checkout (C1/C2/C5 in `tack-api`, B1/B2 in `tack-db`/`tack-orch/src`,
+  their handoffs, and generated OpenAPI/schema output) and was left untouched.
+- Schema/API/contract change requested from another owner: none opened by this sync; it closes
+  III-C2's gap #5 follow-up request.
