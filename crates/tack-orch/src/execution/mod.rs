@@ -10,8 +10,8 @@ mod lifecycle;
 mod types;
 
 pub use capabilities::{
-    CapabilitySupport, CapabilityValue, Concurrency, FeatureCapabilities, HarnessCapability,
-    ModelCombination, RunnerCapabilities,
+    CapabilitySupport, CapabilityValue, Concurrency, EmbeddedCapabilitySnapshot,
+    FeatureCapabilities, HarnessCapability, ModelCombination, RunnerCapabilities,
 };
 pub use lifecycle::{LifecycleError, TransitionActor, validate_transition};
 pub use types::{
