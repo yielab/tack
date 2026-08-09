@@ -9,6 +9,7 @@ pub mod clock;
 pub mod config;
 pub mod error;
 pub mod filesystem;
+pub mod harness;
 pub mod process;
 pub mod registry;
 pub mod runtime;
