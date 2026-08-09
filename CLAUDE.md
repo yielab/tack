@@ -18,10 +18,13 @@ Tack is a lightweight, versatile project management tool built in Rust (backend)
 
 **Core Philosophy:** Universal work tracking with domain-specific vocabulary. The same underlying system adapts to different project types through configurable workflows and terminology.
 
-**Current Status:** Core complete; competitive/growth phases in progress (see `docs/book/src/roadmap.md`)
+**Current Status:** Core complete; the active cycle is the **Harness-Agnostic Runner Fleet**
+(Part III, Phases 50–57). Phases 50–53 are delivered; Phase 54 is next. `TODO.md`'s Part III
+board is the authority for wave status and accepted integration SHAs — `docs/book/src/roadmap.md`
+records the architectural intent, the board records what shipped.
 
-- Backend: complete (REST endpoints + WebSocket, 18 migrations, custom field value validation, Alexa voice integration)
-- Frontend: complete (Board, List, Table, Timeline, Sprints, Calendar, Settings views; teal multi-palette design system — Teal/Clay/Graphite × light/dark; 168 Vitest unit tests + Playwright E2E)
+- Backend: complete (REST endpoints + WebSocket, 61 migrations, custom field value validation, Alexa voice integration)
+- Frontend: complete (Board, List, Table, Timeline, Sprints, Calendar, Settings views; teal multi-palette design system — Teal/Clay/Graphite × light/dark; 482 Vitest unit tests + Playwright E2E)
 - CLI: complete (init, add, list, move, board, branch, search, sprint, template, role, comment, field, backup, restore, mcp)
 - AI agents: `tack mcp` — Model Context Protocol server over stdio (8 tools); see `docs/MCP.md`
 - Project types: 10 presets (software, web, mobile, construction, personal, homework, maintenance, legal, research, event, custom)
@@ -39,6 +42,9 @@ cargo run -p tack-cli -- serve
 
 # Run the CLI tool (same binary)
 cargo run --bin tack -- --help
+
+# Run the execution runner (a SEPARATE binary from `tack`)
+cargo run -p tack-runner -- --help
 
 # Release binary (slow compile — use sparingly)
 cargo build --release
@@ -60,6 +66,16 @@ cargo test test_workflow_transition_validation
 cargo test -p tack-core
 cargo test -p tack-db
 cargo test -p tack-api
+cargo test -p tack-orch
+cargo test -p tack-runner
+
+# Wave gates — these prove things no single card's tests do
+cargo test -p tack-api --test wave2_gate        # full runner lifecycle through the real router
+cargo test -p tack-orch --test runner_contract  # byte-pins every runner-v1 fixture
+
+# Opt-in live harness tests (ignored by default, skipped when the binary is absent).
+# Claude Code's is billed — run it deliberately.
+cargo test -p tack-runner -- --ignored
 
 # End-to-end (Playwright: cross-browser smoke + journeys + a11y + API contract)
 make e2e-install   # one-time: download browser engines
@@ -120,6 +136,20 @@ The API server loads configuration from `tack.toml` (if present) or environment 
 | `TACK_ORCH_EVENT_RETENTION_DAYS` | `90` | Days of `orch_events` (and, once ingested, `orch_metrics`) history kept before the retention sweep rolls old rows into per-day aggregates and deletes them |
 | `TACK_ORCH_APPROVAL_TOKEN` | _(none)_ | Separate shared secret required to grant/deny a docket approval via `POST /api/approvals/{token}` (Wave 4). Deliberately distinct from `TACK_API_TOKEN` — granting an approval is higher-privilege than editing a card. Never logged |
 
+The `tack-runner` binary is configured separately (defaults → `TOML` → environment → CLI flags,
+in that order):
+
+| Variable | Description |
+|----------|-------------|
+| `TACK_RUNNER_API_URL` | Tack API base URL the runner polls |
+| `TACK_RUNNER_ENROLLMENT_TOKEN` | One-time operator-issued token; exchanged for a durable credential and never persisted |
+| `TACK_RUNNER_ID` | Runner identity once enrolled |
+| `TACK_RUNNER_STATE_DIR` | Owner-only directory for the journal and credential |
+
+Runner credentials are redacted in every log, `Debug` impl and error — the redaction is
+structural (`RunnerCredential`'s `Debug`/`Display` are hardcoded to `[REDACTED]`), not
+convention.
+
 The `TACK_BACKUP_*` values are **defaults**. Cloud-backup settings (endpoint, bucket, region, access/secret key, prefix, retention) can also be edited at runtime from the UI (**Settings → Cloud Backup**) and are stored in the `app_meta` table; UI values override the env defaults. `TACK_BACKUP_INTERVAL_SECS` (automatic scheduling) remains env-only and takes effect at startup. The secret key is write-only over the API — never returned to clients.
 
 ### Debugging
@@ -143,7 +173,10 @@ crates/
 ├── tack-core/     Pure business logic (no I/O)
 ├── tack-db/       SQLite persistence layer
 ├── tack-orch/     Agent-fleet orchestration client (ControlPlane trait, reconciler)
+│                  + the neutral runner-v1 execution domain (execution/)
 ├── tack-api/      Axum HTTP server + WebSocket (library; pub fn serve)
+├── tack-runner/   Pull-based execution runner — its own binary; owns local
+│                  credentials, workspace, journal and the harness subprocess
 └── tack-cli/      The single `tack` binary — runs the server (tack serve) and the CLI client
 
 frontend/
@@ -187,7 +220,9 @@ docs/                Documentation
 - Every dollar-valued field is named `*_usd_estimated` — token counts are the primary, trustworthy measure; docket reports no real spend, so any cost figure downstream is a derived estimate. See `docs/book/src/developer/orchestration.md`
 
 **tack-api** (library — does not build its own binary):
-- Axum HTTP server with 76 REST endpoints + 1 WebSocket (100% complete; includes the 8 orchestration endpoints, gated behind `TACK_ORCH_ENABLE`)
+- Axum HTTP server with 84 documented paths + 1 WebSocket (includes the 8 orchestration endpoints gated behind `TACK_ORCH_ENABLE`, the operator execution/fleet surface, and the 13 `/api/runner/v1` runner-protocol paths)
+- **Two authentication surfaces, separated structurally.** Operator routes live under `/api` behind `require_token`. Runner routes are nested as a _sibling_ of `/api` on the outer router, so they never traverse the operator auth layer at all — deliberately not an exemption-list entry, which a later edit could quietly widen. Each runner handler authenticates its own hashed bearer credential via `handlers/runner_protocol/runner_auth.rs`.
+- `x-tack-principal` is **overwritten from server config** by `middleware::inject_operator_principal` and never read from the request. Operator idempotency is scoped by principal, so a trusted header would let one caller collide with another's requests.
 - Server entry point exposed as `tack_api::serve()` (in `server.rs`)
 - WebSocket support for real-time board updates
 - Request handlers in `handlers/` (per entity)
@@ -197,6 +232,15 @@ docs/                Documentation
 - File upload support: multipart/form-data (max 50MB)
 - Export functionality: JSON and CSV formats
 - `orch_store.rs`: wires `tack-orch`'s `ControlPlaneStore` trait to the real `Repository` + a `kind`-dispatched adapter constructor; spawns the reconciler from `server.rs` behind `config.orch_enable`
+
+**tack-runner** (the pull-based execution runner — its own binary, separate from `tack`):
+- Polls the Tack API's `/api/runner/v1` surface: enroll, refresh capabilities, claim, heartbeat, accept, start, stream events, poll decisions, submit artifacts, complete, and report cancellation/recovery observations
+- Owns everything the API must not: local vendor credentials, the isolated per-attempt workspace/worktree, the owner-only TOML journal written **before** spawn, and the harness subprocess itself
+- `harness/` holds the adapter layer — `process.rs` (bounded output capture, timeouts, process-group cancellation), `event_sink.rs` (backpressure), `redact.rs`, `artifact.rs`, and one module per harness: `codex.rs`, `claude_code.rs`, `opencode.rs`
+- Two traits: `client::engine::HarnessAdapter` (per-attempt lifecycle — `validate`/`start`/`cancel`/`wait`/`reconcile`) and `harness::HarnessProbe` (version/capability discovery, which needs no claimed attempt). `AdapterRegistry` implements `HarnessAdapter` by dispatching on the requested harness kind, so the engine takes exactly one adapter type
+- **Capabilities are honest or the adapter is rejected.** `AdapterRegistry::register_probe` refuses any probe claiming `Supported` cancellation, because every harness's shell tool spawns its subprocess in a new session outside the runner's process group — verified with `ps` against real `claude` and real `opencode`. Cancellation is `Advisory` everywhere; the scheduler must read the capability snapshot, never assume
+- Live harness tests are opt-in (`#[ignore]` + a PATH check) and never required in CI; the shared fake binary at `harness/fixtures/fake_harness.sh` is the always-runnable path, driven by `TACK_FAKE_HARNESS_MODE`
+- See `docs/agent-handoffs/part-iii/III-D{1,2,3,4,5}.md` for each adapter's observed-vs-assumed CLI contract
 
 **tack-cli** (the single `tack` binary):
 - `tack` with no subcommand (or `tack serve`) starts the server + web UI via `tack_api::serve()` — the primary, UI-first entry point
@@ -241,7 +285,9 @@ docs/                Documentation
 
 ### Database Schema Highlights
 
-- **18 migrations** tracked in `_migrations` table
+- **61 migrations** tracked in `_migrations` table (039–048 added the ten neutral execution tables; 049+ refine execution replay, recovery and attempt-start facts)
+- Migrations are transactional with ordered-prefix and checksum enforcement; 037/038 do a copy/verify/swap rebuild guarded by a `VACUUM INTO` snapshot
+- **`BEGIN IMMEDIATE` is mandatory for read-then-write transactions.** A deferred transaction that reads then writes deadlocks under concurrency — two callers both upgrade from reader to writer and SQLite returns `SQLITE_LOCKED`. Ten sites in `repo/execution.rs` hit this; each was stress-tested before and after the fix. Write-first methods are fine as-is and were deliberately left deferred. Note the shared in-memory test harness can _mask_ these races — prove any new concurrency test load-bearing against a file-backed DB by reverting the fix and watching it fail
 - **FTS5 virtual table** (`items_fts`) for full-text search across titles, descriptions, tags
 - **Triggers** maintain FTS index on INSERT/UPDATE/DELETE
 - **Foreign keys** enforce referential integrity (e.g., items → projects, items → sprints)
@@ -274,6 +320,8 @@ All routes follow RESTful conventions:
 - `/api/backup/remote` (POST/GET), `/api/backup/remote/restore` — Cloud (S3-compatible) backup, list, and staged restore (3 endpoints)
 - `/api/settings/backup` (GET/PUT) — Read/update the UI-editable cloud-backup config; secret key is write-only (returned as a `secret_key_set` boolean)
 - `/api/control-planes` (GET/POST), `/api/control-planes/{id}` (GET/PATCH/DELETE), `/api/projects/{id}/orch-link` (GET/PUT), `/api/fleet` (GET) — Agent-fleet orchestration (8 endpoints; all gated behind `TACK_ORCH_ENABLE`, 404 when unset). Control-plane token is write-only (`token_set` boolean). See `docs/book/src/developer/orchestration.md` and `docs/book/src/user-guide/orchestration.md`
+- `/api/executions`, `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles`, `/api/model-profiles` — **Operator** execution surface (create/list/get/cancel/requeue, fleet and profile management, runner enrollment and revocation). Under operator auth. Raw enrollment tokens are returned exactly once at issue time and only their SHA-256 hash is stored
+- `/api/runner/v1/*` — **Runner protocol**, 13 paths under a separate credential: `enroll`, `refresh`, `claim`, `heartbeat`, and per-attempt `accept`, `start`, `events`, `decisions`, `decisions/poll`, `artifacts`, `completion`, `cancellation-observation`, `recovery-observation`. Every attempt-scoped mutation validates runner identity + attempt id + current fencing token; a stale fence returns the stable `stale_lease` error and writes nothing
 
 Query parameters support filtering, pagination, and search.
 
@@ -380,10 +428,48 @@ Items can only be assigned to active or planning sprints (enforced in handlers).
   talks to the API directly; the browser exercises the SPA via the proxy.
 - **Security**: `cargo audit` + `npm audit` in CI; justified advisory exceptions
   in `.cargo/audit.toml`. **Performance**: k6 baseline in `tests/load/`.
+- **Wave gates** in `crates/tack-api/tests/wave2_gate.rs` — deliberately import no test
+  infrastructure from any card and drive the real `build_router`, because a card's own
+  green tests are not evidence that the integrated system works.
+
+**A test that asserts a status code has usually not proved the claim.** The recurring failure
+in this codebase has been tests that pass while proving something weaker than their name says:
+a 413 asserted without checking the DB was unwritten; a concurrency test that caught `Err(_)`
+and retried sequentially, so it silently stopped being concurrent; a capability reported
+`Supported` with no implementation behind it. When adding a test for a "writes nothing" or
+"rejects before X" claim, assert the absence directly — row counts, an untouched checkpoint,
+empty bookkeeping — and prove the test is load-bearing by reverting the fix and watching it
+fail.
 
 Use `assert_matches!` macro for enum matching in tests. When changing an API
 response shape, update both the Rust handler and the matching mock in the
 frontend unit/E2E tests (e.g. the `GET /items/{id}` detail envelope).
+
+## Working on Part III (the active runner-fleet cycle)
+
+`TODO.md` carries the full board, the 14 working rules and per-card ownership. The ones that
+bite hardest in practice:
+
+- **`docs/contracts/runner-v1/` is the authority**, not any Rust/TypeScript type. 46 frozen
+  JSON fixtures, byte-pinned by `crates/tack-orch/tests/runner_contract.rs`. Hand-written
+  DTOs are never a second authority — if a fixture and the code disagree, say so rather than
+  bending either side. Adding or editing a fixture requires updating that pin table in the
+  same change.
+- **Shared files have one owner per wave**: `migrations.rs`, `router.rs`, `openapi.rs`,
+  the generated schema, root `Cargo.toml`, the CI workflow, and the contract directory. If a
+  change needs one of those and it isn't yours, record the request rather than making it.
+- **`docs/openapi.json` and `frontend/src/shared/api/schema.gen.ts` are generated.** Never
+  hand-edit. Regenerate with `UPDATE_OPENAPI=1 cargo test -p tack-api --test openapi_contract`
+  then `cd frontend && npm run gen:api`. CI gates on the diff.
+- **Unsupported is typed, unknown is explicit, unmeasured is nullable.** No
+  `unimplemented!()`, no structural zero standing in for "unknown", no capability reporting
+  `false` where the truth is "not verified". A capability claim is load-bearing — the
+  scheduler will act on it.
+- **Logs carry ids only** — never credentials, prompt bodies, query strings or whole
+  environment values, and tests assert the redaction.
+- **Each card writes one handoff** in `docs/agent-handoffs/part-iii/`. Corrections are
+  appended as amendments with the original claim left standing, never rewritten — the
+  history of what was believed and later falsified is the point.
 
 ## Common Patterns When Adding Features
 
