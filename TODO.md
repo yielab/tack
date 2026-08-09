@@ -9103,8 +9103,8 @@ acceptance gate that can be verified without trusting its author's handoff.
 |---|---|---|---|
 | 0 — Clean boundary and safety | III-A0 · A1 · A2 · A3 · A4 | 50 | complete — accepted integration SHA `f042085`; full Rust/frontend/docs/contracts and all three Playwright projects green |
 | 1 — Domain, schema and runner skeleton | III-B1 · B2 · B3 · B4 | 51, 52 | complete — accepted integration SHA `f14019b`; domain/schema/runner/contracts and legacy golden gate green |
-| 2 — Pull protocol vertical slice | III-C1 · C2 · C3 · C4 · C5 | 52 | in progress — C1-C4 branch from accepted Wave 1 SHA `f14019b`; C5 waits for their integration |
-| 3 — Real harness proof | III-D1 · D2 · D3 · D4 · D5 | 53 | blocked on mock vertical slice |
+| 2 — Pull protocol vertical slice | III-C1 · C2 · C3 · C4 · C5 | 52 | complete — accepted integration SHA `f931fc0`; 913 workspace tests, clippy `-D warnings`, fmt, OpenAPI drift and frontend gates green. Integration gate proven end-to-end through the mounted production router (`crates/tack-api/tests/wave2_gate.rs`, 10/10 stability loop) |
+| 3 — Real harness proof | III-D1 · D2 · D3 · D4 · D5 | 53 | ready — branch from accepted Wave 2 SHA `f931fc0`. Read the Wave 2 carry-forward below before starting |
 | 4 — Fleet scheduling and PM UX | III-E1 · E2 · E3 · E4 · E5 · E6 | 54 | blocked on two proven harnesses |
 | 5 — Decisions, artifacts, models and usage | III-F1 · F2 · F3 · F4 · F5 | 55, 56 | blocked on Wave 4 shared state/API |
 | 6 — Legacy bridge and release | III-G1 · G2 · G3 · G4 · G5 | 57 | blocked on all product gates |
@@ -9580,6 +9580,32 @@ field; generated types match fixtures; production router completes the mock vert
 A mock runner enrolled on a clean database can claim, start, stream, complete and survive
 API/runner restart. Security, fencing, payload and OpenAPI drift gates pass. No real harness
 card starts earlier.
+
+**Passed** at integration SHA `f931fc0`. Proven by `crates/tack-api/tests/wave2_gate.rs`, which
+drives the real `build_router` against a from-scratch database and asserts persisted SQL state
+at every step, importing no test infrastructure from any card. Handoff:
+`docs/agent-handoffs/part-iii/III-wave2-gate.md`.
+
+### Wave 2 carry-forward — read before starting Wave 3
+
+Open items Wave 2 deliberately did not close. None block Wave 3, but each has an owner.
+
+1. **Accept/start have no B2-side idempotency fingerprint.** C2 compensates in the handler.
+   If a D-card observes a real runner retrying these, escalate to B2 rather than widening the
+   handler workaround.
+2. **Decision resolution has no endpoint.** C2's acceptance bullet "a runner cannot resolve
+   decisions" is currently vacuously true — nothing can. Wave 5 (F-cards) owns the real surface;
+   do not let a D-card invent one.
+3. **`logs_never_contain_raw_credentials_only_ids` (C2) is flaky (~1/10) under parallel test
+   execution** — a `tracing::subscriber::set_default` thread-local racing `tracing`'s global
+   callsite-interest cache. Stable under `RUST_TEST_THREADS=1`. The assertion is sound; the
+   harness is not. C2 owns the fix.
+4. **The shared in-memory SQLite test harness can mask write-write races.** B2 found the
+   decision/artifact race only after switching to a file-backed database. Any new concurrency
+   test in `tack-db` should use a file-backed DB and be proven load-bearing by reverting the fix.
+5. **`orch.rs` retention-sweep rollups (~lines 1529, 1646) carry the same deferred-transaction
+   read-then-write shape** B2 fixed across `execution.rs`. Inspection only, never stress-tested,
+   and frozen until card G1 — do not fix opportunistically.
 
 ---
 
