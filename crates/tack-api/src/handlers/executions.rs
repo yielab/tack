@@ -18,7 +18,7 @@ use tack_db::{
     Repository,
     repo::execution::{EnqueueResult, ExecutionClock, NewExecutionRequest, OperatorRequeueResult},
 };
-use tack_orch::execution::ExecutionRequestSnapshot;
+use tack_orch::execution::{ExecutionRequestSnapshot, ProtocolErrorEnvelope, StableErrorCode};
 use uuid::Uuid;
 
 /// State for C1's card-local router. C5 can construct this from the shared API
@@ -41,12 +41,21 @@ type HandlerResult = Result<Json<Value>, (StatusCode, Json<Value>)>;
 /// mounts these card-local routes in the global API router.
 const OPERATOR_REQUEST_ID: &str = "req_operator";
 
-fn error(status: StatusCode, code: &str, message: &str) -> (StatusCode, Json<Value>) {
+/// Builds the stable v1 error envelope via B1's `ProtocolErrorEnvelope::new`,
+/// which derives `retryable` from `code` (`StableErrorCode::retryable`) so it
+/// can never drift from `docs/contracts/runner-v1/errors/*.json`. `details`
+/// must follow the per-code shape documented in
+/// `docs/contracts/runner-v1/README.md`.
+fn error(
+    status: StatusCode,
+    code: StableErrorCode,
+    message: &str,
+    details: Value,
+) -> (StatusCode, Json<Value>) {
+    let envelope = ProtocolErrorEnvelope::new(code, message, OPERATOR_REQUEST_ID, details);
     (
         status,
-        Json(
-            json!({"error":{"code":code,"message":message,"request_id":OPERATOR_REQUEST_ID,"retryable":false,"details":{}}}),
-        ),
+        Json(serde_json::to_value(envelope).expect("envelope serializes")),
     )
 }
 
@@ -68,8 +77,9 @@ fn principal(headers: &HeaderMap) -> Result<String, (StatusCode, Json<Value>)> {
         .ok_or_else(|| {
             error(
                 StatusCode::UNAUTHORIZED,
-                "unauthorized",
+                StableErrorCode::Unauthorized,
                 "An authenticated operator principal is required",
+                json!({}),
             )
         })
 }
@@ -87,12 +97,16 @@ fn canonical_json(value: Value) -> Value {
     }
 }
 
-fn canonical_string(value: Value) -> Result<String, (StatusCode, Json<Value>)> {
+/// `field` names the request field being canonicalized, so a failure carries
+/// `invalid_request`'s contract-shaped `{"field": ...}` detail rather than an
+/// empty object.
+fn canonical_string(value: Value, field: &str) -> Result<String, (StatusCode, Json<Value>)> {
     serde_json::to_string(&canonical_json(value)).map_err(|_| {
         error(
             StatusCode::BAD_REQUEST,
-            "invalid_request",
+            StableErrorCode::InvalidRequest,
             "Request cannot be canonicalized",
+            json!({"field": field}),
         )
     })
 }
@@ -161,16 +175,18 @@ pub async fn create_execution(
         .map_err(|_| {
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "internal_error",
+                StableErrorCode::InternalError,
                 "Could not verify item",
+                json!({}),
             )
         })?
         .is_none()
     {
         return Err(error(
             StatusCode::NOT_FOUND,
-            "not_found",
+            StableErrorCode::NotFound,
             "Item does not exist",
+            json!({"resource": "item"}),
         ));
     }
     let existing_snapshot: Option<String> = sqlx::query_scalar(
@@ -180,42 +196,67 @@ pub async fn create_execution(
     .bind(&input.idempotency_key)
     .fetch_optional(state.repo.pool())
     .await
-    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", "Could not load idempotency replay"))?;
+    .map_err(|_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not load idempotency replay",
+            json!({}),
+        )
+    })?;
     // An exact retry must be allowed to reach B2's durable replay record even
     // if a mutable runner status changed after the original create.
     if existing_snapshot.is_none() && input.selector_kind == "exact_runner" {
         let eligible: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agent_runners WHERE id = ? AND state = 'active' AND revoked_at IS NULL)")
             .bind(&input.selector_id).fetch_one(state.repo.pool()).await
-            .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", "Could not verify runner"))?;
+            .map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not verify runner",
+                    json!({}),
+                )
+            })?;
         if !eligible {
             return Err(error(
                 StatusCode::CONFLICT,
-                "runner_revoked",
+                StableErrorCode::RunnerRevoked,
                 "The selected runner is unavailable or revoked",
+                json!({"runner_id": input.selector_id}),
             ));
         }
     }
     if !matches!(input.selector_kind.as_str(), "exact_runner" | "fleet") {
         return Err(error(
             StatusCode::BAD_REQUEST,
-            "invalid_request",
+            StableErrorCode::InvalidRequest,
             "selector_kind must be exact_runner or fleet",
+            json!({"field": "selector_kind"}),
         ));
     }
     let (request_id, created_at) = match existing_snapshot {
         Some(snapshot) => {
+            // A stored replay row that fails to parse means the *persisted*
+            // snapshot is corrupt, not that the caller's idempotency key
+            // collided with a different payload — that distinct, genuinely
+            // client-caused case is detected below via
+            // `EnqueueResult::Conflict`. An unreadable row we ourselves wrote
+            // is a server-side fault, so it is `internal_error`, not
+            // `idempotency_conflict`.
             let value: Value = serde_json::from_str(&snapshot).map_err(|_| {
                 error(
-                    StatusCode::CONFLICT,
-                    "idempotency_conflict",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
                     "Stored request snapshot is invalid",
+                    json!({}),
                 )
             })?;
             let object = value.as_object().ok_or_else(|| {
                 error(
-                    StatusCode::CONFLICT,
-                    "idempotency_conflict",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
                     "Stored request snapshot is invalid",
+                    json!({}),
                 )
             })?;
             let request_id = object
@@ -223,9 +264,10 @@ pub async fn create_execution(
                 .and_then(Value::as_str)
                 .ok_or_else(|| {
                     error(
-                        StatusCode::CONFLICT,
-                        "idempotency_conflict",
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        StableErrorCode::InternalError,
                         "Stored request snapshot is invalid",
+                        json!({}),
                     )
                 })?;
             let created_at = object
@@ -233,18 +275,20 @@ pub async fn create_execution(
                 .and_then(Value::as_str)
                 .ok_or_else(|| {
                     error(
-                        StatusCode::CONFLICT,
-                        "idempotency_conflict",
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        StableErrorCode::InternalError,
                         "Stored request snapshot is invalid",
+                        json!({}),
                     )
                 })?;
             let created_at = DateTime::parse_from_rfc3339(created_at)
                 .map(|time| time.with_timezone(&Utc))
                 .map_err(|_| {
                     error(
-                        StatusCode::CONFLICT,
-                        "idempotency_conflict",
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        StableErrorCode::InternalError,
                         "Stored request snapshot is invalid",
+                        json!({}),
                     )
                 })?;
             (request_id.to_owned(), created_at)
@@ -281,41 +325,48 @@ pub async fn create_execution(
         "metadata": input.metadata,
     });
     let typed_snapshot: ExecutionRequestSnapshot =
-        serde_json::from_value(snapshot_value).map_err(|_| {
+        serde_json::from_value(snapshot_value).map_err(|err| {
             error(
                 StatusCode::BAD_REQUEST,
-                "invalid_request",
+                StableErrorCode::InvalidRequest,
                 "Execution request snapshot is incomplete or invalid",
+                json!({"field": err.to_string()}),
             )
         })?;
     let snapshot_value = serde_json::to_value(typed_snapshot).map_err(|_| {
         error(
             StatusCode::BAD_REQUEST,
-            "invalid_request",
+            StableErrorCode::InvalidRequest,
             "Execution request snapshot is invalid",
+            json!({"field": "execution_request_snapshot"}),
         )
     })?;
-    let request_snapshot = canonical_string(snapshot_value.clone())?;
+    let request_snapshot = canonical_string(snapshot_value.clone(), "request_snapshot")?;
     let request_fingerprint = fingerprint(&request_snapshot);
     let root = snapshot_value.as_object().ok_or_else(|| {
         error(
             StatusCode::BAD_REQUEST,
-            "invalid_request",
+            StableErrorCode::InvalidRequest,
             "Execution request snapshot is invalid",
+            json!({"field": "execution_request_snapshot"}),
         )
     })?;
-    let serialized_field = |name: &str| canonical_string(root[name].clone());
-    let agent_profile_snapshot = serialized_field("resolved_agent_profile")?;
-    let repository_snapshot = serialized_field("repository")?;
-    let permission_policy = serialized_field("permission_policy")?;
-    let budgets = serialized_field("budgets")?;
-    let environment = serialized_field("environment")?;
-    let metadata = serialized_field("metadata")?;
+    let serialized_field = |snapshot_field: &str, public_field: &str| {
+        canonical_string(root[snapshot_field].clone(), public_field)
+    };
+    let agent_profile_snapshot =
+        serialized_field("resolved_agent_profile", "agent_profile_snapshot")?;
+    let repository_snapshot = serialized_field("repository", "repository_snapshot")?;
+    let permission_policy = serialized_field("permission_policy", "permission_policy")?;
+    let budgets = serialized_field("budgets", "budgets")?;
+    let environment = serialized_field("environment", "environment")?;
+    let metadata = serialized_field("metadata", "metadata")?;
     let timeout_seconds = i64::try_from(input.timeout_seconds).map_err(|_| {
         error(
             StatusCode::BAD_REQUEST,
-            "invalid_request",
+            StableErrorCode::InvalidRequest,
             "timeout_seconds is out of range",
+            json!({"field": "timeout_seconds"}),
         )
     })?;
     let request_clock = FixedExecutionClock(created_at);
@@ -350,8 +401,9 @@ pub async fn create_execution(
         .map_err(|_| {
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "internal_error",
+                StableErrorCode::InternalError,
                 "Could not enqueue execution",
+                json!({}),
             )
         })?;
     match result {
@@ -363,15 +415,23 @@ pub async fn create_execution(
         )),
         EnqueueResult::Conflict => Err(error(
             StatusCode::CONFLICT,
-            "idempotency_conflict",
+            StableErrorCode::IdempotencyConflict,
             "The idempotency key was used with a different request",
+            json!({"idempotency_key": input.idempotency_key}),
         )),
     }
 }
 
 pub async fn list_executions(State(state): State<OperatorExecutionState>) -> HandlerResult {
     let rows = sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at FROM execution_requests ORDER BY created_at DESC")
-        .fetch_all(state.repo.pool()).await.map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", "Could not list executions"))?;
+        .fetch_all(state.repo.pool()).await.map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not list executions",
+                json!({}),
+            )
+        })?;
     let data: Vec<Value> = rows.into_iter().map(|row| json!({"request_id":row.get::<String,_>("id"),"item_id":row.get::<String,_>("item_id"),"state":row.get::<String,_>("state"),"cancellation_requested_at":row.get::<Option<String>,_>("cancellation_requested_at"),"created_at":row.get::<String,_>("created_at")})).collect();
     Ok(Json(json!({"protocol_version":1,"data":data})))
 }
@@ -381,12 +441,20 @@ pub async fn get_execution(
     Path(request_id): Path<String>,
 ) -> HandlerResult {
     let row = sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at FROM execution_requests WHERE id = ?")
-        .bind(&request_id).fetch_optional(state.repo.pool()).await.map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", "Could not load execution"))?;
+        .bind(&request_id).fetch_optional(state.repo.pool()).await.map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not load execution",
+                json!({}),
+            )
+        })?;
     let Some(row) = row else {
         return Err(error(
             StatusCode::NOT_FOUND,
-            "not_found",
+            StableErrorCode::NotFound,
             "Execution request does not exist",
+            json!({"resource": "execution_request"}),
         ));
     };
     Ok(Json(
@@ -405,16 +473,44 @@ pub async fn request_cancellation(
         .map_err(|_| {
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "internal_error",
+                StableErrorCode::InternalError,
                 "Could not request cancellation",
+                json!({}),
             )
         })?;
     if !changed {
-        return Err(error(
-            StatusCode::NOT_FOUND,
-            "not_found",
-            "Execution is missing or already terminal",
-        ));
+        // `request_execution_cancellation` returns false both when the
+        // request id is unknown and when it exists but already reached a
+        // terminal state; disambiguate so the client gets `not_found` only
+        // for the former and a genuine, contract-shaped `conflict` for the
+        // latter instead of a misleading `not_found`.
+        let existing_state: Option<String> =
+            sqlx::query_scalar("SELECT state FROM execution_requests WHERE id = ?")
+                .bind(&request_id)
+                .fetch_optional(state.repo.pool())
+                .await
+                .map_err(|_| {
+                    error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        StableErrorCode::InternalError,
+                        "Could not verify execution state",
+                        json!({}),
+                    )
+                })?;
+        return Err(match existing_state {
+            None => error(
+                StatusCode::NOT_FOUND,
+                StableErrorCode::NotFound,
+                "Execution request does not exist",
+                json!({"resource": "execution_request"}),
+            ),
+            Some(_) => error(
+                StatusCode::CONFLICT,
+                StableErrorCode::Conflict,
+                "Execution already reached a terminal state before cancellation could apply",
+                json!({}),
+            ),
+        });
     }
     Ok(Json(
         json!({"protocol_version":1,"request_id":request_id,"state":"cancellation_requested"}),
@@ -447,8 +543,9 @@ pub async fn requeue_needs_operator(
         .map_err(|_| {
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "internal_error",
+                StableErrorCode::InternalError,
                 "Could not requeue execution",
+                json!({}),
             )
         })?;
     match result {
@@ -457,13 +554,30 @@ pub async fn requeue_needs_operator(
         )),
         OperatorRequeueResult::Conflict => Err(error(
             StatusCode::CONFLICT,
-            "idempotency_conflict",
+            StableErrorCode::IdempotencyConflict,
             "The recovery key was used with a different confirmation",
+            json!({"idempotency_key": input.recovery_key}),
         )),
-        OperatorRequeueResult::InvalidTransition | OperatorRequeueResult::NotFound => Err(error(
-            StatusCode::CONFLICT,
-            "invalid_transition",
-            "Only authoritatively recovered needs_operator attempts may be requeued",
-        )),
+        OperatorRequeueResult::InvalidTransition | OperatorRequeueResult::NotFound => {
+            // The repo layer reports only that the requeue is disallowed, not
+            // which attempt state blocked it. Look up the latest attempt's
+            // state so `details` carries `invalid_transition`'s
+            // contract-shaped `{"from":..., "to":...}` pair instead of `{}`.
+            let from_state: String = sqlx::query_scalar(
+                "SELECT state FROM execution_attempts WHERE request_id = ? ORDER BY attempt_number DESC LIMIT 1",
+            )
+            .bind(&request_id)
+            .fetch_optional(state.repo.pool())
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "unknown".to_string());
+            Err(error(
+                StatusCode::CONFLICT,
+                StableErrorCode::InvalidTransition,
+                "Only authoritatively recovered needs_operator attempts may be requeued",
+                json!({"from": from_state, "to": "queued"}),
+            ))
+        }
     }
 }
