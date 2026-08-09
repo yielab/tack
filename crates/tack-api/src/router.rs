@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::DefaultBodyLimit;
@@ -12,17 +13,18 @@ use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
 use tack_db::Repository;
+use tack_db::repo::execution::{ExecutionClock, SystemExecutionClock};
 
 use crate::config::AppConfig;
 use crate::debug;
 #[cfg(feature = "embed-spa")]
 use crate::handlers::spa;
 use crate::handlers::{
-    alexa, attachments, backup, boards_multi, comments, custom_fields, dependencies, export,
-    import_github, import_linear, items, orch, projects, provisioning, roles, settings, sprints,
-    templates, websocket,
+    alexa, attachments, backup, boards_multi, comments, custom_fields, dependencies, executions,
+    export, import_github, import_linear, items, orch, projects, provisioning, roles, runner_admin,
+    runner_protocol, settings, sprints, templates, websocket,
 };
-use crate::middleware::require_token;
+use crate::middleware::{inject_operator_principal, require_token};
 use crate::orch_runtime::OrchRuntime;
 use crate::webhook::WebhookClient;
 
@@ -131,6 +133,80 @@ fn orch_routes(state: AppState) -> Router<AppState> {
             state,
             orch::require_orch_enabled,
         ))
+}
+
+/// Card C1's operator execution/fleet routes — `/api/executions`,
+/// `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles`,
+/// `/api/model-profiles` (`crate::handlers::executions`,
+/// `crate::handlers::runner_admin`). Both card-local routers already call
+/// `with_state` internally (per their own `pub fn routes(state) -> Router`
+/// signature), producing a fully-resolved `Router<()>`; this re-labels that
+/// "no state missing" router's phantom type parameter to `AppState` via a
+/// second `with_state` call — the officially documented pattern for merging
+/// routers whose state types differ (see `axum::Router::merge`'s own doc
+/// example) — so it can be flat-`merge`d into `api` below at the same level
+/// as every other `/api/*` route, rather than nested under an extra path
+/// segment neither card chose.
+///
+/// Merged into `api` *before* `require_token` is layered on, so these
+/// routes share the same operator authentication as the rest of `/api/*`
+/// (`operator_session_or_api_token` per
+/// `docs/contracts/runner-v1/protocol.json`) — never the runner router's
+/// distinct bearer-credential check. `inject_operator_principal` (card C5,
+/// `middleware.rs`) is layered directly on this sub-router so it runs for
+/// every request these handlers see, strips any client-supplied
+/// `x-tack-principal`, and replaces it with a value derived from the
+/// request's own authenticated context — C1's handlers trust that header
+/// completely for idempotency/audit scoping, so an external caller must
+/// never be able to set it.
+fn operator_execution_routes(state: &AppState) -> Router<AppState> {
+    let clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
+    let operator_state = executions::OperatorExecutionState::with_clock(state.repo.clone(), clock);
+    executions::routes(operator_state.clone())
+        .merge(runner_admin::routes(operator_state))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            inject_operator_principal,
+        ))
+        .with_state::<AppState>(())
+}
+
+/// Card C2's runner-protocol v1 router
+/// (`crate::handlers::runner_protocol`), mounted at
+/// `docs/contracts/runner-v1/protocol.json`'s `base_path`
+/// (`/api/runner/v1`). Nested as its own top-level branch in `build_router`
+/// — a sibling of the `/api` nest, not a sub-path merged into it — so it
+/// sits structurally **outside** the `require_token` layer applied to
+/// `api`. That is the whole security property this function exists to
+/// preserve: an operator Bearer token can never reach these routes, and a
+/// runner credential can never reach the operator routes above, because the
+/// two route families do not share a single gate that either could satisfy
+/// — every runner-protocol write authenticates independently, per request,
+/// against a hashed runner bearer credential
+/// (`runner_protocol::runner_auth::authenticate`), matching
+/// `protocol.json`'s `credentials_are_not_substitutable: true`. It still
+/// inherits every layer applied to `outer` in `build_router` (CORS,
+/// security headers, tracing) — only the operator-token check is skipped.
+///
+/// The global body limit is a partial exception, corrected by an
+/// integrator-authorized cross-card amendment (see
+/// `docs/agent-handoffs/part-iii/III-C2.md` and `III-C5.md`): this router
+/// carries its own, more-specific `DefaultBodyLimit` layer (a fixed 4 MiB
+/// protocol ceiling), and axum always applies whichever `DefaultBodyLimit`
+/// is closest to the handler — so the plain global layer on `outer` alone
+/// would never actually bind here. `state.config.max_body_size_bytes` is
+/// threaded into `runner_protocol::routes` so its own layer enforces
+/// `min(configured, 4 MiB)` instead: an operator who tightens the global
+/// limit below 4 MiB gets a genuinely smaller runner-v1 surface, while a
+/// loose or unset global limit can never widen it past the protocol
+/// ceiling. Re-labelled to `Router<AppState>` via the same `with_state`
+/// trick as `operator_execution_routes`, so it can be `nest`ed alongside
+/// `api` without an extra `Service`-erasure layer.
+fn runner_protocol_routes(state: &AppState) -> Router<AppState> {
+    let clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
+    let runner_state = runner_protocol::RunnerProtocolState::new(state.repo.clone(), clock);
+    runner_protocol::routes(runner_state, state.config.max_body_size_bytes)
+        .with_state::<AppState>(())
 }
 
 /// Build the full Axum router with all routes, middleware, and state.
@@ -352,10 +428,24 @@ pub fn build_router(state: AppState) -> Router {
         // with `error.code: "orchestration_disabled"` for every route here
         // while orchestration is off (TODO.md §0 rule 8, card E1).
         .merge(orch_routes(state.clone()))
+        // ─── Operator execution/fleet API (Part III, card C1; wired here
+        // by card C5) — `/executions`, `/runner-fleets`, `/runners/*`,
+        // `/agent-profiles`, `/model-profiles`. Same operator auth as
+        // everything else in this router: merged in *before*
+        // `require_token` below. See `operator_execution_routes`'s doc
+        // comment for why this is a `merge`, not a `nest`. ───────────────
+        .merge(operator_execution_routes(&state))
         // ─── Auth token gate ──────────────────────────────────────
         .layer(middleware::from_fn_with_state(state.clone(), require_token));
 
-    let outer = Router::new().nest("/api", api);
+    let outer = Router::new()
+        .nest("/api", api)
+        // ─── Runner protocol v1 (Part III, card C2; wired here by card
+        // C5) — deliberately a *sibling* nest, not merged into `api`
+        // above, so it never passes through that router's
+        // `require_token` layer. See `runner_protocol_routes`'s doc
+        // comment. ──────────────────────────────────────────────────────
+        .nest("/api/runner/v1", runner_protocol_routes(&state));
 
     #[cfg(feature = "embed-spa")]
     let outer = outer.fallback(spa::serve_spa);
