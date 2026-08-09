@@ -73,6 +73,13 @@ impl ExecutionClock for FakeClock {
 // ---------------------------------------------------------------------
 
 async fn setup() -> (Router, Repository, FakeClock, String) {
+    // Must run before anything else in every test (see
+    // `ensure_global_log_capture_installed`'s doc comment, test group 8,
+    // below): it closes the race window between this file's tests by making
+    // sure no test's HTTP request can reach production handler code before
+    // the one global `tracing` subscriber this binary ever installs is in
+    // place.
+    ensure_global_log_capture_installed();
     let pool = init_pool("sqlite::memory:").await.expect("pool");
     migrations::run_all(&pool).await.expect("migrations");
     let repo = Repository::new(pool);
@@ -1142,14 +1149,83 @@ async fn recovery_observation_safe_requeue_requeues_the_request_and_replays_idem
 
 // ---------------------------------------------------------------------
 // 8. Logs carry ids only.
+//
+// This is the only test in the file that captures `tracing` output, and it
+// deliberately does *not* use a bare `tracing::subscriber::set_default`
+// thread-local override. That was tried first and is flaky under cargo's
+// default parallel execution (~1 in 10; see
+// docs/agent-handoffs/part-iii/III-C2.md for the measured before/after):
+// `tracing`'s callsite-interest cache is process-global, not per-subscriber.
+// The *first* time any thread in this binary hits a given `event!` callsite
+// (e.g. the `tracing::info!(runner_id = ..., "runner enrolled")` in
+// `runner_protocol::enroll`, which every other test that calls `POST
+// /enroll` also hits), the `Interest` returned by whatever subscriber is
+// active *on that thread at that exact moment* is cached forever for that
+// callsite — a thread-local override active on a *different* thread is never
+// consulted. Every other test in this file installs no subscriber at all, so
+// if one of them is the first to touch that callsite (a near coin-flip under
+// parallel execution), the interest gets cached as `never` against the
+// ambient no-op dispatcher, and this test's own `set_default` guard can no
+// longer make that callsite fire for it — the capture buffer stays silently
+// empty.
+//
+// The fix: install a single, permanent, process-global default subscriber
+// (`ensure_global_log_capture_installed`, called from `setup()`, so every
+// test in this file — including this one — is guaranteed to run it before
+// its first HTTP request). Once a global default exists, `tracing` never
+// falls back to the no-op dispatcher again on *any* thread, so no sibling
+// test can poison a callsite's cached interest; every first-touch, from any
+// thread, resolves against this real subscriber. Per-test isolation is then
+// just a thread-local flag (`LOG_CAPTURE`) the global writer consults to
+// decide whether to keep what it's given — safe here specifically because
+// every `#[tokio::test]` in this file runs its whole async body on one
+// dedicated OS thread (default current-thread runtime flavor), so the flag
+// never needs to survive a cross-thread hop mid-`.await`. The subscriber
+// itself is still real `tracing_subscriber::fmt` formatting real output from
+// the production handlers — nothing here is mocked or hand-constructed.
 // ---------------------------------------------------------------------
 
-#[derive(Clone, Default)]
-struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
+thread_local! {
+    /// Set only by `CaptureGuard::start`, and only on the calling test's own
+    /// thread. `None` on every other thread in the binary (i.e. for the
+    /// other twelve tests here), so the shared global writer below silently
+    /// discards everything it's given for them.
+    static LOG_CAPTURE: std::cell::RefCell<Option<Arc<Mutex<Vec<u8>>>>> =
+        const { std::cell::RefCell::new(None) };
+}
 
-impl std::io::Write for CapturedLogs {
+static GLOBAL_LOG_CAPTURE_INIT: std::sync::Once = std::sync::Once::new();
+
+/// Installs the one `tracing` subscriber this test binary ever installs, as
+/// the process-wide global default — exactly once, idempotently. See the
+/// comment on test group 8 above for why a global default (rather than a
+/// thread-local `set_default`) is what actually closes the race, not just
+/// narrows it.
+fn ensure_global_log_capture_installed() {
+    GLOBAL_LOG_CAPTURE_INIT.call_once(|| {
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(GlobalLogWriter)
+            .with_max_level(tracing::Level::DEBUG)
+            .finish();
+        tracing::subscriber::set_global_default(subscriber).expect(
+            "GLOBAL_LOG_CAPTURE_INIT guards the only global tracing subscriber \
+             this binary ever installs",
+        );
+    });
+}
+
+/// Zero-sized `MakeWriter` for the global subscriber. Every event it's given
+/// is routed through the calling thread's `LOG_CAPTURE` slot, so writes from
+/// the eleven tests that never call `CaptureGuard::start` go nowhere.
+struct GlobalLogWriter;
+
+impl std::io::Write for GlobalLogWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+        LOG_CAPTURE.with(|cell| {
+            if let Some(buffer) = cell.borrow().as_ref() {
+                buffer.lock().unwrap().extend_from_slice(buf);
+            }
+        });
         Ok(buf.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {
@@ -1157,10 +1233,29 @@ impl std::io::Write for CapturedLogs {
     }
 }
 
-impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CapturedLogs {
-    type Writer = CapturedLogs;
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for GlobalLogWriter {
+    type Writer = GlobalLogWriter;
     fn make_writer(&'a self) -> Self::Writer {
-        self.clone()
+        GlobalLogWriter
+    }
+}
+
+/// RAII scope: while alive, real `tracing` output from this thread is
+/// collected into the returned buffer instead of being discarded.
+struct CaptureGuard;
+
+impl CaptureGuard {
+    fn start() -> (Self, Arc<Mutex<Vec<u8>>>) {
+        ensure_global_log_capture_installed();
+        let buffer = Arc::new(Mutex::new(Vec::new()));
+        LOG_CAPTURE.with(|cell| *cell.borrow_mut() = Some(buffer.clone()));
+        (Self, buffer)
+    }
+}
+
+impl Drop for CaptureGuard {
+    fn drop(&mut self) {
+        LOG_CAPTURE.with(|cell| *cell.borrow_mut() = None);
     }
 }
 
@@ -1191,12 +1286,7 @@ async fn logs_never_contain_raw_credentials_only_ids() {
     .await
     .expect("pending runner");
 
-    let captured = CapturedLogs::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_writer(captured.clone())
-        .with_max_level(tracing::Level::DEBUG)
-        .finish();
-    let guard = tracing::subscriber::set_default(subscriber);
+    let (guard, captured) = CaptureGuard::start();
 
     let (status, enrolled) = send(
         &app,
@@ -1222,7 +1312,7 @@ async fn logs_never_contain_raw_credentials_only_ids() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
     drop(guard);
-    let log_text = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+    let log_text = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
     assert!(
         log_text.contains(&issued_runner_id),
         "runner_id should be logged for observability: {log_text}"

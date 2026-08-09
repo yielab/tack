@@ -650,3 +650,134 @@ cost) and the `available <= total` business rule.
 
 - Checklist: no unowned files beyond the integrator-authorized, explicitly recorded exception
   (`crates/tack-api/src/router.rs`, one call site); no live secret; no panic stub; no blind retry.
+
+## Amendment: fix the `logs_never_contain_raw_credentials_only_ids` flake noted (not fixed) above
+
+- Base SHA / branch / final SHA: HEAD `ea7b764` ("docs: accept Wave 2 at f931fc0") on
+  `plan/harness-agnostic-agent-fleet`, working tree clean at start. Per this task's instructions
+  the work is left uncommitted; no final SHA is recorded here.
+- Files changed (must equal ownership list): `crates/tack-api/tests/c2_handlers_test.rs` only.
+  `crates/tack-api/src/handlers/runner_protocol.rs` and `runner_auth.rs` were read but not
+  touched — the fix did not require a production change. This file.
+- Contract fixtures consumed: none — this amendment is test-infrastructure-only and changes no
+  wire behavior, error code, or handler logic.
+
+- Behavior implemented — root cause, confirmed by reading `tracing-core` 0.1.36's source directly
+  (`dispatcher.rs`, `callsite.rs`) rather than from memory: `tracing`'s callsite-interest cache is
+  **process-global**, not per-subscriber. The first time any thread in a process hits a given
+  `event!` callsite, the `Interest` returned by whatever subscriber is active *on that thread at
+  that exact moment* — the thread-local override if one is set, else the process's global default,
+  else a hardcoded no-op `Dispatch::none()` if neither was ever installed — is cached forever
+  against that callsite (`DefaultCallsite::interest`/`set_interest`, an `AtomicU8`). A later
+  `tracing::subscriber::set_default` call on a *different* thread does trigger a fresh
+  `Dispatch::new()` and a corresponding rebuild of every callsite touched *so far*, but any
+  callsite a concurrently-running sibling test's thread happens to touch **after** that rebuild
+  snapshot — under no subscriber at all, since eleven of the thirteen tests in this file never
+  install one — gets `Interest::never()` cached against it permanently (no third `Dispatch` is ever
+  constructed later to trigger another rebuild). Once cached `never`, the callsite macro
+  short-circuits before ever calling the capturing subscriber's `event()` method again, for any
+  thread, for the rest of the process — silently. This matches the observed failure exactly: every
+  captured failure's panic message was `runner_id should be logged for observability:` with a
+  **completely empty** `log_text`, i.e. the one relevant callsite
+  (`tracing::info!(runner_id = %runner_id, "runner enrolled")`, `runner_protocol.rs:511`, also hit
+  by `full_runner_protocol_lifecycle_enroll_through_completion`'s own `POST /enroll`) never fired
+  for this test's subscriber at all, not merely a formatting/timing artifact.
+
+  Fix: install one real, permanent, **process-global** default subscriber
+  (`tracing::subscriber::set_global_default`), exactly once for the whole test binary, guarded by
+  `std::sync::Once` and invoked from `setup()` — which literally every test in this file calls
+  first, before any HTTP request reaches production handler code, so the `Once` (which blocks
+  concurrent callers until the winner finishes) guarantees installation completes before any test
+  can race ahead of it. Once a global default exists, `tracing`'s "no one is listening" fallback
+  (`Dispatch::none()`) never occurs again on *any* thread for the rest of the process — `EXISTS`
+  flips permanently and `get_default()`/`get_global()` always resolve to this one subscriber — so
+  no sibling test can ever poison a callsite's cached interest to `never` again. Per-test isolation
+  of *which* test's output is actually kept is then a plain thread-local flag (`LOG_CAPTURE`,
+  `RefCell<Option<Arc<Mutex<Vec<u8>>>>>`) that the shared writer (`GlobalLogWriter`) consults on
+  every write, appending only when the calling thread has an active `CaptureGuard`; the other
+  twelve tests' output goes nowhere. A plain thread-local (not `tokio::task_local!`) is correct
+  here specifically because every `#[tokio::test]` in this file runs its entire async body on one
+  dedicated OS thread under the default current-thread runtime flavor — confirmed by reading the
+  file: no test uses `#[tokio::test(flavor = "multi_thread")]` — so there is no work-stealing that
+  could move a test's execution to a different thread mid-`.await` and strand the flag.
+
+  The subscriber itself is unchanged in substance from before this amendment: still a real
+  `tracing_subscriber::fmt()` builder at `Level::DEBUG`, still formatting genuine `tracing` events
+  emitted by the actual `runner_protocol::enroll`/`authenticate` production code paths through
+  `app.oneshot(...)` — nothing mocked, nothing hand-constructed. Only the writer plumbing and the
+  scope of `set_default` vs. `set_global_default` changed. Considered and rejected:
+  - **Serializing this test against the others via a shared mutex.** Rejected: the race is not
+    confined to a small, enumerable set of callsites — any `tracing::info!/warn!/debug!` callsite
+    inside `runner_protocol.rs`/`runner_auth.rs` shared with any of the other twelve tests
+    (currently: enroll, refresh's success path, plus whatever future handler code adds) is
+    exposed, and a mutex only serializes this test's *own* execution — it does nothing to stop a
+    still-concurrently-running sibling test's thread from touching a callsite for the first time
+    under no subscriber while this test's mutex-protected section runs.
+  - **A `tracing` layer/filter registered before any callsite is hit**, without also making it
+    global, does not close the race by itself — a *thread-local* layer has exactly the same
+    single-thread blind spot as `set_default` did; the fix has to be that a subscriber is
+    *globally* present, not merely present early on one thread.
+  - **A capture mechanism independent of thread-local dispatch entirely** (e.g. hand-rolling a
+    non-`tracing` logging shim) was rejected outright per this task's own instruction: the
+    assertion must keep capturing real `tracing` output from the production handlers, and
+    `tracing_subscriber`/`tracing-appender` (both already present as ordinary, non-dev, workspace
+    dependencies of `tack-api` — confirmed via `Cargo.toml`/`Cargo.lock` before writing any code)
+    are the only sanctioned way to do that; no new dev-dependency was needed or added.
+
+- Other tests in this file checked for the same hazard: only
+  `logs_never_contain_raw_credentials_only_ids` ever installed a subscriber
+  (`grep -n "tracing_subscriber\|set_default\|set_global_default" crates/tack-api/tests/c2_handlers_test.rs`
+  before this amendment matched exactly the three lines inside this one test/its helper struct).
+  None of the other twelve `#[tokio::test]` functions, nor the small `#[test]` unit tests inside
+  the `runner_protocol::tests`/`runner_auth::tests` submodules loaded via `#[path]`, read or depend
+  on `tracing` output in any way — they assert on HTTP status codes and SQL row state only. No
+  other latent instance of this hazard exists in this file.
+
+- Tests added and exact commands/results:
+  - Baseline (before this amendment), measured in a disposable worktree at this same HEAD
+    (`git worktree add --detach <scratch>/c2-flake-baseline HEAD`, removed after measurement):
+    `cargo test -p tack-api --test c2_handlers_test` run **40 times** under cargo's default
+    parallel execution — **36 passed / 4 failed (10% failure rate)**, matching the "roughly 1 in
+    10" figure in this task's brief and the prior amendment's note above. Every captured failure's
+    panic was the same: `runner_id should be logged for observability:` with `log_text` empty.
+  - After this amendment, in the main checkout: `cargo test -p tack-api --test c2_handlers_test`
+    run **90 times total** across two separate loops (50 + 40) under cargo's default parallel
+    execution — **90 passed / 0 failed**.
+  - `cargo test -p tack-api --test c2_handlers_test` (single run) — **23 passed, 0 failed**, same
+    count as before this amendment; no test added or removed, no assertion weakened.
+  - `cargo test -p tack-api` — **361 passed, 0 failed**.
+  - `cargo test --workspace` — **913 passed, 0 failed**, 2 doctests intentionally ignored
+    (pre-existing, `tack-orch`), matching this task's expected total exactly.
+  - `cargo clippy --workspace --all-targets -- -D warnings` — clean (one `missing_const_for_thread_local`
+    lint fixed along the way: the `thread_local!` initializer is `const { RefCell::new(None) }`).
+  - `cargo fmt --all -- --check` — clean.
+  - `git diff --check` — clean.
+  - `git status --porcelain` — only `crates/tack-api/tests/c2_handlers_test.rs` and this file.
+
+- Failure/adversarial case proved: the before/after loop counts above **are** the adversarial
+  proof this task required — a flake fix that changes behavior only in the code path that mattered
+  (interest-cache installation timing), verified by reproducing the original failure mode first
+  (same panic message, same empty-buffer signature) on the unmodified code, then showing it is
+  genuinely eliminated rather than merely narrowed (0/90 vs. a 10% baseline, using more than 3x the
+  minimum 30 runs this task asked for).
+
+- Schema/API/contract change requested from another owner: none.
+
+- Known limitations or `not_measured` fields: none introduced. The global subscriber's
+  `max_level_hint` (`DEBUG`) becomes the process-wide max `tracing` level for the remainder of the
+  test binary's run once installed (a documented `tracing-core` behavior for any global default,
+  not specific to this design) — harmless here since no test in this binary depends on `trace!`-level
+  output existing or not.
+
+- Secrets/logging review: unchanged in substance — the assertion still proves, against real
+  production log output, that a runner_id is logged and that the raw enrollment token, the issued
+  runner credential, and a bogus bearer credential are never logged (Part III rule 12). Nothing
+  about *what* is asserted, or *which* production log line is exercised, changed — only *how*
+  reliably the test's harness observes it.
+
+- Safe merge order and likely conflicts: standalone; touches only this card's own test file and
+  handoff. No interaction with any other card's in-flight work — the fix is confined to test
+  infrastructure inside a file no other card owns.
+
+- Checklist: no unowned files; no live secret; no panic stub; no blind retry; security assertion
+  strengthened in reliability, not weakened or made vacuous.
