@@ -97,6 +97,7 @@ pub mod claude_code;
 pub mod codex;
 pub mod event_sink;
 pub mod fixtures;
+pub mod opencode;
 pub mod process;
 pub mod redact;
 pub mod sha256;
