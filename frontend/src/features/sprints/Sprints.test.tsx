@@ -3,6 +3,7 @@ import { render } from 'solid-js/web';
 import { MemoryRouter, Route } from '@solidjs/router';
 import { ProjectContext, type ProjectContextValue } from '../../shared/state/projectContext';
 import { ProjectItemsProvider } from '../../shared/state/projectItemsContext';
+import { ExecutionStoreProvider } from '../../shared/state/executionContext';
 import type { Resource } from 'solid-js';
 import Sprints from './Sprints';
 
@@ -86,6 +87,10 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
       ),
     );
   }
+  // `ExecutionStoreProvider` (TODO.md III-E4) loads this once on mount.
+  if (url.includes('/executions')) {
+    return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 }));
+  }
   return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
 }
 
@@ -133,18 +138,20 @@ function mountAtProject(projectId: string) {
   document.body.appendChild(container);
   const dispose = render(
     () => (
-      <ProjectContext.Provider value={projectValue}>
-        <MemoryRouter history={createMemoryHistoryAt(`/projects/${projectId}/sprint`)}>
-          <Route
-            path="/projects/:id/sprint"
-            component={() => (
-              <ProjectItemsProvider>
-                <Sprints />
-              </ProjectItemsProvider>
-            )}
-          />
-        </MemoryRouter>
-      </ProjectContext.Provider>
+      <ExecutionStoreProvider>
+        <ProjectContext.Provider value={projectValue}>
+          <MemoryRouter history={createMemoryHistoryAt(`/projects/${projectId}/sprint`)}>
+            <Route
+              path="/projects/:id/sprint"
+              component={() => (
+                <ProjectItemsProvider>
+                  <Sprints />
+                </ProjectItemsProvider>
+              )}
+            />
+          </MemoryRouter>
+        </ProjectContext.Provider>
+      </ExecutionStoreProvider>
     ),
     container,
   );

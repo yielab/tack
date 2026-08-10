@@ -14,6 +14,8 @@ import { dispatchApi, type DispatchItemResponse } from '../../shared/dispatch/ap
 import { notifyDispatchOutcome } from '../../shared/dispatch/notify';
 import { dispatchOutcomeDetail } from '../../shared/dispatch/format';
 import DispatchOutcomeNote from '../../shared/dispatch/DispatchOutcomeNote';
+import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
+import ExecutionTimeline from '../../shared/runWithAgent/ExecutionTimeline';
 import ItemHeader from './ItemHeader';
 import DetailsTab from './tabs/DetailsTab';
 import ActivityTab from './tabs/ActivityTab';
@@ -25,6 +27,13 @@ import AgentActivityTab from './tabs/AgentActivityTab';
 const BASE_TABS: TabItem[] = [
   { id: 'details', label: 'Details' },
   { id: 'activity', label: 'Activity' },
+  // "Execution" (TODO.md III-E4) — the new, neutral Part III execution
+  // domain (`ExecutionRequest`/`ExecutionAttempt` via `tack-runner`). Always
+  // present, unlike the legacy "Agent Activity" tab below (which only
+  // appears once Docket activity actually exists) — an item with zero
+  // execution requests is still a real, honest state worth a visible empty
+  // tab (`ExecutionTimeline`'s own `EmptyState`), not a hidden one.
+  { id: 'execution', label: 'Execution' },
   { id: 'dependencies', label: 'Dependencies' },
   { id: 'files', label: 'Files' },
   { id: 'fields', label: 'Fields' },
@@ -184,6 +193,27 @@ const ItemDetailDrawer: Component = () => {
           <div class="space-y-6">
             <ItemHeader item={it()} onPatch={patch} />
 
+            {/* Run with agent (TODO.md III-E4) — the new, neutral Part III
+                execution surface (`ExecutionRequest`/`ExecutionAttempt` via
+                `tack-runner`). Deliberately its own control, visually and
+                structurally separate from the legacy "Dispatch to agents"
+                block below (a different, older Docket-backed feature per
+                III.0's vocabulary rule) — the two are not variants of one
+                feature and never share a component. A successful run
+                switches straight to the new "Execution" tab so the request
+                that just appeared is immediately visible, without a page
+                navigation. */}
+            <div
+              class="flex flex-wrap items-center gap-3 rounded-lg border p-3"
+              style={{ 'background-color': 'var(--color-bg-subtle)', 'border-color': 'var(--color-border-light)' }}
+            >
+              <RunWithAgentButton
+                itemId={it().id}
+                itemTitle={it().title}
+                onCreated={() => setActiveTab('execution')}
+              />
+            </div>
+
             {/* Dispatch to agents (TODO.md Wave 3, card C4, task 35.8) — a
                 privileged, outward-facing action, so it's a distinct,
                 explicit control rather than folded into an existing button
@@ -213,6 +243,9 @@ const ItemDetailDrawer: Component = () => {
               </Show>
               <Show when={activeTab() === 'activity'}>
                 <ActivityTab itemId={it().id} />
+              </Show>
+              <Show when={activeTab() === 'execution'}>
+                <ExecutionTimeline itemId={it().id} />
               </Show>
               <Show when={activeTab() === 'agent'}>
                 <AgentActivityTab activity={agentActivityData()} loading={agentActivity.loading} />

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
 import { MemoryRouter, Route, useSearchParams } from '@solidjs/router';
 import { ProjectContext, type ProjectContextValue } from '../../shared/state/projectContext';
+import { ExecutionStoreProvider } from '../../shared/state/executionContext';
 import type { Resource } from 'solid-js';
 import ItemDetailDrawer from './ItemDetailDrawer';
 
@@ -41,6 +42,10 @@ function jsonOf(url: string): unknown {
   // (crates/tack-api/src/handlers/items.rs) that api.items.get() unwraps.
   if (url.endsWith('/api/items/item-1')) return { item: ITEM, roles: [], dependencies: [] };
   if (url.includes('/sprints')) return [];
+  // `ExecutionStoreProvider` (TODO.md III-E4) loads this once on mount —
+  // an empty, well-formed list so `store.ts#loadList` has real data to
+  // iterate over rather than tripping on an undefined `data.data`.
+  if (url.includes('/executions')) return { protocol_version: 1, data: [] };
   return {};
 }
 
@@ -79,11 +84,13 @@ function mount() {
   document.body.appendChild(container);
   const dispose = render(
     () => (
-      <ProjectContext.Provider value={projectValue}>
-        <MemoryRouter>
-          <Route path="/" component={Host} />
-        </MemoryRouter>
-      </ProjectContext.Provider>
+      <ExecutionStoreProvider>
+        <ProjectContext.Provider value={projectValue}>
+          <MemoryRouter>
+            <Route path="/" component={Host} />
+          </MemoryRouter>
+        </ProjectContext.Provider>
+      </ExecutionStoreProvider>
     ),
     container,
   );

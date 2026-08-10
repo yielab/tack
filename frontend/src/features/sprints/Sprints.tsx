@@ -9,6 +9,7 @@ import { useVocab } from '../../shared/vocab/useVocab';
 import { priorityColor } from '../../shared/ui/PriorityDot';
 import { useAgentActivityMap } from '../../shared/agentActivity/useAgentActivityMap';
 import DispatchSprintModal from './DispatchSprintModal';
+import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
 import type { Sprint, Item } from '../../shared/types';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -524,9 +525,19 @@ function ItemCard(props: {
           title={props.item.priority}
         />
         <div class="flex-1 min-w-0">
-          <p class="text-xs font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
-            {props.item.title}
-          </p>
+          <div class="flex items-center gap-1.5">
+            <p class="flex-1 min-w-0 text-xs font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
+              {props.item.title}
+            </p>
+            {/* "Run with agent" (TODO.md III-E4) — same new execution
+                surface as Board's per-card trigger, distinct from this
+                view's own "Run sprint" button below (the legacy, sprint-wide
+                Docket dispatch feature): this one launches a single item's
+                own execution request, not a bulk sprint dispatch. */}
+            <span onClick={(e) => e.stopPropagation()}>
+              <RunWithAgentButton itemId={props.item.id} itemTitle={props.item.title} compact />
+            </span>
+          </div>
           <div class="flex items-center gap-2 mt-0.5">
             <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
               {props.item.status}

@@ -147,3 +147,56 @@ export async function createSprintWithItem(
 
   return { sprintId: sprint.id, itemId, sprintName: uniqueName };
 }
+
+/**
+ * Always create a brand-new item (unlike `getOrCreateItem`, which reuses
+ * whatever item already exists in the project) — needed by any test that
+ * asserts something about an item's OWN accumulated state (e.g. "exactly
+ * one execution request exists for this item"), where reusing a
+ * project-shared item across repeated runs against the same persistent
+ * `e2e.db` would silently accumulate state from earlier runs and make the
+ * assertion flaky. Returns the new item's id.
+ */
+export async function createFreshItem(
+  request: APIRequestContext,
+  projectId: string,
+  title: string,
+): Promise<string> {
+  const res = await request.post(`${API}/projects/${projectId}/items`, {
+    data: { title, item_type: 'task' },
+  });
+  expect(res.ok(), `create item failed: ${res.status()}`).toBeTruthy();
+  const body = await res.json();
+  if (body?.id) return body.id;
+  const list = await request
+    .get(`${API}/projects/${projectId}/items`)
+    .then((r) => r.json())
+    .then((p) => p.data ?? []);
+  return list.at(-1).id;
+}
+
+/**
+ * Create a runner fleet via the operator execution surface
+ * (`POST /api/runner-fleets`, TODO.md III-E4's "Run with agent" modal target
+ * picker). Unlike the Docket dispatch helpers above, this route is NOT
+ * gated behind `TACK_ORCH_ENABLE` — see `crates/tack-api/src/router.rs`'s
+ * own comment distinguishing `orch_routes` from card C1's always-on
+ * operator execution/fleet routes. Returns the new fleet's id.
+ */
+export async function createFleet(request: APIRequestContext, name: string): Promise<string> {
+  const res = await request.post(`${API}/runner-fleets`, { data: { name } });
+  expect(res.ok(), `create fleet failed: ${res.status()}`).toBeTruthy();
+  const body = await res.json();
+  return body.fleet_id;
+}
+
+/** Create an agent profile (`POST /api/agent-profiles`) — same always-on
+ *  operator surface as {@link createFleet}. Returns the new profile's id. */
+export async function createAgentProfile(request: APIRequestContext, name: string): Promise<string> {
+  const res = await request.post(`${API}/agent-profiles`, {
+    data: { name, instructions: 'Review the change and leave comments.', tool_policy: { read: true } },
+  });
+  expect(res.ok(), `create agent profile failed: ${res.status()}`).toBeTruthy();
+  const body = await res.json();
+  return body.agent_profile_id;
+}

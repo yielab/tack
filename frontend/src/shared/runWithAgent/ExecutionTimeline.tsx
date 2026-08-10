@@ -1,0 +1,204 @@
+import { type Component, For, Show, createMemo, createSignal } from 'solid-js';
+import { Badge, Button, EmptyState, Field } from '../ui';
+import { toast } from '../ui/toast';
+import { useExecutionStore } from '../state/executionContext';
+import { describeExecutionState, isTerminalStateString, relativeTimeFromIso } from './shared';
+import type { ExecutionRequestRecord } from '../execution';
+
+export interface ExecutionTimelineProps {
+  itemId: string;
+}
+
+/**
+ * The "request/attempt timeline" + "cancel/reconcile controls" this card's
+ * task list asks for (TODO.md III-E4). Reads exclusively through E2's shared
+ * `useExecutionStore()` — no second fetch, no local cache — so this
+ * component's view of a request is always the same one the "Run with agent"
+ * modal and every other mounted consumer see (III-E2's "one consistent
+ * state" acceptance bar).
+ *
+ * Renders every gap in the underlying data HONESTLY rather than papering
+ * over it: `attemptsFor()` always returns the typed `not_available`
+ * placeholder today (no attempt-read endpoint exists — see
+ * `docs/agent-handoffs/part-iii/III-E2.md`, Gap 2), so this component shows
+ * that reason verbatim instead of a fabricated empty timeline or a
+ * misleading "no attempts" message (which would be indistinguishable from
+ * "fetched successfully, zero attempts exist" — exactly what `store.ts`'s
+ * own header comment warns against).
+ */
+const ExecutionTimeline: Component<ExecutionTimelineProps> = (props) => {
+  const store = useExecutionStore();
+  const requests = createMemo(() => store.requestsForItem(props.itemId));
+
+  return (
+    <div class="space-y-3">
+      <Show when={store.listStatus() === 'loading' && requests().length === 0}>
+        <p class="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+          Loading execution requests…
+        </p>
+      </Show>
+
+      <Show when={store.listStatus() === 'error'}>
+        {(() => {
+          const err = store.listError();
+          return (
+            <p class="text-sm" style={{ color: 'var(--color-danger-600)' }}>
+              Couldn't load execution requests{err ? `: ${err.message}` : '.'}
+            </p>
+          );
+        })()}
+      </Show>
+
+      <Show
+        when={requests().length > 0}
+        fallback={
+          <Show when={store.listStatus() !== 'loading'}>
+            <EmptyState title="No execution requests yet" description="Use “Run with agent” to start one." />
+          </Show>
+        }
+      >
+        <ul class="space-y-3">
+          <For each={requests()}>{(record) => <RequestRow record={record} />}</For>
+        </ul>
+      </Show>
+    </div>
+  );
+};
+
+const RequestRow: Component<{ record: ExecutionRequestRecord }> = (props) => {
+  const store = useExecutionStore();
+  const [reconcileOpen, setReconcileOpen] = createSignal(false);
+  const [recoveryKey, setRecoveryKey] = createSignal('');
+  const [reason, setReason] = createSignal('');
+  const [busy, setBusy] = createSignal(false);
+
+  const summary = () => props.record.summary;
+  const state = () => summary()?.state ?? 'unknown';
+  const stateInfo = createMemo(() => describeExecutionState(state()));
+
+  const canCancel = createMemo(() => {
+    const s = summary();
+    if (!s) return false;
+    return !isTerminalStateString(s.state) && !props.record.cancellation.pending && !props.record.cancellation.requested;
+  });
+
+  const canReconcile = createMemo(() => summary()?.state === 'needs_operator');
+
+  const cancel = async () => {
+    const s = summary();
+    if (!s) return;
+    setBusy(true);
+    try {
+      await store.cancel(s.request_id);
+      toast.success('Cancellation requested.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to request cancellation.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // "An ambiguous (needs_operator) state requires explicit operator action,
+  // never an automatic silent retry" (this card's own acceptance bar): the
+  // recovery key and reason are always typed in by hand, never pre-filled or
+  // defaulted — there is no "reconcile" button that fires with zero
+  // arguments.
+  const reconcile = async (e: Event) => {
+    e.preventDefault();
+    const s = summary();
+    if (!s || !recoveryKey().trim() || !reason().trim()) return;
+    setBusy(true);
+    try {
+      await store.requeue(s.request_id, { recovery_key: recoveryKey().trim(), reason: reason().trim() });
+      toast.success('Execution requeued.');
+      setReconcileOpen(false);
+      setRecoveryKey('');
+      setReason('');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to requeue.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const attempts = createMemo(() => store.attemptsFor(summary()?.request_id ?? ''));
+
+  return (
+    <li class="space-y-2 rounded-lg border p-3" style={{ 'background-color': 'var(--color-bg-base)', 'border-color': 'var(--color-border-light)' }}>
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-xs" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+          {summary()?.request_id ?? '—'}
+        </span>
+        <Badge tone={stateInfo().tone}>{stateInfo().label}</Badge>
+        <Show when={!stateInfo().known}>
+          <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            (unrecognised state — showing raw value)
+          </span>
+        </Show>
+        <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+          created {relativeTimeFromIso(summary()?.created_at)}
+        </span>
+        <Show when={props.record.cancellation.requested || props.record.cancellation.pending}>
+          <Badge tone="warning">{props.record.cancellation.pending ? 'Cancellation pending' : 'Cancellation requested'}</Badge>
+        </Show>
+        <Show when={props.record.cancellation.conflict}>
+          <Badge tone="danger">Already terminal — cancel had no effect</Badge>
+        </Show>
+      </div>
+
+      <Show when={props.record.error}>
+        {(err) => (
+          <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
+            {err().message}
+          </p>
+        )}
+      </Show>
+
+      {/* Attempt timeline — honestly typed as unavailable (Gap 2). */}
+      <Show when={attempts().status === 'not_available'}>
+        <p class="rounded-md border border-dashed px-2 py-1.5 text-xs" style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}>
+          Attempt history isn't available yet — {attempts().reason}
+        </p>
+      </Show>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <Show when={canCancel()}>
+          <Button size="sm" variant="secondary" onClick={cancel} disabled={busy()} loading={busy()}>
+            Cancel
+          </Button>
+        </Show>
+        <Show when={canReconcile()}>
+          <Button size="sm" variant="secondary" onClick={() => setReconcileOpen((v) => !v)} disabled={busy()}>
+            Reconcile…
+          </Button>
+        </Show>
+      </div>
+
+      <Show when={reconcileOpen()}>
+        <form class="space-y-2 rounded-md border p-2" style={{ 'border-color': 'var(--color-border-light)' }} onSubmit={reconcile}>
+          <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            This request needs an operator's explicit decision before it can requeue — enter the recovery key and a
+            reason (audited).
+          </p>
+          <Field
+            label="Recovery key"
+            value={recoveryKey()}
+            onInput={(e) => setRecoveryKey(e.currentTarget.value)}
+            required
+          />
+          <Field label="Reason" value={reason()} onInput={(e) => setReason(e.currentTarget.value)} required />
+          <div class="flex justify-end gap-2">
+            <Button type="button" size="sm" variant="secondary" onClick={() => setReconcileOpen(false)} disabled={busy()}>
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" disabled={busy() || !recoveryKey().trim() || !reason().trim()} loading={busy()}>
+              Confirm requeue
+            </Button>
+          </div>
+        </form>
+      </Show>
+    </li>
+  );
+};
+
+export default ExecutionTimeline;
