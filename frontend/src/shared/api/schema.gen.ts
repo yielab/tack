@@ -11,144 +11,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List agent profiles */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Agent profiles */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": unknown;
-                    };
-                };
-                /** @description invalid_request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description forbidden / runner_revoked */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description not_found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-            };
-        };
+        get: operations["list_profiles"];
         put?: never;
-        /** Create an agent profile */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            /** @description {name, instructions, tool_policy?, limits?} */
-            requestBody: {
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            responses: {
-                /** @description Agent profile created */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": unknown;
-                    };
-                };
-                /** @description invalid_request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description forbidden / runner_revoked */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description not_found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-            };
-        };
+        post: operations["create_profile"];
         delete?: never;
         options?: never;
         head?: never;
@@ -489,150 +354,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * List execution requests
-         * @description Newest first.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Execution requests */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": unknown;
-                    };
-                };
-                /** @description invalid_request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description forbidden / runner_revoked */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description not_found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-            };
-        };
+        get: operations["list_executions"];
         put?: never;
-        /**
-         * Create or idempotently replay an execution request
-         * @description Requires the operator-authenticated `x-tack-principal` (server-injected; see this document's header note). Idempotency is scoped to (principal, idempotency_key): a retry with the same key and payload replays the original request; the same key with a changed payload is an idempotency_conflict.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            /** @description Execution request fields: item_id, idempotency_key, exact-runner or fleet selector, agent_profile_id + resolved snapshot, requested harness/model, repository/workspace reference, permission policy, timeout, budgets, environment, metadata. */
-            requestBody: {
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            responses: {
-                /** @description Created or replayed execution request (protocol_version, request_id, state, replayed) */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": unknown;
-                    };
-                };
-                /** @description invalid_request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description forbidden / runner_revoked */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description not_found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-            };
-        };
+        post: operations["create_execution"];
         delete?: never;
         options?: never;
         head?: never;
@@ -646,78 +370,57 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get an execution request
-         * @description Returns the current lifecycle state.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description Execution request ID (opaque) */
-                    request_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Execution request detail */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": unknown;
-                    };
-                };
-                /** @description invalid_request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description forbidden / runner_revoked */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description not_found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-            };
+        get: operations["get_execution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/executions/{request_id}/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        /**
+         * `GET /api/executions/{request_id}/attempts` — card III-E6. Closes the
+         *     gap E2, E4 and E5 each independently hit: `execution_attempts`
+         *     (migration 045) has been written by the runner-v1 protocol since Wave 2
+         *     with no operator read path — `GET /executions/{id}` returns only 5
+         *     scalar columns (`request_id, item_id, state, cancellation_requested_at,
+         *     created_at`), never attempt data. An empty list here is a real, honest
+         *     "no attempt yet" (the request is still `queued`), not a placeholder —
+         *     distinct from the 404 an unknown `request_id` gets.
+         */
+        get: operations["list_execution_attempts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/executions/{request_id}/attempts/{attempt_number}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/executions/{request_id}/attempts/{attempt_number}/events` —
+         *     card III-E6, the other half of the attempts/events gap above. Returns
+         *     `404` naming which resource is missing (`execution_request` vs
+         *     `execution_attempt`) rather than a single ambiguous not-found, since a
+         *     client can otherwise not distinguish "wrong request id" from "this
+         *     attempt number never existed."
+         */
+        get: operations["list_execution_attempt_events"];
         put?: never;
         post?: never;
         delete?: never;
@@ -735,78 +438,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Request cancellation of an execution
-         * @description Records a cancellation request only — the request is not made falsely terminal; the runner observes and reports the actual outcome.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description Execution request ID (opaque) */
-                    request_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Cancellation requested */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": unknown;
-                    };
-                };
-                /** @description invalid_request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description forbidden / runner_revoked */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description not_found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-            };
-        };
+        post: operations["request_cancellation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -822,83 +454,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Requeue a needs_operator execution after an audited recovery decision
-         * @description Only permitted once a B2 authoritative recovery audit exists for the attempt; the recovery_key scopes idempotent replay of this confirmation.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description Execution request ID (opaque) */
-                    request_id: string;
-                };
-                cookie?: never;
-            };
-            /** @description {recovery_key, reason} */
-            requestBody: {
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            responses: {
-                /** @description Execution requeued (or replayed) */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": unknown;
-                    };
-                };
-                /** @description invalid_request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description forbidden / runner_revoked */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description not_found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-            };
-        };
+        post: operations["requeue_needs_operator"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1158,144 +714,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List model profiles */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Model profiles */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": unknown;
-                    };
-                };
-                /** @description invalid_request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description forbidden / runner_revoked */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description not_found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-            };
-        };
+        get: operations["list_model_profiles"];
         put?: never;
-        /** Create a model profile */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            /** @description {name, model_provider, model_id, config_reference?} */
-            requestBody: {
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            responses: {
-                /** @description Model profile created */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": unknown;
-                    };
-                };
-                /** @description invalid_request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description forbidden / runner_revoked */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description not_found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-            };
-        };
+        post: operations["create_model_profile"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1723,144 +1144,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List runner fleets */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Fleets */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": unknown;
-                    };
-                };
-                /** @description invalid_request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description forbidden / runner_revoked */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description not_found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-            };
-        };
+        get: operations["list_fleets"];
         put?: never;
-        /** Create a runner fleet */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            /** @description {name, concurrency_limit?, default_policy?} */
-            requestBody: {
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            responses: {
-                /** @description Fleet created */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": unknown;
-                    };
-                };
-                /** @description invalid_request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description forbidden / runner_revoked */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description not_found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-            };
-        };
+        post: operations["create_fleet"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3051,6 +2337,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runners": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/runners[?fleet_id=]` — card III-E6. Closes the gap E2, E3 and
+         *     E5 each independently hit: `agent_runners` (migration 040) has always
+         *     stored capacity/health/capability data, but nothing read it back to an
+         *     operator before this route existed. `capability_snapshot`/`labels` are
+         *     parsed JSON (matching every other list handler in this file); a
+         *     corrupt/unparseable value is reported per-runner as `null` with the raw
+         *     string preserved separately, rather than failing the whole list for one
+         *     bad row — a operator inspecting runner health must not lose visibility
+         *     into every *other* runner because one has a malformed blob.
+         */
+        get: operations["list_runners"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runners/enrollment": {
         parameters: {
             query?: never;
@@ -3061,79 +2374,11 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Create a pending runner and issue a one-time enrollment token
-         * @description The raw enrollment token is returned exactly once, in this response; only its SHA-256 hash is ever persisted, and no later response (list, detail, or revoke) exposes it or the hash.
+         * Creates a pending runner and stores only a SHA-256 enrollment-token hash.
+         *     The raw token is deliberately emitted once here and is never readable from
+         *     metadata, list, revocation, or runner responses.
          */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            /** @description {name, labels?, total_capacity, available_capacity, capability_snapshot?, protocol_version?, enrollment_lifetime_seconds?} */
-            requestBody: {
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            responses: {
-                /** @description Pending runner created (runner_id, token_id, enrollment_token, expires_at) */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": unknown;
-                    };
-                };
-                /** @description invalid_request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description forbidden / runner_revoked */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description not_found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-            };
-        };
+        post: operations["create_pending_runner"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3149,77 +2394,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Revoke an unredeemed enrollment token */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description Runner ID (opaque) */
-                    runner_id: string;
-                    /** @description Enrollment token ID (opaque) */
-                    token_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Token revoked */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": unknown;
-                    };
-                };
-                /** @description invalid_request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description forbidden / runner_revoked */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description not_found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-            };
-        };
+        post: operations["revoke_enrollment_token"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3235,78 +2410,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Revoke a runner
-         * @description A revoked runner can no longer be selected by new exact-runner creates or authenticate to `/api/runner/v1`.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description Runner ID (opaque) */
-                    runner_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Runner revoked */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": unknown;
-                    };
-                };
-                /** @description invalid_request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description forbidden / runner_revoked */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description not_found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
-                    };
-                };
-            };
-        };
+        post: operations["revoke_runner"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3540,6 +2644,18 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        AgentProfileListResponse: {
+            data: components["schemas"]["AgentProfileSummary"][];
+            /** Format: int32 */
+            protocol_version: number;
+        };
+        AgentProfileSummary: {
+            agent_profile_id: string;
+            instructions: string;
+            limits: unknown;
+            name: string;
+            tool_policy: unknown;
+        };
         /** @description One `docket_approvals_total{channel=...,outcome=...}` sample. */
         ApprovalChannelEntry: {
             /** @description `"cli"` | `"http"` | `"mcp"` | `"telegram"` | `"tack"` | `"timeout"`. */
@@ -3570,6 +2686,47 @@ export interface components {
             storage_path: string;
             /** Format: date-time */
             uploaded_at: string;
+        };
+        AttemptListResponse: {
+            data: components["schemas"]["AttemptSummary"][];
+            /** Format: int32 */
+            protocol_version: number;
+        };
+        /**
+         * @description One attempt as reported by `GET /api/executions/{id}/attempts` — every
+         *     column `execution_attempts` carries (migration 045).
+         */
+        AttemptSummary: {
+            /**
+             * @description `tack_orch::execution::ActualExecution` once the attempt has
+             *     reported one, else `null`.
+             */
+            actual_execution?: unknown;
+            attempt_id: string;
+            /** Format: int64 */
+            attempt_number: number;
+            base_revision?: string | null;
+            completion_id?: string | null;
+            created_at: string;
+            ended_at?: string | null;
+            event_checkpoint?: string | null;
+            /** Format: int64 */
+            fencing_token: number;
+            last_heartbeat_at?: string | null;
+            lease_expires_at: string;
+            lease_issued_at: string;
+            request_id: string;
+            runner_id: string;
+            started_at?: string | null;
+            state: string;
+            terminal_reason?: unknown;
+            updated_at: string;
+            /**
+             * @description `tack_orch::execution::Usage` once reported, else `null` — never a
+             *     fabricated zero (III.2 rule 7).
+             */
+            usage?: unknown;
+            workspace_id?: string | null;
         };
         Board: {
             /** Format: date-time */
@@ -3623,6 +2780,20 @@ export interface components {
         BoardViewResponse: {
             board: components["schemas"]["Board"];
             columns: components["schemas"]["BoardColumnWithItems"][];
+        };
+        /**
+         * @description Response body for `POST /api/executions/{id}/cancel`. `state` is
+         *     deliberately **not** a `docs/contracts/runner-v1/lifecycle-transitions.json`
+         *     value — cancellation is recorded as a request only
+         *     (`cancellation_requested_at`); the request's real lifecycle state is
+         *     unaffected and visible via `GET /api/executions/{id}`.
+         */
+        CancellationRequestedResponse: {
+            /** Format: int32 */
+            protocol_version: number;
+            request_id: string;
+            /** @example cancellation_requested */
+            state: string;
         };
         /**
          * @description Wire mirror of `tack_orch::Capabilities` — what a control plane can
@@ -3728,6 +2899,67 @@ export interface components {
             /** Format: uuid */
             target_item_id: string;
         };
+        CreateExecution: {
+            agent_profile_id: string;
+            /**
+             * @description `tack_orch::execution::AgentProfileSnapshot` (`{name, instructions,
+             *     tool_policy, timeout_seconds, budgets}`) — untyped here because that
+             *     type lives in `tack-orch`, which does not derive `ToSchema` (see
+             *     `RunnerV1ErrorEnvelope`'s doc comment for the same architectural
+             *     reason). Validated against the real nested struct server-side at
+             *     enqueue time.
+             */
+            agent_profile_snapshot: unknown;
+            budgets: unknown;
+            environment: unknown;
+            idempotency_key: string;
+            /** Format: uuid */
+            item_id: string;
+            metadata: unknown;
+            /** @description `tack_orch::execution::PermissionPolicy` (`{tools, network}`). */
+            permission_policy: unknown;
+            /**
+             * @description `tack_orch::execution::RepositorySnapshot` (`{kind, remote,
+             *     base_revision, subdirectory}`).
+             */
+            repository_snapshot: unknown;
+            requested_harness_kind: string;
+            requested_model_id?: string | null;
+            requested_model_provider?: string | null;
+            selector_id: string;
+            selector_kind: string;
+            status_map_policy_id?: string | null;
+            /** Format: int64 */
+            timeout_seconds: number;
+        };
+        /**
+         * @description Response body for `POST /api/executions` — a newly created request or an
+         *     idempotent replay of an existing one (`replayed` distinguishes the two).
+         */
+        CreateExecutionResponse: {
+            /** Format: int32 */
+            protocol_version: number;
+            replayed: boolean;
+            request_id: string;
+            /**
+             * @description Always `"queued"` on success — a request enters the runner-v1
+             *     lifecycle (`docs/contracts/runner-v1/lifecycle-transitions.json`)
+             *     only once created.
+             */
+            state: string;
+        };
+        CreateFleet: {
+            /** Format: int64 */
+            concurrency_limit?: number | null;
+            default_policy?: unknown;
+            name: string;
+        };
+        CreateFleetResponse: {
+            fleet_id: string;
+            name: string;
+            /** Format: int32 */
+            protocol_version: number;
+        };
         CreateItem: {
             assignee?: string | null;
             description?: string | null;
@@ -3744,6 +2976,58 @@ export interface components {
             sprint_id?: string | null;
             tags?: string[] | null;
             title: string;
+        };
+        CreateModelProfile: {
+            config_reference?: string | null;
+            model_id: string;
+            model_provider: string;
+            name: string;
+        };
+        CreateModelProfileResponse: {
+            model_id: string;
+            model_profile_id: string;
+            model_provider: string;
+            name: string;
+            /** Format: int32 */
+            protocol_version: number;
+        };
+        CreatePendingRunner: {
+            /** Format: int64 */
+            available_capacity: number;
+            capability_snapshot?: unknown;
+            /** Format: int64 */
+            enrollment_lifetime_seconds?: number;
+            labels?: unknown;
+            name: string;
+            /** Format: int64 */
+            protocol_version?: number;
+            /** Format: int64 */
+            total_capacity: number;
+        };
+        /**
+         * @description Response body for `POST /api/runners/enrollment`. `enrollment_token` is
+         *     the raw, one-time secret — never persisted, never returned again by any
+         *     later response.
+         */
+        CreatePendingRunnerResponse: {
+            enrollment_token: string;
+            expires_at: string;
+            /** Format: int32 */
+            protocol_version: number;
+            runner_id: string;
+            token_id: string;
+        };
+        CreateProfile: {
+            instructions: string;
+            limits?: unknown;
+            name: string;
+            tool_policy?: unknown;
+        };
+        CreateProfileResponse: {
+            agent_profile_id: string;
+            name: string;
+            /** Format: int32 */
+            protocol_version: number;
         };
         CreateProject: {
             description?: string | null;
@@ -4082,6 +3366,11 @@ export interface components {
         EstimateUnit: "story_points" | "hours" | "days" | {
             custom: string;
         };
+        EventListResponse: {
+            data: components["schemas"]["EventSummary"][];
+            /** Format: int32 */
+            protocol_version: number;
+        };
         EventScopeCapability: {
             level: components["schemas"]["EventScopeLevel"];
             reason: string;
@@ -4091,6 +3380,48 @@ export interface components {
          * @enum {string}
          */
         EventScopeLevel: "none" | "run" | "project" | "plane";
+        /**
+         * @description One event as reported by `GET
+         *     /api/executions/{id}/attempts/{attempt_number}/events`.
+         */
+        EventSummary: {
+            created_at: string;
+            event_id: string;
+            kind: string;
+            occurred_at: string;
+            payload: unknown;
+            /** Format: int64 */
+            sequence: number;
+            source: string;
+        };
+        ExecutionDetailResponse: {
+            cancellation_requested_at?: string | null;
+            created_at: string;
+            item_id: string;
+            /** Format: int32 */
+            protocol_version: number;
+            request_id: string;
+            state: string;
+        };
+        ExecutionListResponse: {
+            data: components["schemas"]["ExecutionSummary"][];
+            /** Format: int32 */
+            protocol_version: number;
+        };
+        /**
+         * @description One row of `GET /api/executions` / the `GET /api/executions/{id}`
+         *     detail. Deliberately five scalar columns today — see
+         *     `docs/agent-handoffs/part-iii/III-E2.md`'s Gap 2 for the attempt/event
+         *     data this does *not* carry, now available separately via `GET
+         *     /api/executions/{id}/attempts`.
+         */
+        ExecutionSummary: {
+            cancellation_requested_at?: string | null;
+            created_at: string;
+            item_id: string;
+            request_id: string;
+            state: string;
+        };
         /**
          * @description One row per Tack project that has an `orch_links` row, joining: the link,
          *     its control plane's reconciler-observed health, and mirrored cost/token/
@@ -4181,13 +3512,10 @@ export interface components {
             /** Format: int64 */
             tokens_out: number;
         };
-        /**
-         * @description `GET /api/fleet` response envelope — matches
-         *     `frontend/src/features/fleet/api.ts`'s `FleetResponse` exactly (`{ rows:
-         *     [...] }`, not a bare array).
-         */
         FleetListResponse: {
-            rows: components["schemas"]["FleetEntry"][];
+            data: components["schemas"]["FleetSummary"][];
+            /** Format: int32 */
+            protocol_version: number;
         };
         /**
          * @description One roster member — projected from a future live `FleetAgent` snapshot.
@@ -4203,6 +3531,13 @@ export interface components {
             model: string;
             name: string;
             role: string;
+        };
+        FleetSummary: {
+            /** Format: int64 */
+            concurrency_limit?: number | null;
+            default_policy: unknown;
+            fleet_id: string;
+            name: string;
         };
         GitHubImportRequest: {
             /** @description Include closed issues (default: false — only open issues are imported). */
@@ -4423,6 +3758,19 @@ export interface components {
              *     issues accessible to the key are fetched.
              */
             team_id?: string | null;
+        };
+        ModelProfileListResponse: {
+            data: components["schemas"]["ModelProfileSummary"][];
+            /** Format: int32 */
+            protocol_version: number;
+        };
+        ModelProfileSummary: {
+            config_reference?: string | null;
+            enabled: boolean;
+            model_id: string;
+            model_profile_id: string;
+            model_provider: string;
+            name: string;
         };
         ModelSelectionCapability: {
             level: components["schemas"]["ModelSelectionLevel"];
@@ -4747,11 +4095,41 @@ export interface components {
             status: "pod_created_link_failed";
             warnings: string[];
         };
+        RecoveryConfirmation: {
+            reason: string;
+            recovery_key: string;
+        };
+        /** @description Response body for `POST /api/executions/{id}/requeue`. */
+        RequeueResponse: {
+            /** Format: int32 */
+            protocol_version: number;
+            /** @example needs_operator */
+            recovered_from: string;
+            replayed: boolean;
+            request_id: string;
+            /** @example queued */
+            state: string;
+        };
         RestoreRemoteRequest: {
             /** @description Override the "this device has newer work" guard. */
             force?: boolean;
             /** @description Object key to restore. Defaults to the latest backup when omitted. */
             key?: string | null;
+        };
+        RevokeEnrollmentTokenResponse: {
+            /** Format: int32 */
+            protocol_version: number;
+            runner_id: string;
+            /** @example revoked */
+            state: string;
+            token_id: string;
+        };
+        RevokeRunnerResponse: {
+            /** Format: int32 */
+            protocol_version: number;
+            runner_id: string;
+            /** @example revoked */
+            state: string;
         };
         /**
          * @description Rework-rate figure for one slice, plus the exact definition and truncation
@@ -4794,6 +4172,102 @@ export interface components {
             name: string;
             /** Format: uuid */
             project_id: string;
+        };
+        RunnerListResponse: {
+            data: components["schemas"]["RunnerSummary"][];
+            /** Format: int32 */
+            protocol_version: number;
+        };
+        /**
+         * @description One row of `GET /api/runners` — every column `agent_runners` carries
+         *     (minus credential material — see `RunnerListingRow`'s own doc comment in
+         *     `tack-db`), plus its current fleet roster.
+         */
+        RunnerSummary: {
+            /** Format: int64 */
+            available_capacity: number;
+            /**
+             * @description Parsed `capability_snapshot` — see `labels`' doc comment for the
+             *     same "raw string always present" guarantee.
+             */
+            capability_snapshot?: unknown;
+            capability_snapshot_raw: string;
+            created_at: string;
+            fleet_ids: string[];
+            /**
+             * @description Parsed `labels` — `null` only if the stored value is somehow not
+             *     valid JSON (`labels_raw` always carries the raw stored string, so no
+             *     information is lost even then).
+             */
+            labels?: unknown;
+            labels_raw: string;
+            last_heartbeat_at?: string | null;
+            name: string;
+            /** Format: int64 */
+            protocol_version: number;
+            revoked_at?: string | null;
+            runner_id: string;
+            runner_version?: string | null;
+            /** @example active */
+            state: string;
+            /** Format: int64 */
+            total_capacity: number;
+            updated_at: string;
+        };
+        RunnerV1Error: {
+            /**
+             * @description One of the fifteen frozen `docs/contracts/runner-v1/errors/*.json`
+             *     codes (e.g. `not_found`, `conflict`, `idempotency_conflict`,
+             *     `invalid_transition`, `stale_lease`, `runner_revoked`).
+             * @example not_found
+             */
+            code: string;
+            /**
+             * @description Per-code structured detail — shape documented per operation in
+             *     `docs/contracts/runner-v1/README.md` (e.g. `invalid_transition`'s
+             *     `{from, to}`, `stale_lease`'s `{attempt_id, current_fencing_token}`).
+             */
+            details: unknown;
+            message: string;
+            request_id: string;
+            /**
+             * @description Whether a conformant client may safely retry — derived from `code`
+             *     alone (`StableErrorCode::retryable`), never set independently.
+             */
+            retryable: boolean;
+        };
+        /**
+         * @description Documents `tack_orch::execution::ProtocolErrorEnvelope`'s real wire shape
+         *     (`docs/contracts/runner-v1/errors/*.json`) for every operator execution/
+         *     fleet/runner/profile route (card III-E6), which returns that envelope —
+         *     not `crate::openapi::ErrorEnvelope`, a different, incompatible shape
+         *     (`{status,message,code?}` vs `{code,message,request_id,retryable,
+         *     details}`). This is a doc-only mirror, not a second runtime authority:
+         *     `tack-orch` must stay free of an OpenAPI-generation dependency (see that
+         *     crate's own architecture boundary), so the real type cannot derive
+         *     `ToSchema` itself. Defined here (not in `crate::openapi`) so this file
+         *     keeps compiling standalone when a card-local test loads it via
+         *     `#[path = "../src/handlers/executions.rs"]` (`c1_handlers_test.rs`,
+         *     `c2_handlers_test.rs`) — a `crate::openapi` import would not resolve in
+         *     that separate test-binary crate root. `code` is documented as a free
+         *     string rather than an enum because `StableErrorCode` lives in
+         *     `tack-orch` for the same reason; its fifteen frozen values are
+         *     enumerated in `docs/contracts/runner-v1/README.md`.
+         *
+         *     `allow(dead_code)`: this type is a pure OpenAPI schema marker — utoipa's
+         *     `#[utoipa::path(responses(... body = RunnerV1ErrorEnvelope ...))]`
+         *     annotations reference it by *type* (calling `ToSchema`'s associated
+         *     functions) but no code anywhere ever constructs a *value* of it, since
+         *     every real error response is built from the actual runtime type,
+         *     `tack_orch::execution::ProtocolErrorEnvelope`. In the real `tack-api`
+         *     library crate this is invisible to `dead_code` (a `pub` item in a
+         *     library is assumed reachable by external callers); it only surfaces
+         *     when this file is compiled standalone into a test *binary* via
+         *     `#[path]` (`c1_handlers_test.rs`/`c2_handlers_test.rs`), which has no
+         *     external callers at all.
+         */
+        RunnerV1ErrorEnvelope: {
+            error: components["schemas"]["RunnerV1Error"];
         };
         SaveAsTemplateRequest: {
             description?: string | null;
@@ -5166,6 +4640,59 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_profiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every agent profile, by name */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfileListResponse"];
+                };
+            };
+        };
+    };
+    create_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProfile"];
+            };
+        };
+        responses: {
+            /** @description Agent profile created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateProfileResponse"];
+                };
+            };
+            /** @description conflict (name already exists) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
     list_pending_approvals: {
         parameters: {
             query?: never;
@@ -5979,6 +5506,252 @@ export interface operations {
             };
         };
     };
+    list_executions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every execution request, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionListResponse"];
+                };
+            };
+        };
+    };
+    create_execution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateExecution"];
+            };
+        };
+        responses: {
+            /** @description Execution request created or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateExecutionResponse"];
+                };
+            };
+            /** @description invalid_request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+            /** @description not_found (item does not exist) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+            /** @description conflict / idempotency_conflict / runner_revoked */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_execution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Execution request ID (opaque) */
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Execution request detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionDetailResponse"];
+                };
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_execution_attempts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Execution request ID (opaque) */
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every attempt made against this request, oldest first (may be empty) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttemptListResponse"];
+                };
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_execution_attempt_events: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Execution request ID (opaque) */
+                request_id: string;
+                /** @description 1-based attempt number */
+                attempt_number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every event this attempt has reported, oldest first (may be empty) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventListResponse"];
+                };
+            };
+            /** @description not_found (execution_request or execution_attempt) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    request_cancellation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Execution request ID (opaque) */
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancellation requested — not yet terminal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancellationRequestedResponse"];
+                };
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+            /** @description conflict (already terminal) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    requeue_needs_operator: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Execution request ID (opaque) */
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecoveryConfirmation"];
+            };
+        };
+        responses: {
+            /** @description Requeued (or replayed) after an audited recovery decision */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequeueResponse"];
+                };
+            };
+            /** @description conflict / idempotency_conflict / invalid_transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
     get_fleet: {
         parameters: {
             query?: never;
@@ -6655,6 +6428,59 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_model_profiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every model profile, by name */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelProfileListResponse"];
+                };
+            };
+        };
+    };
+    create_model_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateModelProfile"];
+            };
+        };
+        responses: {
+            /** @description Model profile created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateModelProfileResponse"];
+                };
+            };
+            /** @description conflict (name already exists) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
             };
         };
     };
@@ -7728,6 +7554,202 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_fleets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every runner fleet, by name */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetListResponse"];
+                };
+            };
+        };
+    };
+    create_fleet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFleet"];
+            };
+        };
+        responses: {
+            /** @description Fleet created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateFleetResponse"];
+                };
+            };
+            /** @description conflict (name already exists) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_runners: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Optional roster filter — a runner is included only if it is a
+                 *     current member of this fleet (`agent_fleet_members`).
+                 */
+                fleet_id: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every enrolled runner (optionally filtered to one fleet's roster) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerListResponse"];
+                };
+            };
+        };
+    };
+    create_pending_runner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePendingRunner"];
+            };
+        };
+        responses: {
+            /** @description Pending runner created; the raw enrollment token is returned exactly once */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatePendingRunnerResponse"];
+                };
+            };
+            /** @description invalid_request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+            /** @description conflict (name already exists) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    revoke_enrollment_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Runner ID (opaque) */
+                runner_id: string;
+                /** @description Enrollment token ID (opaque) */
+                token_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Token revoked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokeEnrollmentTokenResponse"];
+                };
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+            /** @description conflict (already consumed) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    revoke_runner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Runner ID (opaque) */
+                runner_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Runner revoked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokeRunnerResponse"];
+                };
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                 };
             };
         };
