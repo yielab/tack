@@ -41,6 +41,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub mod adapters;
 pub mod execution;
 pub mod reconciler;
+pub mod scheduler;
 
 // ---------------------------------------------------------------------------
 // Errors
