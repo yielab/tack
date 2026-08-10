@@ -29,8 +29,7 @@
 
 use serde::Serialize;
 use utoipa::openapi::path::{
-    HttpMethod, OperationBuilder, Parameter, ParameterBuilder, ParameterIn, PathItem,
-    PathItemBuilder, PathsBuilder,
+    HttpMethod, OperationBuilder, Parameter, ParameterBuilder, ParameterIn, PathItem, PathsBuilder,
 };
 use utoipa::openapi::request_body::RequestBodyBuilder;
 use utoipa::openapi::response::ResponseBuilder;
@@ -213,227 +212,19 @@ fn json_operation(
     op
 }
 
-const OPERATOR_TAG: &str = "execution-operator";
-
-/// Card C1's operator execution/fleet routes, documented at the paths they
-/// are mounted at relative to `handlers::executions::routes`/
-/// `handlers::runner_admin::routes` (see `router.rs::operator_execution_routes`)
-/// — i.e. this fragment is nested at `/api` (no further prefix) below.
-struct OperatorApiDoc;
-
-impl OpenApi for OperatorApiDoc {
-    fn openapi() -> utoipa::openapi::OpenApi {
-        let request_id = || string_path_param("request_id", "Execution request ID (opaque)");
-        let runner_id = || string_path_param("runner_id", "Runner ID (opaque)");
-        let paths = PathsBuilder::new()
-            .path(
-                "/executions",
-                PathItemBuilder::new()
-                    .operation(
-                        HttpMethod::Post,
-                        json_operation(
-                            OPERATOR_TAG,
-                            "Create or idempotently replay an execution request",
-                            "Requires the operator-authenticated `x-tack-principal` (server-injected; \
-                             see this document's header note). Idempotency is scoped to \
-                             (principal, idempotency_key): a retry with the same key and payload \
-                             replays the original request; the same key with a changed payload is \
-                             an idempotency_conflict.",
-                            vec![],
-                            Some(
-                                "Execution request fields: item_id, idempotency_key, exact-runner or \
-                                 fleet selector, agent_profile_id + resolved snapshot, requested \
-                                 harness/model, repository/workspace reference, permission policy, \
-                                 timeout, budgets, environment, metadata.",
-                            ),
-                            "Created or replayed execution request (protocol_version, request_id, state, replayed)",
-                        ),
-                    )
-                    .operation(
-                        HttpMethod::Get,
-                        json_operation(
-                            OPERATOR_TAG,
-                            "List execution requests",
-                            "Newest first.",
-                            vec![],
-                            None,
-                            "Execution requests",
-                        ),
-                    )
-                    .build(),
-            )
-            .path(
-                "/executions/{request_id}",
-                PathItem::new(
-                    HttpMethod::Get,
-                    json_operation(
-                        OPERATOR_TAG,
-                        "Get an execution request",
-                        "Returns the current lifecycle state.",
-                        vec![request_id()],
-                        None,
-                        "Execution request detail",
-                    ),
-                ),
-            )
-            .path(
-                "/executions/{request_id}/cancel",
-                PathItem::new(
-                    HttpMethod::Post,
-                    json_operation(
-                        OPERATOR_TAG,
-                        "Request cancellation of an execution",
-                        "Records a cancellation request only — the request is not made falsely \
-                         terminal; the runner observes and reports the actual outcome.",
-                        vec![request_id()],
-                        None,
-                        "Cancellation requested",
-                    ),
-                ),
-            )
-            .path(
-                "/executions/{request_id}/requeue",
-                PathItem::new(
-                    HttpMethod::Post,
-                    json_operation(
-                        OPERATOR_TAG,
-                        "Requeue a needs_operator execution after an audited recovery decision",
-                        "Only permitted once a B2 authoritative recovery audit exists for the \
-                         attempt; the recovery_key scopes idempotent replay of this confirmation.",
-                        vec![request_id()],
-                        Some("{recovery_key, reason}"),
-                        "Execution requeued (or replayed)",
-                    ),
-                ),
-            )
-            .path(
-                "/runner-fleets",
-                PathItemBuilder::new()
-                    .operation(
-                        HttpMethod::Post,
-                        json_operation(
-                            OPERATOR_TAG,
-                            "Create a runner fleet",
-                            "",
-                            vec![],
-                            Some("{name, concurrency_limit?, default_policy?}"),
-                            "Fleet created",
-                        ),
-                    )
-                    .operation(
-                        HttpMethod::Get,
-                        json_operation(OPERATOR_TAG, "List runner fleets", "", vec![], None, "Fleets"),
-                    )
-                    .build(),
-            )
-            .path(
-                "/runners/enrollment",
-                PathItem::new(
-                    HttpMethod::Post,
-                    json_operation(
-                        OPERATOR_TAG,
-                        "Create a pending runner and issue a one-time enrollment token",
-                        "The raw enrollment token is returned exactly once, in this response; \
-                         only its SHA-256 hash is ever persisted, and no later response (list, \
-                         detail, or revoke) exposes it or the hash.",
-                        vec![],
-                        Some(
-                            "{name, labels?, total_capacity, available_capacity, \
-                             capability_snapshot?, protocol_version?, enrollment_lifetime_seconds?}",
-                        ),
-                        "Pending runner created (runner_id, token_id, enrollment_token, expires_at)",
-                    ),
-                ),
-            )
-            .path(
-                "/runners/{runner_id}/enrollment-tokens/{token_id}/revoke",
-                PathItem::new(
-                    HttpMethod::Post,
-                    json_operation(
-                        OPERATOR_TAG,
-                        "Revoke an unredeemed enrollment token",
-                        "",
-                        vec![
-                            runner_id(),
-                            string_path_param("token_id", "Enrollment token ID (opaque)"),
-                        ],
-                        None,
-                        "Token revoked",
-                    ),
-                ),
-            )
-            .path(
-                "/runners/{runner_id}/revoke",
-                PathItem::new(
-                    HttpMethod::Post,
-                    json_operation(
-                        OPERATOR_TAG,
-                        "Revoke a runner",
-                        "A revoked runner can no longer be selected by new exact-runner creates \
-                         or authenticate to `/api/runner/v1`.",
-                        vec![runner_id()],
-                        None,
-                        "Runner revoked",
-                    ),
-                ),
-            )
-            .path(
-                "/agent-profiles",
-                PathItemBuilder::new()
-                    .operation(
-                        HttpMethod::Post,
-                        json_operation(
-                            OPERATOR_TAG,
-                            "Create an agent profile",
-                            "",
-                            vec![],
-                            Some("{name, instructions, tool_policy?, limits?}"),
-                            "Agent profile created",
-                        ),
-                    )
-                    .operation(
-                        HttpMethod::Get,
-                        json_operation(
-                            OPERATOR_TAG,
-                            "List agent profiles",
-                            "",
-                            vec![],
-                            None,
-                            "Agent profiles",
-                        ),
-                    )
-                    .build(),
-            )
-            .path(
-                "/model-profiles",
-                PathItemBuilder::new()
-                    .operation(
-                        HttpMethod::Post,
-                        json_operation(
-                            OPERATOR_TAG,
-                            "Create a model profile",
-                            "",
-                            vec![],
-                            Some("{name, model_provider, model_id, config_reference?}"),
-                            "Model profile created",
-                        ),
-                    )
-                    .operation(
-                        HttpMethod::Get,
-                        json_operation(
-                            OPERATOR_TAG,
-                            "List model profiles",
-                            "",
-                            vec![],
-                            None,
-                            "Model profiles",
-                        ),
-                    )
-                    .build(),
-            );
-        utoipa::openapi::OpenApi::new(Info::new("operator-execution", "1"), paths)
-    }
-}
+// Card III-E6 (Wave 4 integrator): the operator execution/fleet/runner/
+// profile routes used to be documented here as a hand-built `OperatorApiDoc`
+// fragment with every body typed as free-form JSON (`json_operation`'s
+// `json_content()`) — the reason E2/E3/E4/E5 each independently found this
+// domain's `docs/openapi.json` schemas empty (`{}`). C1's handler files
+// (`handlers::executions`, `handlers::runner_admin`) are no longer
+// off-limits to this card (III.3: C5 for runner/execution wiring, this card
+// for the Wave 4 integration boundary), so every one of their handlers now
+// carries its own `#[utoipa::path(...)]` annotation referencing real,
+// `ToSchema`-derived request/response DTOs, exactly like every other
+// domain in this file (`handlers::orch`, `handlers::items`, …) — listed
+// directly in `ApiDoc`'s `paths(...)`/`components(schemas(...))` below
+// instead of through a separate nested fragment.
 
 const RUNNER_TAG: &str = "runner-protocol-v1";
 const RUNNER_PROTOCOL_NOTE: &str = "Authenticated by a hashed `Authorization: Bearer` runner \
@@ -722,11 +513,34 @@ impl OpenApi for RunnerProtocolApiDoc {
         handlers::provisioning::create_project_with_pod,
         handlers::economics::get_economics_summary,
         handlers::economics::get_economics_items,
+        // ── Harness-agnostic runner fleet: operator execution API (Part III,
+        // card C1; typed OpenAPI documentation wired here by card III-E6) ──
+        handlers::executions::create_execution,
+        handlers::executions::list_executions,
+        handlers::executions::get_execution,
+        handlers::executions::list_execution_attempts,
+        handlers::executions::list_execution_attempt_events,
+        handlers::executions::request_cancellation,
+        handlers::executions::requeue_needs_operator,
+        // ── Harness-agnostic runner fleet: operator fleet/runner/profile API
+        // (Part III, card C1; typed OpenAPI documentation wired by III-E6) ──
+        handlers::runner_admin::create_fleet,
+        handlers::runner_admin::list_fleets,
+        handlers::runner_admin::list_runners,
+        handlers::runner_admin::revoke_runner,
+        handlers::runner_admin::create_pending_runner,
+        handlers::runner_admin::revoke_enrollment_token,
+        handlers::runner_admin::create_profile,
+        handlers::runner_admin::list_profiles,
+        handlers::runner_admin::create_model_profile,
+        handlers::runner_admin::list_model_profiles,
     ),
     components(schemas(
         // Local response/request envelopes
         ErrorEnvelope,
         ErrorBody,
+        handlers::executions::RunnerV1ErrorEnvelope,
+        handlers::executions::RunnerV1Error,
         PaginatedItems,
         ItemDetail,
         handlers::boards_multi::BoardViewResponse,
@@ -795,6 +609,39 @@ impl OpenApi for RunnerProtocolApiDoc {
         handlers::economics::EconomicsPopulation,
         handlers::economics::EconomicsItemResponse,
         handlers::economics::EconomicsItemsResponse,
+        // ── Harness-agnostic runner fleet: operator execution API DTOs ──────
+        handlers::executions::CreateExecution,
+        handlers::executions::CreateExecutionResponse,
+        handlers::executions::ExecutionSummary,
+        handlers::executions::ExecutionListResponse,
+        handlers::executions::ExecutionDetailResponse,
+        handlers::executions::AttemptSummary,
+        handlers::executions::AttemptListResponse,
+        handlers::executions::EventSummary,
+        handlers::executions::EventListResponse,
+        handlers::executions::CancellationRequestedResponse,
+        handlers::executions::RecoveryConfirmation,
+        handlers::executions::RequeueResponse,
+        // ── Harness-agnostic runner fleet: operator fleet/runner/profile API
+        // DTOs ───────────────────────────────────────────────────────────
+        handlers::runner_admin::CreateFleet,
+        handlers::runner_admin::CreateFleetResponse,
+        handlers::runner_admin::FleetSummary,
+        handlers::runner_admin::FleetListResponse,
+        handlers::runner_admin::RunnerSummary,
+        handlers::runner_admin::RunnerListResponse,
+        handlers::runner_admin::RevokeRunnerResponse,
+        handlers::runner_admin::CreatePendingRunner,
+        handlers::runner_admin::CreatePendingRunnerResponse,
+        handlers::runner_admin::RevokeEnrollmentTokenResponse,
+        handlers::runner_admin::CreateProfile,
+        handlers::runner_admin::CreateProfileResponse,
+        handlers::runner_admin::AgentProfileSummary,
+        handlers::runner_admin::AgentProfileListResponse,
+        handlers::runner_admin::CreateModelProfile,
+        handlers::runner_admin::CreateModelProfileResponse,
+        handlers::runner_admin::ModelProfileSummary,
+        handlers::runner_admin::ModelProfileListResponse,
         // Core domain models + DTOs
         Workspace,
         Project,
@@ -877,7 +724,6 @@ impl OpenApi for RunnerProtocolApiDoc {
             shape is frozen by docs/contracts/runner-v1/, not independently re-specified here."),
     ),
     nest(
-        (path = "/api", api = OperatorApiDoc),
         (path = "/api/runner/v1", api = RunnerProtocolApiDoc),
     ),
 )]

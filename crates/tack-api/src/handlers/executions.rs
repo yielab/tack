@@ -19,7 +19,61 @@ use tack_db::{
     repo::execution::{EnqueueResult, ExecutionClock, NewExecutionRequest, OperatorRequeueResult},
 };
 use tack_orch::execution::{ExecutionRequestSnapshot, ProtocolErrorEnvelope, StableErrorCode};
+use utoipa::ToSchema;
 use uuid::Uuid;
+
+/// Documents `tack_orch::execution::ProtocolErrorEnvelope`'s real wire shape
+/// (`docs/contracts/runner-v1/errors/*.json`) for every operator execution/
+/// fleet/runner/profile route (card III-E6), which returns that envelope —
+/// not `crate::openapi::ErrorEnvelope`, a different, incompatible shape
+/// (`{status,message,code?}` vs `{code,message,request_id,retryable,
+/// details}`). This is a doc-only mirror, not a second runtime authority:
+/// `tack-orch` must stay free of an OpenAPI-generation dependency (see that
+/// crate's own architecture boundary), so the real type cannot derive
+/// `ToSchema` itself. Defined here (not in `crate::openapi`) so this file
+/// keeps compiling standalone when a card-local test loads it via
+/// `#[path = "../src/handlers/executions.rs"]` (`c1_handlers_test.rs`,
+/// `c2_handlers_test.rs`) — a `crate::openapi` import would not resolve in
+/// that separate test-binary crate root. `code` is documented as a free
+/// string rather than an enum because `StableErrorCode` lives in
+/// `tack-orch` for the same reason; its fifteen frozen values are
+/// enumerated in `docs/contracts/runner-v1/README.md`.
+///
+/// `allow(dead_code)`: this type is a pure OpenAPI schema marker — utoipa's
+/// `#[utoipa::path(responses(... body = RunnerV1ErrorEnvelope ...))]`
+/// annotations reference it by *type* (calling `ToSchema`'s associated
+/// functions) but no code anywhere ever constructs a *value* of it, since
+/// every real error response is built from the actual runtime type,
+/// `tack_orch::execution::ProtocolErrorEnvelope`. In the real `tack-api`
+/// library crate this is invisible to `dead_code` (a `pub` item in a
+/// library is assumed reachable by external callers); it only surfaces
+/// when this file is compiled standalone into a test *binary* via
+/// `#[path]` (`c1_handlers_test.rs`/`c2_handlers_test.rs`), which has no
+/// external callers at all.
+#[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
+pub struct RunnerV1ErrorEnvelope {
+    pub error: RunnerV1Error,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
+pub struct RunnerV1Error {
+    /// One of the fifteen frozen `docs/contracts/runner-v1/errors/*.json`
+    /// codes (e.g. `not_found`, `conflict`, `idempotency_conflict`,
+    /// `invalid_transition`, `stale_lease`, `runner_revoked`).
+    #[schema(example = "not_found")]
+    pub code: String,
+    pub message: String,
+    pub request_id: String,
+    /// Whether a conformant client may safely retry — derived from `code`
+    /// alone (`StableErrorCode::retryable`), never set independently.
+    pub retryable: bool,
+    /// Per-code structured detail — shape documented per operation in
+    /// `docs/contracts/runner-v1/README.md` (e.g. `invalid_transition`'s
+    /// `{from, to}`, `stale_lease`'s `{attempt_id, current_fencing_token}`).
+    pub details: Value,
+}
 
 /// State for C1's card-local router. C5 can construct this from the shared API
 /// state when it performs the one permitted global-router integration.
@@ -34,8 +88,6 @@ impl OperatorExecutionState {
         Self { repo, clock }
     }
 }
-
-type HandlerResult = Result<Json<Value>, (StatusCode, Json<Value>)>;
 
 /// C5 replaces this non-secret sentinel with the request correlation ID once it
 /// mounts these card-local routes in the global API router.
@@ -123,7 +175,7 @@ fn fingerprint(value: &str) -> String {
     hex::encode(Sha256::digest(value.as_bytes()))
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateExecution {
     pub item_id: Uuid,
     pub idempotency_key: String,
@@ -135,8 +187,17 @@ pub struct CreateExecution {
     pub requested_model_provider: Option<String>,
     #[serde(default)]
     pub requested_model_id: Option<String>,
+    /// `tack_orch::execution::AgentProfileSnapshot` (`{name, instructions,
+    /// tool_policy, timeout_seconds, budgets}`) — untyped here because that
+    /// type lives in `tack-orch`, which does not derive `ToSchema` (see
+    /// `RunnerV1ErrorEnvelope`'s doc comment for the same architectural
+    /// reason). Validated against the real nested struct server-side at
+    /// enqueue time.
     pub agent_profile_snapshot: Value,
+    /// `tack_orch::execution::RepositorySnapshot` (`{kind, remote,
+    /// base_revision, subdirectory}`).
     pub repository_snapshot: Value,
+    /// `tack_orch::execution::PermissionPolicy` (`{tools, network}`).
     pub permission_policy: Value,
     pub budgets: Value,
     pub environment: Value,
@@ -146,10 +207,141 @@ pub struct CreateExecution {
     pub status_map_policy_id: Option<String>,
 }
 
+/// Response body for `POST /api/executions` — a newly created request or an
+/// idempotent replay of an existing one (`replayed` distinguishes the two).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CreateExecutionResponse {
+    pub protocol_version: u32,
+    pub request_id: String,
+    /// Always `"queued"` on success — a request enters the runner-v1
+    /// lifecycle (`docs/contracts/runner-v1/lifecycle-transitions.json`)
+    /// only once created.
+    pub state: String,
+    pub replayed: bool,
+}
+
+/// One row of `GET /api/executions` / the `GET /api/executions/{id}`
+/// detail. Deliberately five scalar columns today — see
+/// `docs/agent-handoffs/part-iii/III-E2.md`'s Gap 2 for the attempt/event
+/// data this does *not* carry, now available separately via `GET
+/// /api/executions/{id}/attempts`.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ExecutionSummary {
+    pub request_id: String,
+    pub item_id: String,
+    pub state: String,
+    pub cancellation_requested_at: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ExecutionListResponse {
+    pub protocol_version: u32,
+    pub data: Vec<ExecutionSummary>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ExecutionDetailResponse {
+    pub protocol_version: u32,
+    pub request_id: String,
+    pub item_id: String,
+    pub state: String,
+    pub cancellation_requested_at: Option<String>,
+    pub created_at: String,
+}
+
+/// One attempt as reported by `GET /api/executions/{id}/attempts` — every
+/// column `execution_attempts` carries (migration 045).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AttemptSummary {
+    pub attempt_id: String,
+    pub request_id: String,
+    pub attempt_number: i64,
+    pub runner_id: String,
+    pub fencing_token: i64,
+    pub state: String,
+    pub lease_issued_at: String,
+    pub lease_expires_at: String,
+    pub last_heartbeat_at: Option<String>,
+    pub event_checkpoint: Option<String>,
+    pub completion_id: Option<String>,
+    pub workspace_id: Option<String>,
+    pub base_revision: Option<String>,
+    /// `tack_orch::execution::ActualExecution` once the attempt has
+    /// reported one, else `null`.
+    pub actual_execution: Option<Value>,
+    pub terminal_reason: Option<Value>,
+    /// `tack_orch::execution::Usage` once reported, else `null` — never a
+    /// fabricated zero (III.2 rule 7).
+    pub usage: Option<Value>,
+    pub started_at: Option<String>,
+    pub ended_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AttemptListResponse {
+    pub protocol_version: u32,
+    pub data: Vec<AttemptSummary>,
+}
+
+/// One event as reported by `GET
+/// /api/executions/{id}/attempts/{attempt_number}/events`.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct EventSummary {
+    pub event_id: String,
+    pub sequence: i64,
+    pub source: String,
+    pub kind: String,
+    pub payload: Value,
+    pub occurred_at: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct EventListResponse {
+    pub protocol_version: u32,
+    pub data: Vec<EventSummary>,
+}
+
+/// Response body for `POST /api/executions/{id}/cancel`. `state` is
+/// deliberately **not** a `docs/contracts/runner-v1/lifecycle-transitions.json`
+/// value — cancellation is recorded as a request only
+/// (`cancellation_requested_at`); the request's real lifecycle state is
+/// unaffected and visible via `GET /api/executions/{id}`.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CancellationRequestedResponse {
+    pub protocol_version: u32,
+    pub request_id: String,
+    #[schema(example = "cancellation_requested")]
+    pub state: String,
+}
+
+/// Response body for `POST /api/executions/{id}/requeue`.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RequeueResponse {
+    pub protocol_version: u32,
+    pub request_id: String,
+    #[schema(example = "queued")]
+    pub state: String,
+    #[schema(example = "needs_operator")]
+    pub recovered_from: String,
+    pub replayed: bool,
+}
+
 pub fn routes(state: OperatorExecutionState) -> Router {
     Router::new()
         .route("/executions", post(create_execution).get(list_executions))
         .route("/executions/{request_id}", get(get_execution))
+        .route(
+            "/executions/{request_id}/attempts",
+            get(list_execution_attempts),
+        )
+        .route(
+            "/executions/{request_id}/attempts/{attempt_number}/events",
+            get(list_execution_attempt_events),
+        )
         .route(
             "/executions/{request_id}/cancel",
             post(request_cancellation),
@@ -161,11 +353,23 @@ pub fn routes(state: OperatorExecutionState) -> Router {
         .with_state(state)
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/executions",
+    tag = "execution-operator",
+    request_body = CreateExecution,
+    responses(
+        (status = 200, description = "Execution request created or idempotently replayed", body = CreateExecutionResponse),
+        (status = 400, description = "invalid_request", body = RunnerV1ErrorEnvelope),
+        (status = 404, description = "not_found (item does not exist)", body = RunnerV1ErrorEnvelope),
+        (status = 409, description = "conflict / idempotency_conflict / runner_revoked", body = RunnerV1ErrorEnvelope),
+    ),
+)]
 pub async fn create_execution(
     State(state): State<OperatorExecutionState>,
     headers: HeaderMap,
     Json(input): Json<CreateExecution>,
-) -> HandlerResult {
+) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
     let authenticated_principal = principal(&headers)?;
     let idempotency_scope = format!("operator:{authenticated_principal}");
     if state
@@ -407,12 +611,18 @@ pub async fn create_execution(
             )
         })?;
     match result {
-        EnqueueResult::Created(id) => Ok(Json(
-            json!({"protocol_version":1,"request_id":id,"state":"queued","replayed":false}),
-        )),
-        EnqueueResult::Replayed(id) => Ok(Json(
-            json!({"protocol_version":1,"request_id":id,"state":"queued","replayed":true}),
-        )),
+        EnqueueResult::Created(id) => Ok(Json(CreateExecutionResponse {
+            protocol_version: 1,
+            request_id: id,
+            state: "queued".into(),
+            replayed: false,
+        })),
+        EnqueueResult::Replayed(id) => Ok(Json(CreateExecutionResponse {
+            protocol_version: 1,
+            request_id: id,
+            state: "queued".into(),
+            replayed: true,
+        })),
         EnqueueResult::Conflict => Err(error(
             StatusCode::CONFLICT,
             StableErrorCode::IdempotencyConflict,
@@ -422,7 +632,17 @@ pub async fn create_execution(
     }
 }
 
-pub async fn list_executions(State(state): State<OperatorExecutionState>) -> HandlerResult {
+#[utoipa::path(
+    get,
+    path = "/api/executions",
+    tag = "execution-operator",
+    responses(
+        (status = 200, description = "Every execution request, newest first", body = ExecutionListResponse),
+    ),
+)]
+pub async fn list_executions(
+    State(state): State<OperatorExecutionState>,
+) -> Result<Json<ExecutionListResponse>, (StatusCode, Json<Value>)> {
     let rows = sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at FROM execution_requests ORDER BY created_at DESC")
         .fetch_all(state.repo.pool()).await.map_err(|_| {
             error(
@@ -432,14 +652,36 @@ pub async fn list_executions(State(state): State<OperatorExecutionState>) -> Han
                 json!({}),
             )
         })?;
-    let data: Vec<Value> = rows.into_iter().map(|row| json!({"request_id":row.get::<String,_>("id"),"item_id":row.get::<String,_>("item_id"),"state":row.get::<String,_>("state"),"cancellation_requested_at":row.get::<Option<String>,_>("cancellation_requested_at"),"created_at":row.get::<String,_>("created_at")})).collect();
-    Ok(Json(json!({"protocol_version":1,"data":data})))
+    let data: Vec<ExecutionSummary> = rows
+        .into_iter()
+        .map(|row| ExecutionSummary {
+            request_id: row.get("id"),
+            item_id: row.get("item_id"),
+            state: row.get("state"),
+            cancellation_requested_at: row.get("cancellation_requested_at"),
+            created_at: row.get("created_at"),
+        })
+        .collect();
+    Ok(Json(ExecutionListResponse {
+        protocol_version: 1,
+        data,
+    }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/executions/{request_id}",
+    tag = "execution-operator",
+    params(("request_id" = String, Path, description = "Execution request ID (opaque)")),
+    responses(
+        (status = 200, description = "Execution request detail", body = ExecutionDetailResponse),
+        (status = 404, description = "not_found", body = RunnerV1ErrorEnvelope),
+    ),
+)]
 pub async fn get_execution(
     State(state): State<OperatorExecutionState>,
     Path(request_id): Path<String>,
-) -> HandlerResult {
+) -> Result<Json<ExecutionDetailResponse>, (StatusCode, Json<Value>)> {
     let row = sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at FROM execution_requests WHERE id = ?")
         .bind(&request_id).fetch_optional(state.repo.pool()).await.map_err(|_| {
             error(
@@ -457,15 +699,208 @@ pub async fn get_execution(
             json!({"resource": "execution_request"}),
         ));
     };
-    Ok(Json(
-        json!({"protocol_version":1,"request_id":row.get::<String,_>("id"),"item_id":row.get::<String,_>("item_id"),"state":row.get::<String,_>("state"),"cancellation_requested_at":row.get::<Option<String>,_>("cancellation_requested_at"),"created_at":row.get::<String,_>("created_at")}),
-    ))
+    Ok(Json(ExecutionDetailResponse {
+        protocol_version: 1,
+        request_id: row.get("id"),
+        item_id: row.get("item_id"),
+        state: row.get("state"),
+        cancellation_requested_at: row.get("cancellation_requested_at"),
+        created_at: row.get("created_at"),
+    }))
 }
 
+/// `GET /api/executions/{request_id}/attempts` — card III-E6. Closes the
+/// gap E2, E4 and E5 each independently hit: `execution_attempts`
+/// (migration 045) has been written by the runner-v1 protocol since Wave 2
+/// with no operator read path — `GET /executions/{id}` returns only 5
+/// scalar columns (`request_id, item_id, state, cancellation_requested_at,
+/// created_at`), never attempt data. An empty list here is a real, honest
+/// "no attempt yet" (the request is still `queued`), not a placeholder —
+/// distinct from the 404 an unknown `request_id` gets.
+#[utoipa::path(
+    get,
+    path = "/api/executions/{request_id}/attempts",
+    tag = "execution-operator",
+    params(("request_id" = String, Path, description = "Execution request ID (opaque)")),
+    responses(
+        (status = 200, description = "Every attempt made against this request, oldest first (may be empty)", body = AttemptListResponse),
+        (status = 404, description = "not_found", body = RunnerV1ErrorEnvelope),
+    ),
+)]
+pub async fn list_execution_attempts(
+    State(state): State<OperatorExecutionState>,
+    Path(request_id): Path<String>,
+) -> Result<Json<AttemptListResponse>, (StatusCode, Json<Value>)> {
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM execution_requests WHERE id = ?)")
+            .bind(&request_id)
+            .fetch_one(state.repo.pool())
+            .await
+            .map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not verify execution",
+                    json!({}),
+                )
+            })?;
+    if !exists {
+        return Err(error(
+            StatusCode::NOT_FOUND,
+            StableErrorCode::NotFound,
+            "Execution request does not exist",
+            json!({"resource": "execution_request"}),
+        ));
+    }
+    let attempts = state
+        .repo
+        .list_attempts_for_request(&request_id)
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not list attempts",
+                json!({}),
+            )
+        })?;
+    let data: Vec<AttemptSummary> = attempts
+        .into_iter()
+        .map(|attempt| AttemptSummary {
+            attempt_id: attempt.id,
+            request_id: attempt.request_id,
+            attempt_number: attempt.attempt_number,
+            runner_id: attempt.runner_id,
+            fencing_token: attempt.fencing_token,
+            state: attempt.state,
+            lease_issued_at: attempt.lease_issued_at,
+            lease_expires_at: attempt.lease_expires_at,
+            last_heartbeat_at: attempt.last_heartbeat_at,
+            event_checkpoint: attempt.event_checkpoint,
+            completion_id: attempt.completion_id,
+            workspace_id: attempt.workspace_id,
+            base_revision: attempt.base_revision,
+            actual_execution: attempt
+                .actual_execution
+                .as_deref()
+                .and_then(|raw| serde_json::from_str::<Value>(raw).ok()),
+            terminal_reason: attempt
+                .terminal_reason
+                .as_deref()
+                .and_then(|raw| serde_json::from_str::<Value>(raw).ok()),
+            usage: attempt
+                .usage
+                .as_deref()
+                .and_then(|raw| serde_json::from_str::<Value>(raw).ok()),
+            started_at: attempt.started_at,
+            ended_at: attempt.ended_at,
+            created_at: attempt.created_at,
+            updated_at: attempt.updated_at,
+        })
+        .collect();
+    Ok(Json(AttemptListResponse {
+        protocol_version: 1,
+        data,
+    }))
+}
+
+/// `GET /api/executions/{request_id}/attempts/{attempt_number}/events` —
+/// card III-E6, the other half of the attempts/events gap above. Returns
+/// `404` naming which resource is missing (`execution_request` vs
+/// `execution_attempt`) rather than a single ambiguous not-found, since a
+/// client can otherwise not distinguish "wrong request id" from "this
+/// attempt number never existed."
+#[utoipa::path(
+    get,
+    path = "/api/executions/{request_id}/attempts/{attempt_number}/events",
+    tag = "execution-operator",
+    params(
+        ("request_id" = String, Path, description = "Execution request ID (opaque)"),
+        ("attempt_number" = i64, Path, description = "1-based attempt number"),
+    ),
+    responses(
+        (status = 200, description = "Every event this attempt has reported, oldest first (may be empty)", body = EventListResponse),
+        (status = 404, description = "not_found (execution_request or execution_attempt)", body = RunnerV1ErrorEnvelope),
+    ),
+)]
+pub async fn list_execution_attempt_events(
+    State(state): State<OperatorExecutionState>,
+    Path((request_id, attempt_number)): Path<(String, i64)>,
+) -> Result<Json<EventListResponse>, (StatusCode, Json<Value>)> {
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM execution_requests WHERE id = ?)")
+            .bind(&request_id)
+            .fetch_one(state.repo.pool())
+            .await
+            .map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not verify execution",
+                    json!({}),
+                )
+            })?;
+    if !exists {
+        return Err(error(
+            StatusCode::NOT_FOUND,
+            StableErrorCode::NotFound,
+            "Execution request does not exist",
+            json!({"resource": "execution_request"}),
+        ));
+    }
+    let events = state
+        .repo
+        .list_events_for_attempt_number(&request_id, attempt_number)
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not list events",
+                json!({}),
+            )
+        })?;
+    let Some(events) = events else {
+        return Err(error(
+            StatusCode::NOT_FOUND,
+            StableErrorCode::NotFound,
+            "Attempt does not exist",
+            json!({"resource": "execution_attempt"}),
+        ));
+    };
+    let data: Vec<EventSummary> = events
+        .into_iter()
+        .map(|event| EventSummary {
+            event_id: event.event_id,
+            sequence: event.sequence,
+            source: event.source,
+            kind: event.kind,
+            payload: serde_json::from_str::<Value>(&event.payload).unwrap_or(Value::Null),
+            occurred_at: event.occurred_at,
+            created_at: event.created_at,
+        })
+        .collect();
+    Ok(Json(EventListResponse {
+        protocol_version: 1,
+        data,
+    }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/executions/{request_id}/cancel",
+    tag = "execution-operator",
+    params(("request_id" = String, Path, description = "Execution request ID (opaque)")),
+    responses(
+        (status = 200, description = "Cancellation requested — not yet terminal", body = CancellationRequestedResponse),
+        (status = 404, description = "not_found", body = RunnerV1ErrorEnvelope),
+        (status = 409, description = "conflict (already terminal)", body = RunnerV1ErrorEnvelope),
+    ),
+)]
 pub async fn request_cancellation(
     State(state): State<OperatorExecutionState>,
     Path(request_id): Path<String>,
-) -> HandlerResult {
+) -> Result<Json<CancellationRequestedResponse>, (StatusCode, Json<Value>)> {
     let changed = state
         .repo
         .request_execution_cancellation(&request_id, state.clock.as_ref())
@@ -512,22 +947,36 @@ pub async fn request_cancellation(
             ),
         });
     }
-    Ok(Json(
-        json!({"protocol_version":1,"request_id":request_id,"state":"cancellation_requested"}),
-    ))
+    Ok(Json(CancellationRequestedResponse {
+        protocol_version: 1,
+        request_id,
+        state: "cancellation_requested".into(),
+    }))
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct RecoveryConfirmation {
     pub recovery_key: String,
     pub reason: String,
 }
+
+#[utoipa::path(
+    post,
+    path = "/api/executions/{request_id}/requeue",
+    tag = "execution-operator",
+    params(("request_id" = String, Path, description = "Execution request ID (opaque)")),
+    request_body = RecoveryConfirmation,
+    responses(
+        (status = 200, description = "Requeued (or replayed) after an audited recovery decision", body = RequeueResponse),
+        (status = 409, description = "conflict / idempotency_conflict / invalid_transition", body = RunnerV1ErrorEnvelope),
+    ),
+)]
 pub async fn requeue_needs_operator(
     State(state): State<OperatorExecutionState>,
     headers: HeaderMap,
     Path(request_id): Path<String>,
     Json(input): Json<RecoveryConfirmation>,
-) -> HandlerResult {
+) -> Result<Json<RequeueResponse>, (StatusCode, Json<Value>)> {
     let actor = principal(&headers)?;
     let reason_fingerprint = fingerprint(&input.reason);
     let result = state
@@ -549,9 +998,15 @@ pub async fn requeue_needs_operator(
             )
         })?;
     match result {
-        OperatorRequeueResult::Requeued | OperatorRequeueResult::Replayed => Ok(Json(
-            json!({"protocol_version":1,"request_id":request_id,"state":"queued","recovered_from":"needs_operator","replayed":matches!(result, OperatorRequeueResult::Replayed)}),
-        )),
+        OperatorRequeueResult::Requeued | OperatorRequeueResult::Replayed => {
+            Ok(Json(RequeueResponse {
+                protocol_version: 1,
+                request_id,
+                state: "queued".into(),
+                recovered_from: "needs_operator".into(),
+                replayed: matches!(result, OperatorRequeueResult::Replayed),
+            }))
+        }
         OperatorRequeueResult::Conflict => Err(error(
             StatusCode::CONFLICT,
             StableErrorCode::IdempotencyConflict,
