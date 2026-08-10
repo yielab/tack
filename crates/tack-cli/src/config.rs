@@ -32,6 +32,12 @@ impl Config {
 }
 
 /// Write base_url (and optionally token) to ~/.tackrc.
+///
+/// `~/.tackrc` can carry `TACK_API_TOKEN` — a credential — so the write goes
+/// through `secure_fs::write_owner_only_atomic` (temp file + `fsync` +
+/// rename, `0600`) instead of a plain `fs::write`, which would both leave a
+/// window where a crash mid-write drops a torn file and rely on umask alone
+/// to keep it unreadable by other local users.
 pub fn save(base_url: &str, token: Option<&str>) -> anyhow::Result<()> {
     let home = std::env::var("HOME").context("HOME environment variable not set")?;
     let path = std::path::Path::new(&home).join(".tackrc");
@@ -39,7 +45,7 @@ pub fn save(base_url: &str, token: Option<&str>) -> anyhow::Result<()> {
     if let Some(t) = token {
         content.push_str(&format!("token = \"{t}\"\n"));
     }
-    std::fs::write(&path, content)
+    crate::secure_fs::write_owner_only_atomic(&path, content.as_bytes())
         .with_context(|| format!("Failed to write {}", path.display()))?;
     Ok(())
 }
