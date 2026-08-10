@@ -1,0 +1,47 @@
+//! The deterministic fleet scheduler (`TODO.md` Part III, Wave 4, card
+//! III-E1).
+//!
+//! This module is a pure decision library: given a candidate set of runners
+//! (their current health/capacity/labels/declared harness and model
+//! support) and a request (exact runner or fleet selector, required
+//! harness, optional provider/model, priority), it returns either a
+//! selected runner or a typed reason none qualify. It performs **no I/O**
+//! — no database, no reconciler, no network client — and it **never grants
+//! the authoritative lease**; only the repository's fenced claim
+//! (`docs/contracts/runner-v1/`, III.1.5) can do that. A later integration
+//! card wires this module's inputs to the real `agent_runners` /
+//! `agent_fleet_members` / `execution_requests` tables
+//! (`crates/tack-db/src/migrations.rs`, migrations 039–044) and calls it
+//! ahead of, or as a replacement for, the naive `ORDER BY created_at LIMIT
+//! 1` match in `crates/tack-db/src/repo/execution.rs`'s claim query — see
+//! this card's handoff (`docs/agent-handoffs/part-iii/III-E1.md`) for the
+//! exact seam.
+//!
+//! # Two entry points
+//!
+//! - [`select::select_runner`] — one request against a candidate pool.
+//!   Pure, synchronous, deterministic.
+//! - [`batch::schedule`] — several requests sharing one candidate pool,
+//!   ordered by priority then FIFO fairness, with capacity consumed across
+//!   the pass. Built on top of [`select::select_runner`], not a separate
+//!   algorithm.
+//!
+//! # Why this crate, not `tack-db` or `tack-api`
+//!
+//! `tack-orch` already depends inward on `tack-core` and `tack-db` only
+//! (see this crate's top-level doc comment) and must never depend on
+//! `tack-api` — exactly the shape a pure selection library needs: it can
+//! reuse `execution::` domain types (`HarnessKind`, `RunnerId`,
+//! `RunnerSelector`, `HarnessCapability`, …) without pulling in HTTP,
+//! `sqlx`, or any transport concern.
+
+pub mod batch;
+pub mod select;
+pub mod types;
+
+pub use batch::schedule;
+pub use select::{SchedulingError, SchedulingPolicy, select_runner};
+pub use types::{
+    IneligibleReason, ModelSelector, Priority, RunnerCandidate, RunnerState, SchedulingRequest,
+    Selection, SelectionOutcome,
+};
