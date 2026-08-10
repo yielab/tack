@@ -326,6 +326,92 @@ test('fleet page (populated) has no accessibility violations', async ({ page }) 
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
 });
 
+// Runner Fleet section (frontend/src/features/fleet/runnerFleet/**, TODO.md
+// §6 "III-E3", Wave 4 / Phase 54). Unlike the legacy Docket scans above, the
+// operator execution/fleet/runner/profile routes this section calls
+// (`/api/executions`, `/api/runner-fleets`, `/api/runners/*`,
+// `/api/agent-profiles`, `/api/model-profiles`) are NOT gated behind
+// `TACK_ORCH_ENABLE` (`crates/tack-api/src/router.rs`'s
+// `operator_execution_routes` is merged into `/api` independently of
+// `orch_routes`) — so these scans hit the real, unmodified webServer with no
+// `page.route` interception at all, including a genuine enroll round-trip
+// against `POST /api/runners/enrollment`.
+
+test('fleet page — runner fleet section (default Runners tab, empty) has no accessibility violations', async ({
+  page,
+}) => {
+  await page.goto('/fleet');
+  await waitForApp(page);
+  await expect(page.getByRole('heading', { name: 'Enroll a runner' })).toBeVisible();
+  await expect(page.getByRole('tablist')).toBeVisible();
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+test('fleet page — enrolling a runner and viewing the one-time token modal has no accessibility violations', async ({
+  page,
+}) => {
+  await page.goto('/fleet');
+  await waitForApp(page);
+
+  const runnerName = `e2e-runner-${Date.now()}`;
+  await page.getByLabel('Name').fill(runnerName);
+  await page.getByRole('button', { name: 'Enroll', exact: true }).click();
+
+  await expect(page.getByRole('dialog', { name: 'Runner enrollment token' })).toBeVisible();
+  await expect(page.getByText('Shown once')).toBeVisible();
+  // The real enrollment token is a real secret round-tripped from the live
+  // API — assert SOME token text rendered (not empty), without hard-coding
+  // its value.
+  await expect(page.getByText(/^enr_/)).toBeVisible();
+
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+
+  // Close and confirm the roster now shows the runner as unconfirmed —
+  // never a fabricated "Healthy" reading.
+  await page.getByRole('button', { name: "I've copied it — close" }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByText(runnerName, { exact: true })).toBeVisible();
+  await expect(page.getByText('Connection unconfirmed')).toBeVisible();
+
+  const violationsAfterClose = await scan(page);
+  expect(violationsAfterClose, JSON.stringify(violationsAfterClose.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+test('fleet page — Fleets/Agent profiles/Model profiles tabs have no accessibility violations', async ({ page }) => {
+  await page.goto('/fleet');
+  await waitForApp(page);
+
+  await page.getByRole('tab', { name: 'Fleets' }).click();
+  await expect(page.getByRole('tabpanel')).toBeVisible();
+  let violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+
+  await page.getByRole('tab', { name: 'Agent profiles' }).click();
+  violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+
+  await page.getByRole('tab', { name: 'Model profiles' }).click();
+  violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+test('fleet page — creating a fleet via the form has no accessibility violations', async ({ page }) => {
+  await page.goto('/fleet');
+  await waitForApp(page);
+
+  await page.getByRole('tab', { name: 'Fleets' }).click();
+  await page.getByRole('button', { name: '+ Create fleet' }).click();
+  const fleetName = `e2e-fleet-${Date.now()}`;
+  await page.getByLabel('Name').fill(fleetName);
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(page.getByText(fleetName, { exact: true })).toBeVisible();
+
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
 // Dispatch UI (frontend/src/shared/dispatch/**, TODO.md §6 "C4", tasks
 // 35.8/35.9). Same technique as the Fleet scans above: `TACK_ORCH_ENABLE`
 // isn't set for this harness's webServer, so every dispatch route 404s by
