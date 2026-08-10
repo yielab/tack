@@ -1,6 +1,6 @@
 # III-E3 handoff
 
-- **Base SHA / branch / final SHA:** base `d72224a4fa3d4da9a78c2c7d3108c76f36f93875` ("docs: mark Wave 4 in progress after E1/E2/E5 integration") on `plan/harness-agnostic-agent-fleet`, worked in an isolated worktree at `/tmp/tack-iii-e3` on `agent/iii-e3-fleet-ui`. Final SHA recorded below once committed (this file's own commit is included in that SHA — see the commit that follows this handoff in `git log`).
+- **Base SHA / branch / final SHA:** base `d72224a4fa3d4da9a78c2c7d3108c76f36f93875` ("docs: mark Wave 4 in progress after E1/E2/E5 integration") on `plan/harness-agnostic-agent-fleet`, worked in an isolated worktree at `/tmp/tack-iii-e3` on `agent/iii-e3-fleet-ui`. Two commits: `7000fcfbcd1ecd3734dda3298d326a6e4e234f07` ("feat(frontend): add runner and fleet management UI" — the feature itself plus this handoff's first draft) and this line's own commit, which only fills in these two SHAs — tip of `agent/iii-e3-fleet-ui` is the final SHA.
 - **Files changed (must equal ownership list):** all under `frontend/src/features/fleet/**` plus `frontend/e2e/a11y.spec.ts` (a11y tests, per this card's explicit instruction to "find and reuse its existing axe test harness") and this handoff:
   - `frontend/src/features/fleet/FleetPage.tsx` — restructured (see "Behavior implemented").
   - `frontend/src/features/fleet/FleetPage.test.tsx` — two tests added (existing tests untouched).
