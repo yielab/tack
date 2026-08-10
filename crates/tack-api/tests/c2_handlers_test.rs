@@ -42,6 +42,11 @@ use uuid::Uuid;
 
 const RUNNER_ID: &str = "runner-c2";
 const RUNNER_CREDENTIAL: &str = "raw-test-runner-credential";
+/// The explicit model every `enqueue_request()` call requests, matching
+/// `full_capabilities()`'s declared combination — see III-E6's scheduler
+/// wiring note on both functions.
+const REQUESTED_MODEL_PROVIDER: &str = "openai";
+const REQUESTED_MODEL_ID: &str = "opaque/model-c2";
 
 // ---------------------------------------------------------------------
 // Fake clock: every lease/heartbeat/expiry test below injects time rather
@@ -124,6 +129,13 @@ async fn setup() -> (Router, Repository, FakeClock, String) {
 
     let clock = FakeClock::new(Utc.with_ymd_and_hms(2026, 8, 6, 12, 0, 0).unwrap());
     let credential_hash = runner_protocol::runner_auth::credential_hash(RUNNER_CREDENTIAL);
+    // Card III-E6 wires `tack_orch::scheduler` into the real claim path, so
+    // `RUNNER_ID` must declare a real harness/model combination — an empty
+    // `"{}"` snapshot (this test's pre-Wave-4 shorthand for "not enrolled
+    // yet, doesn't matter") would now make every claim in this file
+    // eligibility-reject before ever reaching the fencing/idempotency/replay
+    // behavior these tests actually exist to prove.
+    let capability_snapshot = full_capabilities(clock.now(), 2, 2).to_string();
     repo.register_runner(
         NewRunner {
             id: RUNNER_ID,
@@ -132,7 +144,7 @@ async fn setup() -> (Router, Repository, FakeClock, String) {
             labels: "{}",
             total_capacity: 2,
             available_capacity: 2,
-            capability_snapshot: "{}",
+            capability_snapshot: &capability_snapshot,
             protocol_version: 1,
         },
         &clock,
@@ -187,8 +199,10 @@ async fn enqueue_request(
         "agent_profile_id": agent_profile_id,
         "resolved_agent_profile": {"name":"C2 Profile","instructions":"work safely","tool_policy":{"mode":"safe"},"timeout_seconds":60,"budgets":{"tokens":1000}},
         "requested_harness_kind": "codex",
-        "requested_model_provider": Value::Null,
-        "requested_model_id": Value::Null,
+        // Explicit, matching `full_capabilities()`'s declared combination —
+        // see `REQUESTED_MODEL_PROVIDER`/`REQUESTED_MODEL_ID`'s doc comment.
+        "requested_model_provider": REQUESTED_MODEL_PROVIDER,
+        "requested_model_id": REQUESTED_MODEL_ID,
         "repository": {"kind":"git","remote":"https://example.test/c2.git","base_revision":"abc123def456abc123def456abc123def456abc","subdirectory": Value::Null},
         "permission_policy": {"tools":["shell"],"network": false},
         "timeout_seconds": 60,
@@ -212,8 +226,8 @@ async fn enqueue_request(
             agent_profile_id: Some(agent_profile_id),
             agent_profile_snapshot: &field_str("resolved_agent_profile"),
             requested_harness_kind: Some("codex"),
-            requested_model_provider: None,
-            requested_model_id: None,
+            requested_model_provider: Some(REQUESTED_MODEL_PROVIDER),
+            requested_model_id: Some(REQUESTED_MODEL_ID),
             repository_snapshot: &field_str("repository"),
             permission_policy: &field_str("permission_policy"),
             timeout_seconds: Some(60),
@@ -275,12 +289,27 @@ async fn send_as_runner(
     .await
 }
 
+/// `harnesses` declares "codex"/"openai"/`REQUESTED_MODEL_ID` — every
+/// `enqueue_request()` call in this file requests exactly that pair (see
+/// its own doc comment) so the real scheduler (card III-E6) finds this
+/// runner eligible, the same way a real runner's declared capabilities
+/// would need to match a real request for a claim to succeed.
 fn full_capabilities(reported_at: DateTime<Utc>, total: i64, available: i64) -> Value {
     json!({
         "reported_at": reported_at.to_rfc3339(),
         "labels": {"os": "linux"},
         "concurrency": {"total": total, "available": available},
-        "harnesses": [],
+        "harnesses": [{
+            "harness_kind": "codex",
+            "installed_version": "1.0.0",
+            "probe_error": null,
+            "probed_at": reported_at.to_rfc3339(),
+            "model_combinations": [{
+                "model_provider": REQUESTED_MODEL_PROVIDER,
+                "model_ids": [REQUESTED_MODEL_ID],
+                "discovery": "reported"
+            }]
+        }],
         "features": {},
         "limits": {"event_payload_bytes_max": 65536, "artifact_content_bytes_max": 52428800},
     })

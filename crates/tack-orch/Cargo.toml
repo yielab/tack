@@ -35,11 +35,14 @@ chrono = { workspace = true }
 # that, standard-library-adjacent rather than a bespoke hash-to-UUID scheme.
 uuid = { workspace = true, features = ["v5"] }
 tracing = { workspace = true }
+# Card III-E6 (Wave 4 integrator): `scheduler::wiring` calls straight through
+# `tack_db::Repository`'s async methods, whose `Result` error type is
+# `sqlx::Error` — naming that type in this crate's own public signatures
+# (`choose_request_for_runner`) requires `sqlx` as a real dependency, not
+# only the test-only one below. No new crate enters the workspace lockfile:
+# `sqlx` is already the shared workspace dependency `tack-db` itself uses.
+sqlx = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
 wiremock = { workspace = true }
-# Card B1's `tests/ingestion_test.rs` asserts idempotency with a direct
-# `SELECT COUNT(*)` against the in-memory test DB — not a second SQLite
-# driver, the same `sqlx` already used throughout the workspace (tack-db).
-sqlx = { workspace = true }

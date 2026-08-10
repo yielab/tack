@@ -14,6 +14,7 @@ mod common;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
+use chrono::Utc;
 use serde_json::{Value, json};
 use sha2::Digest;
 use tack_api::config::AppConfig;
@@ -154,12 +155,32 @@ fn bearer(token: &str) -> String {
     format!("Bearer {token}")
 }
 
+/// Declares "codex"/"openai"/"opaque/model-c5" — every execution request
+/// body in this file requests exactly that pair (see `requested_harness_kind`
+/// call sites) — and uses the *real* current wall-clock time as
+/// `reported_at`/`probed_at`, not a frozen fixture date: this file drives
+/// the real production router (`SystemExecutionClock`), and card III-E6's
+/// `tack_orch::scheduler::wiring` falls back to a capability report's own
+/// `reported_at` as a liveness signal for a runner that has never sent a
+/// `/heartbeat` yet (true of every runner here). A hardcoded past date
+/// would make that fallback correctly, honestly judge the runner stale.
 fn full_capabilities() -> Value {
+    let now = Utc::now().to_rfc3339();
     json!({
-        "reported_at": "2026-08-08T12:00:00Z",
+        "reported_at": now,
         "labels": {"os": "linux"},
         "concurrency": {"total": 1, "available": 1},
-        "harnesses": [],
+        "harnesses": [{
+            "harness_kind": "codex",
+            "installed_version": "1.2.3",
+            "probe_error": null,
+            "probed_at": now,
+            "model_combinations": [{
+                "model_provider": "openai",
+                "model_ids": ["opaque/model-c5"],
+                "discovery": "reported"
+            }],
+        }],
         "features": {},
         "limits": {"event_payload_bytes_max": 65536, "artifact_content_bytes_max": 52428800},
     })
@@ -277,6 +298,8 @@ async fn production_router_completes_the_mock_vertical_slice_and_survives_restar
             "selector_id": runner_id,
             "agent_profile_id": agent_profile_id,
             "requested_harness_kind": "codex",
+            "requested_model_provider": "openai",
+            "requested_model_id": "opaque/model-c5",
             "agent_profile_snapshot": {"name":"C5 profile","instructions":"work safely","tool_policy":{},"timeout_seconds":60,"budgets":{}},
             "repository_snapshot": {"kind":"git","remote":"https://example.test/c5.git","base_revision":"abc123def456abc123def456abc123def456abc","subdirectory":null},
             "permission_policy": {"tools":["shell"],"network": false},
@@ -885,6 +908,8 @@ async fn queue_one_claimable_runner_v1_request(
             "selector_id": runner_id,
             "agent_profile_id": agent_profile_id,
             "requested_harness_kind": "codex",
+            "requested_model_provider": "openai",
+            "requested_model_id": "opaque/model-c5",
             "agent_profile_snapshot": {"name":"body-limit profile","instructions":"work safely","tool_policy":{},"timeout_seconds":60,"budgets":{}},
             "repository_snapshot": {"kind":"git","remote":"https://example.test/body-limit.git","base_revision":"abc123def456abc123def456abc123def456abc","subdirectory":null},
             "permission_policy": {"tools":["shell"],"network": false},

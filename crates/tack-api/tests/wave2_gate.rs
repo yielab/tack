@@ -29,6 +29,7 @@
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
+use chrono::Utc;
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
 use tack_api::{AppState, orch_runtime::OrchRuntime, router::build_router};
@@ -126,12 +127,44 @@ fn bearer(token: &str) -> String {
     format!("Bearer {token}")
 }
 
+/// The mock runner's declared capability snapshot. Card III-E6 wires
+/// `tack_orch::scheduler` into the real claim path (`crates/tack-db/src/repo/execution.rs`'s
+/// `claim_execution_idempotent_with_snapshot`), which — unlike the pre-Wave-4
+/// naive `ORDER BY created_at LIMIT 1` match this gate originally proved a
+/// lifecycle against — actually checks a claiming runner's declared
+/// harness/model combinations before it may lease a request. `harnesses`
+/// therefore declares "codex"/"openai"/"opaque/model-wave2" here, and every
+/// `execution_request_body()` fixture below requests exactly that pair, so
+/// this file keeps proving "claim, start, stream, complete, survive
+/// restart" through the real, now-scheduler-gated router rather than
+/// silently relying on a runner that declares nothing.
+///
+/// `reported_at`/`probed_at` are the *real* current wall-clock time, not a
+/// frozen fixture date: this file's router hard-codes `SystemExecutionClock`
+/// (see the module doc above), and `tack_orch::scheduler::wiring`'s claim
+/// path falls back to a capability report's own `reported_at` as a liveness
+/// signal for a runner that has never sent a `/heartbeat` yet (true of
+/// every runner in this file — none of these scenarios run an active
+/// attempt before their first claim). A hardcoded past date would make that
+/// fallback correctly, honestly judge the runner stale — this is a fixture
+/// realism fix, not a loosened assertion.
 fn full_capabilities() -> Value {
+    let now = Utc::now().to_rfc3339();
     json!({
-        "reported_at": "2026-08-08T12:00:00Z",
+        "reported_at": now,
         "labels": {"os": "linux"},
         "concurrency": {"total": 1, "available": 1},
-        "harnesses": [],
+        "harnesses": [{
+            "harness_kind": "codex",
+            "installed_version": "1.2.3",
+            "probe_error": null,
+            "probed_at": now,
+            "model_combinations": [{
+                "model_provider": "openai",
+                "model_ids": ["opaque/model-wave2"],
+                "discovery": "reported"
+            }],
+        }],
         "features": {},
         "limits": {"event_payload_bytes_max": 65536, "artifact_content_bytes_max": 52428800},
     })
@@ -282,6 +315,12 @@ fn execution_request_body(
         "selector_id": selector_id,
         "agent_profile_id": agent_profile_id,
         "requested_harness_kind": "codex",
+        // Explicit, matching `full_capabilities()`'s declared combination —
+        // see that function's doc comment for why this is no longer
+        // auto-select (`null`/`null`) now that the real scheduler gates the
+        // claim path.
+        "requested_model_provider": "openai",
+        "requested_model_id": "opaque/model-wave2",
         "agent_profile_snapshot": {"name": "profile", "instructions": "work safely", "tool_policy": {}, "timeout_seconds": 60, "budgets": {}},
         "repository_snapshot": {"kind": "git", "remote": "https://example.test/wave2.git", "base_revision": BASE_REVISION, "subdirectory": null},
         "permission_policy": {"tools": ["shell"], "network": false},
