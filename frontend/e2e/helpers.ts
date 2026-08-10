@@ -200,3 +200,107 @@ export async function createAgentProfile(request: APIRequestContext, name: strin
   const body = await res.json();
   return body.agent_profile_id;
 }
+
+/** Create a model profile (`POST /api/model-profiles`) — the picker
+ *  `RunWithAgentModal.tsx`'s "Choose a model" mode lists. Returns the new
+ *  profile's id. */
+export async function createModelProfile(
+  request: APIRequestContext,
+  name: string,
+  modelProvider: string,
+  modelId: string,
+): Promise<string> {
+  const res = await request.post(`${API}/model-profiles`, {
+    data: { name, model_provider: modelProvider, model_id: modelId },
+  });
+  expect(res.ok(), `create model profile failed: ${res.status()}`).toBeTruthy();
+  const body = await res.json();
+  return body.model_profile_id;
+}
+
+/**
+ * A minimal, valid runner-v1 capability report declaring `codex`/`openai`/
+ * `modelId` — for the direct runner-protocol HTTP calls
+ * {@link enrollRunner}/{@link claimOnce} make (TODO.md III-E6). There is no
+ * CLI/UI surface for the runner side of the protocol (enroll/refresh/claim
+ * are `tack-runner`'s job, a different binary/actor than the operator UI
+ * these specs otherwise drive) — these two helpers speak it directly, as a
+ * real runner would.
+ */
+function capabilities(modelId: string) {
+  const now = new Date().toISOString();
+  return {
+    reported_at: now,
+    labels: {},
+    concurrency: { total: 1, available: 1 },
+    harnesses: [
+      {
+        harness_kind: 'codex',
+        installed_version: '1.0.0',
+        probe_error: null,
+        probed_at: now,
+        model_combinations: [{ model_provider: 'openai', model_ids: [modelId], discovery: 'reported' }],
+      },
+    ],
+    features: {},
+    limits: { event_payload_bytes_max: 65536, artifact_content_bytes_max: 52428800 },
+  };
+}
+
+/**
+ * Enrolls a runner as `tack-runner` would: `POST /api/runners/enrollment`
+ * (operator side, issues the one-time token) then `POST
+ * /api/runner/v1/enroll` (the runner side of the exchange). Returns the
+ * runner id and its bearer credential for later {@link claimOnce} calls.
+ */
+export async function enrollRunner(
+  request: APIRequestContext,
+  name: string,
+  modelId: string,
+  capacity = 1,
+): Promise<{ runnerId: string; credential: string }> {
+  const pendingRes = await request.post(`${API}/runners/enrollment`, {
+    data: { name, total_capacity: capacity, available_capacity: capacity },
+  });
+  expect(pendingRes.ok(), `create pending runner failed: ${pendingRes.status()}`).toBeTruthy();
+  const pending = await pendingRes.json();
+
+  const enrollRes = await request.post(`${API}/runner/v1/enroll`, {
+    data: {
+      protocol_version: 1,
+      enrollment_token: pending.enrollment_token,
+      runner_name: name,
+      runner_version: '0.1.0',
+      capabilities: capabilities(modelId),
+    },
+  });
+  expect(enrollRes.ok(), `runner enroll failed: ${enrollRes.status()}`).toBeTruthy();
+  const enrolled = await enrollRes.json();
+  return { runnerId: pending.runner_id as string, credential: enrolled.runner_credential as string };
+}
+
+/**
+ * Polls `POST /api/runner/v1/claim` once, as `tack-runner` would each
+ * cycle. Returns the claimed `request_id`, or `null` for a `no work`
+ * response.
+ */
+export async function claimOnce(
+  request: APIRequestContext,
+  runnerId: string,
+  credential: string,
+  claimRequestId: string,
+): Promise<string | null> {
+  const res = await request.post(`${API}/runner/v1/claim`, {
+    headers: { authorization: `Bearer ${credential}` },
+    data: {
+      protocol_version: 1,
+      runner_id: runnerId,
+      claim_request_id: claimRequestId,
+      available_capacity: 1,
+      wait_ms: 0,
+    },
+  });
+  expect(res.ok(), `claim failed: ${res.status()}`).toBeTruthy();
+  const body = await res.json();
+  return body?.request?.request_id ?? null;
+}
