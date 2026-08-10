@@ -255,6 +255,26 @@ fn config_save_and_reload() {
     assert_eq!(cfg.base_url, "http://test:9999");
     assert_eq!(cfg.token.as_deref(), Some("tok123"));
 
+    // III-E5: `~/.tackrc` carries `TACK_API_TOKEN` — a credential — so
+    // `config::save` now goes through `secure_fs::write_owner_only_atomic`
+    // instead of a plain `fs::write`. Prove that end-to-end through the real
+    // save path, not just against the isolated `secure_fs` unit tests: the
+    // file this test just read back from must itself be owner-only.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(tmp.join(".tackrc"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "~/.tackrc must be owner-only (0600), got {:o}",
+            mode & 0o777
+        );
+    }
+
     // Restore HOME
     match original_home {
         Some(h) => unsafe { std::env::set_var("HOME", h) },

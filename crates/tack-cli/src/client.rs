@@ -200,12 +200,42 @@ fn extract(resp: Response) -> anyhow::Result<serde_json::Value> {
     }
 }
 
+/// The operator execution/fleet/runner/profile routes (`/api/executions`,
+/// `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles`,
+/// `/api/model-profiles`) answer errors with the stable runner-v1 protocol
+/// envelope, `{"error": {"code": "...", "message": "...", "details": {...},
+/// "retryable": bool}}` — `error` is an *object* there, not a string. Every
+/// other route in this API answers with `{"error": "text"}` or
+/// `{"message": "text"}`. Try the plain-string shapes first (unchanged
+/// behavior for every existing command), and only when `error` turns out to
+/// be an object, surface its `code` alongside `message` — e.g.
+/// `"409: idempotency_conflict: The idempotency key was used with a
+/// different request"` instead of the generic "server error" that
+/// `.as_str()` on an object silently produces. This is what makes
+/// `idempotency_conflict`/`invalid_transition`/`stale_lease`/`conflict`
+/// read as distinct, actionable outcomes for `execution`/`fleet`/`runner`/
+/// `*-profile` commands instead of collapsing into one opaque line — the
+/// stable `code` is there for a script to grep on; `message` is the
+/// human-readable half.
 fn error_msg(body: &serde_json::Value) -> String {
-    body.get("error")
+    if let Some(s) = body
+        .get("error")
         .or_else(|| body.get("message"))
         .and_then(|v| v.as_str())
-        .unwrap_or("server error")
-        .to_string()
+    {
+        return s.to_string();
+    }
+    if let Some(obj) = body.get("error").and_then(|v| v.as_object()) {
+        let code = obj.get("code").and_then(|v| v.as_str());
+        let message = obj.get("message").and_then(|v| v.as_str());
+        if let (Some(code), Some(message)) = (code, message) {
+            return format!("{code}: {message}");
+        }
+        if let Some(message) = message {
+            return message.to_string();
+        }
+    }
+    "server error".to_string()
 }
 
 // ── Connection check ──────────────────────────────────────────────────────────
@@ -390,6 +420,104 @@ mod tests {
         assert_eq!(
             status_label(StatusCode::PRECONDITION_FAILED),
             "Precondition failed (item changed — re-read and retry)"
+        );
+    }
+
+    // ── error_msg: runner-v1 protocol error envelope (III-E5) ──────────────
+    //
+    // The execution/fleet/runner/profile operator routes answer errors with
+    // `{"error": {"code": ..., "message": ..., ...}}` — `error` is an
+    // *object*, unlike every pre-existing route's `{"error": "text"}`. These
+    // pin that both shapes are handled, that the object shape surfaces the
+    // stable `code` (not just prose), and that the legacy string shape is
+    // completely unaffected.
+
+    #[test]
+    fn error_msg_reads_the_plain_string_shape_unchanged() {
+        let body = serde_json::json!({ "error": "not found" });
+        assert_eq!(error_msg(&body), "not found");
+    }
+
+    #[test]
+    fn error_msg_reads_the_message_key_shape_unchanged() {
+        let body = serde_json::json!({ "message": "bad request" });
+        assert_eq!(error_msg(&body), "bad request");
+    }
+
+    #[test]
+    fn error_msg_surfaces_code_and_message_from_the_protocol_envelope() {
+        let body = serde_json::json!({
+            "error": {
+                "code": "idempotency_conflict",
+                "message": "The idempotency key was used with a different request",
+                "request_id": "req_operator",
+                "retryable": false,
+                "details": { "idempotency_key": "k1" }
+            }
+        });
+        assert_eq!(
+            error_msg(&body),
+            "idempotency_conflict: The idempotency key was used with a different request"
+        );
+    }
+
+    #[test]
+    fn error_msg_distinguishes_conflict_codes_from_each_other() {
+        let conflict = serde_json::json!({
+            "error": { "code": "conflict", "message": "Fleet name already exists" }
+        });
+        let stale = serde_json::json!({
+            "error": { "code": "stale_lease", "message": "The fencing token is stale" }
+        });
+        let transition = serde_json::json!({
+            "error": { "code": "invalid_transition", "message": "Only authoritatively recovered needs_operator attempts may be requeued" }
+        });
+        let a = error_msg(&conflict);
+        let b = error_msg(&stale);
+        let c = error_msg(&transition);
+        assert_ne!(a, b);
+        assert_ne!(b, c);
+        assert_ne!(a, c);
+        assert!(a.starts_with("conflict:"));
+        assert!(b.starts_with("stale_lease:"));
+        assert!(c.starts_with("invalid_transition:"));
+    }
+
+    #[test]
+    fn error_msg_falls_back_to_generic_when_nothing_recognizable_is_present() {
+        let body = serde_json::json!({ "whatever": true });
+        assert_eq!(error_msg(&body), "server error");
+    }
+
+    #[tokio::test]
+    async fn post_surfaces_the_protocol_envelope_code_through_extract() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/executions"))
+            .respond_with(ResponseTemplate::new(409).set_body_json(serde_json::json!({
+                "error": {
+                    "code": "idempotency_conflict",
+                    "message": "The idempotency key was used with a different request",
+                    "request_id": "req_operator",
+                    "retryable": false,
+                    "details": {}
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let uri = server.uri();
+        let result =
+            run_blocking(move || client_for(&uri).post("/executions", &serde_json::json!({})))
+                .await;
+
+        let err = result
+            .expect_err("409 must surface as an error")
+            .to_string();
+        assert!(err.contains("409"), "unexpected: {err}");
+        assert!(
+            err.contains("idempotency_conflict"),
+            "must carry the stable code, not just a generic message: {err}"
         );
     }
 }

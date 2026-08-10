@@ -35,3 +35,8 @@ clap_complete = "4"
 [dev-dependencies]
 wiremock = "0.6"
 tokio = { workspace = true }
+# Test-only: proves execution.rs's request-body builders deserialize into
+# the real nested snapshot types (`AgentProfileSnapshot`, `RepositorySnapshot`,
+# `PermissionPolicy`) the operator API validates against, one level deeper
+# than `tack-api`'s own `CreateExecution` struct. Not a production dependency.
+tack-orch = { path = "../tack-orch" }

@@ -14,6 +14,7 @@ use std::io::{BufRead, Write};
 use serde_json::{Value, json};
 
 use crate::client::TackClient;
+use crate::execution;
 
 /// Protocol version we advertise when the client doesn't specify one.
 const DEFAULT_PROTOCOL_VERSION: &str = "2024-11-05";
@@ -184,6 +185,85 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
             let body = json!({ "content": content, "author": opt_str(args, "author") });
             call(client.post(&format!("/items/{item_id}/comments"), &body))
         }
+
+        // ── Execution/fleet/profile tools (III-E5) ─────────────────────────
+        //
+        // Deliberately a *subset* of what the CLI exposes: read tools cover
+        // discovery (an agent needs valid fleet/profile ids before it can
+        // create an execution) plus the core create/list/get/cancel
+        // lifecycle. `runner enroll`/`revoke`, `fleet create`,
+        // `agent-profile create`/`model-profile create`, and
+        // `execution reconcile` are CLI-only, matching this server's
+        // existing precedent of keeping admin-ish actions (backup/restore,
+        // template/role/field management) off the agent-facing tool
+        // surface (see docs/MCP.md). `reconcile` specifically is an
+        // operator's explicit, audited recovery decision after reviewing an
+        // ambiguous `needs_operator` state (III.1.1) — not something an
+        // agent should be able to trigger on its own say-so. `runner
+        // enroll` additionally returns a one-time secret; keeping it out of
+        // the MCP surface means that secret can never end up in an agent's
+        // tool-call transcript.
+        "list_fleets" => {
+            let fleets = call(client.get("/runner-fleets"))?;
+            Ok(data_list("fleets", &fleets))
+        }
+        "list_agent_profiles" => {
+            let profiles = call(client.get("/agent-profiles"))?;
+            Ok(data_list("agent_profiles", &profiles))
+        }
+        "list_model_profiles" => {
+            let profiles = call(client.get("/model-profiles"))?;
+            Ok(data_list("model_profiles", &profiles))
+        }
+        "list_executions" => {
+            let executions = call(client.get("/executions"))?;
+            Ok(data_list("executions", &executions))
+        }
+        "get_execution" => {
+            let id = require_str(args, "request_id")?;
+            call(client.get(&format!("/executions/{id}")))
+        }
+        "cancel_execution" => {
+            let id = require_str(args, "request_id")?;
+            call(client.post(&format!("/executions/{id}/cancel"), &json!({})))
+        }
+        "create_execution" => {
+            let item_id = require_str(args, "item_id")?;
+            let selector = execution::selector_from_flags(
+                opt_str(args, "runner_id").as_deref(),
+                opt_str(args, "fleet_id").as_deref(),
+            )?;
+            let agent_profile_id = require_str(args, "agent_profile_id")?;
+            let harness = require_str(args, "harness")?;
+            let agent_profile_snapshot = require_object(args, "agent_profile_snapshot")?;
+            let repository_snapshot = require_object(args, "repository")?;
+            let permission_policy = require_object(args, "permission_policy")?;
+            let timeout_seconds = require_u64(args, "timeout_seconds")?;
+            let idempotency_key = opt_str(args, "idempotency_key");
+            let model_provider = opt_str(args, "model_provider");
+            let model_id = opt_str(args, "model_id");
+            let status_map_policy_id = opt_str(args, "status_map_policy_id");
+
+            let values = execution::CreateExecutionValues {
+                item_id: &item_id,
+                idempotency_key: idempotency_key.as_deref(),
+                agent_profile_id: &agent_profile_id,
+                requested_harness_kind: &harness,
+                requested_model_provider: model_provider.as_deref(),
+                requested_model_id: model_id.as_deref(),
+                agent_profile_snapshot,
+                repository_snapshot,
+                permission_policy,
+                budgets: opt_object_or_empty(args, "budgets"),
+                environment: opt_object_or_empty(args, "environment"),
+                metadata: opt_object_or_empty(args, "metadata"),
+                timeout_seconds,
+                status_map_policy_id: status_map_policy_id.as_deref(),
+            };
+            let body = execution::create_execution_body(&selector, values);
+            call(client.post("/executions", &body))
+        }
+
         other => Err(format!("unknown tool: {other}")),
     }
 }
@@ -228,6 +308,35 @@ fn opt_str(args: &Value, key: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// A required JSON-object argument (`agent_profile_snapshot`, `repository`,
+/// `permission_policy` on `create_execution`) — these map onto typed nested
+/// snapshot structs server-side with their own required fields (see
+/// `execution.rs`'s module doc), so unlike `opt_object_or_empty` there is no
+/// safe default to fall back to.
+fn require_object(args: &Value, key: &str) -> Result<Value, String> {
+    match args.get(key) {
+        Some(v) if v.is_object() => Ok(v.clone()),
+        Some(_) => Err(format!("{key} must be a JSON object")),
+        None => Err(format!("missing required argument: {key}")),
+    }
+}
+
+/// An optional JSON-object argument that defaults to `{}` when omitted
+/// (`budgets`/`environment`/`metadata` on `create_execution` — all
+/// genuinely untyped `Value` fields server-side).
+fn opt_object_or_empty(args: &Value, key: &str) -> Value {
+    args.get(key)
+        .filter(|v| v.is_object())
+        .cloned()
+        .unwrap_or_else(|| json!({}))
+}
+
+fn require_u64(args: &Value, key: &str) -> Result<u64, String> {
+    args.get(key).and_then(|v| v.as_u64()).ok_or_else(|| {
+        format!("missing or invalid required argument: {key} (expected a non-negative integer)")
+    })
+}
+
 // ── Compact projections (keep agent context small) ───────────────────────────
 
 fn project_list(value: &Value) -> Value {
@@ -243,6 +352,22 @@ fn project_list(value: &Value) -> Value {
         })
         .collect();
     json!({ "projects": projects, "count": projects.len() })
+}
+
+/// Unwraps the `{"protocol_version":1,"data":[...]}` envelope every
+/// execution/fleet/runner/profile list route returns (`executions.rs`,
+/// `runner_admin.rs`) into `{"<key>": [...], "count": n}`, matching
+/// `project_list`/`item_list`'s wrapper convention. No further projection —
+/// unlike items, these rows are already small and have no verbose fields to
+/// drop.
+fn data_list(key: &str, value: &Value) -> Value {
+    let arr = value
+        .get("data")
+        .and_then(|d| d.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let count = arr.len();
+    json!({ key: arr, "count": count })
 }
 
 fn item_list(value: &Value) -> Value {
@@ -417,6 +542,96 @@ fn tool_specs() -> Value {
                 "required": ["item_id", "content"]
             })
         ),
+        tool(
+            "list_fleets",
+            "List runner fleets.",
+            json!({ "type": "object", "properties": {} })
+        ),
+        tool(
+            "list_agent_profiles",
+            "List agent profiles (instructions, tool policy, limits).",
+            json!({ "type": "object", "properties": {} })
+        ),
+        tool(
+            "list_model_profiles",
+            "List model profiles (provider + model id combinations).",
+            json!({ "type": "object", "properties": {} })
+        ),
+        tool(
+            "list_executions",
+            "List execution requests (newest first).",
+            json!({ "type": "object", "properties": {} })
+        ),
+        tool(
+            "get_execution",
+            "Get one execution request's current lifecycle state. A state of \
+             needs_operator or lost is an ambiguous outcome, not just another \
+             in-progress value — surface it distinctly to the user rather than \
+             treating it like queued/running.",
+            json!({
+                "type": "object",
+                "properties": { "request_id": { "type": "string" } },
+                "required": ["request_id"]
+            })
+        ),
+        tool(
+            "cancel_execution",
+            "Request cancellation of an execution. Recorded as a request only \
+             — the execution is not made falsely terminal; call get_execution \
+             afterward to see the actual outcome once the runner reports it.",
+            json!({
+                "type": "object",
+                "properties": { "request_id": { "type": "string" } },
+                "required": ["request_id"]
+            })
+        ),
+        tool(
+            "create_execution",
+            "Create (or idempotently replay, if idempotency_key repeats) an \
+             execution request that assigns a Tack item to a coding-harness \
+             runner or fleet. Exactly one of runner_id/fleet_id is required. \
+             Use list_fleets/list_agent_profiles/list_model_profiles first to \
+             discover valid ids.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "item_id": { "type": "string" },
+                    "runner_id": { "type": "string", "description": "Exact runner id (mutually exclusive with fleet_id)" },
+                    "fleet_id": { "type": "string", "description": "Fleet id (mutually exclusive with runner_id)" },
+                    "agent_profile_id": { "type": "string" },
+                    "harness": { "type": "string", "description": "Requested harness kind, e.g. codex, claude_code, opencode" },
+                    "agent_profile_snapshot": {
+                        "type": "object",
+                        "description": "Resolved agent profile: {name, instructions, tool_policy, timeout_seconds, budgets} — all required, no safe empty default"
+                    },
+                    "repository": {
+                        "type": "object",
+                        "description": "{kind, remote, base_revision, subdirectory?} — kind/remote/base_revision required"
+                    },
+                    "permission_policy": {
+                        "type": "object",
+                        "description": "{network: bool, tools?: [string]} — network required, no safe empty default"
+                    },
+                    "timeout_seconds": { "type": "integer" },
+                    "model_provider": { "type": "string", "description": "Omit to allow auto-selection" },
+                    "model_id": { "type": "string", "description": "Omit to allow auto-selection" },
+                    "budgets": { "type": "object", "description": "Default: {}" },
+                    "environment": { "type": "object", "description": "Default: {}" },
+                    "metadata": { "type": "object", "description": "Default: {}" },
+                    "status_map_policy_id": { "type": "string" },
+                    "idempotency_key": { "type": "string", "description": "Defaults to a fresh key each call; pass a stable value to safely retry the exact same request" }
+                },
+                "required": [
+                    "item_id",
+                    "agent_profile_id",
+                    "harness",
+                    "agent_profile_snapshot",
+                    "repository",
+                    "permission_policy",
+                    "timeout_seconds"
+                ]
+            })
+        ),
     ])
 }
 
@@ -472,7 +687,7 @@ mod tests {
     }
 
     #[test]
-    fn tools_list_advertises_all_eight() {
+    fn tools_list_advertises_all_fifteen() {
         let resp = handle_line(
             &test_client(),
             r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
@@ -480,11 +695,38 @@ mod tests {
         .unwrap();
         let v: Value = serde_json::from_str(&resp).unwrap();
         let tools = v["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 8);
+        // The original 8 item/project tools plus III-E5's 7 execution/fleet/
+        // profile tools (list_fleets, list_agent_profiles,
+        // list_model_profiles, list_executions, get_execution,
+        // cancel_execution, create_execution).
+        assert_eq!(tools.len(), 15);
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"list_projects"));
         assert!(names.contains(&"move_item"));
         assert!(names.contains(&"add_comment"));
+        assert!(names.contains(&"list_fleets"));
+        assert!(names.contains(&"list_agent_profiles"));
+        assert!(names.contains(&"list_model_profiles"));
+        assert!(names.contains(&"list_executions"));
+        assert!(names.contains(&"get_execution"));
+        assert!(names.contains(&"cancel_execution"));
+        assert!(names.contains(&"create_execution"));
+        // III-E5 deliberately keeps admin/secret-bearing actions off the MCP
+        // surface (see the dispatch-time doc comment) — pin their absence so
+        // a future edit can't add them without a second look.
+        for excluded in [
+            "enroll_runner",
+            "revoke_runner",
+            "create_fleet",
+            "create_agent_profile",
+            "create_model_profile",
+            "reconcile_execution",
+        ] {
+            assert!(
+                !names.contains(&excluded),
+                "{excluded} should not be an MCP tool (see III-E5 handoff)"
+            );
+        }
     }
 
     #[test]
@@ -742,5 +984,174 @@ mod tests {
         let c = compact_item(&full);
         assert_eq!(c["title"], "t");
         assert!(c.get("description").is_none());
+    }
+
+    // ── Execution/fleet/profile tools (III-E5) ──────────────────────────────
+
+    fn create_execution_min_args() -> Value {
+        json!({
+            "item_id": "item-1",
+            "fleet_id": "fleet_1",
+            "agent_profile_id": "ap_1",
+            "harness": "claude_code",
+            "agent_profile_snapshot": {
+                "name": "a", "instructions": "be careful", "tool_policy": {},
+                "timeout_seconds": 60, "budgets": {}
+            },
+            "repository": {
+                "kind": "git", "remote": "https://example.test/repo.git", "base_revision": "main"
+            },
+            "permission_policy": { "network": false },
+            "timeout_seconds": 3600
+        })
+    }
+
+    #[test]
+    fn create_execution_requires_agent_profile_snapshot_before_any_network_call() {
+        let mut args = create_execution_min_args();
+        args.as_object_mut()
+            .unwrap()
+            .remove("agent_profile_snapshot");
+        let line = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"create_execution","arguments":{}}}}}"#,
+            args
+        );
+        let resp = handle_line(&test_client(), &line).unwrap();
+        let v: Value = serde_json::from_str(&resp).unwrap();
+        assert_eq!(v["result"]["isError"], true);
+        let text = v["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.contains("agent_profile_snapshot"),
+            "unexpected: {text}"
+        );
+    }
+
+    #[test]
+    fn create_execution_requires_exactly_one_selector() {
+        // Neither runner_id nor fleet_id.
+        let mut args = create_execution_min_args();
+        args.as_object_mut().unwrap().remove("fleet_id");
+        let line = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"create_execution","arguments":{}}}}}"#,
+            args
+        );
+        let resp = handle_line(&test_client(), &line).unwrap();
+        let v: Value = serde_json::from_str(&resp).unwrap();
+        assert_eq!(v["result"]["isError"], true);
+
+        // Both runner_id and fleet_id.
+        let mut both = create_execution_min_args();
+        both["runner_id"] = json!("runr_1");
+        let line = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"create_execution","arguments":{}}}}}"#,
+            both
+        );
+        let resp = handle_line(&test_client(), &line).unwrap();
+        let v: Value = serde_json::from_str(&resp).unwrap();
+        assert_eq!(v["result"]["isError"], true);
+    }
+
+    /// End-to-end proof that `create_execution` sends the object-typed JSON
+    /// blobs an LLM caller would naturally provide (not a stringified
+    /// second encoding of them) straight through to `POST /api/executions`,
+    /// and that the resolved `fleet_id` becomes `selector_kind: "fleet"` /
+    /// `selector_id`.
+    #[tokio::test]
+    async fn mcp_create_execution_posts_the_expected_body() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/api/executions"))
+            .and(wiremock::matchers::body_partial_json(json!({
+                "item_id": "item-1",
+                "selector_kind": "fleet",
+                "selector_id": "fleet_1",
+                "agent_profile_id": "ap_1",
+                "requested_harness_kind": "claude_code",
+                "permission_policy": { "network": false },
+                "timeout_seconds": 3600
+            })))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+                "protocol_version": 1, "request_id": "exec_1", "state": "queued", "replayed": false
+            })))
+            .mount(&server)
+            .await;
+
+        let uri = server.uri();
+        let args = create_execution_min_args();
+        let line = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"create_execution","arguments":{}}}}}"#,
+            args
+        );
+        let resp = run_blocking(move || handle_line(&mock_client(&uri), &line))
+            .await
+            .unwrap();
+        let v: Value = serde_json::from_str(&resp).unwrap();
+        assert_eq!(
+            v["result"]["isError"], false,
+            "unexpected error: {v}\n(a wiremock 404 here means the POST body \
+             did not match — e.g. a JSON blob was double-encoded as a string)"
+        );
+        let text = v["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("exec_1"), "unexpected: {text}");
+    }
+
+    #[tokio::test]
+    async fn mcp_list_executions_unwraps_the_data_envelope() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/api/executions"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+                "protocol_version": 1,
+                "data": [
+                    { "request_id": "exec_1", "item_id": "item-1", "state": "queued", "created_at": "2026-01-01T00:00:00Z" }
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let uri = server.uri();
+        let line = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_executions","arguments":{}}}"#.to_string();
+        let resp = run_blocking(move || handle_line(&mock_client(&uri), &line))
+            .await
+            .unwrap();
+        let v: Value = serde_json::from_str(&resp).unwrap();
+        assert_eq!(v["result"]["isError"], false, "unexpected error: {v}");
+        let text = v["result"]["content"][0]["text"].as_str().unwrap();
+        let parsed: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(parsed["count"], 1);
+        assert_eq!(parsed["executions"][0]["request_id"], "exec_1");
+    }
+
+    #[tokio::test]
+    async fn mcp_cancel_execution_posts_to_the_cancel_route() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/api/executions/exec_1/cancel"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+                "protocol_version": 1, "request_id": "exec_1", "state": "cancellation_requested"
+            })))
+            .mount(&server)
+            .await;
+
+        let uri = server.uri();
+        let line = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"cancel_execution","arguments":{"request_id":"exec_1"}}}"#.to_string();
+        let resp = run_blocking(move || handle_line(&mock_client(&uri), &line))
+            .await
+            .unwrap();
+        let v: Value = serde_json::from_str(&resp).unwrap();
+        assert_eq!(v["result"]["isError"], false, "unexpected error: {v}");
+    }
+
+    #[test]
+    fn get_execution_requires_request_id() {
+        let resp = handle_line(
+            &test_client(),
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_execution","arguments":{}}}"#,
+        )
+        .unwrap();
+        let v: Value = serde_json::from_str(&resp).unwrap();
+        assert_eq!(v["result"]["isError"], true);
+        let text = v["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("request_id"), "unexpected: {text}");
     }
 }

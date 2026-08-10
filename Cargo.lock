@@ -3062,6 +3062,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tack-api",
+ "tack-orch",
  "tokio",
  "toml",
  "wiremock",
