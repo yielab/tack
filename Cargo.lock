@@ -3056,6 +3056,7 @@ name = "tack-cli"
 version = "0.1.0-beta.6"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "clap_complete",
  "reqwest 0.12.28",
