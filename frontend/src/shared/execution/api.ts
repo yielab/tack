@@ -1,30 +1,43 @@
 // Wire-format boundary for the Part III operator execution/fleet/runner/
 // profile surface (TODO.md III-E2). See `types.ts`'s header comment for why
-// these shapes are hand-typed rather than imported from `../api/schema.gen`
-// (every route's OpenAPI schema is currently `{}` — a real, cited gap, not a
-// guess) and for the per-field provenance of the richer domain vocabulary.
-// Every shape in *this* file is instead copied directly from the live Rust
-// handler that produces it — cited per section below — since those handlers
-// are real and already shipped, even though nothing generates a TS type
-// from them yet.
+// these shapes are hand-typed rather than imported from `../api/schema.gen`.
+// Every shape in *this* file is copied directly from the live Rust handler
+// that produces it — cited per section below.
 //
-// **Endpoints intentionally NOT wrapped here, because they don't exist:**
-//   - `GET /runners` (list) — `crates/tack-api/src/handlers/runner_admin.rs`
-//     only registers `POST /runners/enrollment`,
-//     `POST /runners/{id}/enrollment-tokens/{token_id}/revoke`, and
-//     `POST /runners/{id}/revoke`. There is no way to list runners or read
-//     a runner's `capability_snapshot` back from the operator API today.
+// **Update (card III-E6, Wave 4 integration boundary):** this domain's
+// OpenAPI schemas were `{}` (free-form) when E2 wrote the note above — no
+// longer true. `crates/tack-api/src/handlers/executions.rs`/`runner_admin.rs`
+// now carry real `#[derive(ToSchema)]` DTOs and `docs/openapi.json`/
+// `frontend/src/shared/api/schema.gen.ts` are regenerated and drift-checked.
+// This file's hand-typed shapes were deliberately *not* migrated to import
+// the generated types — matching each field to its generated equivalent
+// across every consumer in this domain is a larger refactor outside III-E6's
+// own scope — but every shape below was written to match the real handler
+// field-for-field already, so that swap remains mechanical whenever a future
+// card takes it on.
+//
+// **`GET /runners` now exists** (`runnersApi.list()` below) — closes the gap
+// E2, E3 and E5 each independently hit and documented as "Gap 1," and is now
+// wired into `RunWithAgentModal.tsx`'s live capability fetch (see that
+// file's own comment on why: with no live data, a *specific* model choice
+// was unconditionally hard-blocked at every real call site — the only
+// request shape a real operator could ever submit through the UI was
+// `Auto`, which the scheduler (`tack_orch::scheduler`, card III-E1) always
+// rejects too, an integration gap between two Wave-4 cards this route
+// closes). Two gaps from E2's original list remain open, requested from a
+// future owner:
 //   - `GET /runner-fleets/{id}` (single fleet + roster) — only
-//     `POST`/`GET` (list) exist.
-//   - Any attempt-level read (`GET /executions/{id}` returns only five
-//     scalar columns — see `ExecutionSummary` below — never attempts,
-//     events, decisions or artifacts).
-// All three are flagged in `docs/agent-handoffs/part-iii/III-E2.md` as a
-// schema/API change requested from another owner (E6, which TODO.md's Wave
-// 4 dependency graph names as the integrator who fills in "route/spec/
-// generated updates" after E1-E5 land). `capabilities.ts` and `cache.ts` are
-// still built to consume the richer shapes so no further design work is
-// needed once a read endpoint exists — only a new wrapper function here.
+//     `POST`/`GET` (list) exist; `RunnerSummary.fleet_ids` (via `GET
+//     /runners`) is the only membership read path today.
+//   - `GET /executions/{id}/attempts` (+ `.../attempts/{n}/events`) now
+//     exist server-side (card III-E6) and are covered by
+//     `crates/tack-api/tests/e6_routes_test.rs`, but are deliberately not
+//     wrapped here yet — wiring them into `store.ts#attemptsFor`'s
+//     `AttemptAvailability` union and every consumer
+//     (`ExecutionTimeline.tsx` and their existing tests) is exactly the
+//     kind of larger, ripple-through-two-cards'-test-suites refactor this
+//     integration card's own scope note excludes. `ExecutionTimeline.tsx`
+//     still shows the typed "not available yet" placeholder.
 //
 // **A wire inconsistency worth flagging alongside that gap:** `POST
 // /executions/{id}/cancel`'s success response
@@ -333,7 +346,51 @@ export interface RevokeEnrollmentTokenResult {
   state: 'revoked';
 }
 
+/**
+ * The row shape returned by `GET /runners[?fleet_id=]`
+ * (`crates/tack-api/src/handlers/runner_admin.rs::list_runners`, added by
+ * card III-E6 — this route did not exist when E2/E3/E5 each independently
+ * documented its absence as "Gap 1" in their own handoffs). `labels`/
+ * `capability_snapshot` are the handler's own best-effort parse of the
+ * stored JSON columns (`null` only if the stored value is somehow not
+ * valid JSON — `labels_raw`/`capability_snapshot_raw` always carry the raw
+ * string, so no information is lost even then).
+ */
+export interface RunnerSummary {
+  runner_id: string;
+  name: string;
+  state: 'pending_enrollment' | 'active' | 'revoked' | (string & {});
+  labels: Record<string, string> | null;
+  labels_raw: string;
+  total_capacity: number;
+  available_capacity: number;
+  /** Parsed `EmbeddedCapabilitySnapshot` — see `capabilities.ts`'s
+   *  `runnerSummaryToCapabilities` for how this is adapted into the
+   *  `RunnerCapabilities` shape `gateHarnessModelSelection` expects
+   *  (that type nests `protocol_version`/`runner_version` *inside* the
+   *  capability report; this handler reports them as sibling columns —
+   *  see `RunnerListingRow`'s doc comment in `tack-db` for why). */
+  capability_snapshot: Record<string, unknown> | null;
+  capability_snapshot_raw: string;
+  protocol_version: number;
+  runner_version: string | null;
+  last_heartbeat_at: string | null;
+  revoked_at: string | null;
+  fleet_ids: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RunnerListResult {
+  protocol_version: number;
+  data: RunnerSummary[];
+}
+
 export const runnersApi = {
+  list: (fleetId?: string) =>
+    requestWithHeaders<RunnerListResult>(
+      fleetId ? `/runners?fleet_id=${encodeURIComponent(fleetId)}` : '/runners',
+    ),
   enroll: (input: EnrollRunnerInput) =>
     request<EnrollRunnerResult>('/runners/enrollment', {
       method: 'POST',

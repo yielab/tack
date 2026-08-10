@@ -5,10 +5,12 @@ import {
   fleetsApi,
   agentProfilesApi,
   modelProfilesApi,
+  runnersApi,
   type FleetSummary,
   type AgentProfileSummary,
   type ModelProfileSummary,
   type RunnerCapabilities,
+  type RunnerSummary,
 } from '../execution';
 import { useExecutionStore } from '../state/executionContext';
 import {
@@ -32,16 +34,51 @@ export interface RunWithAgentModalProps {
   onCreated?: (requestId: string) => void;
   /**
    * Injectable runner capability snapshots for the submit gate
-   * (`shared.ts#gateHarnessModelSelection`). Defaults to an empty array —
-   * the honest state of the real system today, since no operator-facing
-   * endpoint returns `RunnerCapabilities` yet (`docs/agent-handoffs/
-   * part-iii/III-E2.md`, Gap 1: no `GET /runners`). Exposed as a prop
-   * (rather than hardcoded `[]` inside this component) purely so tests can
-   * inject fixture data and prove the gate is load-bearing, not permanently
-   * permissive or permanently blocked; every real call site in this card
-   * (Board/item-detail/Sprint) omits it.
+   * (`shared.ts#gateHarnessModelSelection`), overriding the live `GET
+   * /runners` fetch below. Exposed as a prop purely so tests can inject
+   * deterministic fixture data without a network round-trip and prove the
+   * gate is load-bearing, not permanently permissive or permanently
+   * blocked — every real call site (Board/item-detail/Sprint) omits it and
+   * gets live data instead (card III-E6: `GET /runners` didn't exist when
+   * this prop was first built as the only way to test the gate at all —
+   * see this component's own body for the adapter now that it does).
    */
   capabilities?: () => RunnerCapabilities[];
+}
+
+/**
+ * Adapts one `GET /runners` row into the `RunnerCapabilities` shape
+ * `gateHarnessModelSelection` expects. The two shapes differ in exactly one
+ * way: `RunnerCapabilities` (`docs/contracts/runner-v1/capabilities.json`'s
+ * *standalone* report shape) nests `protocol_version`/`runner_version`
+ * inside the capability payload itself, while `agent_runners` stores them
+ * as sibling columns next to the *embedded* snapshot
+ * (`EmbeddedCapabilitySnapshot` — see that type's own doc comment in
+ * `crates/tack-orch/src/execution/capabilities.rs` for why enroll/refresh
+ * use a different, sibling-field shape than a standalone report). Returns
+ * `null` for a runner with no valid, structurally complete parsed snapshot
+ * — never enrolled (the column default is the literal `'{}'`, which parses
+ * as valid JSON but has no `harnesses`/`concurrency`/`features`/`limits`
+ * fields at all — a real, reproduced bug this check fixes: iterating a
+ * missing `harnesses` on such a row threw downstream in
+ * `capabilities.ts#harnessProbeStatus`), a pending-enrollment runner, or a
+ * genuinely corrupt stored value. Skipped from the gate's input entirely —
+ * the same "unknown, not a fabricated empty capability" treatment
+ * `capabilities.ts` already gives a `probe_error`red harness, never a
+ * structural `{}` standing in for "no data" (III.2 rule 7).
+ */
+function runnerSummaryToCapabilities(runner: RunnerSummary): RunnerCapabilities | null {
+  const snapshot = runner.capability_snapshot as
+    | Omit<RunnerCapabilities, 'protocol_version' | 'runner_version'>
+    | null;
+  if (!snapshot || !Array.isArray(snapshot.harnesses) || !snapshot.concurrency || !snapshot.limits) {
+    return null;
+  }
+  return {
+    ...snapshot,
+    protocol_version: runner.protocol_version,
+    runner_version: runner.runner_version ?? '',
+  };
 }
 
 /**
@@ -59,7 +96,6 @@ export interface RunWithAgentModalProps {
  */
 const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const store = useExecutionStore();
-  const capabilities = () => props.capabilities?.() ?? [];
 
   const [fleets] = createResource(
     () => (props.isOpen ? 'open' : undefined),
@@ -73,6 +109,20 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     () => (props.isOpen ? 'open' : undefined),
     () => modelProfilesApi.list().then((r) => r.data.data),
   );
+  // Live capability data (card III-E6) — skipped entirely when a caller
+  // (a test) injects `props.capabilities`, so no network call happens and
+  // the injected fixture stays the only source of truth for that case.
+  const [liveRunners] = createResource(
+    () => (props.isOpen && !props.capabilities ? 'open' : undefined),
+    () => runnersApi.list().then((r) => r.data.data),
+  );
+  const capabilities = (): RunnerCapabilities[] => {
+    if (props.capabilities) return props.capabilities();
+    if (liveRunners.error !== undefined) return [];
+    return (liveRunners() ?? [])
+      .map(runnerSummaryToCapabilities)
+      .filter((c): c is RunnerCapabilities => c !== null);
+  };
 
   // Resources throw once errored — read through a safe accessor everywhere
   // (same pattern, and same reasoning, as `DispatchSprintModal.tsx#dryRunData`

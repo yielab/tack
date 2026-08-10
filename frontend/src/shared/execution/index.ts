@@ -48,6 +48,8 @@ export type {
   EnrollRunnerResult,
   RevokeRunnerResult,
   RevokeEnrollmentTokenResult,
+  RunnerSummary,
+  RunnerListResult,
 } from './api';
 export { executionsApi, fleetsApi, agentProfilesApi, modelProfilesApi, runnersApi } from './api';
 
