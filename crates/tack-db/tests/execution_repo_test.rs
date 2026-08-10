@@ -13,7 +13,7 @@ use tack_db::{
         ExecutionClock, HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewArtifact,
         NewDecision, NewEvent, NewExecutionRequest, NewRunner, RecoveryDisposition,
         RecoveryObservation, RecoveryObservationInput, RecoveryObservationResult,
-        RedeemEnrollmentResult,
+        RedeemEnrollmentResult, RequestSelection,
     },
 };
 
@@ -192,6 +192,7 @@ async fn claim_request_replay_returns_the_original_lease() {
             "attempt-a",
             Duration::seconds(60),
             &clock,
+            RequestSelection::Naive,
         )
         .await
         .unwrap();
@@ -202,6 +203,7 @@ async fn claim_request_replay_returns_the_original_lease() {
             "attempt-b",
             Duration::seconds(60),
             &clock,
+            RequestSelection::Naive,
         )
         .await
         .unwrap();
@@ -1088,6 +1090,7 @@ async fn m060_quarantines_all_nonterminal_malformed_legacy_snapshots() {
             "attempt-legacy-valid",
             Duration::seconds(60),
             &clock,
+            RequestSelection::Naive,
         )
         .await
         .unwrap()
@@ -1126,6 +1129,7 @@ async fn claim_lease(
             attempt_id,
             lease_duration,
             clock,
+            RequestSelection::Naive,
         )
         .await?;
     Ok(claim.map(|claim| claim.lease))

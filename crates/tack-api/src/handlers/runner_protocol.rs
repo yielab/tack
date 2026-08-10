@@ -47,6 +47,7 @@ use tack_db::{
         HeartbeatBatchResult, HeartbeatLease, NewArtifact, NewDecision, NewEvent,
         RecoveryDisposition as DbRecoveryDisposition, RecoveryObservation as DbRecoveryObservation,
         RecoveryObservationInput, RecoveryObservationResult, RedeemEnrollmentResult,
+        RequestSelection,
     },
 };
 use tack_orch::execution::{
@@ -55,6 +56,7 @@ use tack_orch::execution::{
     RecoveryObservation as TackRecoveryObservation, RecoveryObservationRequest,
     RecoveryObservationResponse, StableErrorCode, Usage,
 };
+use tack_orch::scheduler::{SchedulingPolicy, choose_request_for_runner};
 use uuid::Uuid;
 
 // An explicit `#[path]` (rather than relying on the implicit `foo.rs` ->
@@ -741,6 +743,26 @@ pub async fn claim(
         ));
     }
 
+    // Card III-E6 (Wave 4 integrator): the pure `tack_orch::scheduler` decides
+    // *which* selector-eligible queued request (if any) this runner should
+    // attempt, against live capacity/heartbeat/label/harness/model data —
+    // replacing the pre-Wave-4 naive `ORDER BY created_at LIMIT 1` match.
+    // This is a separate, read-only query pass ahead of the fenced claim
+    // transaction (`tack-db` cannot depend on `tack-orch`; see
+    // `RequestSelection`'s doc comment in `crates/tack-db/src/repo/execution.rs`
+    // for the full reasoning) — the claim transaction below still
+    // re-validates the chosen id is genuinely `queued` and eligible before
+    // leasing it, so a decision that raced against a concurrent claim simply
+    // yields "no work" this round rather than a double lease.
+    let scheduled_request_id = choose_request_for_runner(
+        &state.repo,
+        &principal.runner_id,
+        now,
+        &SchedulingPolicy::default(),
+    )
+    .await
+    .map_err(|_| internal_error("Could not evaluate scheduling candidates"))?;
+
     let attempt_id = format!("att_{}", Uuid::new_v4());
     let claimed = state
         .repo
@@ -750,6 +772,7 @@ pub async fn claim(
             &attempt_id,
             Duration::seconds(LIMITS.lease_duration_seconds),
             state.clock.as_ref(),
+            RequestSelection::Scheduled(scheduled_request_id.as_deref()),
         )
         .await
         .map_err(|_| internal_error("Could not claim work"))?;

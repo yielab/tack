@@ -12,7 +12,7 @@ use tack_db::{
         Completion, EnrollmentToken, EventApplyResult, EventBatch, ExecutionClock,
         HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewEvent, NewExecutionRequest,
         NewRunner, RecoveryDisposition, RecoveryObservation, RecoveryObservationInput,
-        RecoveryObservationResult, RedeemEnrollmentResult,
+        RecoveryObservationResult, RedeemEnrollmentResult, RequestSelection,
     },
 };
 use uuid::Uuid;
@@ -199,6 +199,7 @@ async fn claim(fixture: &Fixture) {
             "attempt-crash",
             Duration::seconds(60),
             &fixture.clock,
+            RequestSelection::Naive,
         )
         .await
         .expect("claim query")
@@ -225,6 +226,7 @@ async fn crash_before_claim_commit_rolls_back_request_capacity_and_fence() {
             "attempt-crash",
             Duration::seconds(60),
             &fixture.clock,
+            RequestSelection::Naive,
         )
         .await;
     assert!(crashed.is_err(), "fault injection must reach claim commit");
@@ -260,6 +262,7 @@ async fn crash_before_claim_commit_rolls_back_request_capacity_and_fence() {
             "attempt-after-retry",
             Duration::seconds(60),
             &fixture.clock,
+            RequestSelection::Naive,
         )
         .await
         .expect("claim retry")
@@ -307,6 +310,7 @@ async fn post_spawn_recovery_audits_needs_operator_and_never_grants_a_second_fen
                 "attempt-invalid-second-fence",
                 Duration::seconds(60),
                 &fixture.clock,
+                RequestSelection::Naive,
             )
             .await
             .expect("second claim query")

@@ -197,6 +197,176 @@ pub struct ClaimedExecution {
     pub request_snapshot: serde_json::Value,
 }
 
+/// How `claim_execution_idempotent_with_snapshot` picks *which* queued
+/// request to attempt to claim, once its own capacity check has passed.
+///
+/// `tack-db` cannot depend on `tack-orch` (the dependency arrow points the
+/// other way — see `crates/tack-orch/Cargo.toml`'s own header comment), so
+/// the pure `tack_orch::scheduler` decision cannot be called from inside
+/// this module or its transaction. Instead the caller (today, only
+/// `tack_orch::scheduler::wiring::choose_request_for_runner`, invoked from
+/// `crates/tack-api/src/handlers/runner_protocol.rs`'s `claim` handler)
+/// resolves the decision *first*, against a read-only snapshot fetched via
+/// [`Repository::fetch_runner_scheduling_snapshot`]/
+/// [`Repository::list_eligible_queued_requests`], and hands the resulting
+/// choice back in here so the actual fenced write stays exactly as strict
+/// as it always was (TODO.md Part III, III-E1's boundary: "pure
+/// selection... never grants the authoritative lease").
+#[derive(Debug, Clone, Copy)]
+pub enum RequestSelection<'a> {
+    /// The pre-Wave-4 behavior: `ORDER BY created_at LIMIT 1` over every
+    /// selector-eligible queued request, ignoring harness/model/label/
+    /// heartbeat eligibility entirely. Kept only so every pre-existing test
+    /// call site (none of which set up runner capability data) keeps its
+    /// exact original behavior unmodified. The production runner-v1 claim
+    /// handler never passes this variant.
+    Naive,
+    /// The caller already ran the pure scheduler against live candidate
+    /// data and decided which single request, if any, this runner should
+    /// attempt to claim. `Some(id)` names it — this method still re-checks
+    /// that id is genuinely `queued` and selector-eligible for `runner_id`
+    /// before leasing it (defense in depth against a stale decision).
+    /// `None` means the scheduler considered every selector-eligible
+    /// request and found none this runner is eligible for right now
+    /// (including "there were no queued requests at all") — this call
+    /// reports `no work` without falling back to naive selection, which
+    /// would silently undo the scheduler's rejection.
+    Scheduled(Option<&'a str>),
+}
+
+/// A read-only snapshot of one runner's scheduling-relevant state, used to
+/// build a `tack_orch::scheduler::RunnerCandidate` one layer up (that type
+/// cannot be constructed here — see [`RequestSelection`]'s doc comment for
+/// why). Every field mirrors a live `agent_runners`/`agent_fleet_members`
+/// column, not the runner's self-reported `capability_snapshot` alone,
+/// because capacity/heartbeat are refreshed by every claim/heartbeat call
+/// while the capability blob only changes on enroll/refresh.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunnerSchedulingSnapshot {
+    pub runner_id: String,
+    /// `'pending_enrollment' | 'active' | 'revoked'` — see
+    /// `crate::migrations`'s migration 040. Kept as the raw string; the
+    /// caller owns mapping it to a typed enum (this crate must not depend
+    /// on `tack-orch`'s `scheduler::RunnerState`).
+    pub state: String,
+    /// JSON object string (`agent_runners.labels`).
+    pub labels: String,
+    pub total_capacity: i64,
+    pub available_capacity: i64,
+    pub last_heartbeat_at: Option<String>,
+    /// JSON string, validated at enroll/refresh time to parse as
+    /// `tack_orch::execution::EmbeddedCapabilitySnapshot` — see
+    /// `crates/tack-api/src/handlers/runner_protocol.rs`'s
+    /// `validate_capability_payload`. A runner that has never enrolled
+    /// carries the column default `'{}'`, which does *not* parse as that
+    /// type; the caller treats a parse failure as "no declared harnesses"
+    /// rather than an error (III.2 rule 7: unknown is explicit, not a
+    /// crash).
+    pub capability_snapshot: String,
+    /// Every `agent_fleets.id` this runner currently belongs to, via
+    /// `agent_fleet_members`.
+    pub fleet_ids: Vec<String>,
+}
+
+/// A read-only view of one queued `execution_requests` row, carrying only
+/// the columns scheduling needs. Exists for the same layering reason as
+/// [`RunnerSchedulingSnapshot`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QueuedRequestForScheduling {
+    pub id: String,
+    pub selector_kind: String,
+    pub selector_id: String,
+    /// Always `Some` for any request that passed `enqueue_execution`'s
+    /// snapshot validation (III.1.2's `requested_harness_kind` is a
+    /// required snapshot field) — `Option` only because the raw column
+    /// itself has no `NOT NULL` constraint (migration 044).
+    pub requested_harness_kind: Option<String>,
+    pub requested_model_provider: Option<String>,
+    pub requested_model_id: Option<String>,
+    pub created_at: String,
+    /// JSON object string (`execution_requests.metadata`). The caller may
+    /// read a `priority` key from this as a documented, best-effort
+    /// convention — see `tack_orch::scheduler::wiring`'s module doc for why
+    /// no dedicated column exists yet (III-E1's own flagged gap).
+    pub metadata: String,
+}
+
+/// A fleet's configured concurrency ceiling alongside its current, observed
+/// in-flight usage — `agent_fleets.concurrency_limit` (migration 039) has
+/// never been enforced anywhere until this snapshot gave a caller something
+/// to enforce it against. `in_use` is the sum of `total_capacity -
+/// available_capacity` across every member runner: every unit of capacity a
+/// member runner currently has reserved, regardless of which specific
+/// request or selector claimed it — a fleet-wide ceiling is a statement
+/// about the fleet's aggregate load, not only load arriving through the
+/// `fleet` selector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FleetConcurrencySnapshot {
+    pub concurrency_limit: Option<i64>,
+    pub in_use: i64,
+}
+
+/// One row of `GET /api/runners` (card III-E6) — every column
+/// `agent_runners` carries, minus `credential_hash`/`credential_expires_at`/
+/// `credential_rotated_at` (never read back to an operator; enrollment
+/// tokens/credentials are one-time-reveal by design), plus this runner's
+/// current fleet roster from `agent_fleet_members`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunnerListingRow {
+    pub id: String,
+    pub name: String,
+    pub state: String,
+    pub labels: String,
+    pub total_capacity: i64,
+    pub available_capacity: i64,
+    pub capability_snapshot: String,
+    pub protocol_version: i64,
+    pub runner_version: Option<String>,
+    pub last_heartbeat_at: Option<String>,
+    pub revoked_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub fleet_ids: Vec<String>,
+}
+
+/// One row of `GET /api/executions/{request_id}/attempts` — every column
+/// `execution_attempts` carries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttemptListingRow {
+    pub id: String,
+    pub request_id: String,
+    pub attempt_number: i64,
+    pub runner_id: String,
+    pub fencing_token: i64,
+    pub state: String,
+    pub lease_issued_at: String,
+    pub lease_expires_at: String,
+    pub last_heartbeat_at: Option<String>,
+    pub event_checkpoint: Option<String>,
+    pub completion_id: Option<String>,
+    pub workspace_id: Option<String>,
+    pub base_revision: Option<String>,
+    pub actual_execution: Option<String>,
+    pub terminal_reason: Option<String>,
+    pub usage: Option<String>,
+    pub started_at: Option<String>,
+    pub ended_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// One row of `GET /api/executions/{request_id}/attempts/{attempt_number}/events`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventListingRow {
+    pub event_id: String,
+    pub sequence: i64,
+    pub source: String,
+    pub kind: String,
+    pub payload: String,
+    pub occurred_at: String,
+    pub created_at: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttemptTransitionPhase {
     Preparing,
@@ -1774,6 +1944,11 @@ impl Repository {
 
     /// Strong claim: replay lookup, capacity reservation, attempt and replay
     /// record are committed together, so a crash cannot lose the replay key.
+    ///
+    /// `selection` decides which queued request (if any) this call attempts
+    /// to lease once the capacity check above has passed — see
+    /// [`RequestSelection`]'s doc comment for why that decision is made by
+    /// the caller rather than this module.
     pub async fn claim_execution_idempotent_with_snapshot(
         &self,
         runner_id: &str,
@@ -1781,6 +1956,7 @@ impl Repository {
         attempt_id: &str,
         lease_duration: Duration,
         clock: &dyn ExecutionClock,
+        selection: RequestSelection<'_>,
     ) -> Result<Option<ClaimedExecution>, sqlx::Error> {
         let now = clock.now();
         let now_s = now.to_rfc3339();
@@ -1802,7 +1978,30 @@ impl Repository {
             }));
         }
         if sqlx::query("UPDATE agent_runners SET available_capacity=available_capacity-1,updated_at=? WHERE id=? AND state='active' AND revoked_at IS NULL AND available_capacity>0").bind(&now_s).bind(runner_id).execute(&mut *tx).await?.rows_affected()!=1 { tx.commit().await?; return Ok(None); }
-        let request=sqlx::query("SELECT id,request_snapshot FROM execution_requests WHERE state='queued' AND ((selector_kind='exact_runner' AND selector_id=?) OR (selector_kind='fleet' AND EXISTS(SELECT 1 FROM agent_fleet_members m WHERE m.fleet_id=selector_id AND m.runner_id=?))) ORDER BY created_at LIMIT 1").bind(runner_id).bind(runner_id).fetch_optional(&mut *tx).await?;
+        // `Scheduled(None)` means the scheduler already looked at every
+        // selector-eligible request and found none this runner is eligible
+        // for — reported as "no work" (after undoing the capacity
+        // reservation above) without ever issuing the naive query below,
+        // which would silently override that rejection.
+        if matches!(selection, RequestSelection::Scheduled(None)) {
+            tx.rollback().await?;
+            return Ok(None);
+        }
+        let request = match selection {
+            RequestSelection::Naive => {
+                sqlx::query("SELECT id,request_snapshot FROM execution_requests WHERE state='queued' AND ((selector_kind='exact_runner' AND selector_id=?) OR (selector_kind='fleet' AND EXISTS(SELECT 1 FROM agent_fleet_members m WHERE m.fleet_id=selector_id AND m.runner_id=?))) ORDER BY created_at LIMIT 1")
+                    .bind(runner_id).bind(runner_id).fetch_optional(&mut *tx).await?
+            }
+            RequestSelection::Scheduled(Some(chosen_id)) => {
+                // Defense in depth: re-verify the scheduler's chosen id is
+                // still `queued` and still selector-eligible for this
+                // runner, exactly as the naive path always has, rather than
+                // trusting the earlier read-only snapshot blindly.
+                sqlx::query("SELECT id,request_snapshot FROM execution_requests WHERE id=? AND state='queued' AND ((selector_kind='exact_runner' AND selector_id=?) OR (selector_kind='fleet' AND EXISTS(SELECT 1 FROM agent_fleet_members m WHERE m.fleet_id=selector_id AND m.runner_id=?)))")
+                    .bind(chosen_id).bind(runner_id).bind(runner_id).fetch_optional(&mut *tx).await?
+            }
+            RequestSelection::Scheduled(None) => unreachable!("handled above"),
+        };
         let Some(request) = request else {
             tx.rollback().await?;
             return Ok(None);
@@ -1838,6 +2037,233 @@ impl Repository {
             lease,
             request_snapshot: snapshot,
         }))
+    }
+
+    /// Read-only scheduling input: this runner's own current state plus its
+    /// fleet memberships. `None` if `runner_id` does not exist. See
+    /// [`RequestSelection`]'s doc comment for why this is a plain read
+    /// rather than something `tack-orch` fetches itself.
+    pub async fn fetch_runner_scheduling_snapshot(
+        &self,
+        runner_id: &str,
+    ) -> Result<Option<RunnerSchedulingSnapshot>, sqlx::Error> {
+        let row = sqlx::query(
+            "SELECT state, labels, total_capacity, available_capacity, last_heartbeat_at, \
+             capability_snapshot FROM agent_runners WHERE id = ?",
+        )
+        .bind(runner_id)
+        .fetch_optional(self.pool())
+        .await?;
+        let Some(row) = row else { return Ok(None) };
+        let fleet_ids: Vec<String> =
+            sqlx::query_scalar("SELECT fleet_id FROM agent_fleet_members WHERE runner_id = ?")
+                .bind(runner_id)
+                .fetch_all(self.pool())
+                .await?;
+        Ok(Some(RunnerSchedulingSnapshot {
+            runner_id: runner_id.to_string(),
+            state: row.get("state"),
+            labels: row.get("labels"),
+            total_capacity: row.get("total_capacity"),
+            available_capacity: row.get("available_capacity"),
+            last_heartbeat_at: row.get("last_heartbeat_at"),
+            capability_snapshot: row.get("capability_snapshot"),
+            fleet_ids,
+        }))
+    }
+
+    /// Read-only scheduling input: every `queued` request this runner is
+    /// selector-eligible for (exact match, or fleet membership) — the exact
+    /// same `WHERE` clause `claim_execution_idempotent_with_snapshot`'s
+    /// naive path uses, so the scheduler considers precisely the same
+    /// candidate pool the pre-Wave-4 query did, only with real eligibility
+    /// filtering applied on top instead of a bare `ORDER BY created_at`.
+    pub async fn list_eligible_queued_requests(
+        &self,
+        runner_id: &str,
+    ) -> Result<Vec<QueuedRequestForScheduling>, sqlx::Error> {
+        let rows = sqlx::query(
+            "SELECT id, selector_kind, selector_id, requested_harness_kind, \
+             requested_model_provider, requested_model_id, created_at, metadata \
+             FROM execution_requests WHERE state='queued' AND \
+             ((selector_kind='exact_runner' AND selector_id=?) OR \
+             (selector_kind='fleet' AND EXISTS(SELECT 1 FROM agent_fleet_members m \
+             WHERE m.fleet_id=selector_id AND m.runner_id=?))) ORDER BY created_at",
+        )
+        .bind(runner_id)
+        .bind(runner_id)
+        .fetch_all(self.pool())
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| QueuedRequestForScheduling {
+                id: row.get("id"),
+                selector_kind: row.get("selector_kind"),
+                selector_id: row.get("selector_id"),
+                requested_harness_kind: row.get("requested_harness_kind"),
+                requested_model_provider: row.get("requested_model_provider"),
+                requested_model_id: row.get("requested_model_id"),
+                created_at: row.get("created_at"),
+                metadata: row.get("metadata"),
+            })
+            .collect())
+    }
+
+    /// Read-only scheduling input: `fleet_id`'s configured
+    /// `concurrency_limit` alongside its current aggregate in-use capacity.
+    /// `None` if `fleet_id` does not exist.
+    pub async fn fetch_fleet_concurrency(
+        &self,
+        fleet_id: &str,
+    ) -> Result<Option<FleetConcurrencySnapshot>, sqlx::Error> {
+        let row = sqlx::query("SELECT concurrency_limit FROM agent_fleets WHERE id = ?")
+            .bind(fleet_id)
+            .fetch_optional(self.pool())
+            .await?;
+        let Some(row) = row else { return Ok(None) };
+        let concurrency_limit: Option<i64> = row.get("concurrency_limit");
+        let in_use: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(r.total_capacity - r.available_capacity),0) FROM agent_runners r \
+             JOIN agent_fleet_members m ON m.runner_id = r.id WHERE m.fleet_id = ?",
+        )
+        .bind(fleet_id)
+        .fetch_one(self.pool())
+        .await?;
+        Ok(Some(FleetConcurrencySnapshot {
+            concurrency_limit,
+            in_use,
+        }))
+    }
+
+    /// Every enrolled runner, newest-created last, with its current fleet
+    /// roster. Backs `GET /api/runners` (card III-E6) — the read path E2,
+    /// E3 and E5 each independently flagged as missing (`agent_runners`
+    /// itself has held this data since migration 040; nothing read it back
+    /// to an operator before this).
+    pub async fn list_runners(&self) -> Result<Vec<RunnerListingRow>, sqlx::Error> {
+        let rows = sqlx::query(
+            "SELECT id, name, state, labels, total_capacity, available_capacity, \
+             capability_snapshot, protocol_version, runner_version, last_heartbeat_at, \
+             revoked_at, created_at, updated_at FROM agent_runners ORDER BY created_at",
+        )
+        .fetch_all(self.pool())
+        .await?;
+        let mut out = Vec::with_capacity(rows.len());
+        for row in rows {
+            let id: String = row.get("id");
+            let fleet_ids: Vec<String> =
+                sqlx::query_scalar("SELECT fleet_id FROM agent_fleet_members WHERE runner_id = ?")
+                    .bind(&id)
+                    .fetch_all(self.pool())
+                    .await?;
+            out.push(RunnerListingRow {
+                id,
+                name: row.get("name"),
+                state: row.get("state"),
+                labels: row.get("labels"),
+                total_capacity: row.get("total_capacity"),
+                available_capacity: row.get("available_capacity"),
+                capability_snapshot: row.get("capability_snapshot"),
+                protocol_version: row.get("protocol_version"),
+                runner_version: row.get("runner_version"),
+                last_heartbeat_at: row.get("last_heartbeat_at"),
+                revoked_at: row.get("revoked_at"),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+                fleet_ids,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Every attempt ever made against `request_id`, oldest first. Backs
+    /// `GET /api/executions/{request_id}/attempts` — `execution_attempts`
+    /// (migration 045) has been written by the runner-v1 protocol since
+    /// Wave 2 with no operator read path until now (E2/E4/E5's independently
+    /// flagged gap).
+    pub async fn list_attempts_for_request(
+        &self,
+        request_id: &str,
+    ) -> Result<Vec<AttemptListingRow>, sqlx::Error> {
+        let rows = sqlx::query(
+            "SELECT id, request_id, attempt_number, runner_id, fencing_token, state, \
+             lease_issued_at, lease_expires_at, last_heartbeat_at, event_checkpoint, \
+             completion_id, workspace_id, base_revision, actual_execution, terminal_reason, \
+             usage, started_at, ended_at, created_at, updated_at FROM execution_attempts \
+             WHERE request_id = ? ORDER BY attempt_number",
+        )
+        .bind(request_id)
+        .fetch_all(self.pool())
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| AttemptListingRow {
+                id: row.get("id"),
+                request_id: row.get("request_id"),
+                attempt_number: row.get("attempt_number"),
+                runner_id: row.get("runner_id"),
+                fencing_token: row.get("fencing_token"),
+                state: row.get("state"),
+                lease_issued_at: row.get("lease_issued_at"),
+                lease_expires_at: row.get("lease_expires_at"),
+                last_heartbeat_at: row.get("last_heartbeat_at"),
+                event_checkpoint: row.get("event_checkpoint"),
+                completion_id: row.get("completion_id"),
+                workspace_id: row.get("workspace_id"),
+                base_revision: row.get("base_revision"),
+                actual_execution: row.get("actual_execution"),
+                terminal_reason: row.get("terminal_reason"),
+                usage: row.get("usage"),
+                started_at: row.get("started_at"),
+                ended_at: row.get("ended_at"),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+            })
+            .collect())
+    }
+
+    /// Every event recorded for one specific attempt (identified by its
+    /// parent request id + 1-based attempt number, matching how
+    /// `list_attempts_for_request` already reports attempts), oldest first.
+    /// `Ok(None)` means no attempt with that number exists for this
+    /// request — distinct from `Ok(Some(vec![]))`, an attempt that simply
+    /// has not reported any events yet. Backs `GET
+    /// /api/executions/{request_id}/attempts/{attempt_number}/events`.
+    pub async fn list_events_for_attempt_number(
+        &self,
+        request_id: &str,
+        attempt_number: i64,
+    ) -> Result<Option<Vec<EventListingRow>>, sqlx::Error> {
+        let attempt_id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM execution_attempts WHERE request_id = ? AND attempt_number = ?",
+        )
+        .bind(request_id)
+        .bind(attempt_number)
+        .fetch_optional(self.pool())
+        .await?;
+        let Some(attempt_id) = attempt_id else {
+            return Ok(None);
+        };
+        let rows = sqlx::query(
+            "SELECT event_id, sequence, source, kind, payload, occurred_at, created_at \
+             FROM execution_events WHERE attempt_id = ? ORDER BY sequence",
+        )
+        .bind(&attempt_id)
+        .fetch_all(self.pool())
+        .await?;
+        Ok(Some(
+            rows.into_iter()
+                .map(|row| EventListingRow {
+                    event_id: row.get("event_id"),
+                    sequence: row.get("sequence"),
+                    source: row.get("source"),
+                    kind: row.get("kind"),
+                    payload: row.get("payload"),
+                    occurred_at: row.get("occurred_at"),
+                    created_at: row.get("created_at"),
+                })
+                .collect(),
+        ))
     }
 
     #[instrument(skip(self, input, clock))]

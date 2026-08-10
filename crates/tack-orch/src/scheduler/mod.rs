@@ -34,10 +34,22 @@
 //! reuse `execution::` domain types (`HarnessKind`, `RunnerId`,
 //! `RunnerSelector`, `HarnessCapability`, …) without pulling in HTTP,
 //! `sqlx`, or any transport concern.
+//!
+//! # Live wiring (card III-E6)
+//!
+//! [`wiring::choose_request_for_runner`] is the integration seam this
+//! module's own doc comment above pointed to: it fetches real
+//! `agent_runners`/`agent_fleet_members`/`execution_requests` rows via a
+//! live `tack_db::Repository`, builds the [`RunnerCandidate`]/
+//! [`SchedulingRequest`] values above from them, and calls
+//! [`select::select_runner`]/[`batch::schedule`] — still performing no
+//! write of its own. `crates/tack-api/src/handlers/runner_protocol.rs`'s
+//! `claim` handler is the only caller in production.
 
 pub mod batch;
 pub mod select;
 pub mod types;
+pub mod wiring;
 
 pub use batch::schedule;
 pub use select::{SchedulingError, SchedulingPolicy, select_runner};
@@ -45,3 +57,4 @@ pub use types::{
     IneligibleReason, ModelSelector, Priority, RunnerCandidate, RunnerState, SchedulingRequest,
     Selection, SelectionOutcome,
 };
+pub use wiring::choose_request_for_runner;
