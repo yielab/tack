@@ -35,6 +35,13 @@ clap_complete = "4"
 [dev-dependencies]
 wiremock = "0.6"
 tokio = { workspace = true }
+# Card III-E6's cross-surface CLI E2E test (`tests/e6_scheduler_e2e_test.rs`)
+# spawns a real `tack serve` subprocess and speaks the runner-v1 protocol
+# directly (the CLI itself has no runner-protocol commands — see that
+# file's module doc); `chrono` builds capability-report timestamps for
+# those direct HTTP calls. Already a workspace dependency (tack-api,
+# tack-db, ...); not newly introduced to the lockfile.
+chrono = { workspace = true }
 # Test-only: proves execution.rs's request-body builders deserialize into
 # the real nested snapshot types (`AgentProfileSnapshot`, `RepositorySnapshot`,
 # `PermissionPolicy`) the operator API validates against, one level deeper
