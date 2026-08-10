@@ -19,63 +19,14 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "List agent profiles",
-        "description": "",
+        "operationId": "list_profiles",
         "responses": {
           "200": {
-            "description": "Agent profiles",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "400": {
-            "description": "invalid_request",
+            "description": "Every agent profile, by name",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden / runner_revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "not_found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/AgentProfileListResponse"
                 }
               }
             }
@@ -86,13 +37,13 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "Create an agent profile",
-        "description": "",
+        "operationId": "create_profile",
         "requestBody": {
-          "description": "{name, instructions, tool_policy?, limits?}",
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "$ref": "#/components/schemas/CreateProfile"
+              }
             }
           },
           "required": true
@@ -102,56 +53,18 @@
             "description": "Agent profile created",
             "content": {
               "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "400": {
-            "description": "invalid_request",
-            "content": {
-              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden / runner_revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "not_found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/CreateProfileResponse"
                 }
               }
             }
           },
           "409": {
-            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
+            "description": "conflict (name already exists)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -1159,63 +1072,14 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "List execution requests",
-        "description": "Newest first.",
+        "operationId": "list_executions",
         "responses": {
           "200": {
-            "description": "Execution requests",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "400": {
-            "description": "invalid_request",
+            "description": "Every execution request, newest first",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden / runner_revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "not_found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/ExecutionListResponse"
                 }
               }
             }
@@ -1226,23 +1090,25 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "Create or idempotently replay an execution request",
-        "description": "Requires the operator-authenticated `x-tack-principal` (server-injected; see this document's header note). Idempotency is scoped to (principal, idempotency_key): a retry with the same key and payload replays the original request; the same key with a changed payload is an idempotency_conflict.",
+        "operationId": "create_execution",
         "requestBody": {
-          "description": "Execution request fields: item_id, idempotency_key, exact-runner or fleet selector, agent_profile_id + resolved snapshot, requested harness/model, repository/workspace reference, permission policy, timeout, budgets, environment, metadata.",
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "$ref": "#/components/schemas/CreateExecution"
+              }
             }
           },
           "required": true
         },
         "responses": {
           "200": {
-            "description": "Created or replayed execution request (protocol_version, request_id, state, replayed)",
+            "description": "Execution request created or idempotently replayed",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/CreateExecutionResponse"
+                }
               }
             }
           },
@@ -1251,47 +1117,27 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden / runner_revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
           },
           "404": {
-            "description": "not_found",
+            "description": "not_found (item does not exist)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
           },
           "409": {
-            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
+            "description": "conflict / idempotency_conflict / runner_revoked",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -1304,8 +1150,7 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "Get an execution request",
-        "description": "Returns the current lifecycle state.",
+        "operationId": "get_execution",
         "parameters": [
           {
             "name": "request_id",
@@ -1322,36 +1167,8 @@
             "description": "Execution request detail",
             "content": {
               "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "400": {
-            "description": "invalid_request",
-            "content": {
-              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden / runner_revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/ExecutionDetailResponse"
                 }
               }
             }
@@ -1361,17 +1178,101 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/executions/{request_id}/attempts": {
+      "get": {
+        "tags": [
+          "execution-operator"
+        ],
+        "summary": "`GET /api/executions/{request_id}/attempts` — card III-E6. Closes the\ngap E2, E4 and E5 each independently hit: `execution_attempts`\n(migration 045) has been written by the runner-v1 protocol since Wave 2\nwith no operator read path — `GET /executions/{id}` returns only 5\nscalar columns (`request_id, item_id, state, cancellation_requested_at,\ncreated_at`), never attempt data. An empty list here is a real, honest\n\"no attempt yet\" (the request is still `queued`), not a placeholder —\ndistinct from the 404 an unknown `request_id` gets.",
+        "operationId": "list_execution_attempts",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "Execution request ID (opaque)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every attempt made against this request, oldest first (may be empty)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttemptListResponse"
                 }
               }
             }
           },
-          "409": {
-            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
+          "404": {
+            "description": "not_found",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/executions/{request_id}/attempts/{attempt_number}/events": {
+      "get": {
+        "tags": [
+          "execution-operator"
+        ],
+        "summary": "`GET /api/executions/{request_id}/attempts/{attempt_number}/events` —\ncard III-E6, the other half of the attempts/events gap above. Returns\n`404` naming which resource is missing (`execution_request` vs\n`execution_attempt`) rather than a single ambiguous not-found, since a\nclient can otherwise not distinguish \"wrong request id\" from \"this\nattempt number never existed.\"",
+        "operationId": "list_execution_attempt_events",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "Execution request ID (opaque)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attempt_number",
+            "in": "path",
+            "description": "1-based attempt number",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every event this attempt has reported, oldest first (may be empty)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found (execution_request or execution_attempt)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -1384,8 +1285,7 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "Request cancellation of an execution",
-        "description": "Records a cancellation request only — the request is not made falsely terminal; the runner observes and reports the actual outcome.",
+        "operationId": "request_cancellation",
         "parameters": [
           {
             "name": "request_id",
@@ -1399,39 +1299,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Cancellation requested",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "400": {
-            "description": "invalid_request",
+            "description": "Cancellation requested — not yet terminal",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden / runner_revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/CancellationRequestedResponse"
                 }
               }
             }
@@ -1441,17 +1313,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
           },
           "409": {
-            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
+            "description": "conflict (already terminal)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -1464,8 +1336,7 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "Requeue a needs_operator execution after an audited recovery decision",
-        "description": "Only permitted once a B2 authoritative recovery audit exists for the attempt; the recovery_key scopes idempotent replay of this confirmation.",
+        "operationId": "requeue_needs_operator",
         "parameters": [
           {
             "name": "request_id",
@@ -1478,69 +1349,32 @@
           }
         ],
         "requestBody": {
-          "description": "{recovery_key, reason}",
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryConfirmation"
+              }
             }
           },
           "required": true
         },
         "responses": {
           "200": {
-            "description": "Execution requeued (or replayed)",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "400": {
-            "description": "invalid_request",
+            "description": "Requeued (or replayed) after an audited recovery decision",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden / runner_revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "not_found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RequeueResponse"
                 }
               }
             }
           },
           "409": {
-            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
+            "description": "conflict / idempotency_conflict / invalid_transition",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -2487,63 +2321,14 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "List model profiles",
-        "description": "",
+        "operationId": "list_model_profiles",
         "responses": {
           "200": {
-            "description": "Model profiles",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "400": {
-            "description": "invalid_request",
+            "description": "Every model profile, by name",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden / runner_revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "not_found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/ModelProfileListResponse"
                 }
               }
             }
@@ -2554,13 +2339,13 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "Create a model profile",
-        "description": "",
+        "operationId": "create_model_profile",
         "requestBody": {
-          "description": "{name, model_provider, model_id, config_reference?}",
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "$ref": "#/components/schemas/CreateModelProfile"
+              }
             }
           },
           "required": true
@@ -2570,56 +2355,18 @@
             "description": "Model profile created",
             "content": {
               "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "400": {
-            "description": "invalid_request",
-            "content": {
-              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden / runner_revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "not_found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/CreateModelProfileResponse"
                 }
               }
             }
           },
           "409": {
-            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
+            "description": "conflict (name already exists)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4183,63 +3930,14 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "List runner fleets",
-        "description": "",
+        "operationId": "list_fleets",
         "responses": {
           "200": {
-            "description": "Fleets",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "400": {
-            "description": "invalid_request",
+            "description": "Every runner fleet, by name",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden / runner_revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "not_found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/FleetListResponse"
                 }
               }
             }
@@ -4250,13 +3948,13 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "Create a runner fleet",
-        "description": "",
+        "operationId": "create_fleet",
         "requestBody": {
-          "description": "{name, concurrency_limit?, default_policy?}",
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "$ref": "#/components/schemas/CreateFleet"
+              }
             }
           },
           "required": true
@@ -4266,56 +3964,18 @@
             "description": "Fleet created",
             "content": {
               "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "400": {
-            "description": "invalid_request",
-            "content": {
-              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden / runner_revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "not_found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/CreateFleetResponse"
                 }
               }
             }
           },
           "409": {
-            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
+            "description": "conflict (name already exists)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -5436,28 +5096,66 @@
         }
       }
     },
+    "/api/runners": {
+      "get": {
+        "tags": [
+          "execution-operator"
+        ],
+        "summary": "`GET /api/runners[?fleet_id=]` — card III-E6. Closes the gap E2, E3 and\nE5 each independently hit: `agent_runners` (migration 040) has always\nstored capacity/health/capability data, but nothing read it back to an\noperator before this route existed. `capability_snapshot`/`labels` are\nparsed JSON (matching every other list handler in this file); a\ncorrupt/unparseable value is reported per-runner as `null` with the raw\nstring preserved separately, rather than failing the whole list for one\nbad row — a operator inspecting runner health must not lose visibility\ninto every *other* runner because one has a malformed blob.",
+        "operationId": "list_runners",
+        "parameters": [
+          {
+            "name": "fleet_id",
+            "in": "path",
+            "description": "Optional roster filter — a runner is included only if it is a\ncurrent member of this fleet (`agent_fleet_members`).",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every enrolled runner (optionally filtered to one fleet's roster)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/runners/enrollment": {
       "post": {
         "tags": [
           "execution-operator"
         ],
-        "summary": "Create a pending runner and issue a one-time enrollment token",
-        "description": "The raw enrollment token is returned exactly once, in this response; only its SHA-256 hash is ever persisted, and no later response (list, detail, or revoke) exposes it or the hash.",
+        "summary": "Creates a pending runner and stores only a SHA-256 enrollment-token hash.\nThe raw token is deliberately emitted once here and is never readable from\nmetadata, list, revocation, or runner responses.",
+        "operationId": "create_pending_runner",
         "requestBody": {
-          "description": "{name, labels?, total_capacity, available_capacity, capability_snapshot?, protocol_version?, enrollment_lifetime_seconds?}",
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "$ref": "#/components/schemas/CreatePendingRunner"
+              }
             }
           },
           "required": true
         },
         "responses": {
           "200": {
-            "description": "Pending runner created (runner_id, token_id, enrollment_token, expires_at)",
+            "description": "Pending runner created; the raw enrollment token is returned exactly once",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/CreatePendingRunnerResponse"
+                }
               }
             }
           },
@@ -5466,47 +5164,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden / runner_revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "not_found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
           },
           "409": {
-            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
+            "description": "conflict (name already exists)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -5519,8 +5187,7 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "Revoke an unredeemed enrollment token",
-        "description": "",
+        "operationId": "revoke_enrollment_token",
         "parameters": [
           {
             "name": "runner_id",
@@ -5546,36 +5213,8 @@
             "description": "Token revoked",
             "content": {
               "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "400": {
-            "description": "invalid_request",
-            "content": {
-              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden / runner_revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RevokeEnrollmentTokenResponse"
                 }
               }
             }
@@ -5585,17 +5224,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
           },
           "409": {
-            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
+            "description": "conflict (already consumed)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -5608,8 +5247,7 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "Revoke a runner",
-        "description": "A revoked runner can no longer be selected by new exact-runner creates or authenticate to `/api/runner/v1`.",
+        "operationId": "revoke_runner",
         "parameters": [
           {
             "name": "runner_id",
@@ -5626,36 +5264,8 @@
             "description": "Runner revoked",
             "content": {
               "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "400": {
-            "description": "invalid_request",
-            "content": {
-              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden / runner_revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RevokeRunnerResponse"
                 }
               }
             }
@@ -5665,17 +5275,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -6334,6 +5934,49 @@
           }
         }
       },
+      "AgentProfileListResponse": {
+        "type": "object",
+        "required": [
+          "protocol_version",
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentProfileSummary"
+            }
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "AgentProfileSummary": {
+        "type": "object",
+        "required": [
+          "agent_profile_id",
+          "name",
+          "instructions",
+          "tool_policy",
+          "limits"
+        ],
+        "properties": {
+          "agent_profile_id": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "limits": {},
+          "name": {
+            "type": "string"
+          },
+          "tool_policy": {}
+        }
+      },
       "ApprovalChannelEntry": {
         "type": "object",
         "description": "One `docket_approvals_total{channel=...,outcome=...}` sample.",
@@ -6402,6 +6045,125 @@
           "uploaded_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "AttemptListResponse": {
+        "type": "object",
+        "required": [
+          "protocol_version",
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttemptSummary"
+            }
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "AttemptSummary": {
+        "type": "object",
+        "description": "One attempt as reported by `GET /api/executions/{id}/attempts` — every\ncolumn `execution_attempts` carries (migration 045).",
+        "required": [
+          "attempt_id",
+          "request_id",
+          "attempt_number",
+          "runner_id",
+          "fencing_token",
+          "state",
+          "lease_issued_at",
+          "lease_expires_at",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "actual_execution": {
+            "description": "`tack_orch::execution::ActualExecution` once the attempt has\nreported one, else `null`."
+          },
+          "attempt_id": {
+            "type": "string"
+          },
+          "attempt_number": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "base_revision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "completion_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_checkpoint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fencing_token": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_heartbeat_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lease_expires_at": {
+            "type": "string"
+          },
+          "lease_issued_at": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "runner_id": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "terminal_reason": {},
+          "updated_at": {
+            "type": "string"
+          },
+          "usage": {
+            "description": "`tack_orch::execution::Usage` once reported, else `null` — never a\nfabricated zero (III.2 rule 7)."
+          },
+          "workspace_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -6640,6 +6402,29 @@
             "items": {
               "$ref": "#/components/schemas/BoardColumnWithItems"
             }
+          }
+        }
+      },
+      "CancellationRequestedResponse": {
+        "type": "object",
+        "description": "Response body for `POST /api/executions/{id}/cancel`. `state` is\ndeliberately **not** a `docs/contracts/runner-v1/lifecycle-transitions.json`\nvalue — cancellation is recorded as a request only\n(`cancellation_requested_at`); the request's real lifecycle state is\nunaffected and visible via `GET /api/executions/{id}`.",
+        "required": [
+          "protocol_version",
+          "request_id",
+          "state"
+        ],
+        "properties": {
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "example": "cancellation_requested"
           }
         }
       },
@@ -6958,6 +6743,147 @@
           }
         }
       },
+      "CreateExecution": {
+        "type": "object",
+        "required": [
+          "item_id",
+          "idempotency_key",
+          "selector_kind",
+          "selector_id",
+          "agent_profile_id",
+          "requested_harness_kind",
+          "agent_profile_snapshot",
+          "repository_snapshot",
+          "permission_policy",
+          "budgets",
+          "environment",
+          "metadata",
+          "timeout_seconds"
+        ],
+        "properties": {
+          "agent_profile_id": {
+            "type": "string"
+          },
+          "agent_profile_snapshot": {
+            "description": "`tack_orch::execution::AgentProfileSnapshot` (`{name, instructions,\ntool_policy, timeout_seconds, budgets}`) — untyped here because that\ntype lives in `tack-orch`, which does not derive `ToSchema` (see\n`RunnerV1ErrorEnvelope`'s doc comment for the same architectural\nreason). Validated against the real nested struct server-side at\nenqueue time."
+          },
+          "budgets": {},
+          "environment": {},
+          "idempotency_key": {
+            "type": "string"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "metadata": {},
+          "permission_policy": {
+            "description": "`tack_orch::execution::PermissionPolicy` (`{tools, network}`)."
+          },
+          "repository_snapshot": {
+            "description": "`tack_orch::execution::RepositorySnapshot` (`{kind, remote,\nbase_revision, subdirectory}`)."
+          },
+          "requested_harness_kind": {
+            "type": "string"
+          },
+          "requested_model_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requested_model_provider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selector_id": {
+            "type": "string"
+          },
+          "selector_kind": {
+            "type": "string"
+          },
+          "status_map_policy_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "CreateExecutionResponse": {
+        "type": "object",
+        "description": "Response body for `POST /api/executions` — a newly created request or an\nidempotent replay of an existing one (`replayed` distinguishes the two).",
+        "required": [
+          "protocol_version",
+          "request_id",
+          "state",
+          "replayed"
+        ],
+        "properties": {
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "description": "Always `\"queued\"` on success — a request enters the runner-v1\nlifecycle (`docs/contracts/runner-v1/lifecycle-transitions.json`)\nonly once created."
+          }
+        }
+      },
+      "CreateFleet": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "concurrency_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "default_policy": {},
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateFleetResponse": {
+        "type": "object",
+        "required": [
+          "protocol_version",
+          "fleet_id",
+          "name"
+        ],
+        "properties": {
+          "fleet_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "CreateItem": {
         "type": "object",
         "required": [
@@ -7045,6 +6971,159 @@
           },
           "title": {
             "type": "string"
+          }
+        }
+      },
+      "CreateModelProfile": {
+        "type": "object",
+        "required": [
+          "name",
+          "model_provider",
+          "model_id"
+        ],
+        "properties": {
+          "config_reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "model_provider": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateModelProfileResponse": {
+        "type": "object",
+        "required": [
+          "protocol_version",
+          "model_profile_id",
+          "name",
+          "model_provider",
+          "model_id"
+        ],
+        "properties": {
+          "model_id": {
+            "type": "string"
+          },
+          "model_profile_id": {
+            "type": "string"
+          },
+          "model_provider": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "CreatePendingRunner": {
+        "type": "object",
+        "required": [
+          "name",
+          "total_capacity",
+          "available_capacity"
+        ],
+        "properties": {
+          "available_capacity": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "capability_snapshot": {},
+          "enrollment_lifetime_seconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "labels": {},
+          "name": {
+            "type": "string"
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_capacity": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CreatePendingRunnerResponse": {
+        "type": "object",
+        "description": "Response body for `POST /api/runners/enrollment`. `enrollment_token` is\nthe raw, one-time secret — never persisted, never returned again by any\nlater response.",
+        "required": [
+          "protocol_version",
+          "runner_id",
+          "token_id",
+          "enrollment_token",
+          "expires_at"
+        ],
+        "properties": {
+          "enrollment_token": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "runner_id": {
+            "type": "string"
+          },
+          "token_id": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateProfile": {
+        "type": "object",
+        "required": [
+          "name",
+          "instructions"
+        ],
+        "properties": {
+          "instructions": {
+            "type": "string"
+          },
+          "limits": {},
+          "name": {
+            "type": "string"
+          },
+          "tool_policy": {}
+        }
+      },
+      "CreateProfileResponse": {
+        "type": "object",
+        "required": [
+          "protocol_version",
+          "agent_profile_id",
+          "name"
+        ],
+        "properties": {
+          "agent_profile_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -7916,6 +7995,26 @@
           }
         ]
       },
+      "EventListResponse": {
+        "type": "object",
+        "required": [
+          "protocol_version",
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventSummary"
+            }
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "EventScopeCapability": {
         "type": "object",
         "required": [
@@ -7940,6 +8039,126 @@
           "project",
           "plane"
         ]
+      },
+      "EventSummary": {
+        "type": "object",
+        "description": "One event as reported by `GET\n/api/executions/{id}/attempts/{attempt_number}/events`.",
+        "required": [
+          "event_id",
+          "sequence",
+          "source",
+          "kind",
+          "payload",
+          "occurred_at",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "payload": {},
+          "sequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "source": {
+            "type": "string"
+          }
+        }
+      },
+      "ExecutionDetailResponse": {
+        "type": "object",
+        "required": [
+          "protocol_version",
+          "request_id",
+          "item_id",
+          "state",
+          "created_at"
+        ],
+        "properties": {
+          "cancellation_requested_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "item_id": {
+            "type": "string"
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        }
+      },
+      "ExecutionListResponse": {
+        "type": "object",
+        "required": [
+          "protocol_version",
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExecutionSummary"
+            }
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ExecutionSummary": {
+        "type": "object",
+        "description": "One row of `GET /api/executions` / the `GET /api/executions/{id}`\ndetail. Deliberately five scalar columns today — see\n`docs/agent-handoffs/part-iii/III-E2.md`'s Gap 2 for the attempt/event\ndata this does *not* carry, now available separately via `GET\n/api/executions/{id}/attempts`.",
+        "required": [
+          "request_id",
+          "item_id",
+          "state",
+          "created_at"
+        ],
+        "properties": {
+          "cancellation_requested_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "item_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        }
       },
       "FleetEntry": {
         "type": "object",
@@ -8082,16 +8301,21 @@
       },
       "FleetListResponse": {
         "type": "object",
-        "description": "`GET /api/fleet` response envelope — matches\n`frontend/src/features/fleet/api.ts`'s `FleetResponse` exactly (`{ rows:\n[...] }`, not a bare array).",
         "required": [
-          "rows"
+          "protocol_version",
+          "data"
         ],
         "properties": {
-          "rows": {
+          "data": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/FleetEntry"
+              "$ref": "#/components/schemas/FleetSummary"
             }
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -8115,6 +8339,30 @@
             "type": "string"
           },
           "role": {
+            "type": "string"
+          }
+        }
+      },
+      "FleetSummary": {
+        "type": "object",
+        "required": [
+          "fleet_id",
+          "name",
+          "default_policy"
+        ],
+        "properties": {
+          "concurrency_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "default_policy": {},
+          "fleet_id": {
+            "type": "string"
+          },
+          "name": {
             "type": "string"
           }
         }
@@ -8668,6 +8916,59 @@
               "null"
             ],
             "description": "Import only issues from this team (slug or ID). When omitted, all\nissues accessible to the key are fetched."
+          }
+        }
+      },
+      "ModelProfileListResponse": {
+        "type": "object",
+        "required": [
+          "protocol_version",
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelProfileSummary"
+            }
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ModelProfileSummary": {
+        "type": "object",
+        "required": [
+          "model_profile_id",
+          "name",
+          "model_provider",
+          "model_id",
+          "enabled"
+        ],
+        "properties": {
+          "config_reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "model_profile_id": {
+            "type": "string"
+          },
+          "model_provider": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
           }
         }
       },
@@ -9425,6 +9726,53 @@
         ],
         "description": "The outcome of the provisioning half of the request, once the Tack\nproject itself exists. See the module doc's rollback design for exactly\nwhen each variant is produced — both are a `200`, never an error\nresponse, because in both cases the project *and* the pod are real and\nvalid; `PodCreatedLinkFailed` just means one more step (linking) needs\nfinishing, manually, via the existing Settings → Orchestration UI."
       },
+      "RecoveryConfirmation": {
+        "type": "object",
+        "required": [
+          "recovery_key",
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "recovery_key": {
+            "type": "string"
+          }
+        }
+      },
+      "RequeueResponse": {
+        "type": "object",
+        "description": "Response body for `POST /api/executions/{id}/requeue`.",
+        "required": [
+          "protocol_version",
+          "request_id",
+          "state",
+          "recovered_from",
+          "replayed"
+        ],
+        "properties": {
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "recovered_from": {
+            "type": "string",
+            "example": "needs_operator"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "example": "queued"
+          }
+        }
+      },
       "RestoreRemoteRequest": {
         "type": "object",
         "properties": {
@@ -9438,6 +9786,54 @@
               "null"
             ],
             "description": "Object key to restore. Defaults to the latest backup when omitted."
+          }
+        }
+      },
+      "RevokeEnrollmentTokenResponse": {
+        "type": "object",
+        "required": [
+          "protocol_version",
+          "runner_id",
+          "token_id",
+          "state"
+        ],
+        "properties": {
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "runner_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "example": "revoked"
+          },
+          "token_id": {
+            "type": "string"
+          }
+        }
+      },
+      "RevokeRunnerResponse": {
+        "type": "object",
+        "required": [
+          "protocol_version",
+          "runner_id",
+          "state"
+        ],
+        "properties": {
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "runner_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "example": "revoked"
           }
         }
       },
@@ -9520,6 +9916,151 @@
           "project_id": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "RunnerListResponse": {
+        "type": "object",
+        "required": [
+          "protocol_version",
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunnerSummary"
+            }
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "RunnerSummary": {
+        "type": "object",
+        "description": "One row of `GET /api/runners` — every column `agent_runners` carries\n(minus credential material — see `RunnerListingRow`'s own doc comment in\n`tack-db`), plus its current fleet roster.",
+        "required": [
+          "runner_id",
+          "name",
+          "state",
+          "labels_raw",
+          "total_capacity",
+          "available_capacity",
+          "capability_snapshot_raw",
+          "protocol_version",
+          "fleet_ids",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "available_capacity": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "capability_snapshot": {
+            "description": "Parsed `capability_snapshot` — see `labels`' doc comment for the\nsame \"raw string always present\" guarantee."
+          },
+          "capability_snapshot_raw": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "fleet_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "labels": {
+            "description": "Parsed `labels` — `null` only if the stored value is somehow not\nvalid JSON (`labels_raw` always carries the raw stored string, so no\ninformation is lost even then)."
+          },
+          "labels_raw": {
+            "type": "string"
+          },
+          "last_heartbeat_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "runner_id": {
+            "type": "string"
+          },
+          "runner_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "example": "active"
+          },
+          "total_capacity": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "RunnerV1Error": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "request_id",
+          "retryable",
+          "details"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "One of the fifteen frozen `docs/contracts/runner-v1/errors/*.json`\ncodes (e.g. `not_found`, `conflict`, `idempotency_conflict`,\n`invalid_transition`, `stale_lease`, `runner_revoked`).",
+            "example": "not_found"
+          },
+          "details": {
+            "description": "Per-code structured detail — shape documented per operation in\n`docs/contracts/runner-v1/README.md` (e.g. `invalid_transition`'s\n`{from, to}`, `stale_lease`'s `{attempt_id, current_fencing_token}`)."
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean",
+            "description": "Whether a conformant client may safely retry — derived from `code`\nalone (`StableErrorCode::retryable`), never set independently."
+          }
+        }
+      },
+      "RunnerV1ErrorEnvelope": {
+        "type": "object",
+        "description": "Documents `tack_orch::execution::ProtocolErrorEnvelope`'s real wire shape\n(`docs/contracts/runner-v1/errors/*.json`) for every operator execution/\nfleet/runner/profile route (card III-E6), which returns that envelope —\nnot `crate::openapi::ErrorEnvelope`, a different, incompatible shape\n(`{status,message,code?}` vs `{code,message,request_id,retryable,\ndetails}`). This is a doc-only mirror, not a second runtime authority:\n`tack-orch` must stay free of an OpenAPI-generation dependency (see that\ncrate's own architecture boundary), so the real type cannot derive\n`ToSchema` itself. Defined here (not in `crate::openapi`) so this file\nkeeps compiling standalone when a card-local test loads it via\n`#[path = \"../src/handlers/executions.rs\"]` (`c1_handlers_test.rs`,\n`c2_handlers_test.rs`) — a `crate::openapi` import would not resolve in\nthat separate test-binary crate root. `code` is documented as a free\nstring rather than an enum because `StableErrorCode` lives in\n`tack-orch` for the same reason; its fifteen frozen values are\nenumerated in `docs/contracts/runner-v1/README.md`.\n\n`allow(dead_code)`: this type is a pure OpenAPI schema marker — utoipa's\n`#[utoipa::path(responses(... body = RunnerV1ErrorEnvelope ...))]`\nannotations reference it by *type* (calling `ToSchema`'s associated\nfunctions) but no code anywhere ever constructs a *value* of it, since\nevery real error response is built from the actual runtime type,\n`tack_orch::execution::ProtocolErrorEnvelope`. In the real `tack-api`\nlibrary crate this is invisible to `dead_code` (a `pub` item in a\nlibrary is assumed reachable by external callers); it only surfaces\nwhen this file is compiled standalone into a test *binary* via\n`#[path]` (`c1_handlers_test.rs`/`c2_handlers_test.rs`), which has no\nexternal callers at all.",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/RunnerV1Error"
           }
         }
       },
