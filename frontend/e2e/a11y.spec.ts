@@ -3,8 +3,11 @@ import AxeBuilder from '@axe-core/playwright';
 import {
   getOrCreateProject,
   getOrCreateItem,
+  createFreshItem,
   createItemWithAssignee,
   createSprintWithItem,
+  createFleet,
+  createAgentProfile,
   waitForApp,
 } from './helpers';
 
@@ -1059,6 +1062,55 @@ test('provisioning wizard (confirmation modal open) has no accessibility violati
   await page.getByRole('button', { name: 'Provision…' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByText('cannot be automatically undone')).toBeVisible();
+
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+// "Run with agent" (frontend/src/shared/runWithAgent/**, TODO.md III-E4,
+// Wave 4 / Phase 54). Unlike every Docket dispatch scan above, these routes
+// are NOT gated behind `TACK_ORCH_ENABLE` (see `run-with-agent.spec.ts`'s
+// own header comment) — no orchestration setup needed to reach this
+// surface's populated state. The two states scanned are the highest-risk
+// ones for focus/labelling per this file's own established precedent (a
+// modal with several distinct field groups, and a tab panel rendering a
+// list with inline action controls).
+
+test('Board card "Run with agent" modal has no accessibility violations', async ({ page, request }) => {
+  const projectId = await getOrCreateProject(request);
+  await getOrCreateItem(request, projectId, `A11y RWA board ${Date.now()}`);
+
+  await page.goto(`/projects/${projectId}/board`);
+  await waitForApp(page);
+  await page.getByRole('button', { name: /^Run with agent:/ }).first().click();
+  await expect(page.getByRole('dialog', { name: /^Run with agent:/ })).toBeVisible();
+
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+test('item detail Execution tab (with a real request) has no accessibility violations', async ({ page, request }) => {
+  const projectId = await getOrCreateProject(request);
+  // A guaranteed-fresh item — see `run-with-agent.spec.ts`'s identical note
+  // on why `getOrCreateItem` would accumulate state across repeated runs.
+  const itemId = await createFreshItem(request, projectId, `A11y RWA detail ${Date.now()}`);
+  const fleetId = await createFleet(request, `A11y Fleet ${Date.now()}`);
+  const profileId = await createAgentProfile(request, `A11y Profile ${Date.now()}`);
+
+  await page.goto(`/projects/${projectId}/board?item=${itemId}`);
+  await waitForApp(page);
+  const drawer = page.getByRole('dialog');
+  await drawer.getByRole('button', { name: 'Run with agent' }).click();
+
+  const modal = page.getByRole('dialog', { name: /^Run with agent:/ });
+  await modal.getByRole('combobox', { name: 'Fleet' }).selectOption(fleetId);
+  await modal.getByRole('combobox', { name: 'Agent profile' }).selectOption(profileId);
+  await modal.getByLabel('Remote').fill('git@example.com:org/repo.git');
+  await modal.getByRole('button', { name: 'Run' }).click();
+  await expect(modal).toBeHidden();
+
+  await drawer.getByRole('tab', { name: 'Execution' }).click();
+  await expect(drawer.getByText('Queued')).toBeVisible();
 
   const violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
 import { MemoryRouter, Route, useSearchParams } from '@solidjs/router';
 import { ProjectContext, type ProjectContextValue } from '../../shared/state/projectContext';
+import { ExecutionStoreProvider } from '../../shared/state/executionContext';
 import type { Resource } from 'solid-js';
 import ItemDetailDrawer from './ItemDetailDrawer';
 
@@ -74,6 +75,10 @@ function mockFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Respon
   if (url.includes('/sprints')) {
     return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
   }
+  // `ExecutionStoreProvider` (TODO.md III-E4) loads this once on mount.
+  if (url.includes('/executions')) {
+    return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 }));
+  }
   return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
 }
 
@@ -105,11 +110,13 @@ function mount() {
   document.body.appendChild(container);
   const dispose = render(
     () => (
-      <ProjectContext.Provider value={projectValue}>
-        <MemoryRouter>
-          <Route path="/" component={Host} />
-        </MemoryRouter>
-      </ProjectContext.Provider>
+      <ExecutionStoreProvider>
+        <ProjectContext.Provider value={projectValue}>
+          <MemoryRouter>
+            <Route path="/" component={Host} />
+          </MemoryRouter>
+        </ProjectContext.Provider>
+      </ExecutionStoreProvider>
     ),
     container,
   );
