@@ -1,0 +1,77 @@
+// Public surface of the shared execution API/state layer (TODO.md III-E2).
+// E3 (fleet/runner management UI) and E4 ("Run with agent" + activity) — and
+// any later card — should import from this barrel rather than reaching into
+// individual files, so the boundary of what's public stays visible in one
+// place. See `docs/agent-handoffs/part-iii/III-E2.md` for the narrative
+// tour of this surface, the backend gaps it works around, and how to extend
+// it once those gaps close.
+
+export type {
+  ExecutionState,
+  RunnerSelector,
+  CapabilitySupport,
+  CapabilityValue,
+  FeatureCapabilities,
+  Concurrency,
+  ModelCombination,
+  HarnessCapability,
+  CapabilityLimits,
+  RunnerCapabilities,
+  MeasurementSource,
+  Measurement,
+  Usage,
+  StableErrorCode,
+} from './types';
+export { TERMINAL_EXECUTION_STATES, isTerminalExecutionState } from './types';
+
+export type {
+  ExecutionSummary,
+  ExecutionListResult,
+  CreateExecutionInput,
+  CreateExecutionResult,
+  CancelExecutionResult,
+  RequeueExecutionInput,
+  RequeueExecutionResult,
+  FleetSummary,
+  FleetListResult,
+  CreateFleetInput,
+  CreateFleetResult,
+  AgentProfileSummary,
+  AgentProfileListResult,
+  CreateAgentProfileInput,
+  CreateAgentProfileResult,
+  ModelProfileSummary,
+  ModelProfileListResult,
+  CreateModelProfileInput,
+  CreateModelProfileResult,
+  EnrollRunnerInput,
+  EnrollRunnerResult,
+  RevokeRunnerResult,
+  RevokeEnrollmentTokenResult,
+} from './api';
+export { executionsApi, fleetsApi, agentProfilesApi, modelProfilesApi, runnersApi } from './api';
+
+export type { CapabilityGate, FeatureName, AggregatedModelCombination, CombinationAvailability } from './capabilities';
+export {
+  gateFeature,
+  gateFeatureAcrossRunners,
+  listReportedHarnessKinds,
+  harnessProbeStatus,
+  listModelCombinationsForHarness,
+  isCombinationSupported,
+} from './capabilities';
+
+export { VersionedCache, SequenceAllocator } from './cache';
+
+export type { ExecutionInvalidationEvent, ExecutionRealtimeStatus, ExecutionRealtimeOptions, ExecutionRealtime } from './realtime';
+export { createExecutionRealtime } from './realtime';
+
+export type {
+  NormalizedExecutionError,
+  ListStatus,
+  CancellationState,
+  ExecutionRequestRecord,
+  AttemptAvailability,
+  ExecutionStore,
+} from './store';
+export { createExecutionStore } from './store';
