@@ -1,0 +1,675 @@
+//! III-F1 card-local operator decision-resolution repository/service/handler
+//! module. Not declared in `handlers.rs` and not wired into `router.rs` —
+//! both are explicitly out of this card's "Owns" line ("new decision
+//! repository/service/handler modules and focused tests; no router,
+//! migration or generated edits"). The Wave 5 integrator adds `pub mod
+//! decisions;` to `handlers.rs` and merges `decisions::routes(state)` into
+//! the operator router the same way C5 merged C1's `executions`/
+//! `runner_admin` routers in `router.rs`'s `operator_execution_routes` (see
+//! that function's doc comment) — i.e. **before** the `require_token` layer
+//! is applied and **with** `inject_operator_principal` layered directly on
+//! top, exactly like `operator_execution_routes` does today. Suggested
+//! snippet for that integration (see this card's handoff for the full
+//! rationale):
+//!
+//! ```ignore
+//! let decision_state = decisions::DecisionOperatorState::with_clock(state.repo.clone(), clock);
+//! decisions::routes(decision_state)
+//!     .layer(middleware::from_fn_with_state(state.clone(), inject_operator_principal))
+//! ```
+//!
+//! # Security boundary: runner may raise/read, never resolve
+//!
+//! This module reads exactly one identity signal: the `x-tack-principal`
+//! header (see [`principal`]). It never reads `Authorization` at all — no
+//! code path here can authenticate, or even inspect, a runner bearer
+//! credential. That is the entire enforcement mechanism for "a runner may
+//! raise and read its own attempt's decision (`POST .../decisions`, `POST
+//! .../decisions/poll`, both in `handlers/runner_protocol.rs`, C2's card) but
+//! never resolve it": resolution lives on a structurally separate route
+//! family (mounted on `/api` behind `require_token`, a sibling of
+//! `/api/runner/v1` exactly as `CLAUDE.md`'s "Two authentication surfaces,
+//! separated structurally" describes for every other operator/runner pair),
+//! not an exemption entry on the runner surface, and the runner credential
+//! carries zero privilege here even if presented — proven in
+//! `f1_decisions_test.rs`'s `self_resolution_is_denied_*` tests.
+//!
+//! `docs/contracts/runner-v1/protocol.json`'s `authentication` block names
+//! `decision_resolution` a "separately_scoped_operator_credential" — distinct
+//! wording from the plain `operator_session_or_api_token` every other
+//! operator route uses, and `errors/forbidden.json`'s example carries
+//! `"required_scope":"operator:decisions"`. Tack's actual operator-auth model
+//! (`middleware::require_token`) is a single shared bearer token with no
+//! scope/claim system at all (see `middleware.rs`'s own
+//! `operator_principal_value` doc comment: "a single shared bearer token, not
+//! per-user sessions"), and building a second, decision-specific credential
+//! type would mean editing `config.rs`/`AppConfig` — a shared struct this
+//! card does not own and was not asked to extend. This is a genuine, open
+//! contract-vs-implementation gap (III.2 rule 13), not a corner I cut
+//! silently: I mount this route behind the same `require_token` gate every
+//! other operator route uses (satisfying this card's own instruction,
+//! verbatim: "operator-scoped (`/api` behind `require_token`), structurally
+//! separate — not an exemption entry on the runner surface") and record the
+//! stricter scoped-credential reading as a decision for A0/the wave
+//! integrator in the handoff, rather than inventing an unrequested `AppConfig`
+//! field or a second credential type with no contract-specified shape.
+//!
+//! # No item-status mapping
+//!
+//! `execution_requests.status_map_policy_id` (migration 044) is a bare
+//! nullable `TEXT` column with **zero interpreter anywhere in this
+//! codebase** — grep confirms it is threaded verbatim through every layer
+//! (CLI args, request snapshot, DB column) and never once read back to
+//! decide anything. Nothing defines what a policy id resolves to: which
+//! decision kinds/answers map to which item statuses, or even what shape a
+//! "policy" is. Inventing that mapping now would mean fabricating an
+//! unrequested, uncontracted format — exactly what rule 13 says to stop on.
+//! This module therefore implements the card's "optional status mapping only
+//! after commit through the workflow engine" instruction as a **structural
+//! guarantee with nothing to hang a policy off of yet**: no function in this
+//! file ever writes `items.status`, directly or indirectly, full stop —
+//! proven by `expiry_never_touches_item_status` and
+//! `resolve_never_touches_item_status` in `f1_decisions_test.rs`. Wiring a
+//! real mapping is future work that first needs a policy schema/format
+//! decision from whoever owns `status_map_policy_id`'s contract.
+
+use axum::{
+    Json, Router,
+    body::Bytes,
+    extract::{Path, State},
+    http::{HeaderMap, StatusCode},
+    routing::post,
+};
+use chrono::{DateTime, Utc};
+use serde::Serialize;
+use serde_json::{Value, json};
+use sqlx::{Row, SqlitePool};
+use std::sync::Arc;
+use tack_db::{Repository, repo::execution::ExecutionClock};
+use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
+
+/// `docs/contracts/runner-v1/limits.json`'s `decision_answer_bytes_max`,
+/// mirrored exactly (pinned against the live fixture by
+/// `decision_answer_limit_matches_frozen_fixture` below) — the same limit
+/// `handlers/runner_protocol.rs`'s `create_decision` documents as bounding
+/// "an operator's decision *answer*". That card's own comment names this
+/// exact limit as belonging to decision resolution, not runner-side
+/// creation, which this module implements.
+const DECISION_ANSWER_BYTES_MAX: u64 = 32_768;
+
+/// State for this card's local router. The Wave 5 integrator constructs this
+/// from the shared API state the same way `operator_execution_routes`
+/// constructs `executions::OperatorExecutionState` today.
+#[derive(Clone)]
+pub struct DecisionOperatorState {
+    pub repo: Repository,
+    pub clock: Arc<dyn ExecutionClock>,
+}
+
+impl DecisionOperatorState {
+    pub fn with_clock(repo: Repository, clock: Arc<dyn ExecutionClock>) -> Self {
+        Self { repo, clock }
+    }
+}
+
+/// The integrator replaces this non-secret sentinel with the request
+/// correlation id once it mounts this router, mirroring the identical
+/// convention already established by `executions::OPERATOR_REQUEST_ID` and
+/// `runner_admin::OPERATOR_REQUEST_ID`.
+const OPERATOR_REQUEST_ID: &str = "req_operator_decisions";
+
+/// Builds the stable v1 error envelope via B1's `ProtocolErrorEnvelope::new`,
+/// which derives `retryable` from `code` so it can never drift from
+/// `docs/contracts/runner-v1/errors/*.json`. `details` follows the per-code
+/// shape documented in `docs/contracts/runner-v1/README.md`.
+fn error(
+    status: StatusCode,
+    code: StableErrorCode,
+    message: &str,
+    details: Value,
+) -> (StatusCode, Json<Value>) {
+    let envelope = ProtocolErrorEnvelope::new(code, message, OPERATOR_REQUEST_ID, details);
+    (
+        status,
+        Json(serde_json::to_value(envelope).expect("envelope serializes")),
+    )
+}
+
+fn internal_error() -> (StatusCode, Json<Value>) {
+    error(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        StableErrorCode::InternalError,
+        "Could not resolve decision",
+        json!({}),
+    )
+}
+
+/// Reads the operator principal `inject_operator_principal` (`middleware.rs`)
+/// sets on every request once this router is mounted behind `require_token`.
+/// Deliberately reads *only* this header — never `Authorization` — which is
+/// what makes a runner bearer credential structurally powerless here (see
+/// this file's module doc comment).
+fn principal(headers: &HeaderMap) -> Result<String, (StatusCode, Json<Value>)> {
+    headers
+        .get("x-tack-principal")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            error(
+                StatusCode::UNAUTHORIZED,
+                StableErrorCode::Unauthorized,
+                "An authenticated operator principal is required",
+                json!({}),
+            )
+        })
+}
+
+/// Recursively rebuilds a `Value`, forcing every object through
+/// `FromIterator` so key order can never affect the serialized comparison
+/// used for idempotent-replay detection — mirrors
+/// `handlers/executions.rs`'s identical `canonical_json`/`canonical_string`
+/// pair (duplicated here, not imported, per this card's "new modules, no
+/// coupling to another card's file" scope).
+fn canonical_json(value: Value) -> Value {
+    match value {
+        Value::Array(values) => Value::Array(values.into_iter().map(canonical_json).collect()),
+        Value::Object(values) => Value::Object(
+            values
+                .into_iter()
+                .map(|(key, value)| (key, canonical_json(value)))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
+fn canonical_string(value: &Value) -> String {
+    serde_json::to_string(&canonical_json(value.clone())).unwrap_or_default()
+}
+
+pub fn routes(state: DecisionOperatorState) -> Router {
+    Router::new()
+        .route(
+            "/attempts/{attempt_id}/decisions/{decision_id}/resolve",
+            post(resolve_decision),
+        )
+        .with_state(state)
+}
+
+// ---------------------------------------------------------------------
+// Repository layer: the single read-then-write transaction this card's
+// acceptance bar is about. `BEGIN IMMEDIATE` per CLAUDE.md's "ten sites in
+// repo/execution.rs" rule — this is an eleventh read-then-write site, just
+// not in that file (see the module doc comment for why this card does not
+// touch `repo/execution.rs` or `repo.rs`).
+// ---------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ResolveOutcome {
+    /// No `execution_decisions` row exists for this exact
+    /// `(attempt_id, decision_id)` pair — covers both "never existed" and
+    /// "exists, but under a different attempt" (cross-attempt access). Both
+    /// write nothing; the caller cannot distinguish them, by design (an
+    /// attacker guessing another attempt's `decision_id` learns nothing).
+    NotFound,
+    /// The submitted `answer.option_id` is non-empty but not one of this
+    /// decision's own recorded `options` (only checked when `options` is
+    /// non-empty — a freeform decision has none to check against).
+    InvalidOption,
+    /// Terminal, fail-closed: this decision is expired (either already
+    /// recorded as such, or just transitioned to `expired` by this very
+    /// call) and can never be resolved with an operator's answer, no matter
+    /// what that answer is.
+    Expired {
+        resolved_at: String,
+        resolved_by: Value,
+    },
+    /// Already resolved with a *different* answer than the one just
+    /// submitted — a genuine conflict, not a replay.
+    IdempotencyConflict { stored_answer: Value },
+    /// A fresh resolution, or a byte-identical idempotent replay of one
+    /// (`replayed` distinguishes the two; both return the same fields).
+    Resolved {
+        resolved_at: String,
+        resolved_by: Value,
+        answer: Value,
+        replayed: bool,
+    },
+    /// Defensive: a `state` value neither this module nor
+    /// `create_execution_decision`/`create_decision` ever writes. Never
+    /// silently treated as any of the above.
+    UnknownState(String),
+}
+
+/// Resolves (or fail-closed-expires) exactly one decision, scoped to the
+/// exact `(attempt_id, decision_id)` pair — the only thing that makes
+/// cross-attempt access denial possible. One `BEGIN IMMEDIATE` transaction:
+/// the SELECT and the conditional UPDATE below never run as two separate
+/// un-transacted statements, which is what would let a concurrent resolve
+/// (or a concurrent expiry sweep, see [`expire_overdue_decisions`]) land a
+/// second, conflicting write between this function's own read and write.
+pub async fn resolve_decision_row(
+    pool: &SqlitePool,
+    attempt_id: &str,
+    decision_id: &str,
+    submitted_answer: &Value,
+    resolved_by: &Value,
+    now: DateTime<Utc>,
+) -> Result<ResolveOutcome, sqlx::Error> {
+    let now_s = now.to_rfc3339();
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let row = sqlx::query(
+        "SELECT id, state, options, answer, expires_at, resolved_at, resolved_by \
+         FROM execution_decisions WHERE attempt_id = ? AND decision_id = ?",
+    )
+    .bind(attempt_id)
+    .bind(decision_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let Some(row) = row else {
+        tx.commit().await?;
+        return Ok(ResolveOutcome::NotFound);
+    };
+    let row_id: String = row.get("id");
+    let state: String = row.get("state");
+
+    match state.as_str() {
+        "expired" => {
+            let resolved_at: Option<String> = row.get("resolved_at");
+            let resolved_by_raw: Option<String> = row.get("resolved_by");
+            tx.commit().await?;
+            Ok(ResolveOutcome::Expired {
+                resolved_at: resolved_at.unwrap_or_default(),
+                resolved_by: resolved_by_raw
+                    .and_then(|raw| serde_json::from_str(&raw).ok())
+                    .unwrap_or(Value::Null),
+            })
+        }
+        "resolved" => {
+            let stored_answer_raw: Option<String> = row.get("answer");
+            let stored_answer: Value = stored_answer_raw
+                .as_deref()
+                .and_then(|raw| serde_json::from_str(raw).ok())
+                .unwrap_or(Value::Null);
+            let stored_resolved_at: String = row
+                .get::<Option<String>, _>("resolved_at")
+                .unwrap_or_default();
+            let stored_resolved_by_raw: Option<String> = row.get("resolved_by");
+            let stored_resolved_by: Value = stored_resolved_by_raw
+                .and_then(|raw| serde_json::from_str(&raw).ok())
+                .unwrap_or(Value::Null);
+            tx.commit().await?;
+            if canonical_string(&stored_answer) == canonical_string(submitted_answer) {
+                Ok(ResolveOutcome::Resolved {
+                    resolved_at: stored_resolved_at,
+                    resolved_by: stored_resolved_by,
+                    answer: stored_answer,
+                    replayed: true,
+                })
+            } else {
+                Ok(ResolveOutcome::IdempotencyConflict { stored_answer })
+            }
+        }
+        "pending" => {
+            let expires_at: Option<String> = row.get("expires_at");
+            let is_overdue = expires_at
+                .as_deref()
+                .is_some_and(|value| value <= now_s.as_str());
+            if is_overdue {
+                let system_resolved_by = json!({"kind": "system", "subject_id": "expiry"});
+                let resolved_by_json = serde_json::to_string(&system_resolved_by).unwrap();
+                sqlx::query(
+                    "UPDATE execution_decisions SET state='expired', answer=NULL, resolved_at=?, resolved_by=?, updated_at=? \
+                     WHERE id=? AND state='pending'",
+                )
+                .bind(&now_s)
+                .bind(&resolved_by_json)
+                .bind(&now_s)
+                .bind(&row_id)
+                .execute(&mut *tx)
+                .await?;
+                tx.commit().await?;
+                return Ok(ResolveOutcome::Expired {
+                    resolved_at: now_s,
+                    resolved_by: system_resolved_by,
+                });
+            }
+
+            let options_json: String = row.get("options");
+            let options: Vec<Value> = serde_json::from_str(&options_json).unwrap_or_default();
+            let option_id = submitted_answer
+                .get("option_id")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let option_known = options
+                .iter()
+                .any(|opt| opt.get("option_id").and_then(Value::as_str) == Some(option_id));
+            if !options.is_empty() && !option_known {
+                tx.commit().await?;
+                return Ok(ResolveOutcome::InvalidOption);
+            }
+
+            let answer_json = serde_json::to_string(submitted_answer).unwrap();
+            let resolved_by_json = serde_json::to_string(resolved_by).unwrap();
+            sqlx::query(
+                "UPDATE execution_decisions SET state='resolved', answer=?, resolved_at=?, resolved_by=?, updated_at=? \
+                 WHERE id=? AND state='pending'",
+            )
+            .bind(&answer_json)
+            .bind(&now_s)
+            .bind(&resolved_by_json)
+            .bind(&now_s)
+            .bind(&row_id)
+            .execute(&mut *tx)
+            .await?;
+            tx.commit().await?;
+            Ok(ResolveOutcome::Resolved {
+                resolved_at: now_s,
+                resolved_by: resolved_by.clone(),
+                answer: submitted_answer.clone(),
+                replayed: false,
+            })
+        }
+        other => {
+            tx.commit().await?;
+            Ok(ResolveOutcome::UnknownState(other.to_string()))
+        }
+    }
+}
+
+/// Fail-closed bulk expiry sweep: transitions every still-`pending` decision
+/// whose `expires_at` has passed into `state='expired'` with a `system`
+/// `resolved_by` — the same terminal shape [`resolve_decision_row`] writes
+/// lazily for a single row. Exposed (not called by this card's own handler,
+/// which only ever touches one row at a time) for a future periodic caller —
+/// see this card's handoff, "Schema/API/contract change requested from
+/// another owner": wiring an actual scheduled sweep is III-F5's
+/// "startup/shutdown wiring" charter, not this card's "repository/service/
+/// handler modules" one.
+pub async fn expire_overdue_decisions(
+    pool: &SqlitePool,
+    now: DateTime<Utc>,
+) -> Result<u64, sqlx::Error> {
+    let now_s = now.to_rfc3339();
+    let system_resolved_by = json!({"kind": "system", "subject_id": "expiry"});
+    let resolved_by_json = serde_json::to_string(&system_resolved_by).unwrap();
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let result = sqlx::query(
+        "UPDATE execution_decisions SET state='expired', answer=NULL, resolved_at=?, resolved_by=?, updated_at=? \
+         WHERE state='pending' AND expires_at IS NOT NULL AND expires_at <= ?",
+    )
+    .bind(&now_s)
+    .bind(&resolved_by_json)
+    .bind(&now_s)
+    .bind(&now_s)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(result.rows_affected())
+}
+
+// ---------------------------------------------------------------------
+// HTTP handler.
+// ---------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+pub struct ResolveDecisionResponse {
+    pub protocol_version: u32,
+    pub decision_id: String,
+    /// Always `"resolved"` on a 200 — an expired/not-found/conflicting
+    /// decision is a distinct error response, never a 200 with a different
+    /// state string, so a caller need not switch on this field.
+    pub state: String,
+    pub answer: Value,
+    pub resolved_at: String,
+    pub resolved_by: Value,
+    /// `true` when this response is a byte-identical idempotent replay of an
+    /// already-committed resolution rather than a fresh write.
+    pub replayed: bool,
+}
+
+fn validate_answer(value: &Value) -> Result<Value, (StatusCode, Json<Value>)> {
+    let answer = value.get("answer").cloned().ok_or_else(|| {
+        error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "answer is required",
+            json!({"field": "answer"}),
+        )
+    })?;
+    if !answer.is_object() {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "answer must be an object",
+            json!({"field": "answer"}),
+        ));
+    }
+    let option_id_ok = answer
+        .get("option_id")
+        .and_then(Value::as_str)
+        .is_some_and(|value| !value.is_empty());
+    if !option_id_ok {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "answer.option_id is required and must be a non-empty string",
+            json!({"field": "answer.option_id"}),
+        ));
+    }
+    if let Some(text) = answer.get("text")
+        && !text.is_null()
+        && !text.is_string()
+    {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "answer.text must be a string or null",
+            json!({"field": "answer.text"}),
+        ));
+    }
+    let answer_bytes = serde_json::to_vec(&answer).unwrap_or_default().len() as u64;
+    if answer_bytes > DECISION_ANSWER_BYTES_MAX {
+        return Err(error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            StableErrorCode::PayloadTooLarge,
+            "The answer exceeds a protocol limit",
+            json!({"limit": "decision_answer_bytes_max", "maximum": DECISION_ANSWER_BYTES_MAX}),
+        ));
+    }
+    Ok(answer)
+}
+
+/// `POST /attempts/{attempt_id}/decisions/{decision_id}/resolve` —
+/// operator-only (see this file's module doc comment). Never reachable by a
+/// runner bearer credential; never resolves an item's status directly.
+pub async fn resolve_decision(
+    State(state): State<DecisionOperatorState>,
+    headers: HeaderMap,
+    Path((attempt_id, decision_id)): Path<(String, String)>,
+    body: Bytes,
+) -> Result<Json<ResolveDecisionResponse>, (StatusCode, Json<Value>)> {
+    let principal_id = principal(&headers)?;
+
+    let value: Value = serde_json::from_slice(&body).map_err(|_| {
+        error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "Request body must be valid JSON",
+            json!({"field": "body"}),
+        )
+    })?;
+    let answer = validate_answer(&value)?;
+
+    let now = state.clock.now();
+    let resolved_by = json!({"kind": "operator", "subject_id": principal_id});
+    let outcome = resolve_decision_row(
+        state.repo.pool(),
+        &attempt_id,
+        &decision_id,
+        &answer,
+        &resolved_by,
+        now,
+    )
+    .await
+    .map_err(|err| {
+        tracing::error!(
+            attempt_id = %attempt_id,
+            decision_id = %decision_id,
+            error = %err,
+            "decision resolve query failed"
+        );
+        internal_error()
+    })?;
+
+    match outcome {
+        ResolveOutcome::NotFound => {
+            tracing::info!(
+                attempt_id = %attempt_id,
+                decision_id = %decision_id,
+                outcome = "not_found",
+                "decision resolve rejected"
+            );
+            Err(error(
+                StatusCode::NOT_FOUND,
+                StableErrorCode::NotFound,
+                "The requested resource does not exist",
+                json!({"resource": "decision"}),
+            ))
+        }
+        ResolveOutcome::InvalidOption => {
+            tracing::info!(
+                attempt_id = %attempt_id,
+                decision_id = %decision_id,
+                outcome = "invalid_option",
+                "decision resolve rejected"
+            );
+            Err(error(
+                StatusCode::BAD_REQUEST,
+                StableErrorCode::InvalidRequest,
+                "answer.option_id is not one of this decision's options",
+                json!({"field": "answer.option_id"}),
+            ))
+        }
+        ResolveOutcome::Expired { .. } => {
+            tracing::info!(
+                attempt_id = %attempt_id,
+                decision_id = %decision_id,
+                outcome = "expired",
+                "decision resolve rejected: fail-closed expiry"
+            );
+            Err(error(
+                StatusCode::CONFLICT,
+                StableErrorCode::DecisionExpired,
+                "The decision expired without a valid answer",
+                json!({"decision_id": decision_id}),
+            ))
+        }
+        ResolveOutcome::IdempotencyConflict { .. } => {
+            tracing::info!(
+                attempt_id = %attempt_id,
+                decision_id = %decision_id,
+                outcome = "idempotency_conflict",
+                "decision resolve rejected: conflicting replay"
+            );
+            Err(error(
+                StatusCode::CONFLICT,
+                StableErrorCode::IdempotencyConflict,
+                "The decision was already resolved with a different answer",
+                json!({"decision_id": decision_id}),
+            ))
+        }
+        ResolveOutcome::Resolved {
+            resolved_at,
+            resolved_by,
+            answer,
+            replayed,
+        } => {
+            tracing::info!(
+                attempt_id = %attempt_id,
+                decision_id = %decision_id,
+                outcome = "resolved",
+                replayed,
+                "decision resolved"
+            );
+            Ok(Json(ResolveDecisionResponse {
+                protocol_version: 1,
+                decision_id,
+                state: "resolved".to_string(),
+                answer,
+                resolved_at,
+                resolved_by,
+                replayed,
+            }))
+        }
+        ResolveOutcome::UnknownState(raw_state) => {
+            tracing::error!(
+                attempt_id = %attempt_id,
+                decision_id = %decision_id,
+                state = %raw_state,
+                "decision resolve: unrecognized stored state"
+            );
+            Err(internal_error())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decision_answer_limit_matches_frozen_fixture() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../../docs/contracts/runner-v1/limits.json"
+        ))
+        .expect("fixture parses");
+        assert_eq!(
+            fixture["decision_answer_bytes_max"].as_u64().unwrap(),
+            DECISION_ANSWER_BYTES_MAX
+        );
+    }
+
+    #[test]
+    fn canonical_string_is_stable_across_key_order() {
+        let a = json!({"option_id": "allow_once", "text": null});
+        let b = json!({"text": null, "option_id": "allow_once"});
+        assert_eq!(canonical_string(&a), canonical_string(&b));
+        let c = json!({"option_id": "deny", "text": null});
+        assert_ne!(canonical_string(&a), canonical_string(&c));
+    }
+
+    #[test]
+    fn principal_requires_a_non_empty_header() {
+        let mut headers = HeaderMap::new();
+        let (status, body) = principal(&headers).unwrap_err();
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(body.0["error"]["code"], "unauthorized");
+
+        headers.insert("x-tack-principal", "".parse().unwrap());
+        let (status, _) = principal(&headers).unwrap_err();
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        headers.insert("x-tack-principal", "operator:local".parse().unwrap());
+        assert_eq!(principal(&headers).unwrap(), "operator:local");
+    }
+
+    #[test]
+    fn validate_answer_rejects_missing_and_empty_option_id_and_bad_text() {
+        assert!(validate_answer(&json!({})).is_err());
+        assert!(validate_answer(&json!({"answer": "not-an-object"})).is_err());
+        assert!(validate_answer(&json!({"answer": {"option_id": ""}})).is_err());
+        assert!(
+            validate_answer(&json!({"answer": {"option_id": "allow_once", "text": 5}})).is_err()
+        );
+        assert!(validate_answer(&json!({"answer": {"option_id": "allow_once"}})).is_ok());
+        assert!(
+            validate_answer(&json!({"answer": {"option_id": "allow_once", "text": null}})).is_ok()
+        );
+        assert!(
+            validate_answer(&json!({"answer": {"option_id": "allow_once", "text": "ok"}})).is_ok()
+        );
+    }
+}
