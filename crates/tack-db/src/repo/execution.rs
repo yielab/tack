@@ -367,6 +367,39 @@ pub struct EventListingRow {
     pub created_at: String,
 }
 
+/// III-F2: every column `execution_artifacts` carries for one manifest row.
+/// `content_reference` is `None` until [`Repository::set_execution_artifact_content_reference`]
+/// commits a verified upload — its presence, not a separate status column
+/// (none exists; see the card's own "do not add a column" instruction), is
+/// the manifest-vs-content-verified distinction this crate exposes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutionArtifactRow {
+    pub id: String,
+    pub attempt_id: String,
+    pub artifact_id: String,
+    pub kind: String,
+    pub name: String,
+    pub media_type: Option<String>,
+    pub size_bytes: i64,
+    pub sha256: String,
+    pub content_disposition: Option<String>,
+    pub content_reference: Option<String>,
+    pub metadata: String,
+    pub created_at: String,
+}
+
+/// Outcome of [`Repository::set_execution_artifact_content_reference`].
+/// `AlreadySet` is distinct from `Committed` (rule 7: no structural
+/// stand-in) — a second attempt to record content for the same
+/// `(attempt_id, artifact_id)` is reported honestly rather than silently
+/// treated as success or as the same thing as a fencing failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArtifactContentCommitResult {
+    Committed,
+    AlreadySet,
+    Stale,
+}
+
 // ─── Card III-F5: runtime retention and observability ─────────────────────
 
 /// Outcome of one bounded batch-purge call (which may run several bounded
@@ -2629,6 +2662,211 @@ impl Repository {
             .bind(artifact.id).bind(attempt_id).bind(artifact.artifact_id).bind(artifact.kind).bind(artifact.name).bind(artifact.media_type).bind(artifact.size_bytes).bind(artifact.sha256).bind(artifact.content_disposition).bind(artifact.content_reference).bind(artifact.metadata).bind(now).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(true)
+    }
+
+    /// III-F2: looks up one manifest row by its natural key. `Ok(None)`
+    /// means no such artifact was ever manifested for this attempt —
+    /// distinct from a manifested-but-not-yet-content-verified row (which is
+    /// `Some` with `content_reference: None`).
+    #[instrument(skip(self))]
+    pub async fn get_execution_artifact(
+        &self,
+        attempt_id: &str,
+        artifact_id: &str,
+    ) -> Result<Option<ExecutionArtifactRow>, sqlx::Error> {
+        let row = sqlx::query(
+            "SELECT id, attempt_id, artifact_id, kind, name, media_type, size_bytes, sha256, \
+             content_disposition, content_reference, metadata, created_at \
+             FROM execution_artifacts WHERE attempt_id = ? AND artifact_id = ?",
+        )
+        .bind(attempt_id)
+        .bind(artifact_id)
+        .fetch_optional(self.pool())
+        .await?;
+        Ok(row.map(|row| ExecutionArtifactRow {
+            id: row.get("id"),
+            attempt_id: row.get("attempt_id"),
+            artifact_id: row.get("artifact_id"),
+            kind: row.get("kind"),
+            name: row.get("name"),
+            media_type: row.get("media_type"),
+            size_bytes: row.get("size_bytes"),
+            sha256: row.get("sha256"),
+            content_disposition: row.get("content_disposition"),
+            content_reference: row.get("content_reference"),
+            metadata: row.get("metadata"),
+            created_at: row.get("created_at"),
+        }))
+    }
+
+    /// III-F2: resolves an artifact the same way
+    /// [`Repository::list_events_for_attempt_number`] resolves events — by
+    /// the operator-facing `(request_id, attempt_number)` pair rather than
+    /// the internal opaque `attempt_id` — so `GET
+    /// /api/executions/{request_id}/attempts/{attempt_number}/artifacts/{artifact_id}/content`
+    /// (this card's recorded wiring request; see the F2 handoff) never needs
+    /// to expose `attempt_id` to an operator caller. `Ok(None)` collapses
+    /// "no such attempt" and "no such artifact on that attempt" into one
+    /// not-found outcome, matching every other operator lookup in this file.
+    #[instrument(skip(self))]
+    pub async fn get_execution_artifact_by_attempt_number(
+        &self,
+        request_id: &str,
+        attempt_number: i64,
+        artifact_id: &str,
+    ) -> Result<Option<ExecutionArtifactRow>, sqlx::Error> {
+        let attempt_id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM execution_attempts WHERE request_id = ? AND attempt_number = ?",
+        )
+        .bind(request_id)
+        .bind(attempt_number)
+        .fetch_optional(self.pool())
+        .await?;
+        let Some(attempt_id) = attempt_id else {
+            return Ok(None);
+        };
+        self.get_execution_artifact(&attempt_id, artifact_id).await
+    }
+
+    /// III-F2: commits a verified artifact's storage reference. Mirrors
+    /// `record_execution_artifact`'s own `BEGIN IMMEDIATE` eligibility
+    /// pattern (CLAUDE.md: read-then-write requires `BEGIN IMMEDIATE`) so a
+    /// concurrent terminal transition cannot land a content reference
+    /// against an attempt that has already gone terminal, lost, or
+    /// needs_operator between the caller's own fencing check (at manifest
+    /// time) and this call (after the — potentially long — upload finished
+    /// streaming). `content_reference IS NULL` in the `UPDATE`'s `WHERE`
+    /// makes a committed reference immutable: a second call for the same
+    /// `(attempt_id, artifact_id)` — even with byte-identical content —
+    /// reports `AlreadySet` rather than silently re-writing, so "checksum
+    /// mismatch stages nothing" can never be defeated by racing two uploads
+    /// for the same artifact_id.
+    #[instrument(skip(self, clock))]
+    pub async fn set_execution_artifact_content_reference(
+        &self,
+        runner_id: &str,
+        attempt_id: &str,
+        artifact_id: &str,
+        fence: i64,
+        content_reference: &str,
+        clock: &dyn ExecutionClock,
+    ) -> Result<ArtifactContentCommitResult, sqlx::Error> {
+        let now = stamp(clock);
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
+        let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state NOT IN ('succeeded','failed','cancelled') AND lease_expires_at > ?)")
+            .bind(attempt_id).bind(runner_id).bind(fence).bind(&now).fetch_one(&mut *tx).await?;
+        if !valid {
+            tx.commit().await?;
+            return Ok(ArtifactContentCommitResult::Stale);
+        }
+        let changed = sqlx::query(
+            "UPDATE execution_artifacts SET content_reference = ? WHERE attempt_id = ? AND artifact_id = ? AND content_reference IS NULL",
+        )
+        .bind(content_reference)
+        .bind(attempt_id)
+        .bind(artifact_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        if changed.rows_affected() == 1 {
+            Ok(ArtifactContentCommitResult::Committed)
+        } else {
+            Ok(ArtifactContentCommitResult::AlreadySet)
+        }
+    }
+
+    /// III-F2 retention (behavior only — F5 owns the recurring background
+    /// task, startup/shutdown wiring, metrics and alerting). Bounded batch:
+    /// the subquery `LIMIT` keeps one sweep pass cheap and interruptible
+    /// rather than locking the table for an unbounded delete; the caller
+    /// loops until `0` is returned. Deletes purely by `created_at` age, the
+    /// same column `limits.json`'s `retention_event_days_default` is
+    /// documented against.
+    #[instrument(skip(self))]
+    pub async fn purge_execution_events_older_than(
+        &self,
+        cutoff: DateTime<Utc>,
+        batch_limit: i64,
+    ) -> Result<u64, sqlx::Error> {
+        let result = sqlx::query(
+            "DELETE FROM execution_events WHERE id IN (SELECT id FROM execution_events WHERE created_at < ? LIMIT ?)",
+        )
+        .bind(cutoff.to_rfc3339())
+        .bind(batch_limit)
+        .execute(self.pool())
+        .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// III-F2 retention: the read half of the two-phase artifact sweep — the
+    /// blob referenced by `content_reference` must be unlinked from disk
+    /// (a filesystem concern this crate does not own) *before* the row
+    /// naming it disappears, so the caller fetches full rows here, deletes
+    /// each blob it can reach, and only then calls
+    /// [`Repository::delete_execution_artifacts_by_row_ids`]. A manifest row
+    /// with no verified content (`content_reference: None`) is included —
+    /// there is no blob to unlink, but the manifest row itself is still
+    /// subject to the same age-based retention.
+    #[instrument(skip(self))]
+    pub async fn list_execution_artifacts_older_than(
+        &self,
+        cutoff: DateTime<Utc>,
+        batch_limit: i64,
+    ) -> Result<Vec<ExecutionArtifactRow>, sqlx::Error> {
+        let rows = sqlx::query(
+            "SELECT id, attempt_id, artifact_id, kind, name, media_type, size_bytes, sha256, \
+             content_disposition, content_reference, metadata, created_at \
+             FROM execution_artifacts WHERE created_at < ? LIMIT ?",
+        )
+        .bind(cutoff.to_rfc3339())
+        .bind(batch_limit)
+        .fetch_all(self.pool())
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| ExecutionArtifactRow {
+                id: row.get("id"),
+                attempt_id: row.get("attempt_id"),
+                artifact_id: row.get("artifact_id"),
+                kind: row.get("kind"),
+                name: row.get("name"),
+                media_type: row.get("media_type"),
+                size_bytes: row.get("size_bytes"),
+                sha256: row.get("sha256"),
+                content_disposition: row.get("content_disposition"),
+                content_reference: row.get("content_reference"),
+                metadata: row.get("metadata"),
+                created_at: row.get("created_at"),
+            })
+            .collect())
+    }
+
+    /// III-F2 retention: the write half — deletes exactly the rows named by
+    /// `ids` (each `execution_artifacts.id`, not `artifact_id`), so a
+    /// caller that already unlinked their blobs cannot accidentally sweep a
+    /// row it never inspected.
+    #[instrument(skip(self, ids))]
+    pub async fn delete_execution_artifacts_by_row_ids(
+        &self,
+        ids: &[String],
+    ) -> Result<u64, sqlx::Error> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let mut query = String::from("DELETE FROM execution_artifacts WHERE id IN (");
+        for (index, _) in ids.iter().enumerate() {
+            if index > 0 {
+                query.push(',');
+            }
+            query.push('?');
+        }
+        query.push(')');
+        let mut built = sqlx::query(&query);
+        for id in ids {
+            built = built.bind(id);
+        }
+        let result = built.execute(self.pool()).await?;
+        Ok(result.rows_affected())
     }
 
     #[instrument(skip(self, decision, clock))]
