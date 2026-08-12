@@ -30,10 +30,10 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    body::Bytes,
+    body::{Body, Bytes},
     extract::{DefaultBodyLimit, Path, State},
-    http::{HeaderMap, StatusCode},
-    routing::post,
+    http::{HeaderMap, StatusCode, header},
+    routing::{post, put},
 };
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{Value, json};
@@ -41,13 +41,13 @@ use sqlx::Row;
 use tack_db::{
     Repository,
     repo::execution::{
-        AttemptTransitionInput, AttemptTransitionPhase, AttemptTransitionResult,
-        CancellationObservation, CancellationObservationInput, ClaimedExecution, Completion,
-        CompletionResult, CredentialRotationResult, EventApplyResult, EventBatch, ExecutionClock,
-        HeartbeatBatchResult, HeartbeatLease, NewArtifact, NewDecision, NewEvent,
-        RecoveryDisposition as DbRecoveryDisposition, RecoveryObservation as DbRecoveryObservation,
-        RecoveryObservationInput, RecoveryObservationResult, RedeemEnrollmentResult,
-        RequestSelection,
+        ArtifactContentCommitResult, AttemptTransitionInput, AttemptTransitionPhase,
+        AttemptTransitionResult, CancellationObservation, CancellationObservationInput,
+        ClaimedExecution, Completion, CompletionResult, CredentialRotationResult, EventApplyResult,
+        EventBatch, ExecutionClock, HeartbeatBatchResult, HeartbeatLease, NewArtifact, NewDecision,
+        NewEvent, RecoveryDisposition as DbRecoveryDisposition,
+        RecoveryObservation as DbRecoveryObservation, RecoveryObservationInput,
+        RecoveryObservationResult, RedeemEnrollmentResult, RequestSelection,
     },
 };
 use tack_orch::execution::{
@@ -71,9 +71,40 @@ use uuid::Uuid;
 #[path = "runner_protocol/runner_auth.rs"]
 pub mod runner_auth;
 
+// III-F2: nested the same way `runner_auth` is (see that `mod` line's own
+// comment) — declaring these as submodules of this already-registered file
+// keeps them reachable without touching `handlers/mod.rs`, which this card
+// must not edit. `artifact_storage` is the pure storage module (safe paths,
+// streaming write/read); `retention` is the pure event/artifact sweep logic
+// (F5 owns the recurring background task that calls it); `artifact_download`
+// is the operator-facing content-download handler, deliberately never merged
+// into this file's own `routes()` (that router is runner-credential-only —
+// see its own doc comment) — it is proven only via a locally-constructed
+// router in this card's own test file, with its real mounting recorded as a
+// wiring request in `docs/agent-handoffs/part-iii/III-F2.md`.
+#[path = "runner_protocol/artifact_download.rs"]
+pub mod artifact_download;
+#[path = "runner_protocol/artifact_storage.rs"]
+pub mod artifact_storage;
+#[path = "runner_protocol/retention.rs"]
+pub mod retention;
+
+use artifact_storage::{ArtifactContentError, ArtifactStorage};
 use runner_auth::{invalid_request, payload_too_large, protocol_error, stale_lease};
 
 type HandlerResult = runner_auth::ProtocolResult<Json<Value>>;
+
+/// Default artifact-content storage root, relative to the process's working
+/// directory — mirrors `config.rs#default_storage_dir`'s own `"./storage"`
+/// default, one level deeper so artifact blobs never collide with attachment
+/// files that already live directly under `TACK_STORAGE_DIR`. This is only
+/// ever used until the integrator wires the real, operator-configured
+/// `TACK_STORAGE_DIR` through — see the F2 handoff's recorded wiring
+/// request. `RunnerProtocolState::new`'s two-argument signature is
+/// deliberately left unchanged (production's one call site,
+/// `router.rs#runner_protocol_routes`, is off-limits to this card) so this
+/// default is additive, never a breaking change.
+const DEFAULT_ARTIFACT_STORAGE_ROOT: &str = "./storage/execution-artifacts";
 
 /// State for this card's local router. C5 constructs this from the shared API
 /// state when it performs the one permitted global-router integration.
@@ -81,11 +112,30 @@ type HandlerResult = runner_auth::ProtocolResult<Json<Value>>;
 pub struct RunnerProtocolState {
     pub repo: Repository,
     pub clock: Arc<dyn ExecutionClock>,
+    pub artifact_storage: Arc<ArtifactStorage>,
 }
 
 impl RunnerProtocolState {
     pub fn new(repo: Repository, clock: Arc<dyn ExecutionClock>) -> Self {
-        Self { repo, clock }
+        Self {
+            repo,
+            clock,
+            artifact_storage: Arc::new(ArtifactStorage::new(DEFAULT_ARTIFACT_STORAGE_ROOT)),
+        }
+    }
+
+    /// Additive builder so the integrator can point artifact content storage
+    /// at the operator-configured `TACK_STORAGE_DIR` (see the F2 handoff's
+    /// wiring request) without changing `new`'s call signature. Used by this
+    /// card's own `f2_artifact_events_test.rs`; `#[allow(dead_code)]` because
+    /// the pre-existing, unrelated `c2_handlers_test.rs` also loads this file
+    /// via `#[path]` (for its own auth non-substitution test) without
+    /// calling this — see `artifact_download.rs`'s module-level allow for
+    /// the fuller precedent.
+    #[allow(dead_code)]
+    pub fn with_artifact_storage_root(mut self, root: impl Into<std::path::PathBuf>) -> Self {
+        self.artifact_storage = Arc::new(ArtifactStorage::new(root.into()));
+        self
     }
 }
 
@@ -136,6 +186,22 @@ pub fn routes(state: RunnerProtocolState, configured_max_body_size_bytes: usize)
             post(poll_decisions),
         )
         .route("/attempts/{attempt_id}/artifacts", post(submit_artifacts))
+        // III-F2: artifact content upload. A distinct, more-specific
+        // `DefaultBodyLimit` on this one route (mirroring
+        // `attachments.rs`'s own fixed 50 MB ceiling, independent of the
+        // operator-configured global limit) — the router-wide layer below
+        // (a 4 MiB ceiling meant for JSON control-plane bodies) would
+        // otherwise reject any real artifact upload before this handler's
+        // own streaming size/checksum checks ever ran. Per axum's
+        // closest-to-the-handler precedence (see `effective_body_limit_bytes`'s
+        // doc comment above), this per-route layer wins over the router-wide
+        // one that follows.
+        .route(
+            "/attempts/{attempt_id}/artifacts/{artifact_id}/content",
+            put(put_artifact_content).layer(DefaultBodyLimit::max(
+                LIMITS.artifact_content_bytes_max as usize,
+            )),
+        )
         .route("/attempts/{attempt_id}/completion", post(submit_completion))
         .route(
             "/attempts/{attempt_id}/cancellation-observation",
@@ -254,10 +320,21 @@ const LIMITS: Limits = Limits {
     retention_artifact_days_default: 30,
 };
 
-/// Not fixed by `limits.json` (no artifact-content-upload endpoint is part of
-/// this card — see the handoff): a reasonable, explicitly-chosen window for
-/// the manifest-accepted upload URL.
+/// Not fixed by `limits.json`: a reasonable, explicitly-chosen window for the
+/// manifest-accepted upload URL returned by `submit_artifacts`. III-F2 adds
+/// the real content-upload endpoint (`put_artifact_content`, below) this URL
+/// points at; the endpoint itself does not enforce this window (there is no
+/// fixture-defined field to check it against), so it is advisory to the
+/// runner today, not yet a hard server-side expiry.
 const ARTIFACT_UPLOAD_WINDOW_SECONDS: i64 = 600;
+/// Header a runner sets on `PUT .../artifacts/{artifact_id}/content` to carry
+/// its fencing token — the request body *is* the artifact's raw bytes, so
+/// (unlike every other runner-protocol write) the fencing token cannot travel
+/// inside a JSON body. Not part of any frozen fixture: this whole route is
+/// this card's own addition (`docs/contracts/runner-v1/` only fixes the
+/// manifest exchange's payload shape, not this URL — see this file's own
+/// top-of-file doc comment on route-layout freedom).
+const ARTIFACT_FENCING_TOKEN_HEADER: &str = "x-tack-fencing-token";
 /// Not fixed by any fixture: a reasonable no-work poll backoff hint.
 const NO_WORK_RETRY_AFTER_MS: u64 = 5_000;
 /// Not fixed by any fixture: how long an issued/rotated runner credential
@@ -352,6 +429,29 @@ fn json_byte_len(value: &Value) -> u64 {
     serde_json::to_vec(value)
         .map(|bytes| bytes.len() as u64)
         .unwrap_or(u64::MAX)
+}
+
+/// III-F2: a deliberately permissive `type/subtype` shape check — this is
+/// not a MIME registry validator (registered types/suffixes/parameters are
+/// out of scope), just enough to reject garbage (empty, no slash, control
+/// characters, absurd length) while accepting every real value this repo's
+/// own fixtures and tests use (`text/x-diff`, `application/octet-stream`,
+/// `text/plain`, ...).
+fn is_plausible_media_type(value: &str) -> bool {
+    const MAX_MEDIA_TYPE_BYTES: usize = 255;
+    if value.is_empty() || value.len() > MAX_MEDIA_TYPE_BYTES {
+        return false;
+    }
+    let Some((kind, subtype)) = value.split_once('/') else {
+        return false;
+    };
+    let plausible_token = |token: &str| {
+        !token.is_empty()
+            && token
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic() && byte != b'/')
+    };
+    plausible_token(kind) && plausible_token(subtype)
 }
 
 fn internal_error(message: &str) -> runner_auth::ProtocolErrorResponse {
@@ -1447,6 +1547,22 @@ pub async fn submit_artifacts(
                         LIMITS.artifact_metadata_bytes_max,
                     ));
                 }
+                // III-F2: `media_type` had no shape check at all before this
+                // card — any string, of any length, was accepted verbatim.
+                // Not bounded by any `limits.json` field (unlike `sha256`,
+                // which the fixture's own value shape fixes), so this is a
+                // reasonable, explicitly-chosen check this card introduces:
+                // a plausible `type/subtype` MIME shape and a modest length
+                // cap, catching both garbage values and an unbounded-length
+                // field slipping through unmeasured.
+                if let Some(media_type) = artifact.get("media_type").and_then(Value::as_str)
+                    && !is_plausible_media_type(media_type)
+                {
+                    return Err(invalid_request(
+                        "media_type",
+                        "media_type must look like type/subtype and be at most 255 bytes",
+                    ));
+                }
                 Ok(PreparedArtifact {
                     artifact_id: as_str(artifact, "artifact_id")?.to_owned(),
                     kind: as_str(artifact, "kind")?.to_owned(),
@@ -1581,7 +1697,15 @@ pub async fn submit_artifacts(
             "state": "manifest_accepted",
             "upload": {
                 "method": "PUT",
-                "path": format!("/api/runner/v1/artifacts/{}/content", item.artifact_id),
+                // III-F2: attempt-scoped (unlike the pre-F2 placeholder path
+                // this replaces) — `artifact_id` alone cannot disambiguate
+                // between two different attempts that happen to choose the
+                // same runner-supplied id, and the real endpoint needs the
+                // attempt to authenticate/fence against.
+                "path": format!(
+                    "/api/runner/v1/attempts/{attempt_id}/artifacts/{}/content",
+                    item.artifact_id
+                ),
                 "expires_at": upload_expires_at,
             },
         }));
@@ -1592,6 +1716,207 @@ pub async fn submit_artifacts(
         "attempt_id": attempt_id,
         "artifacts": accepted,
     })))
+}
+
+// ---------------------------------------------------------------------
+// III-F2: artifact content upload. Streams the request body straight to
+// `ArtifactStorage` (never buffers it whole — see that module's own doc
+// comment) and only commits `content_reference` once both the total byte
+// count and the SHA-256 exactly match the manifest `submit_artifacts`
+// already recorded. Every failure path (oversize, short, checksum mismatch,
+// stream error) stages nothing: no blob survives on disk, and
+// `content_reference` is never written.
+// ---------------------------------------------------------------------
+
+pub async fn put_artifact_content(
+    State(state): State<RunnerProtocolState>,
+    headers: HeaderMap,
+    Path((attempt_id, artifact_id)): Path<(String, String)>,
+    body: Body,
+) -> HandlerResult {
+    let now = state.clock.now();
+    let principal = runner_auth::authenticate(&state.repo, &headers, now).await?;
+
+    let fencing_token = headers
+        .get(ARTIFACT_FENCING_TOKEN_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<i64>().ok())
+        .ok_or_else(|| {
+            invalid_request(
+                "fencing_token",
+                "The X-Tack-Fencing-Token header is required and must be an integer",
+            )
+        })?;
+
+    // One query resolves both eligibility facts this handler needs: the
+    // manifest row (sha256/size/media_type/content_reference) and the
+    // owning attempt's fencing/lease/state — mirrors `submit_artifacts`'s
+    // own two-part check (lease/state gate + artifact lookup) collapsed into
+    // one round trip via a join, since (unlike `submit_artifacts`) there is
+    // no batch of rows to loop over here.
+    let row = sqlx::query(
+        "SELECT ea.sha256 AS sha256, ea.size_bytes AS size_bytes, ea.media_type AS media_type, \
+         ea.content_reference AS content_reference, eat.state AS state, \
+         eat.lease_expires_at AS lease_expires_at \
+         FROM execution_artifacts ea \
+         JOIN execution_attempts eat ON eat.id = ea.attempt_id \
+         WHERE ea.attempt_id = ? AND ea.artifact_id = ? AND eat.runner_id = ? AND eat.fencing_token = ?",
+    )
+    .bind(&attempt_id)
+    .bind(&artifact_id)
+    .bind(&principal.runner_id)
+    .bind(fencing_token)
+    .fetch_optional(state.repo.pool())
+    .await
+    .map_err(|_| internal_error("Could not verify artifact"))?;
+    let Some(row) = row else {
+        // Covers every "this write is not currently valid" case in one
+        // stable code, matching `submit_artifacts`'s own precedent: an
+        // unknown artifact_id, a fencing mismatch, or a runner_id mismatch
+        // are all indistinguishable from a stale lease to an unauthenticated
+        // caller, and must stay that way — a more specific error here would
+        // let a caller probe for which of the three is true.
+        return Err(stale_lease(&attempt_id));
+    };
+    let attempt_state: String = row.get("state");
+    let lease_expires_at: String = row.get("lease_expires_at");
+    if lease_expires_at <= now.to_rfc3339() {
+        return Err(stale_lease(&attempt_id));
+    }
+    if !matches!(attempt_state.as_str(), "running" | "waiting_decision") {
+        return Err(protocol_error(
+            StatusCode::CONFLICT,
+            StableErrorCode::Conflict,
+            "Artifact content can only be recorded while the attempt is running or awaiting a decision",
+            json!({"state": attempt_state}),
+        ));
+    }
+    let existing_content_reference: Option<String> = row.get("content_reference");
+    if existing_content_reference.is_some() {
+        // Content is immutable once verified (see
+        // `set_execution_artifact_content_reference`'s own doc comment) — a
+        // second PUT for the same artifact_id is refused before consuming
+        // any of its body, rather than re-verified and silently discarded.
+        return Err(protocol_error(
+            StatusCode::CONFLICT,
+            StableErrorCode::Conflict,
+            "Artifact content has already been recorded and is immutable",
+            json!({"artifact_id": artifact_id}),
+        ));
+    }
+    let declared_media_type: Option<String> = row.get("media_type");
+    if let Some(declared) = declared_media_type.as_deref()
+        && let Some(provided) = headers
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+        && !content_type_matches(declared, provided)
+    {
+        return Err(invalid_request(
+            "content-type",
+            "The upload Content-Type does not match the artifact manifest's declared media_type",
+        ));
+    }
+    let declared_size_bytes: i64 = row.get("size_bytes");
+    let declared_sha256: String = row.get("sha256");
+
+    let stored = state
+        .artifact_storage
+        .store_streaming(
+            &attempt_id,
+            &artifact_id,
+            declared_size_bytes as u64,
+            &declared_sha256,
+            Box::pin(body.into_data_stream()),
+        )
+        .await;
+    let stored = match stored {
+        Ok(stored) => stored,
+        Err(ArtifactContentError::ChecksumMismatch) => {
+            return Err(protocol_error(
+                StatusCode::CONFLICT,
+                StableErrorCode::ArtifactChecksumMismatch,
+                "The uploaded artifact does not match its manifest",
+                json!({"artifact_id": artifact_id}),
+            ));
+        }
+        Err(ArtifactContentError::OversizeStream) | Err(ArtifactContentError::SizeMismatch) => {
+            return Err(payload_too_large(
+                "artifact_content_bytes_max",
+                LIMITS.artifact_content_bytes_max,
+            ));
+        }
+        Err(ArtifactContentError::StreamRead) => {
+            return Err(invalid_request(
+                "content",
+                "The upload stream ended before it could be verified",
+            ));
+        }
+        Err(ArtifactContentError::UnsafeStorageLocation) | Err(ArtifactContentError::Io) => {
+            return Err(internal_error("Could not store artifact content"));
+        }
+    };
+
+    let commit = state
+        .repo
+        .set_execution_artifact_content_reference(
+            &principal.runner_id,
+            &attempt_id,
+            &artifact_id,
+            fencing_token,
+            &stored.content_reference,
+            state.clock.as_ref(),
+        )
+        .await
+        .map_err(|_| internal_error("Could not record artifact content"))?;
+    match commit {
+        ArtifactContentCommitResult::Committed => Ok(Json(json!({
+            "protocol_version": 1,
+            "attempt_id": attempt_id,
+            "artifact_id": artifact_id,
+            "state": "content_verified",
+            "size_bytes": stored.bytes_written,
+            "sha256": declared_sha256,
+        }))),
+        ArtifactContentCommitResult::AlreadySet => {
+            // Lost a race to a concurrent upload of the same artifact_id
+            // after fully streaming and verifying our own copy: the bytes we
+            // just wrote are correct but orphaned (the DB row is now owned
+            // by whichever request committed first), so they are removed
+            // rather than left as an unreferenced blob.
+            state
+                .artifact_storage
+                .remove_blob(&stored.content_reference)
+                .await;
+            Err(protocol_error(
+                StatusCode::CONFLICT,
+                StableErrorCode::Conflict,
+                "Artifact content has already been recorded and is immutable",
+                json!({"artifact_id": artifact_id}),
+            ))
+        }
+        ArtifactContentCommitResult::Stale => {
+            state
+                .artifact_storage
+                .remove_blob(&stored.content_reference)
+                .await;
+            Err(stale_lease(&attempt_id))
+        }
+    }
+}
+
+/// Case-insensitive, parameter-stripped comparison — `text/x-diff` matches
+/// `text/x-diff` and `text/x-diff; charset=utf-8` alike, since HTTP clients
+/// routinely append a `charset` parameter this endpoint has no use for.
+fn content_type_matches(declared: &str, provided: &str) -> bool {
+    let essence = |value: &str| {
+        value
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase()
+    };
+    essence(declared) == essence(provided)
 }
 
 // ---------------------------------------------------------------------
