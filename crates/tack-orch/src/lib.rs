@@ -40,6 +40,12 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub mod adapters;
 pub mod execution;
+// Card III-F5 (Wave 5): runtime retention and observability for the
+// execution domain. Siblings of `execution` (not submodules of it) because
+// both are I/O-bearing background tasks — see `execution_retention`'s
+// module doc for why that boundary matters.
+pub mod execution_observability;
+pub mod execution_retention;
 pub mod model_policy;
 pub mod reconciler;
 pub mod scheduler;

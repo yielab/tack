@@ -367,6 +367,68 @@ pub struct EventListingRow {
     pub created_at: String,
 }
 
+// ─── Card III-F5: runtime retention and observability ─────────────────────
+
+/// Outcome of one bounded batch-purge call (which may run several bounded
+/// transactions internally — see the doc comments on
+/// [`Repository::purge_stale_execution_replays`] /
+/// [`Repository::purge_stale_terminal_execution_events`]). Field names
+/// mirror `tack_db::repo::orch::RollupStats`/`tack_orch::reconciler::RollupOutcome`
+/// on purpose — same shape, same reason (a `tack-orch` trait impl backed by
+/// this repo is a direct pass-through) — but this type is named `PurgeStats`,
+/// not `RollupStats`: nothing in this card aggregates rows into a daily
+/// table before deleting them (see each method's own doc comment for why).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PurgeStats {
+    /// Total raw rows deleted.
+    pub rows_purged: i64,
+    /// Number of batch transactions it took (observability/tuning only).
+    pub batches_run: i64,
+}
+
+/// A fleet-wide, id-free snapshot of execution runtime health, computed
+/// fresh on every call from live tables (nothing cached). Every count is a
+/// fixed-cardinality aggregate — keyed only by the small, closed
+/// vocabularies of `agent_runners.state` (3 values, migration 040) and
+/// `execution_requests.state` (the 10-value `ExecutionState` vocabulary,
+/// III.1.1) — never by attempt/request/runner id, so nothing here can grow
+/// an unbounded metric label set. See `crates/tack-orch/src/execution_observability.rs`
+/// for the background task that logs alerts from this snapshot and the pure
+/// `evaluate_alerts` function that decides what counts as "stuck"/"ambiguous."
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ExecutionFleetSnapshotRow {
+    /// `agent_runners.state` -> count.
+    pub runner_state_counts: std::collections::BTreeMap<String, i64>,
+    /// `execution_requests.state` -> count.
+    pub request_state_counts: std::collections::BTreeMap<String, i64>,
+    /// Attempts whose lease has expired (`lease_expires_at < now`) but whose
+    /// state is still one of `leased`/`preparing`/`running`/`waiting_decision`
+    /// — a lease the recovery service has not yet resolved to `lost` or
+    /// `needs_operator`. This is what makes a stale lease *observable*
+    /// independent of whatever (if anything) later resolves it.
+    pub stale_lease_count: i64,
+    /// Age in seconds of the single oldest stale lease found above (by
+    /// `lease_expires_at`) — `None` iff `stale_lease_count == 0`, never `0`
+    /// standing in for "none found."
+    pub oldest_stale_lease_age_secs: Option<i64>,
+    /// `execution_requests` currently in `needs_operator` — an ambiguous
+    /// state that is never automatically retried (III.1.1).
+    pub needs_operator_count: i64,
+    /// Age in seconds since the oldest `needs_operator` request's `updated_at`
+    /// (i.e. since it became ambiguous) — `None` iff `needs_operator_count == 0`.
+    pub oldest_needs_operator_age_secs: Option<i64>,
+    /// Count of `execution_events` rows with `occurred_at` inside the
+    /// caller-chosen trailing window ending at `now`. A coarse ingestion-rate
+    /// signal — a single bounded total, never broken down by attempt/event id.
+    pub events_ingested_in_window: i64,
+}
+
+fn parse_rfc3339_checked(s: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(s)
+        .ok()
+        .map(|d| d.with_timezone(&Utc))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttemptTransitionPhase {
     Preparing,
@@ -2597,5 +2659,253 @@ impl Repository {
         .bind(decision.id).bind(attempt_id).bind(decision.decision_id).bind(decision.kind).bind(decision.prompt).bind(decision.options).bind(decision.metadata).bind(decision.expires_at.map(|v| v.to_rfc3339())).bind(&now).bind(&now).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(true)
+    }
+
+    // ─── Card III-F5: runtime retention and observability ─────────────────
+
+    /// Deletes stale rows from the six idempotency/replay bookkeeping tables
+    /// (`execution_claim_replays`, `execution_heartbeat_replays`,
+    /// `execution_cancellation_replays`, `execution_event_batch_replays`,
+    /// `execution_completion_replays`, `execution_recovery_audits`), batched
+    /// at up to `batch_size` rows per table per transaction, looping per
+    /// table until nothing older than `cutoff` remains.
+    ///
+    /// **Purge, not roll-up.** Every row in these six tables exists solely
+    /// to answer "have I already processed this exact retried write?" for a
+    /// fencing/lease/heartbeat replay window measured in seconds to low
+    /// minutes (III.1.5). Once `cutoff` (typically 90 days out) has passed,
+    /// there is no future question these rows could ever answer — unlike
+    /// `execution_events` (see [`Self::purge_stale_terminal_execution_events`]),
+    /// there is no meaningful aggregate to preserve first, so plain deletion
+    /// loses nothing of value. Read "purge" here literally, not as a
+    /// synonym for "roll up."
+    ///
+    /// **`BEGIN IMMEDIATE`, not a deferred transaction:** every one of these
+    /// tables is also written concurrently by live runner-protocol traffic
+    /// (claim/heartbeat/event-batch/completion/cancellation/recovery each
+    /// insert into one of these six tables on every call). A deferred
+    /// transaction that `SELECT`s candidate rows and only later `DELETE`s
+    /// them is exactly the read-then-write shape CLAUDE.md calls out: two
+    /// concurrent deferred transactions can both acquire a shared read lock
+    /// and then race to upgrade to a write lock, and SQLite returns
+    /// `SQLITE_LOCKED` rather than queuing one behind the other.
+    /// `BEGIN IMMEDIATE` takes the write lock up front instead, serializing
+    /// this sweep against every other writer to these tables rather than
+    /// deadlocking against them. Proved load-bearing (reverted, watched the
+    /// concurrency test fail, restored) in
+    /// `crates/tack-db/tests/execution_retention_test.rs`.
+    #[instrument(skip(self))]
+    pub async fn purge_stale_execution_replays(
+        &self,
+        cutoff: DateTime<Utc>,
+        batch_size: i64,
+    ) -> Result<PurgeStats, sqlx::Error> {
+        const TABLES: [(&str, &str); 6] = [
+            ("execution_claim_replays", "created_at"),
+            ("execution_heartbeat_replays", "created_at"),
+            ("execution_cancellation_replays", "created_at"),
+            ("execution_event_batch_replays", "created_at"),
+            ("execution_completion_replays", "committed_at"),
+            ("execution_recovery_audits", "created_at"),
+        ];
+        let cutoff_str = cutoff.to_rfc3339();
+        let mut stats = PurgeStats::default();
+
+        for (table, ts_col) in TABLES {
+            loop {
+                let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
+
+                let select_sql = format!(
+                    "SELECT rowid FROM {table} WHERE {ts_col} < ? ORDER BY {ts_col} ASC LIMIT ?"
+                );
+                let ids: Vec<i64> = sqlx::query_scalar(&select_sql)
+                    .bind(&cutoff_str)
+                    .bind(batch_size)
+                    .fetch_all(&mut *tx)
+                    .await?;
+
+                if ids.is_empty() {
+                    tx.commit().await?;
+                    break;
+                }
+
+                let placeholders = vec!["?"; ids.len()].join(",");
+                let delete_sql = format!("DELETE FROM {table} WHERE rowid IN ({placeholders})");
+                let mut q = sqlx::query(&delete_sql);
+                for id in &ids {
+                    q = q.bind(id);
+                }
+                q.execute(&mut *tx).await?;
+
+                tx.commit().await?;
+
+                let batch_len = ids.len() as i64;
+                stats.rows_purged += batch_len;
+                stats.batches_run += 1;
+
+                if batch_len < batch_size {
+                    break;
+                }
+            }
+        }
+
+        Ok(stats)
+    }
+
+    /// Deletes `execution_events` rows once both (a) `occurred_at < cutoff`
+    /// and (b) the owning attempt has reached a genuinely terminal state
+    /// (`succeeded`/`failed`/`cancelled` — the same three states
+    /// `tack_orch::execution::ExecutionState::is_terminal()` names).
+    /// Deliberately excludes `lost`/`needs_operator`: both remain
+    /// actionable/ambiguous per III.1.1 and are this very card's own
+    /// observability targets ([`Self::execution_fleet_snapshot`]) — an
+    /// attempt an operator might still requeue or investigate must never
+    /// have its event history silently swept out from under it.
+    ///
+    /// **Purge only — not a roll-up.** No `execution_events_daily` (or
+    /// equivalent) aggregate table exists in this schema today. See this
+    /// card's handoff (`docs/agent-handoffs/part-iii/III-F5.md`) for the
+    /// exact `CREATE TABLE` DDL requested to add one, mirroring
+    /// `orch_events`/`orch_events_daily`
+    /// (`crates/tack-db/src/repo/orch.rs::rollup_and_purge_orch_events`).
+    /// Until that migration lands, this purges raw rows outright — no
+    /// day/kind/count aggregate survives; that information is only
+    /// recoverable by adding the rollup table before this method ever runs
+    /// against a given row. This is an explicit, documented trade, not a
+    /// silent one (III.2 rule 7 — no structural zero, no fake success):
+    /// this repo's `Repository` API has exactly one method for this table
+    /// and its own doc comment says exactly what it does.
+    ///
+    /// Same `BEGIN IMMEDIATE` batching rationale as
+    /// [`Self::purge_stale_execution_replays`] — `execution_events` receives
+    /// live inserts from every in-flight attempt's event-batch reports.
+    #[instrument(skip(self))]
+    pub async fn purge_stale_terminal_execution_events(
+        &self,
+        cutoff: DateTime<Utc>,
+        batch_size: i64,
+    ) -> Result<PurgeStats, sqlx::Error> {
+        let cutoff_str = cutoff.to_rfc3339();
+        let mut stats = PurgeStats::default();
+
+        loop {
+            let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
+
+            let ids: Vec<String> = sqlx::query_scalar(
+                "SELECT ee.id FROM execution_events ee \
+                 JOIN execution_attempts ea ON ea.id = ee.attempt_id \
+                 WHERE ee.occurred_at < ? AND ea.state IN ('succeeded','failed','cancelled') \
+                 ORDER BY ee.occurred_at ASC LIMIT ?",
+            )
+            .bind(&cutoff_str)
+            .bind(batch_size)
+            .fetch_all(&mut *tx)
+            .await?;
+
+            if ids.is_empty() {
+                tx.commit().await?;
+                break;
+            }
+
+            let placeholders = vec!["?"; ids.len()].join(",");
+            let delete_sql = format!("DELETE FROM execution_events WHERE id IN ({placeholders})");
+            let mut q = sqlx::query(&delete_sql);
+            for id in &ids {
+                q = q.bind(id);
+            }
+            q.execute(&mut *tx).await?;
+
+            tx.commit().await?;
+
+            let batch_len = ids.len() as i64;
+            stats.rows_purged += batch_len;
+            stats.batches_run += 1;
+
+            if batch_len < batch_size {
+                break;
+            }
+        }
+
+        Ok(stats)
+    }
+
+    /// See [`ExecutionFleetSnapshotRow`]'s own doc comment for the shape and
+    /// the cardinality guarantee. Independent read-only queries — nothing
+    /// here writes, so no transaction is needed; a snapshot that is
+    /// eventually-consistent across its own several reads by a few
+    /// milliseconds is an acceptable trade for an observability signal that
+    /// is only ever logged/alerted on, never used to gate a safety decision.
+    #[instrument(skip(self))]
+    pub async fn execution_fleet_snapshot(
+        &self,
+        now: DateTime<Utc>,
+        event_window: Duration,
+    ) -> Result<ExecutionFleetSnapshotRow, sqlx::Error> {
+        let now_s = now.to_rfc3339();
+
+        let runner_rows: Vec<(String, i64)> =
+            sqlx::query_as("SELECT state, COUNT(*) FROM agent_runners GROUP BY state")
+                .fetch_all(self.pool())
+                .await?;
+        let runner_state_counts = runner_rows.into_iter().collect();
+
+        let request_rows: Vec<(String, i64)> =
+            sqlx::query_as("SELECT state, COUNT(*) FROM execution_requests GROUP BY state")
+                .fetch_all(self.pool())
+                .await?;
+        let request_state_counts = request_rows.into_iter().collect();
+
+        let stale_lease_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM execution_attempts WHERE lease_expires_at < ? \
+             AND state IN ('leased','preparing','running','waiting_decision')",
+        )
+        .bind(&now_s)
+        .fetch_one(self.pool())
+        .await?;
+        let oldest_stale_lease_expires_at: Option<String> = sqlx::query_scalar(
+            "SELECT lease_expires_at FROM execution_attempts WHERE lease_expires_at < ? \
+             AND state IN ('leased','preparing','running','waiting_decision') \
+             ORDER BY lease_expires_at ASC LIMIT 1",
+        )
+        .bind(&now_s)
+        .fetch_optional(self.pool())
+        .await?;
+        let oldest_stale_lease_age_secs = oldest_stale_lease_expires_at
+            .and_then(|s| parse_rfc3339_checked(&s))
+            .map(|expired_at| (now - expired_at).num_seconds().max(0));
+
+        let needs_operator_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM execution_requests WHERE state = 'needs_operator'",
+        )
+        .fetch_one(self.pool())
+        .await?;
+        let oldest_needs_operator_updated_at: Option<String> = sqlx::query_scalar(
+            "SELECT updated_at FROM execution_requests WHERE state = 'needs_operator' \
+             ORDER BY updated_at ASC LIMIT 1",
+        )
+        .fetch_optional(self.pool())
+        .await?;
+        let oldest_needs_operator_age_secs = oldest_needs_operator_updated_at
+            .and_then(|s| parse_rfc3339_checked(&s))
+            .map(|since| (now - since).num_seconds().max(0));
+
+        let window_start = (now - event_window).to_rfc3339();
+        let events_ingested_in_window: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM execution_events WHERE occurred_at >= ? AND occurred_at <= ?",
+        )
+        .bind(&window_start)
+        .bind(&now_s)
+        .fetch_one(self.pool())
+        .await?;
+
+        Ok(ExecutionFleetSnapshotRow {
+            runner_state_counts,
+            request_state_counts,
+            stale_lease_count,
+            oldest_stale_lease_age_secs,
+            needs_operator_count,
+            oldest_needs_operator_age_secs,
+            events_ingested_in_window,
+        })
     }
 }

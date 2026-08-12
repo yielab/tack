@@ -135,6 +135,11 @@ The API server loads configuration from `tack.toml` (if present) or environment 
 | `TACK_ORCH_POLL_SECS` | `10` | Reconciler base poll interval in seconds (before per-plane backoff + jitter) |
 | `TACK_ORCH_EVENT_RETENTION_DAYS` | `90` | Days of `orch_events` (and, once ingested, `orch_metrics`) history kept before the retention sweep rolls old rows into per-day aggregates and deletes them |
 | `TACK_ORCH_APPROVAL_TOKEN` | _(none)_ | Separate shared secret required to grant/deny a docket approval via `POST /api/approvals/{token}` (Wave 4). Deliberately distinct from `TACK_API_TOKEN` — granting an approval is higher-privilege than editing a card. Never logged |
+| `TACK_EXECUTION_RETENTION_ENABLE` | `true` | Enables the execution-domain retention sweep (replay/idempotency bookkeeping + terminal `execution_events` purge, Wave 5 card III-F5). **On by default** — unlike `TACK_ORCH_ENABLE`, this makes no outbound call and exposes no new API surface, so the safer default is pruning local rows this same process already owns |
+| `TACK_EXECUTION_RETENTION_DAYS` | `90` | Days of replay/idempotency bookkeeping and terminal `execution_events` history kept before the sweep purges them |
+| `TACK_EXECUTION_RETENTION_INTERVAL_SECS` | `3600` | Interval, in seconds, between execution-retention sweeps |
+| `TACK_EXECUTION_HEALTH_ENABLE` | `true` | Enables the execution-domain health watch (runner/queue/lease/event counts; logs a `warn!` on stale-lease/`needs_operator` onset, Wave 5 card III-F5). On by default for the same reason as retention: read-only, no external calls |
+| `TACK_EXECUTION_HEALTH_INTERVAL_SECS` | `60` | Interval, in seconds, between execution health-watch checks |
 
 The `tack-runner` binary is configured separately (defaults → `TOML` → environment → CLI flags,
 in that order):

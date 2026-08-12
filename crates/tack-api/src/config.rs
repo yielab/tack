@@ -132,6 +132,40 @@ pub struct AppConfig {
     /// for this cycle lands in one place. Never logged.
     #[serde(default)]
     pub orch_approval_token: Option<String>,
+
+    // ── Execution runtime retention/observability (card III-F5) ───────────────
+    /// Enables the execution-domain retention sweep (replay/idempotency
+    /// bookkeeping + terminal `execution_events` purge — see
+    /// `tack_orch::execution_retention`). **On by default**, unlike
+    /// `TACK_ORCH_ENABLE`: this has no external side effects (no outbound
+    /// calls, no new API surface — it only prunes local rows this same
+    /// process already owns), so the safer default is "don't let an
+    /// unattended long-running install grow these tables forever."
+    #[serde(default = "default_execution_retention_enable")]
+    pub execution_retention_enable: bool,
+
+    /// Days of replay/idempotency bookkeeping and terminal `execution_events`
+    /// history kept before the retention sweep purges them. Default: 90 —
+    /// matching `TACK_ORCH_EVENT_RETENTION_DAYS`'s own default.
+    #[serde(default = "default_execution_retention_days")]
+    pub execution_retention_days: u32,
+
+    /// Interval, in seconds, between execution-retention sweeps. Default:
+    /// 3600 (hourly) — retention is a hygiene task, not a latency-sensitive
+    /// one, so this is deliberately far coarser than `TACK_ORCH_POLL_SECS`.
+    #[serde(default = "default_execution_retention_interval_secs")]
+    pub execution_retention_interval_secs: u64,
+
+    /// Enables the execution-domain health watch (runner/queue/lease/event
+    /// counts; logs a `warn!` on stale-lease/`needs_operator` onset — see
+    /// `tack_orch::execution_observability`). On by default for the same
+    /// reason as `execution_retention_enable`: read-only, no external calls.
+    #[serde(default = "default_execution_health_enable")]
+    pub execution_health_enable: bool,
+
+    /// Interval, in seconds, between execution health-watch checks. Default: 60.
+    #[serde(default = "default_execution_health_interval_secs")]
+    pub execution_health_interval_secs: u64,
 }
 
 impl Default for AppConfig {
@@ -165,6 +199,11 @@ impl Default for AppConfig {
             orch_poll_secs: default_orch_poll_secs(),
             orch_event_retention_days: default_orch_event_retention_days(),
             orch_approval_token: None,
+            execution_retention_enable: default_execution_retention_enable(),
+            execution_retention_days: default_execution_retention_days(),
+            execution_retention_interval_secs: default_execution_retention_interval_secs(),
+            execution_health_enable: default_execution_health_enable(),
+            execution_health_interval_secs: default_execution_health_interval_secs(),
         }
     }
 }
@@ -209,6 +248,22 @@ fn default_orch_poll_secs() -> u64 {
 }
 fn default_orch_event_retention_days() -> u32 {
     90
+}
+
+fn default_execution_retention_enable() -> bool {
+    true
+}
+fn default_execution_retention_days() -> u32 {
+    90
+}
+fn default_execution_retention_interval_secs() -> u64 {
+    3600
+}
+fn default_execution_health_enable() -> bool {
+    true
+}
+fn default_execution_health_interval_secs() -> u64 {
+    60
 }
 
 fn default_allowed_origins() -> Vec<String> {
@@ -409,6 +464,26 @@ impl AppConfig {
             && !v.is_empty()
         {
             config.orch_approval_token = Some(v);
+        }
+        if let Ok(v) = std::env::var("TACK_EXECUTION_RETENTION_ENABLE") {
+            config.execution_retention_enable = v == "1" || v.eq_ignore_ascii_case("true");
+        }
+        if let Ok(v) = std::env::var("TACK_EXECUTION_RETENTION_DAYS") {
+            config.execution_retention_days =
+                v.parse().unwrap_or(default_execution_retention_days());
+        }
+        if let Ok(v) = std::env::var("TACK_EXECUTION_RETENTION_INTERVAL_SECS") {
+            config.execution_retention_interval_secs = v
+                .parse()
+                .unwrap_or(default_execution_retention_interval_secs());
+        }
+        if let Ok(v) = std::env::var("TACK_EXECUTION_HEALTH_ENABLE") {
+            config.execution_health_enable = v == "1" || v.eq_ignore_ascii_case("true");
+        }
+        if let Ok(v) = std::env::var("TACK_EXECUTION_HEALTH_INTERVAL_SECS") {
+            config.execution_health_interval_secs = v
+                .parse()
+                .unwrap_or(default_execution_health_interval_secs());
         }
         config
     }

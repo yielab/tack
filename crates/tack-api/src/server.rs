@@ -163,6 +163,22 @@ pub async fn serve() -> anyhow::Result<()> {
         );
     }
 
+    // Start the execution-domain retention sweep + health watch (card
+    // III-F5, Wave 5) — two independently-gated cancellable background
+    // tasks (`TACK_EXECUTION_RETENTION_ENABLE`/`TACK_EXECUTION_HEALTH_ENABLE`,
+    // both on by default: unlike the orchestration reconciler above, neither
+    // makes an outbound call or exposes new API surface, so the safer
+    // default is "don't let an unattended install grow these tables
+    // forever" rather than opt-in). See `execution_runtime.rs`'s own doc
+    // comment for why this isn't stored on `AppState`: `stop()` is called
+    // once below, after the HTTP server itself has already stopped
+    // accepting requests, and nothing in the current API surface needs to
+    // toggle it at runtime.
+    let execution_runtime = crate::execution_runtime::ExecutionRuntime::new();
+    execution_runtime
+        .start(state.repo.clone(), (&config).into())
+        .await;
+
     // Build router
     let app = build_router(state);
 
@@ -189,6 +205,14 @@ pub async fn serve() -> anyhow::Result<()> {
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
+
+    // Join the execution retention/health tasks before exiting — the HTTP
+    // server has already stopped accepting requests at this point, so this
+    // wait costs nothing observable and is what makes "shutdown joins task"
+    // true rather than aspirational (see `execution_runtime.rs`'s doc
+    // comment for why this differs from `OrchRuntime::stop`, which
+    // deliberately does not block).
+    execution_runtime.stop().await;
 
     info!("Server shut down gracefully");
     Ok(())
