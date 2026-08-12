@@ -40,8 +40,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub mod adapters;
 pub mod execution;
+pub mod model_policy;
 pub mod reconciler;
 pub mod scheduler;
+pub mod usage_provenance;
 
 // ---------------------------------------------------------------------------
 // Errors

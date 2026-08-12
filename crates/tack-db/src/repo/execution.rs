@@ -2135,6 +2135,37 @@ impl Repository {
         }))
     }
 
+    /// Read-only model-policy input (card III-F3): `agent_profile_id`'s raw
+    /// `limits` JSON blob (migration 042), unparsed — the convention read
+    /// out of it (`{"default_model": ...}`) lives in
+    /// `tack_orch::model_policy::wiring`, which cannot be called from here
+    /// (`tack-db` cannot depend on `tack-orch`; see [`RequestSelection`]'s
+    /// doc comment for the same layering reason). `None` if
+    /// `agent_profile_id` does not exist.
+    pub async fn fetch_agent_profile_limits(
+        &self,
+        agent_profile_id: &str,
+    ) -> Result<Option<String>, sqlx::Error> {
+        sqlx::query_scalar("SELECT limits FROM agent_profiles WHERE id = ?")
+            .bind(agent_profile_id)
+            .fetch_optional(self.pool())
+            .await
+    }
+
+    /// Read-only model-policy input (card III-F3): `fleet_id`'s raw
+    /// `default_policy` JSON blob (migration 039), unparsed — same
+    /// convention/layering note as [`Self::fetch_agent_profile_limits`].
+    /// `None` if `fleet_id` does not exist.
+    pub async fn fetch_fleet_default_policy(
+        &self,
+        fleet_id: &str,
+    ) -> Result<Option<String>, sqlx::Error> {
+        sqlx::query_scalar("SELECT default_policy FROM agent_fleets WHERE id = ?")
+            .bind(fleet_id)
+            .fetch_optional(self.pool())
+            .await
+    }
+
     /// Every enrolled runner, newest-created last, with its current fleet
     /// roster. Backs `GET /api/runners` (card III-E6) — the read path E2,
     /// E3 and E5 each independently flagged as missing (`agent_runners`
