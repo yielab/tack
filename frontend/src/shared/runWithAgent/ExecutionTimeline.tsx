@@ -1,7 +1,8 @@
-import { type Component, For, Show, createMemo, createSignal } from 'solid-js';
+import { type Component, For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { Badge, Button, EmptyState, Field } from '../ui';
 import { toast } from '../ui/toast';
 import { useExecutionStore } from '../state/executionContext';
+import AttemptList from './AttemptList';
 import { describeExecutionState, isTerminalStateString, relativeTimeFromIso } from './shared';
 import type { ExecutionRequestRecord } from '../execution';
 
@@ -18,13 +19,14 @@ export interface ExecutionTimelineProps {
  * state" acceptance bar).
  *
  * Renders every gap in the underlying data HONESTLY rather than papering
- * over it: `attemptsFor()` always returns the typed `not_available`
- * placeholder today (no attempt-read endpoint exists — see
- * `docs/agent-handoffs/part-iii/III-E2.md`, Gap 2), so this component shows
- * that reason verbatim instead of a fabricated empty timeline or a
- * misleading "no attempts" message (which would be indistinguishable from
- * "fetched successfully, zero attempts exist" — exactly what `store.ts`'s
- * own header comment warns against).
+ * over it: `attemptsFor()` is an explicit state machine (idle / loading /
+ * ready / error — see `store.ts`'s own header comment), so a genuinely
+ * empty attempt list is never conflated with "still loading" or "the fetch
+ * failed". `GET /executions/{id}/attempts` (card III-E6) is now wired in
+ * (card III-F4) — this component used to show a typed `not_available`
+ * placeholder here (see `docs/agent-handoffs/part-iii/III-E2.md`, Gap 2,
+ * and `III-E6.md`'s "mechanical follow-up" note); that placeholder is gone
+ * now that the route is real.
  */
 const ExecutionTimeline: Component<ExecutionTimelineProps> = (props) => {
   const store = useExecutionStore();
@@ -123,6 +125,17 @@ const RequestRow: Component<{ record: ExecutionRequestRecord }> = (props) => {
 
   const attempts = createMemo(() => store.attemptsFor(summary()?.request_id ?? ''));
 
+  // Lazy first load: fetch attempts once per request the moment its row is
+  // rendered, never repeatedly — a subsequent render with the same `idle`
+  // state (there isn't one, since `loadAttempts` always transitions past
+  // `idle`) would otherwise re-trigger. Realtime refresh is handled by
+  // `store.ts#connectRealtime` for any request this effect has already
+  // asked about.
+  createEffect(() => {
+    const id = summary()?.request_id;
+    if (id && attempts().status === 'idle') void store.loadAttempts(id);
+  });
+
   return (
     <li class="space-y-2 rounded-lg border p-3" style={{ 'background-color': 'var(--color-bg-base)', 'border-color': 'var(--color-border-light)' }}>
       <div class="flex flex-wrap items-center gap-2">
@@ -154,11 +167,35 @@ const RequestRow: Component<{ record: ExecutionRequestRecord }> = (props) => {
         )}
       </Show>
 
-      {/* Attempt timeline — honestly typed as unavailable (Gap 2). */}
-      <Show when={attempts().status === 'not_available'}>
-        <p class="rounded-md border border-dashed px-2 py-1.5 text-xs" style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}>
-          Attempt history isn't available yet — {attempts().reason}
+      {/* Attempt timeline — real data now (card III-F4 wired the endpoint
+          card III-E6 added). Every fetch state is rendered explicitly. */}
+      <Show when={attempts().status === 'loading'}>
+        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+          Loading attempts…
         </p>
+      </Show>
+      <Show when={attempts().status === 'error'}>
+        {(() => {
+          const a = attempts();
+          return a.status === 'error' ? (
+            <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
+              Couldn't load attempts: {a.error.message}
+            </p>
+          ) : null;
+        })()}
+      </Show>
+      <Show when={attempts().status === 'ready'}>
+        {(() => {
+          const a = attempts();
+          if (a.status !== 'ready') return null;
+          return a.data.length > 0 ? (
+            <AttemptList requestId={summary()?.request_id ?? ''} attempts={a.data} />
+          ) : (
+            <p class="rounded-md border border-dashed px-2 py-1.5 text-xs" style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}>
+              No attempts yet.
+            </p>
+          );
+        })()}
       </Show>
 
       <div class="flex flex-wrap items-center gap-2">
