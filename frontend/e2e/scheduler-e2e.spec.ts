@@ -104,8 +104,11 @@ test('healthy exact-runner selection is claimed, and the UI reflects it without 
 
   // The store's bounded poll (default 4s, `shared/execution/realtime.ts`)
   // must pick up the state change on its own — no reload, no manual
-  // refetch trigger from this test.
-  await expect(drawer.getByText('Leased', { exact: true })).toBeVisible({ timeout: 10_000 });
+  // refetch trigger from this test. Card III-F4 wired the real attempts
+  // endpoint into this same tab, so the request's own state badge AND the
+  // now-visible attempt row's state badge both read "Leased" — `.first()`
+  // targets the request-level one this test's own name is about.
+  await expect(drawer.getByText('Leased', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
 });
 
 test('a saturated runner leaves a second exact-runner request visibly queued', async ({ page, request }) => {

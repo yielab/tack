@@ -304,3 +304,200 @@ export async function claimOnce(
   const body = await res.json();
   return body?.request?.request_id ?? null;
 }
+
+// ─── III-F4: attempt-detail additions (decisions/artifacts/events) ─────────
+//
+// The four helpers below extend the runner-protocol simulation `claimOnce`
+// already established, far enough to get a real attempt into `running`
+// state and raise a real decision/artifact — the only way to prove
+// `DecisionInbox`/`ArtifactDownloadPanel`'s "happy path" against the real
+// production router, since no CLI/UI surface exists for the runner side of
+// this protocol (the same reasoning `enrollRunner`/`claimOnce` themselves
+// document). See `execution-attempt-detail.spec.ts`.
+
+/** Full lease detail from a claim response (`claimOnce` above only extracts
+ *  `request_id`, which is all the pre-existing scheduler specs needed) —
+ *  `attempt_id`/`fencing_token` are required to drive every subsequent
+ *  runner-protocol call in this file. Returns `null` for a `no work`
+ *  response, matching `claimOnce`'s own contract. */
+export async function claimOnceWithLease(
+  request: APIRequestContext,
+  runnerId: string,
+  credential: string,
+  claimRequestId: string,
+): Promise<{ requestId: string; attemptId: string; fencingToken: number } | null> {
+  const res = await request.post(`${API}/runner/v1/claim`, {
+    headers: { authorization: `Bearer ${credential}` },
+    data: {
+      protocol_version: 1,
+      runner_id: runnerId,
+      claim_request_id: claimRequestId,
+      available_capacity: 1,
+      wait_ms: 0,
+    },
+  });
+  expect(res.ok(), `claim failed: ${res.status()}`).toBeTruthy();
+  const body = await res.json();
+  if (!body?.request?.request_id) return null;
+  return {
+    requestId: body.request.request_id as string,
+    attemptId: body.lease.attempt_id as string,
+    fencingToken: body.lease.fencing_token as number,
+  };
+}
+
+/** Drives a claimed attempt through `accept` then `start` — as `tack-runner`
+ *  would before doing any real work — so its `execution_attempts.state`
+ *  reaches `running`, the precondition `create_decision`/`submit_artifacts`
+ *  both require. */
+export async function acceptAndStartAttempt(
+  request: APIRequestContext,
+  runnerId: string,
+  credential: string,
+  attemptId: string,
+  fencingToken: number,
+): Promise<void> {
+  const base = {
+    protocol_version: 1,
+    runner_id: runnerId,
+    attempt_id: attemptId,
+    fencing_token: fencingToken,
+    workspace_id: `ws-${attemptId}`,
+    base_revision: '0'.repeat(40),
+  };
+  const acceptRes = await request.post(`${API}/runner/v1/attempts/${attemptId}/accept`, {
+    headers: { authorization: `Bearer ${credential}` },
+    data: base,
+  });
+  expect(acceptRes.ok(), `accept failed: ${acceptRes.status()}`).toBeTruthy();
+  const startRes = await request.post(`${API}/runner/v1/attempts/${attemptId}/start`, {
+    headers: { authorization: `Bearer ${credential}` },
+    data: { ...base, process_id: 'e2e-fake-process' },
+  });
+  expect(startRes.ok(), `start failed: ${startRes.status()}`).toBeTruthy();
+}
+
+/** Raises a real, pending decision on a running attempt — as a harness
+ *  would via `create_decision` (`crates/tack-api/src/handlers/
+ *  runner_protocol.rs`). Returns the `decision_id` the test supplied, for
+ *  convenience at call sites. */
+export async function createRunnerDecision(
+  request: APIRequestContext,
+  runnerId: string,
+  credential: string,
+  attemptId: string,
+  fencingToken: number,
+  decisionId: string,
+  options: Array<{ option_id: string; label: string }>,
+): Promise<string> {
+  const res = await request.post(`${API}/runner/v1/attempts/${attemptId}/decisions`, {
+    headers: { authorization: `Bearer ${credential}` },
+    data: {
+      protocol_version: 1,
+      runner_id: runnerId,
+      attempt_id: attemptId,
+      fencing_token: fencingToken,
+      decision_id: decisionId,
+      kind: 'permission',
+      prompt: 'e2e: allow this action?',
+      options,
+    },
+  });
+  expect(res.ok(), `create_decision failed: ${res.status()}`).toBeTruthy();
+  return decisionId;
+}
+
+/** Manifests + uploads a real, verified artifact on a running attempt —
+ *  `submit_artifacts` (manifest) then `PUT .../content` (III-F2), computing
+ *  the real sha256 the streaming verifier checks against. Returns the
+ *  `artifact_id` the test supplied. */
+export async function submitRunnerArtifact(
+  request: APIRequestContext,
+  runnerId: string,
+  credential: string,
+  attemptId: string,
+  fencingToken: number,
+  artifactId: string,
+  content: string,
+): Promise<string> {
+  const crypto = await import('node:crypto');
+  const bytes = Buffer.from(content, 'utf-8');
+  const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+
+  const manifestRes = await request.post(`${API}/runner/v1/attempts/${attemptId}/artifacts`, {
+    headers: { authorization: `Bearer ${credential}` },
+    data: {
+      protocol_version: 1,
+      runner_id: runnerId,
+      attempt_id: attemptId,
+      fencing_token: fencingToken,
+      artifacts: [
+        {
+          artifact_id: artifactId,
+          kind: 'diff',
+          name: `${artifactId}.txt`,
+          media_type: 'text/plain',
+          size_bytes: bytes.length,
+          sha256,
+          content_disposition: 'inline_upload',
+        },
+      ],
+    },
+  });
+  expect(manifestRes.ok(), `submit_artifacts failed: ${manifestRes.status()}`).toBeTruthy();
+
+  const uploadRes = await request.put(`${API}/runner/v1/attempts/${attemptId}/artifacts/${artifactId}/content`, {
+    headers: {
+      authorization: `Bearer ${credential}`,
+      'x-tack-fencing-token': String(fencingToken),
+      'content-type': 'text/plain',
+    },
+    data: bytes,
+  });
+  expect(uploadRes.ok(), `artifact content upload failed: ${uploadRes.status()}`).toBeTruthy();
+  return artifactId;
+}
+
+/** Creates an execution request directly (`POST /executions`) — faster and
+ *  more deterministic than driving `RunWithAgentModal` through the UI when
+ *  a test's real subject is what happens *after* the request exists.
+ *  Field-for-field the same body `shared/runWithAgent/shared.ts#buildCreateExecutionInput`
+ *  sends.
+ *
+ *  Uses an `exact_runner` selector, not `fleet` — `agent_fleet_members`
+ *  still has no write route on any API surface (E6's own flagged gap,
+ *  still open as of this card), so a `fleet`-selector request can never be
+ *  claimed in an E2E environment; `scheduler-e2e.spec.ts` hit the same
+ *  constraint and made the identical choice. Callers must enroll the
+ *  target runner (`enrollRunner`) BEFORE calling this, so its id is known. */
+export async function createExecution(
+  request: APIRequestContext,
+  itemId: string,
+  runnerId: string,
+  profileId: string,
+  modelId: string,
+): Promise<string> {
+  const res = await request.post(`${API}/executions`, {
+    data: {
+      item_id: itemId,
+      idempotency_key: `e2e-${Date.now()}-${Math.random()}`,
+      selector_kind: 'exact_runner',
+      selector_id: runnerId,
+      agent_profile_id: profileId,
+      requested_harness_kind: 'codex',
+      requested_model_provider: 'openai',
+      requested_model_id: modelId,
+      agent_profile_snapshot: { name: 'e2e', instructions: 'e2e', tool_policy: {}, timeout_seconds: 3600, budgets: {} },
+      repository_snapshot: { kind: 'git', remote: 'git@example.com:org/repo.git', base_revision: 'main', subdirectory: null },
+      permission_policy: { tools: [], network: false },
+      budgets: {},
+      environment: {},
+      metadata: {},
+      timeout_seconds: 3600,
+      status_map_policy_id: null,
+    },
+  });
+  expect(res.ok(), `create execution failed: ${res.status()}`).toBeTruthy();
+  const body = await res.json();
+  return body.request_id as string;
+}

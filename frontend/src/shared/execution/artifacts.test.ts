@@ -1,0 +1,75 @@
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { ApiError, tokenStore } from '../api/client';
+import { artifactsApi, isArtifactContentNotVerified, isArtifactNotFound } from './artifacts';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  tokenStore.set(null);
+});
+
+function errorResponse(status: number, code: string, message: string): Response {
+  return new Response(JSON.stringify({ error: { status, message, code } }), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+describe('artifactsApi.contentUrl', () => {
+  it('builds the exact route the operator artifact-download handler mounts', () => {
+    expect(artifactsApi.contentUrl('exec_1', 2, 'art_1')).toBe(
+      '/api/executions/exec_1/attempts/2/artifacts/art_1/content',
+    );
+  });
+
+  it('URL-encodes every segment', () => {
+    expect(artifactsApi.contentUrl('a/b', 1, 'art/1')).toBe(
+      '/api/executions/a%2Fb/attempts/1/artifacts/art%2F1/content',
+    );
+  });
+});
+
+describe('artifactsApi.download', () => {
+  it('GETs the content route and resolves to a Blob on 200', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('hello', { status: 200, headers: { 'Content-Type': 'text/plain' } }),
+    );
+    const blob = await artifactsApi.download('exec_1', 1, 'art_1');
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/executions/exec_1/attempts/1/artifacts/art_1/content');
+    expect(await blob.text()).toBe('hello');
+  });
+
+  it('throws ApiError(404) when no manifest exists — distinguishable via isArtifactNotFound', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorResponse(404, 'not_found', 'Artifact not found'));
+    await expect(artifactsApi.download('exec_1', 1, 'missing')).rejects.toBeInstanceOf(ApiError);
+    try {
+      await artifactsApi.download('exec_1', 1, 'missing');
+    } catch (err) {
+      expect(isArtifactNotFound(err)).toBe(true);
+      expect(isArtifactContentNotVerified(err)).toBe(false);
+    }
+  });
+
+  it('throws ApiError(409) when content is not verified yet — distinguishable via isArtifactContentNotVerified, never conflated with 404', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      errorResponse(409, 'conflict', 'Artifact content has not been verified yet'),
+    );
+    try {
+      await artifactsApi.download('exec_1', 1, 'art_1');
+      expect.unreachable('expected a rejection');
+    } catch (err) {
+      expect(isArtifactContentNotVerified(err)).toBe(true);
+      expect(isArtifactNotFound(err)).toBe(false);
+    }
+  });
+
+  it('a generic 500 is neither isArtifactNotFound nor isArtifactContentNotVerified', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorResponse(500, 'internal_error', 'boom'));
+    try {
+      await artifactsApi.download('exec_1', 1, 'art_1');
+      expect.unreachable('expected a rejection');
+    } catch (err) {
+      expect(isArtifactNotFound(err)).toBe(false);
+      expect(isArtifactContentNotVerified(err)).toBe(false);
+    }
+  });
+});

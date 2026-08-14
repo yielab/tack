@@ -95,7 +95,10 @@ test('item-detail: submitting a run creates the request and it appears in the Ex
   const executionTab = drawer.getByRole('tab', { name: 'Execution' });
   await executionTab.click();
   await expect(drawer.getByText('Queued')).toBeVisible();
-  await expect(drawer.getByText(/Attempt history isn't available yet/)).toBeVisible();
+  // III-F4 wired the real attempts endpoint (card III-E6 added it; this was
+  // a typed "not available yet" placeholder before) — a freshly-created,
+  // unclaimed request honestly shows zero attempts, not the old placeholder.
+  await expect(drawer.getByText('No attempts yet.')).toBeVisible();
 
   // Confirm the request is real, not just an optimistic client-side fake —
   // it round-trips through the actual API.
