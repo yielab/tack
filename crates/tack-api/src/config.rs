@@ -136,11 +136,12 @@ pub struct AppConfig {
     // ── Execution runtime retention/observability (card III-F5) ───────────────
     /// Enables the execution-domain retention sweep (replay/idempotency
     /// bookkeeping + terminal `execution_events` purge — see
-    /// `tack_orch::execution_retention`). **On by default**, unlike
-    /// `TACK_ORCH_ENABLE`: this has no external side effects (no outbound
-    /// calls, no new API surface — it only prunes local rows this same
-    /// process already owns), so the safer default is "don't let an
-    /// unattended long-running install grow these tables forever."
+    /// `tack_orch::execution_retention`). **Off by default** (III-F6
+    /// amendment — F5's own original default was `true`; see
+    /// `default_execution_retention_enable`'s doc comment for the full
+    /// rationale). This sweep deletes rows; data deletion must be an
+    /// operator opt-in, the same posture `TACK_ORCH_ENABLE` already
+    /// establishes for this codebase.
     #[serde(default = "default_execution_retention_enable")]
     pub execution_retention_enable: bool,
 
@@ -158,14 +159,29 @@ pub struct AppConfig {
 
     /// Enables the execution-domain health watch (runner/queue/lease/event
     /// counts; logs a `warn!` on stale-lease/`needs_operator` onset — see
-    /// `tack_orch::execution_observability`). On by default for the same
-    /// reason as `execution_retention_enable`: read-only, no external calls.
+    /// `tack_orch::execution_observability`). **On by default** — unlike
+    /// retention above, this reads and logs only; it deletes nothing, so it
+    /// carries none of retention's data-loss risk and keeps F5's original
+    /// default.
     #[serde(default = "default_execution_health_enable")]
     pub execution_health_enable: bool,
 
     /// Interval, in seconds, between execution health-watch checks. Default: 60.
     #[serde(default = "default_execution_health_interval_secs")]
     pub execution_health_interval_secs: u64,
+
+    /// Shared secret required to resolve a scoped execution decision via
+    /// `POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve`
+    /// (Wave 5 card III-F1, wired by the Wave 5 integrator III-F6).
+    /// Deliberately separate from `TACK_API_TOKEN`, mirroring
+    /// `orch_approval_token`'s own precedent exactly: resolving a decision
+    /// releases whatever the harness/runner is blocked on, a materially
+    /// higher-privilege act than the ordinary operator gate already covers.
+    /// **Fail-closed when unset** — see
+    /// `handlers::decisions::require_decision_token`'s doc comment. Never
+    /// logged.
+    #[serde(default)]
+    pub execution_decision_token: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -204,6 +220,7 @@ impl Default for AppConfig {
             execution_retention_interval_secs: default_execution_retention_interval_secs(),
             execution_health_enable: default_execution_health_enable(),
             execution_health_interval_secs: default_execution_health_interval_secs(),
+            execution_decision_token: None,
         }
     }
 }
@@ -251,7 +268,16 @@ fn default_orch_event_retention_days() -> u32 {
 }
 
 fn default_execution_retention_enable() -> bool {
-    true
+    // III-F6 amendment: F5's own handoff shipped this default as `true`
+    // ("a deliberate departure from `TACK_ORCH_ENABLE`'s off-by-default
+    // precedent... flagged here explicitly in case a reviewer disagrees
+    // with the default direction"). The Wave 5 integrator does: this sweep
+    // deletes rows (`purge_stale_execution_replays`,
+    // `purge_stale_terminal_execution_events`) — data deletion must be
+    // opt-in, matching `TACK_ORCH_ENABLE`'s own off-by-default posture, not
+    // read-only hygiene the operator never asked for. `execution_health_enable`
+    // stays `true` below: it only reads and logs, it deletes nothing.
+    false
 }
 fn default_execution_retention_days() -> u32 {
     90
@@ -484,6 +510,13 @@ impl AppConfig {
             config.execution_health_interval_secs = v
                 .parse()
                 .unwrap_or(default_execution_health_interval_secs());
+        }
+        // Never log the decision-token value — same posture as the
+        // approval-token parse above.
+        if let Ok(v) = std::env::var("TACK_EXECUTION_DECISION_TOKEN")
+            && !v.is_empty()
+        {
+            config.execution_decision_token = Some(v);
         }
         config
     }
