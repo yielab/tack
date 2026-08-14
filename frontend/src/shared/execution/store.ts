@@ -17,6 +17,7 @@ import {
   type ExecutionSummary,
   type RequeueExecutionInput,
 } from './api';
+import { attemptsApi, type AttemptSummary } from './attempts';
 import { SequenceAllocator, VersionedCache } from './cache';
 import type { ExecutionRealtime } from './realtime';
 
@@ -89,23 +90,23 @@ export interface ExecutionRequestRecord {
 }
 
 /**
- * Attempts (III.1.3) are not exposed by any operator-facing read endpoint
- * today — `GET /executions/{id}` returns only the five columns in
- * `ExecutionSummary` (see `api.ts`'s header note). This typed placeholder is
- * the honest alternative to returning `[]`, which would be indistinguishable
- * from "fetched successfully, zero attempts exist." The `not_available`
- * variant is the only one implemented; a future `status: 'ready'` variant
- * carrying real `AttemptSnapshot[]` data can be added the moment a read
- * endpoint exists, without changing this type's discriminant shape.
+ * Attempts (III.1.3), read through `GET /executions/{id}/attempts` (card
+ * III-E6 added the route; card III-F4 — this file — wires it in here; see
+ * `attempts.ts`'s header comment for the full history). Modeled the same
+ * way `ExecutionRequestRecord`/`ListStatus` are: an explicit state machine
+ * so "never fetched", "fetching", "fetched, zero attempts exist", and
+ * "fetch failed" are four genuinely different, never-conflated states — in
+ * particular `ready` with an empty `data` array is NOT the same thing as
+ * `idle` (never fetched), matching this store's own header-comment
+ * discipline for `ExecutionRequestRecord`.
  */
-export type AttemptAvailability = { status: 'not_available'; reason: string };
+export type AttemptAvailability =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; data: AttemptSummary[] }
+  | { status: 'error'; error: NormalizedExecutionError };
 
-const ATTEMPTS_NOT_AVAILABLE: AttemptAvailability = {
-  status: 'not_available',
-  reason:
-    'No runner-fleet attempt-read endpoint exists yet — see docs/agent-handoffs/part-iii/III-E2.md, ' +
-    '"Schema/API/contract change requested from another owner".',
-};
+const ATTEMPTS_IDLE: AttemptAvailability = { status: 'idle' };
 
 export interface ExecutionStore {
   /** Every known request, keyed by `request_id`. Reactive — read inside a
@@ -130,7 +131,17 @@ export interface ExecutionStore {
    *  side effects (e.g. a toast) without needing to re-derive anything. */
   cancel: (requestId: string) => Promise<void>;
   requeue: (requestId: string, input: RequeueExecutionInput) => Promise<void>;
+  /** Reactive read of the last-known attempt list for one request — never
+   *  triggers a fetch itself (mirrors `getRequest`'s pure-read contract).
+   *  Returns `{status: 'idle'}` until a caller invokes {@link loadAttempts}
+   *  at least once. */
   attemptsFor: (requestId: string) => AttemptAvailability;
+  /** Fetches (or re-fetches) the attempt list for one request. Safe to call
+   *  repeatedly — callers that only want a first, lazy load should check
+   *  `attemptsFor(id).status === 'idle'` first (as `AttemptList.tsx` does);
+   *  a caller that wants to force a refresh (e.g. after resolving a
+   *  decision) may call this unconditionally. */
+  loadAttempts: (requestId: string) => Promise<void>;
   /** Wires an `ExecutionRealtime` subscription (see `realtime.ts`) to this
    *  store's refetch paths. Returns an unsubscribe function; safe to call
    *  once per store/subscription pair. */
@@ -160,6 +171,7 @@ export function createExecutionStore(): ExecutionStore {
   const cancellations = new Map<string, CancellationState>();
   const fetchErrors = new Map<string, NormalizedExecutionError>();
   const inFlightCancel = new Set<string>();
+  const attemptsCache = new Map<string, AttemptAvailability>();
 
   // A single bump signal drives reactivity for every accessor below. This
   // is coarser-grained than a per-key signal, but keeps exactly one
@@ -333,14 +345,37 @@ export function createExecutionStore(): ExecutionStore {
       });
   }
 
-  function attemptsFor(_requestId: string): AttemptAvailability {
-    return ATTEMPTS_NOT_AVAILABLE;
+  function attemptsFor(requestId: string): AttemptAvailability {
+    bump();
+    return attemptsCache.get(requestId) ?? ATTEMPTS_IDLE;
+  }
+
+  async function loadAttempts(requestId: string): Promise<void> {
+    attemptsCache.set(requestId, { status: 'loading' });
+    touch();
+    try {
+      const { data } = await attemptsApi.list(requestId);
+      attemptsCache.set(requestId, { status: 'ready', data: data.data });
+      touch();
+    } catch (err) {
+      attemptsCache.set(requestId, { status: 'error', error: normalizeError(err) });
+      touch();
+      throw err;
+    }
   }
 
   function connectRealtime(realtime: ExecutionRealtime): () => void {
     return realtime.onInvalidate((event) => {
-      if (event.scope === 'list') void loadList();
-      else void loadOne(event.requestId);
+      if (event.scope === 'list') {
+        void loadList();
+        return;
+      }
+      void loadOne(event.requestId);
+      // Only refresh attempts for a request this consumer already asked
+      // about (`idle` means nobody has called `loadAttempts` for it yet) —
+      // an unconditional refetch here would fetch attempt data for every
+      // invalidated request even when nothing on screen reads it.
+      if (attemptsCache.has(event.requestId)) void loadAttempts(event.requestId);
     });
   }
 
@@ -356,6 +391,7 @@ export function createExecutionStore(): ExecutionStore {
     cancel,
     requeue,
     attemptsFor,
+    loadAttempts,
     connectRealtime,
   };
 }

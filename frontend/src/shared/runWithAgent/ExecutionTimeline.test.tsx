@@ -6,12 +6,49 @@ import ExecutionTimeline from './ExecutionTimeline';
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const disposers: Array<() => void> = [];
 
+/** The top-level request `<li>` rows only — `AttemptList.tsx` (card III-F4)
+ *  now nests its own `<li>` elements per attempt inside each request row, so
+ *  a plain `querySelectorAll('li')` would pick up both levels and break any
+ *  test asserting positional order or count. Scoped to the outer request
+ *  `<ul>`'s direct children via `:scope`. */
+function requestRows(container: HTMLElement): HTMLLIElement[] {
+  return [...container.querySelectorAll<HTMLLIElement>('ul.space-y-3 > li')];
+}
+
 const ROWS = [
   { request_id: 'req-running', item_id: 'item-1', state: 'running', cancellation_requested_at: null, created_at: '2025-01-01T00:00:00Z' },
   { request_id: 'req-needs-operator', item_id: 'item-1', state: 'needs_operator', cancellation_requested_at: null, created_at: '2025-01-02T00:00:00Z' },
   { request_id: 'req-mystery', item_id: 'item-1', state: 'some_future_state', cancellation_requested_at: null, created_at: '2025-01-03T00:00:00Z' },
   { request_id: 'req-other-item', item_id: 'item-OTHER', state: 'queued', cancellation_requested_at: null, created_at: '2025-01-01T00:00:00Z' },
 ];
+
+const ATTEMPT_ROW = {
+  attempt_id: 'att-1',
+  request_id: 'req-running',
+  attempt_number: 1,
+  runner_id: 'runner-1',
+  fencing_token: 1,
+  state: 'running',
+  lease_issued_at: '2025-01-01T00:00:00Z',
+  lease_expires_at: '2025-01-01T00:05:00Z',
+  last_heartbeat_at: null,
+  event_checkpoint: null,
+  completion_id: null,
+  workspace_id: null,
+  base_revision: null,
+  actual_execution: null,
+  terminal_reason: null,
+  usage: null,
+  started_at: null,
+  ended_at: null,
+  created_at: '2025-01-01T00:00:00Z',
+  updated_at: '2025-01-01T00:00:00Z',
+  model_provenance: null,
+  usage_economics: {
+    model_token_cost_usd_estimated: { value: null, source: 'not_measured' },
+    runner_time_cost: { wall_clock_ms: null, cost_usd_estimated: { value: null, source: 'not_measured' } },
+  },
+};
 
 let cancelCalls: string[];
 let requeueBody: unknown;
@@ -29,6 +66,12 @@ function mockFetch(): typeof fetch {
         JSON.stringify({ protocol_version: 1, request_id: 'req-needs-operator', state: 'queued', recovered_from: 'needs_operator', replayed: false }),
         { status: 200 },
       );
+    }
+    if (url.includes('/attempts') && url.includes('req-running')) {
+      return new Response(JSON.stringify({ protocol_version: 1, data: [ATTEMPT_ROW] }), { status: 200 });
+    }
+    if (url.includes('/attempts')) {
+      return new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 });
     }
     if (url.includes('/executions')) {
       return new Response(JSON.stringify({ protocol_version: 1, data: ROWS }), { status: 200 });
@@ -77,7 +120,7 @@ describe('ExecutionTimeline', () => {
     await flush();
     await flush();
     expect(c.textContent).not.toContain('req-other-item');
-    const ids = [...c.querySelectorAll('li')].map((li) => li.textContent);
+    const ids = requestRows(c).map((li) => li.textContent);
     // newest (req-mystery, 01-03) first, oldest (req-running, 01-01) last.
     expect(ids[0]).toContain('req-mystery');
     expect(ids[ids.length - 1]).toContain('req-running');
@@ -93,19 +136,23 @@ describe('ExecutionTimeline', () => {
     expect(c.textContent).toContain('unrecognised state');
   });
 
-  it('every request shows the typed "attempt history not available" reason (Gap 2) instead of a fake empty list', async () => {
+  it('fetches and renders real attempts for a request that has some, and an honest "no attempts yet" for one that has none', async () => {
     const c = mount('item-1');
-    await flush();
-    await flush();
-    expect(c.textContent).toContain("Attempt history isn't available yet");
-    expect(c.textContent).toContain('III-E2.md');
+    for (let i = 0; i < 6; i++) await flush();
+
+    const runningRow = requestRows(c).find((li) => li.textContent?.includes('req-running'))!;
+    expect(runningRow.textContent).toContain('Attempt #1');
+    expect(runningRow.textContent).toContain('runner-1');
+
+    const opRow = requestRows(c).find((li) => li.textContent?.includes('req-needs-operator'))!;
+    expect(opRow.textContent).toContain('No attempts yet.');
   });
 
   it('Cancel is offered for a non-terminal request and calls the store cancel path', async () => {
     const c = mount('item-1');
     await flush();
     await flush();
-    const runningRow = [...c.querySelectorAll('li')].find((li) => li.textContent?.includes('req-running'))!;
+    const runningRow = requestRows(c).find((li) => li.textContent?.includes('req-running'))!;
     const cancelBtn = [...runningRow.querySelectorAll('button')].find((b) => b.textContent === 'Cancel')!;
     cancelBtn.click();
     await flush();
@@ -118,10 +165,10 @@ describe('ExecutionTimeline', () => {
     await flush();
     await flush();
 
-    const runningRow = [...c.querySelectorAll('li')].find((li) => li.textContent?.includes('req-running'))!;
+    const runningRow = requestRows(c).find((li) => li.textContent?.includes('req-running'))!;
     expect([...runningRow.querySelectorAll('button')].some((b) => b.textContent?.includes('Reconcile'))).toBe(false);
 
-    const opRow = [...c.querySelectorAll('li')].find((li) => li.textContent?.includes('req-needs-operator'))!;
+    const opRow = requestRows(c).find((li) => li.textContent?.includes('req-needs-operator'))!;
     const reconcileBtn = [...opRow.querySelectorAll('button')].find((b) => b.textContent?.includes('Reconcile'))!;
     reconcileBtn.click();
     await flush();

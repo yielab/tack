@@ -8,6 +8,9 @@ import {
   createSprintWithItem,
   createFleet,
   createAgentProfile,
+  createExecution,
+  enrollRunner,
+  claimOnceWithLease,
   waitForApp,
 } from './helpers';
 
@@ -1111,6 +1114,39 @@ test('item detail Execution tab (with a real request) has no accessibility viola
 
   await drawer.getByRole('tab', { name: 'Execution' }).click();
   await expect(drawer.getByText('Queued')).toBeVisible();
+
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+// III-F4: the attempt-detail panel (`AttemptList.tsx` — model provenance,
+// usage economics, and the expanded events/decisions/artifacts sections).
+// Scans with a real claimed attempt so the expanded state (radios, text
+// fields, buttons across `EventTimeline`/`DecisionInbox`/
+// `ArtifactDownloadPanel`) is actually present in the DOM, not just the
+// collapsed row.
+test('item detail Execution tab — expanded attempt detail (events/decisions/artifacts) has no accessibility violations', async ({
+  page,
+  request,
+}) => {
+  const projectId = await getOrCreateProject(request);
+  const itemId = await createFreshItem(request, projectId, `A11y attempt detail ${Date.now()}`);
+  const profileId = await createAgentProfile(request, `A11y Attempt Profile ${Date.now()}`);
+  const modelId = 'opaque/model-alpha';
+
+  const { runnerId, credential } = await enrollRunner(request, `A11y Attempt Runner ${Date.now()}`, modelId);
+  const requestId = await createExecution(request, itemId, runnerId, profileId, modelId);
+  const lease = await claimOnceWithLease(request, runnerId, credential, `a11y-attempt-claim-${Date.now()}`);
+  expect(lease?.requestId).toBe(requestId);
+
+  await page.goto(`/projects/${projectId}/board?item=${itemId}`);
+  await waitForApp(page);
+  const drawer = page.getByRole('dialog');
+  await drawer.getByRole('tab', { name: 'Execution' }).click();
+  await expect(drawer.getByText('Attempt #1')).toBeVisible();
+
+  await drawer.getByRole('button', { name: /Show events, decisions & artifacts/ }).click();
+  await expect(drawer.getByText('No events reported yet')).toBeVisible();
 
   const violations = await scan(page);
   expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);

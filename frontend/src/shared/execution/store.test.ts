@@ -4,6 +4,8 @@ import { ApiError } from '../api/client';
 import { createExecutionStore } from './store';
 import { executionsApi } from './api';
 import type { ExecutionSummary } from './api';
+import { attemptsApi } from './attempts';
+import type { AttemptSummary } from './attempts';
 import type { ExecutionRealtime, ExecutionInvalidationEvent } from './realtime';
 
 vi.mock('./api', () => ({
@@ -16,7 +18,46 @@ vi.mock('./api', () => ({
   },
 }));
 
+vi.mock('./attempts', () => ({
+  attemptsApi: {
+    list: vi.fn(),
+    events: vi.fn(),
+  },
+}));
+
 const mockedApi = vi.mocked(executionsApi, true);
+const mockedAttemptsApi = vi.mocked(attemptsApi, true);
+
+function attemptSummary(overrides: Partial<AttemptSummary> = {}): AttemptSummary {
+  return {
+    attempt_id: 'att_1',
+    request_id: 'exec_1',
+    attempt_number: 1,
+    runner_id: 'runner_1',
+    fencing_token: 1,
+    state: 'running',
+    lease_issued_at: '2026-08-06T12:00:00Z',
+    lease_expires_at: '2026-08-06T12:05:00Z',
+    last_heartbeat_at: null,
+    event_checkpoint: null,
+    completion_id: null,
+    workspace_id: null,
+    base_revision: null,
+    actual_execution: null,
+    terminal_reason: null,
+    usage: null,
+    started_at: null,
+    ended_at: null,
+    created_at: '2026-08-06T12:00:00Z',
+    updated_at: '2026-08-06T12:00:00Z',
+    model_provenance: null,
+    usage_economics: {
+      model_token_cost_usd_estimated: { value: null, source: 'not_measured' },
+      runner_time_cost: { wall_clock_ms: null, cost_usd_estimated: { value: null, source: 'not_measured' } },
+    },
+    ...overrides,
+  };
+}
 
 function summary(overrides: Partial<ExecutionSummary> = {}): ExecutionSummary {
   return {
@@ -310,13 +351,46 @@ describe('createExecutionStore — requeue()', () => {
   });
 });
 
-describe('createExecutionStore — attemptsFor()', () => {
-  it('always returns the typed not_available placeholder (no attempt-read endpoint exists yet)', () => {
+describe('createExecutionStore — attemptsFor() / loadAttempts()', () => {
+  it('is idle until loadAttempts is called — never conflated with "loaded, zero attempts"', () => {
     const store = createExecutionStore();
-    expect(store.attemptsFor('exec_1')).toEqual({
-      status: 'not_available',
-      reason: expect.stringContaining('runner-fleet attempt-read endpoint'),
-    });
+    expect(store.attemptsFor('exec_1')).toEqual({ status: 'idle' });
+  });
+
+  it('loadAttempts populates a ready record with real data', async () => {
+    mockedAttemptsApi.list.mockResolvedValue(
+      withHeaders({ protocol_version: 1, data: [attemptSummary(), attemptSummary({ attempt_id: 'att_2', attempt_number: 2 })] }),
+    );
+    const store = createExecutionStore();
+    const promise = store.loadAttempts('exec_1');
+    expect(store.attemptsFor('exec_1')).toEqual({ status: 'loading' });
+    await promise;
+    const record = store.attemptsFor('exec_1');
+    expect(record.status).toBe('ready');
+    expect(record.status === 'ready' && record.data).toHaveLength(2);
+  });
+
+  it('a genuinely empty attempt list is "ready" with zero rows, not "idle" or "error"', async () => {
+    mockedAttemptsApi.list.mockResolvedValue(withHeaders({ protocol_version: 1, data: [] }));
+    const store = createExecutionStore();
+    await store.loadAttempts('exec_1');
+    expect(store.attemptsFor('exec_1')).toEqual({ status: 'ready', data: [] });
+  });
+
+  it('loadAttempts failure yields an explicit error record and rejects', async () => {
+    mockedAttemptsApi.list.mockRejectedValue(new ApiError(500, 'boom', 'internal_error'));
+    const store = createExecutionStore();
+    await expect(store.loadAttempts('exec_1')).rejects.toBeInstanceOf(ApiError);
+    const record = store.attemptsFor('exec_1');
+    expect(record.status).toBe('error');
+    expect(record.status === 'error' && record.error.message).toBe('boom');
+  });
+
+  it('a request nobody has asked about stays idle even after other requests load attempts', async () => {
+    mockedAttemptsApi.list.mockResolvedValue(withHeaders({ protocol_version: 1, data: [attemptSummary()] }));
+    const store = createExecutionStore();
+    await store.loadAttempts('exec_1');
+    expect(store.attemptsFor('exec_2')).toEqual({ status: 'idle' });
   });
 });
 
@@ -358,6 +432,30 @@ describe('createExecutionStore — connectRealtime()', () => {
     await Promise.resolve();
 
     expect(mockedApi.get).toHaveBeenCalledWith('exec_9');
+  });
+
+  it('a request-scope invalidation refreshes attempts only for a request that already loaded them', async () => {
+    mockedApi.get.mockResolvedValue(withHeaders(summary({ request_id: 'exec_9' })));
+    mockedAttemptsApi.list.mockResolvedValue(withHeaders({ protocol_version: 1, data: [attemptSummary()] }));
+    const store = createExecutionStore();
+    const { realtime, emit } = fakeRealtime();
+    store.connectRealtime(realtime);
+
+    // Nobody has called loadAttempts('exec_9') yet — invalidation must not
+    // fetch attempts for it out of nowhere.
+    emit({ scope: 'request', requestId: 'exec_9' });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockedAttemptsApi.list).not.toHaveBeenCalled();
+
+    // Once a consumer has asked about this request's attempts, a later
+    // invalidation refreshes them too.
+    await store.loadAttempts('exec_9');
+    mockedAttemptsApi.list.mockClear();
+    emit({ scope: 'request', requestId: 'exec_9' });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockedAttemptsApi.list).toHaveBeenCalledWith('exec_9');
   });
 
   it('the returned unsubscribe function detaches from the realtime source', () => {

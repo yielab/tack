@@ -53,6 +53,37 @@ export type {
 } from './api';
 export { executionsApi, fleetsApi, agentProfilesApi, modelProfilesApi, runnersApi } from './api';
 
+export type {
+  ModelProvenance,
+  RunnerTimeCost,
+  UsageEconomics,
+  AttemptSummary,
+  AttemptListResult,
+  EventSummary,
+  EventListResult,
+} from './attempts';
+export { attemptsApi } from './attempts';
+
+export type {
+  DecisionOption,
+  DecisionState,
+  DecisionAnswer,
+  DecisionResolvedBy,
+  DecisionRecord,
+  ResolveDecisionResult,
+} from './decisions';
+export {
+  decisionsApi,
+  decisionTokenStore,
+  isDecisionTokenRejected,
+  isDecisionExpired,
+  isDecisionIdempotencyConflict,
+  isDecisionNotFound,
+  isDecisionInvalidOption,
+} from './decisions';
+
+export { artifactsApi, isArtifactNotFound, isArtifactContentNotVerified } from './artifacts';
+
 export type { CapabilityGate, FeatureName, AggregatedModelCombination, CombinationAvailability } from './capabilities';
 export {
   gateFeature,
