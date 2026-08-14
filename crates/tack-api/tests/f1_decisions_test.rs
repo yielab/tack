@@ -313,8 +313,26 @@ async fn item_status(repo: &Repository, item_id: &str) -> String {
         .unwrap()
 }
 
+/// The test suite's configured `TACK_EXECUTION_DECISION_TOKEN` — every test
+/// below that exercises real handler *behavior* (as opposed to the token
+/// gate itself) presents this via [`DECISION_TOKEN`] in its header list, the
+/// same way it presents `x-tack-principal` via [`OPERATOR`]. Added by
+/// III-F6 alongside `require_decision_token` — see that function's doc
+/// comment in `decisions.rs` for why an unconfigured token fails closed.
+const TEST_DECISION_TOKEN: &str = "f1-test-decision-token-never-a-real-secret";
+
 fn app(repo: &Repository, clock: &FakeClock) -> Router {
-    let state = decisions::DecisionOperatorState::with_clock(repo.clone(), Arc::new(clock.clone()));
+    let state = decisions::DecisionOperatorState::with_clock(repo.clone(), Arc::new(clock.clone()))
+        .with_decision_token(Some(TEST_DECISION_TOKEN.to_string()));
+    decisions::routes(state)
+}
+
+/// A router built with `TACK_EXECUTION_DECISION_TOKEN` left unconfigured
+/// (`None`) — the fail-closed default. Used only by the token-gate tests
+/// themselves, never by a test proving ordinary resolve behavior.
+fn app_without_decision_token(repo: &Repository, clock: &FakeClock) -> Router {
+    let state =
+        decisions::DecisionOperatorState::with_clock(repo.clone(), Arc::new(clock.clone()));
     decisions::routes(state)
 }
 
@@ -350,7 +368,15 @@ fn resolve_uri(attempt_id: &str, decision_id: &str) -> String {
     format!("/attempts/{attempt_id}/decisions/{decision_id}/resolve")
 }
 
-const OPERATOR: &[(&str, &str)] = &[("x-tack-principal", "operator:local")];
+/// Every real (non-token-gate) test presents both the operator principal
+/// and the correct `TACK_EXECUTION_DECISION_TOKEN` — the token gate runs
+/// first (see `resolve_decision`), so without this header every one of
+/// these tests would now observe `403 forbidden` instead of whatever
+/// principal-level/business-logic outcome it actually means to prove.
+const OPERATOR: &[(&str, &str)] = &[
+    ("x-tack-principal", "operator:local"),
+    ("x-tack-decision-token", TEST_DECISION_TOKEN),
+];
 
 // ---------------------------------------------------------------------
 // 1. Happy path.
@@ -534,7 +560,9 @@ async fn missing_operator_principal_is_denied_and_writes_nothing() {
         &app,
         &resolve_uri(&attempt_id, "dec-1"),
         json!({"answer": {"option_id": "allow_once", "text": null}}),
-        &[],
+        // Correct decision token, no principal — isolates the principal
+        // check from the (separate, already-passing) token gate.
+        &[("x-tack-decision-token", TEST_DECISION_TOKEN)],
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -565,7 +593,13 @@ async fn self_resolution_via_a_valid_runner_bearer_credential_is_denied_and_writ
         &app,
         &resolve_uri(&attempt_id, "dec-1"),
         json!({"answer": {"option_id": "allow_once", "text": null}}),
-        &[("authorization", auth_header.as_str())],
+        // Correct decision token (proving the token gate alone is not what
+        // stops this credential) plus the runner's own bearer credential in
+        // `authorization` instead of `x-tack-principal`.
+        &[
+            ("x-tack-decision-token", TEST_DECISION_TOKEN),
+            ("authorization", auth_header.as_str()),
+        ],
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -883,6 +917,96 @@ async fn logs_never_contain_the_raw_answer_text_or_prompt_only_ids() {
         log_text.contains("dec-1"),
         "log output should still carry the decision id"
     );
+}
+
+// ---------------------------------------------------------------------
+// 18/19/20. III-F6 amendment: TACK_EXECUTION_DECISION_TOKEN is fail-closed,
+// distinct from and layered on top of the ordinary operator principal gate.
+// ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn an_unconfigured_decision_token_rejects_every_resolve_and_writes_nothing() {
+    let (repo, clock, item_id) = setup().await;
+    let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "no-token-configured").await;
+    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
+    // No `TACK_EXECUTION_DECISION_TOKEN` configured on this server at all —
+    // the fail-closed default (see `require_decision_token`'s doc comment:
+    // "no secret configured" must never mean "anyone holding the ordinary
+    // API token can").
+    let app = app_without_decision_token(&repo, &clock);
+
+    // Even a perfectly well-formed operator principal cannot help here —
+    // the token gate runs first and there is no token to ever satisfy.
+    let (status, body) = send(
+        &app,
+        &resolve_uri(&attempt_id, "dec-1"),
+        json!({"answer": {"option_id": "allow_once", "text": null}}),
+        OPERATOR,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["error"]["code"], "forbidden");
+    assert_eq!(body["error"]["details"]["required_scope"], "operator:decisions");
+
+    let row = decision_row(&repo, &attempt_id, "dec-1").await;
+    assert_eq!(row.state, "pending");
+    assert!(row.resolved_by.is_none());
+    assert!(row.answer.is_none());
+}
+
+#[tokio::test]
+async fn a_wrong_decision_token_rejects_the_resolve_and_writes_nothing() {
+    let (repo, clock, item_id) = setup().await;
+    let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "wrong-token").await;
+    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
+    let app = app(&repo, &clock);
+
+    let (status, body) = send(
+        &app,
+        &resolve_uri(&attempt_id, "dec-1"),
+        json!({"answer": {"option_id": "allow_once", "text": null}}),
+        &[
+            ("x-tack-principal", "operator:local"),
+            ("x-tack-decision-token", "definitely-not-the-configured-token"),
+        ],
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["error"]["code"], "forbidden");
+    assert_eq!(body["error"]["details"]["required_scope"], "operator:decisions");
+
+    let row = decision_row(&repo, &attempt_id, "dec-1").await;
+    assert_eq!(
+        row.state, "pending",
+        "a wrong decision token must never resolve the decision"
+    );
+    assert!(row.resolved_by.is_none());
+    assert!(row.answer.is_none());
+}
+
+#[tokio::test]
+async fn the_correct_decision_token_alongside_a_valid_principal_resolves() {
+    let (repo, clock, item_id) = setup().await;
+    let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "correct-token").await;
+    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
+    let app = app(&repo, &clock);
+
+    // `OPERATOR` carries both the operator principal and the exact
+    // `TEST_DECISION_TOKEN` the router above was constructed with.
+    let (status, body) = send(
+        &app,
+        &resolve_uri(&attempt_id, "dec-1"),
+        json!({"answer": {"option_id": "allow_once", "text": null}}),
+        OPERATOR,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["state"], "resolved");
+
+    let row = decision_row(&repo, &attempt_id, "dec-1").await;
+    assert_eq!(row.state, "resolved");
+    assert!(row.resolved_by.is_some());
+    assert!(row.answer.is_some());
 }
 
 // ---------------------------------------------------------------------

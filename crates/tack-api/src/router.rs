@@ -20,9 +20,9 @@ use crate::debug;
 #[cfg(feature = "embed-spa")]
 use crate::handlers::spa;
 use crate::handlers::{
-    alexa, attachments, backup, boards_multi, comments, custom_fields, dependencies, executions,
-    export, import_github, import_linear, items, orch, projects, provisioning, roles, runner_admin,
-    runner_protocol, settings, sprints, templates, websocket,
+    alexa, attachments, backup, boards_multi, comments, custom_fields, decisions, dependencies,
+    executions, export, import_github, import_linear, items, orch, projects, provisioning, roles,
+    runner_admin, runner_protocol, settings, sprints, templates, websocket,
 };
 use crate::middleware::{inject_operator_principal, require_token};
 use crate::orch_runtime::OrchRuntime;
@@ -138,15 +138,22 @@ fn orch_routes(state: AppState) -> Router<AppState> {
 /// Card C1's operator execution/fleet routes — `/api/executions`,
 /// `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles`,
 /// `/api/model-profiles` (`crate::handlers::executions`,
-/// `crate::handlers::runner_admin`). Both card-local routers already call
-/// `with_state` internally (per their own `pub fn routes(state) -> Router`
-/// signature), producing a fully-resolved `Router<()>`; this re-labels that
-/// "no state missing" router's phantom type parameter to `AppState` via a
-/// second `with_state` call — the officially documented pattern for merging
-/// routers whose state types differ (see `axum::Router::merge`'s own doc
-/// example) — so it can be flat-`merge`d into `api` below at the same level
-/// as every other `/api/*` route, rather than nested under an extra path
-/// segment neither card chose.
+/// `crate::handlers::runner_admin`) — plus two Wave 5 additions mounted the
+/// same way: III-F1's decision resolution (`crate::handlers::decisions`) and
+/// III-F2's operator artifact download
+/// (`crate::handlers::runner_protocol::artifact_download`), both of which
+/// shipped as deliberately unwired card-local modules with a suggested
+/// integration snippet in their own doc comments — this function is the
+/// Wave 5 integrator (III-F6) performing that integration. Every card-local
+/// router already calls `with_state` internally (per its own `pub fn
+/// routes(state) -> Router` signature), producing a fully-resolved
+/// `Router<()>`; this re-labels that "no state missing" router's phantom
+/// type parameter to `AppState` via a second `with_state` call — the
+/// officially documented pattern for merging routers whose state types
+/// differ (see `axum::Router::merge`'s own doc example) — so it can be
+/// flat-`merge`d into `api` below at the same level as every other `/api/*`
+/// route, rather than nested under an extra path segment neither card
+/// chose.
 ///
 /// Merged into `api` *before* `require_token` is layered on, so these
 /// routes share the same operator authentication as the rest of `/api/*`
@@ -156,14 +163,44 @@ fn orch_routes(state: AppState) -> Router<AppState> {
 /// `middleware.rs`) is layered directly on this sub-router so it runs for
 /// every request these handlers see, strips any client-supplied
 /// `x-tack-principal`, and replaces it with a value derived from the
-/// request's own authenticated context — C1's handlers trust that header
-/// completely for idempotency/audit scoping, so an external caller must
-/// never be able to set it.
+/// request's own authenticated context — C1's handlers (and, as of this
+/// integration, F1's/F2's) trust that header completely for idempotency/
+/// audit scoping, so an external caller must never be able to set it.
+///
+/// **F1's decision-resolve route carries a second, independent gate on top**
+/// (`TACK_EXECUTION_DECISION_TOKEN`, checked inside
+/// `decisions::require_decision_token` — see that function's doc comment):
+/// an integrator security decision (III-F6) that resolves the gap F1's own
+/// handoff flagged and declined to decide unilaterally
+/// (`docs/contracts/runner-v1/protocol.json` names decision resolution a
+/// `"separately_scoped_operator_credential"`, distinct from the plain
+/// operator gate every other route here uses). Mirrors
+/// `handlers::orch::require_approval_token`/`TACK_ORCH_APPROVAL_TOKEN`
+/// exactly, including its fail-closed-when-unset default.
+///
+/// F2's artifact-download route points at the same operator-configured
+/// `TACK_STORAGE_DIR`-derived storage root as `runner_protocol_routes`'s own
+/// artifact storage below, per F2's own recorded wiring request ("same
+/// storage root as request 1, for consistency").
 fn operator_execution_routes(state: &AppState) -> Router<AppState> {
     let clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
     let operator_state = executions::OperatorExecutionState::with_clock(state.repo.clone(), clock);
+    let decision_clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
+    let decision_state =
+        decisions::DecisionOperatorState::with_clock(state.repo.clone(), decision_clock)
+            .with_decision_token(state.config.execution_decision_token.clone());
+    let artifact_download_state = runner_protocol::artifact_download::ArtifactDownloadState {
+        repo: state.repo.clone(),
+        artifact_storage: Arc::new(runner_protocol::artifact_storage::ArtifactStorage::new(
+            format!("{}/execution-artifacts", state.config.storage_dir),
+        )),
+    };
     executions::routes(operator_state.clone())
         .merge(runner_admin::routes(operator_state))
+        .merge(decisions::routes(decision_state))
+        .merge(runner_protocol::artifact_download::routes(
+            artifact_download_state,
+        ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             inject_operator_principal,
@@ -202,9 +239,17 @@ fn operator_execution_routes(state: &AppState) -> Router<AppState> {
 /// ceiling. Re-labelled to `Router<AppState>` via the same `with_state`
 /// trick as `operator_execution_routes`, so it can be `nest`ed alongside
 /// `api` without an extra `Service`-erasure layer.
+///
+/// Artifact content storage is rooted at the operator-configured
+/// `TACK_STORAGE_DIR` (`state.config.storage_dir`), one level deeper than
+/// attachments (`<storage_dir>/execution-artifacts`) so the two never
+/// collide — fulfilling III-F2's recorded wiring request; without this,
+/// `RunnerProtocolState::new` alone would fall back to a hardcoded,
+/// process-CWD-relative default (see its own doc comment).
 fn runner_protocol_routes(state: &AppState) -> Router<AppState> {
     let clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
-    let runner_state = runner_protocol::RunnerProtocolState::new(state.repo.clone(), clock);
+    let runner_state = runner_protocol::RunnerProtocolState::new(state.repo.clone(), clock)
+        .with_artifact_storage_root(format!("{}/execution-artifacts", state.config.storage_dir));
     runner_protocol::routes(runner_state, state.config.max_body_size_bytes)
         .with_state::<AppState>(())
 }

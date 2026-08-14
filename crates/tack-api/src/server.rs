@@ -165,15 +165,18 @@ pub async fn serve() -> anyhow::Result<()> {
 
     // Start the execution-domain retention sweep + health watch (card
     // III-F5, Wave 5) — two independently-gated cancellable background
-    // tasks (`TACK_EXECUTION_RETENTION_ENABLE`/`TACK_EXECUTION_HEALTH_ENABLE`,
-    // both on by default: unlike the orchestration reconciler above, neither
-    // makes an outbound call or exposes new API surface, so the safer
-    // default is "don't let an unattended install grow these tables
-    // forever" rather than opt-in). See `execution_runtime.rs`'s own doc
-    // comment for why this isn't stored on `AppState`: `stop()` is called
-    // once below, after the HTTP server itself has already stopped
-    // accepting requests, and nothing in the current API surface needs to
-    // toggle it at runtime.
+    // tasks (`TACK_EXECUTION_RETENTION_ENABLE`/`TACK_EXECUTION_HEALTH_ENABLE`).
+    // Health defaults on (read-only: no outbound call, no new API surface,
+    // just logging a `warn!` on a stale lease/`needs_operator` request).
+    // Retention defaults **off** (Wave 5 integrator III-F6 amendment — F5's
+    // own original default was `true`; see
+    // `config.rs#default_execution_retention_enable`'s doc comment): it
+    // deletes rows, so — unlike health — it needs an explicit operator
+    // opt-in, the same posture `TACK_ORCH_ENABLE` already establishes for
+    // this codebase. See `execution_runtime.rs`'s own doc comment for why
+    // this isn't stored on `AppState`: `stop()` is called once below, after
+    // the HTTP server itself has already stopped accepting requests, and
+    // nothing in the current API surface needs to toggle it at runtime.
     let execution_runtime = crate::execution_runtime::ExecutionRuntime::new();
     execution_runtime
         .start(state.repo.clone(), (&config).into())

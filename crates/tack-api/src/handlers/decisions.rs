@@ -13,10 +13,27 @@
 //! rationale):
 //!
 //! ```ignore
-//! let decision_state = decisions::DecisionOperatorState::with_clock(state.repo.clone(), clock);
+//! let decision_state = decisions::DecisionOperatorState::with_clock(state.repo.clone(), clock)
+//!     .with_decision_token(state.config.execution_decision_token.clone());
 //! decisions::routes(decision_state)
 //!     .layer(middleware::from_fn_with_state(state.clone(), inject_operator_principal))
 //! ```
+//!
+//! # III-F6 amendment: `TACK_EXECUTION_DECISION_TOKEN`
+//!
+//! The Wave 5 integrator (III-F6) added [`require_decision_token`], mirroring
+//! `handlers::orch::require_approval_token` exactly, to close the gap this
+//! card's own handoff flagged and deliberately declined to decide
+//! unilaterally: `docs/contracts/runner-v1/protocol.json` names decision
+//! resolution a `"separately_scoped_operator_credential"` (distinct from the
+//! plain `operator_session_or_api_token` every other operator route uses),
+//! and `errors/forbidden.json`'s frozen example carries
+//! `"required_scope":"operator:decisions"`. `TACK_EXECUTION_DECISION_TOKEN`
+//! is that second, independent credential — checked here, on top of (not
+//! instead of) the `x-tack-principal` check below, fail-closed when unset
+//! exactly like `TACK_ORCH_APPROVAL_TOKEN`. See `require_decision_token`'s
+//! own doc comment for the full rationale and `CLAUDE.md`'s config table for
+//! the environment variable.
 //!
 //! # Security boundary: runner may raise/read, never resolve
 //!
@@ -104,11 +121,34 @@ const DECISION_ANSWER_BYTES_MAX: u64 = 32_768;
 pub struct DecisionOperatorState {
     pub repo: Repository,
     pub clock: Arc<dyn ExecutionClock>,
+    /// `TACK_EXECUTION_DECISION_TOKEN` (III-F6 amendment). `None` means
+    /// "not configured on this server" — the fail-closed default, same
+    /// posture as `AppState::config.orch_approval_token` before
+    /// `handlers::orch::require_approval_token` ever compares anything. See
+    /// [`require_decision_token`].
+    pub decision_token: Option<String>,
 }
 
 impl DecisionOperatorState {
+    /// `decision_token` defaults to `None` (fail-closed) — a caller must
+    /// opt in via [`Self::with_decision_token`] to ever allow a resolve
+    /// through, matching this card's original two-argument constructor so
+    /// no existing call site silently starts granting more than it did
+    /// before this amendment.
     pub fn with_clock(repo: Repository, clock: Arc<dyn ExecutionClock>) -> Self {
-        Self { repo, clock }
+        Self {
+            repo,
+            clock,
+            decision_token: None,
+        }
+    }
+
+    /// Builder, mirroring `runner_protocol::RunnerProtocolState::with_artifact_storage_root`'s
+    /// established convention for an additive, post-construction config
+    /// value (III-F2).
+    pub fn with_decision_token(mut self, token: Option<String>) -> Self {
+        self.decision_token = token;
+        self
     }
 }
 
@@ -142,6 +182,84 @@ fn internal_error() -> (StatusCode, Json<Value>) {
         "Could not resolve decision",
         json!({}),
     )
+}
+
+/// Header carrying the operator's `TACK_EXECUTION_DECISION_TOKEN` on a
+/// decision-resolution request (III-F6 amendment). Deliberately not
+/// `Authorization` (already spoken for by the ordinary `TACK_API_TOKEN`
+/// Bearer gate — this is a second, independent credential, not a
+/// replacement for it) and deliberately a header, not a request-body field,
+/// mirroring `handlers::orch::APPROVAL_TOKEN_HEADER` exactly — so it never
+/// ends up echoed into a JSON log line the way a body field might.
+pub const DECISION_TOKEN_HEADER: &str = "x-tack-decision-token";
+
+/// Byte-wise constant-time equality, duplicated verbatim from
+/// `crate::middleware::constant_time_eq` rather than imported — this module
+/// is loaded standalone via `#[path]` in `f1_decisions_test.rs` (a separate
+/// test-binary crate root with no `middleware` module of its own; see this
+/// file's own module doc comment on why it stays deliberately decoupled from
+/// other files), so a `crate::middleware::...` path would fail to resolve
+/// there even though it resolves fine once this module is wired into the
+/// real crate. Same reasoning as this file's existing
+/// `canonical_json`/`canonical_string` duplication of `executions.rs`'s
+/// identical pair.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    std::hint::black_box(
+        a.iter()
+            .zip(b.iter())
+            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+            == 0,
+    )
+}
+
+/// Resolving a decision releases whatever the harness/runner is blocked on
+/// — a materially higher-privilege action than the ordinary operator
+/// `x-tack-principal` gate already covers (which only proves "this caller
+/// cleared `require_token`"), exactly the same argument
+/// `handlers::orch::require_approval_token`'s doc comment makes for granting
+/// a docket approval. This function mirrors that one's implementation and
+/// rationale exactly, including the safe-default direction:
+///
+/// **The safe default when `TACK_EXECUTION_DECISION_TOKEN` is unset: always
+/// reject.** There is deliberately no "no secret configured, so skip the
+/// check" branch the way `middleware::require_token`'s ordinary Bearer gate
+/// has for an unset `TACK_API_TOKEN` ("pure-local mode, allow everything").
+/// An unconfigured `TACK_EXECUTION_DECISION_TOKEN` must mean "nothing on
+/// this server is configured to resolve a decision" — never "anyone holding
+/// the ordinary API token can."
+///
+/// The error details carry `required_scope: "operator:decisions"`, matching
+/// `docs/contracts/runner-v1/errors/forbidden.json`'s frozen example
+/// byte-for-byte in shape — this is the real, separately-scoped credential
+/// that fixture's wording called for (see the module doc comment's "III-F6
+/// amendment" section).
+fn require_decision_token(
+    state: &DecisionOperatorState,
+    headers: &HeaderMap,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    let Some(expected) = &state.decision_token else {
+        return Err(error(
+            StatusCode::FORBIDDEN,
+            StableErrorCode::Forbidden,
+            "resolving a decision requires TACK_EXECUTION_DECISION_TOKEN to be configured on this server",
+            json!({"required_scope": "operator:decisions"}),
+        ));
+    };
+    let provided = headers
+        .get(DECISION_TOKEN_HEADER)
+        .and_then(|value| value.to_str().ok());
+    match provided {
+        Some(token) if constant_time_eq(token.as_bytes(), expected.as_bytes()) => Ok(()),
+        _ => Err(error(
+            StatusCode::FORBIDDEN,
+            StableErrorCode::Forbidden,
+            &format!("missing or invalid {DECISION_TOKEN_HEADER} header"),
+            json!({"required_scope": "operator:decisions"}),
+        )),
+    }
 }
 
 /// Reads the operator principal `inject_operator_principal` (`middleware.rs`)
@@ -491,6 +609,7 @@ pub async fn resolve_decision(
     Path((attempt_id, decision_id)): Path<(String, String)>,
     body: Bytes,
 ) -> Result<Json<ResolveDecisionResponse>, (StatusCode, Json<Value>)> {
+    require_decision_token(&state, &headers)?;
     let principal_id = principal(&headers)?;
 
     let value: Value = serde_json::from_slice(&body).map_err(|_| {
