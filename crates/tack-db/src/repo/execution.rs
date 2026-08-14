@@ -2869,6 +2869,66 @@ impl Repository {
         Ok(result.rows_affected())
     }
 
+    /// III-F6d: conditional counterpart to
+    /// [`Repository::delete_execution_artifacts_by_row_ids`], scoped to rows
+    /// whose `content_reference` is *still* `NULL` — i.e. rows the caller
+    /// observed at list-time (`list_execution_artifacts_older_than`) as
+    /// having no blob to unlink.
+    ///
+    /// # Why this exists: the race the plain by-id delete cannot see
+    ///
+    /// `set_execution_artifact_content_reference`'s own `UPDATE` is guarded
+    /// `WHERE content_reference IS NULL`, so once a row's reference is set it
+    /// can never change again — a row observed with `Some(reference)` at
+    /// list-time is safe to delete unconditionally by id (this crate's
+    /// existing method already does that correctly). But a row observed with
+    /// `None` can race: a runner's real content upload
+    /// (`put_artifact_content` → `store_streaming` then this same
+    /// `set_execution_artifact_content_reference` call) can land *between*
+    /// the sweep's read and its delete, writing a real blob to disk and
+    /// setting `content_reference` — and an unconditional
+    /// `delete_execution_artifacts_by_row_ids` would still delete that row
+    /// despite the fresh blob, permanently orphaning it (nothing will ever
+    /// reference it again once the row is gone). This method closes that
+    /// window to the width of one atomic SQL statement (no separate read
+    /// step here to race against) by re-checking `content_reference IS NULL`
+    /// as part of the same `DELETE`: a row that raced past `NULL` in the
+    /// meantime simply is not matched and survives this pass, to be picked
+    /// up correctly (blob removed, then deleted) on the next one, once its
+    /// `content_reference` is visible as `Some` to a fresh
+    /// `list_execution_artifacts_older_than` read.
+    ///
+    /// See `handlers/runner_protocol/retention.rs::sweep_artifacts` (the
+    /// only caller) for how the two delete methods are split across a listed
+    /// batch, and `crates/tack-db/tests/f2_event_artifact_retention_test.rs`
+    /// for the deterministic proof of both this guard's effect and what the
+    /// unconditional method would have done to the same racing row.
+    #[instrument(skip(self, ids))]
+    pub async fn delete_unresolved_execution_artifacts_by_row_ids(
+        &self,
+        ids: &[String],
+    ) -> Result<u64, sqlx::Error> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let mut query = String::from(
+            "DELETE FROM execution_artifacts WHERE content_reference IS NULL AND id IN (",
+        );
+        for (index, _) in ids.iter().enumerate() {
+            if index > 0 {
+                query.push(',');
+            }
+            query.push('?');
+        }
+        query.push(')');
+        let mut built = sqlx::query(&query);
+        for id in ids {
+            built = built.bind(id);
+        }
+        let result = built.execute(self.pool()).await?;
+        Ok(result.rows_affected())
+    }
+
     #[instrument(skip(self, decision, clock))]
     pub async fn create_execution_decision(
         &self,
