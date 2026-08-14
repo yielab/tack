@@ -163,13 +163,19 @@ pub async fn serve() -> anyhow::Result<()> {
         );
     }
 
-    // Start the execution-domain retention sweep + health watch (card
-    // III-F5, Wave 5) — two independently-gated cancellable background
-    // tasks (`TACK_EXECUTION_RETENTION_ENABLE`/`TACK_EXECUTION_HEALTH_ENABLE`).
-    // Health defaults on (read-only: no outbound call, no new API surface,
-    // just logging a `warn!` on a stale lease/`needs_operator` request).
-    // Retention defaults **off** (Wave 5 integrator III-F6 amendment — F5's
-    // own original default was `true`; see
+    // Start the execution-domain retention sweep, the artifact/event sweep +
+    // decision-expiry sweep, and the health watch (cards III-F5/III-F2/III-F1,
+    // wired together by the Wave 5 integrator, III-F6d) — three cancellable
+    // background tasks gated by two flags
+    // (`TACK_EXECUTION_RETENTION_ENABLE`/`TACK_EXECUTION_HEALTH_ENABLE`): the
+    // artifact/event/decision sweep shares `retention_enable` with the
+    // replay/idempotency purge above it, on purpose — see
+    // `execution_runtime.rs::spawn_artifact_and_decision_sweep`'s own doc
+    // comment for why artifact deletion must never be gated any more loosely
+    // than that purge already is. Health defaults on (read-only: no outbound
+    // call, no new API surface, just logging a `warn!` on a stale
+    // lease/`needs_operator` request). Retention defaults **off** (Wave 5
+    // integrator III-F6 amendment — F5's own original default was `true`; see
     // `config.rs#default_execution_retention_enable`'s doc comment): it
     // deletes rows, so — unlike health — it needs an explicit operator
     // opt-in, the same posture `TACK_ORCH_ENABLE` already establishes for

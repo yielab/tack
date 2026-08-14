@@ -10,7 +10,7 @@ use std::sync::Mutex;
 
 use chrono::{DateTime, Duration, Utc};
 use tack_db::{
-    Repository,
+    Repository, init_pool, migrations,
     repo::execution::{
         ArtifactContentCommitResult, AttemptTransitionInput, AttemptTransitionPhase,
         EventApplyResult, EventBatch, ExecutionClock, NewAgentProfile, NewArtifact, NewEvent,
@@ -37,7 +37,15 @@ impl ExecutionClock for FakeClock {
 }
 
 async fn ready_repo() -> (Repository, String, FakeClock) {
-    let repo = common::setup_test_db().await;
+    ready_repo_on(common::setup_test_db().await).await
+}
+
+/// Same seeding as [`ready_repo`], parameterized over an already-constructed
+/// `Repository` — lets the III-F6d race tests below point it at a
+/// *file-backed* pool instead (CLAUDE.md: "prove any new concurrency test
+/// load-bearing against a file-backed DB"), without duplicating this whole
+/// seeding block.
+async fn ready_repo_on(repo: Repository) -> (Repository, String, FakeClock) {
     let workspace = common::create_test_workspace(&repo).await;
     let project = common::make_project(&repo, workspace).await;
     let item = common::make_item(&repo, &project).await;
@@ -70,6 +78,31 @@ async fn ready_repo() -> (Repository, String, FakeClock) {
     .await
     .unwrap();
     (repo, item.id.to_string(), clock)
+}
+
+/// File-backed pool (WAL, `mode=rwc` — the same setup production uses),
+/// matching `execution_retention_test.rs`'s own
+/// `concurrent_purges_never_deadlock_against_a_file_backed_database` /
+/// `execution_repo_test.rs`'s `defect2`-style race tests. A shared in-memory
+/// pool can mask a race that only shows up against real file I/O and
+/// locking — CLAUDE.md's own warning about this exact class of test.
+async fn file_backed_repo(label: &str) -> (Repository, std::path::PathBuf) {
+    let db_path = std::env::temp_dir().join(format!(
+        "tack-db-f6d-artifact-race-{label}-{}-{}.db",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let pool = init_pool(&format!("sqlite://{}?mode=rwc", db_path.display()))
+        .await
+        .expect("file-backed pool");
+    migrations::run_all(&pool).await.expect("migrations");
+    (Repository::new(pool), db_path)
+}
+
+fn remove_file_backed_db(db_path: &std::path::Path) {
+    let _ = std::fs::remove_file(db_path);
+    let _ = std::fs::remove_file(format!("{}-wal", db_path.display()));
+    let _ = std::fs::remove_file(format!("{}-shm", db_path.display()));
 }
 
 fn request<'a>(id: &'a str, item_id: &'a str, key: &'a str) -> NewExecutionRequest<'a> {
@@ -678,6 +711,295 @@ async fn delete_execution_artifacts_by_row_ids_is_a_no_op_on_an_empty_list() {
     let repo = common::setup_test_db().await;
     let deleted = repo
         .delete_execution_artifacts_by_row_ids(&[])
+        .await
+        .unwrap();
+    assert_eq!(deleted, 0);
+}
+
+// ---------------------------------------------------------------------
+// III-F6d: the concurrent-upload race
+// `delete_unresolved_execution_artifacts_by_row_ids` closes.
+//
+// `sweep_artifacts` (`crates/tack-api/src/handlers/runner_protocol/retention.rs`)
+// lists expired manifest rows, then deletes them. A row observed with
+// `content_reference: None` at list-time cannot safely be deleted by the
+// plain by-id method afterward: a real artifact-content upload
+// (`put_artifact_content` -> `store_streaming` then
+// `set_execution_artifact_content_reference`) can land between the read and
+// the delete, writing a real blob to disk and setting the reference — an
+// unconditional delete would still remove the row, permanently orphaning
+// that just-written blob (nothing will ever reference it again once the row
+// is gone). These tests exercise the two repository primitives directly, in
+// the exact interleaved order that race requires: list, then the concurrent
+// update (simulated by a direct call — the property under test is "does the
+// delete re-check state," not "who wins a thread-scheduling race," so a
+// deterministic call sequence is a faithful, non-flaky reproduction), then
+// delete. Run against a *file-backed* database per CLAUDE.md's own
+// instruction for concurrency-adjacent tests.
+// ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn delete_unresolved_execution_artifacts_by_row_ids_skips_a_row_resolved_concurrently() {
+    let (file_repo, db_path) = file_backed_repo("guard-skips").await;
+    let (repo, item_id, clock) = ready_repo_on(file_repo).await;
+    let fence = ready_running_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-race-guard",
+        "attempt-race-guard",
+    )
+    .await;
+
+    repo.record_execution_artifact(
+        "runner-f2",
+        "attempt-race-guard",
+        fence,
+        NewArtifact {
+            id: "art-row-race-guard",
+            artifact_id: "art-race-guard",
+            kind: "patch",
+            name: "race.patch",
+            media_type: Some("text/x-diff"),
+            size_bytes: 4,
+            sha256: &"4".repeat(64),
+            content_disposition: Some("inline_upload"),
+            // No content yet — exactly the "manifest created, upload not
+            // finished" state `sweep_artifacts` must treat as racy.
+            content_reference: None,
+            metadata: "{}",
+        },
+        &clock,
+    )
+    .await
+    .unwrap();
+    // Backdate so it is what the sweep's `list_execution_artifacts_older_than`
+    // would pick up.
+    sqlx::query(
+        "UPDATE execution_artifacts SET created_at = ? WHERE attempt_id = 'attempt-race-guard' AND artifact_id = 'art-race-guard'",
+    )
+    .bind((clock.now() - Duration::days(2)).to_rfc3339())
+    .execute(repo.pool())
+    .await
+    .unwrap();
+    let cutoff = clock.now() - Duration::days(1);
+
+    // Step 1: the sweep's read.
+    let expired = repo
+        .list_execution_artifacts_older_than(cutoff, 100)
+        .await
+        .unwrap();
+    assert_eq!(expired.len(), 1);
+    assert_eq!(expired[0].content_reference, None);
+    let ids: Vec<String> = expired.iter().map(|row| row.id.clone()).collect();
+
+    // Step 2: the race — a real content upload lands, exactly as
+    // `put_artifact_content` would call it, between the read above and the
+    // delete below.
+    let result = repo
+        .set_execution_artifact_content_reference(
+            "runner-f2",
+            "attempt-race-guard",
+            "art-race-guard",
+            fence,
+            "attempt-race-guard-hex/real-upload.blob",
+            &clock,
+        )
+        .await
+        .unwrap();
+    assert_eq!(result, ArtifactContentCommitResult::Committed);
+
+    // Step 3: the sweep's guarded delete — must skip this row now that its
+    // content_reference is no longer NULL.
+    let deleted = repo
+        .delete_unresolved_execution_artifacts_by_row_ids(&ids)
+        .await
+        .unwrap();
+    assert_eq!(
+        deleted, 0,
+        "a row whose content_reference was set concurrently must survive this pass"
+    );
+
+    let stored_reference: Option<String> = sqlx::query_scalar(
+        "SELECT content_reference FROM execution_artifacts WHERE attempt_id='attempt-race-guard' AND artifact_id='art-race-guard'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(
+        stored_reference,
+        Some("attempt-race-guard-hex/real-upload.blob".to_string()),
+        "the row — and the fresh reference the race just wrote — must still be there"
+    );
+
+    remove_file_backed_db(&db_path);
+}
+
+/// Load-bearing counter-proof: the *old*, unconditional
+/// `delete_execution_artifacts_by_row_ids` — still present and still
+/// correctly used for the "blob already resolved and removed" branch of
+/// `sweep_artifacts` — applied to the identical racing setup *would* have
+/// deleted the row despite its freshly-set `content_reference`, permanently
+/// orphaning the blob the concurrent upload just wrote. This is the exact
+/// defect `delete_unresolved_execution_artifacts_by_row_ids`'s guard exists
+/// to close; this test pins the pre-guard behavior so a future edit cannot
+/// silently widen the unconditional method's use back onto this branch.
+#[tokio::test]
+async fn unconditional_delete_would_have_orphaned_the_racily_resolved_row() {
+    let (file_repo, db_path) = file_backed_repo("guard-counterexample").await;
+    let (repo, item_id, clock) = ready_repo_on(file_repo).await;
+    let fence = ready_running_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-race-counterexample",
+        "attempt-race-counterexample",
+    )
+    .await;
+
+    repo.record_execution_artifact(
+        "runner-f2",
+        "attempt-race-counterexample",
+        fence,
+        NewArtifact {
+            id: "art-row-race-counterexample",
+            artifact_id: "art-race-counterexample",
+            kind: "patch",
+            name: "race.patch",
+            media_type: Some("text/x-diff"),
+            size_bytes: 4,
+            sha256: &"5".repeat(64),
+            content_disposition: Some("inline_upload"),
+            content_reference: None,
+            metadata: "{}",
+        },
+        &clock,
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE execution_artifacts SET created_at = ? WHERE attempt_id = 'attempt-race-counterexample' AND artifact_id = 'art-race-counterexample'",
+    )
+    .bind((clock.now() - Duration::days(2)).to_rfc3339())
+    .execute(repo.pool())
+    .await
+    .unwrap();
+    let cutoff = clock.now() - Duration::days(1);
+
+    let expired = repo
+        .list_execution_artifacts_older_than(cutoff, 100)
+        .await
+        .unwrap();
+    let ids: Vec<String> = expired.iter().map(|row| row.id.clone()).collect();
+
+    let result = repo
+        .set_execution_artifact_content_reference(
+            "runner-f2",
+            "attempt-race-counterexample",
+            "art-race-counterexample",
+            fence,
+            "attempt-race-counterexample-hex/real-upload.blob",
+            &clock,
+        )
+        .await
+        .unwrap();
+    assert_eq!(result, ArtifactContentCommitResult::Committed);
+
+    // The *unconditional* method — used unmodified today for the
+    // already-resolved branch — applied here instead of the guarded one.
+    let deleted = repo
+        .delete_execution_artifacts_by_row_ids(&ids)
+        .await
+        .unwrap();
+    assert_eq!(
+        deleted, 1,
+        "demonstrates the defect: the unconditional delete removes the row \
+         even though a real upload just set its content_reference — exactly \
+         why sweep_artifacts must not use this method for rows observed \
+         with content_reference: None at list-time"
+    );
+
+    remove_file_backed_db(&db_path);
+}
+
+/// Control: with no race, the guarded method still deletes an unresolved row
+/// exactly as the unconditional one would — the guard narrows *when* a
+/// delete happens, it does not make deletion of a genuinely-still-`NULL` row
+/// impossible.
+#[tokio::test]
+async fn delete_unresolved_execution_artifacts_by_row_ids_deletes_when_nothing_raced() {
+    let (file_repo, db_path) = file_backed_repo("guard-no-race").await;
+    let (repo, item_id, clock) = ready_repo_on(file_repo).await;
+    let fence = ready_running_attempt(
+        &repo,
+        &item_id,
+        &clock,
+        "request-race-none",
+        "attempt-race-none",
+    )
+    .await;
+
+    repo.record_execution_artifact(
+        "runner-f2",
+        "attempt-race-none",
+        fence,
+        NewArtifact {
+            id: "art-row-race-none",
+            artifact_id: "art-race-none",
+            kind: "patch",
+            name: "none.patch",
+            media_type: Some("text/x-diff"),
+            size_bytes: 4,
+            sha256: &"6".repeat(64),
+            content_disposition: Some("inline_upload"),
+            content_reference: None,
+            metadata: "{}",
+        },
+        &clock,
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE execution_artifacts SET created_at = ? WHERE attempt_id = 'attempt-race-none' AND artifact_id = 'art-race-none'",
+    )
+    .bind((clock.now() - Duration::days(2)).to_rfc3339())
+    .execute(repo.pool())
+    .await
+    .unwrap();
+    let cutoff = clock.now() - Duration::days(1);
+
+    let expired = repo
+        .list_execution_artifacts_older_than(cutoff, 100)
+        .await
+        .unwrap();
+    let ids: Vec<String> = expired.iter().map(|row| row.id.clone()).collect();
+
+    // No concurrent upload this time.
+    let deleted = repo
+        .delete_unresolved_execution_artifacts_by_row_ids(&ids)
+        .await
+        .unwrap();
+    assert_eq!(
+        deleted, 1,
+        "an unresolved row with no race must still be purged"
+    );
+
+    let remaining: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_artifacts WHERE attempt_id='attempt-race-none'",
+    )
+    .fetch_one(repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(remaining, 0);
+
+    remove_file_backed_db(&db_path);
+}
+
+#[tokio::test]
+async fn delete_unresolved_execution_artifacts_by_row_ids_is_a_no_op_on_an_empty_list() {
+    let repo = common::setup_test_db().await;
+    let deleted = repo
+        .delete_unresolved_execution_artifacts_by_row_ids(&[])
         .await
         .unwrap();
     assert_eq!(deleted, 0);
