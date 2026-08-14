@@ -7,10 +7,19 @@
 //! `/api` surface, which means the actual mounting touches `router.rs`/
 //! `handlers/mod.rs` — both off-limits to this card. So, per this card's own
 //! brief ("If a route must be mounted ... write the handler in your own
-//! module and record the wiring request in your handoff"), this module is
-//! self-contained and only proven via [`routes`]'s own locally-constructed
-//! router in this card's test file. The recorded wiring request (path,
-//! auth expectations) is in `docs/agent-handoffs/part-iii/III-F2.md`.
+//! module and record the wiring request in your handoff"), this module was
+//! written self-contained, and III-F2 proved it only via [`routes`]'s own
+//! locally-constructed router. The recorded wiring request (path, auth
+//! expectations) is in `docs/agent-handoffs/part-iii/III-F2.md`.
+//!
+//! **Amendment (III-F6/F6a):** that request has since been granted — the
+//! Wave 5 integrator mounted [`routes`] under the real operator surface in
+//! `router.rs#operator_execution_routes` as
+//! `GET /api/executions/{request_id}/attempts/{attempt_number}/artifacts/{artifact_id}/content`,
+//! sharing the `TACK_STORAGE_DIR`-derived artifact root with
+//! `runner_protocol_routes`. `crates/tack-api/tests/f6a_artifact_wiring_test.rs`
+//! proves the mount through the real `build_router` and was verified
+//! load-bearing by unmounting it and watching the test 404.
 //!
 //! Nested under `runner_protocol/` (a submodule of an already-registered
 //! file) purely so it is reachable without touching `handlers/mod.rs` — see
@@ -97,8 +106,10 @@ fn principal(headers: &HeaderMap) -> Result<String, Box<Response>> {
         })
 }
 
-/// Test-only / integrator-preview router. Production mounting is a recorded
-/// wiring request (see this module's own doc comment), not performed here.
+/// Operator-facing artifact-download router. Mounted in production by
+/// `router.rs#operator_execution_routes` (III-F6), inside the `require_token`
+/// operator surface — never under `runner_protocol_routes`. III-F2 authored
+/// this constructor before the mount existed; see this module's doc comment.
 pub fn routes(state: ArtifactDownloadState) -> Router {
     Router::new()
         .route(
