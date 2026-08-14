@@ -19,6 +19,9 @@ use tack_db::{
     repo::execution::{EnqueueResult, ExecutionClock, NewExecutionRequest, OperatorRequeueResult},
 };
 use tack_orch::execution::{ExecutionRequestSnapshot, ProtocolErrorEnvelope, StableErrorCode};
+use tack_orch::model_policy::wiring::resolve_request_model_policy;
+use tack_orch::scheduler::types::ModelSelector;
+use tack_orch::usage_provenance::derive_attempt_facts;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -175,6 +178,18 @@ fn fingerprint(value: &str) -> String {
     hex::encode(Sha256::digest(value.as_bytes()))
 }
 
+/// Parses a stored `TEXT` timestamp column (always written via
+/// `DateTime::to_rfc3339`, e.g. `execution_attempts.started_at`/`ended_at`)
+/// back into a `DateTime<Utc>`. `None` on a missing or malformed value —
+/// never a panic, matching this file's existing
+/// `DateTime::parse_from_rfc3339` usage above for `request_snapshot`'s
+/// `created_at`.
+fn parse_rfc3339(raw: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(raw)
+        .ok()
+        .map(|value| value.with_timezone(&Utc))
+}
+
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 pub struct CreateExecution {
     pub item_id: Uuid,
@@ -278,6 +293,23 @@ pub struct AttemptSummary {
     pub ended_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// `tack_orch::usage_provenance::ModelProvenance` (`matched` /
+    /// `auto_select_observed` / `mismatched`), or `null` when the attempt
+    /// has not yet reported `actual_execution` — card III-F3's
+    /// `derive_attempt_facts`, wired here by III-F6. Untyped `Value` (not a
+    /// `ToSchema` struct) for the same reason `actual_execution`/
+    /// `terminal_reason` above are: the real type lives in `tack-orch`,
+    /// which does not depend on `utoipa`.
+    pub model_provenance: Option<Value>,
+    /// `tack_orch::usage_provenance::UsageEconomics` — two
+    /// independently-provenanced dollar dimensions, never summed. Absent
+    /// usage/timestamps serialize as `{"value": null, "source":
+    /// "not_measured"}`, never a structural zero (III.2 rule 7); no runner
+    /// infra cost-rate is stored anywhere in this schema today (III-F3
+    /// handoff, "Schema/API/contract change requested" item 2), so
+    /// `runner_time_cost.cost_usd_estimated` is always `not_measured` in
+    /// every real response from this endpoint.
+    pub usage_economics: Value,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -438,6 +470,45 @@ pub async fn create_execution(
             json!({"field": "selector_kind"}),
         ));
     }
+    // Card III-F3 built `resolve_request_model_policy` (request override →
+    // agent-profile default → project default → fleet default →
+    // auto-select) but left it unwired from any live HTTP path — see that
+    // card's handoff, "Schema/API/contract change requested" item 3. Only
+    // resolve when the client expressed no explicit choice: an explicit
+    // `requested_model_provider`/`requested_model_id` pair is itself the
+    // highest-precedence tier (`ModelPolicyTier::RequestOverride`) and must
+    // never be overridden by a lower tier's default.
+    let (resolved_model_provider, resolved_model_id) =
+        if input.requested_model_provider.is_none() && input.requested_model_id.is_none() {
+            let fleet_id = (input.selector_kind == "fleet").then_some(input.selector_id.as_str());
+            let resolved = resolve_request_model_policy(
+                &state.repo,
+                Some(input.agent_profile_id.as_str()),
+                fleet_id,
+                None,
+            )
+            .await
+            .map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not resolve model policy",
+                    json!({}),
+                )
+            })?;
+            match resolved.selector {
+                ModelSelector::AutoSelect => (None, None),
+                ModelSelector::Explicit { provider, model_id } => (
+                    Some(provider.as_str().to_string()),
+                    Some(model_id.as_str().to_string()),
+                ),
+            }
+        } else {
+            (
+                input.requested_model_provider.clone(),
+                input.requested_model_id.clone(),
+            )
+        };
     let (request_id, created_at) = match existing_snapshot {
         Some(snapshot) => {
             // A stored replay row that fails to parse means the *persisted*
@@ -518,8 +589,8 @@ pub async fn create_execution(
         "agent_profile_id": input.agent_profile_id,
         "resolved_agent_profile": input.agent_profile_snapshot,
         "requested_harness_kind": input.requested_harness_kind,
-        "requested_model_provider": input.requested_model_provider,
-        "requested_model_id": input.requested_model_id,
+        "requested_model_provider": resolved_model_provider.clone(),
+        "requested_model_id": resolved_model_id.clone(),
         "repository": input.repository_snapshot,
         "permission_policy": input.permission_policy,
         "timeout_seconds": input.timeout_seconds,
@@ -588,8 +659,8 @@ pub async fn create_execution(
                 agent_profile_id: Some(&input.agent_profile_id),
                 agent_profile_snapshot: &agent_profile_snapshot,
                 requested_harness_kind: Some(&input.requested_harness_kind),
-                requested_model_provider: input.requested_model_provider.as_deref(),
-                requested_model_id: input.requested_model_id.as_deref(),
+                requested_model_provider: resolved_model_provider.as_deref(),
+                requested_model_id: resolved_model_id.as_deref(),
                 repository_snapshot: &repository_snapshot,
                 permission_policy: &permission_policy,
                 timeout_seconds: Some(timeout_seconds),
@@ -731,27 +802,35 @@ pub async fn list_execution_attempts(
     State(state): State<OperatorExecutionState>,
     Path(request_id): Path<String>,
 ) -> Result<Json<AttemptListResponse>, (StatusCode, Json<Value>)> {
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM execution_requests WHERE id = ?)")
-            .bind(&request_id)
-            .fetch_one(state.repo.pool())
-            .await
-            .map_err(|_| {
-                error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    StableErrorCode::InternalError,
-                    "Could not verify execution",
-                    json!({}),
-                )
-            })?;
-    if !exists {
+    // Also carries `requested_model_provider`/`requested_model_id` — card
+    // III-F3's `derive_attempt_facts` needs the *requested* side of
+    // provenance, which lives on `execution_requests`, not on any one
+    // attempt row. Replaces the plain `EXISTS(...)` check this handler used
+    // before III-F6b: same not-found semantics, one query instead of two.
+    let request_row = sqlx::query(
+        "SELECT requested_model_provider, requested_model_id FROM execution_requests WHERE id = ?",
+    )
+    .bind(&request_id)
+    .fetch_optional(state.repo.pool())
+    .await
+    .map_err(|_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not verify execution",
+            json!({}),
+        )
+    })?;
+    let Some(request_row) = request_row else {
         return Err(error(
             StatusCode::NOT_FOUND,
             StableErrorCode::NotFound,
             "Execution request does not exist",
             json!({"resource": "execution_request"}),
         ));
-    }
+    };
+    let requested_model_provider: Option<String> = request_row.get("requested_model_provider");
+    let requested_model_id: Option<String> = request_row.get("requested_model_id");
     let attempts = state
         .repo
         .list_attempts_for_request(&request_id)
@@ -766,36 +845,59 @@ pub async fn list_execution_attempts(
         })?;
     let data: Vec<AttemptSummary> = attempts
         .into_iter()
-        .map(|attempt| AttemptSummary {
-            attempt_id: attempt.id,
-            request_id: attempt.request_id,
-            attempt_number: attempt.attempt_number,
-            runner_id: attempt.runner_id,
-            fencing_token: attempt.fencing_token,
-            state: attempt.state,
-            lease_issued_at: attempt.lease_issued_at,
-            lease_expires_at: attempt.lease_expires_at,
-            last_heartbeat_at: attempt.last_heartbeat_at,
-            event_checkpoint: attempt.event_checkpoint,
-            completion_id: attempt.completion_id,
-            workspace_id: attempt.workspace_id,
-            base_revision: attempt.base_revision,
-            actual_execution: attempt
-                .actual_execution
-                .as_deref()
-                .and_then(|raw| serde_json::from_str::<Value>(raw).ok()),
-            terminal_reason: attempt
-                .terminal_reason
-                .as_deref()
-                .and_then(|raw| serde_json::from_str::<Value>(raw).ok()),
-            usage: attempt
-                .usage
-                .as_deref()
-                .and_then(|raw| serde_json::from_str::<Value>(raw).ok()),
-            started_at: attempt.started_at,
-            ended_at: attempt.ended_at,
-            created_at: attempt.created_at,
-            updated_at: attempt.updated_at,
+        .map(|attempt| {
+            // III-F3's own convenience "service handler" — takes the exact
+            // raw column shapes `AttemptListingRow` already carries, so
+            // nothing here re-derives provenance/economics logic. No runner
+            // infra cost-rate is stored anywhere in this schema today (see
+            // that card's handoff), so `runner_rate_usd_per_hour` is always
+            // `None` here — `runner_time_cost.cost_usd_estimated` stays
+            // honestly `not_measured`, never a fabricated rate.
+            let facts = derive_attempt_facts(
+                requested_model_provider.as_deref(),
+                requested_model_id.as_deref(),
+                attempt.actual_execution.as_deref(),
+                attempt.usage.as_deref(),
+                attempt.started_at.as_deref().and_then(parse_rfc3339),
+                attempt.ended_at.as_deref().and_then(parse_rfc3339),
+                None,
+            );
+            AttemptSummary {
+                attempt_id: attempt.id,
+                request_id: attempt.request_id,
+                attempt_number: attempt.attempt_number,
+                runner_id: attempt.runner_id,
+                fencing_token: attempt.fencing_token,
+                state: attempt.state,
+                lease_issued_at: attempt.lease_issued_at,
+                lease_expires_at: attempt.lease_expires_at,
+                last_heartbeat_at: attempt.last_heartbeat_at,
+                event_checkpoint: attempt.event_checkpoint,
+                completion_id: attempt.completion_id,
+                workspace_id: attempt.workspace_id,
+                base_revision: attempt.base_revision,
+                actual_execution: attempt
+                    .actual_execution
+                    .as_deref()
+                    .and_then(|raw| serde_json::from_str::<Value>(raw).ok()),
+                terminal_reason: attempt
+                    .terminal_reason
+                    .as_deref()
+                    .and_then(|raw| serde_json::from_str::<Value>(raw).ok()),
+                usage: attempt
+                    .usage
+                    .as_deref()
+                    .and_then(|raw| serde_json::from_str::<Value>(raw).ok()),
+                started_at: attempt.started_at,
+                ended_at: attempt.ended_at,
+                created_at: attempt.created_at,
+                updated_at: attempt.updated_at,
+                model_provenance: facts.model_provenance.map(|provenance| {
+                    serde_json::to_value(provenance).expect("ModelProvenance serializes")
+                }),
+                usage_economics: serde_json::to_value(facts.usage_economics)
+                    .expect("UsageEconomics serializes"),
+            }
         })
         .collect();
     Ok(Json(AttemptListResponse {
