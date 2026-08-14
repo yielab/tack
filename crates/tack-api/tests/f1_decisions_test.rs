@@ -331,8 +331,7 @@ fn app(repo: &Repository, clock: &FakeClock) -> Router {
 /// (`None`) — the fail-closed default. Used only by the token-gate tests
 /// themselves, never by a test proving ordinary resolve behavior.
 fn app_without_decision_token(repo: &Repository, clock: &FakeClock) -> Router {
-    let state =
-        decisions::DecisionOperatorState::with_clock(repo.clone(), Arc::new(clock.clone()));
+    let state = decisions::DecisionOperatorState::with_clock(repo.clone(), Arc::new(clock.clone()));
     decisions::routes(state)
 }
 
@@ -946,7 +945,10 @@ async fn an_unconfigured_decision_token_rejects_every_resolve_and_writes_nothing
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body["error"]["code"], "forbidden");
-    assert_eq!(body["error"]["details"]["required_scope"], "operator:decisions");
+    assert_eq!(
+        body["error"]["details"]["required_scope"],
+        "operator:decisions"
+    );
 
     let row = decision_row(&repo, &attempt_id, "dec-1").await;
     assert_eq!(row.state, "pending");
@@ -967,13 +969,19 @@ async fn a_wrong_decision_token_rejects_the_resolve_and_writes_nothing() {
         json!({"answer": {"option_id": "allow_once", "text": null}}),
         &[
             ("x-tack-principal", "operator:local"),
-            ("x-tack-decision-token", "definitely-not-the-configured-token"),
+            (
+                "x-tack-decision-token",
+                "definitely-not-the-configured-token",
+            ),
         ],
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body["error"]["code"], "forbidden");
-    assert_eq!(body["error"]["details"]["required_scope"], "operator:decisions");
+    assert_eq!(
+        body["error"]["details"]["required_scope"],
+        "operator:decisions"
+    );
 
     let row = decision_row(&repo, &attempt_id, "dec-1").await;
     assert_eq!(

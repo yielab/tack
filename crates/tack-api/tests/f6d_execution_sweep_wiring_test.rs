@@ -592,12 +592,11 @@ async fn overdue_decision_expires_via_the_periodic_sweep_while_a_future_one_stay
         "an overdue, unresolved decision must transition to expired via the periodic sweep"
     );
 
-    let future_state: String = sqlx::query_scalar(
-        "SELECT state FROM execution_decisions WHERE decision_id='dec-future'",
-    )
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
+    let future_state: String =
+        sqlx::query_scalar("SELECT state FROM execution_decisions WHERE decision_id='dec-future'")
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
     assert_eq!(
         future_state, "pending",
         "a not-yet-overdue decision must remain pending"

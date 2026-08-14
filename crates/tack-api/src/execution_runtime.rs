@@ -65,7 +65,9 @@ use tracing::{debug, info, warn};
 use crate::config::AppConfig;
 use crate::handlers::decisions;
 use crate::handlers::runner_protocol::artifact_storage::ArtifactStorage;
-use crate::handlers::runner_protocol::retention::{self as artifact_event_retention, RetentionPolicy};
+use crate::handlers::runner_protocol::retention::{
+    self as artifact_event_retention, RetentionPolicy,
+};
 
 /// What `server.rs` needs from `AppConfig` to start this runtime — a
 /// deliberately narrow view (not `&AppConfig` itself) so this module never
