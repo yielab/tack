@@ -93,6 +93,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/attempts/{attempt_id}/decisions/{decision_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve a pending decision with an operator-supplied answer
+         * @description Operator-only, and more tightly scoped than the rest of the operator surface. Authenticates via the `x-tack-principal` header alone — this route never reads `Authorization` at all, so a valid runner bearer credential (even one issued for this exact attempt) cannot reach it; `handlers::decisions`'s own tests (`self_resolution_is_denied_*`) prove a runner credential carries zero privilege here even when presented. A runner may raise a decision and poll for its resolution (`POST .../decisions`, `POST .../decisions/poll`, both under `runner-protocol-v1`) but never resolve one itself. Idempotent: replaying the identical `answer` for an already-resolved decision returns the prior resolution (`replayed: true`) rather than erroring; a *different* `answer` is a 409 idempotency_conflict. A decision past its `expires_at` can never be resolved (409 decision_expired) — including one that transitions from `pending` to `expired` lazily on this very call, which still refuses the submitted answer. This route never writes an item's status, directly or indirectly (see `handlers::decisions`'s "No item-status mapping" section).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description TACK_EXECUTION_DECISION_TOKEN — a second, independent operator credential *on top of* the ordinary operator auth every other `/api` route uses (never a substitute for it). Fail-closed: every call is rejected with 403 whenever the server has not configured TACK_EXECUTION_DECISION_TOKEN at all — there is no "no secret configured, allow everything" fallback the way the plain Bearer gate has for an unset TACK_API_TOKEN. Mirrors TACK_ORCH_APPROVAL_TOKEN exactly. */
+                    "x-tack-decision-token": string;
+                };
+                path: {
+                    /** @description Attempt ID the decision belongs to (opaque) */
+                    attempt_id: string;
+                    /** @description Decision ID, scoped to `attempt_id`: a decision_id that exists but belongs to a different attempt resolves as 404 not_found, indistinguishable from one that never existed at all — an attacker guessing another attempt's decision_id learns nothing. */
+                    decision_id: string;
+                };
+                cookie?: never;
+            };
+            /** @description The operator's answer to this pending decision. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ResolveDecisionRequest"];
+                };
+            };
+            responses: {
+                /** @description Decision resolved — either a fresh write or a byte-identical idempotent replay of one (`replayed` distinguishes the two). */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ResolveDecisionResponseSchema"];
+                    };
+                };
+                /** @description invalid_request (missing/malformed answer, or answer.option_id is not one of this decision's own recorded options) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description unauthorized — no x-tack-principal; a runner bearer credential never satisfies this, by construction */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description forbidden — x-tack-decision-token missing, unconfigured server-side, or mismatched (details.required_scope = "operator:decisions") */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description not_found — no decision exists for this exact (attempt_id, decision_id) pair */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description decision_expired / idempotency_conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description payload_too_large (answer exceeds decision_answer_bytes_max, 32768 bytes) */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/backup": {
         parameters: {
             query?: never;
@@ -397,6 +503,83 @@ export interface paths {
          *     distinct from the 404 an unknown `request_id` gets.
          */
         get: operations["list_execution_attempts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/executions/{request_id}/attempts/{attempt_number}/artifacts/{artifact_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download a verified artifact's raw content
+         * @description Operator-only (`x-tack-principal`); never reachable via a runner bearer credential — this route is mounted under the operator `/api` surface, not `runner-protocol-v1`. Streams the stored bytes chunk-by-chunk (never buffers the whole file in memory) and shares the same TACK_STORAGE_DIR-derived artifact root as `runner-protocol-v1`'s own content-upload route.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Execution request ID (opaque) */
+                    request_id: string;
+                    /** @description 1-based attempt number within the execution request */
+                    attempt_number: number;
+                    /** @description Artifact ID, scoped to the attempt that reported it (opaque) */
+                    artifact_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The artifact's raw bytes. `Content-Type` is the artifact's declared `media_type`, or `application/octet-stream` when none was declared. */
+                200: {
+                    headers: {
+                        /** @description `attachment; filename="<name>"` — falls back to a bare `attachment` if the artifact's own `name` cannot be encoded as a valid header value (e.g. contains control characters). */
+                        "Content-Disposition"?: string;
+                        /** @description Size of the artifact content, in bytes. */
+                        "Content-Length"?: number;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/octet-stream": string;
+                    };
+                };
+                /** @description unauthorized — no authenticated operator principal */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description not_found (details.artifact_id) — no artifact manifest matches this (request_id, attempt_number, artifact_id) triple */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description conflict (details.artifact_id) — the artifact manifest exists but its content has not been verified yet; distinct from not_found, never silently treated as "gone" or zero bytes (III.2 rule 7) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+            };
+        };
         put?: never;
         post?: never;
         delete?: never;
@@ -1198,7 +1381,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description unauthorized */
@@ -1207,7 +1390,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description forbidden / runner_revoked */
@@ -1216,7 +1399,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description not_found */
@@ -1225,7 +1408,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
@@ -1234,7 +1417,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
             };
@@ -1255,7 +1438,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Submit an artifact manifest (content upload/download is a separate, out-of-scope endpoint per the C2 handoff)
+         * Submit an artifact manifest (content upload is the separate PUT .../artifacts/{artifact_id}/content operation below; content download is a distinct, operator-facing route — see `execution-operator`'s "Download a verified artifact's raw content")
          * @description Authenticated by a hashed `Authorization: Bearer` runner credential (`runner_bearer_credential` per docs/contracts/runner-v1/protocol.json) — never the operator token, and never substitutable for it. Every field, limit and error shape is frozen by docs/contracts/runner-v1/ (protocol.json, limits.json, lifecycle-transitions.json, and this exchange's paired *.request.json/*.response.json fixtures); this document deliberately does not re-specify them as a second, driftable shape.
          */
         post: {
@@ -1290,7 +1473,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description unauthorized */
@@ -1299,7 +1482,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description forbidden / runner_revoked */
@@ -1308,7 +1491,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description not_found */
@@ -1317,7 +1500,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
@@ -1326,11 +1509,108 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runner/v1/attempts/{attempt_id}/artifacts/{artifact_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upload one manifested artifact's verified raw content
+         * @description Follows a successful manifest submission. Content is immutable once verified: a second PUT for the same artifact_id is rejected (409 conflict) before consuming any of its body. Bytes are streamed to storage and checked against the manifest's declared size and sha256 before being committed — any mismatch (artifact_checksum_mismatch) or interrupted stream discards the partial write, never a partially-committed artifact. Rejected (409 conflict) unless the owning attempt is currently `running` or `waiting_decision`.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description The attempt's current fencing token. The request body is raw bytes, so — unlike every other runner-protocol write — the fencing token cannot travel inside a JSON body. This header, like this route's URL, is this card's own addition: docs/contracts/runner-v1/ fixes the manifest exchange's payload shape, not this upload URL (see this fragment's own doc comment). */
+                    "x-tack-fencing-token": string;
+                };
+                path: {
+                    /** @description Attempt ID, issued at claim time (opaque) */
+                    attempt_id: string;
+                    /** @description Artifact ID from this attempt's prior manifest submission (`POST .../artifacts`, opaque) */
+                    artifact_id: string;
+                };
+                cookie?: never;
+            };
+            /** @description The artifact's raw bytes, matching the size/sha256 declared in its prior manifest entry. `Content-Type`, if set, must match the manifest's declared `media_type`. */
+            requestBody: {
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            responses: {
+                /** @description Content verified and committed: {protocol_version, attempt_id, artifact_id, state: "content_verified", size_bytes, sha256} */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": unknown;
+                    };
+                };
+                /** @description invalid_request (Content-Type mismatch, or the upload stream ended early) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description forbidden / runner_revoked */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description conflict (content already recorded and is immutable; or the attempt is not currently running/waiting_decision) / artifact_checksum_mismatch / stale_lease */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description payload_too_large (artifact_content_bytes_max) */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+            };
+        };
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1382,7 +1662,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description unauthorized */
@@ -1391,7 +1671,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description forbidden / runner_revoked */
@@ -1400,7 +1680,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description not_found */
@@ -1409,7 +1689,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
@@ -1418,7 +1698,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
             };
@@ -1474,7 +1754,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description unauthorized */
@@ -1483,7 +1763,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description forbidden / runner_revoked */
@@ -1492,7 +1772,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description not_found */
@@ -1501,7 +1781,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
@@ -1510,7 +1790,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
             };
@@ -1566,7 +1846,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description unauthorized */
@@ -1575,7 +1855,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description forbidden / runner_revoked */
@@ -1584,7 +1864,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description not_found */
@@ -1593,7 +1873,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
@@ -1602,7 +1882,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
             };
@@ -1658,7 +1938,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description unauthorized */
@@ -1667,7 +1947,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description forbidden / runner_revoked */
@@ -1676,7 +1956,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description not_found */
@@ -1685,7 +1965,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
@@ -1694,7 +1974,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
             };
@@ -1750,7 +2030,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description unauthorized */
@@ -1759,7 +2039,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description forbidden / runner_revoked */
@@ -1768,7 +2048,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description not_found */
@@ -1777,7 +2057,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
@@ -1786,7 +2066,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
             };
@@ -1842,7 +2122,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description unauthorized */
@@ -1851,7 +2131,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description forbidden / runner_revoked */
@@ -1860,7 +2140,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description not_found */
@@ -1869,7 +2149,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
@@ -1878,7 +2158,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
             };
@@ -1934,7 +2214,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description unauthorized */
@@ -1943,7 +2223,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description forbidden / runner_revoked */
@@ -1952,7 +2232,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description not_found */
@@ -1961,7 +2241,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
@@ -1970,7 +2250,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
             };
@@ -2023,7 +2303,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description unauthorized */
@@ -2032,7 +2312,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description forbidden / runner_revoked */
@@ -2041,7 +2321,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description not_found */
@@ -2050,7 +2330,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
@@ -2059,7 +2339,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
             };
@@ -2112,7 +2392,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description unauthorized */
@@ -2121,7 +2401,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description forbidden / runner_revoked */
@@ -2130,7 +2410,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description not_found */
@@ -2139,7 +2419,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
@@ -2148,7 +2428,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
             };
@@ -2201,7 +2481,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description unauthorized */
@@ -2210,7 +2490,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description forbidden / runner_revoked */
@@ -2219,7 +2499,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description not_found */
@@ -2228,7 +2508,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
@@ -2237,7 +2517,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
             };
@@ -2290,7 +2570,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description unauthorized */
@@ -2299,7 +2579,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description forbidden / runner_revoked */
@@ -2308,7 +2588,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description not_found */
@@ -2317,7 +2597,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
                 /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
@@ -2326,7 +2606,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorEnvelope"];
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
             };
@@ -2715,6 +2995,7 @@ export interface components {
             last_heartbeat_at?: string | null;
             lease_expires_at: string;
             lease_issued_at: string;
+            model_provenance?: null | components["schemas"]["ModelProvenanceSchema"];
             request_id: string;
             runner_id: string;
             started_at?: string | null;
@@ -2726,6 +3007,19 @@ export interface components {
              *     fabricated zero (III.2 rule 7).
              */
             usage?: unknown;
+            /**
+             * @description `tack_orch::usage_provenance::UsageEconomics` — two
+             *     independently-provenanced dollar dimensions, never summed. Absent
+             *     usage/timestamps serialize as `{"value": null, "source":
+             *     "not_measured"}`, never a structural zero (III.2 rule 7); no runner
+             *     infra cost-rate is stored anywhere in this schema today (III-F3
+             *     handoff, "Schema/API/contract change requested" item 2), so
+             *     `runner_time_cost.cost_usd_estimated` is always `not_measured` in
+             *     every real response from this endpoint. `#[schema(...)]` below
+             *     points the generated document at `UsageEconomicsSchema` (III-F6e),
+             *     the same fix as `model_provenance` above.
+             */
+            usage_economics: components["schemas"]["UsageEconomicsSchema"];
             workspace_id?: string | null;
         };
         Board: {
@@ -3115,6 +3409,34 @@ export interface components {
         DecideApprovalResponse: {
             state: string;
             token: string;
+        };
+        /**
+         * @description Schema-only mirror of the `answer` object `POST
+         *     .../decisions/{decision_id}/resolve` both accepts (`handlers::decisions::
+         *     validate_answer`) and echoes back on success. `option_id` must be a
+         *     non-empty string; when the decision's own `options` list is non-empty,
+         *     resolution also requires `option_id` to be one of them (checked
+         *     server-side, not expressible in this schema). `text` may be omitted,
+         *     `null`, or a string — never anything else.
+         */
+        DecisionAnswerSchema: {
+            option_id: string;
+            text?: string | null;
+        };
+        /**
+         * @description Schema-only mirror of `resolved_by`'s two observed shapes:
+         *     `{"kind": "operator", "subject_id": <x-tack-principal>}` for a live
+         *     resolve, or `{"kind": "system", "subject_id": "expiry"}` for a
+         *     fail-closed lazy expiry. Deliberately not a closed/tagged enum — nothing
+         *     in `docs/contracts/runner-v1/` fixes this shape (decision resolution has
+         *     no runner-v1 fixture at all; see `handlers::decisions`'s own module doc,
+         *     "No item-status mapping"), so this stays an open two-field object rather
+         *     than an invented contract (III.2 rule 13).
+         */
+        DecisionResolvedBySchema: {
+            /** @example operator */
+            kind: string;
+            subject_id: string;
         };
         /**
          * @description Wire mirror of `tack_orch::DecisionSupport`.
@@ -3759,6 +4081,22 @@ export interface components {
              */
             team_id?: string | null;
         };
+        /**
+         * @description Documents `tack_orch::execution::MeasurementSource`'s wire shape —
+         *     used by `AttemptSummary.usage_economics` (III-F6b/III-F6e). Defined here,
+         *     not in `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope`
+         *     above is: this file must keep compiling standalone when a card-local
+         *     test loads it via `#[path]` (`c1_handlers_test.rs`, `c2_handlers_test.rs`)
+         *     — a `crate::openapi` (or any other module's) reference would not resolve
+         *     in that separate test-binary crate root. `tack-orch` has no `ToSchema`
+         *     (see `usage_provenance.rs`'s own module doc), so this is a
+         *     hand-verified mirror, never constructed or serialized by real code —
+         *     `#[allow(dead_code)]` for the identical reason `RunnerV1ErrorEnvelope`
+         *     carries it. `not_measured` is the honest value whenever a figure
+         *     genuinely is not known — never a fabricated zero (III.2 rule 7).
+         * @enum {string}
+         */
+        MeasurementSourceSchema: "measured" | "estimated" | "not_measured";
         ModelProfileListResponse: {
             data: components["schemas"]["ModelProfileSummary"][];
             /** Format: int32 */
@@ -3771,6 +4109,31 @@ export interface components {
             model_profile_id: string;
             model_provider: string;
             name: string;
+        };
+        /**
+         * @description Documents `tack_orch::usage_provenance::ModelProvenance` —
+         *     `AttemptSummary.model_provenance`'s real shape (`null` while the attempt
+         *     has not yet reported `actual_execution`). A tagged union carrying every
+         *     observed fact, never coalesced into a bare boolean "matched" flag, so a
+         *     caller (F4's frontend rendering) can show both sides of a mismatch.
+         */
+        ModelProvenanceSchema: {
+            /** @enum {string} */
+            kind: "matched";
+            model_id: string;
+            provider: string;
+        } | {
+            actual_model_id: string;
+            actual_provider: string;
+            /** @enum {string} */
+            kind: "auto_select_observed";
+        } | {
+            actual_model_id: string;
+            actual_provider: string;
+            /** @enum {string} */
+            kind: "mismatched";
+            requested_model_id: string;
+            requested_provider: string;
         };
         ModelSelectionCapability: {
             level: components["schemas"]["ModelSelectionLevel"];
@@ -4110,6 +4473,34 @@ export interface components {
             /** @example queued */
             state: string;
         };
+        /** @description `POST .../decisions/{decision_id}/resolve` request body. */
+        ResolveDecisionRequest: {
+            answer: components["schemas"]["DecisionAnswerSchema"];
+        };
+        /**
+         * @description `POST .../decisions/{decision_id}/resolve` response body — mirrors
+         *     `handlers::decisions::ResolveDecisionResponse` exactly.
+         */
+        ResolveDecisionResponseSchema: {
+            answer: components["schemas"]["DecisionAnswerSchema"];
+            decision_id: string;
+            /** Format: int32 */
+            protocol_version: number;
+            /**
+             * @description `true` when this response is a byte-identical idempotent replay of
+             *     an already-committed resolution rather than a fresh write.
+             */
+            replayed: boolean;
+            resolved_at: string;
+            resolved_by: components["schemas"]["DecisionResolvedBySchema"];
+            /**
+             * @description Always `"resolved"` on a 200 — an expired/not-found/conflicting
+             *     decision is a distinct error response, never a 200 with a different
+             *     state string.
+             * @example resolved
+             */
+            state: string;
+        };
         RestoreRemoteRequest: {
             /** @description Override the "this device has newer work" guard. */
             force?: boolean;
@@ -4213,6 +4604,20 @@ export interface components {
             /** Format: int64 */
             total_capacity: number;
             updated_at: string;
+        };
+        /**
+         * @description Documents `tack_orch::usage_provenance::RunnerTimeCost`.
+         *     `cost_usd_estimated` is `{"value": null, "source": "not_measured"}` in
+         *     every real response today — no runner infra cost-rate is stored anywhere
+         *     in this schema (see `CLAUDE.md`'s `TACK_EXECUTION_*` config table and the
+         *     III-F3 handoff's "Schema/API/contract change requested" item 2).
+         *     `wall_clock_ms` is a plain derivable fact, not itself a `Measurement` —
+         *     `null` only until both the attempt's `started_at`/`ended_at` are known.
+         */
+        RunnerTimeCostSchema: {
+            cost_usd_estimated: components["schemas"]["UsdMeasurementSchema"];
+            /** Format: int64 */
+            wall_clock_ms?: number | null;
         };
         RunnerV1Error: {
             /**
@@ -4608,10 +5013,35 @@ export interface components {
             reason: string;
         };
         /**
+         * @description Documents `tack_orch::usage_provenance::UsageEconomics` —
+         *     `AttemptSummary.usage_economics`'s real shape. Always present (never
+         *     `null`), unlike `ModelProvenanceSchema` below: two
+         *     independently-provenanced dollar dimensions, deliberately never summed
+         *     into one figure.
+         */
+        UsageEconomicsSchema: {
+            model_token_cost_usd_estimated: components["schemas"]["UsdMeasurementSchema"];
+            runner_time_cost: components["schemas"]["RunnerTimeCostSchema"];
+        };
+        /**
          * @description Wire mirror of `tack_orch::UsageSupport`.
          * @enum {string}
          */
         UsageSupportLevel: "not_measured" | "from_provider" | "from_gateway";
+        /**
+         * @description Documents `tack_orch::execution::Measurement<f64>` — every dollar figure
+         *     in this API (`*_usd_estimated`) uses this shape. `value` is `null`
+         *     whenever `source` is `not_measured`; `tack-orch`'s own
+         *     `absent_usage_never_serializes_as_zero` test asserts the literal JSON,
+         *     not just the Rust type, for exactly this reason (III.2 rule 7:
+         *     "unmeasured is nullable" — this is documented as genuinely nullable,
+         *     never a number defaulting to `0`).
+         */
+        UsdMeasurementSchema: {
+            source: components["schemas"]["MeasurementSourceSchema"];
+            /** Format: double */
+            value?: number | null;
+        };
         /** @description Full workflow configuration for a project. */
         WorkflowConfig: {
             statuses: components["schemas"]["StatusDef"][];

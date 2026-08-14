@@ -28,12 +28,13 @@
 //!   string enum.
 
 use serde::Serialize;
+use utoipa::openapi::header::HeaderBuilder;
 use utoipa::openapi::path::{
     HttpMethod, OperationBuilder, Parameter, ParameterBuilder, ParameterIn, PathItem, PathsBuilder,
 };
 use utoipa::openapi::request_body::RequestBodyBuilder;
 use utoipa::openapi::response::ResponseBuilder;
-use utoipa::openapi::schema::{SchemaType, Type};
+use utoipa::openapi::schema::{KnownFormat, SchemaFormat, SchemaType, Type};
 use utoipa::openapi::{
     ContentBuilder, Info, ObjectBuilder, Ref, RefOr, Required, Response, Schema,
 };
@@ -137,9 +138,20 @@ fn json_content() -> utoipa::openapi::Content {
         .build()
 }
 
+/// III-F6e correction: every operation this is used by (`RunnerProtocolApiDoc`'s
+/// runner-protocol-v1 exchanges, plus `ExecutionOperatorExtrasApiDoc` below)
+/// returns `tack_orch::execution::ProtocolErrorEnvelope` on failure — never
+/// `ErrorEnvelope`, the ordinary `{status, message, code?}` shape
+/// `crate::error::ApiError` maps every plain `/api` handler's failure to.
+/// Before this fix, every runner-protocol-v1 error response in this file
+/// was documented against the wrong envelope shape (a pre-existing gap,
+/// not introduced by Wave 5 — see this card's handoff). `RunnerV1ErrorEnvelope`
+/// (`handlers::executions`) already exists as the correct, doc-only mirror
+/// of `ProtocolErrorEnvelope` — reused here rather than declaring a second
+/// one.
 fn error_envelope_content() -> utoipa::openapi::Content {
     ContentBuilder::new()
-        .schema(Some(Ref::from_schema_name("ErrorEnvelope")))
+        .schema(Some(Ref::from_schema_name("RunnerV1ErrorEnvelope")))
         .build()
 }
 
@@ -169,11 +181,60 @@ fn string_path_param(name: &'static str, description: &str) -> Parameter {
         .build()
 }
 
+/// Same as [`string_path_param`] but for a path segment that is numeric on
+/// the wire (e.g. `attempt_number`) — never a stringly-typed id.
+fn integer_path_param(name: &'static str, description: &str) -> Parameter {
+    ParameterBuilder::new()
+        .name(name)
+        .parameter_in(ParameterIn::Path)
+        .required(Required::True)
+        .description(Some(description))
+        .schema(Some(
+            ObjectBuilder::new().schema_type(SchemaType::Type(Type::Integer)),
+        ))
+        .build()
+}
+
+/// A documented request header parameter — e.g. the operator's
+/// `x-tack-decision-token` or a runner's `x-tack-fencing-token`, both of
+/// which travel out-of-band of the JSON/binary body.
+fn header_param(name: &'static str, description: &str, required: bool) -> Parameter {
+    ParameterBuilder::new()
+        .name(name)
+        .parameter_in(ParameterIn::Header)
+        .required(if required {
+            Required::True
+        } else {
+            Required::False
+        })
+        .description(Some(description))
+        .schema(Some(
+            ObjectBuilder::new().schema_type(SchemaType::Type(Type::String)),
+        ))
+        .build()
+}
+
 fn json_request_body(description: &str) -> utoipa::openapi::request_body::RequestBody {
     RequestBodyBuilder::new()
         .description(Some(description))
         .required(Some(Required::True))
         .content("application/json", json_content())
+        .build()
+}
+
+/// A raw-bytes schema (`type: string, format: binary`) — the standard
+/// OpenAPI convention for a non-JSON body. Used by both
+/// `PUT .../artifacts/{artifact_id}/content`'s request (runner upload) and
+/// `GET .../artifacts/{artifact_id}/content`'s response (operator
+/// download); neither is JSON, so `json_content()` above does not apply.
+fn binary_content() -> utoipa::openapi::Content {
+    ContentBuilder::new()
+        .schema(Some(RefOr::T(Schema::Object(
+            ObjectBuilder::new()
+                .schema_type(SchemaType::Type(Type::String))
+                .format(Some(SchemaFormat::KnownFormat(KnownFormat::Binary)))
+                .build(),
+        ))))
         .build()
 }
 
@@ -233,6 +294,87 @@ const RUNNER_PROTOCOL_NOTE: &str = "Authenticated by a hashed `Authorization: Be
     frozen by docs/contracts/runner-v1/ (protocol.json, limits.json, lifecycle-transitions.json, \
     and this exchange's paired *.request.json/*.response.json fixtures); this document \
     deliberately does not re-specify them as a second, driftable shape.";
+
+/// `PUT .../attempts/{attempt_id}/artifacts/{artifact_id}/content` —
+/// III-F2's artifact content-upload route (III-F6e: previously mounted in
+/// `router.rs` and served in production, but missing from this document
+/// entirely; `CLAUDE.md`'s own "13 `/api/runner/v1` runner-protocol paths"
+/// count already included it). Not part of the `op(...)` closure above:
+/// its request is raw bytes, not JSON, and it carries a header parameter no
+/// other exchange in this fragment needs. See
+/// `handlers::runner_protocol::put_artifact_content` for the real
+/// implementation this mirrors.
+fn artifact_content_upload_operation() -> OperationBuilder {
+    let params = vec![
+        string_path_param("attempt_id", "Attempt ID, issued at claim time (opaque)"),
+        string_path_param(
+            "artifact_id",
+            "Artifact ID from this attempt's prior manifest submission \
+             (`POST .../artifacts`, opaque)",
+        ),
+        header_param(
+            "x-tack-fencing-token",
+            "The attempt's current fencing token. The request body is raw bytes, so — unlike \
+             every other runner-protocol write — the fencing token cannot travel inside a JSON \
+             body. This header, like this route's URL, is this card's own addition: \
+             docs/contracts/runner-v1/ fixes the manifest exchange's payload shape, not this \
+             upload URL (see this fragment's own doc comment).",
+            true,
+        ),
+    ];
+    OperationBuilder::new()
+        .tag(RUNNER_TAG)
+        .summary(Some(
+            "Upload one manifested artifact's verified raw content",
+        ))
+        .description(Some(
+            "Follows a successful manifest submission. Content is immutable once verified: a \
+             second PUT for the same artifact_id is rejected (409 conflict) before consuming \
+             any of its body. Bytes are streamed to storage and checked against the manifest's \
+             declared size and sha256 before being committed — any mismatch \
+             (artifact_checksum_mismatch) or interrupted stream discards the partial write, \
+             never a partially-committed artifact. Rejected (409 conflict) unless the owning \
+             attempt is currently `running` or `waiting_decision`.",
+        ))
+        .parameters(Some(params))
+        .request_body(Some(
+            RequestBodyBuilder::new()
+                .description(Some(
+                    "The artifact's raw bytes, matching the size/sha256 declared in its prior \
+                     manifest entry. `Content-Type`, if set, must match the manifest's declared \
+                     `media_type`.",
+                ))
+                .required(Some(Required::True))
+                .content("application/octet-stream", binary_content())
+                .build(),
+        ))
+        .response(
+            "200",
+            ok_response(
+                "Content verified and committed: {protocol_version, attempt_id, artifact_id, \
+                 state: \"content_verified\", size_bytes, sha256}",
+            ),
+        )
+        .response(
+            "400",
+            error_response(
+                "invalid_request (Content-Type mismatch, or the upload stream ended early)",
+            ),
+        )
+        .response("401", error_response("unauthorized"))
+        .response("403", error_response("forbidden / runner_revoked"))
+        .response(
+            "409",
+            error_response(
+                "conflict (content already recorded and is immutable; or the attempt is not \
+                 currently running/waiting_decision) / artifact_checksum_mismatch / stale_lease",
+            ),
+        )
+        .response(
+            "413",
+            error_response("payload_too_large (artifact_content_bytes_max)"),
+        )
+}
 
 /// Card C2's runner-protocol v1 routes, documented relative to
 /// `handlers::runner_protocol::routes` — nested at
@@ -351,12 +493,18 @@ impl OpenApi for RunnerProtocolApiDoc {
                 PathItem::new(
                     HttpMethod::Post,
                     op(
-                        "Submit an artifact manifest (content upload/download is a separate, \
-                         out-of-scope endpoint per the C2 handoff)",
+                        "Submit an artifact manifest (content upload is the separate \
+                         PUT .../artifacts/{artifact_id}/content operation below; content \
+                         download is a distinct, operator-facing route — see \
+                         `execution-operator`'s \"Download a verified artifact's raw content\")",
                         vec![attempt_id()],
                         "Manifest accepted; per-artifact upload URLs issued",
                     ),
                 ),
+            )
+            .path(
+                "/attempts/{attempt_id}/artifacts/{artifact_id}/content",
+                PathItem::new(HttpMethod::Put, artifact_content_upload_operation()),
             )
             .path(
                 "/attempts/{attempt_id}/completion",
@@ -389,6 +537,293 @@ impl OpenApi for RunnerProtocolApiDoc {
                 ),
             );
         utoipa::openapi::OpenApi::new(Info::new("runner-protocol-v1", "1"), paths)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Wave 5 integration (III-F6e): two operator-scoped routes whose handler
+// files are off-limits to this card (`handlers::decisions` — another Wave 5
+// agent is editing it directly right now; `handlers::runner_protocol::
+// artifact_download` — kept undisturbed for the same "don't touch a
+// sibling card's file" discipline even though it isn't formally locked).
+// Both were mounted onto the real `/api` operator surface by
+// `router.rs#operator_execution_routes` (see that function's own doc
+// comment, "F1's decision-resolve route carries a second, independent
+// gate..." / "F2's artifact-download route points at the same operator-
+// configured TACK_STORAGE_DIR..."), so — exactly like `RunnerProtocolApiDoc`
+// above for card C2's un-annotated `Json<Value>` handlers — this is a
+// hand-built `OpenApi` fragment, not a `#[utoipa::path(...)]` annotation on
+// the real handler function. Every request/response shape below is a
+// schema-only mirror, hand-verified against `handlers::decisions::
+// resolve_decision`/`ResolveDecisionResponse` and `handlers::
+// runner_protocol::artifact_download::download_artifact_content`'s actual
+// source — never generated from them, and never constructed by real code
+// (see `RunnerV1ErrorEnvelope`'s doc comment above for the identical,
+// already-established precedent).
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Schema-only mirror of the `answer` object `POST
+/// .../decisions/{decision_id}/resolve` both accepts (`handlers::decisions::
+/// validate_answer`) and echoes back on success. `option_id` must be a
+/// non-empty string; when the decision's own `options` list is non-empty,
+/// resolution also requires `option_id` to be one of them (checked
+/// server-side, not expressible in this schema). `text` may be omitted,
+/// `null`, or a string — never anything else.
+#[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
+pub struct DecisionAnswerSchema {
+    pub option_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
+/// `POST .../decisions/{decision_id}/resolve` request body.
+#[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
+pub struct ResolveDecisionRequest {
+    pub answer: DecisionAnswerSchema,
+}
+
+/// Schema-only mirror of `resolved_by`'s two observed shapes:
+/// `{"kind": "operator", "subject_id": <x-tack-principal>}` for a live
+/// resolve, or `{"kind": "system", "subject_id": "expiry"}` for a
+/// fail-closed lazy expiry. Deliberately not a closed/tagged enum — nothing
+/// in `docs/contracts/runner-v1/` fixes this shape (decision resolution has
+/// no runner-v1 fixture at all; see `handlers::decisions`'s own module doc,
+/// "No item-status mapping"), so this stays an open two-field object rather
+/// than an invented contract (III.2 rule 13).
+#[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
+pub struct DecisionResolvedBySchema {
+    #[schema(example = "operator")]
+    pub kind: String,
+    pub subject_id: String,
+}
+
+/// `POST .../decisions/{decision_id}/resolve` response body — mirrors
+/// `handlers::decisions::ResolveDecisionResponse` exactly.
+#[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
+pub struct ResolveDecisionResponseSchema {
+    pub protocol_version: u32,
+    pub decision_id: String,
+    /// Always `"resolved"` on a 200 — an expired/not-found/conflicting
+    /// decision is a distinct error response, never a 200 with a different
+    /// state string.
+    #[schema(example = "resolved")]
+    pub state: String,
+    pub answer: DecisionAnswerSchema,
+    pub resolved_at: String,
+    pub resolved_by: DecisionResolvedBySchema,
+    /// `true` when this response is a byte-identical idempotent replay of
+    /// an already-committed resolution rather than a fresh write.
+    pub replayed: bool,
+}
+
+/// `POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve` (III-F1,
+/// mounted by III-F6). See `handlers::decisions`'s own module doc for the
+/// full security rationale this description summarizes.
+fn resolve_decision_operation() -> OperationBuilder {
+    let params = vec![
+        string_path_param("attempt_id", "Attempt ID the decision belongs to (opaque)"),
+        string_path_param(
+            "decision_id",
+            "Decision ID, scoped to `attempt_id`: a decision_id that exists but belongs to a \
+             different attempt resolves as 404 not_found, indistinguishable from one that never \
+             existed at all — an attacker guessing another attempt's decision_id learns nothing.",
+        ),
+        header_param(
+            handlers::decisions::DECISION_TOKEN_HEADER,
+            "TACK_EXECUTION_DECISION_TOKEN — a second, independent operator credential *on top \
+             of* the ordinary operator auth every other `/api` route uses (never a substitute \
+             for it). Fail-closed: every call is rejected with 403 whenever the server has not \
+             configured TACK_EXECUTION_DECISION_TOKEN at all — there is no \"no secret \
+             configured, allow everything\" fallback the way the plain Bearer gate has for an \
+             unset TACK_API_TOKEN. Mirrors TACK_ORCH_APPROVAL_TOKEN exactly.",
+            true,
+        ),
+    ];
+    OperationBuilder::new()
+        .tag("execution-operator")
+        .summary(Some(
+            "Resolve a pending decision with an operator-supplied answer",
+        ))
+        .description(Some(
+            "Operator-only, and more tightly scoped than the rest of the operator surface. \
+             Authenticates via the `x-tack-principal` header alone — this route never reads \
+             `Authorization` at all, so a valid runner bearer credential (even one issued for \
+             this exact attempt) cannot reach it; `handlers::decisions`'s own tests \
+             (`self_resolution_is_denied_*`) prove a runner credential carries zero privilege \
+             here even when presented. A runner may raise a decision and poll for its \
+             resolution (`POST .../decisions`, `POST .../decisions/poll`, both under \
+             `runner-protocol-v1`) but never resolve one itself. \
+             \
+             Idempotent: replaying the identical `answer` for an already-resolved decision \
+             returns the prior resolution (`replayed: true`) rather than erroring; a *different* \
+             `answer` is a 409 idempotency_conflict. A decision past its `expires_at` can never \
+             be resolved (409 decision_expired) — including one that transitions from `pending` \
+             to `expired` lazily on this very call, which still refuses the submitted answer. \
+             This route never writes an item's status, directly or indirectly (see \
+             `handlers::decisions`'s \"No item-status mapping\" section).",
+        ))
+        .parameters(Some(params))
+        .request_body(Some(
+            RequestBodyBuilder::new()
+                .description(Some("The operator's answer to this pending decision."))
+                .required(Some(Required::True))
+                .content(
+                    "application/json",
+                    ContentBuilder::new()
+                        .schema(Some(Ref::from_schema_name("ResolveDecisionRequest")))
+                        .build(),
+                )
+                .build(),
+        ))
+        .response(
+            "200",
+            ResponseBuilder::new()
+                .description(
+                    "Decision resolved — either a fresh write or a byte-identical idempotent \
+                     replay of one (`replayed` distinguishes the two).",
+                )
+                .content(
+                    "application/json",
+                    ContentBuilder::new()
+                        .schema(Some(Ref::from_schema_name("ResolveDecisionResponseSchema")))
+                        .build(),
+                )
+                .build(),
+        )
+        .response(
+            "400",
+            error_response(
+                "invalid_request (missing/malformed answer, or answer.option_id is not one of \
+                 this decision's own recorded options)",
+            ),
+        )
+        .response(
+            "401",
+            error_response(
+                "unauthorized — no x-tack-principal; a runner bearer credential never \
+                 satisfies this, by construction",
+            ),
+        )
+        .response(
+            "403",
+            error_response(
+                "forbidden — x-tack-decision-token missing, unconfigured server-side, or \
+                 mismatched (details.required_scope = \"operator:decisions\")",
+            ),
+        )
+        .response(
+            "404",
+            error_response(
+                "not_found — no decision exists for this exact (attempt_id, decision_id) pair",
+            ),
+        )
+        .response(
+            "409",
+            error_response("decision_expired / idempotency_conflict"),
+        )
+        .response(
+            "413",
+            error_response(
+                "payload_too_large (answer exceeds decision_answer_bytes_max, 32768 bytes)",
+            ),
+        )
+}
+
+/// `GET /api/executions/{request_id}/attempts/{attempt_number}/artifacts/{artifact_id}/content`
+/// (III-F2, mounted by III-F6).
+fn download_artifact_content_operation() -> OperationBuilder {
+    let params = vec![
+        string_path_param("request_id", "Execution request ID (opaque)"),
+        integer_path_param(
+            "attempt_number",
+            "1-based attempt number within the execution request",
+        ),
+        string_path_param(
+            "artifact_id",
+            "Artifact ID, scoped to the attempt that reported it (opaque)",
+        ),
+    ];
+    OperationBuilder::new()
+        .tag("execution-operator")
+        .summary(Some("Download a verified artifact's raw content"))
+        .description(Some(
+            "Operator-only (`x-tack-principal`); never reachable via a runner bearer \
+             credential — this route is mounted under the operator `/api` surface, not \
+             `runner-protocol-v1`. Streams the stored bytes chunk-by-chunk (never buffers the \
+             whole file in memory) and shares the same TACK_STORAGE_DIR-derived artifact root \
+             as `runner-protocol-v1`'s own content-upload route.",
+        ))
+        .parameters(Some(params))
+        .response(
+            "200",
+            ResponseBuilder::new()
+                .description(
+                    "The artifact's raw bytes. `Content-Type` is the artifact's declared \
+                     `media_type`, or `application/octet-stream` when none was declared.",
+                )
+                .content("application/octet-stream", binary_content())
+                .header(
+                    "Content-Length",
+                    HeaderBuilder::new()
+                        .description(Some("Size of the artifact content, in bytes."))
+                        .schema(ObjectBuilder::new().schema_type(SchemaType::Type(Type::Integer)))
+                        .build(),
+                )
+                .header(
+                    "Content-Disposition",
+                    HeaderBuilder::new()
+                        .description(Some(
+                            "`attachment; filename=\"<name>\"` — falls back to a bare \
+                             `attachment` if the artifact's own `name` cannot be encoded as a \
+                             valid header value (e.g. contains control characters).",
+                        ))
+                        .schema(ObjectBuilder::new().schema_type(SchemaType::Type(Type::String)))
+                        .build(),
+                )
+                .build(),
+        )
+        .response(
+            "401",
+            error_response("unauthorized — no authenticated operator principal"),
+        )
+        .response(
+            "404",
+            error_response("not_found (details.artifact_id) — no artifact manifest matches this (request_id, attempt_number, artifact_id) triple"),
+        )
+        .response(
+            "409",
+            error_response(
+                "conflict (details.artifact_id) — the artifact manifest exists but its content \
+                 has not been verified yet; distinct from not_found, never silently treated as \
+                 \"gone\" or zero bytes (III.2 rule 7)",
+            ),
+        )
+}
+
+/// III-F1's decision-resolution route and III-F2's operator artifact-download
+/// route (see this section's own doc comment above), both nested at `/api`
+/// below — the same base every ordinary operator route in `ApiDoc.paths(...)`
+/// uses, since both are merged into the real `api` router *before*
+/// `require_token` (`router.rs#operator_execution_routes`), not into the
+/// runner-credential-only `/api/runner/v1` surface.
+struct ExecutionOperatorExtrasApiDoc;
+
+impl OpenApi for ExecutionOperatorExtrasApiDoc {
+    fn openapi() -> utoipa::openapi::OpenApi {
+        let paths = PathsBuilder::new()
+            .path(
+                "/attempts/{attempt_id}/decisions/{decision_id}/resolve",
+                PathItem::new(HttpMethod::Post, resolve_decision_operation()),
+            )
+            .path(
+                "/executions/{request_id}/attempts/{attempt_number}/artifacts/{artifact_id}/content",
+                PathItem::new(HttpMethod::Get, download_artifact_content_operation()),
+            );
+        utoipa::openapi::OpenApi::new(Info::new("execution-operator-extras", "1"), paths)
     }
 }
 
@@ -622,6 +1057,23 @@ impl OpenApi for RunnerProtocolApiDoc {
         handlers::executions::CancellationRequestedResponse,
         handlers::executions::RecoveryConfirmation,
         handlers::executions::RequeueResponse,
+        // ── AttemptSummary.model_provenance/usage_economics real shape
+        // (III-F6b/III-F6e) — schema-only mirrors of `tack_orch::
+        // usage_provenance`, which has no `ToSchema`; see their doc
+        // comments in `handlers::executions` for why they live there. ──────
+        handlers::executions::ModelProvenanceSchema,
+        handlers::executions::MeasurementSourceSchema,
+        handlers::executions::UsdMeasurementSchema,
+        handlers::executions::RunnerTimeCostSchema,
+        handlers::executions::UsageEconomicsSchema,
+        // ── Wave 5 operator-scoped decision resolution (III-F1, wired by
+        // III-F6e) — schema-only mirrors of `handlers::decisions`, a file
+        // off-limits to this card; see `ExecutionOperatorExtrasApiDoc`'s
+        // own doc comment above. ────────────────────────────────────────
+        DecisionAnswerSchema,
+        ResolveDecisionRequest,
+        DecisionResolvedBySchema,
+        ResolveDecisionResponseSchema,
         // ── Harness-agnostic runner fleet: operator fleet/runner/profile API
         // DTOs ───────────────────────────────────────────────────────────
         handlers::runner_admin::CreateFleet,
@@ -725,6 +1177,7 @@ impl OpenApi for RunnerProtocolApiDoc {
     ),
     nest(
         (path = "/api/runner/v1", api = RunnerProtocolApiDoc),
+        (path = "/api", api = ExecutionOperatorExtrasApiDoc),
     ),
 )]
 pub struct ApiDoc;
