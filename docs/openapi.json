@@ -251,6 +251,127 @@
         }
       }
     },
+    "/api/attempts/{attempt_id}/decisions/{decision_id}/resolve": {
+      "post": {
+        "tags": [
+          "execution-operator"
+        ],
+        "summary": "Resolve a pending decision with an operator-supplied answer",
+        "description": "Operator-only, and more tightly scoped than the rest of the operator surface. Authenticates via the `x-tack-principal` header alone — this route never reads `Authorization` at all, so a valid runner bearer credential (even one issued for this exact attempt) cannot reach it; `handlers::decisions`'s own tests (`self_resolution_is_denied_*`) prove a runner credential carries zero privilege here even when presented. A runner may raise a decision and poll for its resolution (`POST .../decisions`, `POST .../decisions/poll`, both under `runner-protocol-v1`) but never resolve one itself. Idempotent: replaying the identical `answer` for an already-resolved decision returns the prior resolution (`replayed: true`) rather than erroring; a *different* `answer` is a 409 idempotency_conflict. A decision past its `expires_at` can never be resolved (409 decision_expired) — including one that transitions from `pending` to `expired` lazily on this very call, which still refuses the submitted answer. This route never writes an item's status, directly or indirectly (see `handlers::decisions`'s \"No item-status mapping\" section).",
+        "parameters": [
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "description": "Attempt ID the decision belongs to (opaque)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "decision_id",
+            "in": "path",
+            "description": "Decision ID, scoped to `attempt_id`: a decision_id that exists but belongs to a different attempt resolves as 404 not_found, indistinguishable from one that never existed at all — an attacker guessing another attempt's decision_id learns nothing.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-tack-decision-token",
+            "in": "header",
+            "description": "TACK_EXECUTION_DECISION_TOKEN — a second, independent operator credential *on top of* the ordinary operator auth every other `/api` route uses (never a substitute for it). Fail-closed: every call is rejected with 403 whenever the server has not configured TACK_EXECUTION_DECISION_TOKEN at all — there is no \"no secret configured, allow everything\" fallback the way the plain Bearer gate has for an unset TACK_API_TOKEN. Mirrors TACK_ORCH_APPROVAL_TOKEN exactly.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "The operator's answer to this pending decision.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Decision resolved — either a fresh write or a byte-identical idempotent replay of one (`replayed` distinguishes the two).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolveDecisionResponseSchema"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request (missing/malformed answer, or answer.option_id is not one of this decision's own recorded options)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized — no x-tack-principal; a runner bearer credential never satisfies this, by construction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden — x-tack-decision-token missing, unconfigured server-side, or mismatched (details.required_scope = \"operator:decisions\")",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found — no decision exists for this exact (attempt_id, decision_id) pair",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "decision_expired / idempotency_conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "payload_too_large (answer exceeds decision_answer_bytes_max, 32768 bytes)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/backup": {
       "get": {
         "tags": [
@@ -1217,6 +1338,101 @@
           },
           "404": {
             "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/executions/{request_id}/attempts/{attempt_number}/artifacts/{artifact_id}/content": {
+      "get": {
+        "tags": [
+          "execution-operator"
+        ],
+        "summary": "Download a verified artifact's raw content",
+        "description": "Operator-only (`x-tack-principal`); never reachable via a runner bearer credential — this route is mounted under the operator `/api` surface, not `runner-protocol-v1`. Streams the stored bytes chunk-by-chunk (never buffers the whole file in memory) and shares the same TACK_STORAGE_DIR-derived artifact root as `runner-protocol-v1`'s own content-upload route.",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "Execution request ID (opaque)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attempt_number",
+            "in": "path",
+            "description": "1-based attempt number within the execution request",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "description": "Artifact ID, scoped to the attempt that reported it (opaque)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The artifact's raw bytes. `Content-Type` is the artifact's declared `media_type`, or `application/octet-stream` when none was declared.",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`attachment; filename=\"<name>\"` — falls back to a bare `attachment` if the artifact's own `name` cannot be encoded as a valid header value (e.g. contains control characters)."
+              },
+              "Content-Length": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Size of the artifact content, in bytes."
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized — no authenticated operator principal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found (details.artifact_id) — no artifact manifest matches this (request_id, attempt_number, artifact_id) triple",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conflict (details.artifact_id) — the artifact manifest exists but its content has not been verified yet; distinct from not_found, never silently treated as \"gone\" or zero bytes (III.2 rule 7)",
             "content": {
               "application/json": {
                 "schema": {
@@ -4024,7 +4240,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4034,7 +4250,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4044,7 +4260,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4054,7 +4270,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4064,7 +4280,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4077,7 +4293,7 @@
         "tags": [
           "runner-protocol-v1"
         ],
-        "summary": "Submit an artifact manifest (content upload/download is a separate, out-of-scope endpoint per the C2 handoff)",
+        "summary": "Submit an artifact manifest (content upload is the separate PUT .../artifacts/{artifact_id}/content operation below; content download is a distinct, operator-facing route — see `execution-operator`'s \"Download a verified artifact's raw content\")",
         "description": "Authenticated by a hashed `Authorization: Bearer` runner credential (`runner_bearer_credential` per docs/contracts/runner-v1/protocol.json) — never the operator token, and never substitutable for it. Every field, limit and error shape is frozen by docs/contracts/runner-v1/ (protocol.json, limits.json, lifecycle-transitions.json, and this exchange's paired *.request.json/*.response.json fixtures); this document deliberately does not re-specify them as a second, driftable shape.",
         "parameters": [
           {
@@ -4113,7 +4329,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4123,7 +4339,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4133,7 +4349,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4143,7 +4359,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4153,7 +4369,117 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runner/v1/attempts/{attempt_id}/artifacts/{artifact_id}/content": {
+      "put": {
+        "tags": [
+          "runner-protocol-v1"
+        ],
+        "summary": "Upload one manifested artifact's verified raw content",
+        "description": "Follows a successful manifest submission. Content is immutable once verified: a second PUT for the same artifact_id is rejected (409 conflict) before consuming any of its body. Bytes are streamed to storage and checked against the manifest's declared size and sha256 before being committed — any mismatch (artifact_checksum_mismatch) or interrupted stream discards the partial write, never a partially-committed artifact. Rejected (409 conflict) unless the owning attempt is currently `running` or `waiting_decision`.",
+        "parameters": [
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "description": "Attempt ID, issued at claim time (opaque)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "description": "Artifact ID from this attempt's prior manifest submission (`POST .../artifacts`, opaque)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-tack-fencing-token",
+            "in": "header",
+            "description": "The attempt's current fencing token. The request body is raw bytes, so — unlike every other runner-protocol write — the fencing token cannot travel inside a JSON body. This header, like this route's URL, is this card's own addition: docs/contracts/runner-v1/ fixes the manifest exchange's payload shape, not this upload URL (see this fragment's own doc comment).",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "The artifact's raw bytes, matching the size/sha256 declared in its prior manifest entry. `Content-Type`, if set, must match the manifest's declared `media_type`.",
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Content verified and committed: {protocol_version, attempt_id, artifact_id, state: \"content_verified\", size_bytes, sha256}",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request (Content-Type mismatch, or the upload stream ended early)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden / runner_revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conflict (content already recorded and is immutable; or the attempt is not currently running/waiting_decision) / artifact_checksum_mismatch / stale_lease",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "payload_too_large (artifact_content_bytes_max)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4202,7 +4528,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4212,7 +4538,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4222,7 +4548,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4232,7 +4558,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4242,7 +4568,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4291,7 +4617,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4301,7 +4627,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4311,7 +4637,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4321,7 +4647,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4331,7 +4657,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4380,7 +4706,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4390,7 +4716,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4400,7 +4726,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4410,7 +4736,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4420,7 +4746,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4469,7 +4795,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4479,7 +4805,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4489,7 +4815,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4499,7 +4825,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4509,7 +4835,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4558,7 +4884,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4568,7 +4894,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4578,7 +4904,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4588,7 +4914,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4598,7 +4924,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4647,7 +4973,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4657,7 +4983,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4667,7 +4993,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4677,7 +5003,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4687,7 +5013,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4736,7 +5062,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4746,7 +5072,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4756,7 +5082,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4766,7 +5092,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4776,7 +5102,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4814,7 +5140,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4824,7 +5150,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4834,7 +5160,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4844,7 +5170,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4854,7 +5180,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4892,7 +5218,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4902,7 +5228,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4912,7 +5238,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4922,7 +5248,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4932,7 +5258,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4970,7 +5296,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4980,7 +5306,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -4990,7 +5316,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -5000,7 +5326,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -5010,7 +5336,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -5048,7 +5374,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -5058,7 +5384,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -5068,7 +5394,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -5078,7 +5404,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -5088,7 +5414,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
                 }
               }
             }
@@ -6081,7 +6407,8 @@
           "lease_issued_at",
           "lease_expires_at",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "usage_economics"
         ],
         "properties": {
           "actual_execution": {
@@ -6137,6 +6464,17 @@
           "lease_issued_at": {
             "type": "string"
           },
+          "model_provenance": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModelProvenanceSchema",
+                "description": "`tack_orch::usage_provenance::ModelProvenance` (`matched` /\n`auto_select_observed` / `mismatched`), or `null` when the attempt\nhas not yet reported `actual_execution` — card III-F3's\n`derive_attempt_facts`, wired here by III-F6. Runtime type stays\nuntyped `Value` (the real type lives in `tack-orch`, which does not\ndepend on `utoipa`); `#[schema(...)]` below points the *generated\nOpenAPI document* at `ModelProvenanceSchema`, this file's\nhand-verified mirror, instead of the untyped-`Value` default\n(III-F6e — was previously an empty `{}` schema, the exact spec-drift\nproblem Wave 4's integrator eliminated elsewhere in this API)."
+              }
+            ]
+          },
           "request_id": {
             "type": "string"
           },
@@ -6158,6 +6496,10 @@
           },
           "usage": {
             "description": "`tack_orch::execution::Usage` once reported, else `null` — never a\nfabricated zero (III.2 rule 7)."
+          },
+          "usage_economics": {
+            "$ref": "#/components/schemas/UsageEconomicsSchema",
+            "description": "`tack_orch::usage_provenance::UsageEconomics` — two\nindependently-provenanced dollar dimensions, never summed. Absent\nusage/timestamps serialize as `{\"value\": null, \"source\":\n\"not_measured\"}`, never a structural zero (III.2 rule 7); no runner\ninfra cost-rate is stored anywhere in this schema today (III-F3\nhandoff, \"Schema/API/contract change requested\" item 2), so\n`runner_time_cost.cost_usd_estimated` is always `not_measured` in\nevery real response from this endpoint. `#[schema(...)]` below\npoints the generated document at `UsageEconomicsSchema` (III-F6e),\nthe same fix as `model_provenance` above."
           },
           "workspace_id": {
             "type": [
@@ -7461,6 +7803,41 @@
             "type": "string"
           },
           "token": {
+            "type": "string"
+          }
+        }
+      },
+      "DecisionAnswerSchema": {
+        "type": "object",
+        "description": "Schema-only mirror of the `answer` object `POST\n.../decisions/{decision_id}/resolve` both accepts (`handlers::decisions::\nvalidate_answer`) and echoes back on success. `option_id` must be a\nnon-empty string; when the decision's own `options` list is non-empty,\nresolution also requires `option_id` to be one of them (checked\nserver-side, not expressible in this schema). `text` may be omitted,\n`null`, or a string — never anything else.",
+        "required": [
+          "option_id"
+        ],
+        "properties": {
+          "option_id": {
+            "type": "string"
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "DecisionResolvedBySchema": {
+        "type": "object",
+        "description": "Schema-only mirror of `resolved_by`'s two observed shapes:\n`{\"kind\": \"operator\", \"subject_id\": <x-tack-principal>}` for a live\nresolve, or `{\"kind\": \"system\", \"subject_id\": \"expiry\"}` for a\nfail-closed lazy expiry. Deliberately not a closed/tagged enum — nothing\nin `docs/contracts/runner-v1/` fixes this shape (decision resolution has\nno runner-v1 fixture at all; see `handlers::decisions`'s own module doc,\n\"No item-status mapping\"), so this stays an open two-field object rather\nthan an invented contract (III.2 rule 13).",
+        "required": [
+          "kind",
+          "subject_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "example": "operator"
+          },
+          "subject_id": {
             "type": "string"
           }
         }
@@ -8919,6 +9296,15 @@
           }
         }
       },
+      "MeasurementSourceSchema": {
+        "type": "string",
+        "description": "Documents `tack_orch::execution::MeasurementSource`'s wire shape —\nused by `AttemptSummary.usage_economics` (III-F6b/III-F6e). Defined here,\nnot in `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope`\nabove is: this file must keep compiling standalone when a card-local\ntest loads it via `#[path]` (`c1_handlers_test.rs`, `c2_handlers_test.rs`)\n— a `crate::openapi` (or any other module's) reference would not resolve\nin that separate test-binary crate root. `tack-orch` has no `ToSchema`\n(see `usage_provenance.rs`'s own module doc), so this is a\nhand-verified mirror, never constructed or serialized by real code —\n`#[allow(dead_code)]` for the identical reason `RunnerV1ErrorEnvelope`\ncarries it. `not_measured` is the honest value whenever a figure\ngenuinely is not known — never a fabricated zero (III.2 rule 7).",
+        "enum": [
+          "measured",
+          "estimated",
+          "not_measured"
+        ]
+      },
       "ModelProfileListResponse": {
         "type": "object",
         "required": [
@@ -8971,6 +9357,88 @@
             "type": "string"
           }
         }
+      },
+      "ModelProvenanceSchema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The attempt ran on exactly the requested provider/model.",
+            "required": [
+              "provider",
+              "model_id",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "matched"
+                ]
+              },
+              "model_id": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The request allowed auto-selection (no explicit provider/model was\never resolved for it) and the attempt observed a concrete choice.",
+            "required": [
+              "actual_provider",
+              "actual_model_id",
+              "kind"
+            ],
+            "properties": {
+              "actual_model_id": {
+                "type": "string"
+              },
+              "actual_provider": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "auto_select_observed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The attempt ran on a provider and/or model different from what was\nexplicitly requested. Both sides are always carried in full, never\nsilently reconciled.",
+            "required": [
+              "requested_provider",
+              "requested_model_id",
+              "actual_provider",
+              "actual_model_id",
+              "kind"
+            ],
+            "properties": {
+              "actual_model_id": {
+                "type": "string"
+              },
+              "actual_provider": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "mismatched"
+                ]
+              },
+              "requested_model_id": {
+                "type": "string"
+              },
+              "requested_provider": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "Documents `tack_orch::usage_provenance::ModelProvenance` —\n`AttemptSummary.model_provenance`'s real shape (`null` while the attempt\nhas not yet reported `actual_execution`). A tagged union carrying every\nobserved fact, never coalesced into a bare boolean \"matched\" flag, so a\ncaller (F4's frontend rendering) can show both sides of a mismatch."
       },
       "ModelSelectionCapability": {
         "type": "object",
@@ -9773,6 +10241,59 @@
           }
         }
       },
+      "ResolveDecisionRequest": {
+        "type": "object",
+        "description": "`POST .../decisions/{decision_id}/resolve` request body.",
+        "required": [
+          "answer"
+        ],
+        "properties": {
+          "answer": {
+            "$ref": "#/components/schemas/DecisionAnswerSchema"
+          }
+        }
+      },
+      "ResolveDecisionResponseSchema": {
+        "type": "object",
+        "description": "`POST .../decisions/{decision_id}/resolve` response body — mirrors\n`handlers::decisions::ResolveDecisionResponse` exactly.",
+        "required": [
+          "protocol_version",
+          "decision_id",
+          "state",
+          "answer",
+          "resolved_at",
+          "resolved_by",
+          "replayed"
+        ],
+        "properties": {
+          "answer": {
+            "$ref": "#/components/schemas/DecisionAnswerSchema"
+          },
+          "decision_id": {
+            "type": "string"
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "replayed": {
+            "type": "boolean",
+            "description": "`true` when this response is a byte-identical idempotent replay of\nan already-committed resolution rather than a fresh write."
+          },
+          "resolved_at": {
+            "type": "string"
+          },
+          "resolved_by": {
+            "$ref": "#/components/schemas/DecisionResolvedBySchema"
+          },
+          "state": {
+            "type": "string",
+            "description": "Always `\"resolved\"` on a 200 — an expired/not-found/conflicting\ndecision is a distinct error response, never a 200 with a different\nstate string.",
+            "example": "resolved"
+          }
+        }
+      },
       "RestoreRemoteRequest": {
         "type": "object",
         "properties": {
@@ -10019,6 +10540,26 @@
           },
           "updated_at": {
             "type": "string"
+          }
+        }
+      },
+      "RunnerTimeCostSchema": {
+        "type": "object",
+        "description": "Documents `tack_orch::usage_provenance::RunnerTimeCost`.\n`cost_usd_estimated` is `{\"value\": null, \"source\": \"not_measured\"}` in\nevery real response today — no runner infra cost-rate is stored anywhere\nin this schema (see `CLAUDE.md`'s `TACK_EXECUTION_*` config table and the\nIII-F3 handoff's \"Schema/API/contract change requested\" item 2).\n`wall_clock_ms` is a plain derivable fact, not itself a `Measurement` —\n`null` only until both the attempt's `started_at`/`ended_at` are known.",
+        "required": [
+          "cost_usd_estimated"
+        ],
+        "properties": {
+          "cost_usd_estimated": {
+            "$ref": "#/components/schemas/UsdMeasurementSchema"
+          },
+          "wall_clock_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
           }
         }
       },
@@ -10943,6 +11484,22 @@
           }
         }
       },
+      "UsageEconomicsSchema": {
+        "type": "object",
+        "description": "Documents `tack_orch::usage_provenance::UsageEconomics` —\n`AttemptSummary.usage_economics`'s real shape. Always present (never\n`null`), unlike `ModelProvenanceSchema` below: two\nindependently-provenanced dollar dimensions, deliberately never summed\ninto one figure.",
+        "required": [
+          "model_token_cost_usd_estimated",
+          "runner_time_cost"
+        ],
+        "properties": {
+          "model_token_cost_usd_estimated": {
+            "$ref": "#/components/schemas/UsdMeasurementSchema"
+          },
+          "runner_time_cost": {
+            "$ref": "#/components/schemas/RunnerTimeCostSchema"
+          }
+        }
+      },
       "UsageSupportLevel": {
         "type": "string",
         "description": "Wire mirror of `tack_orch::UsageSupport`.",
@@ -10951,6 +11508,25 @@
           "from_provider",
           "from_gateway"
         ]
+      },
+      "UsdMeasurementSchema": {
+        "type": "object",
+        "description": "Documents `tack_orch::execution::Measurement<f64>` — every dollar figure\nin this API (`*_usd_estimated`) uses this shape. `value` is `null`\nwhenever `source` is `not_measured`; `tack-orch`'s own\n`absent_usage_never_serializes_as_zero` test asserts the literal JSON,\nnot just the Rust type, for exactly this reason (III.2 rule 7:\n\"unmeasured is nullable\" — this is documented as genuinely nullable,\nnever a number defaulting to `0`).",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/MeasurementSourceSchema"
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        }
       },
       "WorkflowConfig": {
         "type": "object",

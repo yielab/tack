@@ -78,6 +78,95 @@ pub struct RunnerV1Error {
     pub details: Value,
 }
 
+/// Documents `tack_orch::execution::MeasurementSource`'s wire shape —
+/// used by `AttemptSummary.usage_economics` (III-F6b/III-F6e). Defined here,
+/// not in `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope`
+/// above is: this file must keep compiling standalone when a card-local
+/// test loads it via `#[path]` (`c1_handlers_test.rs`, `c2_handlers_test.rs`)
+/// — a `crate::openapi` (or any other module's) reference would not resolve
+/// in that separate test-binary crate root. `tack-orch` has no `ToSchema`
+/// (see `usage_provenance.rs`'s own module doc), so this is a
+/// hand-verified mirror, never constructed or serialized by real code —
+/// `#[allow(dead_code)]` for the identical reason `RunnerV1ErrorEnvelope`
+/// carries it. `not_measured` is the honest value whenever a figure
+/// genuinely is not known — never a fabricated zero (III.2 rule 7).
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[allow(dead_code)]
+pub enum MeasurementSourceSchema {
+    Measured,
+    Estimated,
+    NotMeasured,
+}
+
+/// Documents `tack_orch::execution::Measurement<f64>` — every dollar figure
+/// in this API (`*_usd_estimated`) uses this shape. `value` is `null`
+/// whenever `source` is `not_measured`; `tack-orch`'s own
+/// `absent_usage_never_serializes_as_zero` test asserts the literal JSON,
+/// not just the Rust type, for exactly this reason (III.2 rule 7:
+/// "unmeasured is nullable" — this is documented as genuinely nullable,
+/// never a number defaulting to `0`).
+#[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
+pub struct UsdMeasurementSchema {
+    pub value: Option<f64>,
+    pub source: MeasurementSourceSchema,
+}
+
+/// Documents `tack_orch::usage_provenance::RunnerTimeCost`.
+/// `cost_usd_estimated` is `{"value": null, "source": "not_measured"}` in
+/// every real response today — no runner infra cost-rate is stored anywhere
+/// in this schema (see `CLAUDE.md`'s `TACK_EXECUTION_*` config table and the
+/// III-F3 handoff's "Schema/API/contract change requested" item 2).
+/// `wall_clock_ms` is a plain derivable fact, not itself a `Measurement` —
+/// `null` only until both the attempt's `started_at`/`ended_at` are known.
+#[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
+pub struct RunnerTimeCostSchema {
+    pub wall_clock_ms: Option<u64>,
+    pub cost_usd_estimated: UsdMeasurementSchema,
+}
+
+/// Documents `tack_orch::usage_provenance::UsageEconomics` —
+/// `AttemptSummary.usage_economics`'s real shape. Always present (never
+/// `null`), unlike `ModelProvenanceSchema` below: two
+/// independently-provenanced dollar dimensions, deliberately never summed
+/// into one figure.
+#[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
+pub struct UsageEconomicsSchema {
+    pub model_token_cost_usd_estimated: UsdMeasurementSchema,
+    pub runner_time_cost: RunnerTimeCostSchema,
+}
+
+/// Documents `tack_orch::usage_provenance::ModelProvenance` —
+/// `AttemptSummary.model_provenance`'s real shape (`null` while the attempt
+/// has not yet reported `actual_execution`). A tagged union carrying every
+/// observed fact, never coalesced into a bare boolean "matched" flag, so a
+/// caller (F4's frontend rendering) can show both sides of a mismatch.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[allow(dead_code)]
+pub enum ModelProvenanceSchema {
+    /// The attempt ran on exactly the requested provider/model.
+    Matched { provider: String, model_id: String },
+    /// The request allowed auto-selection (no explicit provider/model was
+    /// ever resolved for it) and the attempt observed a concrete choice.
+    AutoSelectObserved {
+        actual_provider: String,
+        actual_model_id: String,
+    },
+    /// The attempt ran on a provider and/or model different from what was
+    /// explicitly requested. Both sides are always carried in full, never
+    /// silently reconciled.
+    Mismatched {
+        requested_provider: String,
+        requested_model_id: String,
+        actual_provider: String,
+        actual_model_id: String,
+    },
+}
+
 /// State for C1's card-local router. C5 can construct this from the shared API
 /// state when it performs the one permitted global-router integration.
 #[derive(Clone)]
@@ -296,10 +385,14 @@ pub struct AttemptSummary {
     /// `tack_orch::usage_provenance::ModelProvenance` (`matched` /
     /// `auto_select_observed` / `mismatched`), or `null` when the attempt
     /// has not yet reported `actual_execution` — card III-F3's
-    /// `derive_attempt_facts`, wired here by III-F6. Untyped `Value` (not a
-    /// `ToSchema` struct) for the same reason `actual_execution`/
-    /// `terminal_reason` above are: the real type lives in `tack-orch`,
-    /// which does not depend on `utoipa`.
+    /// `derive_attempt_facts`, wired here by III-F6. Runtime type stays
+    /// untyped `Value` (the real type lives in `tack-orch`, which does not
+    /// depend on `utoipa`); `#[schema(...)]` below points the *generated
+    /// OpenAPI document* at `ModelProvenanceSchema`, this file's
+    /// hand-verified mirror, instead of the untyped-`Value` default
+    /// (III-F6e — was previously an empty `{}` schema, the exact spec-drift
+    /// problem Wave 4's integrator eliminated elsewhere in this API).
+    #[schema(value_type = Option<ModelProvenanceSchema>, nullable)]
     pub model_provenance: Option<Value>,
     /// `tack_orch::usage_provenance::UsageEconomics` — two
     /// independently-provenanced dollar dimensions, never summed. Absent
@@ -308,7 +401,10 @@ pub struct AttemptSummary {
     /// infra cost-rate is stored anywhere in this schema today (III-F3
     /// handoff, "Schema/API/contract change requested" item 2), so
     /// `runner_time_cost.cost_usd_estimated` is always `not_measured` in
-    /// every real response from this endpoint.
+    /// every real response from this endpoint. `#[schema(...)]` below
+    /// points the generated document at `UsageEconomicsSchema` (III-F6e),
+    /// the same fix as `model_provenance` above.
+    #[schema(value_type = UsageEconomicsSchema)]
     pub usage_economics: Value,
 }
 
