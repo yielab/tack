@@ -64,7 +64,7 @@ behind, because nobody compared them.
 ```bash
 # 1. What does the board say the integration line is? (never assume from your CWD)
 grep -n "[Ii]ntegration line\|branch from" TODO.md | head -3
-LINE=plan/harness-agnostic-agent-fleet     # confirm against the line above
+LINE=develop                              # confirm against the line above
 
 # 2. Does any branch hold work the line does not have? (content, not ancestry)
 git for-each-ref --format='%(refname:short)' refs/heads | while read b; do
