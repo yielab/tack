@@ -10,6 +10,9 @@ authors.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
 clap.workspace = true
+# III-H1: the runner's own HTTP transport. Reused from the workspace table
+# (already used by tack-api/tack-orch/tack-cli), not a new version pin.
+reqwest = { workspace = true }
 serde.workspace = true
 serde_json.workspace = true
 tack-orch = { path = "../tack-orch" }

@@ -22,6 +22,12 @@ pub enum RunnerError {
     UnsupportedHarness { harness: String },
     #[error("runner protocol client is not configured")]
     ProtocolUnavailable,
+    /// The HTTP transport could not be built or the enrollment exchange did
+    /// not complete. Deliberately carries no detail: a `reqwest` error's
+    /// `Display` includes the request URL and can include a redacted-looking
+    /// but complete header context, and this value is printed by `main`.
+    #[error("runner protocol transport failed")]
+    ProtocolTransport,
     #[error("runner client stopped before shutdown was requested")]
     ClientStopped,
     #[error("runner client task could not be joined")]
