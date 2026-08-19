@@ -47,7 +47,13 @@ has a better excuse. Give each topic its own labelled item: where the code lives
 mechanism works, what is technically blocking, the test numbers, what was not checked.
 Someone debugging one of those should never have to read the other four.
 
-## Rule 5 — the shape
+## Rule 5 — never open with git housekeeping
+
+"X is delivered on branch Y (uncommitted)" tells the reader nothing about whether the
+thing works. Branch and commit state is real information, but it belongs on the last
+line, under the next step.
+
+## Rule 6 — the shape
 
 ```
 ## What this is about
@@ -79,14 +85,14 @@ One sentence. What to do, and the command if there is one.
 
 Omit any section that is genuinely empty. Never pad.
 
-## Rule 6 — be honest about what you did not check
+## Rule 7 — be honest about what you did not check
 
 "Verified" means you ran it and read the output — give the number. "Not checked" means
 you did not, and it must never sit beside a green number where it reads as covered.
 Never claim something is the *only* remaining problem unless you ran a search that proves
 it; that claim has already shipped false here once.
 
-## Rule 7 — finding something is good news
+## Rule 8 — finding something is good news
 
 A card that discovers a problem in someone else's area and reports it did its job better,
 not worse. Write it so it does not read as failure: name who owns the fix.

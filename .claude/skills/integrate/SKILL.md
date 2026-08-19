@@ -98,3 +98,42 @@ git worktree prune
 ```
 Deleting merged branches is the user's call — propose, don't execute. Verify a branch's
 work is truly in HEAD by patch-equivalence (`git cherry`) before ever suggesting deletion.
+
+## Final step — write the report
+
+This is part of the integration, not an afterthought. Full rules in
+`.claude/reporting-contract.md`; the required shape is below and is not optional.
+
+**Do not open with the branch, the commit, or "X is delivered".** That is housekeeping —
+it goes at the very end. Open with what a person can now do.
+
+```
+## What this is about
+One or two sentences. The feature in human terms. No file names, no ids, no modes.
+
+## Where it stands
+What works now that did not before. What still does not work. Plain sentences.
+Evidence goes in Technical detail — not here.
+
+## What is left
+One short paragraph per item. Each answers, in order: what is missing, what it was
+supposed to do, what it blocks — then who fixes it. Order: blocks the feature working
+at all, then blocks the next piece of work, then can wait.
+If you fixed something outside your ownership, say so here and name the integrator.
+
+## Technical detail
+Labelled items, ONE topic each. Never one dense paragraph listing five files.
+  **Where the code lives** — files added or changed.
+  **How <one mechanism> works** — one topic per item, repeat as needed.
+  **What is blocking, technically** — exact type or file, and why.
+  **Test results** — the numbers.
+  **Not checked** — what was skipped, and why it is not covered.
+
+## Next step
+One sentence: what to do next, and the command if there is one.
+Then, on its own line, the housekeeping: branch name and whether it is committed.
+```
+
+Two failure modes to check before sending: a plain-language section that contains an id,
+a file path or a permission mode (move it down), and a technical section that is one
+paragraph covering several topics (split it into labelled items).
