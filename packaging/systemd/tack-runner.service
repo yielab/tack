@@ -1,0 +1,69 @@
+# Example systemd unit for `tack-runner`, the pull-based execution runner that
+# is a SEPARATE binary from `tack` (the API server / CLI). It owns local
+# credentials, the per-attempt workspace/worktree, the owner-only journal and
+# the harness subprocess — see crates/tack-runner and docs/ARCHITECTURE.md.
+#
+# This file is a template, not applied automatically. To install:
+#
+#   sudo cp packaging/systemd/tack-runner.service /etc/systemd/system/
+#   sudo useradd --system --create-home --home-dir /var/lib/tack-runner tack-runner   # once
+#   sudo mkdir -p /etc/tack-runner
+#   sudo cp packaging/systemd/tack-runner.env.example /etc/tack-runner/tack-runner.env
+#   sudo $EDITOR /etc/tack-runner/tack-runner.env   # set TACK_RUNNER_ENROLLMENT_TOKEN etc.
+#   sudo chmod 600 /etc/tack-runner/tack-runner.env
+#   sudo chown tack-runner:tack-runner /etc/tack-runner/tack-runner.env
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now tack-runner
+#
+# The enrollment token is a one-time credential: the runner exchanges it for a
+# durable credential on first successful enroll and never needs the original
+# again (crates/tack-runner/src/config.rs, docs/CONFIG.md). Rotate/remove it
+# from the env file after the first successful start if your secrets policy
+# requires that.
+
+[Unit]
+Description=Tack pull-based execution runner (tack-runner)
+Documentation=https://github.com/yielab/tack
+# Not "Wants=network-online.target" as a hard dependency — the runner already
+# retries a down/unreachable API on its own poll interval rather than crash-
+# looping, but starting after the network stack is up avoids a spurious first
+# failure at boot.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tack-runner
+Group=tack-runner
+# StateDirectory creates/owns /var/lib/tack-runner (mode 0700) and is passed
+# to the process as %S — matches TACK_RUNNER_STATE_DIR's "owner-only
+# directory for the journal and credential" contract (docs/CONFIG.md).
+StateDirectory=tack-runner
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/tack-runner
+EnvironmentFile=/etc/tack-runner/tack-runner.env
+Environment=TACK_RUNNER_STATE_DIR=/var/lib/tack-runner
+ExecStart=/usr/local/bin/tack-runner
+Restart=on-failure
+RestartSec=5s
+# Ctrl-C-equivalent: main.rs's shutdown path drains in-flight work on
+# tokio::signal::ctrl_c(); SIGTERM triggers the same path.
+KillSignal=SIGTERM
+TimeoutStopSec=30s
+
+# --- Sandboxing (systemd hardening; the runner spawns harness subprocesses
+# under the same user, so this is deliberately not NoNewPrivileges-hostile to
+# child processes, but everything else here is safe to keep tight) ---
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/tack-runner
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
