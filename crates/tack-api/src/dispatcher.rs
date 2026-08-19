@@ -16,6 +16,14 @@
 //!    active (pending/running/waiting_approval), do **not** call docket
 //!    again — [`DispatchOutcome::AlreadyInFlight`]. See "Idempotency and
 //!    `attempt`" below.
+//!
+//! **One scheduling owner (card III-G1, Wave 6).** If the item already has
+//! an active runner-v1 `execution_requests` row, do **not** call docket at
+//! all — `Err(ApiError::Conflict(..))`, same shape the concurrent-dispatch
+//! lock already uses. Checked before any HTTP call. See
+//! `tack_db::repo::orch`'s "III-G1" module section for the exact "active"
+//! definition and why this is the only direction of the guard this card's
+//! file ownership can add.
 //! 4. Call `ControlPlane::enqueue_task` (`POST /tasks/{project}`, card V1's
 //!    live-verified three-outcome contract):
 //!    - **block** → [`DispatchOutcome::Blocked`], no `orch_tasks` row at
@@ -306,6 +314,31 @@ pub async fn dispatch_item(
             "item {item_id} is already being dispatched by another in-flight request"
         )));
     };
+
+    // III-G1 (Wave 6): one scheduling owner. If the item already has a live
+    // runner-v1 execution request (`execution_requests`, the neutral domain — see
+    // `tack_db::repo::orch`'s "III-G1" section for the exact "active" definition,
+    // which mirrors `ExecutionState::is_terminal` rather than redefining it), legacy
+    // Docket dispatch defers rather than racing it: nothing is sent to docket and no
+    // `orch_tasks` row is written. Checked before the existing `orch_tasks`
+    // idempotency read, and before any HTTP call, for the same reason the per-item
+    // lock is acquired first — a caller must never observe docket being contacted for
+    // an item the runner-v1 scheduler already owns. Reuses the same `ApiError::
+    // Conflict` shape this function already returns for the concurrent-dispatch lock
+    // case just above (not a new `DispatchOutcome` variant — see the III-G1 handoff
+    // for why: every existing exhaustive match on `DispatchOutcome` lives outside
+    // this card's file ownership, and `Conflict` already means exactly "another party
+    // owns this item's dispatch right now").
+    if state
+        .repo
+        .has_active_execution_request_for_item(item_id)
+        .await?
+    {
+        return Err(ApiError::Conflict(format!(
+            "item {item_id} has an active runner-v1 execution request; refusing legacy \
+             Docket dispatch to preserve one scheduling owner"
+        )));
+    }
 
     let existing = state.repo.list_orch_tasks_for_item(item_id).await?; // attempt DESC
     if let Some(latest) = existing.first()
