@@ -15,7 +15,10 @@ WORK="$(mktemp -d)"; PORT=${SMOKE_PORT:-3399}
 API="http://127.0.0.1:$PORT"
 SERVER_PID=""; FAILED=0
 
-cleanup() { [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null; rm -rf "$WORK"; }
+cleanup() {
+  [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null && wait "$SERVER_PID" 2>/dev/null
+  rm -rf "$WORK"
+}
 trap cleanup EXIT
 step() { printf '\n\033[1m== STEP %s: %s\033[0m\n' "$1" "$2"; }
 ok()   { printf '   \033[32mPASS\033[0m %s\n' "$1"; }
@@ -41,7 +44,10 @@ step 3 "Start the API server"
 # Run from $WORK, never the repo root: the developer's tack.toml would otherwise be
 # picked up (it sets alexa_skill_id, and the server correctly refuses to boot without
 # TACK_ALEXA_SHARED_SECRET). A smoke test must exercise the product, not the workstation.
-( cd "$WORK" && TACK_DATABASE_URL="sqlite:$WORK/smoke.db?mode=rwc" TACK_PORT="$PORT" \
+# `exec` matters: it replaces the subshell with the server process, so $! is the real
+# tack PID. Without it, cleanup kills the subshell and leaves an orphan holding $PORT —
+# a later run then silently talks to the previous run's database (found by III-H1).
+( cd "$WORK" && exec env TACK_DATABASE_URL="sqlite:$WORK/smoke.db?mode=rwc" TACK_PORT="$PORT" \
   TACK_STORAGE_DIR="$WORK/storage" "$ROOT/target/debug/tack" serve >"$WORK/server.log" 2>&1 ) &
 SERVER_PID=$!
 for _ in $(seq 1 40); do curl -sf "$API/api/health" >/dev/null 2>&1 && break; sleep 0.25; done

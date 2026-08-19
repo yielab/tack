@@ -5,6 +5,9 @@ description: Run this repo's verification, cheapest-first and scoped to what cha
 
 # Verification — cheapest first, scoped to the diff
 
+> **Report using `.claude/reporting-contract.md`.** Lead with the capability in plain language — what someone can or cannot do now — and keep file and function names in the technical-detail section at the end. Explain every blocker as: what is missing, what it was for, what it blocks.
+
+
 Argument = scope: `core|db|orch|api|runner|frontend|contract|full`. If no scope given,
 derive it from `git diff --name-only <base>` — test the crates/dirs actually touched.
 Never start with `--release` or the full workspace when a scoped check answers the
