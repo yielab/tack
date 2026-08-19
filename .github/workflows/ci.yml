@@ -148,7 +148,7 @@ jobs:
       # live call. 85% mirrors tack-core's floor with headroom below the measured value.
       - name: Rust coverage — tack-runner (>= 85%)
         run: cargo llvm-cov -p tack-runner --fail-under-lines 85
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: "npm"
@@ -231,7 +231,7 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: "npm"
@@ -268,7 +268,7 @@ jobs:
             exit 1
           fi
       - name: Upload dist artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
           path: frontend/dist/
@@ -301,7 +301,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: Download frontend dist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: frontend-dist
           path: frontend/dist/
@@ -353,7 +353,7 @@ jobs:
           tool: cargo-audit
       - name: Rust dependency audit (honors .cargo/audit.toml)
         run: cargo audit
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: "npm"
@@ -374,7 +374,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Pre-build server (warms the cache the Playwright webServer reuses)
         run: cargo build -p tack-cli
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: "npm"
@@ -390,7 +390,7 @@ jobs:
         run: npm run test:e2e
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: frontend/playwright-report/

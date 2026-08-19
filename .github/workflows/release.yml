@@ -64,7 +64,7 @@ jobs:
           tool: cargo-cyclonedx
       - name: Generate Rust SBOM (workspace dependencies)
         run: cargo cyclonedx --format json --all
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: "npm"
@@ -82,7 +82,7 @@ jobs:
           # cargo-cyclonedx writes <crate>.cdx.json next to each crate manifest.
           find . -name '*.cdx.json' -not -path './sbom/*' -exec cp {} sbom/ \;
           ls -la sbom/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sbom
           path: sbom/
@@ -115,7 +115,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: "npm"
@@ -262,7 +262,7 @@ jobs:
           Compress-Archive -Path $runnerStage -DestinationPath "$runnerStage.zip"
           "RUNNER_ASSET=$runnerStage.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.platform }}
           path: |
@@ -280,7 +280,7 @@ jobs:
       attestations: write    # write build-provenance attestations
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -298,14 +298,14 @@ jobs:
           cat SHA256SUMS
 
       - name: Attest build provenance for release binaries
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             dist/*.tar.gz
             dist/*.zip
 
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           generate_release_notes: true
