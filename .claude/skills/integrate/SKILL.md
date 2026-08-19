@@ -5,6 +5,9 @@ description: Merge finished card branches into the integration line and review t
 
 # Integrate finished branches (solo-friendly review)
 
+> **Report using `.claude/reporting-contract.md`.** Lead with the capability in plain language — what someone can or cannot do now — and keep file and function names in the technical-detail section at the end. Explain every blocker as: what is missing, what it was for, what it blocks.
+
+
 **Do not review branch by branch.** Each card already justified itself in its handoff and
 ran its own tests. Reviewing N branches separately re-does that work N times and still
 misses the only thing that matters: whether they are correct *together*. Review once, on

@@ -5,6 +5,9 @@ description: Answer "where is this project right now and what is next" — recon
 
 # Where am I / what's next
 
+> **Report using `.claude/reporting-contract.md`.** Lead with the capability in plain language — what someone can or cannot do now — and keep file and function names in the technical-detail section at the end. Explain every blocker as: what is missing, what it was for, what it blocks.
+
+
 State is NOT stored in one place and no file is kept "up to date" for you. It is derived
 from four sources of record. Run these, then report.
 
