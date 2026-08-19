@@ -20,9 +20,13 @@ The intended product is one place where a person can:
 5. retain an auditable history even when a runner disconnects or a harness is replaced.
 
 > **Development status:** Tack's project-management foundation is available today.
-> The native runner fleet described below is the active **Phases 50–57** roadmap and
-> is not yet a released feature. The existing Docket integration is retained as a
-> legacy optional bridge, not as the architecture of the new control plane.
+> The native runner fleet described below — **Phases 50–56** of the roadmap — is
+> implemented on the development branch: durable execution requests, `tack-runner`,
+> real harness adapters, fleet scheduling, decisions, artifacts, and model profiles all
+> exist and are tested. It is **not yet a released feature**: no tagged release ships
+> it, and **Phase 57** (release hardening and the optional legacy Docket bridge) has
+> not started. The existing Docket integration is retained as a legacy optional
+> bridge, not as the architecture of the new control plane.
 
 Built with Rust (Axum + sqlx), SolidJS, and SQLite.
 
@@ -105,23 +109,23 @@ there as design history instead of being rewritten as completed work.
 | **0–32** | **Complete** | Core PM product, integrations, hardening, and audit-driven work are documented as done. |
 | **33–38** | **Complete** | The optional Docket-based factory control-center cycle is done. It is now a legacy integration path. |
 | **39–40** | **Implemented, unreleased** | Regression oracle plus capability/adapter foundations exist in the current working tree. |
-| **41** | **Partial; acceptance reopened** | Optimistic concurrency exists, but atomic-write and browser ETag acceptance still need closure. |
-| **42** | **Transitional; acceptance reopened** | Run/decision persistence exists, but provider-scoped identity still needs correction. |
+| **41** | **Acceptance closed, unreleased** | Atomic-write and browser-ETag acceptance, previously reopened, are now closed: item `PATCH` runs as one transaction proven with failure-injection tests, and the browser sends `If-Match` and handles `412` with a refresh-and-retry flow. |
+| **42** | **Acceptance closed, unreleased** | Provider-scoped identity acceptance, previously reopened, is now closed: migrations 037/038 rebuild `orch_runs`/`orch_approvals` as a transactional copy/verify/swap with checksum and pre-upgrade snapshot safety, replacing a boot-loop risk with recovery. |
 | **43–49** | **Superseded or frozen** | Do not implement this old control-plane sequence; its useful outcomes were re-scoped into Phases 50–57. |
-| **50–57** | **Planned; active cycle** | Native harness-agnostic runner fleet. No part of this row should be treated as shipped yet. |
+| **50–57** | **Phases 50–56 delivered, unreleased; 57 not started** | Native harness-agnostic runner fleet — execution domain, runner protocol, real harness adapters, fleet scheduling, decisions/artifacts, and model profiles. Not shipped in any tagged release. |
 
 The active cycle is:
 
-| Phase | Outcome |
-| --- | --- |
-| **50** | Boundary, safety, migration, and contract freeze. |
-| **51** | Durable execution domain and schema. |
-| **52** | Pull-based runner protocol and `tack-runner` skeleton. |
-| **53** | Real Codex, Claude Code, and OpenCode harness proofs. |
-| **54** | Fleet scheduler and item-assignment UX. |
-| **55** | Decisions, artifacts, and realtime execution activity. |
-| **56** | Model profiles, policy enforcement, and honest measured usage. |
-| **57** | Optional Docket bridge, recovery testing, and release hardening. |
+| Phase | Outcome | Status |
+| --- | --- | --- |
+| **50** | Boundary, safety, migration, and contract freeze. | Delivered, unreleased |
+| **51** | Durable execution domain and schema. | Delivered, unreleased |
+| **52** | Pull-based runner protocol and `tack-runner` skeleton. | Delivered, unreleased |
+| **53** | Real Codex, Claude Code, and OpenCode harness proofs. | Delivered, unreleased |
+| **54** | Fleet scheduler and item-assignment UX. | Delivered, unreleased |
+| **55** | Decisions, artifacts, and realtime execution activity. | Delivered, unreleased |
+| **56** | Model profiles, policy enforcement, and honest measured usage. | Delivered, unreleased |
+| **57** | Optional Docket bridge, recovery testing, and release hardening. | Not started |
 
 ## What works today
 
@@ -145,9 +149,10 @@ The active cycle is:
 - Outbound signed webhooks and optional GitHub push sync.
 - An optional, feature-gated Docket integration from the completed Phases 33–38.
 
-`tack mcp` and the planned runner fleet solve different problems: MCP gives an
-interactive agent tools for managing the board; the runner fleet lets Tack durably
-schedule, lease, observe, and recover agent execution.
+`tack mcp` and the runner fleet solve different problems: MCP gives an interactive
+agent tools for managing the board; the runner fleet — implemented on the
+development branch through Phase 56, not yet released — lets Tack durably schedule,
+lease, observe, and recover agent execution.
 
 ## Quick start
 
@@ -190,7 +195,7 @@ Open **`http://localhost:3210`**. Project data lives in `tack.db`; attachments l
 | Authentication | One optional shared Bearer token; no per-user identities or permissions. |
 | Multi-device data | One active SQLite writer. S3 backup is snapshot replication, not live multi-writer sync. |
 | Offline UI | The browser UI requires its Tack server to be running. |
-| Native runner fleet | Planned in Phases 50–57; it is not available in the current release. |
+| Native runner fleet | Implemented through Phase 56 on the development branch (execution domain, `tack-runner`, harness adapters, fleet scheduling, decisions, artifacts, model profiles); not shipped in any tagged release. Phase 57 (release hardening, optional legacy bridge) has not started, and some execution-domain behavior (for example, decision resolution) requires its own separate configuration. |
 | Existing orchestration | Docket-specific and disabled by default. It is a legacy bridge, not proof of harness-agnostic execution. |
 | Usage and cost | Existing imported values may be estimates or absent. Native telemetry must label measurement source; absent usage is not zero. |
 | Mobile | Responsive web UI only; no native mobile application. |
@@ -246,8 +251,9 @@ variables.
 
 See the [configuration guide](docs/book/src/user-guide/configuration.md) and
 [administration guide](docs/book/src/user-guide/administration.md) for the full
-reference. Configuration for `tack-runner` will be added as the Phase 52 contract is
-implemented; it is intentionally not invented here ahead of that work.
+reference. `tack-runner` configuration (API URL, enrollment token, state directory)
+shipped with Phases 51–52 on the development branch; a full operator reference is
+still pending as part of Phase 57.
 
 ## Architecture
 
@@ -265,8 +271,9 @@ tack-api    Axum HTTP/WebSocket server, configuration, and integrations
 tack-cli    Server binary, CLI client, embedded SolidJS application, and MCP server
 ```
 
-Phases 50–57 add a pull runner protocol and harness adapters without moving PM domain
-logic into the worker. See the
+Phases 50–56 added a pull runner protocol and harness adapters, running as a separate
+`tack-runner` binary rather than moving PM domain logic into this stack; Phase 57
+(release hardening, optional Docket bridge) has not started. See the
 [developer architecture overview](docs/book/src/developer/README.md) for the current
 code and the [roadmap](docs/book/src/roadmap.md) for the target boundary.
 
