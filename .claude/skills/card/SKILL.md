@@ -53,6 +53,25 @@ dependencies. CLAUDE.md (already in context) covers architecture — don't re-de
 - Logs carry ids only (no credentials/prompts/env values), and tests assert the redaction.
 - Never `git commit` without the user asking; never add Co-Authored-By/AI attribution.
 
+
+### Branch discipline (before you write any code)
+
+```bash
+LINE=plan/harness-agnostic-agent-fleet          # confirm against the board
+git rev-list --count "$LINE..$(git branch --show-current)"   # must be 0 before you start
+git switch -c agent/<card-id-lowercase>-<slug> "$LINE"
+```
+
+- **Branch from the integration line, never from "wherever I happen to be."** The board's
+  recorded base SHA can be stale — if it does not match the line's tip, say so rather than
+  silently using either.
+- **A card branch holds that card's work and nothing else.** Tooling, skills, unrelated
+  fixes and board edits belong on the integration line. If you notice you have mixed
+  them, separate them into different commits before handing over — this has happened
+  twice here and both times the tooling had to be moved afterwards.
+- **Never merge the card branch yourself** unless you are the integrator, and never
+  advance the integration line from a card branch.
+
 ## 3. Deliver, then gate
 
 Implement against the card's **Acceptance** list. Test the claim itself: for "writes
