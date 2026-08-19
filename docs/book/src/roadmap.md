@@ -1853,10 +1853,22 @@ them. Retire `grant_available` and `useAgentActivityMap`'s `orchAvailable()`-as-
 `rg -n "kind === 'docket'|grant_available" frontend/src` returns 0; a disabled control
 renders a reason string **sourced from the capability**, asserted by a Vitest test.
 
-### Phase 41 — Optimistic Concurrency **partial; acceptance reopened**
+### Phase 41 — Optimistic Concurrency ~~**partial; acceptance reopened**~~ **acceptance closed by Part III Wave 0**
 
 **Goal:** make a lost update detectable, and be honest about the writers that never go
 through HTTP.
+
+> **Acceptance closed 2026-08-14** (verified against the tree at `5c6842f`, not taken from a
+> handoff). The reopened half was atomic write plus browser ETag; both now hold.
+> `Repository::update_item_atomically` (`crates/tack-db/src/repo/items.rs`) performs the WIP
+> count and the conditional update inside one `BEGIN IMMEDIATE` transaction, and the browser
+> sends `If-Match` and treats `412` as concurrency feedback rather than a network error
+> (`frontend/src/shared/api/items.ts`). Proven by the 9 tests in
+> `crates/tack-api/tests/item_concurrency_test.rs` — including
+> `multi_field_wip_rejection_writes_nothing_and_does_not_bump_version` and
+> `before_update_failure_cannot_partially_apply_a_multi_field_patch`, which assert the
+> absence of a partial write rather than only a status code. Delivered by III-A1/III-A2;
+> **unreleased**. The original status is struck through, not deleted.
 
 #### Task 41.1 — Migrations 034–036
 
@@ -1904,10 +1916,21 @@ deterministic; a `PATCH` with no `If-Match` still succeeds; and a preflight resp
 > proving a precondition was checked. The concurrent test remains in the suite as a
 > property test of the compare-and-swap layer.
 
-### Phase 42 — Run Identity & Decision Store Rebuild **transitional; acceptance reopened**
+### Phase 42 — Run Identity & Decision Store Rebuild ~~**transitional; acceptance reopened**~~ **acceptance closed by Part III Wave 0**
 
 **Goal:** give a run an identity two providers can share, and let a decision exist without
 a control plane.
+
+> **Acceptance closed 2026-08-14** (verified against the tree at `5c6842f`). Every clause of
+> the acceptance below now holds in `crates/tack-db/src/migrations.rs`: migration 037 rebuilds
+> `orch_runs` with `PRIMARY KEY (control_plane_id, external_run_id, run_attempt)` and a
+> separate `correlation_id TEXT UNIQUE`; migration 038 adds `kind`, `external_id` and
+> `provider_metadata` to `orch_approvals` while `token` stays the primary key; and the
+> half-applied-boot guard refuses to re-run a partial rebuild rather than silently retrying
+> `DROP TABLE`. Both rebuilds run as a transactional copy/verify/swap behind a `VACUUM INTO`
+> snapshot. Proven by the 31 tests in `crates/tack-db/tests/orch_migrations_test.rs`, which
+> inject failure at every boundary. Delivered by III-A3; **unreleased**. The original status
+> is struck through, not deleted.
 
 #### Task 42.1 — Migration 037, rebuild `orch_runs`
 
@@ -2329,14 +2352,21 @@ No current plans. The SPA is responsive on mobile browsers; no native app and no
 
 ## Known Gaps
 
+> **This table is the Phases 26–32 audit snapshot, not a current gap list.** Each row records
+> what that audit found; the "Tracked in" column names the phase that took the work on, and
+> those phases are marked done above. Rows verified closed as of 2026-08-14 are annotated
+> inline. Read the owning phase's own section for what actually shipped versus what it
+> deferred — several closed only partially. Current Part III gaps live in the Part III section
+> below and on `TODO.md`'s board, which is the authority.
+
 | Area | Gap | Tracked in |
 |---|---|---|
 | Item updates | `sprint_id` / `due_date` / `estimate_unit` not persisted by `update_item`; `started_at`/`completed_at` never set on ordinary status moves | Phase 26 (blocker) |
 | Security | Alexa endpoint lacks Amazon cert-chain validation; no warning on unauthenticated non-loopback bind; tar-slip + unverified sha256 in backup restore; S3 secret embedded in backup bundles | Phase 27 |
 | Backup as sync | No conflict detection between installs; scheduler ignores UI-saved settings; non-atomic restore swap | Phase 28 |
-| API contract | No OpenAPI spec; hand-maintained TS types and API docs have drifted from the router; two error JSON shapes; item lists truncate at 100 without a total | Phase 29 |
+| API contract | ~~No OpenAPI spec; hand-maintained TS types and API docs have drifted from the router~~ **closed** — `docs/openapi.json` (90 paths) is generated from the code, `frontend/src/shared/api/schema.gen.ts` is generated from it, and CI fails on drift. "Two error JSON shapes" **still holds and is now deliberate**: `ErrorEnvelope` for operator routes, `RunnerV1ErrorEnvelope` for the runner protocol — two separate auth surfaces, not an oversight | Phase 29 |
 | Vocabulary | Global "+ New" modal, Sprints view, tabs/palette/first-run guide hardcode "sprint"/"Story Points" | Phase 30 |
-| Coverage reporting | 168 Vitest unit tests and a Playwright E2E suite ship; automated coverage thresholds in CI are not yet enforced | Phase 32 |
+| Coverage reporting | ~~168 Vitest unit tests and a Playwright E2E suite ship; automated coverage thresholds in CI are not yet enforced~~ **closed** — CI's `coverage` job enforces `cargo llvm-cov --fail-under-lines` per crate (tack-core 85, tack-db/tack-api/tack-orch 70) alongside Vitest thresholds; the frontend suite is now 724 tests across 85 files | Phase 32 |
 | Release integrity | No checksums/SBOM/provenance on release assets; SECURITY.md routes disclosure through public issues | Phase 32 |
 | Custom field validation | `validation` rules enforced (pattern, min/max, min/max_length, max_items); full JSON Schema not supported | Future |
 | Auth | No multi-user auth (by design for v1) | Future |
@@ -2353,9 +2383,11 @@ three most common extension patterns.
 
 # Next — Harness-Agnostic Runner Fleet (Phases 50–57)
 
-**Status:** in progress — Phases 50–53 delivered, Phase 54 next. This section supersedes the
-unstarted implementation work in Phases 43–49. Phases 39–42 and every earlier section remain
-in this document as implementation and decision history.
+**Status:** in progress — Phases 50–56 delivered (merged onto the branch, unreleased); Phase 57
+(the Docket bridge, recovery and release phase) is the only phase remaining. Updated 2026-08-14
+against `TODO.md`'s Part III board, the authority for wave status and accepted integration SHAs.
+This section supersedes the unstarted implementation work in Phases 43–49. Phases 39–42 and
+every earlier section remain in this document as implementation and decision history.
 
 Execution is tracked card-by-card on the **Part III board** in `TODO.md`, which is the
 authority for wave status, card ownership and accepted integration SHAs. Per-card evidence
@@ -2570,10 +2602,10 @@ lifecycle, decisions, artifacts and usage are first-class protocol values.
 | 51 | Durable Execution Domain & Schema | ✅ Done — Wave 1, integration SHA `f14019b` |
 | 52 | Pull Runner Protocol & `tack-runner` | ✅ Done — Wave 2, integration SHA `f931fc0` |
 | 53 | Codex / Claude Code / OpenCode Harness Proof | ✅ Done — Wave 3, integration SHA `6a53a18`; live-proof caveats below |
-| 54 | Fleet Scheduler & Item Assignment UX | **next** |
-| 55 | Decisions, Artifacts & Realtime Activity | **planned** |
-| 56 | Model Profiles, Policy & Honest Usage | **planned** |
-| 57 | Docket Bridge, Recovery & Release | **planned** |
+| 54 | Fleet Scheduler & Item Assignment UX | ✅ Done — Wave 4, integration SHA `8a6e613` |
+| 55 | Decisions, Artifacts & Realtime Activity | ✅ Done — Wave 5, integration SHA `073aa4d` |
+| 56 | Model Profiles, Policy & Honest Usage | ✅ Done — Wave 5, integration SHA `073aa4d` |
+| 57 | Docket Bridge, Recovery & Release | **next** — unblocked now that Wave 5 is accepted |
 
 ### Phase 50 — Boundary, Safety & Contract Freeze
 
@@ -2728,6 +2760,27 @@ harness/provider/model combinations.
 runners are never leased; all dispatch surfaces make the same capability decision; and a
 new request appears consistently in every work lens without duplicate WebSockets.
 
+**Delivered** (Wave 4, `8a6e613`): the pure scheduler (III-E1) wired to live
+`agent_runners`/`agent_fleet_members`/`agent_fleets`/`execution_requests` data, replacing a
+naive `ORDER BY created_at LIMIT 1` claim match; new `GET /api/runners` and
+`GET /api/executions/{id}/attempts[/{n}/events]` routes; and typed OpenAPI schemas for the
+whole operator execution/fleet/runner/profile domain, replacing the `{}` placeholder schemas
+flagged earlier as the biggest spec-drift item. "Run with agent" ships from Board, item detail
+and Sprint against one shared capability/execution-request store, plus a CLI/MCP path and
+Fleet views for health, capacity and unavailability reasons. The integration also found and
+fixed a deadlock between two individually-correct Wave 4 designs: the modal could only ever
+submit `Auto`-model requests (no live capability data existed to unblock a specific choice),
+and the scheduler unconditionally rejects `Auto` — so nothing submitted through the landed UI
+could ever be claimed by any runner. Healthy selection, saturation, exact-runner exclusivity,
+unsupported-model rejection and realtime updates are each proven at the Rust, CLI and
+Playwright layers.
+
+**Genuinely open:** `agent_fleet_members` still has no write route on any API surface, so every
+proof above uses exact-runner selection — fleet-membership eligibility itself is proven only
+directly against the database, not through a live API; `execution_requests` still has no real
+`priority` column (a `metadata`-convention stopgap stands in, documented as non-binding);
+model-resolution/provenance (III-F3) was deliberately left untouched here, for Wave 5.
+
 ### Phase 55 — Decisions, Artifacts & Realtime Activity
 
 **Goal:** one normalized attempt timeline contains agent output, human gates and deliverables.
@@ -2745,6 +2798,28 @@ new request appears consistently in every work lens without duplicate WebSockets
 fail-closed, artifacts verify against their checksum, and replay produces no duplicate
 timeline or item transition.
 
+**Delivered** (Wave 5, `073aa4d`): scoped decisions (III-F1) that a runner credential may raise
+and poll but never resolve — resolution lives behind a second, independent
+`TACK_EXECUTION_DECISION_TOKEN` gate, fail-closed when unset, mirroring
+`TACK_ORCH_APPROVAL_TOKEN` exactly; verified artifacts with checksummed manifests and a real
+content-upload/download path (III-F2, proven wired to the production router by integrator
+sub-card III-F6a); and the execution-domain retention sweep plus health watch (III-F5), with
+retention defaulted to **off** by the integrator — F5 had shipped it `true`, and deleting rows
+and (since F6d) their on-disk blobs must be an explicit operator opt-in, matching
+`TACK_ORCH_ENABLE`'s own posture. Integrator sub-card III-F6d found that F1's decision-expiry
+sweep and F2's artifact/event sweeps had **zero callers anywhere in the tree** — F5 was
+authored before F2's tables existed — and wired all three into `ExecutionRuntime` as one
+joined, cancellable task. The frontend timeline renders `not measured` as that exact literal,
+never `$0.00`, an em dash, or a blank cell.
+
+**Genuinely open:** no decision-discovery or artifact-discovery/list endpoint exists anywhere
+in the codebase (confirmed by reading every handler) — both UI list views stay honestly empty
+by design, scoped to one attempt's own event stream; concrete route shapes are requested in
+`docs/agent-handoffs/part-iii/III-F4.md`. Webkit Playwright coverage remains unverified —
+`libwoff2dec.so.1.0.2` is missing from the build sandbox, first hit in Wave 4 and confirmed to
+fail identically on untouched specs in Wave 5, so it is not a regression but genuinely
+unmeasured.
+
 ### Phase 56 — Model Profiles, Policy & Honest Usage
 
 **Goal:** choose and audit models without turning Tack into a model gateway or inventing
@@ -2761,6 +2836,32 @@ measurements.
 **Exit:** every presence/precedence combination resolves deterministically; opaque unknown
 model ids round-trip unchanged; actual selection differences are visible; and absent usage
 renders `not measured`, never `0` or `$0.00`.
+
+**Delivered** (Wave 5, `073aa4d`): opaque model profiles and resolution provenance (III-F3) —
+request override → agent-profile default → project default → fleet default → auto-select —
+wired onto the live `POST /api/executions` path by integrator sub-card III-F6b (F3 shipped the
+pure resolver but left it unwired from any HTTP path; F6b is the wiring). `AttemptSummary` now
+carries `model_provenance` and `usage_economics`. Nullable usage is normalized as `measured`,
+`estimated` or `not_measured`, never a fabricated zero.
+
+**Genuinely open:** `projects` still has no default-model-policy storage —
+`ModelPolicySources.project_default` is fully modeled in the pure type but always resolves to
+`None`; III-F3's own handoff requests either a real `projects.default_model_policy` column or
+an explicitly documented reuse of an existing column, decided by whoever owns the next
+migration batch. No runner infra cost-rate is stored anywhere, so
+`runner_time_cost.cost_usd_estimated` can never read anything but `not_measured` regardless of
+harness — distinct from `model_token_cost_usd_estimated`, which OpenCode reports as a real
+measured figure. `model_profiles` (migration 043) — the CRUD table for named provider/model
+references — is consulted by nothing in the resolution path above, which reads its per-tier
+defaults out of `agent_profiles.limits`/`agent_fleets.default_policy` JSON conventions instead.
+
+**Read this before Phase 57.** Codex was not installed on the machine Wave 3 was implemented on
+(III-D1), and nothing in the Wave 4 or Wave 5 handoffs reports installing it since — that
+adapter is still proven only against the shared fake binary, so Phase 57's "one live workflow
+completes through each supported harness" exit criterion is not yet met for Codex specifically.
+Cancellation also remains `Advisory` on every harness, unchanged since Phase 53: no shell tool
+spawns inside the runner's process group, and `AdapterRegistry::register_probe` still refuses
+to register a probe that claims otherwise.
 
 ### Phase 57 — Docket Bridge, Recovery & Release
 
@@ -2803,16 +2904,16 @@ restart without silent loss or blind duplicate execution. Docket is optional, to
 values are measured or explicitly `not measured`, and no historical PM item or legacy
 orchestration row is erased to achieve the cutover.
 
-**Progress against that definition, as of Phase 53:**
+**Progress against that definition, as of Phase 56 (Wave 5 accepted, `073aa4d`):**
 
 | Capability | State |
 |---|---|
-| Separate attempts through Codex / Claude Code / OpenCode | adapters exist; Codex unproven against its real CLI |
-| Exact runner or fleet selection | data model and API exist; scheduler is Phase 54 |
-| Only a supported provider and opaque model | enforced pre-spawn, including wrong-provider pairings |
-| Requested vs. actual execution facts | recorded; actual model confirmable on Claude Code only |
-| Bounded human gate | not started — Phase 55 |
-| Verified artifacts and idempotent event timeline | events idempotent and fenced; artifacts are raw run logs only, no discovery |
+| Separate attempts through Codex / Claude Code / OpenCode | adapters exist; Codex still unproven against its real CLI — never installed on a development machine through Wave 5 |
+| Exact runner or fleet selection | scheduler live-wired to real data (Wave 4) and proven end-to-end at the Rust/CLI/UI layers using exact-runner selection; `agent_fleet_members` still has no write route on any API surface, so fleet-membership eligibility is proven only directly against the database |
+| Only a supported provider and opaque model | enforced pre-spawn, including wrong-provider pairings; resolution provenance (request → agent-profile → project → fleet → auto-select) now wired onto the live create path, though the project tier always resolves `None` — no storage exists |
+| Requested vs. actual execution facts | recorded; actual model confirmable on Claude Code only (unchanged since Phase 53) |
+| Bounded human gate | delivered (III-F1) — a runner may raise/poll a decision but never resolve it; resolution is fail-closed behind `TACK_EXECUTION_DECISION_TOKEN`, expiry is swept automatically; no decision-discovery/list endpoint exists, so the UI can only see decisions already attached to an attempt it has loaded |
+| Verified artifacts and idempotent event timeline | events idempotent and fenced; artifacts are now checksummed with a real content-upload/download path (III-F2); still no artifact-discovery/list endpoint — only per-id download |
 | Recover from API/runner restart | proven end-to-end by the Wave 2 gate |
-| Measured or explicitly unmeasured token/cost | OpenCode reports real token and cost figures; others report unmeasured |
+| Measured or explicitly unmeasured token/cost | OpenCode reports real token and cost figures; others report unmeasured; `runner_time_cost.cost_usd_estimated` can never read anything but `not_measured` for any harness — no runner cost-rate is stored anywhere |
 | Docket optional, no historical row erased | holds — legacy orchestration untouched, frozen until Phase 57 |
