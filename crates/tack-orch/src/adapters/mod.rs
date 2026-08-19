@@ -25,3 +25,10 @@ pub mod prometheus;
 /// doc comment for what it replaces and why it lives here, not in
 /// `tack-api`.
 pub mod registry;
+
+/// The Part III legacy-bridge compatibility policy (card **III-G1**, Wave 6,
+/// Phase 57 — not to be confused with the older "card G1, Wave B / Phase 40"
+/// referenced above, a Part II card that predates and is unrelated to this
+/// one). See the module's own doc comment for the maintain/export/deprecate
+/// decision and its evidence.
+pub mod legacy_bridge;

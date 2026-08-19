@@ -1940,3 +1940,152 @@ impl Repository {
         Ok(rows.into_iter().map(|r| r.into_trace_cursor()).collect())
     }
 }
+
+// ════════════════════════════════════════════════════════════════════════════════════
+// III-G1 — legacy Docket bridge: dual-dispatch prevention and stale-row reconciliation
+// ════════════════════════════════════════════════════════════════════════════════════
+//
+// The functions below are new for card III-G1 (Wave 6). Two problems, both scoped to
+// this file even though the first one reads a table this file has never touched before:
+//
+// 1. **Dual dispatch.** `execution_requests`/`execution_attempts` (migrations 044/045,
+//    the neutral runner-v1 domain) and `orch_tasks` (migration 021, this file, the
+//    legacy Docket bridge) are two fully independent write paths that can both target
+//    the same `item_id` with no coordination whatsoever — confirmed by grep before this
+//    card started: nothing in `tack-orch::reconciler`, this file, or
+//    `tack-api::dispatcher` ever mentioned `execution_requests`, and nothing in
+//    `tack-api::handlers::executions` ever mentioned `orch_tasks`. [`Repository::
+//    has_active_execution_request_for_item`] is a **read-only** query against the
+//    neutral domain's table so `tack-api::dispatcher::dispatch_item` can enforce "one
+//    scheduling owner": if the item already has a live runner-v1 request, legacy Docket
+//    dispatch defers rather than racing it. This is the only direction III-G1's file
+//    ownership (`existing orch_*, Docket adapter/reconciler`) can enforce — the mirror
+//    guard on the `execution_requests` creation path belongs to whichever card owns
+//    `handlers/executions.rs`, and is requested rather than added here. No schema
+//    changes; this reads a table `execution_requests` already exposes with no
+//    modification to `migrations.rs`.
+//
+// 2. **Stale rows.** Nothing has ever updated `orch_tasks.remote_status` /
+//    `orch_approvals.state` after the initial dispatch/poll except a fresh poll of a
+//    *reachable* plane (`dispatcher.rs`'s write, `reconciler.rs`'s `persist_approvals`).
+//    A plane that goes `unreachable` (already tracked by `control_planes.health`/
+//    `last_seen_at`, card A2) and never recovers leaves any row that was "active" at
+//    that moment (`pending`/`running`/`waiting_approval` on `orch_tasks`, `pending` on
+//    `orch_approvals`) active forever — which also permanently blocks legacy
+//    redispatch, since `dispatcher.rs::is_active_task_status` treats those exact values
+//    as "still in flight." [`Repository::reconcile_stale_orch_tasks`] and
+//    [`Repository::reconcile_stale_orch_approvals`] are **local-only** sweeps: no HTTP
+//    call to docket, so they cannot perturb `docket_tick_contract_test.rs`'s pinned
+//    per-tick request sequence. Not wired to any scheduled task from this card — see
+//    the III-G1 handoff for the exact one-block addition an integrator needs (mirrors
+//    `spawn_retention_sweep`'s own "not yet spawned" precedent, card B3).
+
+impl Repository {
+    /// `true` iff `item_id` has an `execution_requests` row whose `state` is not one
+    /// of the three terminal strings runner-v1 uses (`succeeded`/`failed`/`cancelled`
+    /// — mirrors `tack_orch::execution::types::ExecutionState::is_terminal` exactly,
+    /// which is the single authority for that set; this function does not redefine
+    /// it, only reuses the same three literals). `queued`/`leased`/`preparing`/
+    /// `running`/`waiting_decision`/`lost`/`needs_operator` all count as "active" —
+    /// including `lost`/`needs_operator`, because both still require an operator or a
+    /// recovery service to resolve before the item is safe to hand to a second
+    /// scheduler; neither is a safe redispatch target on its own.
+    ///
+    /// Read-only against a table this file has never written — see this section's
+    /// module doc for why that's still III-G1's file to add, not a schema change.
+    #[instrument(skip(self))]
+    pub async fn has_active_execution_request_for_item(
+        &self,
+        item_id: Uuid,
+    ) -> Result<bool, sqlx::Error> {
+        let row: (i64,) = sqlx::query_as(
+            "SELECT EXISTS(
+                SELECT 1 FROM execution_requests
+                WHERE item_id = ?
+                  AND state NOT IN ('succeeded', 'failed', 'cancelled')
+             )",
+        )
+        .bind(item_id.to_string())
+        .fetch_one(self.pool())
+        .await?;
+        Ok(row.0 != 0)
+    }
+
+    /// Marks `orch_tasks` rows `remote_status = 'stale'` when all three hold: the row
+    /// is currently "active" (`pending`/`running`/`waiting_approval`,
+    /// `dispatcher::ACTIVE_TASK_STATUSES`'s exact set), its `dispatched_at` predates
+    /// `stale_before`, and the item's project is linked (`orch_links`) to a
+    /// `control_planes` row whose `health = 'unreachable'` and whose `last_seen_at`
+    /// also predates `stale_before` — a plane that has never once answered `/health`
+    /// successfully since before the cutoff, not a plane mid-outage that might still
+    /// recover this tick. `'stale'` is deliberately outside
+    /// `dispatcher::ACTIVE_TASK_STATUSES`, so a reconciled row immediately becomes
+    /// redispatchable (the existing "anything not in the active set is terminal,
+    /// redispatch is safe" rule in `dispatcher.rs` already covers it — no separate
+    /// unblock logic needed). Returns the number of rows updated.
+    ///
+    /// No HTTP call — see this section's module doc for why that matters for the
+    /// golden tick-contract test.
+    #[instrument(skip(self))]
+    pub async fn reconcile_stale_orch_tasks(
+        &self,
+        stale_before: DateTime<Utc>,
+    ) -> Result<u64, sqlx::Error> {
+        let now = Utc::now().to_rfc3339();
+        let cutoff = stale_before.to_rfc3339();
+        let result = sqlx::query(
+            "UPDATE orch_tasks
+             SET remote_status = 'stale', updated_at = ?
+             WHERE remote_status IN ('pending', 'running', 'waiting_approval')
+               AND dispatched_at < ?
+               AND item_id IN (
+                   SELECT i.id FROM items i
+                   JOIN orch_links l ON l.project_id = i.project_id
+                   JOIN control_planes cp ON cp.id = l.control_plane_id
+                   WHERE cp.health = 'unreachable' AND cp.last_seen_at < ?
+               )",
+        )
+        .bind(&now)
+        .bind(&cutoff)
+        .bind(&cutoff)
+        .execute(self.pool())
+        .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// Same reconciliation as [`Self::reconcile_stale_orch_tasks`], for
+    /// `orch_approvals`: a `pending` approval whose `requested_at` predates
+    /// `stale_before`, correlated to a control plane (`orch_approvals.control_plane_id`
+    /// directly, no join needed — migration 038's rebuild added the column) that has
+    /// been `unreachable` since before the same cutoff, moves to `'expired'` with
+    /// `decided_at` set to now. An approval with a `NULL control_plane_id` (possible
+    /// post-038-rebuild; see this table's own doc comment) is never touched — there is
+    /// no plane to judge unreachable, so "stale" cannot be determined from this signal
+    /// alone. Returns the number of rows updated.
+    #[instrument(skip(self))]
+    pub async fn reconcile_stale_orch_approvals(
+        &self,
+        stale_before: DateTime<Utc>,
+    ) -> Result<u64, sqlx::Error> {
+        let now = Utc::now().to_rfc3339();
+        let cutoff = stale_before.to_rfc3339();
+        let result = sqlx::query(
+            "UPDATE orch_approvals
+             SET state = 'expired', decided_at = ?, updated_at = ?
+             WHERE state = 'pending'
+               AND requested_at < ?
+               AND control_plane_id IS NOT NULL
+               AND control_plane_id IN (
+                   SELECT id FROM control_planes
+                   WHERE health = 'unreachable' AND last_seen_at < ?
+               )",
+        )
+        .bind(&now)
+        .bind(&now)
+        .bind(&cutoff)
+        .bind(&cutoff)
+        .execute(self.pool())
+        .await?;
+        Ok(result.rows_affected())
+    }
+}
