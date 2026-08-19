@@ -1,6 +1,6 @@
 # Crate Tour
 
-This chapter walks through each of the four Rust crates in depth: what it owns, what it deliberately does not own, the key files, and the patterns worth understanding.
+This chapter walks through each of the six Rust crates in depth: what it owns, what it deliberately does not own, the key files, and the patterns worth understanding. `tack-core`, `tack-db`, `tack-api`, and `tack-cli` predate the Part III runner-fleet cycle; `tack-orch` and `tack-runner` were added by it.
 
 > The SolidJS web UI in `frontend/` is covered separately in
 > [Frontend & Design System](frontend.md) — structure, the design-token system,
@@ -137,7 +137,9 @@ The mapping from `CoreError` to HTTP status codes lives in `tack-api/src/error.r
 
 ### `migrations.rs`
 
-Contains 18 migrations as `const` arrays of SQL strings. Each entry is `(&str name, &[&str] statements)`. The runner:
+Contains every migration (61 as of this build — check `GET /api/health`'s
+`migrations_applied` field rather than trusting a hand-written count here) as `const`
+arrays of SQL strings. Each entry is `(&str name, &[&str] statements)`. The runner:
 
 1. Creates `_migrations` table if absent.
 2. For each migration, checks if the name is already recorded.
@@ -150,6 +152,20 @@ Migrations are idempotent — running them on an existing database is safe. Nota
 - `010_fts` — creates the FTS5 virtual table `items_fts` and three triggers (`after_item_insert`, `after_item_update`, `after_item_delete`) that keep the FTS index in sync with the `items` table.
 - `012_custom_fields` — `custom_field_definitions` and `custom_field_values` tables.
 - `016_perf_indexes` — additional composite indexes added after profiling.
+- `039`–`048` — the ten neutral runner-v1 execution-domain tables added in Part III
+  Wave 1 (execution requests/attempts/events/decisions/artifacts, agent profiles,
+  runner fleets/members, model profiles). `049`+ refine execution replay, recovery
+  and attempt-start facts across later waves.
+
+Each ordinary migration runs in its own transaction with the `_migrations` record
+inserted at commit; a failing statement rolls the whole migration back. Applied
+migrations are checked at every startup against the binary's own ordered list by name
+**and** a deterministic checksum — an edited or reordered history refuses to boot
+rather than running silently. A small subset (037/038, a table
+copy/verify/swap rebuild predating Part III) additionally takes an automatic
+`VACUUM INTO` snapshot before its first attempt. See `docs/MIGRATION-GUIDE.md` for the
+operator-facing version of this and `docs/adr/0008-transactional-migration-rebuild-recovery.md`
+for the design rationale.
 
 ---
 
@@ -181,6 +197,58 @@ This design gives callers a single `repo` value to pass around while keeping eac
 - Timestamps are stored as RFC 3339 strings and parsed via `chrono::DateTime<Utc>`.
 
 **Notable function: `check_and_update_parent_status`** (in `items.rs`). After an item is moved to a `Done`-category status, the handler calls this function with the item's `parent_id`. It queries whether all sibling items are also in a done status, and if so, updates the parent. The `WorkflowConfig::should_complete_parent(all_siblings_done)` call in `tack-core` provides the decision logic — the repository only handles the data queries.
+
+---
+
+## `tack-orch`
+
+**Lives in:** `crates/tack-orch/src/`
+
+**Owns:** two things that share a crate because both sit between `tack-db` and
+`tack-api` without depending on `tack-api`: the Docket agent-fleet orchestration
+client (`ControlPlane` trait, reconciler, adapters), and — added in Part III — the
+neutral runner-v1 **execution domain** (`execution/`): lifecycle validation,
+fencing/idempotency types, and the pure state-machine rules that both `tack-api`'s
+handlers and `tack-runner`'s protocol implementation must agree on.
+
+**Does not own:** HTTP handling or SQL. Depends only on `tack-core` and `tack-db`; the
+dependency points inward deliberately — `tack-api` depends on this crate (to spawn the
+reconciler and expose the orchestration/execution routes), never the reverse. This
+boundary is load-bearing: it's what lets `tack-runner`'s tests exercise the same
+lifecycle rules as the server without linking Axum.
+
+---
+
+### `execution/lifecycle.rs`
+
+`validate_transition(from, to, actor)` is the single authority for every legal
+execution-attempt state change. States: `queued | leased | preparing | running |
+waiting_decision | succeeded | failed | cancelled | lost | needs_operator`. Each
+transition is validated against **both** the state pair and which `TransitionActor`
+(`Scheduler`, `Operator`, `LeaseOwner`, `RecoveryService`) is allowed to request it —
+for example, only `RecoveryService` may move an attempt into `lost` or
+`needs_operator`; a lease owner reporting the same crash cannot self-authorize it. See
+the [Recovery Runbook](../user-guide/recovery-runbook.md) for what drives those
+transitions operationally.
+
+### `execution/types.rs`
+
+Wire-shape-adjacent types shared by both the server and (once wired) the runner:
+`AgentProfileSnapshot { name, instructions, tool_policy, timeout_seconds, budgets }`,
+`RepositorySnapshot { kind, remote, base_revision }`, `PermissionPolicy { tools,
+network }`, and `EnvironmentValue { value, secret_reference }` — the last one is why
+execution requests never store a raw secret: every environment entry is either a
+literal non-secret value or an opaque reference the runner resolves locally.
+
+### `reconciler.rs` and `adapters::docket`
+
+One `tokio` task per registered Docket control plane, polling `/health` +
+`/status.json` on a jittered interval and driving a `healthy → degraded (3 failures) →
+unreachable (10)` state machine. Remote enums all carry an `Unknown(String)` fallback
+so a Docket version mismatch degrades gracefully instead of failing a poll. This half
+of the crate is entirely independent of the execution domain above — see
+[Docket compatibility](../user-guide/agent-runners.md#docket-compatibility) for how
+(and why) the two never share a code path.
 
 ---
 
@@ -287,6 +355,64 @@ The API token is never logged. The only place it appears in logs is a boolean "t
 | `Internal` | 500 |
 
 The response body is always `{ "error": { "status": <code>, "message": "<text>" } }`.
+
+---
+
+## `tack-runner`
+
+**Lives in:** `crates/tack-runner/src/`
+
+**Owns:** its own binary (`tack-runner`, entirely separate from `tack`) — local
+enrollment/credential handling, the isolated per-attempt workspace, the owner-only
+attempt journal, and the harness adapter layer. **Does not own** anything the API
+must not touch: vendor credentials, workspace contents, and the harness subprocess
+never leave this crate. See [Agent Runners & Fleet Execution](../user-guide/agent-runners.md)
+for the operator-facing view of everything below.
+
+### `config.rs`
+
+`RunnerConfig::from_sources` layers defaults → TOML file → environment
+(`TACK_RUNNER_API_URL`, `TACK_RUNNER_ID`, `TACK_RUNNER_STATE_DIR`,
+`TACK_RUNNER_ENROLLMENT_TOKEN`) → CLI flags. `EnrollmentCredential`'s `Debug`/
+`Display` are hardcoded to print `[REDACTED]` — redaction here is structural, not a
+convention a future `println!` could accidentally bypass.
+
+### `journal.rs` and `workspace.rs`
+
+A `WorkspaceJournal` record is written to `TACK_RUNNER_STATE_DIR` **before** any
+harness process is allowed to spawn — this ordering is what makes crash recovery
+possible (see the [Recovery Runbook](../user-guide/recovery-runbook.md)).
+`JournalState` tracks `Prepared → ProcessObservedRunning → ... → Reported`; a restart
+finds this file and reports what it actually observed rather than guessing.
+`WorktreeProvisioner` is the sole trait allowed to create a workspace's git worktree —
+tests inject a fake so unit tests never touch a real checkout.
+
+### `client.rs` — `RunnerProtocolClient`
+
+Defines the trait the runner's runtime loop drives: `enroll`, `refresh`, `claim`,
+`heartbeat`, and per-attempt `accept`/`start`/`events`/`decisions`/`artifacts`/
+`completion`/`cancellation`/`recovery-observation`. **The only implementation of this
+trait in the tree today is `UnavailableProtocolClient`**, which fails immediately with
+a typed `RunnerError::ProtocolUnavailable` — there is no HTTP-backed implementation
+wired into `main.rs` yet, and the crate does not depend on `reqwest`. This is a
+genuine, tested gap (`runtime::tests::unavailable_protocol_is_a_typed_failure_not_success`
+pins the failure as deliberate), not an oversight papered over with a fake success —
+see [What actually runs today](../user-guide/agent-runners.md#what-actually-runs-today).
+
+### `harness/`
+
+The adapter layer: `process.rs` (bounded output capture, timeouts, process-group
+cancellation), `event_sink.rs` (backpressure), `redact.rs`, `artifact.rs`, and one
+module per harness (`codex.rs`, `claude_code.rs`, `opencode.rs`). Two traits:
+`HarnessAdapter` (per-attempt lifecycle: `validate`/`start`/`cancel`/`wait`/
+`reconcile`) and `HarnessProbe` (version/capability discovery). `AdapterRegistry`
+implements `HarnessAdapter` by dispatching on harness kind and **refuses to register
+any probe claiming `cancel: supported`** — every harness's own shell tool spawns its
+subprocess in a new session outside the runner's process group, confirmed against real
+binaries in Wave 3 (`docs/agent-handoffs/part-iii/III-D{1,2,3,4,5}.md`). Live harness
+tests are `#[ignore]`d and never required in CI; `harness/fixtures/fake_harness.sh`,
+driven by `TACK_FAKE_HARNESS_MODE`, is the always-runnable path every required test
+uses instead.
 
 ---
 

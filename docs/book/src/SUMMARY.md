@@ -20,6 +20,8 @@
 - [Administration & Security](user-guide/administration.md)
 - [Orchestration & the Fleet View](user-guide/orchestration.md)
   - [Local Integration Setup](user-guide/orchestration-local-setup.md)
+- [Agent Runners & Fleet Execution](user-guide/agent-runners.md)
+  - [Recovery Runbook](user-guide/recovery-runbook.md)
 - [Troubleshooting & FAQ](user-guide/troubleshooting.md)
 
 ---
