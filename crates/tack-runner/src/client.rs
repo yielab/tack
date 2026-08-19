@@ -1,9 +1,10 @@
-use std::{fmt, time::Duration};
+use std::{fmt, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use tack_orch::execution::{
     ActualExecution, AttemptSnapshot, ExecutionRequestSnapshot, ExecutionState, ProtocolVersion,
-    RecoveryObservationRequest, RecoveryObservationResponse, RunnerCapabilities, Usage,
+    RecoveryObservationRequest, RecoveryObservationResponse, RunnerCapabilities, StableErrorCode,
+    Usage,
 };
 
 use crate::{EnrollmentCredential, RunnerError, Shutdown};
@@ -12,6 +13,8 @@ use crate::{EnrollmentCredential, RunnerError, Shutdown};
 pub mod engine;
 #[path = "journal.rs"]
 pub mod journal;
+#[path = "transport.rs"]
+pub mod transport;
 #[path = "workspace.rs"]
 pub mod workspace;
 
@@ -24,6 +27,12 @@ pub use journal::{
     PendingTerminalReportKind, WorkspaceJournal,
 };
 pub use tack_orch::execution::RecoveryObservation;
+pub use transport::{
+    ArtifactManifestItem, ArtifactManifestReport, ArtifactUploadGrant, AttemptDataProtocol,
+    DecisionAnswer, DecisionCreateReport, DecisionCreateResponse, DecisionOption,
+    DecisionPollReport, DecisionPollResponse, EventBatchReport, EventBatchResponse,
+    HttpPullProtocol, HttpRunnerClient, ProtocolEvent, ResolvedDecision, RetryPolicy,
+};
 pub use workspace::{
     CleanupResult, UnavailableWorktreeProvisioner, Workspace, WorkspaceError, WorkspaceManager,
     WorktreeProvisioner,
@@ -449,16 +458,132 @@ pub trait PullProtocol: Send + Sync {
     ) -> Result<RecoveryObservationResponse, ProtocolClientError>;
 }
 
+/// Shared ownership of one transport by the engine and the daemon loop that
+/// also needs it for idle heartbeats. Without this the engine would have to
+/// take the only copy.
+#[async_trait]
+impl<T> PullProtocol for Arc<T>
+where
+    T: PullProtocol + ?Sized,
+{
+    async fn enroll(
+        &self,
+        enrollment_credential: &EnrollmentCredential,
+        request: EnrollmentRequest,
+    ) -> Result<EnrollmentResponse, ProtocolClientError> {
+        (**self).enroll(enrollment_credential, request).await
+    }
+
+    async fn refresh(
+        &self,
+        session: &RunnerSession,
+        request: RefreshRequest,
+    ) -> Result<RefreshResponse, ProtocolClientError> {
+        (**self).refresh(session, request).await
+    }
+
+    async fn claim(
+        &self,
+        session: &RunnerSession,
+        request: ClaimRequest,
+    ) -> Result<ClaimResult, ProtocolClientError> {
+        (**self).claim(session, request).await
+    }
+
+    async fn heartbeat(
+        &self,
+        session: &RunnerSession,
+        request: HeartbeatRequest,
+    ) -> Result<HeartbeatResponse, ProtocolClientError> {
+        (**self).heartbeat(session, request).await
+    }
+
+    async fn report_start(
+        &self,
+        session: &RunnerSession,
+        report: StartReport,
+    ) -> Result<(), ProtocolClientError> {
+        (**self).report_start(session, report).await
+    }
+
+    async fn report_completion(
+        &self,
+        session: &RunnerSession,
+        report: CompletionReport,
+    ) -> Result<CompletionResponse, ProtocolClientError> {
+        (**self).report_completion(session, report).await
+    }
+
+    async fn report_cancellation(
+        &self,
+        session: &RunnerSession,
+        report: CancellationReport,
+    ) -> Result<CancellationResponse, ProtocolClientError> {
+        (**self).report_cancellation(session, report).await
+    }
+
+    async fn observe_recovery(
+        &self,
+        session: &RunnerSession,
+        report: RecoveryObservationRequest,
+    ) -> Result<RecoveryObservationResponse, ProtocolClientError> {
+        (**self).observe_recovery(session, report).await
+    }
+}
+
+/// Every failure a [`PullProtocol`] implementation may report.
+///
+/// `StaleLease` and `RunnerRevoked` predate III-H1 and stay separate
+/// variants because the engine's fencing and revocation handling branch on
+/// them by name; III-H1 added [`ProtocolClientError::Protocol`] so the other
+/// thirteen `docs/contracts/runner-v1/` stable codes arrive **typed** rather
+/// than collapsed into the bare `Rejected` a pre-transport seam had to use.
+/// `Rejected` is retained with a narrowed meaning: the server refused the
+/// request but its body was not a parseable v1 error envelope, so there is
+/// no stable code to report. That is a real, distinguishable condition — a
+/// proxy or a non-v1 server — and must not be silently reported as one of
+/// the fifteen contract codes.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ProtocolClientError {
     #[error("stale_lease")]
     StaleLease,
     #[error("runner_revoked")]
     RunnerRevoked,
+    /// A stable v1 error code other than `stale_lease`/`runner_revoked`.
+    #[error("protocol rejected the request: {code:?}")]
+    Protocol { code: StableErrorCode },
     #[error("protocol rejected the request")]
     Rejected,
     #[error("runner protocol transport failed")]
     Transport,
+}
+
+impl ProtocolClientError {
+    /// Maps a stable contract code onto this enum, preserving the two
+    /// variants the engine branches on by name. `stale_lease` can therefore
+    /// never surface as a generic conflict.
+    pub fn from_stable_code(code: StableErrorCode) -> Self {
+        match code {
+            StableErrorCode::StaleLease => Self::StaleLease,
+            StableErrorCode::RunnerRevoked => Self::RunnerRevoked,
+            other => Self::Protocol { code: other },
+        }
+    }
+
+    /// Whether a conformant client may retry, delegating entirely to
+    /// [`StableErrorCode::retryable`] — the single authority derived from
+    /// `docs/contracts/runner-v1/errors/*.json`. A transport failure is
+    /// retryable only for operations whose payload carries an idempotency
+    /// key; that second condition lives in `transport.rs`, not here.
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::StaleLease => StableErrorCode::StaleLease.retryable(),
+            Self::RunnerRevoked => StableErrorCode::RunnerRevoked.retryable(),
+            Self::Protocol { code } => code.retryable(),
+            Self::Rejected => false,
+            Self::Transport => true,
+        }
+    }
 }
 
 /// Fails explicitly until a route-owning integration supplies a transport.
