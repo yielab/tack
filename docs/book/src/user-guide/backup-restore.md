@@ -1,7 +1,8 @@
 # Backup and Restore
 
-Tack offers two data-protection mechanisms: **hot backup** (a full SQLite copy) and **JSON
-export** (a human-readable per-project snapshot). Both can be triggered via the API or the CLI.
+Tack offers three data-protection mechanisms: **hot backup** (a database-only SQLite copy),
+**remote/cloud backup** (a full bundle including on-disk files), and **JSON export** (a
+human-readable per-project snapshot). All three can be triggered via the API or the CLI.
 
 ---
 
@@ -34,7 +35,10 @@ curl -O -J -H "Authorization: Bearer <token>" http://127.0.0.1:3210/api/backup
 
 **What it does NOT include:**
 
-- Attachment files — stored in `TACK_STORAGE_DIR` (default `./storage`). Back that directory up separately.
+- Attachment files and execution artifacts — both stored under `TACK_STORAGE_DIR`
+  (default `./storage`; execution artifacts specifically in
+  `TACK_STORAGE_DIR/execution-artifacts`). Back that directory up separately, or use
+  [Remote/Cloud Backup](#remotecloud-backup) below, which includes it automatically.
 
 ---
 
@@ -65,6 +69,41 @@ curl -X POST http://127.0.0.1:3210/api/restore \
    - Runs any pending migrations
 
 The previous database is kept as `tack.db.bak`. Delete it once you've verified the restore.
+
+---
+
+## Remote/Cloud Backup
+
+Unlike the hot backup above, a remote backup bundle includes **the database and every
+file under `TACK_STORAGE_DIR`** — item attachments and, since Part III,
+`execution-artifacts/` (artifacts a runner uploaded for an execution attempt — logs,
+diffs, generated files; see [Agent Runners](agent-runners.md#workspace-and-artifact-storage)).
+This is the one backup mechanism that captures artifacts without a separate `rsync`
+step. It requires cloud object storage to be configured — see
+[Cloud Backup](administration.md#cloud-backup-s3-compatible) for the S3-compatible
+setup — and is otherwise inert.
+
+```sh
+tack backup --remote                 # push a bundle now
+tack backups                         # list bundles in the bucket
+```
+
+The bundle is a `zstd`-compressed tar (`database.db`, the recursively-walked storage
+tree, and a `manifest.json` with a sha256 of the database and an item count). Secrets
+are scrubbed from the embedded database snapshot before it's bundled — see
+`scrub_snapshot_secrets` in `crates/tack-api/src/remote_backup.rs`, kept in sync with
+every secret-bearing column in the same commit that adds one.
+
+Restore is staged the same way as local restore — download, stage, restart:
+
+```sh
+tack restore --remote --key <object-key>   # omit --key to restore the latest bundle
+```
+
+On the next startup, the staged database swaps in and the staged storage tree is
+merged into `TACK_STORAGE_DIR` — so a remote restore recovers execution artifacts and
+attachments together with the database, in one step, unlike the local hot-backup path
+below.
 
 ---
 

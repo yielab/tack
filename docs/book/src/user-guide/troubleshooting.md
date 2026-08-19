@@ -64,7 +64,7 @@ sqlite3 tack.db
 SELECT * FROM _migrations;
 ```
 
-If a migration is recorded as applied but the schema is clearly incomplete, the safest recovery is to restore a known-good backup rather than hand-editing the schema. See [Backup and Restore](backup-restore.md).
+If a migration is recorded as applied but the schema is clearly incomplete, the safest recovery is to restore a known-good backup rather than hand-editing the schema. See [Backup and Restore](backup-restore.md). For the full upgrade path — what runs automatically, when Tack takes its own pre-upgrade snapshot, and how to safely enable the Part III runner-fleet execution features — see [`docs/MIGRATION-GUIDE.md`](../../../MIGRATION-GUIDE.md).
 
 **How staged restore interacts with this.** A restore is *staged*, not applied live: Tack writes the uploaded database next to the live file as `<db>.restore` and tells you to restart. On the next startup, before opening the database, Tack swaps the files atomically:
 
