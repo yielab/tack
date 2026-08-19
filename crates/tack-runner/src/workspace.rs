@@ -45,9 +45,27 @@ pub enum WorkspaceError {
     AttemptMismatch,
     #[error("worktree provisioning is not configured")]
     WorktreeUnavailable,
+    // Every git failure below is deliberately distinguishable: an operator
+    // debugging a stuck attempt needs to know whether git is missing, the
+    // remote is unreachable, the revision does not exist, or git hung — and
+    // none of these messages may carry a remote URL, a path or git's own text
+    // (see `git::GitOutput::redacted_stderr`).
+    #[error("the git binary is not available to this runner")]
+    GitUnavailable,
+    #[error("a git command failed while provisioning the attempt checkout")]
+    Git,
+    #[error("a git command exceeded the provisioning timeout")]
+    GitTimeout,
+    #[error("the attempt repository could not be reached")]
+    RepositoryUnreachable,
+    #[error("the requested base revision does not exist in the attempt repository")]
+    RevisionUnavailable,
     #[error("runner workspace operation failed")]
     Io,
 }
+
+#[path = "git.rs"]
+pub mod git;
 
 /// The only boundary allowed to create a Git worktree. Tests inject a fake;
 /// C3 does not pretend that an empty directory is a checked-out repository.
