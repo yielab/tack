@@ -10,7 +10,7 @@ use tack_runner::{
     RunnerConfigSources, RunnerRuntime, Shutdown, SystemClock, SystemProcessSupervisor,
     client::{
         HttpPullProtocol, HttpRunnerClient, OwnerOnlyJournal, RetryPolicy, RunnerEngine,
-        UnavailableWorktreeProvisioner, WorkspaceManager,
+        WorkspaceManager, workspace::git::GitWorktreeProvisioner,
     },
     harness::{
         AdapterRegistry, HarnessProbe, PROCESS_GROUP_CANCEL_CEILING,
@@ -94,16 +94,14 @@ async fn run(cli: Cli) -> Result<(), tack_runner::RunnerError> {
         Arc::clone(&protocol),
         adapters,
         OwnerOnlyJournal::new(config.state_dir.join("journal")),
-        // The only `WorktreeProvisioner` in the tree still refuses every
-        // provision with a typed `WorktreeUnavailable`. That is a real,
-        // separate gap from this card's transport (see
-        // docs/agent-handoffs/part-iii/III-H1.md, "escalated"): the runner
-        // can now enroll, claim, heartbeat and report, but cannot yet check
-        // out a repository for a claimed attempt. Wired honestly rather than
-        // hidden behind a directory that merely looks like a checkout.
+        // III-H3: every claimed attempt now gets its own real git checkout
+        // under the runner's state directory. This replaces
+        // `UnavailableWorktreeProvisioner`, which refused every provision with
+        // a typed `WorktreeUnavailable` — the gap III-H1 found and could not
+        // close inside its own ownership.
         WorkspaceManager::new(
             config.state_dir.join("workspaces"),
-            UnavailableWorktreeProvisioner,
+            GitWorktreeProvisioner::default(),
         ),
     );
     let client = HttpRunnerClient::new(protocol, engine, config.clone(), SystemClock, capabilities);

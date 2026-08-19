@@ -261,10 +261,21 @@ where
                 Ok(observation) => observation,
                 Err(_) => RecoveryObservation::Ambiguous,
             };
-            outcomes.push(
-                self.report_recovery_and_apply_disposition(session, &mut record, observation)
-                    .await?,
-            );
+            let outcome = self
+                .report_recovery_and_apply_disposition(session, &mut record, observation)
+                .await?;
+            // III-H3: a settled recovery owns the same cleanup duty as a
+            // terminal replay. Without this the checkout a killed runner left
+            // behind survives every restart, because nothing else ever revisits
+            // that attempt's directory. A `Quarantined` or `RecoveryPending`
+            // outcome deliberately keeps the checkout: it is the evidence an
+            // operator needs, and the attempt is not settled.
+            if matches!(outcome, RunCycle::Completed { .. }) {
+                let _ = self
+                    .workspaces
+                    .cleanup(&Self::workspace_from_journal(&record));
+            }
+            outcomes.push(outcome);
         }
         Ok(outcomes)
     }
