@@ -55,6 +55,43 @@ For every branch that reports UNLANDED, classify it before reporting — never g
 | `plan/<cycle-name>` | the cycle's integration line |
 | `develop`, `origin/*` | long-lived; `main` does NOT exist locally — do not assume it |
 
+## Branch health — run this every time, it is how the trunk gets lost
+
+The integration line is named on the board, not chosen by habit. A *card* branch has
+served as the de facto trunk here for three waves while the real line sat 21 commits
+behind, because nobody compared them.
+
+```bash
+# 1. What does the board say the integration line is? (never assume from your CWD)
+grep -n "[Ii]ntegration line\|branch from" TODO.md | head -3
+LINE=plan/harness-agnostic-agent-fleet     # confirm against the line above
+
+# 2. Does any branch hold work the line does not have? (content, not ancestry)
+git for-each-ref --format='%(refname:short)' refs/heads | while read b; do
+  [ "$b" = "$LINE" ] && continue
+  # git cherry, not rev-list: ancestry reports every rebased or restructured branch
+  # as ahead forever. Here that was 27 false positives against 4 real ones, and a check
+  # that cries wolf is a check nobody reads.
+  n=$(git cherry "$LINE" "$b" 2>/dev/null | grep -c '^+')
+  [ "${n:-0}" -gt 0 ] && printf 'UNLANDED  %-42s %s commits not in the line\n' "$b" "$n"
+done
+
+# 3. Is the line backed up? Unpushed commits exist only on this machine.
+git show-ref --verify --quiet "refs/remotes/origin/$LINE" \
+  && git rev-list --count "origin/$LINE..$LINE" | xargs echo "unpushed on the line:" \
+  || echo "the line is NOT on the remote at all — everything here exists on one machine"
+
+# 4. Which branch are you actually on?
+git branch --show-current
+```
+
+Report, in the status summary:
+- the integration line and whether you are on it;
+- any branch ahead of it, and whether that is expected (a finished card awaiting merge)
+  or drift (a card branch that quietly became the trunk — say so, it is a finding);
+- the unpushed count when it is not zero. Work that exists on one machine only is a
+  risk worth one sentence, every time.
+
 ## Reporting
 
 Answer in this order, briefly:

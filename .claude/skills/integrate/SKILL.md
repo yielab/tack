@@ -13,6 +13,30 @@ ran its own tests. Reviewing N branches separately re-does that work N times and
 misses the only thing that matters: whether they are correct *together*. Review once, on
 the merged tree.
 
+
+## 0. Merge INTO the integration line, and prove it afterwards
+
+```bash
+LINE=plan/harness-agnostic-agent-fleet          # confirm against the board
+git switch "$LINE"                              # merge target is the line, never a card branch
+# ... merges happen here ...
+# afterwards, nothing may be ahead of the line except unmerged cards you chose to leave:
+git for-each-ref --format='%(refname:short)' refs/heads | while read b; do
+  n=$(git cherry "$LINE" "$b" 2>/dev/null | grep -c '^+')   # content, not ancestry
+  [ "${n:-0}" -gt 0 ] && printf 'still unlanded: %-42s %s\n' "$b" "$n"
+done
+git show-ref --verify --quiet "refs/remotes/origin/$LINE" \
+  && git rev-list --count "origin/$LINE..$LINE" | xargs echo "unpushed:" \
+  || echo "the line is not on the remote at all"
+```
+
+If a card branch is ahead of the line after integration and it was not deliberately left
+out, the line did not actually advance — you merged into the wrong place. Fix it before
+reporting, and say what happened.
+
+Report the unpushed count in the summary. Pushing is the user's call, but silently
+leaving a whole wave on one machine is not.
+
 ## 1. Establish the set
 
 ```bash
