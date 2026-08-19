@@ -1,0 +1,75 @@
+---
+name: status
+description: Answer "where is this project right now and what is next" — reconstructs current state from git, the TODO.md status board, handoffs and the working tree in a few cheap commands. Use at the start of any session, after a break, or when it is unclear what was done and what to do next.
+---
+
+# Where am I / what's next
+
+State is NOT stored in one place and no file is kept "up to date" for you. It is derived
+from four sources of record. Run these, then report.
+
+```bash
+# 1. What actually landed, and is the tree clean?
+git log --oneline -8
+git status --porcelain          # empty = safe to branch cards from HEAD
+git branch --show-current
+
+# 2. The board: which wave is active, what is its base SHA, what is open
+head -30 TODO.md                          # names the active cycle
+grep -n "^| [0-9] — \|^| Wave " TODO.md   # the status-board rows
+# then read only the row for the active wave (sed -n '<line>p' TODO.md)
+
+# 3. The most recent decisions/corrections
+ls -t docs/agent-handoffs/*/ | head -5
+# read only the newest one or two if the board row is unclear
+
+# 4. DELIVERED-BUT-UNMERGED WORK — the check that ancestry misses.
+# `git branch --merged` lies here: rebased/restructured branches report unmerged
+# forever, and finished card branches sit invisible. Use patch-equivalence:
+for b in $(git branch --no-merged HEAD | sed 's/^..//'); do
+  n=$(git cherry HEAD "$b" 2>/dev/null | grep -c '^+')
+  [ "$n" -gt 0 ] && printf 'UNLANDED %-40s %s commits  (last %s)\n' \
+    "$b" "$n" "$(git log -1 --format=%cd --date=short $b)"
+done
+
+git worktree list               # agent worktrees still mounted
+```
+
+For every branch that reports UNLANDED, classify it before reporting — never guess:
+
+- **Finished card awaiting integration** — recent date, has a handoff in
+  `docs/agent-handoffs/`, matches an open card id. This is real work; say so loudly.
+- **Superseded** — old date, and its content exists in HEAD in restructured form.
+  Verify by looking for the feature in the tree (a moved file, a renamed module),
+  not by trusting the branch name. Report as safe-to-delete; deleting is the user's call.
+
+## Branch conventions in this repo
+
+| Pattern | Meaning |
+|---|---|
+| `agent/iii-<card>-<slug>` | one board card's work; merged by the wave integrator |
+| `worktree-agent-<hash>` | throwaway checkout created by agent isolation; not authored work |
+| `plan/<cycle-name>` | the cycle's integration line |
+| `develop`, `origin/*` | long-lived; `main` does NOT exist locally — do not assume it |
+
+## Reporting
+
+Answer in this order, briefly:
+
+1. **Done** — the last accepted wave/card and its SHA (from the board row, confirmed
+   against `git log`).
+2. **Now** — clean tree or not; current branch; anything uncommitted that must land
+   before dispatching cards.
+3. **Next** — the open cards for the active wave, which may run in parallel, which must
+   run last, and **the exact base SHA to branch from**.
+4. **Findings** — anything that contradicts itself. Check specifically: does the board's
+   stated base SHA still equal HEAD? New commits after the board was written mean cards
+   branching from the recorded SHA would silently miss them.
+
+## Rules
+
+- The board is the authority for what shipped; `git log` is the authority for what
+  exists. When they disagree, say so — do not quietly trust either.
+- Never read TODO.md whole. Extract the rows and the active wave's section only.
+- This skill only READS. Updating the board is the wave integrator's job (see `/card`);
+  if you find drift, report it and propose the corrected text.

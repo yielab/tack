@@ -16,7 +16,7 @@ records only intent. Don't read `TODO.md` whole (~10k lines, mostly archive) —
 `/card` skill's extraction recipe.
 
 **Skills:** `/card` (work a board card), `/feature` (feature work off the board),
-`/gate` (scoped verification), `/tokens` (usage measurement vs `.claude/token-baseline.md`). Prefer them over improvising the workflow.
+`/gate` (scoped verification), `/tokens` (usage measurement vs `.claude/token-baseline.md`), `/status` (where am I / what is next), `/integrate` (merge finished card branches and review them as one change). Prefer them over improvising the workflow.
 
 ## Local Domain
 
@@ -81,8 +81,13 @@ frontend/          SolidJS + Tailwind v4; two-axis design tokens (mode × palett
 Boundary rules: **two auth surfaces, structurally separated** — operator routes under
 `/api` behind `require_token`; runner routes (`/api/runner/v1`) are a sibling of `/api`
 with per-handler hashed-credential auth; never route one through the other. Every
-attempt-scoped mutation validates runner id + attempt id + fencing token (stale fence ⇒
-`stale_lease`, writes nothing). Full crate detail, design patterns, and implementation
+attempt-scoped mutation validates runner id + attempt id + fencing token; a stale fence
+returns `stale_lease` and writes nothing (16 call sites in
+`handlers/runner_protocol.rs`). **Known inconsistency (III-G2 audit, 2026-08-19,
+finding F1, non-blocking):** when an attempt was superseded by a pre-spawn *recovery*,
+the retried old fence returns `409 conflict` instead of `stale_lease` on heartbeat,
+decisions, artifacts and the observation routes — an earlier guard fires first. Nothing
+is written either way; the code is inconsistent with itself, not unsafe. III-G5 routes it. Full crate detail, design patterns, and implementation
 notes (workflow validation, auto-status propagation, WebSocket events, attachments…):
 **`docs/ARCHITECTURE.md`**.
 
