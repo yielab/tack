@@ -57,7 +57,7 @@ dependencies. CLAUDE.md (already in context) covers architecture — don't re-de
 ### Branch discipline (before you write any code)
 
 ```bash
-LINE=plan/harness-agnostic-agent-fleet          # confirm against the board
+LINE=develop                                    # confirm against the board
 git rev-list --count "$LINE..$(git branch --show-current)"   # must be 0 before you start
 git switch -c agent/<card-id-lowercase>-<slug> "$LINE"
 ```

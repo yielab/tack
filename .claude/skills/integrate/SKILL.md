@@ -17,7 +17,7 @@ the merged tree.
 ## 0. Merge INTO the integration line, and prove it afterwards
 
 ```bash
-LINE=plan/harness-agnostic-agent-fleet          # confirm against the board
+LINE=develop                                    # confirm against the board
 git switch "$LINE"                              # merge target is the line, never a card branch
 # ... merges happen here ...
 # afterwards, nothing may be ahead of the line except unmerged cards you chose to leave:
