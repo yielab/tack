@@ -8,9 +8,10 @@
 >
 > The authoritative, always-current contract is the machine-generated OpenAPI 3.1
 > document — served live at **`GET /api/openapi.json`** and checked into the repo at
-> **[`docs/openapi.json`](openapi.json)** (68 REST operations across 43 paths + 1
-> WebSocket). It is generated from the handler annotations and gated in CI, so it
-> cannot silently drift from the code.
+> **[`docs/openapi.json`](openapi.json)** (90+ paths, over 120 REST operations, plus 1
+> WebSocket — check the file itself rather than trusting a hand-written count here, it
+> grows every wave). It is generated from the handler annotations and gated in CI, so
+> it cannot silently drift from the code.
 >
 > **This document is a hand-written companion** — narrative, auth model, and
 > copy-paste `curl` examples. Exact field names, status codes, and request/response
@@ -39,7 +40,8 @@
 15. [WebSocket Events](#websocket-events)
 16. [Alexa Voice Integration](#alexa-voice-integration)
 17. [Remote Cloud Backup](#remote-cloud-backup)
-18. [Error Responses](#error-responses)
+18. [Runner, Fleet & Execution](#runner-fleet--execution)
+19. [Error Responses](#error-responses)
 
 ---
 
@@ -1263,6 +1265,32 @@ Saves the configuration to the `app_meta` table. Leave `secret_key` blank to kee
 the currently stored secret (so the masked UI field can be submitted untouched).
 Any blank string field clears that override and falls back to the environment
 default. Returns the same masked shape as `GET`.
+
+---
+
+## Runner, Fleet & Execution
+
+Everything for handing a board item to a coding-agent runner (Codex, Claude Code, or
+OpenCode) lives under `/api/executions`, `/api/runner-fleets`, `/api/runners`,
+`/api/agent-profiles`, `/api/model-profiles` (operator surface, ordinary
+`Authorization: Bearer` auth), and the separate `/api/runner/v1/*` protocol (13 paths,
+per-handler hashed runner-credential auth — deliberately never routed through operator
+auth). This document does not hand-duplicate that surface: it changes every wave and
+the schemas are fully typed in `docs/openapi.json` already. Two narrative guides cover
+it instead:
+
+- **[Agent Runners & Fleet Execution](book/src/user-guide/agent-runners.md)** —
+  concepts, enrolling/revoking a runner, credentials, workspace/artifact storage, the
+  capability matrix, version compatibility, Docket's relationship to this surface, and
+  — read before relying on any of this — exactly what runs end-to-end today versus
+  what stops at enrollment in this build.
+- **[Recovery Runbook](book/src/user-guide/recovery-runbook.md)** — `needs_operator`,
+  lease fencing, and how an operator resolves a stuck attempt.
+
+`resolve_decision` (`POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve`)
+requires the separate `TACK_EXECUTION_DECISION_TOKEN` secret, fail-closed when unset —
+see [Authentication](#authentication) for how this differs from the ordinary API
+token.
 
 ---
 
