@@ -9,6 +9,15 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
+# Every multi-line shell step in this workflow runs under `bash` with
+# `set -euo pipefail` as its first line (see each `run: |` block) so a failing
+# command in the middle of a pipeline — e.g. `git diff --exit-code docs/openapi.json`
+# piped through something, or a `cargo test` piped to a filter — cannot be masked
+# by the exit status of the last command in the pipe.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   rust:
     name: Rust (fmt + clippy + test)
@@ -22,7 +31,7 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all --check
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace
       # Regenerate the committed OpenAPI contract from the code and fail if it
@@ -30,6 +39,7 @@ jobs:
       # cargo test -p tack-api --test openapi_contract) is caught here.
       - name: OpenAPI contract drift gate
         run: |
+          set -euo pipefail
           UPDATE_OPENAPI=1 cargo test -p tack-api --test openapi_contract openapi_spec_matches_committed_file
           git diff --exit-code docs/openapi.json
       # Regenerate the tack-orch regression oracles (docs/plans/agnostic-control-plane.md
@@ -41,9 +51,49 @@ jobs:
       # without a golden regen is caught here.
       - name: tack-orch golden drift gate
         run: |
+          set -euo pipefail
           UPDATE_GOLDEN=1 cargo test -p tack-orch --test docket_tick_contract_test
           UPDATE_GOLDEN=1 cargo test -p tack-orch --test docket_wire_contract_test
           git diff --exit-code crates/tack-orch/tests/golden/
+      # The runner-v1 fixtures under docs/contracts/runner-v1/ are the language-neutral
+      # authority (III.1.6); this test byte-pins every one of them and is committed to
+      # git, not generated at job time (`git ls-files docs/contracts/runner-v1` — 47
+      # tracked files). A deliberate mutation of a fixture and revert is exercised
+      # locally (see III-G4 handoff) rather than in this workflow, so CI never carries a
+      # step designed to fail.
+      - name: Runner-v1 fixture drift gate (byte-pinned contract)
+        run: cargo test -p tack-orch --test runner_contract
+      # Wave-2 gate: full runner lifecycle proven through the real production router,
+      # not card-local scaffolding.
+      - name: Runner lifecycle gate (real router)
+        run: cargo test -p tack-api --test wave2_gate
+      # Fake-binary harness adapters (crates/tack-runner/src/harness/fixtures) and the
+      # runner crash matrix — spawn/ack/completion/cancellation loss and ambiguous
+      # recovery, each proven to never blind-retry. Never uses a live harness binary.
+      - name: Runner fake-adapter and crash-matrix tests
+        run: cargo test -p tack-runner
+      # Deterministic recovery from a migration failure mid-run — the runner executes
+      # each ALTER individually with no wrapping transaction (CLAUDE.md), so a partial
+      # apply must leave the DB in a state the next startup can repair, not brick it.
+      - name: Migration crash-recovery test
+        run: cargo test -p tack-db --test orch_migrations_test
+      # Security/chaos subset: auth-surface separation (operator vs runner-protocol
+      # tokens cannot substitute for each other), CORS allow-list enforcement, and
+      # concurrent-write race safety (WIP limit, board drag, Alexa dispatch) proven
+      # against a real, contended DB rather than a sequential retry loop.
+      - name: Security/chaos subset
+        run: |
+          set -euo pipefail
+          cargo test -p tack-api --test trust_boundary_test
+          cargo test -p tack-api --test cors_test
+          cargo test -p tack-api --test board_drag_wip_race_test
+          cargo test -p tack-api --test wip_limit_race_test
+          cargo test -p tack-api --test alexa_wip_race_test
+          cargo test -p tack-api --test runner_vertical_slice
+      # Contention-sensitive: forced to a single test thread, matching
+      # docs/agent-handoffs/part-iii/III-F6.md's isolated-run instruction.
+      - name: Scheduler E2E gate (isolated)
+        run: cargo test -p tack-cli --test e6_scheduler_e2e_test -- --test-threads=1
 
   msrv:
     name: MSRV (Rust 1.85 — edition 2024 floor)
@@ -90,6 +140,14 @@ jobs:
       # least-guarded crate in the workspace without this line.
       - name: Rust coverage — tack-orch (>= 70%)
         run: cargo llvm-cov -p tack-orch --fail-under-lines 70
+      # tack-runner had no floor before III-G4 (Wave 6) — it owns local credentials,
+      # the journal and the harness subprocess boundary. Measured locally at 93.66%
+      # line coverage (`cargo llvm-cov -p tack-runner --summary-only`, III-G4 handoff)
+      # via fake-adapter/crash-matrix tests only; live-harness tests are `--ignored`
+      # and excluded from this run by default, so the floor never depends on a billed
+      # live call. 85% mirrors tack-core's floor with headroom below the measured value.
+      - name: Rust coverage — tack-runner (>= 85%)
+        run: cargo llvm-cov -p tack-runner --fail-under-lines 85
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -99,6 +157,7 @@ jobs:
         working-directory: frontend
         # --no-save keeps package.json untouched; the provider is CI-only.
         run: |
+          set -euo pipefail
           npm ci
           npm install --no-save @vitest/coverage-v8@^4
       - name: Frontend Vitest coverage thresholds
@@ -129,6 +188,7 @@ jobs:
       # so this run checks licenses + bans only.
       - name: Generate deny policy
         run: |
+          set -euo pipefail
           cat > deny.toml <<'EOF'
           [graph]
           all-features = true
@@ -184,6 +244,7 @@ jobs:
         # contract drift gate", this makes the spec → server → frontend chain
         # impossible to silently diverge.
         run: |
+          set -euo pipefail
           npm run gen:api
           git diff --exit-code src/shared/api/schema.gen.ts
       - name: Type check
@@ -196,6 +257,7 @@ jobs:
         # Routes are now lazy-loaded; only the entry (solid-js runtime) and
         # router chunks are always downloaded.  Check those stay under 30 KB.
         run: |
+          set -euo pipefail
           TOTAL=0
           for f in dist/assets/index-*.js dist/assets/routing-*.js; do
             [ -f "$f" ] && TOTAL=$((TOTAL + $(gzip -c "$f" | wc -c)))
@@ -224,7 +286,9 @@ jobs:
       - name: Build docs
         run: mdbook build docs/book
       - name: Check for broken links
-        run: mdbook build docs/book 2>&1 | grep -i "error\|broken" && exit 1 || true
+        run: |
+          set -euo pipefail
+          mdbook build docs/book 2>&1 | grep -i "error\|broken" && exit 1 || true
 
   embed-spa:
     name: Embed SPA (single-binary packaging)
@@ -247,11 +311,35 @@ jobs:
         run: cargo test -p tack-api --features embed-spa
       - name: Build single binary
         run: cargo build -p tack-cli --release --features embed-spa
-      - name: Report binary size
+      - name: Build tack-runner binary
+        run: cargo build -p tack-runner --release
+      # Budgets are measured, not copied from stale documentation: CLAUDE.md's "~10 MB"
+      # figure for `tack` predates Part III's runner/orchestration dependencies
+      # (reqwest+rustls, object_store/S3, tokio-tungstenite, …) — a real `cargo build
+      # --release --features embed-spa` on this branch produced an 18.34 MB `tack` and a
+      # 1.81 MB `tack-runner` (III-G4 handoff). Budgets below add ~35-40% headroom over
+      # those measurements so the gate catches an accidental dependency that defeats
+      # `opt-level = "z"` / lto / strip, not routine drift — and a doc-correction request
+      # for CLAUDE.md's stale figure is recorded in the III-G4 handoff.
+      - name: Binary-size budget
         run: |
-          SIZE=$(stat -c%s target/release/tack)
-          MB=$(echo "scale=1; $SIZE / 1048576" | bc)
-          echo "tack binary: $SIZE bytes (${MB} MB)"
+          set -euo pipefail
+          TACK_SIZE=$(stat -c%s target/release/tack)
+          RUNNER_SIZE=$(stat -c%s target/release/tack-runner)
+          TACK_MB=$(echo "scale=1; $TACK_SIZE / 1048576" | bc)
+          RUNNER_MB=$(echo "scale=1; $RUNNER_SIZE / 1048576" | bc)
+          echo "tack binary:        $TACK_SIZE bytes (${TACK_MB} MB), budget 26214400 (25 MB)"
+          echo "tack-runner binary: $RUNNER_SIZE bytes (${RUNNER_MB} MB), budget 5242880 (5 MB)"
+          FAIL=0
+          if [ "$TACK_SIZE" -gt 26214400 ]; then
+            echo "ERROR: tack binary exceeds the 25 MB budget"
+            FAIL=1
+          fi
+          if [ "$RUNNER_SIZE" -gt 5242880 ]; then
+            echo "ERROR: tack-runner binary exceeds the 5 MB budget"
+            FAIL=1
+          fi
+          exit $FAIL
 
   security:
     name: Security (dependency audit)

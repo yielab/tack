@@ -17,6 +17,13 @@ env:
 permissions:
   contents: write
 
+# Non-Windows steps run under bash with `set -euo pipefail` as the first line
+# of every multi-line `run:` block (the pwsh packaging step below is the one
+# documented exception — PowerShell has its own error-stop semantics).
+defaults:
+  run:
+    shell: bash
+
 jobs:
   check-version:
     name: Tag matches Cargo.toml version
@@ -25,6 +32,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Verify versions match
         run: |
+          set -euo pipefail
           CARGO_VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           echo "Cargo.toml: $CARGO_VERSION — tag: $TAG_VERSION"
@@ -69,6 +77,7 @@ jobs:
         run: npm sbom --sbom-format cyclonedx > frontend.cdx.json
       - name: Collect SBOMs
         run: |
+          set -euo pipefail
           mkdir -p sbom
           # cargo-cyclonedx writes <crate>.cdx.json next to each crate manifest.
           find . -name '*.cdx.json' -not -path './sbom/*' -exec cp {} sbom/ \;
@@ -139,9 +148,16 @@ jobs:
       - name: Build release binary (auditable)
         run: cargo auditable build --release --target ${{ matrix.target }} -p tack-cli --features embed-spa
 
+      # tack-runner is a separate binary from `tack` (CLAUDE.md) — its own release
+      # archive so an operator provisioning a fleet host doesn't need the whole
+      # server/SPA bundle. Same auditable-build treatment as `tack`.
+      - name: Build tack-runner release binary (auditable)
+        run: cargo auditable build --release --target ${{ matrix.target }} -p tack-runner
+
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'
         run: |
+          set -euo pipefail
           STAGE="tack-${GITHUB_REF_NAME}-${{ matrix.platform }}"
           mkdir "$STAGE"
           cp "target/${{ matrix.target }}/release/tack" "$STAGE/"
@@ -164,6 +180,33 @@ jobs:
           EOF
           tar czf "$STAGE.tar.gz" "$STAGE"
           echo "ASSET=$STAGE.tar.gz" >> "$GITHUB_ENV"
+
+          RUNNER_STAGE="tack-runner-${GITHUB_REF_NAME}-${{ matrix.platform }}"
+          mkdir "$RUNNER_STAGE"
+          cp "target/${{ matrix.target }}/release/tack-runner" "$RUNNER_STAGE/"
+          cp LICENSE "$RUNNER_STAGE/"
+          cp packaging/systemd/tack-runner.service packaging/systemd/tack-runner.env.example "$RUNNER_STAGE/"
+          cat > "$RUNNER_STAGE/QUICKSTART.txt" <<'EOF'
+          tack-runner — Quick Start
+          ====================
+
+          tack-runner is the pull-based execution runner. It is a SEPARATE
+          binary from `tack` (the API server / CLI) — install it on any
+          machine that should execute agent work, not necessarily the one
+          running the Tack server.
+
+          1. Set required configuration (see docs/CONFIG.md for the full
+             table): TACK_RUNNER_API_URL, TACK_RUNNER_ENROLLMENT_TOKEN.
+          2. Start it:  ./tack-runner
+          3. Stop with Ctrl+C (drains in-flight work before exiting).
+
+          A systemd unit template and environment-file example are included
+          (tack-runner.service, tack-runner.env.example) for running this as
+          a long-lived service — see the comments in tack-runner.service for
+          install steps.
+          EOF
+          tar czf "$RUNNER_STAGE.tar.gz" "$RUNNER_STAGE"
+          echo "RUNNER_ASSET=$RUNNER_STAGE.tar.gz" >> "$GITHUB_ENV"
 
       - name: Package (zip)
         if: matrix.archive == 'zip'
@@ -195,10 +238,36 @@ jobs:
           Compress-Archive -Path $stage -DestinationPath "$stage.zip"
           "ASSET=$stage.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+          $runnerStage = "tack-runner-$env:GITHUB_REF_NAME-${{ matrix.platform }}"
+          New-Item -ItemType Directory -Path $runnerStage | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/tack-runner.exe" $runnerStage
+          Copy-Item LICENSE $runnerStage
+          @"
+          tack-runner — Quick Start
+          ====================
+
+          tack-runner is the pull-based execution runner. It is a SEPARATE
+          binary from tack.exe (the API server / CLI) — install it on any
+          machine that should execute agent work.
+
+          1. Set required configuration (see docs/CONFIG.md for the full
+             table): TACK_RUNNER_API_URL, TACK_RUNNER_ENROLLMENT_TOKEN.
+          2. Run tack-runner.exe (a console window opens).
+          3. Close the console window to stop.
+
+          A systemd unit template is provided for Linux hosts under
+          packaging/systemd/ in the source repository; on Windows, run this
+          as a scheduled task or via NSSM / a similar service wrapper.
+          "@ | Set-Content "$runnerStage/QUICKSTART.txt"
+          Compress-Archive -Path $runnerStage -DestinationPath "$runnerStage.zip"
+          "RUNNER_ASSET=$runnerStage.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.platform }}
-          path: ${{ env.ASSET }}
+          path: |
+            ${{ env.ASSET }}
+            ${{ env.RUNNER_ASSET }}
           if-no-files-found: error
 
   release:
@@ -219,6 +288,7 @@ jobs:
       - name: Generate SHA256SUMS
         working-directory: dist
         run: |
+          set -euo pipefail
           # Checksum every release asset (archives + SBOMs), excluding the
           # checksum file itself. Consumers verify with `sha256sum -c SHA256SUMS`.
           find . -maxdepth 1 -type f ! -name 'SHA256SUMS' -printf '%P\0' \
