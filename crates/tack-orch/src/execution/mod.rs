@@ -9,8 +9,12 @@ mod capabilities;
 mod lifecycle;
 mod types;
 
+// III-H1 added `CapabilityLimits` below: it is the type of the public field
+// `RunnerCapabilities::limits`, but was the only capability type this list
+// omitted — so no downstream crate could name it to construct a capability
+// report. Purely an export-list omission; no type, field or behaviour changed.
 pub use capabilities::{
-    CapabilitySupport, CapabilityValue, Concurrency, EmbeddedCapabilitySnapshot,
+    CapabilityLimits, CapabilitySupport, CapabilityValue, Concurrency, EmbeddedCapabilitySnapshot,
     FeatureCapabilities, HarnessCapability, ModelCombination, RunnerCapabilities,
 };
 pub use lifecycle::{LifecycleError, TransitionActor, validate_transition};
