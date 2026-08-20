@@ -16,7 +16,11 @@
           "model_ids": ["opaque/model-alpha", "opaque:model-beta"],
           "discovery": "reported"
         }
-      ]
+      ],
+      "model_passthrough": {
+        "support": "supported",
+        "reason": "the adapter forwards the operator-specified model id verbatim; the harness validates it at run time"
+      }
     }
   ],
   "features": {

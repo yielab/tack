@@ -823,6 +823,25 @@ impl<C: Clock + Send + Sync> HarnessProbe for ClaudeCodeAdapter<C> {
             probe_error,
             probed_at,
             model_combinations: Vec::new(),
+            // III-H5 pass-through attestation: a claim about THIS adapter's
+            // invocation contract (`run_arguments` appends `--model
+            // <requested_model_id>` verbatim, asserted by unit test), not
+            // about which models exist — the CLI validates the model itself
+            // at run time and an invalid one fails the attempt with the
+            // CLI's own error envelope (observed live, module docs). This is
+            // what makes claude-code schedulable without inventing a model
+            // list.
+            model_passthrough: Some(CapabilityValue {
+                support: CapabilitySupport::Supported,
+                reason: Some(
+                    "the adapter forwards requested_model_id verbatim via --model; the CLI \
+                     validates it at run time (an invalid model returns is_error:true), so \
+                     operator-specified opaque models are accepted without the probe claiming \
+                     any model list"
+                        .to_string(),
+                ),
+                additional: Default::default(),
+            }),
             additional,
         }
     }
@@ -1812,6 +1831,26 @@ mod tests {
         let (version, error) = parse_version_text("3.0.0-beta.1 (Claude Code)\n");
         assert_eq!(version, "3.0.0-beta.1");
         assert_eq!(error, None);
+    }
+
+    /// III-H5: the probe declares zero `model_combinations` (the CLI has no
+    /// list-models command) and instead attests `model_passthrough:
+    /// supported` — the claim the scheduler now relies on to make
+    /// claude-code schedulable at all. It must be Supported, carry a
+    /// reason, and coexist with the empty combination list rather than
+    /// replace its honesty note.
+    #[tokio::test]
+    async fn probe_attests_model_passthrough_instead_of_inventing_a_model_list() {
+        let adapter = adapter_with_fake_binary();
+        let capability = adapter.probe().await;
+
+        assert!(capability.model_combinations.is_empty());
+        let passthrough = capability
+            .model_passthrough
+            .expect("claude-code probe must attest model_passthrough");
+        assert_eq!(passthrough.support, CapabilitySupport::Supported);
+        assert!(passthrough.reason.is_some());
+        assert!(capability.additional.contains_key("model_discovery_note"));
     }
 
     /// Acceptance: fake-binary unknown version, driven through the real

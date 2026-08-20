@@ -746,6 +746,11 @@ mod tests {
                     .expect("fixture timestamp")
                     .into(),
                 model_combinations: Vec::new(),
+                // Deliberately un-attested (III-H5): the fake probe stands in
+                // for a pre-III-H5 runner so scheduler tests can cover the
+                // "no attestation" path; the real adapters each attest
+                // explicitly.
+                model_passthrough: None,
                 additional: Default::default(),
             }
         }
