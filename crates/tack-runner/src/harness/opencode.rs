@@ -1034,6 +1034,19 @@ where
                 probe_error: Some(reason),
                 probed_at,
                 model_combinations: Vec::new(),
+                // III-H5: opencode is NOT pass-through — see the successful
+                // probe arm below; unchanged by a failed probe.
+                model_passthrough: Some(CapabilityValue {
+                    support: CapabilitySupport::Unsupported,
+                    reason: Some(
+                        "the adapter validates the requested model against opencode's \
+                         enumerated combinations and refuses undeclared ones pre-spawn, so \
+                         operator-specified models outside model_combinations are not \
+                         accepted"
+                            .to_owned(),
+                    ),
+                    additional: Default::default(),
+                }),
                 additional,
             };
         }
@@ -1045,6 +1058,22 @@ where
                 probe_error: None,
                 probed_at,
                 model_combinations,
+                // III-H5: honestly Unsupported, not merely un-attested —
+                // `resolve_model` refuses any requested model that is not in
+                // the enumerated combinations, so a pass-through claim here
+                // would be false. Scheduling against opencode stays
+                // declaration-based.
+                model_passthrough: Some(CapabilityValue {
+                    support: CapabilitySupport::Unsupported,
+                    reason: Some(
+                        "the adapter validates the requested model against opencode's \
+                         enumerated combinations and refuses undeclared ones pre-spawn, so \
+                         operator-specified models outside model_combinations are not \
+                         accepted"
+                            .to_owned(),
+                    ),
+                    additional: Default::default(),
+                }),
                 additional,
             },
             Err(reason) => {
@@ -1058,6 +1087,18 @@ where
                     )),
                     probed_at,
                     model_combinations: Vec::new(),
+                    // III-H5: same honest Unsupported as the arms above.
+                    model_passthrough: Some(CapabilityValue {
+                        support: CapabilitySupport::Unsupported,
+                        reason: Some(
+                            "the adapter validates the requested model against opencode's \
+                         enumerated combinations and refuses undeclared ones pre-spawn, so \
+                         operator-specified models outside model_combinations are not \
+                         accepted"
+                                .to_owned(),
+                        ),
+                        additional: Default::default(),
+                    }),
                     additional,
                 }
             }
@@ -2108,6 +2149,14 @@ fi
         assert_eq!(capability.installed_version, "1.18.0");
         assert_eq!(capability.probe_error, None);
         assert_eq!(capability.model_combinations.len(), 2);
+        // III-H5: opencode is declaration-based, not pass-through — the
+        // adapter refuses undeclared models pre-spawn, so the attestation
+        // must be an explicit Unsupported, never Supported or absent.
+        let passthrough = capability
+            .model_passthrough
+            .as_ref()
+            .expect("opencode probe must attest model_passthrough explicitly");
+        assert_eq!(passthrough.support, CapabilitySupport::Unsupported);
         assert!(
             capability
                 .model_combinations

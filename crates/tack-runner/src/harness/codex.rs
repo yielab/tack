@@ -669,6 +669,22 @@ where
             probed_at: DateTime::<Utc>::from(self.clock.now()),
             // Deliberately always empty — see module docs assumption (7).
             model_combinations: Vec::new(),
+            // III-H5 pass-through attestation: a claim about THIS adapter's
+            // invocation contract (`--model <requested_model_id>` is passed
+            // verbatim, and a spec without an explicit model is rejected
+            // pre-spawn — see the module docs), not about which models
+            // exist. Assumption (7) stands: no model list is invented.
+            model_passthrough: Some(CapabilityValue {
+                support: CapabilitySupport::Supported,
+                reason: Some(
+                    "the adapter forwards requested_model_id verbatim via --model and rejects \
+                     specs without an explicit model pre-spawn; model validity is established \
+                     by the Codex CLI at run time, so operator-specified opaque models are \
+                     accepted without the probe claiming any model list"
+                        .to_string(),
+                ),
+                additional: Default::default(),
+            }),
             additional,
         }
     }
@@ -1419,6 +1435,13 @@ mod tests {
         assert_eq!(capability.installed_version, "9.9.9");
         assert_eq!(capability.probe_error, None);
         assert!(capability.model_combinations.is_empty());
+        // III-H5: with no enumerable models, schedulability rests on the
+        // pass-through attestation — it must be Supported and carry a reason.
+        let passthrough = capability
+            .model_passthrough
+            .expect("codex probe must attest model_passthrough");
+        assert_eq!(passthrough.support, CapabilitySupport::Supported);
+        assert!(passthrough.reason.is_some());
     }
 
     /// Acceptance: unknown version. The fixture's `unknown_version` mode

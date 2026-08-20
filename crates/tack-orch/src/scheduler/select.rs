@@ -14,7 +14,7 @@ use super::types::{
     IneligibleReason, ModelSelector, RunnerCandidate, RunnerState, SchedulingRequest, Selection,
     SelectionOutcome,
 };
-use crate::execution::{HarnessKind, RunnerId, RunnerSelector};
+use crate::execution::{CapabilitySupport, HarnessKind, RunnerId, RunnerSelector};
 
 /// A request-level defect that disqualifies every candidate identically, so
 /// it is reported once rather than as N copies of the same
@@ -155,7 +155,18 @@ fn evaluate_candidate(
                         .iter()
                         .any(|declared_id| declared_id.as_str() == model_id.as_str())
             });
-            if !declared {
+            // III-H5: an undeclared pairing is still eligible when the
+            // harness attests `model_passthrough: supported` — the adapter
+            // forwards the operator's model verbatim and the harness itself
+            // validates it at run time. Only `Supported` schedules;
+            // `Advisory` is an unverified claim and capability claims are
+            // load-bearing, so it is rejected exactly like `Unsupported`
+            // and like an absent attestation (pre-III-H5 snapshots).
+            let passthrough = harness
+                .model_passthrough
+                .as_ref()
+                .is_some_and(|cap| cap.support == CapabilitySupport::Supported);
+            if !declared && !passthrough {
                 return Err(IneligibleReason::ModelCombinationNotDeclared {
                     harness: request.requested_harness_kind.clone(),
                     provider: provider.as_str().to_string(),
@@ -259,6 +270,7 @@ mod tests {
                     additional: BTreeMap::new(),
                 })
                 .collect(),
+            model_passthrough: None,
             additional: BTreeMap::new(),
         }
     }

@@ -120,6 +120,7 @@ mod tests {
                     discovery: "reported".to_string(),
                     additional: BTreeMap::new(),
                 }],
+                model_passthrough: None,
                 additional: BTreeMap::new(),
             }],
         }
