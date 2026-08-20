@@ -961,6 +961,11 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         // (Part III, card C1; typed OpenAPI documentation wired by III-E6) ──
         handlers::runner_admin::create_fleet,
         handlers::runner_admin::list_fleets,
+        // Fleet-membership write route (III-H8): populates
+        // `agent_fleet_members`, the roster a fleet-selector scheduling
+        // request resolves against.
+        handlers::runner_admin::add_fleet_member,
+        handlers::runner_admin::remove_fleet_member,
         handlers::runner_admin::list_runners,
         handlers::runner_admin::revoke_runner,
         handlers::runner_admin::create_pending_runner,
@@ -1080,6 +1085,8 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::runner_admin::CreateFleetResponse,
         handlers::runner_admin::FleetSummary,
         handlers::runner_admin::FleetListResponse,
+        handlers::runner_admin::AddFleetMember,
+        handlers::runner_admin::FleetMemberResponse,
         handlers::runner_admin::RunnerSummary,
         handlers::runner_admin::RunnerListResponse,
         handlers::runner_admin::RevokeRunnerResponse,

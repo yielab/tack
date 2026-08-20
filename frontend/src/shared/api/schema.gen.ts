@@ -1336,6 +1336,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runner-fleets/{fleet_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["add_fleet_member"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runner-fleets/{fleet_id}/members/{runner_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["remove_fleet_member"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runner/v1/attempts/{attempt_id}/accept": {
         parameters: {
             query?: never;
@@ -2902,6 +2934,18 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * @description Request body for `POST /api/runner-fleets/{fleet_id}/members` — card
+         *     III-H8. `agent_fleet_members` (migration 041) has been a live scheduling
+         *     *read* input since B2 (`fetch_runner_scheduling_snapshot`,
+         *     `fetch_fleet_concurrency`, the fleet-selector claim query), but nothing
+         *     could ever write to it: §III.6 requires selecting "an exact runner or
+         *     fleet", and the fleet half was undemonstrable end to end because no
+         *     route populated a fleet's roster.
+         */
+        AddFleetMember: {
+            runner_id: string;
+        };
+        /**
          * @description `GET /api/projects/{id}/agent-activity` response envelope — matches
          *     `frontend/src/shared/agentActivity/api.ts`'s `AgentBadgeResponse` exactly
          *     (`{ rows: [...] }`, not a bare array).
@@ -3838,6 +3882,18 @@ export interface components {
             data: components["schemas"]["FleetSummary"][];
             /** Format: int32 */
             protocol_version: number;
+        };
+        FleetMemberResponse: {
+            fleet_id: string;
+            /** Format: int32 */
+            protocol_version: number;
+            runner_id: string;
+            /**
+             * @description One of `"added"`, `"already_member"` (idempotent re-add) or
+             *     `"removed"`.
+             * @example added
+             */
+            state: string;
         };
         /**
          * @description One roster member — projected from a future live `FleetAgent` snapshot.
@@ -8032,6 +8088,76 @@ export interface operations {
             };
             /** @description conflict (name already exists) */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    add_fleet_member: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Fleet ID (opaque) */
+                fleet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddFleetMember"];
+            };
+        };
+        responses: {
+            /** @description Runner is now (or already was) a member of the fleet */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetMemberResponse"];
+                };
+            };
+            /** @description not_found (fleet or runner does not exist) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    remove_fleet_member: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Fleet ID (opaque) */
+                fleet_id: string;
+                /** @description Runner ID (opaque) */
+                runner_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Runner removed from the fleet */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetMemberResponse"];
+                };
+            };
+            /** @description not_found (runner was not a member of this fleet) */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
