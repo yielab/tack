@@ -463,6 +463,17 @@ fn internal_error(message: &str) -> runner_auth::ProtocolErrorResponse {
     )
 }
 
+/// Whether a `sqlx::Error` is a unique-constraint violation, as opposed to
+/// any other database-level fault — mirrors
+/// `runner_admin.rs::is_unique_violation` (that copy is private to its own
+/// module, so this is a local twin rather than a shared import) so a name
+/// collision maps to `conflict` and everything else stays `internal_error`.
+fn is_unique_violation(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .is_some_and(|db_error| db_error.is_unique_violation())
+}
+
 fn generate_raw_credential() -> String {
     format!("runner_credential_{}", Uuid::new_v4())
 }
@@ -606,7 +617,33 @@ pub async fn enroll(State(state): State<RunnerProtocolState>, body: Bytes) -> Ha
             state.clock.as_ref(),
         )
         .await
-        .map_err(|_| internal_error("Could not redeem enrollment token"))?;
+        .map_err(|err| {
+            // III-H7: a collision on `agent_runners`'s `UNIQUE` `name` column
+            // gets the frozen `conflict` outcome
+            // (`docs/contracts/runner-v1/errors/conflict.json`), never an
+            // unhandled 500 — the same classification
+            // `runner_admin.rs::create_pending_runner` already applies to the
+            // sibling INSERT. Nothing else this statement writes carries a
+            // uniqueness constraint, so every other failure stays
+            // `internal_error`. The `redeem_enrollment_token` UPDATE no
+            // longer writes the self-reported `runner_name` into `name` (see
+            // that function's doc comment), so this branch is not reachable
+            // through today's public API; it is kept as the same
+            // defense-in-depth the sibling admin route relies on, in case a
+            // future migration adds another unique column this statement
+            // touches.
+            if is_unique_violation(&err) {
+                tracing::warn!("enrollment rejected: runner name already in use");
+                protocol_error(
+                    StatusCode::CONFLICT,
+                    StableErrorCode::Conflict,
+                    "A runner with this name is already enrolled",
+                    json!({}),
+                )
+            } else {
+                internal_error("Could not redeem enrollment token")
+            }
+        })?;
 
     match redeemed {
         RedeemEnrollmentResult::Redeemed(runner_id) => {
