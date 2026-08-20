@@ -69,6 +69,27 @@ pub struct HarnessCapability {
     pub probed_at: DateTime<Utc>,
     #[serde(default)]
     pub model_combinations: Vec<ModelCombination>,
+    /// Whether this harness accepts an **operator-specified opaque model**
+    /// forwarded verbatim by its adapter (III-H5's pass-through attestation).
+    ///
+    /// `Supported` is a claim about the *adapter's own invocation contract*
+    /// — "whatever `model_id` the request carries is handed to the harness
+    /// unmodified; validity is established by the harness at run time, and a
+    /// bad model fails the attempt with the harness's own error, never a
+    /// fabricated one." It says nothing about which models exist, so it can
+    /// be attested honestly by adapters (claude-code, codex) whose harness
+    /// offers no model enumeration — exactly the harnesses whose
+    /// `model_combinations` are deliberately empty.
+    ///
+    /// The scheduler treats only `Supported` as schedulable
+    /// (`crates/tack-orch/src/scheduler/select.rs`): `Advisory` is an
+    /// unverified claim and capability claims are load-bearing, so it is
+    /// rejected identically to `Unsupported`. `None` means the runner did
+    /// not attest either way (pre-III-H5 runners, the shared fake probe) and
+    /// preserves the pre-III-H5 behavior: only declared
+    /// `model_combinations` are eligible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_passthrough: Option<CapabilityValue>,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
 }

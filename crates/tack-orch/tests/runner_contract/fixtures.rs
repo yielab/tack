@@ -9,7 +9,11 @@ const FROZEN_FIXTURE_FNV1A64: &[(&str, u64)] = &[
     ("artifact.response.json", 0x103d_f88e_44d9_900d),
     ("cancellation.request.json", 0x083e_61d8_a5b4_f80a),
     ("cancellation.response.json", 0x25ac_7703_2f24_298f),
-    ("capabilities.json", 0x7d77_354b_9dfa_46ec),
+    // Re-pinned by III-H5: the codex harness entry now exemplifies the
+    // optional `model_passthrough` attestation (operator-specified opaque
+    // models forwarded verbatim; scheduler eligibility without a declared
+    // combination).
+    ("capabilities.json", 0x5896_310e_67a1_42b6),
     ("claim.no-work.response.json", 0x67a3_99f9_f7ee_5fc4),
     ("claim.request.json", 0x2b2d_c1f6_2357_bd0b),
     ("claim.response.json", 0x4d27_1810_d5f7_cf48),
