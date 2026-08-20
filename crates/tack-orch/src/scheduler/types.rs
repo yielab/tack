@@ -186,7 +186,11 @@ pub enum IneligibleReason {
     /// error — not currently usable, whatever it worked before.
     HarnessProbeError { harness: HarnessKind, error: String },
     /// [`ModelSelector::Explicit`] named a provider/model this candidate's
-    /// declared `model_combinations` for the matched harness does not list.
+    /// declared `model_combinations` for the matched harness does not list,
+    /// and the harness did not attest `model_passthrough: supported`
+    /// (III-H5) — with that attestation the adapter forwards the operator's
+    /// opaque model verbatim and the pairing is eligible without being
+    /// declared.
     ModelCombinationNotDeclared {
         harness: HarnessKind,
         provider: String,
