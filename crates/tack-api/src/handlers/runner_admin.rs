@@ -4,14 +4,16 @@ use axum::{
     Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::Row;
-use tack_db::repo::execution::{EnrollmentToken, NewAgentProfile, NewRunner};
+use tack_db::repo::execution::{
+    AddFleetMemberOutcome, EnrollmentToken, NewAgentProfile, NewRunner,
+};
 use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -53,6 +55,11 @@ fn is_unique_violation(error: &sqlx::Error) -> bool {
 pub fn routes(state: OperatorExecutionState) -> Router {
     Router::new()
         .route("/runner-fleets", post(create_fleet).get(list_fleets))
+        .route("/runner-fleets/{fleet_id}/members", post(add_fleet_member))
+        .route(
+            "/runner-fleets/{fleet_id}/members/{runner_id}",
+            delete(remove_fleet_member),
+        )
         .route("/runners", get(list_runners))
         .route("/runners/enrollment", post(create_pending_runner))
         .route(
@@ -342,6 +349,130 @@ pub async fn list_fleets(
     Ok(Json(FleetListResponse {
         protocol_version: 1,
         data,
+    }))
+}
+
+/// Request body for `POST /api/runner-fleets/{fleet_id}/members` — card
+/// III-H8. `agent_fleet_members` (migration 041) has been a live scheduling
+/// *read* input since B2 (`fetch_runner_scheduling_snapshot`,
+/// `fetch_fleet_concurrency`, the fleet-selector claim query), but nothing
+/// could ever write to it: §III.6 requires selecting "an exact runner or
+/// fleet", and the fleet half was undemonstrable end to end because no
+/// route populated a fleet's roster.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct AddFleetMember {
+    pub runner_id: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FleetMemberResponse {
+    pub protocol_version: u32,
+    pub fleet_id: String,
+    pub runner_id: String,
+    /// One of `"added"`, `"already_member"` (idempotent re-add) or
+    /// `"removed"`.
+    #[schema(example = "added")]
+    pub state: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/runner-fleets/{fleet_id}/members",
+    tag = "execution-operator",
+    params(("fleet_id" = String, Path, description = "Fleet ID (opaque)")),
+    request_body = AddFleetMember,
+    responses(
+        (status = 200, description = "Runner is now (or already was) a member of the fleet", body = FleetMemberResponse),
+        (status = 404, description = "not_found (fleet or runner does not exist)", body = RunnerV1ErrorEnvelope),
+    ),
+)]
+pub async fn add_fleet_member(
+    State(state): State<OperatorExecutionState>,
+    Path(fleet_id): Path<String>,
+    Json(input): Json<AddFleetMember>,
+) -> Result<Json<FleetMemberResponse>, (StatusCode, Json<Value>)> {
+    let outcome = state
+        .repo
+        .add_fleet_member(&fleet_id, &input.runner_id, state.clock.as_ref())
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not add fleet member",
+                json!({}),
+            )
+        })?;
+    match outcome {
+        AddFleetMemberOutcome::Added => Ok(Json(FleetMemberResponse {
+            protocol_version: 1,
+            fleet_id,
+            runner_id: input.runner_id,
+            state: "added".into(),
+        })),
+        AddFleetMemberOutcome::AlreadyMember => Ok(Json(FleetMemberResponse {
+            protocol_version: 1,
+            fleet_id,
+            runner_id: input.runner_id,
+            state: "already_member".into(),
+        })),
+        AddFleetMemberOutcome::FleetNotFound => Err(error(
+            StatusCode::NOT_FOUND,
+            StableErrorCode::NotFound,
+            "Fleet does not exist",
+            json!({"resource": "fleet"}),
+        )),
+        AddFleetMemberOutcome::RunnerNotFound => Err(error(
+            StatusCode::NOT_FOUND,
+            StableErrorCode::NotFound,
+            "Runner does not exist",
+            json!({"resource": "runner"}),
+        )),
+    }
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/runner-fleets/{fleet_id}/members/{runner_id}",
+    tag = "execution-operator",
+    params(
+        ("fleet_id" = String, Path, description = "Fleet ID (opaque)"),
+        ("runner_id" = String, Path, description = "Runner ID (opaque)"),
+    ),
+    responses(
+        (status = 200, description = "Runner removed from the fleet", body = FleetMemberResponse),
+        (status = 404, description = "not_found (runner was not a member of this fleet)", body = RunnerV1ErrorEnvelope),
+    ),
+)]
+pub async fn remove_fleet_member(
+    State(state): State<OperatorExecutionState>,
+    Path((fleet_id, runner_id)): Path<(String, String)>,
+) -> Result<Json<FleetMemberResponse>, (StatusCode, Json<Value>)> {
+    let removed = state
+        .repo
+        .remove_fleet_member(&fleet_id, &runner_id)
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not remove fleet member",
+                json!({}),
+            )
+        })?;
+    if !removed {
+        return Err(error(
+            StatusCode::NOT_FOUND,
+            StableErrorCode::NotFound,
+            "Runner is not a member of this fleet",
+            json!({"resource": "fleet_member"}),
+        ));
+    }
+    Ok(Json(FleetMemberResponse {
+        protocol_version: 1,
+        fleet_id,
+        runner_id,
+        state: "removed".into(),
     }))
 }
 

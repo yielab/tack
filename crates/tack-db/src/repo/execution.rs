@@ -1247,6 +1247,22 @@ fn snapshot(row: &sqlx::sqlite::SqliteRow) -> Result<serde_json::Value, sqlx::Er
     parse_execution_request_snapshot(&row.get::<String, _>("request_snapshot"))
 }
 
+/// Outcome of [`Repository::add_fleet_member`] — distinguishes an idempotent
+/// no-op (`AlreadyMember`) from either side of the pair not existing, so the
+/// handler can report a precise 404 instead of collapsing every failure into
+/// one generic error. Card III-H8: `agent_fleet_members` (migration 041) has
+/// existed since B2 as a scheduling *read* input
+/// (`fetch_runner_scheduling_snapshot`, `fetch_fleet_concurrency`, the
+/// claimable-request query below) but had no write path — an operator could
+/// never actually populate a fleet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddFleetMemberOutcome {
+    Added,
+    AlreadyMember,
+    FleetNotFound,
+    RunnerNotFound,
+}
+
 impl Repository {
     pub async fn complete_execution_result(
         &self,
@@ -1400,6 +1416,72 @@ impl Repository {
         }
         tx.commit().await?;
         Ok(r.rows_affected() == 1)
+    }
+
+    /// Adds `runner_id` to `fleet_id`'s roster (`agent_fleet_members`).
+    /// Idempotent: adding a runner that is already a member is a successful
+    /// no-op (`AlreadyMember`), not a conflict — re-populating a fleet with
+    /// the same membership twice is the expected operator workflow, not an
+    /// error case. Existence of both sides is checked explicitly first (two
+    /// reads outside a transaction — this table has no other writer racing
+    /// against it, unlike credential rotation) so the caller gets a precise
+    /// `FleetNotFound`/`RunnerNotFound` distinction rather than a generic
+    /// foreign-key failure from the insert.
+    pub async fn add_fleet_member(
+        &self,
+        fleet_id: &str,
+        runner_id: &str,
+        clock: &dyn ExecutionClock,
+    ) -> Result<AddFleetMemberOutcome, sqlx::Error> {
+        let fleet_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agent_fleets WHERE id = ?)")
+                .bind(fleet_id)
+                .fetch_one(self.pool())
+                .await?;
+        if !fleet_exists {
+            return Ok(AddFleetMemberOutcome::FleetNotFound);
+        }
+        let runner_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agent_runners WHERE id = ?)")
+                .bind(runner_id)
+                .fetch_one(self.pool())
+                .await?;
+        if !runner_exists {
+            return Ok(AddFleetMemberOutcome::RunnerNotFound);
+        }
+        let now = stamp(clock);
+        let result = sqlx::query(
+            "INSERT OR IGNORE INTO agent_fleet_members (fleet_id,runner_id,created_at) VALUES (?,?,?)",
+        )
+        .bind(fleet_id)
+        .bind(runner_id)
+        .bind(&now)
+        .execute(self.pool())
+        .await?;
+        Ok(if result.rows_affected() == 1 {
+            AddFleetMemberOutcome::Added
+        } else {
+            AddFleetMemberOutcome::AlreadyMember
+        })
+    }
+
+    /// Removes `runner_id` from `fleet_id`'s roster. Returns `false` if the
+    /// pair was never a member (including either id not existing at all) —
+    /// the handler maps that to `not_found` rather than treating a no-op
+    /// delete as success, matching `revoke_runner`'s own
+    /// exists-vs-no-op-true convention just above.
+    pub async fn remove_fleet_member(
+        &self,
+        fleet_id: &str,
+        runner_id: &str,
+    ) -> Result<bool, sqlx::Error> {
+        let result =
+            sqlx::query("DELETE FROM agent_fleet_members WHERE fleet_id = ? AND runner_id = ?")
+                .bind(fleet_id)
+                .bind(runner_id)
+                .execute(self.pool())
+                .await?;
+        Ok(result.rows_affected() == 1)
     }
 
     /// Compare-and-set credential rotation: the write only applies if
