@@ -3,8 +3,7 @@
 - **Base SHA / branch / final SHA:** base `0e2da46` on `develop` (the board names `84fabf1`
   as Wave 8's base; `0e2da46` is a docs-only commit recording III-H5's merge that landed on
   `develop` on top of it — branched from `develop`'s actual tip per the card brief). Branch
-  `agent/iii-h8-fleet-write-route`. Final SHA: recorded at commit time (this handoff is
-  written before the commit that carries it; see the branch for the actual head).
+  `agent/iii-h8-fleet-write-route`, final SHA `a79ecba`.
 
 - **Files changed (must equal ownership list):**
   - `crates/tack-db/src/repo/execution.rs` — new `AddFleetMemberOutcome` enum and
