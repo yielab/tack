@@ -103,7 +103,16 @@ async fn run(cli: Cli) -> Result<(), tack_runner::RunnerError> {
             config.state_dir.join("workspaces"),
             GitWorktreeProvisioner::default(),
         ),
-    );
+    )
+    // III-H6: `HttpPullProtocol` has implemented `AttemptDataProtocol` since
+    // III-H1, but nothing ever attached it to the engine — this is that one
+    // remaining wiring point. `engine.rs` (this card's ownership) now has
+    // real call sites; without this line they would never run in the
+    // production binary and the events/artifacts §III.6 gap this card
+    // exists to close would stay open in practice even though the code
+    // compiles. See this card's handoff for why `main.rs` is touched despite
+    // not being named in `Owns`.
+    .with_data_protocol(Arc::clone(&protocol) as Arc<dyn tack_runner::client::AttemptDataProtocol>);
     let client = HttpRunnerClient::new(protocol, engine, config.clone(), SystemClock, capabilities);
 
     let runtime = RunnerRuntime::new(
@@ -207,11 +216,21 @@ fn build_adapter_registry(staging_root: &std::path::Path) -> AdapterRegistry {
 /// - `cancel` reports [`PROCESS_GROUP_CANCEL_CEILING`] (advisory), the honest
 ///   ceiling of a process-group signal — III-D2 proved twice that it cannot
 ///   reliably reach a descendant a harness spawns into a new OS session.
-/// - `decisions` and `artifacts` report **unsupported**. III-H1 implemented
-///   the wire operations for both, but `engine.rs` (unowned by that card) has
-///   no call site for either, so nothing would actually open a decision or
-///   upload an artifact. Claiming support for a path with no caller is exactly
-///   the kind of lie the "capability claims are load-bearing" rule forbids.
+/// - `artifacts` reports **advisory**: III-H6 gave `engine.rs` a real call
+///   site (`RunnerEngine::submit_terminal_evidence`), so a completed attempt
+///   with a staged artifact now genuinely uploads it — but only when an
+///   adapter happens to stage one (`terminal_reason.artifact`), and only
+///   best-effort (a transport failure is logged, never retried or replayed
+///   on restart, and never blocks the attempt's own completion). That
+///   conditionality is exactly what `advisory` is for; `supported` would
+///   overclaim an upload this runner cannot yet guarantee.
+/// - `decisions` still reports **unsupported**. III-H1 implemented the wire
+///   operations, and `AttemptDataProtocol::create_decision`/`poll_decisions`
+///   are reachable from `engine.rs` since this card, but no harness adapter
+///   in this tree ever asks a question a decision could answer — there is
+///   still no call site that would ever open one. Claiming support for a
+///   path nothing calls is exactly the kind of lie the "capability claims
+///   are load-bearing" rule forbids.
 async fn report_capabilities<C: Clock>(
     adapters: &AdapterRegistry,
     clock: &C,
@@ -247,11 +266,11 @@ async fn report_capabilities<C: Clock>(
             ),
             decisions: feature(
                 tack_orch::execution::CapabilitySupport::Unsupported,
-                Some("the runner engine has no decision call site yet"),
+                Some("no harness adapter in this tree ever opens a decision"),
             ),
             artifacts: feature(
-                tack_orch::execution::CapabilitySupport::Unsupported,
-                Some("the runner engine has no artifact upload call site yet"),
+                tack_orch::execution::CapabilitySupport::Advisory,
+                Some("uploaded when an adapter stages one; best-effort, not replayed on restart"),
             ),
             usage: feature(
                 tack_orch::execution::CapabilitySupport::Advisory,
