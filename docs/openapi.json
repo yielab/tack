@@ -4199,6 +4199,107 @@
         }
       }
     },
+    "/api/runner-fleets/{fleet_id}/members": {
+      "post": {
+        "tags": [
+          "execution-operator"
+        ],
+        "operationId": "add_fleet_member",
+        "parameters": [
+          {
+            "name": "fleet_id",
+            "in": "path",
+            "description": "Fleet ID (opaque)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddFleetMember"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Runner is now (or already was) a member of the fleet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetMemberResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found (fleet or runner does not exist)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runner-fleets/{fleet_id}/members/{runner_id}": {
+      "delete": {
+        "tags": [
+          "execution-operator"
+        ],
+        "operationId": "remove_fleet_member",
+        "parameters": [
+          {
+            "name": "fleet_id",
+            "in": "path",
+            "description": "Fleet ID (opaque)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runner_id",
+            "in": "path",
+            "description": "Runner ID (opaque)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Runner removed from the fleet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetMemberResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found (runner was not a member of this fleet)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/runner/v1/attempts/{attempt_id}/accept": {
       "post": {
         "tags": [
@@ -6218,6 +6319,18 @@
   },
   "components": {
     "schemas": {
+      "AddFleetMember": {
+        "type": "object",
+        "description": "Request body for `POST /api/runner-fleets/{fleet_id}/members` — card\nIII-H8. `agent_fleet_members` (migration 041) has been a live scheduling\n*read* input since B2 (`fetch_runner_scheduling_snapshot`,\n`fetch_fleet_concurrency`, the fleet-selector claim query), but nothing\ncould ever write to it: §III.6 requires selecting \"an exact runner or\nfleet\", and the fleet half was undemonstrable end to end because no\nroute populated a fleet's roster.",
+        "required": [
+          "runner_id"
+        ],
+        "properties": {
+          "runner_id": {
+            "type": "string"
+          }
+        }
+      },
       "AgentBadgeResponse": {
         "type": "object",
         "description": "`GET /api/projects/{id}/agent-activity` response envelope — matches\n`frontend/src/shared/agentActivity/api.ts`'s `AgentBadgeResponse` exactly\n(`{ rows: [...] }`, not a bare array).",
@@ -8693,6 +8806,33 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "FleetMemberResponse": {
+        "type": "object",
+        "required": [
+          "protocol_version",
+          "fleet_id",
+          "runner_id",
+          "state"
+        ],
+        "properties": {
+          "fleet_id": {
+            "type": "string"
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "runner_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "description": "One of `\"added\"`, `\"already_member\"` (idempotent re-add) or\n`\"removed\"`.",
+            "example": "added"
           }
         }
       },
