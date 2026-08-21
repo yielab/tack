@@ -2075,6 +2075,21 @@ impl Repository {
         Ok(result.rows_affected() == 1)
     }
 
+    // III-H7: `runner_name` is accepted (the runner-v1 protocol requires the
+    // field and validates its presence upstream in
+    // `crates/tack-api/src/handlers/runner_protocol.rs::enroll`) but
+    // deliberately NOT written to `agent_runners.name` here. `name` carries a
+    // `UNIQUE` constraint (migration 040); the operator already assigned it,
+    // uniquely, when the pending-runner row was created
+    // (`create_pending_runner_and_issue_token`). Two default-configured
+    // runners on one host self-report the same `runner_name` (both default it
+    // from `TACK_RUNNER_ID`), so letting the self-reported value overwrite
+    // the operator-assigned one made the *second* runner's enrollment race
+    // the first's for that string and fail a `UNIQUE` constraint the caller
+    // never intended to touch — surfaced as an unhandled 500 (reproduced by
+    // III-H2). The operator-assigned name is authoritative for identity;
+    // the self-report is accepted for protocol-shape validation only. See
+    // `docs/agent-handoffs/part-iii/III-H7.md`.
     #[allow(clippy::too_many_arguments)] // protocol exchange fields must commit together
     pub async fn redeem_enrollment_token(
         &self,
@@ -2082,7 +2097,7 @@ impl Repository {
         credential_hash: &str,
         credential_expires_at: DateTime<Utc>,
         runner_version: &str,
-        runner_name: &str,
+        _runner_name: &str,
         labels: &str,
         total_capacity: i64,
         available_capacity: i64,
@@ -2109,8 +2124,8 @@ impl Repository {
             tx.rollback().await?;
             return Ok(RedeemEnrollmentResult::InvalidOrExpired);
         }
-        let runner = sqlx::query("UPDATE agent_runners SET credential_hash=?, credential_expires_at=?, credential_rotated_at=?, runner_version=?, name=?, labels=?, total_capacity=?, available_capacity=?, capability_snapshot=?, protocol_version=?, state='active', updated_at=? WHERE id=? AND state='pending_enrollment' AND revoked_at IS NULL")
-            .bind(credential_hash).bind(credential_expires_at.to_rfc3339()).bind(&now).bind(runner_version).bind(runner_name).bind(labels).bind(total_capacity).bind(available_capacity).bind(capability_snapshot).bind(protocol_version).bind(&now).bind(&runner_id).execute(&mut *tx).await?;
+        let runner = sqlx::query("UPDATE agent_runners SET credential_hash=?, credential_expires_at=?, credential_rotated_at=?, runner_version=?, labels=?, total_capacity=?, available_capacity=?, capability_snapshot=?, protocol_version=?, state='active', updated_at=? WHERE id=? AND state='pending_enrollment' AND revoked_at IS NULL")
+            .bind(credential_hash).bind(credential_expires_at.to_rfc3339()).bind(&now).bind(runner_version).bind(labels).bind(total_capacity).bind(available_capacity).bind(capability_snapshot).bind(protocol_version).bind(&now).bind(&runner_id).execute(&mut *tx).await?;
         if runner.rows_affected() != 1 {
             tx.rollback().await?;
             return Ok(RedeemEnrollmentResult::InvalidOrExpired);

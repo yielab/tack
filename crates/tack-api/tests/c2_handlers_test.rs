@@ -668,6 +668,117 @@ fn request_created_before(clock: &FakeClock) -> String {
 }
 
 // ---------------------------------------------------------------------
+// III-H7: two default-configured runners self-report the identical
+// `runner_name` (both default it from `TACK_RUNNER_ID`), which used to
+// silently overwrite the operator-assigned, uniquely-named pending-runner
+// row and crash the second enrollment on `agent_runners`'s `UNIQUE` `name`
+// constraint (reproduced live by III-H2: two curl enrollments differing
+// only in token, first 200, second 500). Load-bearing: reverting the
+// `_runner_name`/removed `name=?` change in
+// `crates/tack-db/src/repo/execution.rs::redeem_enrollment_token` makes
+// this test fail with a 500 on the second enrollment.
+// ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn duplicate_self_reported_runner_name_enrolls_both_runners() {
+    let (app, repo, clock, _item_id) = setup().await;
+
+    // The operator assigns each pending runner a distinct, unique name —
+    // exactly as `create_pending_runner` requires (its own INSERT is
+    // `UNIQUE`-constrained on `name`).
+    const RAW_TOKEN_A: &str = "iii-h7-token-a";
+    const RAW_TOKEN_B: &str = "iii-h7-token-b";
+    let token_hash_a = runner_protocol::runner_auth::credential_hash(RAW_TOKEN_A);
+    let token_hash_b = runner_protocol::runner_auth::credential_hash(RAW_TOKEN_B);
+    repo.create_pending_runner_and_issue_token(
+        NewRunner {
+            id: "runner-h7-a",
+            name: "operator-assigned-a",
+            credential_hash: "pending:no-credential",
+            labels: "{}",
+            total_capacity: 1,
+            available_capacity: 1,
+            capability_snapshot: "{}",
+            protocol_version: 1,
+        },
+        EnrollmentToken {
+            id: "tok-h7-a",
+            runner_id: "runner-h7-a",
+            token_hash: &token_hash_a,
+            expires_at: clock.now() + Duration::hours(1),
+        },
+        &clock,
+    )
+    .await
+    .expect("pending runner a");
+    repo.create_pending_runner_and_issue_token(
+        NewRunner {
+            id: "runner-h7-b",
+            name: "operator-assigned-b",
+            credential_hash: "pending:no-credential",
+            labels: "{}",
+            total_capacity: 1,
+            available_capacity: 1,
+            capability_snapshot: "{}",
+            protocol_version: 1,
+        },
+        EnrollmentToken {
+            id: "tok-h7-b",
+            runner_id: "runner-h7-b",
+            token_hash: &token_hash_b,
+            expires_at: clock.now() + Duration::hours(1),
+        },
+        &clock,
+    )
+    .await
+    .expect("pending runner b");
+
+    // Both enroll bodies differ only in `enrollment_token` — the exact
+    // III-H2 repro shape — and self-report the identical `runner_name`, the
+    // way two default-configured runners on one host would (both defaulting
+    // it from `TACK_RUNNER_ID`).
+    let enroll_body = |token: &str| {
+        json!({
+            "protocol_version": 1,
+            "enrollment_token": token,
+            "runner_name": "default-runner-id",
+            "runner_version": "0.1.0",
+            "capabilities": full_capabilities(clock.now(), 1, 1),
+        })
+        .to_string()
+    };
+
+    let (status_a, enrolled_a) = send(&app, "POST", "/enroll", enroll_body(RAW_TOKEN_A), &[]).await;
+    assert_eq!(status_a, StatusCode::OK, "{enrolled_a}");
+    let runner_id_a = enrolled_a["runner_id"].as_str().unwrap().to_owned();
+
+    let (status_b, enrolled_b) = send(&app, "POST", "/enroll", enroll_body(RAW_TOKEN_B), &[]).await;
+    assert_eq!(
+        status_b,
+        StatusCode::OK,
+        "second same-self-reported-name enrollment must not 500: {enrolled_b}"
+    );
+    let runner_id_b = enrolled_b["runner_id"].as_str().unwrap().to_owned();
+    assert_ne!(runner_id_a, runner_id_b);
+
+    // The operator-assigned names are untouched by the self-reported value —
+    // it is accepted for protocol-shape validation only, never persisted
+    // over the operator's assignment.
+    let stored_name_a: String = sqlx::query_scalar("SELECT name FROM agent_runners WHERE id=?")
+        .bind(&runner_id_a)
+        .fetch_one(repo.pool())
+        .await
+        .unwrap();
+    let stored_name_b: String = sqlx::query_scalar("SELECT name FROM agent_runners WHERE id=?")
+        .bind(&runner_id_b)
+        .fetch_one(repo.pool())
+        .await
+        .unwrap();
+    assert_eq!(stored_name_a, "operator-assigned-a");
+    assert_eq!(stored_name_b, "operator-assigned-b");
+}
+
+// ---------------------------------------------------------------------
 // 2. Operator auth cannot substitute for runner auth, and vice versa. A
 //    runner therefore cannot reach any PM-mutating (item/execution/runner
 //    admin) route — it can only reach its own report-only endpoints.
