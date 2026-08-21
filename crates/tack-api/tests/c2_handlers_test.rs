@@ -1762,6 +1762,101 @@ async fn refresh_rotation_with_stale_expected_hash_is_rejected_not_overwritten()
 }
 
 // ---------------------------------------------------------------------
+// 12b. III-H4: the same defect, reproduced deterministically instead of by
+//     timing/luck. The test above (12) drives two rotations through a
+//     genuinely concurrent SQLite lock race, which is realistic but, as its
+//     own comment documents, cannot force a specific interleaving — locally
+//     it lands on the CAS-level `HashMismatch` -> `conflict` outcome (already
+//     correct before this card) far more often than the earlier,
+//     authenticate-level failure this card actually fixes, which is why CI's
+//     more contended scheduler saw it and a local run of 32 iterations did
+//     not (see docs/agent-handoffs/part-iii/III-H4.md).
+//
+//     The server has no way to distinguish "this stale credential belongs to
+//     a request that lost a real concurrent race" from "this stale
+//     credential is simply being reused after a rotation already committed"
+//     — both hit the exact same code path: `authenticate`'s `SELECT ...
+//     WHERE credential_hash=?` finds no row, because the only record of the
+//     old hash was overwritten in place by the rotation UPDATE (see
+//     `runner_auth::is_credential_not_recognized`'s doc comment). So this
+//     test reproduces the identical defect without any lock or sleep, purely
+//     sequentially: rotate once (the request that would have "won" a race),
+//     then present the now-superseded original credential again with
+//     `rotate_credential: true` (standing in for the request that would have
+//     "lost" it) and assert the documented, retryable outcome.
+// ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn refresh_rotation_with_already_superseded_credential_returns_conflict_not_unauthorized() {
+    let (app, repo, clock, _item_id) = setup().await;
+
+    // The winner: rotates first and commits, exactly like task A above.
+    let (winner_status, winner_body) = send_as_runner(
+        &app,
+        "POST",
+        "/refresh",
+        json!({"protocol_version":1,"runner_id":RUNNER_ID,"runner_name":"r","runner_version":"1","rotate_credential":true,"capabilities":full_capabilities(clock.now(),2,2)}).to_string(),
+    )
+    .await;
+    assert_eq!(winner_status, StatusCode::OK, "the first rotation must win");
+    let stored_hash_after_winner: String =
+        sqlx::query_scalar("SELECT credential_hash FROM agent_runners WHERE id=?")
+            .bind(RUNNER_ID)
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+
+    // The loser: presents the pre-rotation `RUNNER_CREDENTIAL` (still what a
+    // client would hold if its rotation request lost the race) and also asks
+    // to rotate. `authenticate`'s hash lookup finds no row for it at all —
+    // the exact failure this card's fix reclassifies.
+    let (loser_status, loser_body) = send(
+        &app,
+        "POST",
+        "/refresh",
+        json!({"protocol_version":1,"runner_id":RUNNER_ID,"runner_name":"r","runner_version":"1","rotate_credential":true,"capabilities":full_capabilities(clock.now(),2,2)}).to_string(),
+        &[("authorization", &format!("Bearer {RUNNER_CREDENTIAL}"))],
+    )
+    .await;
+
+    assert_eq!(
+        loser_status,
+        StatusCode::CONFLICT,
+        "a superseded credential attempting to rotate must be told it can retry, \
+         not that it is permanently unauthorized: {loser_body}"
+    );
+    assert_eq!(loser_body["error"]["code"], "conflict");
+    assert_eq!(
+        loser_body["error"]["retryable"], true,
+        "must match docs/contracts/runner-v1/errors/conflict.json: {loser_body}"
+    );
+    assert!(
+        loser_body.get("runner_credential").is_none(),
+        "a rejected rotation returns no credential for a caller to mistakenly treat as live"
+    );
+
+    // Writes nothing: the credential stored after the winner's rotation is
+    // unchanged by the loser's rejected attempt.
+    let stored_hash_after_loser: String =
+        sqlx::query_scalar("SELECT credential_hash FROM agent_runners WHERE id=?")
+            .bind(RUNNER_ID)
+            .fetch_one(repo.pool())
+            .await
+            .unwrap();
+    assert_eq!(
+        stored_hash_after_winner, stored_hash_after_loser,
+        "the rejected rotation must not have written anything"
+    );
+    assert_eq!(
+        stored_hash_after_loser,
+        runner_protocol::runner_auth::credential_hash(
+            winner_body["runner_credential"].as_str().unwrap()
+        ),
+        "the stored credential remains exactly the winner's"
+    );
+}
+
+// ---------------------------------------------------------------------
 // 13. Task 3: state-gate alignment. `submit_artifacts` must reject `lost`
 //     and `needs_operator` attempts exactly like `create_decision` already
 //     does — not just the three purely-terminal states. Both states exist
