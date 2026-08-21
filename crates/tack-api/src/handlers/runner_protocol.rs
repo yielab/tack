@@ -655,7 +655,59 @@ pub async fn enroll(State(state): State<RunnerProtocolState>, body: Bytes) -> Ha
 // wrapper — run *after* the credential CAS succeeds (or, on the
 // non-rotating branch, unconditionally). Ordering the CAS first means a
 // rejected rotation (`HashMismatch`) never touches the capability columns.
+//
+// III-H4: a losing rotation can fail at *either* of two points, and both
+// must answer the same retryable `conflict`, not `unauthorized`. The later
+// point — the CAS itself losing (`CredentialRotationResult::HashMismatch`
+// below) — already did before this card. The earlier point did not:
+// `runner_auth::authenticate` above runs a plain `SELECT ... WHERE
+// credential_hash=?` first, and if the *other* concurrent rotation already
+// committed its new hash by the time this request's `authenticate` runs,
+// that `SELECT` finds no row at all and fails "not recognized" (401) before
+// the CAS — the check that would have classified it correctly — ever runs.
+// See `reclassify_refresh_auth_error` immediately below and
+// `docs/agent-handoffs/part-iii/III-H4.md`.
 // ---------------------------------------------------------------------
+
+/// Remaps `authenticate`'s "credential not recognized" failure to the same
+/// retryable `conflict` outcome `rotate_runner_credential`'s CAS already
+/// returns for `CredentialRotationResult::HashMismatch`, but only when the
+/// request body says `rotate_credential: true` — i.e. only for a request
+/// that was itself trying to rotate, where "not recognized" is genuinely
+/// ambiguous between "you lost the race" and "this credential was always
+/// bogus" (see `runner_auth::is_credential_not_recognized`'s doc comment for
+/// why that ambiguity is accepted rather than resolved). A non-rotating
+/// refresh, or any other `authenticate` failure (missing header, revoked,
+/// inactive, expired), is returned unchanged — none of those are the
+/// rotation-race case this card fixes.
+///
+/// Peeks `rotate_credential` from the raw, not-yet-validated body — cheap,
+/// side-effect-free, and used only to pick an error code; the real,
+/// validated parse (`parse_body`/`check_protocol_version`) still runs
+/// exactly as before on the authenticated success path below, unchanged by
+/// this peek.
+fn reclassify_refresh_auth_error(
+    error: runner_auth::ProtocolErrorResponse,
+    raw_body: &[u8],
+) -> runner_auth::ProtocolErrorResponse {
+    let (status, body) = error;
+    if status != StatusCode::UNAUTHORIZED || !runner_auth::is_credential_not_recognized(&body.0) {
+        return (status, body);
+    }
+    let intends_rotation = serde_json::from_slice::<Value>(raw_body)
+        .ok()
+        .and_then(|value| value.get("rotate_credential").and_then(Value::as_bool))
+        .unwrap_or(false);
+    if !intends_rotation {
+        return (status, body);
+    }
+    runner_auth::protocol_error(
+        StatusCode::CONFLICT,
+        StableErrorCode::Conflict,
+        "The runner credential changed before this rotation committed",
+        json!({}),
+    )
+}
 
 pub async fn refresh(
     State(state): State<RunnerProtocolState>,
@@ -663,7 +715,9 @@ pub async fn refresh(
     body: Bytes,
 ) -> HandlerResult {
     let now = state.clock.now();
-    let principal = runner_auth::authenticate(&state.repo, &headers, now).await?;
+    let principal = runner_auth::authenticate(&state.repo, &headers, now)
+        .await
+        .map_err(|error| reclassify_refresh_auth_error(error, &body))?;
     let value = parse_body(&body)?;
     check_protocol_version(&value)?;
     runner_auth::require_matching_runner(&value, &principal)?;

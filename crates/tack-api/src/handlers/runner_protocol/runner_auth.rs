@@ -111,6 +111,14 @@ pub fn credential_hash(raw: &str) -> String {
     hex::encode(Sha256::digest(raw.as_bytes()))
 }
 
+/// The exact message `authenticate` emits when no row's `credential_hash`
+/// matches the presented bearer at all — as opposed to matching a row that
+/// is merely revoked, inactive, or expired. Shared with
+/// [`is_credential_not_recognized`] so the two call sites (the emission
+/// here and the classification there) cannot drift apart; see that
+/// function's doc comment for why this distinction exists (III-H4).
+const CREDENTIAL_NOT_RECOGNIZED_MESSAGE: &str = "The runner credential is not recognized";
+
 /// Authenticates `Authorization: Bearer <runner_credential>` against the
 /// stored, hashed runner credential. Returns `unauthorized` for a missing,
 /// unrecognized, inactive, or expired credential, and the stable
@@ -154,7 +162,7 @@ pub async fn authenticate(
         return Err(protocol_error(
             StatusCode::UNAUTHORIZED,
             StableErrorCode::Unauthorized,
-            "The runner credential is not recognized",
+            CREDENTIAL_NOT_RECOGNIZED_MESSAGE,
             json!({}),
         ));
     };
@@ -203,6 +211,39 @@ pub async fn authenticate(
         runner_id,
         credential_hash: hash,
     })
+}
+
+/// True exactly when an `authenticate` error is the "no row's `credential_hash`
+/// matched this bearer at all" case, as opposed to a revoked, inactive,
+/// expired, or missing-header credential.
+///
+/// This distinction exists for one caller: `/refresh`'s rotation-race
+/// handling (III-H4, see `runner_protocol.rs::reclassify_refresh_auth_error`).
+/// SQLite has no history of a credential once it is rotated away — the
+/// `UPDATE ... SET credential_hash=?` in `rotate_runner_credential` (B2)
+/// overwrites the old hash in place — so a `/refresh` request that loses a
+/// concurrent rotation race and a `/refresh` request carrying a genuinely
+/// bogus credential are indistinguishable by a second query: both hit this
+/// exact "not recognized" branch, for the same reason (no row currently
+/// carries the presented hash). `/refresh`'s rotating branch already accepts
+/// that same ambiguity one step later, when the CAS itself loses a race
+/// (`CredentialRotationResult::HashMismatch`, mapped to `conflict` rather
+/// than disambiguated further — see that match arm's own comment). This
+/// function lets `/refresh` apply the identical policy to the *earlier* of
+/// the two indistinguishable failure points, so a losing rotation gets the
+/// same retryable answer regardless of which point it failed at, instead of
+/// a policy that depends on load-sensitive scheduling of two DB statements.
+///
+/// Deliberately does **not** change `authenticate`'s own return value or
+/// behavior for its other 16 call sites in `runner_protocol.rs` — this only
+/// classifies an error already produced, for one caller to decide whether to
+/// remap it.
+pub fn is_credential_not_recognized(error_body: &Value) -> bool {
+    error_body
+        .get("error")
+        .and_then(|error| error.get("message"))
+        .and_then(Value::as_str)
+        == Some(CREDENTIAL_NOT_RECOGNIZED_MESSAGE)
 }
 
 /// Cross-checks a request body's `runner_id` field against the authenticated
@@ -261,6 +302,33 @@ mod tests {
         let (status, body) = require_matching_runner(&json!({}), &principal).unwrap_err();
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body.0["error"]["code"], "invalid_request");
+    }
+
+    #[test]
+    fn is_credential_not_recognized_matches_only_the_not_recognized_message() {
+        let (_, not_recognized) = protocol_error(
+            StatusCode::UNAUTHORIZED,
+            StableErrorCode::Unauthorized,
+            CREDENTIAL_NOT_RECOGNIZED_MESSAGE,
+            json!({}),
+        );
+        assert!(is_credential_not_recognized(&not_recognized.0));
+
+        let (_, expired) = protocol_error(
+            StatusCode::UNAUTHORIZED,
+            StableErrorCode::Unauthorized,
+            "The runner credential has expired",
+            json!({}),
+        );
+        assert!(!is_credential_not_recognized(&expired.0));
+
+        let (_, revoked) = protocol_error(
+            StatusCode::FORBIDDEN,
+            StableErrorCode::RunnerRevoked,
+            "The runner credential has been revoked",
+            json!({}),
+        );
+        assert!(!is_credential_not_recognized(&revoked.0));
     }
 
     #[test]
