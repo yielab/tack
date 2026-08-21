@@ -6,6 +6,7 @@
 
 use async_trait::async_trait;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use tack_orch::execution::{
     AttemptId as DomainAttemptId, FencingToken as DomainFencingToken, ProtocolVersion,
     RecoveryDetails as DomainRecoveryDetails, RecoveryDisposition, RecoveryJournalState,
@@ -15,11 +16,13 @@ use tack_orch::execution::{
 use thiserror::Error;
 
 use super::{
-    ActiveAttempt, AttemptId, AttemptState, CancellationReport, CancellationRequestId,
-    ClaimRequest, ClaimResult, ClaimedWork, ClaimedWorkError, CompletionId, CompletionReport,
-    CompletionResponse, EnrollmentRequest, EnrollmentResponse, HeartbeatRequest,
-    PendingTerminalReport, PendingTerminalReportKind, ProtocolClientError, PullProtocol,
-    RefreshRequest, RefreshResponse, RunnerSession, StartPhase, StartReport, Timestamp,
+    ActiveAttempt, ArtifactManifestItem, ArtifactManifestReport, AttemptDataProtocol, AttemptId,
+    AttemptState, CancellationReport, CancellationRequestId, Checkpoint, ClaimRequest, ClaimResult,
+    ClaimedWork, ClaimedWorkError, CompletionId, CompletionReport, CompletionResponse,
+    EnrollmentRequest, EnrollmentResponse, EventBatchReport, HeartbeatRequest,
+    PendingTerminalReport, PendingTerminalReportKind, ProtocolClientError, ProtocolEvent,
+    PullProtocol, RefreshRequest, RefreshResponse, RunnerSession, StartPhase, StartReport,
+    Timestamp,
     journal::{AttemptJournal, JournalError, JournalState, OwnerOnlyJournal},
     workspace::{Workspace, WorkspaceError, WorkspaceManager, WorktreeProvisioner},
 };
@@ -153,6 +156,15 @@ pub struct RunnerEngine<P, A, W, C = crate::SystemClock> {
     journal: OwnerOnlyJournal,
     workspaces: WorkspaceManager<W>,
     clock: C,
+    /// Card III-H6: the events/decisions/artifacts transport
+    /// (`AttemptDataProtocol`, live since III-H1 but with no call site until
+    /// this card). Optional and defaulted to `None` by every existing
+    /// constructor so no caller outside this file's ownership (`main.rs`
+    /// aside, see [`Self::with_data_protocol`]) is forced to supply one —
+    /// `crash_matrix.rs` (C4-owned) and `h3_checkout.rs` (H3-owned) keep
+    /// compiling unchanged. When absent, the engine behaves exactly as
+    /// before: no event/artifact submission is attempted.
+    data_protocol: Option<Arc<dyn AttemptDataProtocol>>,
 }
 
 impl<P, A, W> RunnerEngine<P, A, W, crate::SystemClock>
@@ -193,7 +205,18 @@ where
             journal,
             workspaces,
             clock,
+            data_protocol: None,
         }
+    }
+
+    /// Card III-H6: attaches the events/decisions/artifacts transport. A
+    /// separate builder method, not a `new`/`with_clock` parameter, so every
+    /// pre-existing construction site outside this card's ownership keeps
+    /// compiling untouched; only `main.rs` (the one production wiring point,
+    /// documented in this card's handoff) calls it today.
+    pub fn with_data_protocol(mut self, data_protocol: Arc<dyn AttemptDataProtocol>) -> Self {
+        self.data_protocol = Some(data_protocol);
+        self
     }
 
     pub async fn enroll(
@@ -377,6 +400,11 @@ where
                 // fabricating a cancelled success.
                 return self.report_or_retain_ambiguity(session, &record).await;
             }
+            // III-H6: real evidence that a cancellation actually happened,
+            // submitted through `AttemptDataProtocol` before the terminal
+            // report — best-effort, see `submit_event`'s own doc comment.
+            self.submit_cancellation_event(session, &mut record, &evidence)
+                .await;
             let report = CancellationReport {
                 protocol_version: ProtocolVersion::v1(),
                 runner_id: session.runner_id.clone(),
@@ -416,6 +444,16 @@ where
             return self.quarantine_after_spawn(session, &record, &handle).await;
         }
         let outcome = outcome.normalize_workspace_facts(&spec.workspace);
+        // III-H6: the runner's only call site for events and artifacts.
+        // `outcome.terminal_reason` is the exact JSON D1/D2/D3's adapters
+        // already produce (including the `artifact` key their `wait()`
+        // implementations stage via `harness::artifact::ArtifactStager` —
+        // see e.g. `codex.rs::stage_run_log`), so this reads real evidence,
+        // never a fabricated summary. Runs before the completion report so
+        // an operator inspecting the timeline after `succeeded` sees the
+        // event/artifact already there.
+        self.submit_terminal_evidence(session, &mut record, &outcome)
+            .await;
         let report = CompletionReport {
             protocol_version: ProtocolVersion::v1(),
             runner_id: session.runner_id.clone(),
@@ -428,7 +466,24 @@ where
             fencing_token: record.fencing_token,
             terminal_state: outcome.terminal_state,
             terminal_reason: outcome.terminal_reason,
-            final_event_checkpoint: outcome.final_checkpoint,
+            // III-H6: NOT `outcome.final_checkpoint` (always `None` — no
+            // adapter ever sets it). `complete_execution_result`'s own
+            // compare-and-set requires this to equal the attempt row's
+            // *current* `event_checkpoint` column exactly
+            // (`crates/tack-db/src/repo/execution.rs`, the `UPDATE ... AND
+            // event_checkpoint IS ?` guard) — and `submit_terminal_evidence`
+            // above just moved that column from `NULL` to a real value by
+            // submitting an event. Sending the adapter's stale `None` here
+            // mismatches the row's now-current value and the update's
+            // `rows_affected() != 1` branch turns every completion into a
+            // `Conflict`, forever — proven the hard way against a live
+            // server (`./scripts/smoke.sh`) before this fix, where the
+            // event/artifact evidence this card exists to submit reached
+            // the server but the attempt's own completion never did.
+            // `record.last_event_checkpoint` is exactly what the server
+            // committed (or still `None` if nothing was ever submitted),
+            // so it is always the value this compare-and-set expects.
+            final_event_checkpoint: record.last_event_checkpoint.clone(),
             actual_execution: outcome.actual_execution,
             usage: outcome.usage,
         };
@@ -484,6 +539,244 @@ where
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
         format!("hb_{opaque}")
+    }
+
+    // -----------------------------------------------------------------
+    // III-H6: events, decisions and artifacts.
+    //
+    // `AttemptDataProtocol` (III-H1) has had a working HTTP transport since
+    // `transport.rs` landed, but nothing in this file ever called it — see
+    // that trait's own doc comment, which names this exact gap and requests
+    // this wiring. The methods below are the call sites: one runner-sourced
+    // event per terminal outcome (completion or cancellation), plus a
+    // best-effort upload of whatever artifact an adapter already staged
+    // locally (`terminal_reason.artifact`, D1/D2/D3's own convention — see
+    // e.g. `harness::codex::CodexAdapter::stage_run_log`).
+    //
+    // Submission is deliberately best-effort: a transport failure here is
+    // logged (ids only) and never turns a real harness result into a failed
+    // attempt or blocks the terminal report. It does not participate in the
+    // crash-safe replay `send_pending_terminal_report` implements for
+    // completion/cancellation — a restart does not resend a lost event or
+    // artifact. That is a known limitation, recorded in this card's handoff,
+    // not hidden here.
+    // -----------------------------------------------------------------
+
+    async fn submit_terminal_evidence(
+        &self,
+        session: &RunnerSession,
+        record: &mut AttemptJournal,
+        outcome: &HarnessOutcome,
+    ) {
+        self.submit_event(
+            session,
+            record,
+            "attempt.terminal",
+            outcome.terminal_reason.clone(),
+        )
+        .await;
+        if let Some(artifact) = outcome.terminal_reason.get("artifact") {
+            self.submit_staged_artifact(session, record, artifact).await;
+        }
+    }
+
+    async fn submit_cancellation_event(
+        &self,
+        session: &RunnerSession,
+        record: &mut AttemptJournal,
+        evidence: &CancellationEvidence,
+    ) {
+        let payload = serde_json::json!({
+            "observation": evidence.observation,
+            "details": serde_json::Value::Object(evidence.details.clone()),
+        });
+        self.submit_event(session, record, "attempt.cancelled", payload)
+            .await;
+    }
+
+    /// Submits one runner-sourced event carrying `payload`. `event_id` is
+    /// derived deterministically from `(attempt_id, fencing_token, kind)` —
+    /// never random or clock-based — so a caller that retries this exact
+    /// submission (e.g. after a transient transport error) reuses the
+    /// identical id instead of manufacturing a duplicate under a new
+    /// identity. `docs/contracts/runner-v1/event-batch.request.json`'s own
+    /// idempotency rule is a unique `(attempt_id, event_id)`; the server is
+    /// the authority on treating a resend of the same id as a no-op
+    /// (`duplicate_event_ids`), proved from this side in
+    /// `submitting_the_same_terminal_event_twice_is_idempotent` below.
+    async fn submit_event(
+        &self,
+        session: &RunnerSession,
+        record: &mut AttemptJournal,
+        kind: &str,
+        payload: serde_json::Value,
+    ) {
+        let Some(data_protocol) = self.data_protocol.as_ref() else {
+            return;
+        };
+        let sent_at = chrono::DateTime::<chrono::Utc>::from(self.clock.now())
+            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let event_id = Self::event_id(record, kind);
+        let checkpoint = Checkpoint::new(format!(
+            "chk:{}:{}:{kind}",
+            record.attempt_id.as_str(),
+            record.fencing_token.0
+        ));
+        let report = EventBatchReport {
+            attempt_id: record.attempt_id.clone(),
+            fencing_token: record.fencing_token,
+            previous_checkpoint: record.last_event_checkpoint.clone(),
+            checkpoint: checkpoint.clone(),
+            events: vec![ProtocolEvent {
+                event_id,
+                // Exactly one event is ever submitted per checkpoint in this
+                // card's wiring (completion XOR cancellation, never both),
+                // so a fixed `0` is honest, not a placeholder — see the
+                // module doc above on what still needs a real sequence
+                // counter if a future card submits more than one event per
+                // attempt.
+                sequence: 0,
+                occurred_at: Timestamp::new(sent_at),
+                source: "runner".to_owned(),
+                kind: kind.to_owned(),
+                payload,
+            }],
+        };
+        match data_protocol.submit_events(session, report).await {
+            Ok(response) => {
+                record.last_event_checkpoint = response.committed_checkpoint.or(Some(checkpoint));
+                // Best-effort: the event already reached the server; a local
+                // journal-write failure here only affects this runner's own
+                // `last_event_checkpoint` bookkeeping (used for a future
+                // resumed batch), not the event's durability on the server.
+                let _ = self.journal.update(record);
+            }
+            Err(_error) => {
+                tracing::warn!(
+                    attempt_id = record.attempt_id.as_str(),
+                    "III-H6: event submission failed"
+                );
+            }
+        }
+    }
+
+    fn event_id(record: &AttemptJournal, kind: &str) -> String {
+        let material = format!(
+            "{}:{}:{kind}",
+            record.attempt_id.as_str(),
+            record.fencing_token.0
+        );
+        format!("evt_{}", Self::hex(material.as_bytes()))
+    }
+
+    fn artifact_id(record: &AttemptJournal, sha256: &str) -> String {
+        let material = format!(
+            "{}:{}:{sha256}",
+            record.attempt_id.as_str(),
+            record.fencing_token.0
+        );
+        format!("art_{}", Self::hex(material.as_bytes()))
+    }
+
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    /// Best-effort upload of a locally staged artifact. `artifact` is the
+    /// exact JSON object D1/D2/D3's adapters already produce at
+    /// `terminal_reason.artifact` (`kind`, `name`, `media_type`, `sha256`,
+    /// `staged_path`, ...) via `harness::artifact::ArtifactStager` — this
+    /// method is the first thing in the tree that ever reads it back out.
+    /// The file's bytes and size are read fresh from `staged_path` rather
+    /// than trusted from the JSON, mirroring `ArtifactStager`'s own rule
+    /// that a checksum/size must come from bytes actually handled, never a
+    /// value merely reported.
+    async fn submit_staged_artifact(
+        &self,
+        session: &RunnerSession,
+        record: &AttemptJournal,
+        artifact: &serde_json::Value,
+    ) {
+        let Some(data_protocol) = self.data_protocol.as_ref() else {
+            return;
+        };
+        let (Some(kind), Some(name), Some(media_type), Some(sha256), Some(staged_path)) = (
+            artifact.get("kind").and_then(|value| value.as_str()),
+            artifact.get("name").and_then(|value| value.as_str()),
+            artifact.get("media_type").and_then(|value| value.as_str()),
+            artifact.get("sha256").and_then(|value| value.as_str()),
+            artifact.get("staged_path").and_then(|value| value.as_str()),
+        ) else {
+            tracing::warn!(
+                attempt_id = record.attempt_id.as_str(),
+                "III-H6: staged artifact JSON is missing an expected field; not uploaded"
+            );
+            return;
+        };
+        let content = match std::fs::read(staged_path) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                tracing::warn!(
+                    attempt_id = record.attempt_id.as_str(),
+                    "III-H6: staged artifact could not be read for upload"
+                );
+                return;
+            }
+        };
+        let artifact_id = Self::artifact_id(record, sha256);
+        let manifest = ArtifactManifestReport {
+            attempt_id: record.attempt_id.clone(),
+            fencing_token: record.fencing_token,
+            artifacts: vec![ArtifactManifestItem {
+                artifact_id: artifact_id.clone(),
+                kind: kind.to_owned(),
+                name: name.to_owned(),
+                media_type: Some(media_type.to_owned()),
+                size_bytes: content.len() as u64,
+                sha256: sha256.to_owned(),
+                content_disposition: "inline_upload".to_owned(),
+                metadata: Default::default(),
+            }],
+        };
+        let grants = match data_protocol
+            .submit_artifact_manifest(session, manifest)
+            .await
+        {
+            Ok(grants) => grants,
+            Err(_error) => {
+                tracing::warn!(
+                    attempt_id = record.attempt_id.as_str(),
+                    "III-H6: artifact manifest submission failed"
+                );
+                return;
+            }
+        };
+        let Some(grant) = grants
+            .into_iter()
+            .find(|grant| grant.artifact_id == artifact_id)
+        else {
+            tracing::warn!(
+                attempt_id = record.attempt_id.as_str(),
+                "III-H6: server granted no upload for the submitted artifact"
+            );
+            return;
+        };
+        if data_protocol
+            .put_artifact_content(
+                session,
+                record.fencing_token,
+                &grant,
+                Some(media_type),
+                content,
+            )
+            .await
+            .is_err()
+        {
+            tracing::warn!(
+                attempt_id = record.attempt_id.as_str(),
+                "III-H6: artifact content upload failed"
+            );
+        }
     }
 
     fn persist_pending_terminal_report<T: serde::Serialize>(
@@ -773,7 +1066,7 @@ where
 mod tests {
     use std::{
         collections::{BTreeMap, BTreeSet},
-        path::PathBuf,
+        path::{Path, PathBuf},
         sync::{
             Arc, Mutex,
             atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -783,9 +1076,10 @@ mod tests {
 
     use super::*;
     use crate::client::{
-        AttemptLease, CancellationResponse, ClaimRequestId, ClaimResult, ClaimedWork,
-        CompletionResponse, FencingToken, LeaseResult, ProtocolClientError, RunnerCredential,
-        RunnerId, Timestamp,
+        ArtifactUploadGrant, AttemptLease, CancellationResponse, ClaimRequestId, ClaimResult,
+        ClaimedWork, CompletionResponse, DecisionCreateReport, DecisionCreateResponse,
+        DecisionPollReport, DecisionPollResponse, EventBatchResponse, FencingToken, LeaseResult,
+        ProtocolClientError, RunnerCredential, RunnerId, Timestamp,
     };
     use tack_orch::execution::{
         AttemptId as DomainAttemptId, AttemptSnapshot, ExecutionRequestSnapshot,
@@ -1162,6 +1456,11 @@ mod tests {
         recovery_observation: RecoveryObservation,
         reconcile_fails: bool,
         completion_actual_execution: tack_orch::execution::ActualExecution,
+        // III-H6: overridable so a test can prove the engine reads a real
+        // `terminal_reason.artifact` object (the exact shape D1/D2/D3's real
+        // adapters already stage) without touching any other test's fixed
+        // expectation of the plain `{code, message}` default.
+        completion_terminal_reason: serde_json::Value,
     }
 
     #[async_trait]
@@ -1189,10 +1488,7 @@ mod tests {
         async fn wait(&self, _handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError> {
             Ok(HarnessOutcome {
                 terminal_state: AttemptState::Succeeded,
-                terminal_reason: serde_json::json!({
-                    "code": "completed",
-                    "message": "Harness exited successfully"
-                }),
+                terminal_reason: self.completion_terminal_reason.clone(),
                 final_checkpoint: None,
                 actual_execution: self.completion_actual_execution.clone(),
                 usage: usage(),
@@ -1404,6 +1700,10 @@ mod tests {
             recovery_observation: RecoveryObservation::ProcessStopped,
             reconcile_fails: false,
             completion_actual_execution: actual_execution(),
+            completion_terminal_reason: serde_json::json!({
+                "code": "completed",
+                "message": "Harness exited successfully"
+            }),
         }
     }
 
@@ -3036,6 +3336,421 @@ mod tests {
         ));
         assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 1);
         assert_eq!(cancellations.load(Ordering::SeqCst), 1);
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+
+    // -----------------------------------------------------------------
+    // III-H6 acceptance: the engine actually submits events, decisions and
+    // artifacts through `AttemptDataProtocol`, and a resubmission is
+    // idempotent. `FakeDataProtocol` below is a second fake transport,
+    // deliberately independent of `FakeProtocol` (which only ever
+    // implements `PullProtocol`) — proving `RunnerEngine::with_data_protocol`
+    // wires a genuinely separate seam, not a coincidental reuse of the
+    // lifecycle fake.
+    // -----------------------------------------------------------------
+
+    #[derive(Default)]
+    struct FakeDataProtocolState {
+        events: Vec<EventBatchReport>,
+        accepted_event_ids: BTreeSet<String>,
+        manifests: Vec<ArtifactManifestReport>,
+        uploads: Vec<(String, Vec<u8>, Option<String>)>,
+    }
+
+    #[derive(Clone, Default)]
+    struct FakeDataProtocol {
+        state: Arc<Mutex<FakeDataProtocolState>>,
+        events_fail: Arc<AtomicBool>,
+        manifest_fails: Arc<AtomicBool>,
+        upload_fails: Arc<AtomicBool>,
+    }
+
+    impl FakeDataProtocol {
+        fn new() -> Self {
+            Self::default()
+        }
+    }
+
+    #[async_trait]
+    impl AttemptDataProtocol for FakeDataProtocol {
+        async fn submit_events(
+            &self,
+            _session: &RunnerSession,
+            report: EventBatchReport,
+        ) -> Result<EventBatchResponse, ProtocolClientError> {
+            if self.events_fail.load(Ordering::SeqCst) {
+                return Err(ProtocolClientError::Transport);
+            }
+            let mut state = self.state.lock().expect("fake data protocol lock");
+            let mut accepted_event_ids = Vec::new();
+            let mut duplicate_event_ids = Vec::new();
+            for event in &report.events {
+                // Mirrors the server's own idempotency contract
+                // (`docs/contracts/runner-v1/event-batch.*`, unique
+                // `(attempt_id, event_id)`): a previously seen id is a
+                // no-op duplicate, never a second row.
+                if state.accepted_event_ids.insert(event.event_id.clone()) {
+                    accepted_event_ids.push(event.event_id.clone());
+                } else {
+                    duplicate_event_ids.push(event.event_id.clone());
+                }
+            }
+            let response = EventBatchResponse {
+                attempt_id: report.attempt_id.clone(),
+                accepted_event_ids,
+                duplicate_event_ids,
+                committed_checkpoint: Some(report.checkpoint.clone()),
+            };
+            state.events.push(report);
+            Ok(response)
+        }
+
+        async fn create_decision(
+            &self,
+            _session: &RunnerSession,
+            report: DecisionCreateReport,
+        ) -> Result<DecisionCreateResponse, ProtocolClientError> {
+            Ok(DecisionCreateResponse {
+                decision_id: report.decision_id,
+                state: "open".into(),
+                created_at: Timestamp::new("2026-08-20T00:00:00Z"),
+            })
+        }
+
+        async fn poll_decisions(
+            &self,
+            _session: &RunnerSession,
+            _report: DecisionPollReport,
+        ) -> Result<DecisionPollResponse, ProtocolClientError> {
+            Ok(DecisionPollResponse {
+                decisions: Vec::new(),
+                next_after: None,
+            })
+        }
+
+        async fn submit_artifact_manifest(
+            &self,
+            _session: &RunnerSession,
+            report: ArtifactManifestReport,
+        ) -> Result<Vec<ArtifactUploadGrant>, ProtocolClientError> {
+            if self.manifest_fails.load(Ordering::SeqCst) {
+                return Err(ProtocolClientError::Transport);
+            }
+            let grants = report
+                .artifacts
+                .iter()
+                .map(|item| ArtifactUploadGrant {
+                    artifact_id: item.artifact_id.clone(),
+                    state: "manifest_accepted".into(),
+                    method: "PUT".into(),
+                    path: format!("/api/runner/v1/artifacts/{}/content", item.artifact_id),
+                    expires_at: Some(Timestamp::new("2026-08-20T01:00:00Z")),
+                })
+                .collect();
+            self.state
+                .lock()
+                .expect("fake data protocol lock")
+                .manifests
+                .push(report);
+            Ok(grants)
+        }
+
+        async fn put_artifact_content(
+            &self,
+            _session: &RunnerSession,
+            _fencing_token: FencingToken,
+            grant: &ArtifactUploadGrant,
+            media_type: Option<&str>,
+            content: Vec<u8>,
+        ) -> Result<(), ProtocolClientError> {
+            if self.upload_fails.load(Ordering::SeqCst) {
+                return Err(ProtocolClientError::Transport);
+            }
+            self.state
+                .lock()
+                .expect("fake data protocol lock")
+                .uploads
+                .push((
+                    grant.artifact_id.clone(),
+                    content,
+                    media_type.map(str::to_owned),
+                ));
+            Ok(())
+        }
+    }
+
+    /// Builds an engine identical to the other happy-path tests but with a
+    /// [`FakeDataProtocol`] attached, and an adapter whose staged artifact
+    /// points at a real file this test writes itself — so the assertions
+    /// below read genuine bytes/sha256 back out, never a value the test
+    /// merely asserts against itself.
+    fn engine_with_data_protocol(
+        root: &Path,
+        journal: OwnerOnlyJournal,
+        data_protocol: FakeDataProtocol,
+        completion_terminal_reason: serde_json::Value,
+    ) -> RunnerEngine<FakeProtocol, FakeAdapter, FakeWorktree> {
+        RunnerEngine::new(
+            protocol(work(), false, false),
+            FakeAdapter {
+                completion_terminal_reason,
+                ..adapter(journal.journal_path(&AttemptId::new("attempt")))
+            },
+            journal,
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: OwnerOnlyJournal::new(root)
+                        .journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+        )
+        .with_data_protocol(Arc::new(data_protocol))
+    }
+
+    #[tokio::test]
+    async fn run_once_with_a_data_protocol_submits_the_terminal_event_and_uploads_the_staged_artifact()
+     {
+        let root = temporary_root("data-protocol-terminal");
+        std::fs::create_dir_all(&root).expect("test root");
+        let staged_path = root.join("staged-artifact.log");
+        let content = b"real staged artifact bytes, not a placeholder".to_vec();
+        std::fs::write(&staged_path, &content).expect("write staged artifact");
+        let sha256 = crate::harness::sha256::sha256_hex(&content);
+
+        let journal = OwnerOnlyJournal::new(&root);
+        let data_protocol = FakeDataProtocol::new();
+        let engine = engine_with_data_protocol(
+            &root,
+            journal,
+            data_protocol.clone(),
+            serde_json::json!({
+                "code": "completed",
+                "message": "Harness exited successfully",
+                "artifact": {
+                    "kind": "log",
+                    "name": "staged-artifact.log",
+                    "media_type": "text/plain",
+                    "size_bytes": content.len(),
+                    "sha256": sha256,
+                    "staged_path": staged_path.display().to_string(),
+                }
+            }),
+        );
+
+        assert!(matches!(
+            engine
+                .run_once(&session(), claim_request())
+                .await
+                .expect("cycle"),
+            RunCycle::Completed { .. }
+        ));
+
+        let state = data_protocol.state.lock().expect("fake data protocol lock");
+        assert_eq!(state.events.len(), 1, "exactly one event batch submitted");
+        let submitted = &state.events[0];
+        assert_eq!(submitted.events.len(), 1);
+        assert_eq!(submitted.events[0].kind, "attempt.terminal");
+        assert_eq!(submitted.events[0].source, "runner");
+        assert_eq!(submitted.events[0].payload["code"], "completed");
+        assert_eq!(submitted.previous_checkpoint, None, "first submission ever");
+        assert!(
+            state
+                .accepted_event_ids
+                .contains(&submitted.events[0].event_id)
+        );
+
+        assert_eq!(state.manifests.len(), 1, "exactly one artifact manifest");
+        let manifest_item = &state.manifests[0].artifacts[0];
+        assert_eq!(manifest_item.sha256, sha256);
+        assert_eq!(manifest_item.size_bytes, content.len() as u64);
+        assert_eq!(manifest_item.name, "staged-artifact.log");
+
+        assert_eq!(state.uploads.len(), 1, "exactly one artifact upload");
+        assert_eq!(state.uploads[0].0, manifest_item.artifact_id);
+        assert_eq!(
+            state.uploads[0].1, content,
+            "the exact bytes read from the staged file were uploaded"
+        );
+        assert_eq!(state.uploads[0].2.as_deref(), Some("text/plain"));
+
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+
+    #[tokio::test]
+    async fn run_once_with_a_data_protocol_submits_a_cancellation_event() {
+        let root = temporary_root("data-protocol-cancellation");
+        std::fs::create_dir_all(&root).expect("test root");
+        let journal = OwnerOnlyJournal::new(&root);
+        let data_protocol = FakeDataProtocol::new();
+        let engine = RunnerEngine::new(
+            protocol(work(), true, false),
+            adapter(journal.journal_path(&AttemptId::new("attempt"))),
+            journal,
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: OwnerOnlyJournal::new(&root)
+                        .journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+        )
+        .with_data_protocol(Arc::new(data_protocol.clone()));
+
+        assert!(matches!(
+            engine
+                .run_once(&session(), claim_request())
+                .await
+                .expect("cycle"),
+            RunCycle::Cancelled { .. }
+        ));
+
+        let state = data_protocol.state.lock().expect("fake data protocol lock");
+        assert_eq!(state.events.len(), 1);
+        assert_eq!(state.events[0].events[0].kind, "attempt.cancelled");
+        assert_eq!(
+            state.events[0].events[0].payload["observation"],
+            serde_json::json!("process_stopped")
+        );
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+
+    /// Acceptance: no `AttemptDataProtocol` configured is exactly today's
+    /// pre-III-H6 behavior — the attempt still completes, and nothing about
+    /// the lifecycle depends on the new seam being present.
+    #[tokio::test]
+    async fn without_a_data_protocol_the_attempt_still_completes_and_nothing_is_submitted() {
+        let root = temporary_root("data-protocol-absent");
+        let journal = OwnerOnlyJournal::new(&root);
+        let engine = RunnerEngine::new(
+            protocol(work(), false, false),
+            adapter(journal.journal_path(&AttemptId::new("attempt"))),
+            journal,
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: OwnerOnlyJournal::new(&root)
+                        .journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+        );
+        assert!(matches!(
+            engine
+                .run_once(&session(), claim_request())
+                .await
+                .expect("cycle"),
+            RunCycle::Completed { .. }
+        ));
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+
+    /// Acceptance: a transport failure on the events/artifacts seam is
+    /// real (logged, ids only — no payload) and never turns into a hidden
+    /// fake success, but it also never blocks the attempt's own terminal
+    /// report — the harness genuinely succeeded, and that fact must still
+    /// reach the server even if this best-effort evidence upload could not.
+    #[tokio::test]
+    async fn data_protocol_transport_failure_does_not_block_the_attempts_own_completion() {
+        let root = temporary_root("data-protocol-failure");
+        let journal = OwnerOnlyJournal::new(&root);
+        let data_protocol = FakeDataProtocol::new();
+        data_protocol.events_fail.store(true, Ordering::SeqCst);
+        let engine = RunnerEngine::new(
+            protocol(work(), false, false),
+            adapter(journal.journal_path(&AttemptId::new("attempt"))),
+            journal,
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: OwnerOnlyJournal::new(&root)
+                        .journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+        )
+        .with_data_protocol(Arc::new(data_protocol.clone()));
+
+        assert!(matches!(
+            engine
+                .run_once(&session(), claim_request())
+                .await
+                .expect("cycle — harness success is not held hostage by evidence upload"),
+            RunCycle::Completed { .. }
+        ));
+        assert!(
+            data_protocol
+                .state
+                .lock()
+                .expect("fake data protocol lock")
+                .events
+                .is_empty(),
+            "the failed submission attempt left no accepted event behind"
+        );
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+
+    /// Acceptance (III-H6's own idempotency requirement): retrying the
+    /// identical terminal-event submission — the exact scenario a runner
+    /// hits after a transient transport error, or a crash between a
+    /// server-side commit and the local checkpoint write — reuses the same
+    /// `event_id` both times (never a random or clock-derived one), so the
+    /// server-side dedup this fake mirrors treats the retry as a genuine
+    /// no-op: the accepted set never grows past one member.
+    #[tokio::test]
+    async fn resubmitting_the_same_terminal_event_is_idempotent() {
+        let root = temporary_root("data-protocol-idempotent-retry");
+        let journal = OwnerOnlyJournal::new(&root);
+        let data_protocol = FakeDataProtocol::new();
+        let engine = RunnerEngine::new(
+            protocol(work(), false, false),
+            adapter(journal.journal_path(&AttemptId::new("attempt"))),
+            journal.clone(),
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: OwnerOnlyJournal::new(&root)
+                        .journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+        )
+        .with_data_protocol(Arc::new(data_protocol.clone()));
+
+        let claimed = work();
+        let mut record = AttemptJournal::prepared(
+            &claimed.lease,
+            super::super::WorkspaceJournal {
+                workspace_id: super::super::WorkspaceId::new("ws_617474656d7074"),
+                path: root.join("workspaces/617474656d7074"),
+                base_revision: "revision".into(),
+            },
+        );
+
+        let first_payload = serde_json::json!({"code": "completed"});
+        engine
+            .submit_event(&session(), &mut record, "attempt.terminal", first_payload)
+            .await;
+        let second_payload = serde_json::json!({"code": "completed"});
+        engine
+            .submit_event(&session(), &mut record, "attempt.terminal", second_payload)
+            .await;
+
+        let state = data_protocol.state.lock().expect("fake data protocol lock");
+        assert_eq!(state.events.len(), 2, "the engine did submit twice");
+        let first_event_id = &state.events[0].events[0].event_id;
+        let second_event_id = &state.events[1].events[0].event_id;
+        assert_eq!(
+            first_event_id, second_event_id,
+            "identical (attempt_id, fencing_token, kind) must yield the identical event_id"
+        );
+        assert_eq!(
+            state.accepted_event_ids.len(),
+            1,
+            "server-side dedup (mirrored by the fake) sees one logical event, not two"
+        );
         std::fs::remove_dir_all(root).expect("remove temporary root");
     }
 }
