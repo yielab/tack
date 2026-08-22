@@ -74,16 +74,27 @@ pub struct StoredArtifactContent {
     pub bytes_written: u64,
 }
 
-/// Hex-encodes every byte of `value` so it can never be interpreted as a
-/// path separator, a `..` traversal component, or a NUL terminator — the
-/// same convention `tack-runner`'s `harness/artifact.rs#encode_id` uses for
-/// the identical reason on the local side.
+/// SHA-256-hashes `value` and hex-encodes the fixed-size digest, so the
+/// result can never be interpreted as a path separator, a `..` traversal
+/// component or a NUL terminator (same defense `tack-runner`'s
+/// `harness/artifact.rs#encode_id` uses on the local side) **and** is always
+/// exactly 64 bytes regardless of `value`'s own length.
+///
+/// III-H9: this used to hex-encode every byte of `value` literally, which
+/// doubled its length. `tack-runner`'s own `engine.rs::artifact_id` derives
+/// an `artifact_id` by hex-encoding `"{attempt_id}:{fencing_token}:{sha256}"`
+/// (already ~220 bytes), so the doubled encoding here — used twice per
+/// filename, once for the temp name and once for the final blob name — blew
+/// past Linux's 255-byte `NAME_MAX`, and every real upload failed with
+/// `ENAMETOOLONG` inside `Io`, surfaced to the caller as a bare `500`.
+/// Reproduced live via `./scripts/smoke.sh`: every `PUT
+/// .../artifacts/{artifact_id}/content` 500'd with
+/// `Os { code: 36, kind: InvalidFilename, message: "File name too long" }`.
+/// Hashing bounds the length unconditionally; content is never read back by
+/// literal id (`open_for_read` takes the already-produced
+/// `content_reference`), so losing reversibility costs nothing.
 fn encode_id(value: &str) -> String {
-    value
-        .as_bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    hex::encode(Sha256::digest(value.as_bytes()))
 }
 
 /// Roots every stored artifact under `root/<hex(attempt_id)>/...`, mirroring
@@ -314,6 +325,52 @@ mod tests {
                 .into_iter()
                 .map(|chunk| Ok(Bytes::from_static(chunk))),
         )
+    }
+
+    /// III-H9: reproduces the exact `artifact_id` shape
+    /// `tack-runner`'s `engine.rs::artifact_id` produces —
+    /// `format!("art_{}", hex(format!("{attempt_id}:{fencing_token}:{sha256}")))`,
+    /// itself already ~220 bytes before this module's own (former)
+    /// hex-doubling. Before the fix, hex-encoding this literally for both the
+    /// temp file name and the final blob name overflowed Linux's 255-byte
+    /// `NAME_MAX` and every real upload failed with `Io` (`ENAMETOOLONG`),
+    /// surfaced to callers as a bare `500` — reproduced live via
+    /// `./scripts/smoke.sh` before this fix. Load-bearing: reverting
+    /// `encode_id` to hex-encode every byte of `value` again makes this test
+    /// fail with `Err(Io)`.
+    #[tokio::test]
+    async fn a_realistic_long_runner_generated_artifact_id_does_not_overflow_a_filename() {
+        let root = temp_root("long-id");
+        let storage = ArtifactStorage::new(&root);
+        let long_attempt_id = format!("att_{}", uuid::Uuid::new_v4());
+        let long_artifact_id = format!(
+            "art_{}",
+            hex::encode(format!("{long_attempt_id}:1:{}", "a".repeat(64)))
+        );
+        assert!(
+            long_artifact_id.len() > 200,
+            "test fixture must reproduce a realistically long id"
+        );
+        let content = b"a realistic staged artifact payload";
+        let stored = storage
+            .store_streaming(
+                &long_attempt_id,
+                &long_artifact_id,
+                content.len() as u64,
+                &sha256_hex(content),
+                ok_stream(vec![content]),
+            )
+            .await
+            .expect("store must not fail with a long, realistic runner-generated id");
+        let mut file = storage
+            .open_for_read(&stored.content_reference)
+            .await
+            .expect("open");
+        let mut buf = Vec::new();
+        use tokio::io::AsyncReadExt;
+        file.read_to_end(&mut buf).await.unwrap();
+        assert_eq!(buf, content);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
