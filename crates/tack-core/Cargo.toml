@@ -3,6 +3,7 @@ name = "tack-core"
 description = "Core domain models and business logic for Tack"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [features]
 # Derive `utoipa::ToSchema` / `IntoParams` on the domain models + DTOs so the

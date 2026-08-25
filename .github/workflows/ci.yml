@@ -218,6 +218,7 @@ jobs:
             "0BSD",
             "BSL-1.0",
             "OpenSSL",
+            "CDLA-Permissive-2.0",
           ]
           EOF
       - name: cargo deny check

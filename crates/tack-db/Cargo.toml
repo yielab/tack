@@ -3,6 +3,7 @@ name = "tack-db"
 description = "Database layer and migrations for Tack"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [dependencies]
 tack-core = { path = "../tack-core" }

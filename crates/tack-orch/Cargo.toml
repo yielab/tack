@@ -3,6 +3,7 @@ name = "tack-orch"
 description = "Control-plane orchestration client for Tack — the ControlPlane trait, shared DTOs, and (from Wave 1 on) adapters/reconciler for docket-style agent-fleet runtimes."
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 # Dependency direction is INWARD ONLY: tack-orch may depend on tack-core and
 # tack-db, but must NEVER depend on tack-api. tack-api depends on tack-orch
