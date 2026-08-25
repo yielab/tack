@@ -3,6 +3,7 @@ name = "tack-api"
 description = "HTTP API server for Tack"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [features]
 # Embed the pre-built SPA into the binary for single-binary distribution.
