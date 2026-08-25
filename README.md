@@ -24,9 +24,13 @@ The intended product is one place where a person can:
 > implemented on the development branch: durable execution requests, `tack-runner`,
 > real harness adapters, fleet scheduling, decisions, artifacts, and model profiles all
 > exist and are tested. It is **not yet a released feature**: no tagged release ships
-> it, and **Phase 57** (release hardening and the optional legacy Docket bridge) has
-> not started. The existing Docket integration is retained as a legacy optional
-> bridge, not as the architecture of the new control plane.
+> it, and **Phase 57** (release hardening and the optional legacy Docket bridge) is
+> in progress — the runner's HTTP transport, per-attempt checkouts, event/decision/
+> artifact submission, and fleet-membership write routes are all built and gated
+> green; the release tag is blocked only on installing the `codex` CLI on the build
+> machine so the three-harness live smoke can run end to end. The existing Docket
+> integration is retained as a legacy optional bridge, not as the architecture of the
+> new control plane.
 
 Built with Rust (Axum + sqlx), SolidJS, and SQLite.
 
@@ -112,7 +116,7 @@ there as design history instead of being rewritten as completed work.
 | **41** | **Acceptance closed, unreleased** | Atomic-write and browser-ETag acceptance, previously reopened, are now closed: item `PATCH` runs as one transaction proven with failure-injection tests, and the browser sends `If-Match` and handles `412` with a refresh-and-retry flow. |
 | **42** | **Acceptance closed, unreleased** | Provider-scoped identity acceptance, previously reopened, is now closed: migrations 037/038 rebuild `orch_runs`/`orch_approvals` as a transactional copy/verify/swap with checksum and pre-upgrade snapshot safety, replacing a boot-loop risk with recovery. |
 | **43–49** | **Superseded or frozen** | Do not implement this old control-plane sequence; its useful outcomes were re-scoped into Phases 50–57. |
-| **50–57** | **Phases 50–56 delivered, unreleased; 57 not started** | Native harness-agnostic runner fleet — execution domain, runner protocol, real harness adapters, fleet scheduling, decisions/artifacts, and model profiles. Not shipped in any tagged release. |
+| **50–57** | **Phases 50–56 delivered, unreleased; 57 in progress** | Native harness-agnostic runner fleet — execution domain, runner protocol, real harness adapters, fleet scheduling, decisions/artifacts, and model profiles. Not shipped in any tagged release; the tag is blocked only on installing `codex` locally to complete the three-harness live smoke. |
 
 The active cycle is:
 
@@ -125,7 +129,7 @@ The active cycle is:
 | **54** | Fleet scheduler and item-assignment UX. | Delivered, unreleased |
 | **55** | Decisions, artifacts, and realtime execution activity. | Delivered, unreleased |
 | **56** | Model profiles, policy enforcement, and honest measured usage. | Delivered, unreleased |
-| **57** | Optional Docket bridge, recovery testing, and release hardening. | Not started |
+| **57** | Optional Docket bridge, recovery testing, and release hardening. | In progress — runner HTTP transport, per-attempt checkouts, event/decision/artifact submission, and fleet-membership write routes delivered and gated; blocked on installing `codex` for the live smoke |
 
 ## What works today
 
@@ -151,8 +155,8 @@ The active cycle is:
 
 `tack mcp` and the runner fleet solve different problems: MCP gives an interactive
 agent tools for managing the board; the runner fleet — implemented on the
-development branch through Phase 56, not yet released — lets Tack durably schedule,
-lease, observe, and recover agent execution.
+development branch through Phase 57's release-hardening work, not yet released —
+lets Tack durably schedule, lease, observe, and recover agent execution.
 
 ## Quick start
 
@@ -195,7 +199,7 @@ Open **`http://localhost:3210`**. Project data lives in `tack.db`; attachments l
 | Authentication | One optional shared Bearer token; no per-user identities or permissions. |
 | Multi-device data | One active SQLite writer. S3 backup is snapshot replication, not live multi-writer sync. |
 | Offline UI | The browser UI requires its Tack server to be running. |
-| Native runner fleet | Implemented through Phase 56 on the development branch (execution domain, `tack-runner`, harness adapters, fleet scheduling, decisions, artifacts, model profiles); not shipped in any tagged release. Phase 57 (release hardening, optional legacy bridge) has not started, and some execution-domain behavior (for example, decision resolution) requires its own separate configuration. |
+| Native runner fleet | Implemented through Phase 56 on the development branch (execution domain, `tack-runner`, harness adapters, fleet scheduling, decisions, artifacts, model profiles); not shipped in any tagged release. Phase 57 (release hardening, optional legacy bridge) is in progress and gated green; the release tag is blocked only on installing `codex` locally for the three-harness live smoke, and some execution-domain behavior (for example, decision resolution) requires its own separate configuration. |
 | Existing orchestration | Docket-specific and disabled by default. It is a legacy bridge, not proof of harness-agnostic execution. |
 | Usage and cost | Existing imported values may be estimates or absent. Native telemetry must label measurement source; absent usage is not zero. |
 | Mobile | Responsive web UI only; no native mobile application. |
@@ -253,7 +257,7 @@ See the [configuration guide](docs/book/src/user-guide/configuration.md) and
 [administration guide](docs/book/src/user-guide/administration.md) for the full
 reference. `tack-runner` configuration (API URL, enrollment token, state directory)
 shipped with Phases 51–52 on the development branch; a full operator reference is
-still pending as part of Phase 57.
+part of Phase 57's remaining release-hardening work.
 
 ## Architecture
 
@@ -273,7 +277,8 @@ tack-cli    Server binary, CLI client, embedded SolidJS application, and MCP ser
 
 Phases 50–56 added a pull runner protocol and harness adapters, running as a separate
 `tack-runner` binary rather than moving PM domain logic into this stack; Phase 57
-(release hardening, optional Docket bridge) has not started. See the
+(release hardening, optional Docket bridge) is in progress, blocked on installing
+`codex` locally for the three-harness live smoke. See the
 [developer architecture overview](docs/book/src/developer/README.md) for the current
 code and the [roadmap](docs/book/src/roadmap.md) for the target boundary.
 

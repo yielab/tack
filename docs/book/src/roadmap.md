@@ -2384,8 +2384,11 @@ three most common extension patterns.
 # Next — Harness-Agnostic Runner Fleet (Phases 50–57)
 
 **Status:** in progress — Phases 50–56 delivered (merged onto the branch, unreleased); Phase 57
-(the Docket bridge, recovery and release phase) is the only phase remaining. Updated 2026-08-14
-against `TODO.md`'s Part III board, the authority for wave status and accepted integration SHAs.
+(the Docket bridge, recovery and release phase) is the only phase remaining, and its release
+blockers are now closed except one: `codex` is not installed on the development machine, so the
+three-harness live smoke cannot complete for that harness. Updated 2026-08-25 against `TODO.md`'s
+Part III board (integration SHA `6252f52`/`c193a77` on `develop`), the authority for wave status
+and accepted integration SHAs.
 This section supersedes the unstarted implementation work in Phases 43–49. Phases 39–42 and
 every earlier section remain in this document as implementation and decision history.
 
@@ -2904,16 +2907,21 @@ restart without silent loss or blind duplicate execution. Docket is optional, to
 values are measured or explicitly `not measured`, and no historical PM item or legacy
 orchestration row is erased to achieve the cutover.
 
-**Progress against that definition, as of Phase 56 (Wave 5 accepted, `073aa4d`):**
+**Progress against that definition, as of III-H9 (`6252f52`/`c193a77` on `develop`):**
 
 | Capability | State |
 |---|---|
-| Separate attempts through Codex / Claude Code / OpenCode | adapters exist; Codex still unproven against its real CLI — never installed on a development machine through Wave 5 |
-| Exact runner or fleet selection | scheduler live-wired to real data (Wave 4) and proven end-to-end at the Rust/CLI/UI layers using exact-runner selection; `agent_fleet_members` still has no write route on any API surface, so fleet-membership eligibility is proven only directly against the database |
-| Only a supported provider and opaque model | enforced pre-spawn, including wrong-provider pairings; resolution provenance (request → agent-profile → project → fleet → auto-select) now wired onto the live create path, though the project tier always resolves `None` — no storage exists |
+| Separate attempts through Codex / Claude Code / OpenCode | adapters exist for all three; claude-code and opencode proven live against their real CLIs. Codex remains unproven against its real binary — still never installed on any development machine that has run the smoke suite; scheduling itself is no longer the blocker (see next row) |
+| Only a supported provider and opaque model | enforced pre-spawn, including wrong-provider pairings; resolution provenance (request → agent-profile → project → fleet → auto-select) wired onto the live create path (project tier still always resolves `None` — no storage exists). III-H5 closed the schedulability P0: claude-code/codex are schedulable via a pass-through capability attestation (`HarnessCapability.model_passthrough`), proven live with the real `claude` binary |
+| Exact runner or fleet selection | scheduler live-wired to real data (Wave 4) and proven end-to-end at the Rust/CLI/UI layers. `agent_fleet_members` now has a write route (III-H8) — an operator can populate a fleet over the API and a fleet-targeted request schedules onto a member, proven against real DB rows |
 | Requested vs. actual execution facts | recorded; actual model confirmable on Claude Code only (unchanged since Phase 53) |
-| Bounded human gate | delivered (III-F1) — a runner may raise/poll a decision but never resolve it; resolution is fail-closed behind `TACK_EXECUTION_DECISION_TOKEN`, expiry is swept automatically; no decision-discovery/list endpoint exists, so the UI can only see decisions already attached to an attempt it has loaded |
-| Verified artifacts and idempotent event timeline | events idempotent and fenced; artifacts are now checksummed with a real content-upload/download path (III-F2); still no artifact-discovery/list endpoint — only per-id download |
-| Recover from API/runner restart | proven end-to-end by the Wave 2 gate |
+| Bounded human gate | delivered (III-F1) — a runner may raise/poll a decision but never resolve it; resolution is fail-closed behind `TACK_EXECUTION_DECISION_TOKEN`, expiry is swept automatically; no decision-discovery/list endpoint exists, so the UI can only see decisions already attached to an attempt it has loaded; no harness in this tree yet asks a mid-run question, so the decision path is unexercised end-to-end (accepted scope limit, not a defect) |
+| Verified artifacts and idempotent event timeline | **fully demonstrable live, both halves.** III-H6 wired the runner engine to submit a real terminal/cancellation event and attempt an artifact upload on every completed attempt. III-H9 then fixed the artifact **content** PUT, which had 500'd on every real upload — a runner-generated `artifact_id` (~220 bytes) was being hex-doubled past Linux's 255-byte filename limit; fixed by hashing the id instead. `./scripts/smoke.sh` now shows every artifact content upload as `200` with bytes confirmed on disk. Still no artifact-discovery/list endpoint — only per-id download |
+| Recover from API/runner restart | proven end-to-end by the Wave 2 gate; III-H3 added crash-recovery cleanup for per-attempt checkouts; III-H2 proved restart recovery live by SIGKILLing the runner mid-attempt |
 | Measured or explicitly unmeasured token/cost | OpenCode reports real token and cost figures; others report unmeasured; `runner_time_cost.cost_usd_estimated` can never read anything but `not_measured` for any harness — no runner cost-rate is stored anywhere |
 | Docket optional, no historical row erased | holds — legacy orchestration untouched, frozen until Phase 57 |
+
+Two release-blocking bugs found and closed since Phase 56: a losing credential-rotation race
+answered a healthy runner with a false-fatal `401` instead of retryable `409` (III-H4), and a
+second same-named runner enrolling on one host 500'd instead of succeeding (III-H7). Neither is a
+capability gap in the table above, but both would have failed a real multi-runner deployment.

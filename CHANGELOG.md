@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> **Harness-agnostic runner fleet (Phases 50–57, in progress, August 2026).** A durable
+> execution domain, pull-based `tack-runner` binary, real Codex/Claude Code/OpenCode
+> harness adapters, fleet scheduling, decisions, artifacts, and model profiles — tracked
+> on the Part III board in [TODO.md](TODO.md) and the
+> [roadmap](docs/book/src/roadmap.md#next--harness-agnostic-runner-fleet-phases-5057).
+> Phases 50–56 are delivered and merged onto `develop`, unreleased. Phase 57 (release
+> hardening, optional Docket bridge) is in progress; the release tag is blocked only on
+> installing `codex` locally to complete the three-harness live smoke. Not summarized
+> item-by-item here — see the roadmap's definition-of-done table for current capability
+> status and `docs/agent-handoffs/part-iii/` for per-card evidence.
+
+### Security
+
+- **Dependency and license audit cleared.** `cargo audit`/`npm audit` had drifted to 3
+  Rust advisories (`h2` unbounded empty DATA frames, `quick-xml` quadratic parsing and
+  unbounded namespace allocation) and 7 npm advisories (`brace-expansion`, `js-yaml`,
+  `nanoid`, `postcss`, `undici`); all resolved via lockfile-only updates, no `Cargo.toml`/
+  `package.json` version bump needed. Separately, `cargo-deny`'s CI license gate was
+  failing outright: five of six workspace crates never declared
+  `license.workspace = true` (only `tack-runner` did) so they read as unlicensed
+  regardless of the allow-list, and `CDLA-Permissive-2.0` (the license
+  `webpki-root-certs`/`webpki-roots` ship under) was missing from the allow-list.
+
 > **Audit-driven cycle (Phases 26–32, July 2026).** A full-repo audit produced a
 > correctness/security/quality cycle, now implemented and verified (244 Rust tests,
 > 169 Vitest, clippy clean). Grouped below under Fixed / Security / Added / Changed.
