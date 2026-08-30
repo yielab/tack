@@ -9,16 +9,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-> **Harness-agnostic runner fleet (Phases 50–57, in progress, August 2026).** A durable
-> execution domain, pull-based `tack-runner` binary, real Codex/Claude Code/OpenCode
-> harness adapters, fleet scheduling, decisions, artifacts, and model profiles — tracked
-> on the Part III board in [TODO.md](TODO.md) and the
+> **Nothing in this section has ever been released.** The most recent tag is
+> `v0.1.0-beta.6` (2026-06-22). Everything below postdates it, which means the entire
+> runner fleet is currently undownloadable — the only published archives are `tack-*` from
+> June and contain no `tack-runner`. Cutting `v0.1.0-beta.7` is card **V-A3** on the Part V
+> board.
+>
+> ---
+>
+> **Harness-agnostic runner fleet (Phases 50–57, August 2026).** A durable execution
+> domain, pull-based `tack-runner` binary, real Codex/Claude Code/OpenCode harness
+> adapters, fleet scheduling, decisions, artifacts, and model profiles — tracked on the
+> Part III board in [TODO.md](TODO.md) and the
 > [roadmap](docs/book/src/roadmap.md#next--harness-agnostic-runner-fleet-phases-5057).
-> Phases 50–56 are delivered and merged onto `develop`, unreleased. Phase 57 (release
-> hardening, optional Docket bridge) is in progress; the release tag is blocked only on
-> installing `codex` locally to complete the three-harness live smoke. Not summarized
-> item-by-item here — see the roadmap's definition-of-done table for current capability
-> status and `docs/agent-handoffs/part-iii/` for per-card evidence.
+> Phases 50–56 are delivered and merged onto `develop`. Not summarized item-by-item here —
+> see the roadmap's definition-of-done table for current capability status and
+> `docs/agent-handoffs/part-iii/` for per-card evidence.
+>
+> **Status correction (2026-08-26), superseding the earlier note in this section.** This
+> entry previously said the release tag was "blocked only on installing `codex` locally to
+> complete the three-harness live smoke". That was tested and is **false**. `codex` was
+> installed (`codex-cli 0.149.1`, alongside `claude` 2.1.236 and `opencode` 1.18.0 — three
+> of three present for the first time), both binaries were rebuilt in release, and
+> `./scripts/smoke.sh --live` returned **`SMOKE FAILED`**. Steps 1–6 and 9 passed, including
+> the full restart-recovery proof. Step 7's live attempt never reached a terminal state
+> (`terminal_reason: null` after the 300 s budget), and step 8 failed for all three harness
+> kinds while printing a message the board had already recorded as stale six days earlier.
+> The leading hypothesis — that step 8 is a cascade of step 7 saturating a capacity-1 runner
+> — is explicitly **unverified**. **`codex` has never completed a live attempt.** The four
+> open questions are card **V-A2**.
+>
+> ---
+>
+> **Adoption & first public release (Phase 59, opened 2026-08-30).** A full adoption audit
+> against the open-source ecosystem opened a new cycle, carded as Part V in
+> [TODO.md](TODO.md). It found no code defects it did not already know about, and several
+> distribution ones it did not:
+>
+> - The install command printed in `README.md` returns **HTTP 404** and always has — it
+>   names a `main` branch that does not exist in this repository (card V-A1).
+> - The repository has been public since 2026-03-15 with **0 stars, 0 forks, 0 human-filed
+>   issues and 1 human contributor**; every open PR is Dependabot's.
+> - The mdBook under `docs/book/` is unpublished (`yielab.github.io/tack` → 404) and
+>   `homepageUrl` is empty (card V-A4).
+> - Tack has **no identity model** — no users, no sessions, no per-user permissions;
+>   `assignee` is free text and `roles` is a colour label. This is a legitimate
+>   single-operator design that has never been written down as one (card V-B1).
+> - The docket control plane from Phases 33–49 and the native runner from Phases 50–58 now
+>   coexist in the schema and the UI, with 11 `orch_*` tables including two rebuild
+>   leftovers (card V-B2).
+>
+> One earlier claim in this audit was **corrected before it reached this file**: CI does
+> package `tack-runner` into its own per-platform archive, and has since `7d78de3`
+> (2026-08-19). The release gap is the missing tag, not the workflow.
+
+### Added
+
+- **`tack-runner` release archives.** The release workflow now builds `tack-runner` with
+  `cargo auditable` and packages it per platform in its own archive, alongside the systemd
+  unit and env example, so a fleet host can be provisioned without the server/SPA bundle.
+  (Part III, III-G4.) *Not yet visible on any release page — no tag has been cut since.*
 
 ### Security
 

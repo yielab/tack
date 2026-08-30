@@ -1,20 +1,1065 @@
 # TODO — Tack cycle boards
 
-> **Part I — Agent-Factory Control Center (Phases 33–38).** Complete, 2026-08-05.
-> Everything from here to the end of §6 is that cycle. **Its section numbers are load
-> bearing** — Rust doc comments across `crates/tack-orch` and `crates/tack-api` cite
-> `TODO.md §0 rule 6`, `§1.1`, `§1.2`, `§1.4`, `§2.1` and `§6` by number. Do not
-> renumber them.
+> **Read this header, then jump. Never read this file whole** — it is ~10.6k lines and
+> roughly 90% closed-cycle decision history. Reading it costs more context than any card
+> needs. The extraction recipe is in `.claude/context-budget.md`; the short version is
+> `grep -n "^# \|^## " TODO.md`, then `sed -n '<start>,<end>p'` for the one section you
+> need.
+
+## Which board is live
+
+| Part | Cycle | Phases | Status | Where |
+|---|---|---|---|---|
+| **V** | **Adoption & First Public Release** | 59 | **ACTIVE** — not started | [§V](#part-v--adoption--first-public-release-phase-59), top of this file |
+| **IV** | **Standalone Single-Binary Operation** | 58 | **ACTIVE** — not started | [§IV](#part-iv--standalone-single-binary-operation-phase-58) |
+| III | Harness-Agnostic Runner Fleet | 50–57 | Feature-complete, **tag refused** | [§III](#part-iii--harness-agnostic-runner-fleet-phases-5057), archive |
+| II | Agnostic Control Plane | 39–49 | Superseded after Wave B by Part III | [§II](#part-ii--agnostic-control-plane-phases-3949), archive |
+| I | Agent-Factory Control Center | 33–38 | Complete 2026-08-05 | [§I](#part-i--agent-factory-control-center-phases-3338), archive |
+
+**Parts IV and V are both active and independent.** Part IV is packaging and first-run
+(`tack serve --with-runner`). Part V is everything between "it works here" and "a stranger
+can use it". They share two files — `scripts/smoke.sh` and `README.md` — and the conflict
+rule is written in [§V.3](#v3-dependency-graph-cross-part-conflicts-and-merge-policy). Read
+it before branching a card in either Part.
+
+## Why the archive stays in this file
+
+`Parts I–III must not be moved to another path.` **234 Rust doc comments across `crates/`
+cite section numbers in them** (`TODO.md §0 rule 6`, `§1.1`, `§1.2`, `§1.4`, `§2.1`, `§6`,
+`§II.2`, `§III.2`, `§III.3` …), plus ~240 more references from `docs/`. Verify before you
+doubt it:
+
+```bash
+grep -rn "TODO\.md" crates/ --include='*.rs' | wc -l    # 234 as of 2026-08-30
+```
+
+Moving or renumbering them breaks every one of those citations silently. The archive was
+therefore **reordered below the active boards, not extracted**. Its numbering namespaces
+(`§0`…`§6` for Part I, `§II.*`, `§III.*`) are unchanged and stay load-bearing.
+
+## Conventions that hold across every Part
+
+- One card, one worktree, one branch: `agent/<card-id-lowercase>-<slug>`, branched from the
+  integration line the active board names — today `develop` for both Parts IV and V.
+- Stay inside your card's `Owns`. A change you need in someone else's file is a request
+  written into your handoff, not an edit.
+- Each card writes exactly one handoff in `docs/agent-handoffs/<part>/<ID>.md`. Corrections
+  are appended as amendments; the original claim stays, because the history of what was
+  believed and later falsified is the point.
+- No card edits a status board. The wave integrator does that, after independent
+  verification by someone who did not author the code.
+- Never `git commit` without the user asking; never add AI attribution to a commit message.
+
+---
+
+# Part V — Adoption & First Public Release (Phase 59)
+
+Executable board for the cycle described in
+[docs/book/src/roadmap.md](docs/book/src/roadmap.md) → *Next — Adoption & First Public
+Release*, opened by the adoption audit of **2026-08-30**. This Part has its own numbering
+namespace (`§V.0` … `§V.6`) so the archive's load-bearing numbers stay put.
+
+Like Parts III and IV, this board is written to be picked up cold by parallel agents in
+isolated worktrees. Every card is bounded, names every shared-file owner, and has an
+acceptance gate verifiable without trusting its author's handoff.
+
+## Status board — Part V
+
+| Wave | Cards | Phase | Status |
+|---|---|---|---|
+| 11 — Release blockers | V-A1 · V-A2 · V-A3 · V-A4 | 59 | **not started.** Base SHA for the first cards: `277868a` on `develop` — but see §V.0, the working tree is NOT clean at the time of writing. |
+| 12 — Honest posture & prune | V-B1 · V-B2 | 59 | **not started.** May start in parallel with Wave 11; only V-B1's README text depends on it. |
+| 13 — Distribution & launch | V-C1 · V-C2 · V-C3 | 59 | **not started.** Blocked — see §V.3. V-C2 additionally needs Part IV Wave 10. |
+
+**Integration line:** `develop`, the repository's default branch — same as Parts III and IV,
+and for the same reason. Branch every card from `develop`. Do not create a `plan/*` line.
+
+---
+
+## §V.0 Cold-start context capsule
+
+**What this Part is for, in one sentence.** Tack has been a public repository since
+2026-03-15 and has zero stars, zero forks, zero human issues and one human contributor;
+this Part closes the distance between "it works on this machine" and "a stranger can use
+it".
+
+**Read that number correctly.** It is not a verdict on the code. This repository holds
+~122k lines of Rust across six crates, ~45k lines of SolidJS, 1380 passing workspace tests,
+57 migrations, a 92-path documented API, a ~113 ms cold start at ~11.7 MiB RSS, and durable
+execution semantics — fencing tokens, leases, replay tables, recovery audits — that **no
+competitor in its category has**. It is a verdict on the fact that the project has never
+been released, published, positioned or shown to anybody. Every card here is about
+distribution, proof and truthfulness. **None of them adds a product feature.**
+
+### Evidence base, measured 2026-08-30
+
+Do not re-derive these; act on them. Each row names the command that produced it, so any
+card can re-check one cheaply.
+
+| Fact | Value | How it was checked |
+|---|---|---|
+| README's headline install one-liner | **HTTP 404** | `curl -sI https://raw.githubusercontent.com/yielab/tack/main/install.sh` |
+| branch `main` | **does not exist**; default branch is `develop` | `git ls-remote --heads origin main` → empty |
+| stars / forks / human issues / human contributors | **0 / 0 / 0 / 1** | `gh repo view`, `gh issue list --state all`, `git shortlog -sn --all` |
+| only release | `v0.1.0-beta.6`, **2026-06-22**, four `tack-*` archives, **no runner archive** | `gh release view v0.1.0-beta.6 --json assets` |
+| `release.yml` packages `tack-runner` | **yes, already** — since `7d78de3`, 2026-08-19 | the workflow's `RUNNER_STAGE` block |
+| mdBook published | **no** — `yielab.github.io/tack` returns 404 | curl |
+| repo `homepageUrl` / topics | **empty** | `gh repo view` |
+| live smoke | **`SMOKE FAILED`**, 2026-08-26 | Part III Wave 9 amendment, in the archive below |
+| identity model | **none** — one shared bearer token; no token configured = allow-all | `crates/tack-api/src/middleware.rs::require_token` |
+| docket legacy surface still in the tree | 11 `orch_*` tables + `control_planes`, an Approvals page, a ControlPlanesManager | `grep -o 'orch_[a-z_]*' crates/tack-db/src/migrations.rs \| sort -u` |
+
+**The single most embarrassing line in that table is the first one.** The install command
+printed in the README of a public repository has never worked, because the branch it names
+was never created. That is V-A1, and it is a few minutes of work that has been costing
+every visitor since March.
+
+**A correction the audit made to itself, so no card repeats it.** The first reading of the
+release gap was "CI does not package the runner". That is **false** — `release.yml` has
+built and packaged `tack-runner` into its own per-platform archive since `7d78de3`
+(2026-08-19). The gap is that **no tag has been cut since**, so the only downloadable
+release predates every Phase 50–58 capability. V-A3 cuts a tag; it does not fix CI.
+
+### Competitive context, and why the timing is the whole argument
+
+The nearest thing to Tack that ever existed — **Vibe Kanban**, a kanban board that
+orchestrates Claude Code / Codex / Gemini agents — **shut down on 2026-04-10** when its
+company (Bloop) closed. Its own farewell post says it had thousands of engineers using it
+daily and never found a business model. **Crystal**, the other popular open-source
+orchestrator in that space, **was deprecated in February 2026**.
+
+What remains above Tack in that category is either closed-source (Conductor — macOS-only,
+$22M Series A; Sculptor — Claude-only, by Imbue) or is not a board at all (OpenHands,
+Emdash). Meanwhile the mature open-source project managers — Plane (~54.6k ★), Huly
+(~26.9k ★), Focalboard (~26.3k ★), Leantime (~9.4k ★), Vikunja (~3.8–5k ★) — **execute
+nothing**.
+
+Tack is the only thing that is both. **There is a real, identifiable, currently-orphaned
+audience**, and it is being collected by Emdash (YC W26) while this board sits unstarted.
+That is the adoption thesis, and it has an expiry date.
+
+The category's history also carries a warning worth stating once: it killed its leader
+through failure to monetize, not failure to be useful. For a project with no company
+behind it that is an advantage, and the positioning card (V-A4) should not shy from it.
+
+### Working-tree state at the time this board was written (2026-08-30)
+
+`develop` is at `277868a`, and the tree is **not clean**:
+
+- `crates/tack-runner/src/harness/mod.rs` — the uncommitted
+  `registering_all_three_real_adapters_is_order_independent` fix inherited from Part IV
+  §IV.0. **Land or discard it deliberately before branching any card**; do not let it ride
+  into a card's diff unexamined. It is the same change Part IV's capsule describes; the two
+  Parts must not both claim it.
+- `docs/adr/0058-standalone-single-binary-runner.md`, `docs/agent-handoffs/part-iv/` —
+  untracked Part IV material.
+- `tack.db.before-037_orch_runs_rebuild.sqlite` — an untracked database snapshot sitting in
+  the repository root. It is not a card, but it should not be there when a stranger clones.
+  Whoever lands V-A4 removes it or gitignores it.
+
+---
+
+## §V.1 Rules for simultaneous agents
+
+**All fourteen rules of §III.2 apply unchanged** — one card / one worktree / one branch,
+stay inside `Owns`, no `unimplemented!()` or hidden fake success, tests ship with the card,
+no blocking sleeps, logs carry ids and never credentials, stop on contract ambiguity, and
+each wave ends with adversarial verification by someone who did not author the code. Read
+them in the archive; they are not restated here.
+
+Five rules are specific to this Part, and they exist because this Part's output is read by
+strangers rather than by the team:
+
+1. **No claim ships that this repository cannot demonstrate on a clean machine.** The
+   standing failure mode here is documentation that describes the *intended* product rather
+   than the delivered one — the README currently implies three working harnesses when
+   `codex` has never completed a live attempt. A card that cannot prove a claim deletes the
+   claim; it does not soften the wording.
+2. **Do not fix a documentation gap by weakening the product, and do not fix a product gap
+   by rewording the documentation.** If V-A2 cannot make the live smoke pass, V-A4 changes
+   what the README claims. If V-A4 finds a claim it wants to keep, it asks V-A2 to prove
+   it. Neither card resolves the tension alone.
+3. **Removal needs a decision record, not a preference.** Anything this Part gates, hides or
+   proposes deleting gets an ADR in `docs/adr/` naming the option chosen and the options
+   rejected, with the measured cost of each. "It felt like dead weight" is not a reason this
+   repository accepts.
+4. **Measure, never estimate.** Every number that reaches a handoff, a doc or a release note
+   arrives with the command that produced it. Binary sizes, install times, test counts,
+   surface counts — all of them. This rule already exists in Part IV for binary size; here
+   it covers every number.
+5. **Nothing outward-facing is published without the user's explicit approval.** Creating a
+   git tag, pushing a release, publishing a Pages site, opening a package-manager PR, or
+   posting anywhere are all outward-facing. Cards prepare them and stop. V-C3 is entirely a
+   preparation card for this reason.
+
+---
+
+## §V.2 Shared-file ownership
+
+| Chokepoint | Owner |
+|---|---|
+| `install.sh`, the `main`-branch decision, the doc-URL CI check | V-A1 only |
+| `scripts/smoke.sh` | V-A2 — **and IV-A6 in Part IV. Real conflict, see §V.3** |
+| `.github/workflows/release.yml`, release notes, the tag itself | V-A3 only |
+| `README.md` | V-A4 — **and IV-A6 in Part IV. Real conflict, see §V.3** |
+| GitHub repo description / topics / `homepageUrl`, the Pages workflow, `docs/book/src/introduction.md` | V-A4 only |
+| `crates/tack-api/src/middleware.rs`, `docs/book/src/user-guide/administration.md` | V-B1 only |
+| `crates/tack-orch/src/adapters/**` gating, `frontend/src/features/approvals/**`, the control-planes UI | V-B2 only |
+| `docs/CONFIG.md` | V-B1 for the auth rows, V-B2 for the docket rows — **disjoint sections, coordinate in handoffs**; and IV-A6 in Part IV |
+| `packaging/**`, brew/AUR/Nix recipes, `cargo-binstall` metadata in `Cargo.toml` | V-C1 only |
+| `docs/screenshots/**`, the demo asset | V-C2 only |
+| `CHANGELOG.md` | V-A3 for the release section; every other card proposes text in its handoff |
+| `TODO.md`, `docs/book/src/roadmap.md` statuses | wave integrator only |
+| `docs/contracts/runner-v1/**`, `migrations.rs`, `router.rs`, `docs/openapi.json` | **nobody — out of scope for this Part** |
+
+---
+
+## §V.3 Dependency graph, cross-Part conflicts and merge policy
+
+```text
+V-A1  (install path) ──────────────────┐
+                                       │
+V-A2  (smoke tells the truth) ──┬──────┼── V-A3  (cut the tag) ──┐
+                                │      │                         │
+                                └──────┴── V-A4  (positioning) ──┼── V-C1 (distribution) ──┐
+                                                                 │                         │
+V-B1  (identity posture) ────────────────────────────────────────┘                         ├── V-C3 (launch prep)
+                                                                                           │
+V-B2  (docket decision) ─────────────────────────────────────────  V-C2 (demo) ────────────┘
+                                                                        ▲
+                                        Part IV Wave 10 ────────────────┘
+```
+
+**Wave 11 parallelism.** V-A1 is independent of everything and should land first — it is the
+cheapest fix on the board with the largest per-visitor cost. V-A2 is the long pole and
+should start at the same time. V-A3 and V-A4 both consume V-A2's verdict about what is
+actually provable, so they merge after it.
+
+**Wave 12 is not blocked by Wave 11** and can run concurrently. Only V-B1's README paragraph
+depends on V-A4 owning that file, and it is handed over as proposed text rather than edited.
+
+### Two genuine cross-Part conflicts — read before branching
+
+Part IV's §IV.2 assigns `scripts/smoke.sh`, `README.md` and `docs/CONFIG.md` to **IV-A6**.
+Part V assigns the first two to **V-A2** and **V-A4**. This is a real collision, not an
+oversight, and the resolution rule is:
+
+1. **`scripts/smoke.sh` — V-A2 goes first, IV-A6 rebases onto it.** IV-A6 adds a standalone
+   `--with-runner` step to the smoke; V-A2 fixes a smoke that is currently reporting a
+   misleading cause for its own failure. Adding a step to a script that lies is strictly
+   worse than fixing the lie first. If Part IV Wave 10 is already in flight when V-A2
+   starts, **V-A2 escalates to the integrator rather than editing** — it does not race.
+2. **`README.md` — V-A4 goes last and takes the merge.** IV-A6 documents `--with-runner`;
+   V-A4 restructures the whole file. Whichever lands second resolves, and V-A4 is written to
+   expect inbound Part IV text.
+3. **`docs/CONFIG.md` — disjoint sections, no ordering constraint.** V-B1 owns the auth rows,
+   V-B2 the docket rows, IV-A6 the local-runner rows. Each states in its handoff which rows
+   it touched so the integrator can verify the disjointness rather than assume it.
+
+A card that discovers a third collision states it in the handoff and stops. It does not
+choose a winner.
+
+---
+
+## §V.4 Cards
+
+### V-A1 — The install path a stranger actually takes
+
+**The smallest card on this board and the most overdue.** Its risk is scope creep into V-A4.
+
+**Owns:** `install.sh`, the install section of `README.md` (**only** that section — the
+restructure is V-A4's), the `main`-branch decision, a new CI check, and the V-A1 handoff.
+**Does not own** the README's positioning, the release workflow, or any crate.
+
+**Context — the exact shape of the problem.** `README.md:166` prints, as the headline
+install method for a public project:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh | sh
+```
+
+There is no `main` branch. `git ls-remote --heads origin main` returns empty; the repository's
+default branch is `develop`. The URL returns **404**, and has since the repository was made
+public on 2026-03-15. The same file served from `develop` returns 200, so the script itself
+is fine — only the path is wrong. `cargo install --git` happens to work because cargo follows
+the default branch, which is why this was never noticed locally.
+
+**Tasks:**
+- Decide, and record the reasoning in the handoff: (a) create `main` as a branch tracking
+  released state, or (b) point every advertised URL at `develop`. **The recommendation is
+  (a)** — a stranger's `curl | sh` should not follow the development tip, and every other
+  project's convention says `main` exists. But this is the card's call to make and defend,
+  because (b) is one line and (a) adds a branch to keep in sync.
+- Fix every URL in `README.md` and `docs/` that names a branch, not just the one that was
+  found. `grep -rn 'githubusercontent.com/yielab/tack' . --include='*.md' --include='*.sh'`.
+- **The card's real deliverable:** a CI job that resolves every install URL the docs
+  advertise and fails the build on any non-200. Without it this rots again the next time the
+  branch layout changes, which is exactly how it broke the first time.
+
+**Acceptance:** on a machine with no checkout of this repository, the exact command printed
+in the README installs a `tack` that starts and serves the UI — **proven by running it in a
+clean container and pasting the transcript**, not by reading the URL. The new CI check is
+proven load-bearing by pointing one documented URL at a bad path once, watching CI go red,
+and reverting. `git ls-remote --heads origin` output is recorded in the handoff before and
+after, so the branch decision is visible.
+
+---
+
+### V-A2 — Make the live smoke tell the truth
+
+**The long pole of this Part, and the only card here that may touch runtime code.** It is
+also the card most likely to discover that the honest answer is "this does not work yet".
+That is an acceptable outcome; hiding it is not.
+
+**Owns:** `scripts/smoke.sh`, plus whatever narrow runner-side fix the diagnosis lands on
+(`crates/tack-runner/**`), and the V-A2 handoff. **Does not own** the contract directory,
+the scheduler, migrations, `router.rs` or the frontend. A diagnosis that points at any of
+those is an escalation with evidence, not an edit.
+
+**Context.** On 2026-08-26, with all three harnesses installed for the first time
+(`codex-cli 0.149.1`, `claude 2.1.236`, `opencode 1.18.0`) and both binaries rebuilt in
+release, `./scripts/smoke.sh --live` returned **`SMOKE FAILED`**. Steps 1–6 and 9 passed,
+including the complete restart-recovery proof (SIGKILL mid-attempt → `needs_operator` → no
+blind duplicate → operator requeue → attempt #2 success) and capacity-1 saturation. Two
+steps failed:
+
+- **Step 7** — the live attempt never reached a terminal state. The `opencode` +
+  `llamacpp/qwen3.6-35b-uncensored` pairing was claimed and checked out at the exact
+  requested commit with an isolated workspace, then produced `attempt ended '' —
+  terminal_reason: null` after the 300 s budget.
+- **Step 8** — all three harness kinds FAILed, printing canned text that the board had
+  **already recorded as stale on 2026-08-20** and never reworded. It names a pre-III-H5
+  structural cause that no longer applies, and it has now misled two separate readers into
+  seeing a regression that is not there.
+
+**The leading hypothesis is explicitly unverified.** The runner is enrolled at capacity 1;
+step 7's attempt never terminated, so its lease was very likely still held when step 8
+created three more requests — under which none could be claimed by anyone, which is exactly
+the symptom all three printed. That would make step 8 a **cascade of step 7**, not three
+independent defects. Nobody has re-run step 8 against an idle runner, and the runner-side
+log was not preserved (`SMOKE_KEEP=1` was not set).
+
+**Tasks — the four open questions from the Wave 9 amendment, each answered or explicitly
+re-opened with what was ruled out:**
+1. Re-run with `SMOKE_KEEP=1` and preserve the runner log and journal before anything else.
+   The previous run's evidence was lost; do not lose this one's.
+2. **Why the live attempt hangs.** Try a lighter declared pairing first — `opencode/big-pickle`,
+   `hy3-free` and `mimo-v2.5-free` were all declared — to separate "the product hangs" from
+   "the model was too slow for a 300 s budget". **Note carefully:** even if the cause is a
+   slow model, an attempt that exceeds its budget and reports `terminal_reason: null` is a
+   product defect. A budget expiry must produce a terminal state. Fix that regardless of
+   which model was chosen.
+3. **Whether step 8 survives an idle runner.** If the three failures vanish, the smoke
+   saturates its own capacity-1 runner and then reports scheduling failures — in which case
+   the defect is in the smoke, and the handoff says so plainly.
+4. Reword step 8's canned FAIL text so it names the cause it actually observed.
+
+**Acceptance:** `./scripts/smoke.sh --live` on a three-harness machine either passes end to
+end, or fails with a message that names the real cause and is proven to do so by inducing
+that cause deliberately. Each of the four questions above is answered in the handoff with
+preserved evidence, or re-opened with what was eliminated. Any runner-side fix is proven
+load-bearing by reverting it once and watching the smoke fail again. **Codex is reported
+honestly**: it has never completed a live attempt, and if this card does not change that,
+the handoff says so in those words and hands V-A4 the instruction to stop implying
+otherwise.
+
+---
+
+### V-A3 — Cut a release that contains the product
+
+**Owns:** `.github/workflows/release.yml`, the `[Unreleased]` → release section of
+`CHANGELOG.md`, the tag, and the V-A3 handoff. **Needs V-A2's verdict** — the release notes
+must not claim what the smoke could not show.
+
+**Context — read this before touching CI.** The audit's first reading was that CI does not
+package the runner. **That is false.** `release.yml` has built `tack-runner` with
+`cargo auditable` and packaged it into its own per-platform archive (`RUNNER_STAGE`, with
+the systemd unit and env example) since `7d78de3`, 2026-08-19. **This card does not need to
+fix the workflow.** The gap is purely that no tag has been cut since: the only downloadable
+release is `v0.1.0-beta.6` from 2026-06-22, whose four assets are `tack-*` only and which
+predates every Phase 50–58 capability. A visitor who follows the README today downloads a
+Tack with no runner fleet at all — the entire differentiator is undownloadable.
+
+**Tasks:**
+- Verify the workflow's artifact set on a dry run before tagging — that both `tack-*` and
+  `tack-runner-*` archives are produced for all four platform targets, and that checksums
+  and build provenance are unchanged.
+- Cut `v0.1.0-beta.7` from `develop`. **Preparation only — the user approves the tag push**
+  (§V.1 rule 5).
+- Write release notes that state exactly what is proven and name what is not. If V-A2 could
+  not prove a codex live attempt, the notes say two of three harnesses are live-proven. The
+  notes are the first thing a stranger reads about the state of this project; §V.1 rule 1
+  applies to them more than to anything else on this board.
+
+**Acceptance:** the produced release carries both a `tack-*` and a `tack-runner-*` archive
+per platform. A downloaded pair, on a machine with no repository checkout, enrolls a runner
+against a served instance and completes an attempt — **or the notes state that it cannot and
+why**, with the transcript in the handoff either way. No claim in the notes lacks a
+corresponding proof in V-A2's or this card's evidence.
+
+---
+
+### V-A4 — Say what Tack is in one sentence, and publish it where it can be read
+
+**Owns:** `README.md` (whole file — takes the merge against IV-A6, see §V.3), the GitHub repo
+description / topics / `homepageUrl`, a new GitHub Pages workflow for the mdBook,
+`docs/book/src/introduction.md`, and the V-A4 handoff. **Does not own** any crate, the
+release workflow, or `docs/CONFIG.md`.
+
+**Context.** The repository's GitHub description reads *"Self-hosted project manager in a
+single binary — no Docker, no database server. Rust + SolidJS."* It does not mention agents.
+That sentence places Tack in the category where it competes against Plane (~54.6k ★), Huly
+(~26.9k ★) and Vikunja and loses on maturity — while omitting the one capability none of
+them has. The README's opening line then says *"Local-first project management with a
+harness-agnostic control plane for agent work"*, which is two products in one sentence and
+requires the reader to already know what a harness is.
+
+Meanwhile the mdBook under `docs/book/` — a genuinely good user and developer guide with a
+recovery runbook — is **not published anywhere**. `yielab.github.io/tack` returns 404 and
+`homepageUrl` is empty. The documentation exists and is invisible.
+
+**Tasks:**
+- Write one sentence that leads with the differentiator, not the category. It should be
+  comprehensible to someone who has never heard the word "harness". Apply it identically to
+  the GitHub description, the README's first line, and the book's introduction — three
+  places currently saying three different things.
+- Restructure the README so the first screen answers four questions in order: what is it,
+  what does it do that nothing else does, how do I run it, **and what does it not do yet**.
+  That fourth question is not a disclaimer to bury — a stranger who discovers the single-user
+  limit after installing feels misled, and one who reads it up front feels informed. Take the
+  identity paragraph from V-B1's handoff and the proven-harness list from V-A2's.
+- Publish the mdBook to GitHub Pages from CI; set `homepageUrl` and repository topics.
+- Remove or gitignore `tack.db.before-037_orch_runs_rebuild.sqlite` from the repository root
+  (§V.0) — a database snapshot in the root of a project a stranger is about to clone.
+- Record, but do not act on, the positioning question the audit raised and this card cannot
+  settle alone: the ten project-type presets (construction, legal, homework, events) pull the
+  story toward generic project management, which is the losing category. State the trade-off
+  in the handoff for the user to decide; **change no preset code**.
+
+**Acceptance:** the README's first fifteen lines, read by someone who has never heard of
+Tack, state the category, the differentiator, and the current limits — verified by having an
+agent with no prior context on this repository read only those lines and report back what it
+believes the product is and cannot do. **Every capability claim on the first screen traces to
+a proof from V-A2 or V-A3**, listed in the handoff as claim → evidence. The book is reachable
+at a public URL published by CI, and the repository's homepage points at it.
+
+---
+
+### V-B1 — Declare the identity posture instead of leaving it ambiguous
+
+**Owns:** `crates/tack-api/src/middleware.rs`, `docs/book/src/user-guide/administration.md`,
+the auth rows of `docs/CONFIG.md`, a new ADR, and the V-B1 handoff. **Hands** its README
+paragraph to V-A4 as proposed text; does not edit `README.md`.
+
+**Context.** Tack has **no identity model**. There is no users table, no sessions, and no
+per-user permissions. `assignee` is a free-text column added in migration 015; `roles` is a
+per-project colour-and-icon label attached to items, not an identity. Authorization is a
+single shared bearer token compared in `require_token` — and when no token is configured,
+that function returns `Ok(next.run(req).await)` for everything, by design, for pure-local
+mode.
+
+**That is a defensible design for a single operator. It is not "self-hosted for a team", and
+nothing in the docs distinguishes the two.** A reader who sees "self-hosted" reasonably
+assumes accounts exist. This ambiguity is worse than either honest answer.
+
+The posture also aged badly against Part III. Phase 27.2 made a non-loopback bind with no
+token log a **warning**. When the product's job was storing task text, a warning was
+proportionate. Now the same server schedules coding agents that execute arbitrary code, and
+ADR 0058 already chose a startup **error** for exactly this shape of risk on the embedded
+runner. The two postures contradict each other.
+
+**Tasks:**
+- **Decide and record in an ADR:** Tack v1 is single-operator. Name what was rejected (full
+  accounts, OIDC, per-user tokens) and why now is not the time. This is the card's primary
+  deliverable — the code change is small; the decision is the point.
+- Make the code agree: binding a non-loopback address with no `TACK_API_TOKEN` becomes a
+  startup error rather than a warning. Loopback with no token is unchanged — that is the
+  pure-local mode the design intends.
+- **Handle the deployment constraint honestly.** `Dockerfile` and `docker-compose.yml` exist
+  in this repository and a container necessarily binds `0.0.0.0`. Turning this into a hard
+  error breaks every existing container deployment on upgrade. Provide a single explicit
+  opt-out (an env var whose name states what it means), document it, and make the error
+  message name it. A change that silently bricks existing deployments is not shippable.
+- State the model plainly in the administration guide's first paragraph, including that
+  `assignee` is a label rather than an account.
+
+**Acceptance:** the ADR exists and names the rejected options with reasons. A non-loopback
+bind with no token fails to start, proven by a test; the same bind with the documented
+opt-out starts, also proven by a test; loopback with no token is byte-identical to today,
+proven by the existing tests passing untouched. The administration guide states the limit
+before it states any feature. The README paragraph is written and handed to V-A4, not merged
+here.
+
+---
+
+### V-B2 — Decide the fate of the docket control plane
+
+**This card decides and gates. It does not delete.** A card that starts deleting has
+misunderstood its scope.
+
+**Owns:** a new ADR, the feature-gating of `crates/tack-orch/src/adapters/**`, the
+control-plane and approvals UI routes in `frontend/src/features/`, the docket rows of
+`docs/CONFIG.md`, and the V-B2 handoff. **Does not own** migrations, the scheduler, the
+runner-v1 execution domain, or any `TODO.md` archive section.
+
+**Context.** Parts I and II built a complete integration against exactly one backend,
+[docket](https://github.com/yielab/docket): a `ControlPlane` trait, a reconciler and health
+machine, a docket adapter, 11 `orch_*` tables (including `orch_runs_new` and
+`orch_approvals_new`, leftovers of migration 037's rebuild), a `control_planes` table, a
+fleet-wide Approvals inbox and a ControlPlanesManager. Part III then replaced that entire
+model with the native pull-based runner and kept docket only as "an optional legacy bridge".
+
+Both models now coexist in the schema, in the UI and inside `tack-orch` — where the docket
+half sits beside the runner-v1 execution domain that Part III *does* depend on. A reader
+encountering two `fleet` concepts cannot tell which one is current, and neither can a new
+contributor.
+
+**Read this before scoping anything.** `tack-orch` is ~19k lines and **is not all legacy** —
+the neutral runner-v1 execution domain lives there too and is load-bearing. Furthermore,
+**234 Rust doc comments across `crates/` cite `TODO.md` section numbers** from these cycles.
+Deletion is not an `rm`; it is a migration plan plus 234 citation updates, and it is
+explicitly **not this card's job**.
+
+**Tasks:**
+- **Measure the surface first, before proposing anything.** Tables, rows in the live schema,
+  LOC attributable to the docket half of `tack-orch` (as distinct from the runner-v1 domain),
+  UI routes, config variables, and the release binary delta with the adapter compiled out.
+  Numbers, with commands (§V.1 rule 4).
+- Write the ADR deciding one of three options, each costed from those numbers: **keep** as a
+  supported optional bridge; **gate** behind a default-off cargo feature plus config flag; or
+  **schedule deletion**, with the migration plan for the `orch_*` tables and the citation
+  updates written out.
+- **Implement only the gating**, and only if that is the decision. Deletion, if chosen, is a
+  future card that this ADR authorizes.
+
+**Acceptance:** the handoff carries measured numbers, not adjectives. The ADR names the
+option chosen and both rejected, with the cost of each. If gating shipped: a default build
+exposes no docket concept in the UI, the CLI or the config table; `cargo test --workspace` is
+green in **both** feature states, with the test counts for each recorded; and no migration was
+altered, proven by the migration list being unchanged.
+
+---
+
+### V-C1 — Distribution beyond `curl | sh`
+
+**Needs V-A3.** There is nothing to distribute until a release exists that contains the
+product.
+
+**Owns:** `packaging/**`, a Homebrew formula/tap, an AUR `PKGBUILD`, a Nix derivation, the
+container-publish step of `release.yml` (**coordinate with V-A3**, which owns that file), and
+`cargo-binstall` metadata in `Cargo.toml`.
+
+**Context.** Today there are exactly two install paths: a `curl | sh` one-liner (broken until
+V-A1) and `cargo install --git`, which requires a Rust toolchain and a slow LTO build. The
+audience this Part targets installs things with `brew`, `paru`, `nix` or `docker run`. A
+`Dockerfile` exists but no image is published anywhere.
+
+**Tasks:** add the recipes; publish the container image to `ghcr.io` from the release
+workflow; add `cargo-binstall` metadata so `cargo binstall tack-cli` fetches the release
+binary instead of compiling. **Preparation only for anything requiring an external account or
+a PR to a third-party repository** — §V.1 rule 5 covers Homebrew taps and AUR submissions.
+
+**Acceptance:** at least three channels install a working `tack` that starts and serves,
+**each verified by an actual install in a clean container**, with the command and transcript
+in the handoff. A channel that could not be tested on this machine is listed as **untested**
+in the handoff and is not mentioned in the README until it is. Binary size and install time
+are recorded per channel as real measurements.
+
+---
+
+### V-C2 — The demo that shows what nothing else can
+
+**Needs Part IV Wave 10** (so the demo is one command, not four steps and a copied token) and
+**V-A2** (so it does not hang on camera).
+
+**Owns:** `docs/screenshots/**`, the demo recording and its script, the README hero asset
+(hand the markdown to V-A4), and the V-C2 handoff.
+
+**Context — this is the most under-used asset in the repository.** Every competitor can show
+"assign a card to an agent and watch it work". **None of them can show durable recovery**,
+because none of them has leases, fencing tokens or replay tables. Tack's own smoke already
+proves the sequence end to end: SIGKILL mid-attempt → `needs_operator` → **no blind
+duplicate** → operator requeue → attempt #2 succeeds. That is the entire competitive
+argument, it is already tested, and it has never been shown to a single person outside this
+repository.
+
+**Tasks:** record roughly sixty seconds, no narration required: create an item → dispatch it
+to an agent → watch the attempt live → kill the runner → see `needs_operator` and the absence
+of a duplicate → requeue → success → open the artifact. Record it from a **release artifact on
+a clean machine** running `tack serve --with-runner`, not from a development tree.
+
+**Acceptance:** the recording is made from a release artifact on a machine with no repository
+checkout, stated as such in the handoff with the version used. It contains no cut that hides a
+failure or a retry. **If a step cannot be shown honestly, it is dropped from the demo rather
+than staged** — a demo that shows five real steps beats one that shows seven with one faked.
+
+---
+
+### V-C3 — Launch preparation
+
+**Needs V-A1 through V-A4, V-C1 and V-C2.** This card **prepares and stops**; §V.1 rule 5 is
+absolute here.
+
+**Owns:** a launch checklist under `docs/`, the issue and PR templates, `good first issue`
+labelling, seeded Discussions topics, and the V-C3 handoff.
+
+**Context.** Five months public, zero stars. Nothing on this board converts unless somebody
+sees it, and the audience is unusually identifiable: the users Vibe Kanban orphaned when Bloop
+shut down on 2026-04-10, and Crystal's after its February 2026 deprecation. Those people are
+in known places asking a known question. A launch that reaches them is a different act from a
+generic "Show HN".
+
+**Tasks:**
+- Draft the posts (HN / r/selfhosted / r/rust / Lobsters) — **drafts only, published by the
+  user**.
+- Write the comparison table, and be honest in it about what Tack lacks: no accounts, no
+  notifications, English only, one contributor. A comparison table that only lists wins is
+  read as marketing and discounted entirely; one that names its own gaps is read as
+  engineering. Given this audience, the second converts better and is also simply true.
+- Seed five to ten `good first issue`s from the real gaps this board and the audit named — i18n
+  scaffolding, SMTP notifications, time tracking, in-UI artifact diff review. Each with enough
+  context that a stranger could start.
+- Review the issue and PR templates for someone who has never contributed here.
+
+**Acceptance:** **nothing is published.** The deliverable is the prepared material plus a
+repository that survives its first hundred visitors, verified by walking the stranger's path
+end to end on a clean machine: the install command works, the docs load, the demo plays, the
+limits are stated before they are discovered, and a `good first issue` can be understood
+without reading `TODO.md`.
+
+---
+
+## §V.5 Deliberately not in this Part
+
+Recorded so no card adopts them by drift, and so the roadmap keeps them visible:
+
+- **Any new product feature.** Outbound notifications and SMTP (zero references today),
+  i18n (the UI is English-only, with zero locale infrastructure), time tracking (`estimate`
+  exists, `time_spent` does not), and in-UI diff review of agent artifacts are all real gaps
+  the audit found. They belong to a post-adoption cycle and are recorded in the roadmap, not
+  carded here.
+- **Multi-user accounts.** V-B1 decides and documents the posture; it does not build identity.
+- **Deleting the docket surface.** V-B2 decides and gates; deletion is a future card that its
+  ADR authorizes.
+- **Changing or removing the ten project-type presets.** V-A4 records the positioning
+  trade-off for the user to decide and changes no preset code.
+- **Anything Part IV owns.** `tack serve --with-runner`, `tack runner doctor` and the runner
+  composition root are Phase 58 and stay there.
+- **The Alexa integration.** The audit flags it as surface area with no adoption value, but it
+  works, it is documented, and removing working features to tidy a story is not a trade this
+  Part is authorized to make.
+
+---
+
+## §V.6 Handoff additions for this Part
+
+Use the §III.2 template verbatim, plus three sections specific to Part V:
+
+1. **Claim → evidence table.** Every user-visible claim your card added or kept, and the
+   command, test or transcript that proves it. A row with no evidence column is a claim to
+   delete, not a row to leave blank.
+2. **Measured numbers.** Every number you produced, with the command that produced it
+   (§V.1 rule 4).
+3. **What a stranger still cannot do.** One short paragraph. Not what is unimplemented in
+   general — specifically what someone arriving from outside this repository would try, and
+   fail at, after your card landed.
+
+---
+
+# Part IV — Standalone Single-Binary Operation (Phase 58)
+
+Executable board for the cycle described in
+[docs/book/src/roadmap.md](docs/book/src/roadmap.md) → *Next — Standalone Single-Binary
+Operation*, and decided in [`docs/adr/0058-standalone-single-binary-runner.md`](docs/adr/0058-standalone-single-binary-runner.md).
+**Parts I, II and III remain historical context.** This Part has its own numbering
+namespace (`§IV.0` … `§IV.6`) so Part I's load-bearing section numbers stay put.
+
+Like Part III, this board is written to be picked up cold by parallel agents in isolated
+worktrees. Every card is bounded, names every shared-file owner, and has an acceptance
+gate verifiable without trusting its author's handoff.
+
+## Status board — Part IV
+
+| Wave | Cards | Phase | Status |
+|---|---|---|---|
+| 10 — Standalone single binary | IV-A1 · A2 · A3 · A4 · A5 · A6 | 58 | **not started.** Base SHA for the first cards: `277868a` on `develop` — but see §IV.0, the working tree is NOT clean at the time of writing. |
+
+**Integration line:** `develop`, the repository's default branch — unchanged from Part III
+Wave 7 onward, and for the same reason (two naming failures in a row cost that cycle a
+real trunk). Branch every card from `develop`. Do not create a `plan/*` line for this Part.
+
+> **Part V is active at the same time, and shares three files with this Part.**
+> `scripts/smoke.sh`, `README.md` and `docs/CONFIG.md` are assigned to **IV-A6** in §IV.2
+> below *and* to Part V cards. That collision is real, and the resolution rule lives in
+> **[§V.3](#v3-dependency-graph-cross-part-conflicts-and-merge-policy)** — read it before
+> branching IV-A6. In short: **V-A2 fixes `scripts/smoke.sh` first and IV-A6 rebases onto
+> it** (adding a step to a smoke that misreports its own failure is strictly worse than
+> fixing the misreport first), and **V-A4 takes the `README.md` merge last**. If IV-A6 is
+> already in flight when a Part V card starts, the Part V card escalates rather than racing.
+
+---
+
+## §IV.0 Cold-start context capsule
+
+**What this Part is for, in one sentence.** Today a developer who wants an agent to run
+against their own board needs two binaries, four manual steps and a copied one-time token;
+after this Part they need one command, `tack serve --with-runner`.
+
+**Read before touching anything:** `docs/adr/0058-standalone-single-binary-runner.md`. It
+records why the runner is separate at all (ADR 0050), why that separation is about *roles
+and not binaries*, and — most importantly — why the embedded runner must still speak
+runner-v1 over loopback HTTP instead of calling handlers in-process. A card that "optimizes
+away" that HTTP hop has broken the whole point of the design; escalate instead.
+
+**Working-tree state at the time this board was written (2026-08-26).** `develop` is at
+`277868a`, but the tree carries one **uncommitted** change: a fix to
+`crates/tack-runner/src/harness/mod.rs::registering_all_three_real_adapters_is_order_independent`.
+That test asserted all three adapters reject a fixture spec identically; that was only true
+for `codex` *by accident*, because the binary was absent from the machine. With `codex`
+installed the test failed legitimately — the codex adapter is a pass-through harness
+(III-H5) and accepts any explicit model pre-spawn. The assertion now expects codex to
+accept and the other two to reject, matching real behaviour instead of an environmental
+artifact. **Land or discard this deliberately before branching cards** — do not let it ride
+into a card's diff unexamined.
+
+**Part III's tag is still refused, and NOT for the reason the board previously recorded.**
+Wave 9 said the tag was blocked on one thing: `codex` not being installed. It has since
+been installed (`codex-cli 0.149.1`, alongside `claude` 2.1.236 and `opencode` 1.18.0 — 3
+of 3) and `./scripts/smoke.sh --live` was run on 2026-08-26. It **failed**, for a different
+reason. See the Wave 9 amendment in the Part III board above before assuming the release is
+one smoke run away. This Part does not depend on that being resolved, and must not be
+blocked waiting for it.
+
+**What is already true and must stay true.** The runner protocol, scheduler, fencing,
+decisions, artifacts, retention and the operator API/CLI/UI are all built and tested; a
+runner enrolls, claims, checks out, runs a real harness, submits events and artifacts, and
+completes against a live server. This Part adds **packaging and first-run experience**. It
+is not permitted to change behaviour that Part III proved.
+
+---
+
+## §IV.1 Rules for simultaneous agents
+
+**All fourteen rules of §III.2 apply unchanged** — one card / one worktree / one branch,
+stay inside `Owns`, no `unimplemented!()` or hidden fake success, tests ship with the card,
+no blocking sleeps, logs carry ids and never credentials, stop on contract ambiguity, and
+each wave ends with adversarial verification by someone who did not author the code. Read
+them; they are not restated here.
+
+Four rules are specific to this Part:
+
+1. **The embedded runner uses the same protocol client as a remote runner.** No card may add
+   an in-process shortcut, a privileged bypass, a second `RunnerProtocolClient`, or shared
+   access to `AppState`. If loopback HTTP appears to be a problem, that is an escalation,
+   not a design freedom.
+2. **`tack-api` must not gain a dependency on `tack-runner`.** The composition root is
+   `tack-cli`. A card that finds itself wanting `tack-api` to know a runner exists has
+   mis-placed the work — escalate.
+3. **Off by default, loud on failure.** No card may ship the embedded runner enabled by
+   default, and none may let `tack serve` continue silently after the embedded runner has
+   failed to start or has died. A server running without the runner the operator asked for
+   is indistinguishable from a scheduler bug and must be an error, not a log line.
+4. **No contract, scheduler, fleet, migration or frontend changes.** This Part is packaging.
+   `docs/contracts/runner-v1/**`, `migrations.rs`, `router.rs`, `docs/openapi.json` and
+   `frontend/**` are all out of scope for every card here. A card that believes it needs one
+   states the need in its handoff and stops.
+
+**Handoff:** each card writes exactly one `docs/agent-handoffs/part-iv/IV-<card>.md`, using
+the template in §III.2 verbatim, plus the three Part IV additions in §IV.6. Corrections are
+appended as amendments, never rewritten. No card edits this board — the wave integrator
+does that after independent verification.
+
+---
+
+## §IV.2 Shared-file ownership
+
+| Chokepoint | Owner |
+|---|---|
+| `crates/tack-runner/src/main.rs`, `lib.rs`, the new bootstrap module | IV-A1 only |
+| `crates/tack-api/src/server.rs` | IV-A2 only, and **only** the readiness/bound-address signal |
+| `crates/tack-cli/src/main.rs`, `crates/tack-cli/Cargo.toml`, root `Cargo.lock` | IV-A3, then IV-A5 for its one subcommand arm |
+| `crates/tack-cli/src/local_runner.rs` (new) | IV-A3 |
+| `crates/tack-cli/src/local_enrollment.rs` (new) | IV-A4 |
+| `crates/tack-api/src/handlers/runner_admin.rs` | IV-A4 only, and **only** to extract a reusable provisioning function without changing the route's behaviour |
+| `scripts/smoke.sh` | IV-A6 only |
+| `docs/CONFIG.md`, `docs/book/src/user-guide/agent-runners.md`, `README.md` | IV-A6 only |
+| `TODO.md`, `docs/book/src/roadmap.md` statuses | wave integrator only |
+| `docs/contracts/runner-v1/**`, `migrations.rs`, `router.rs`, `docs/openapi.json`, `frontend/**` | **nobody — out of scope for this Part** |
+
+---
+
+## §IV.3 Dependency graph and merge policy
+
+```text
+IV-A1  (tack-runner entry point) ──┐
+                                   ├── IV-A3 ──┬── IV-A4 ──┐
+IV-A2  (tack-api readiness seam) ──┘           │           ├── IV-A6
+                                               └── IV-A5 ──┘
+```
+
+- **A1 and A2 run in parallel** — different crates, no shared file, neither depends on the
+  other.
+- **A3 needs both.** It is the card that makes `tack` one binary with both roles.
+- **A4 and A5 run in parallel** after A3 lands; both touch files A3 created, so neither may
+  start before A3 is merged.
+- **A6 is last** — it proves the whole thing live and writes the operator docs. It needs A4
+  (auto-enrollment) to exist for the standalone claim to be true; A5 is optional to it.
+
+**Merge order:** A1 → A2 → A3 → (A4, A5 in either order) → A6. A1 and A2 may merge in either
+order. Gates run once on the integrated tree, not per card, per the Part III precedent.
+
+---
+
+## §IV.4 Cards
+
+### IV-A1 — Runner composition root as a reusable entry point
+
+**No behaviour change. This card is a refactor and must prove it changed nothing.**
+
+**Owns:** `crates/tack-runner/src/main.rs`, `crates/tack-runner/src/lib.rs`, a new
+bootstrap/composition module in `crates/tack-runner/src/`, and the IV-A1 handoff.
+**Does not own** any other crate, the contract directory, or any harness adapter.
+
+**Context — the exact shape of the problem.** Everything that composes a working runner
+lives in the binary's `main.rs::run()`: `build_adapter_registry`, `report_capabilities`,
+`HttpPullProtocol`, `RunnerEngine`, `OwnerOnlyJournal`, `WorkspaceManager` +
+`GitWorktreeProvisioner`, `HttpRunnerClient`, `RunnerRuntime`, and the `with_data_protocol`
+wiring III-H6 added. None of it is reachable from the library, so an embedder would have to
+copy it — and a copied composition root is a copy that drifts. `RunnerRuntime::run` already
+takes an injected `Shutdown`, so the seam for an embedder mostly exists; what is missing is
+a public function that builds the whole thing.
+
+**Tasks:** extract the composition into a public library entry point taking a
+`RunnerConfig` and a `Shutdown` and returning the same typed `Result` the binary returns
+today. The `tack-runner` binary becomes argument parsing plus a call to it, and keeps its
+own signal handling. Keep `ProcessLimits` and `PROTOCOL_REQUEST_TIMEOUT` explicit rather
+than defaulted — they are deliberate operational choices with no `Default` for that reason.
+Preserve the honest capability reporting verbatim: `cancel` advisory, `decisions`
+unsupported, `artifacts`/`usage` advisory, and the "not registered when the binary is
+absent" behaviour for each adapter.
+
+**Acceptance:** the `tack-runner` binary's observable behaviour is unchanged — it enrolls,
+claims, runs and completes against a live `tack serve` exactly as before, and
+`./scripts/smoke.sh` (fake mode) reaches the same steps with the same outcomes as on the
+base SHA, recorded side by side in the handoff. The new entry point is callable from
+outside the crate with an injected shutdown, proven by a test that starts it and stops it
+without a process signal. `cargo test -p tack-runner` is green with no test deleted.
+
+### IV-A2 — Server readiness and bound-address seam
+
+**Small card. Its scope is one signal, and its risk is scope creep.**
+
+**Owns:** `crates/tack-api/src/server.rs` (the readiness/bound-address signal only) and the
+IV-A2 handoff. **Does not own** anything else in `tack-api`, and explicitly not
+`router.rs`, `config.rs`, any handler, or the OpenAPI surface.
+
+**Context.** `tack_api::serve()` loads config, migrates, binds, and blocks until shutdown.
+An embedder must know two things it cannot know today: *when* the listener is actually
+accepting, and *what address* it bound. The port is configurable and may differ from the
+requested one, so the embedder cannot assume `127.0.0.1:3210`. Without this, the embedded
+runner would have to poll-and-hope against a guessed URL — a race and a wrong-target bug
+waiting to happen.
+
+**Tasks:** add a way for an in-process caller to observe readiness and the real bound
+`SocketAddr`, without changing `serve()`'s existing signature or behaviour for every
+current caller. Signal readiness **after** the listener accepts, never before — an early
+signal recreates the race this card exists to remove.
+
+**Acceptance:** an in-process test starts the server through the new seam, receives the
+bound address, and issues a successful request to it with no retry loop and no sleep. The
+existing `serve()` entry point still works unchanged, proven by the CLI's `tack serve`
+starting exactly as before. No route, handler, config field or spec path changes — asserted
+by `openapi_contract` staying 5/5 drift-free.
+
+### IV-A3 — One binary: `tack runner start` and supervised `tack serve --with-runner`
+
+**Needs IV-A1 and IV-A2 merged.** This is the card that delivers the headline capability.
+
+**Owns:** `crates/tack-cli/src/main.rs`, `crates/tack-cli/Cargo.toml`, root `Cargo.lock`, a
+new `crates/tack-cli/src/local_runner.rs`, and the IV-A3 handoff. **Does not own**
+`tack-api` or `tack-runner` internals — if either needs a change, that is an escalation to
+IV-A2 or IV-A1's owner, not an edit.
+
+**Context.** `tack-cli` already has a `runner` subcommand namespace (`enroll`, `revoke`,
+`revoke-token`), so `tack runner start` slots in beside them. `tack-cli` already depends on
+`tack-api`; it gains `tack-runner`. Verified before this board was written: **no dependency
+cycle** — `tack-runner` depends on `tack-orch` only, never on `tack-api`.
+
+**Tasks:**
+- `tack runner start` — run A1's entry point with the same configuration precedence and the
+  same flags the standalone binary accepts. Prefer `TACK_RUNNER_ENROLLMENT_TOKEN` over a
+  flag, as the standalone binary already does, so the secret stays out of shell history.
+- `tack serve --with-runner` (gate also readable as `TACK_LOCAL_RUNNER_ENABLE`) — start the
+  server, wait on A2's readiness signal, then start an embedded runner **as a task in the
+  same process**, pointed at the real bound loopback address, speaking ordinary runner-v1
+  HTTP. Off unless explicitly enabled.
+- Supervise it honestly: shutdown stops both roles cleanly; an embedded runner that fails to
+  start or dies takes the process down with an operator-visible error rather than leaving a
+  server running with no runner.
+- Refuse to start the embedded runner when the server is not bound to loopback — reuse the
+  existing `AppConfig::binds_loopback()`. This is a startup error, never a silent downgrade.
+- Enrollment stays manual in this card: it consumes a credential from the environment.
+  Zero-touch enrollment is IV-A4 and must not be pre-empted here.
+
+**Acceptance:** `tack runner start`, given a credential, enrolls and completes a real
+attempt against a live `tack serve` — the same proof the standalone binary carries.
+`tack serve --with-runner`, given a credential, does the same from **one process and one
+binary**, with the attempt visible through the operator API. Default `tack serve` starts no
+runner — asserted by the absence of a runner in `GET /api/runners`, not merely by a missing
+log line. A non-loopback bind refuses with a typed error, proven by a test. Killing the
+embedded runner surfaces an error rather than a quiet server. **The binary-size delta is
+measured and recorded as a real number**, before and after, never estimated.
+
+### IV-A4 — Zero-touch local enrollment
+
+**Needs IV-A3 merged.** Without this card the standalone claim is not true — the user still
+copies a token by hand.
+
+**Owns:** a new `crates/tack-cli/src/local_enrollment.rs`,
+`crates/tack-api/src/handlers/runner_admin.rs` (**only** to extract a reusable provisioning
+function — the HTTP route's behaviour, auth and response shape must not change), and the
+IV-A4 handoff.
+
+**Context.** Enrollment is deliberately two-step: an operator creates a pending runner and
+receives a one-time token, and the runner redeems it for a durable credential. Only hashes
+are stored. That design is not being weakened — it is being *automated for the local case*,
+where the operator and the runner are the same person on the same machine.
+
+**Tasks:** on `tack serve --with-runner`, after readiness and before starting the runner —
+(1) if the runner's state directory already holds a durable credential, use it; (2)
+otherwise self-provision: create the pending runner in-process (this is a bootstrap/admin
+concern, not the runner protocol, so in-process is legitimate *here* and only here), obtain
+the one-time token, and hand it to the embedded runner, which redeems it **over loopback
+HTTP through the ordinary protocol path** like any other runner. Keep the durable credential
+owner-only in the runner state directory. Auto-provisioning is gated by the same
+loopback-only rule IV-A3 established, checked again here rather than assumed.
+
+**Acceptance:** on a machine with no prior runner state, `tack serve --with-runner` reaches
+a completed attempt with **no token ever displayed, copied or configured** — the headline
+proof of this Part. A second start reuses the stored credential and does not create a
+second runner, asserted against `GET /api/runners` row counts, not logs. The redemption is
+shown to have gone through the real HTTP protocol path, not a bypass. No credential appears
+in any log or terminal output, asserted with a positive control (the test proves it *can*
+observe output by asserting an id does appear). `runner_admin.rs`'s route behaviour is
+byte-identical — proven by its existing tests passing untouched.
+
+### IV-A5 — `tack runner doctor`
+
+**Needs IV-A3 merged.** Independent of IV-A4; the two may run in parallel.
+
+**Owns:** a new doctor module in `crates/tack-cli/src/`, one subcommand arm in
+`crates/tack-cli/src/main.rs`, and the IV-A5 handoff.
+
+**Context — why this is in scope for a packaging Part.** The information an operator needs
+in order to answer "why can't I run this model?" exists only inside a capability snapshot
+that a runner posts to a server. There is no way to ask the local machine what it can do.
+That gap is the direct cause of a real, reported confusion: it is not discoverable how one
+configures Claude, Codex, OpenRouter or a local model. The answer — that provider
+credentials live in each harness's own environment and Tack never proxies them (ADR 0050,
+reaffirmed in ADR 0058) — is correct but invisible.
+
+**Tasks:** report, for the local machine: which harness binaries are on `PATH` and their
+versions; what each probe declares (`model_combinations`, `model_passthrough`, and each
+feature's `cancel`/`resume`/`decisions`/`artifacts`/`usage` support with its reason); and
+which are absent. Reuse A1's probe path — do not re-implement discovery. State plainly, for
+each harness, where its provider credentials come from and that Tack neither stores nor
+forwards them.
+
+**Acceptance:** on a machine with a harness installed and one absent, the output names each
+honestly — present with a version, absent as absent, never rounded up and never invented. A
+probe error is reported as a probe error, distinct from "not installed". The declared
+capabilities shown match exactly what the same probe reports to a server, proven by
+comparing against a real capability snapshot rather than by re-deriving them.
+
+### IV-A6 — Standalone smoke, configuration and operator docs
+
+**Needs IV-A4 merged.** Last card of the wave.
+
+**Owns:** `scripts/smoke.sh`, `docs/CONFIG.md`,
+`docs/book/src/user-guide/agent-runners.md`, `README.md`, and the IV-A6 handoff.
+
+**Context and a standing warning.** `scripts/smoke.sh` has shipped a false green once
+already in this repository's history: steps 7–9 printed `SKIPPED` unconditionally and could
+never fail, so the script reported `SMOKE PASSED` while proving less than it claimed. Any
+step this card adds must be able to fail. A step that cannot pass because the product cannot
+do the thing is a `FAIL`, never a `SKIP`; environmental absence is `ABSENT` and named in the
+verdict, never counted as a pass. Additionally: `docs/CONFIG.md` today documents no
+harness/model configuration at all, and the model-configuration story is exactly what users
+report as unclear — this card is where that gets written down.
+
+**Tasks:** add a standalone-mode step proving one binary, one command, zero manual
+enrollment reaches a completed attempt; assert that default `tack serve` starts no runner;
+assert the non-loopback refusal. Document the gate, the loopback rule, the state-directory
+location, and — as its own section — how provider credentials actually work for each
+harness (env/CLI login per harness, OpenRouter and local-model endpoints via the harness's
+own configuration, and that Tack is never a model gateway, with the ADR cited). Update
+`README.md`'s getting-started path to lead with the standalone command.
+
+**Acceptance:** the new smoke step is proven load-bearing by breaking the feature once and
+watching it `FAIL` — the same discipline III-H9 and III-H6 used, and the specific defense
+against the false green above. The documented commands are executed exactly as written on a
+clean state directory and the transcript recorded. Every capability claim in the new docs
+cites the test or run that proves it. Nothing in this card changes compiled behaviour.
+
+---
+
+## §IV.5 Acceptance matrix
+
+| Invariant | Owner | Must remain green through |
+|---|---|---|
+| One protocol-client implementation; no in-process bypass | A3 | A6 |
+| `tack-api` never depends on `tack-runner` | A3 | A6 |
+| Embedded runner is off unless explicitly enabled | A3 | A6 |
+| Non-loopback bind refuses to auto-enroll, as a startup error | A3/A4 | A6 |
+| A failed or dead embedded runner is loud, never silent | A3 | A6 |
+| Durable credential owner-only; no credential in any log or terminal | A4 | A6 |
+| Runner-v1 contract, scheduler, fleets, migrations, frontend untouched | all | A6 |
+| Standalone smoke step can actually fail | A6 | release |
+
+---
+
+## §IV.6 Definition of done
+
+On a machine with one harness installed and no prior Tack state, **`tack serve
+--with-runner` is the only command needed** to go from nothing to a completed agent attempt
+visible in the UI — one binary, one process, no second artifact to install, no pending
+runner to create, no one-time token to copy.
+
+Additionally:
+
+- The embedded runner is off unless explicitly enabled, and refuses to auto-enroll on any
+  non-loopback bind.
+- The embedded runner speaks runner-v1 over loopback HTTP with **no second code path** —
+  the same client a remote runner uses, against the same routes.
+- A fleet of remote runners still works exactly as before; `tack-runner` remains shippable
+  and useful on a machine with no server.
+- `tack runner doctor` answers "what can this machine run, and where do its model
+  credentials come from" without a server round trip.
+- An operator can find out how to point a harness at Claude, Codex, OpenRouter or a local
+  model from the documentation, including the fact that Tack never proxies model traffic.
+- Full Rust gates green; `runner_contract`, `wave2_gate` and `openapi_contract` unchanged
+  and drift-free, because nothing in this Part may touch what they pin.
+
+**Handoff additions for this Part** — each card's handoff carries §III.2's template plus:
+
+- **Binary-size delta**, measured before and after, for any card that changes what `tack`
+  links.
+- **Which role executed what**, for any card claiming a live run — whether the attempt was
+  claimed by an embedded or a standalone runner, and over which address.
+- **Loopback/gating proof**, naming the test that shows the off-by-default and
+  non-loopback-refusal behaviours, not merely asserting them.
+
+# Archive — closed and superseded cycles
+
+> **Everything below this line is history.** Parts I, II and III are closed or superseded.
+> They stay in this file, at their original section numbers, because **234 Rust doc comments
+> in `crates/` and ~240 references in `docs/` cite those numbers**; moving or renumbering
+> them breaks every citation silently. See the header for the verification command.
 >
-> **Part II — Agnostic Control Plane (Phases 39–49).** Historical cycle, **superseded
-> after Wave B** by Part III. It lives at
-> the end of this file with its own numbering namespace (`§II.0` … `§II.6`) so Part I's
-> numbers stay put. Jump to [Part II](#part-ii--agnostic-control-plane-phases-3949).
->
-> **Part III — Harness-Agnostic Runner Fleet (Phases 50–57).** The **active** cycle.
-> Tack becomes the scheduler and plan-of-record; pull-based runners execute Codex,
-> Claude Code, OpenCode, and future harnesses. Jump to
-> [Part III](#part-iii--harness-agnostic-runner-fleet-phases-5057).
+> Read a section from here only when a card's `Context` names it, or when you need the
+> decision history behind a mechanism you are about to change. Part III's **Wave 9 amendment**
+> is the exception worth reading unprompted: it holds the live-smoke failure that card V-A2
+> exists to resolve, and its four open questions are that card's task list.
 
 ---
 
@@ -9113,6 +10158,74 @@ acceptance gate that can be verified without trusting its author's handoff.
 
 | 9 — Artifact content storage | III-H9 | 57 (cont.) | **Integrated — accepted integration SHA `6252f52` on `develop` (2026-08-22), base `b848d96`.** Single card, fast-forwarded (branch tip and `develop` were already identical before this commit). Root cause was not H6's escalation guess (a missing `execution-artifacts` directory) — `safe_attempt_dir` already `create_dir_all`s it on every write. The real bug: `encode_id` hex-encoded every byte of a runner-generated `artifact_id` (already ~220 bytes: `art_<hex of "attempt_id:fencing_token:sha256">`), doubling it past Linux's 255-byte `NAME_MAX`, so every real content upload failed with `Io`/`ENAMETOOLONG` and surfaced as a bare `500`. Fixed by SHA-256-hashing the id instead of hex-encoding it literally — same traversal defense, fixed 64-byte length regardless of input. Proven load-bearing by reverting the fix once (new test fails with `Err(Io)` against the old encoding) and live via `./scripts/smoke.sh`: every artifact content `PUT` now returns `200` where it was `500` on every prior run, bytes confirmed on disk. **Gates on the integrated tree (re-run by the integrator, not just the card's own claim):** `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace` 1383/0 failed (+3 over the Wave 8 baseline of 1380, matching the card's own count); `runner_contract` 18/18, `wave2_gate` 5/5, `openapi_contract` 5/5 drift-free, all unchanged (no wire-shape or route change); no frontend files touched, frontend gates not re-run; `cargo audit` still shows the same 3 pre-existing advisories against an unchanged `Cargo.lock` (III-G4's standing gap, not a regression). **§III.6 status:** both halves of "verified artifacts" (manifest + content bytes) are now demonstrable live end-to-end. **The tag remains blocked on exactly one thing: the `codex` binary is absent from this machine** (III-H2's standing environmental gap) — no decision-asking harness exists yet either, but that is an accepted scope limit, not a defect. No next wave is defined; whoever installs `codex` and re-runs `./scripts/smoke.sh` closes the cycle's definition of done. See `docs/agent-handoffs/part-iii/III-H9.md`. |
 
+### Amendment to Wave 9 — 2026-08-26: `codex` installed, live smoke still FAILS
+
+Recorded as an amendment rather than by rewriting the Wave 9 row above, per the
+corrections-are-appended rule. **Wave 9's closing sentence — "whoever installs `codex` and
+re-runs `./scripts/smoke.sh` closes the cycle's definition of done" — has been tested and is
+false.** The tag is still refused, for a new reason.
+
+**What was done.** `codex` is now installed (`codex-cli 0.149.1`), joining `claude` 2.1.236
+and `opencode` 1.18.0 — smoke step 1 reports **3 of 3 real harnesses present**, the first
+time that has been true on any machine in this cycle. Both binaries were rebuilt in release
+(`tack` 18.4 MB with `embed-spa`, `tack-runner` 4.5 MB) and `./scripts/smoke.sh --live` was
+run in full.
+
+**Result: `SMOKE FAILED`.** Steps 1–6 and step 9 passed, including the complete restart-
+recovery proof (SIGKILL mid-attempt → `needs_operator` → no blind duplicate → operator
+requeue → attempt #2 success) and capacity-1 saturation. The failures:
+
+- **Step 7 — the live attempt never reached a terminal state.** The `opencode` +
+  `llamacpp/qwen3.6-35b-uncensored` pairing (chosen by the script from the runner's own
+  declaration) was claimed, checked out at the exact requested commit `29836a98` with an
+  isolated workspace, and then produced `attempt ended '' — terminal_reason: null` after the
+  300 s live budget. The pipeline did its job up to the harness; the harness run itself did
+  not come back.
+- **Step 8 — all three harness kinds FAILed.** `codex` and `claude-code` printed the canned
+  "declares zero `model_combinations`, therefore structurally unschedulable" text, and
+  `opencode` printed "never claimed despite a declared model combination".
+
+**Read step 8's message with the board's own warning in hand.** The Wave 7 row already
+routed that exact string as **stale**: escalation (1) of the III-H5 integration explicitly
+records that "step 8's canned never-claimable FAIL text still names the pre-H5 structural
+cause — post-H5 that symptom usually means a broken binary or saturation; routed to the
+smoke's owner (H2 lineage), reword on next touch." III-H5 closed the schedulability P0 via
+`model_passthrough` and proved `claude` claimable live. The text was never reworded, so it
+fired again here and reads as a regression it is not.
+
+**Leading hypothesis, explicitly NOT verified.** The runner is enrolled at capacity 1. Step
+7's attempt never terminated, so its lease was very likely still held when step 8 created
+three more requests — under which none of them could be claimed by anyone, which is
+precisely the symptom all three printed, `opencode` included. That would make step 8's three
+failures a **cascade of step 7's hang**, not three independent defects. This is a hypothesis
+consistent with every observation, not a diagnosis: nobody has re-run step 8 against an idle
+runner, and the runner-side log was not preserved (`SMOKE_KEEP=1` was not set).
+
+**What is therefore genuinely open** — do not treat any of this as settled:
+
+1. Why the live `opencode` + local-llama.cpp attempt hangs instead of terminating. Re-run
+   with `SMOKE_KEEP=1` and inspect the runner log and journal; try a lighter declared
+   pairing (`opencode/big-pickle`, `hy3-free`, `mimo-v2.5-free` … were all declared) before
+   concluding anything about the product rather than the model.
+2. Whether step 8's three failures survive once a runner is idle. If they do not, the real
+   defect is that the smoke saturates its own single-capacity runner and then blames
+   scheduling.
+3. Step 8's canned FAIL text, still unworded since 2026-08-20 and now demonstrably
+   misleading a second reader. Owner remains the smoke's (H2 lineage).
+4. `codex` has still never completed a live attempt — installing it moved the blocker, it did
+   not clear it. Two of three harnesses remain live-proven; three of three is still not a
+   claim this repository can make.
+
+**One test was also fixed while running the workspace gate**, and is **uncommitted** at the
+time of writing: `crates/tack-runner/src/harness/mod.rs::registering_all_three_real_adapters_is_order_independent`
+asserted that all three adapters reject the fixture spec identically. That held only because
+`codex` was absent; with the binary installed the codex adapter correctly *accepts* an
+explicit model (it is a pass-through harness — III-H5), and the test failed. The assertion
+now expects accept-for-codex / reject-for-the-other-two, which is the real post-H5 contract
+rather than an artifact of an empty PATH. Gates after the fix: `cargo test --workspace`
+green, `clippy -D warnings` and `fmt --check` clean. See §IV.0 — land or discard this
+deliberately before branching Part IV cards.
+
 **Current branch:** `plan/harness-agnostic-agent-fleet`.
 
 **Gate 0 — do not skip:** this branch was created while the source worktree already carried
@@ -10134,3 +11247,5 @@ Additionally:
 - Full Rust/frontend/cross-browser/security/migration/chaos/backup gates are green.
 - The integration tree is clean, public docs match runtime, and release artifacts are
   checksummed, signed/provenanced and tagged.
+
+---
