@@ -1,4 +1,4 @@
-//! Card III-F6b (Wave 5 integrator slice): proves the two wiring changes
+//! Card III-F6b: proves the two wiring changes
 //! this card makes in `crates/tack-api/src/handlers/executions.rs` actually
 //! work through the *real* production router (`tack_api::router::build_router`
 //! — exactly what `tack serve` mounts), per this project's own rule that a

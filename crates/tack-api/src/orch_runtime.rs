@@ -1,7 +1,6 @@
-//! Runtime start/stop control for the orchestration reconciler (card E1,
-//! 2026-08-05 — see TODO.md §6's E1 handoff for the full design writeup).
+//! Runtime start/stop control for the orchestration reconciler.
 //!
-//! Before this card, the reconciler was spawned once at boot
+//! The reconciler used to be spawned once at boot
 //! (`server.rs`), gated on `TACK_ORCH_ENABLE`, and that was the only way to
 //! turn it on or off. This module makes the enable flag a runtime setting
 //! (mirroring the Cloud Backup precedent in `handlers/settings.rs`: stored
@@ -47,7 +46,7 @@
 //! cycle) and, at the HTTP layer, in
 //! `tack-api`'s `tests/orch_settings_test.rs`.
 //!
-//! # The list of planes isn't read once anymore (card E3, 2026-08-05)
+//! # The list of planes isn't read once anymore
 //!
 //! `start()` used to call `reconciler::spawn_reconcilers_cancellable`,
 //! which read `store.list_registered()` exactly once and spawned one
@@ -65,7 +64,7 @@
 //! match — self-healing regardless of *how* `control_planes` changed
 //! (through the API, a bulk import, or a direct DB edit). See
 //! `tack_orch::reconciler`'s module doc, the section headed "Supervisor
-//! (card E3, ...)", for the full design writeup and the alternative
+//!", for the full design writeup and the alternative
 //! (handler-driven notification) that was considered and rejected. This
 //! module's own responsibilities are unchanged by that card: `OrchRuntime`
 //! still only owns the single global start/stop signal and the
@@ -374,7 +373,7 @@ mod tests {
     /// already been called, the exact sequence the setup wizard walks users
     /// through (enable orchestration -> register a control plane -> link a
     /// project). See `a_plane_registered_after_start_gets_polled` below —
-    /// this is card E3's bug-reproduction fixture (TODO.md §6).
+    /// this is card E3's bug-reproduction fixture.
     struct MutableFakeStore {
         planes: std::sync::Mutex<Vec<Uuid>>,
     }

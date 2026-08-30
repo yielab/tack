@@ -235,7 +235,7 @@ async fn list_tasks_happy_path_against_a_live_captured_shape() {
 }
 
 // ---------------------------------------------------------------------------
-// enqueue_task — POST /tasks/{project} (card C1, Wave 3, 2026-08-05)
+// enqueue_task — POST /tasks/{project}
 //
 // All three of docket's real `pre_input` outcomes (card V1's live
 // verification): allow (200, task id), block (400, typed `PolicyBlocked`
@@ -431,7 +431,7 @@ async fn traces_happy_path_decodes_the_double_encoded_events_array() {
     // `traces_list.json`'s provenance comment and `lib.rs`'s
     // `RemoteEvent::event_type` doc).
     assert_eq!(page.events[2].event_type, "some_future_event_type_v3");
-    // The remote's own cursor, forwarded verbatim (card R1) — this adapter
+    // The remote's own cursor, forwarded verbatim — this adapter
     // never parses or recomputes it, just passes it through.
     assert_eq!(page.next.as_deref(), Some("2026-08-05T11:08:10Z:3"));
 }
@@ -667,8 +667,8 @@ async fn unauthenticated_routes_never_send_authorization_header() {
 // ---------------------------------------------------------------------------
 // Write methods: `dispatch` disabled unconditionally — a real docket route
 // (V1, live-verified) with no Tack consumer yet, see the module doc's
-// "Write methods" section. `enqueue_task` (card C1, Wave 3) and
-// `decide_approval` (card D1, Wave 4) are both implemented — their outcomes
+// "Write methods" section. `enqueue_task` and
+// `decide_approval` are both implemented — their outcomes
 // are covered above (`enqueue_task`) and below (`decide_approval`).
 // ---------------------------------------------------------------------------
 
@@ -687,7 +687,7 @@ async fn dispatch_is_still_disabled() {
 }
 
 // ---------------------------------------------------------------------------
-// decide_approval (card D1, Wave 4, task 36.1)
+// decide_approval
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -821,7 +821,7 @@ async fn decide_approval_unauthorized_maps_to_auth_error() {
 }
 
 // ---------------------------------------------------------------------------
-// provision_pod (card D4) — POST /pods
+// provision_pod — POST /pods
 // ---------------------------------------------------------------------------
 
 #[tokio::test]

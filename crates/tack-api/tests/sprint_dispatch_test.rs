@@ -1,5 +1,5 @@
 //! Tests for `POST /api/sprints/{id}/dispatch` and
-//! `GET /api/sprints/{id}/dispatch/dry-run` (card C3, Wave 3, task 35.4) —
+//! `GET /api/sprints/{id}/dispatch/dry-run` —
 //! the `sprint_dispatch` module they're backed by.
 //!
 //! Covers: 404 with `TACK_ORCH_ENABLE` unset / unknown sprint; 409 for an

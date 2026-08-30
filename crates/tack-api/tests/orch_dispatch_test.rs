@@ -526,7 +526,7 @@ async fn dispatch_sends_trusted_false_for_a_github_imported_item() {
     let (app, state) = app_with_state(orch_config()).await;
     let project_id = create_project(&app, "software").await;
     // A real GitHub import (`handlers::import_github`) writes the item with
-    // `ItemSource::Github` (card C2, migration 029) — that persisted
+    // `ItemSource::Github` — that persisted
     // provenance marker, not the `github_links` row, is what
     // `resolve_default_trust` now reads to decide `trusted: false`. Seed the
     // item the same way the real importer does (`create_item_with_source`)

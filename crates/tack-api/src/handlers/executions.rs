@@ -79,7 +79,7 @@ pub struct RunnerV1Error {
 }
 
 /// Documents `tack_orch::execution::MeasurementSource`'s wire shape —
-/// used by `AttemptSummary.usage_economics` (III-F6b/III-F6e). Defined here,
+/// used by `AttemptSummary.usage_economics`. Defined here,
 /// not in `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope`
 /// above is: this file must keep compiling standalone when a card-local
 /// test loads it via `#[path]` (`c1_handlers_test.rs`, `c2_handlers_test.rs`)
@@ -402,7 +402,7 @@ pub struct AttemptSummary {
     /// handoff, "Schema/API/contract change requested" item 2), so
     /// `runner_time_cost.cost_usd_estimated` is always `not_measured` in
     /// every real response from this endpoint. `#[schema(...)]` below
-    /// points the generated document at `UsageEconomicsSchema` (III-F6e),
+    /// points the generated document at `UsageEconomicsSchema`,
     /// the same fix as `model_provenance` above.
     #[schema(value_type = UsageEconomicsSchema)]
     pub usage_economics: Value,

@@ -27,24 +27,23 @@ use super::{
     workspace::{Workspace, WorkspaceError, WorkspaceManager, WorktreeProvisioner},
 };
 
-/// Card III-D5 reconciliation: `Rejected` now carries a `reason`.
+/// `Rejected` carries a `reason`.
 ///
-/// D1 and D3 (`docs/agent-handoffs/part-iii/III-D1.md`, `III-D3.md`) both
-/// independently hit the same gap: `validate`/`start` have several genuinely
+/// Two harness adapters independently hit the same gap: `validate`/`start`
+/// have several genuinely
 /// distinct pre-spawn rejection reasons (wrong harness kind, an
 /// auto-selected model this adapter cannot honestly confirm, an unresolvable
 /// binary, an unsupported provider, a provider/model pairing opencode itself
 /// does not offer, ...) that all collapsed to the same bare `Rejected` at
-/// this trait boundary. Both cards worked around it with a `tracing::warn!`
+/// this trait boundary. Both worked around it with a `tracing::warn!`
 /// immediately before returning the error — which means the reason reached
 /// a log line, never the caller or the operator who actually needs it to
 /// decide what to do next. This is the smallest fix that carries the reason
 /// across the boundary itself: a plain `String`, not a new taxonomy of
-/// typed sub-variants (rule 6 already made `HarnessError` a closed,
+/// typed sub-variants — `HarnessError` is a closed,
 /// deliberately small enum; widening it to a fourth *kind* of error was
-/// evaluated and rejected by D4 for the same reason — see D4's handoff,
-/// "the `engine.rs` decision"). `Process`/`RecoveryUnavailable` are
-/// untouched: neither D1/D2/D3 nor D4 reported an analogous need for them.
+/// evaluated and rejected for the same reason. `Process`/`RecoveryUnavailable`
+/// are untouched: nothing reported an analogous need for them.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum HarnessError {
     #[error("harness rejected this execution: {reason}")]
@@ -156,12 +155,11 @@ pub struct RunnerEngine<P, A, W, C = crate::SystemClock> {
     journal: OwnerOnlyJournal,
     workspaces: WorkspaceManager<W>,
     clock: C,
-    /// Card III-H6: the events/decisions/artifacts transport
-    /// (`AttemptDataProtocol`, live since III-H1 but with no call site until
-    /// this card). Optional and defaulted to `None` by every existing
-    /// constructor so no caller outside this file's ownership (`main.rs`
+    /// The events/decisions/artifacts transport
+    /// (`AttemptDataProtocol`). Optional and defaulted to `None` by every
+    /// existing constructor so no caller (`main.rs`
     /// aside, see [`Self::with_data_protocol`]) is forced to supply one —
-    /// `crash_matrix.rs` (C4-owned) and `h3_checkout.rs` (H3-owned) keep
+    /// `crash_matrix.rs` and `h3_checkout.rs` keep
     /// compiling unchanged. When absent, the engine behaves exactly as
     /// before: no event/artifact submission is attempted.
     data_protocol: Option<Arc<dyn AttemptDataProtocol>>,
@@ -209,11 +207,11 @@ where
         }
     }
 
-    /// Card III-H6: attaches the events/decisions/artifacts transport. A
+    /// Attaches the events/decisions/artifacts transport. A
     /// separate builder method, not a `new`/`with_clock` parameter, so every
-    /// pre-existing construction site outside this card's ownership keeps
-    /// compiling untouched; only `main.rs` (the one production wiring point,
-    /// documented in this card's handoff) calls it today.
+    /// pre-existing construction site keeps
+    /// compiling untouched; only `main.rs` (the one production wiring point)
+    /// calls it today.
     pub fn with_data_protocol(mut self, data_protocol: Arc<dyn AttemptDataProtocol>) -> Self {
         self.data_protocol = Some(data_protocol);
         self
@@ -287,7 +285,7 @@ where
             let outcome = self
                 .report_recovery_and_apply_disposition(session, &mut record, observation)
                 .await?;
-            // III-H3: a settled recovery owns the same cleanup duty as a
+            // A settled recovery owns the same cleanup duty as a
             // terminal replay. Without this the checkout a killed runner left
             // behind survives every restart, because nothing else ever revisits
             // that attempt's directory. A `Quarantined` or `RecoveryPending`
@@ -400,7 +398,7 @@ where
                 // fabricating a cancelled success.
                 return self.report_or_retain_ambiguity(session, &record).await;
             }
-            // III-H6: real evidence that a cancellation actually happened,
+            // Real evidence that a cancellation actually happened,
             // submitted through `AttemptDataProtocol` before the terminal
             // report — best-effort, see `submit_event`'s own doc comment.
             self.submit_cancellation_event(session, &mut record, &evidence)
@@ -444,8 +442,8 @@ where
             return self.quarantine_after_spawn(session, &record, &handle).await;
         }
         let outcome = outcome.normalize_workspace_facts(&spec.workspace);
-        // III-H6: the runner's only call site for events and artifacts.
-        // `outcome.terminal_reason` is the exact JSON D1/D2/D3's adapters
+        // The runner's only call site for events and artifacts.
+        // `outcome.terminal_reason` is the exact JSON the harness adapters
         // already produce (including the `artifact` key their `wait()`
         // implementations stage via `harness::artifact::ArtifactStager` —
         // see e.g. `codex.rs::stage_run_log`), so this reads real evidence,
@@ -466,7 +464,7 @@ where
             fencing_token: record.fencing_token,
             terminal_state: outcome.terminal_state,
             terminal_reason: outcome.terminal_reason,
-            // III-H6: NOT `outcome.final_checkpoint` (always `None` — no
+            // NOT `outcome.final_checkpoint` (always `None` — no
             // adapter ever sets it). `complete_execution_result`'s own
             // compare-and-set requires this to equal the attempt row's
             // *current* `event_checkpoint` column exactly
@@ -477,8 +475,8 @@ where
             // mismatches the row's now-current value and the update's
             // `rows_affected() != 1` branch turns every completion into a
             // `Conflict`, forever — proven the hard way against a live
-            // server (`./scripts/smoke.sh`) before this fix, where the
-            // event/artifact evidence this card exists to submit reached
+            // server (`./scripts/smoke.sh`): the
+            // event/artifact evidence reached
             // the server but the attempt's own completion never did.
             // `record.last_event_checkpoint` is exactly what the server
             // committed (or still `None` if nothing was ever submitted),
@@ -542,24 +540,20 @@ where
     }
 
     // -----------------------------------------------------------------
-    // III-H6: events, decisions and artifacts.
+    // Events, decisions and artifacts.
     //
-    // `AttemptDataProtocol` (III-H1) has had a working HTTP transport since
-    // `transport.rs` landed, but nothing in this file ever called it — see
-    // that trait's own doc comment, which names this exact gap and requests
-    // this wiring. The methods below are the call sites: one runner-sourced
+    // The methods below are the call sites: one runner-sourced
     // event per terminal outcome (completion or cancellation), plus a
     // best-effort upload of whatever artifact an adapter already staged
-    // locally (`terminal_reason.artifact`, D1/D2/D3's own convention — see
-    // e.g. `harness::codex::CodexAdapter::stage_run_log`).
+    // locally (`terminal_reason.artifact`, each harness adapter's own
+    // convention — see e.g. `harness::codex::CodexAdapter::stage_run_log`).
     //
     // Submission is deliberately best-effort: a transport failure here is
     // logged (ids only) and never turns a real harness result into a failed
     // attempt or blocks the terminal report. It does not participate in the
     // crash-safe replay `send_pending_terminal_report` implements for
     // completion/cancellation — a restart does not resend a lost event or
-    // artifact. That is a known limitation, recorded in this card's handoff,
-    // not hidden here.
+    // artifact. That is a known limitation, not hidden here.
     // -----------------------------------------------------------------
 
     async fn submit_terminal_evidence(
@@ -1456,9 +1450,9 @@ mod tests {
         recovery_observation: RecoveryObservation,
         reconcile_fails: bool,
         completion_actual_execution: tack_orch::execution::ActualExecution,
-        // III-H6: overridable so a test can prove the engine reads a real
-        // `terminal_reason.artifact` object (the exact shape D1/D2/D3's real
-        // adapters already stage) without touching any other test's fixed
+        // Overridable so a test can prove the engine reads a real
+        // `terminal_reason.artifact` object (the exact shape the real
+        // harness adapters already stage) without touching any other test's fixed
         // expectation of the plain `{code, message}` default.
         completion_terminal_reason: serde_json::Value,
     }
@@ -3340,7 +3334,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // III-H6 acceptance: the engine actually submits events, decisions and
+    // The engine actually submits events, decisions and
     // artifacts through `AttemptDataProtocol`, and a resubmission is
     // idempotent. `FakeDataProtocol` below is a second fake transport,
     // deliberately independent of `FakeProtocol` (which only ever
@@ -3617,8 +3611,8 @@ mod tests {
         std::fs::remove_dir_all(root).expect("remove temporary root");
     }
 
-    /// Acceptance: no `AttemptDataProtocol` configured is exactly today's
-    /// pre-III-H6 behavior — the attempt still completes, and nothing about
+    /// No `AttemptDataProtocol` configured is exactly the behavior
+    /// without the seam at all — the attempt still completes, and nothing about
     /// the lifecycle depends on the new seam being present.
     #[tokio::test]
     async fn without_a_data_protocol_the_attempt_still_completes_and_nothing_is_submitted() {
@@ -3692,7 +3686,7 @@ mod tests {
         std::fs::remove_dir_all(root).expect("remove temporary root");
     }
 
-    /// Acceptance (III-H6's own idempotency requirement): retrying the
+    /// Retrying the
     /// identical terminal-event submission — the exact scenario a runner
     /// hits after a transient transport error, or a crash between a
     /// server-side commit and the local checkpoint write — reuses the same

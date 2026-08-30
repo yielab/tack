@@ -877,7 +877,7 @@
         "tags": [
           "orchestration"
         ],
-        "summary": "`PATCH /api/control-planes/{id}`. Supports optimistic concurrency (card\nG1, TODO.md §3b D4): an `If-Match: \"<version>\"` header, taken from a\nprevious response's `ETag`, must match the row's current version or the\nrequest is rejected with `412` and nothing is written. **Omitting\n`If-Match` behaves exactly as before this card** — the precondition\ncheck is skipped entirely; the version still moves forward on every\nsuccessful write either way, so a later conditional request from a\ndifferent client can always detect this one.",
+        "summary": "`PATCH /api/control-planes/{id}`. Supports optimistic concurrency: an\n`If-Match: \"<version>\"` header, taken from a\nprevious response's `ETag`, must match the row's current version or the\nrequest is rejected with `412` and nothing is written. **Omitting\n`If-Match` is not an error** — the precondition\ncheck is skipped entirely; the version still moves forward on every\nsuccessful write either way, so a later conditional request from a\ndifferent client can always detect this one.",
         "operationId": "update_control_plane",
         "parameters": [
           {
@@ -1868,7 +1868,7 @@
           "orchestration"
         ],
         "summary": "`POST /api/items/{id}/dispatch` — enqueue a governed task on the item's\nproject's linked control plane. See the `dispatcher` module for the full\nflow; this handler is just the HTTP boundary.",
-        "description": "**Trust default.** Unlike `dispatcher::dispatch_item`'s own required\n`trusted: bool` parameter (no default, by design — see that module's\ndoc), this direct/manual entry point has no request body asking the\ncaller to state trust explicitly, so it resolves one via\n`dispatcher::resolve_default_trust` — a conservative stopgap pending\ncard C2's `source: imported` marker (task 35.7). See that function's own\ndoc comment for exactly what it checks today and what it doesn't yet.",
+        "description": "**Trust default.** Unlike `dispatcher::dispatch_item`'s own required\n`trusted: bool` parameter (no default, by design — see that module's\ndoc), this direct/manual entry point has no request body asking the\ncaller to state trust explicitly, so it resolves one via\n`dispatcher::resolve_default_trust` — a conservative stopgap pending\nitem-provenance-driven trust resolution. See that function's own\ndoc comment for exactly what it checks today and what it doesn't yet.",
         "operationId": "dispatch_item",
         "parameters": [
           {
@@ -3245,7 +3245,7 @@
         "tags": [
           "orchestration"
         ],
-        "summary": "`PUT /api/projects/{id}/orch-link` — create or replace the project's\nlink. Supports optimistic concurrency (card G1, TODO.md §3b D4) the same\nway `PATCH /api/control-planes/{id}` does — see that handler's doc\ncomment for the `If-Match`/`ETag` contract. One difference: this is a\ncreate-or-replace endpoint, so a nonexistent link and a version mismatch\nboth surface as `412` here (see `bump_orch_link_version_if_match`'s doc\ncomment for why that collapse is correct, not a shortcut).",
+        "summary": "`PUT /api/projects/{id}/orch-link` — create or replace the project's\nlink. Supports optimistic concurrency the same\nway `PATCH /api/control-planes/{id}` does — see that handler's doc\ncomment for the `If-Match`/`ETag` contract. One difference: this is a\ncreate-or-replace endpoint, so a nonexistent link and a version mismatch\nboth surface as `412` here (see `bump_orch_link_version_if_match`'s doc\ncomment for why that collapse is correct, not a shortcut).",
         "operationId": "put_orch_link",
         "parameters": [
           {
@@ -5894,7 +5894,7 @@
         "tags": [
           "orchestration"
         ],
-        "summary": "`POST /api/sprints/{id}/dispatch` — dispatch every dependency-ready item\nin the sprint, in topological order, bounded by `max_in_flight`\nconcurrent control-plane calls. Each item's own `ItemSource` decides its\n`trusted` flag (never a blanket value for the batch — TODO.md's\nnon-negotiable). A failure dispatching one item never aborts the rest;\nsee `sprint_dispatch`'s module doc, decision 1.",
+        "summary": "`POST /api/sprints/{id}/dispatch` — dispatch every dependency-ready item\nin the sprint, in topological order, bounded by `max_in_flight`\nconcurrent control-plane calls. Each item's own `ItemSource` decides its\n`trusted` flag (never a blanket value for the batch). A failure\ndispatching one item never aborts the rest;\nsee `sprint_dispatch`'s module doc, decision 1.",
         "operationId": "dispatch_sprint",
         "parameters": [
           {
@@ -6612,7 +6612,7 @@
           },
           "usage_economics": {
             "$ref": "#/components/schemas/UsageEconomicsSchema",
-            "description": "`tack_orch::usage_provenance::UsageEconomics` — two\nindependently-provenanced dollar dimensions, never summed. Absent\nusage/timestamps serialize as `{\"value\": null, \"source\":\n\"not_measured\"}`, never a structural zero (III.2 rule 7); no runner\ninfra cost-rate is stored anywhere in this schema today (III-F3\nhandoff, \"Schema/API/contract change requested\" item 2), so\n`runner_time_cost.cost_usd_estimated` is always `not_measured` in\nevery real response from this endpoint. `#[schema(...)]` below\npoints the generated document at `UsageEconomicsSchema` (III-F6e),\nthe same fix as `model_provenance` above."
+            "description": "`tack_orch::usage_provenance::UsageEconomics` — two\nindependently-provenanced dollar dimensions, never summed. Absent\nusage/timestamps serialize as `{\"value\": null, \"source\":\n\"not_measured\"}`, never a structural zero (III.2 rule 7); no runner\ninfra cost-rate is stored anywhere in this schema today (III-F3\nhandoff, \"Schema/API/contract change requested\" item 2), so\n`runner_time_cost.cost_usd_estimated` is always `not_measured` in\nevery real response from this endpoint. `#[schema(...)]` below\npoints the generated document at `UsageEconomicsSchema`,\nthe same fix as `model_provenance` above."
           },
           "workspace_id": {
             "type": [
@@ -6885,7 +6885,7 @@
       },
       "CapabilitiesResponse": {
         "type": "object",
-        "description": "Wire mirror of `tack_orch::Capabilities` — what a control plane can\nactually do, so the UI can disable a control and explain why instead of\nchecking `kind` (TODO.md §II.0 rule 6).",
+        "description": "Wire mirror of `tack_orch::Capabilities` — what a control plane can\nactually do, so the UI can disable a control and explain why instead of\nchecking `kind`.",
         "required": [
           "dispatch",
           "cancel",
@@ -8065,7 +8065,7 @@
               "string",
               "null"
             ],
-            "description": "Present only when `outcome == \"blocked\"` — the id of the guardrail\npolicy that fired (`OrchError::PolicyBlocked::policy_id`, card R1),\nas a typed field rather than something a caller has to parse back out\nof `message`."
+            "description": "Present only when `outcome == \"blocked\"` — the id of the guardrail\npolicy that fired (`OrchError::PolicyBlocked::policy_id`),\nas a typed field rather than something a caller has to parse back out\nof `message`."
           },
           "status_applied": {
             "type": [
@@ -8079,7 +8079,7 @@
               "string",
               "null"
             ],
-            "description": "Set when the workflow engine refused the `status_map`-driven\ntransition (TODO.md §0 rule 7 / task 35.6's `status_map_rejected`\noutcome). The item was left exactly as it was; this is the engine's\nown reason (e.g. an invalid transition or a WIP limit)."
+            "description": "Set when the workflow engine refused the `status_map`-driven\ntransition (`status_map_rejected`\noutcome). The item was left exactly as it was; this is the engine's\nown reason (e.g. an invalid transition or a WIP limit)."
           },
           "task": {
             "oneOf": [
@@ -8652,7 +8652,7 @@
       },
       "FleetEntry": {
         "type": "object",
-        "description": "One row per Tack project that has an `orch_links` row, joining: the link,\nits control plane's reconciler-observed health, and mirrored cost/token/\napproval data summed from `orch_tasks`/`orch_approvals`.\n\n**Staleness must be representable.** `cost_usd_estimated` is `None`\nwhenever the plane is `unreachable` — never coerced to zero — so the UI can\ngrey the row and say \"last seen Nm ago\" instead of rendering a confident\nzero (TODO.md §0 rule 6 / this card's acceptance bar). `Some(0.0)` means the\nplane is reachable and genuinely has no mirrored cost yet. `tokens_in`/\n`tokens_out` are always a plain (never-null) sum — per A5's contract, the\nrow component gates on `health`/`isStale()`, not per-field nullability, to\ndecide whether a number is trustworthy to render.",
+        "description": "One row per Tack project that has an `orch_links` row, joining: the link,\nits control plane's reconciler-observed health, and mirrored cost/token/\napproval data summed from `orch_tasks`/`orch_approvals`.\n\n**Staleness must be representable.** `cost_usd_estimated` is `None`\nwhenever the plane is `unreachable` — never coerced to zero — so the UI can\ngrey the row and say \"last seen Nm ago\" instead of rendering a confident\nzero. `Some(0.0)` means the\nplane is reachable and genuinely has no mirrored cost yet. `tokens_in`/\n`tokens_out` are always a plain (never-null) sum — per A5's contract, the\nrow component gates on `health`/`isStale()`, not per-field nullability, to\ndecide whether a number is trustworthy to render.",
         "required": [
           "project_id",
           "project_name",
@@ -8728,7 +8728,7 @@
           },
           "gateway": {
             "type": "string",
-            "description": "`\"active\"` | `\"inactive\"` | `\"unknown\"`. **Always `\"unknown\"` in Wave\n1** — `control_planes` has no persisted gateway column (see migration\n019) and the reconciler only polls `/health` + `/status.json` for the\nhealth state machine, not a stored gateway snapshot (card A2, 33.6). A\nlater wave that mirrors `FleetStatus.gateway` populates this for real."
+            "description": "`\"active\"` | `\"inactive\"` | `\"unknown\"`. **Always `\"unknown\"` today** —\n`control_planes` has no persisted gateway column (see migration 019) and\nthe reconciler only polls `/health` + `/status.json` for the health state\nmachine, not a stored gateway snapshot. Mirroring `FleetStatus.gateway`\nwould populate this for real."
           },
           "health": {
             "type": "string",
@@ -8740,7 +8740,7 @@
               "null"
             ],
             "format": "date-time",
-            "description": "Most recent `orch_tasks.dispatched_at` for this project's items, or\n`None` if nothing has ever been dispatched. Real data (not a\nplaceholder) — computed from the same join as the cost/token sums —\nbut will always be `None` until Wave 3 (C1) starts dispatching."
+            "description": "Most recent `orch_tasks.dispatched_at` for this project's items, or\n`None` if nothing has ever been dispatched. Real data (not a\nplaceholder) — computed from the same join as the cost/token sums."
           },
           "last_seen_at": {
             "type": [
@@ -8752,14 +8752,14 @@
           "pending_approval_count": {
             "type": "integer",
             "format": "int64",
-            "description": "Pending docket approvals correlated to an item in this project (via\n`orch_approvals.item_id`). Approvals with no item correlation surface\nin the fleet-wide approvals inbox (Wave 4 / D1) instead of here."
+            "description": "Pending docket approvals correlated to an item in this project (via\n`orch_approvals.item_id`). Approvals with no item correlation surface\nin the fleet-wide approvals inbox instead of here."
           },
           "pricing_snapshot_at": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Pricing-table snapshot date backing `cost_usd_estimated`. **Always\n`None` in Wave 1** — no pricing-snapshot mechanism exists yet; a later\nwave that adds one should populate this alongside real cost figures."
+            "description": "Pricing-table snapshot date backing `cost_usd_estimated`. **Always\n`None` today** — no pricing-snapshot mechanism exists. Whatever adds one\nshould populate this alongside real cost figures."
           },
           "project_id": {
             "type": "string",
@@ -8776,12 +8776,12 @@
             "items": {
               "$ref": "#/components/schemas/FleetRosterMember"
             },
-            "description": "Always `[]` in Wave 1 — see [`FleetRosterMember`]."
+            "description": "Always `[]` — see [`FleetRosterMember`]."
           },
           "tokens_in": {
             "type": "integer",
             "format": "int64",
-            "description": "Summed from `orch_tasks.tokens_in`/`tokens_out` for this project's\nitems. Real data, always `0` until Wave 3 dispatches anything — not a\nplaceholder, just an honest current total."
+            "description": "Summed from `orch_tasks.tokens_in`/`tokens_out` for this project's\nitems. Real data, not a placeholder — an honest current total."
           },
           "tokens_out": {
             "type": "integer",
@@ -8838,7 +8838,7 @@
       },
       "FleetRosterMember": {
         "type": "object",
-        "description": "One roster member — projected from a future live `FleetAgent` snapshot.\n**Always an empty list in Wave 1**: no agent-roster table exists yet\n(migrations 019–024 mirror control planes/links/tasks/runs/events/\napprovals only). A later wave that adds roster mirroring populates this;\nuntil then the field stays on the wire as `[]` rather than being removed,\nso `frontend/src/features/fleet/api.ts`'s `FleetRow.roster` never needs a\nshape change.",
+        "description": "One roster member — projected from a future live `FleetAgent` snapshot.\n**Always an empty list today**: no agent-roster table exists (migrations\n019–024 mirror control planes/links/tasks/runs/events/approvals only).\nWhatever adds roster mirroring populates this; until then the field stays\non the wire as `[]` rather than being removed,\nso `frontend/src/features/fleet/api.ts`'s `FleetRow.roster` never needs a\nshape change.",
         "required": [
           "id",
           "name",
@@ -9160,7 +9160,7 @@
               "string",
               "null"
             ],
-            "description": "Always `null` — no pricing-snapshot mechanism exists anywhere in the\nsystem yet (TODO.md §0 rule 6; same gap A4 found for the Fleet view's\nidentical field). Left `null` rather than invented."
+            "description": "Always `null` — no pricing-snapshot mechanism exists anywhere in the\nsystem yet (the Fleet view has the identical gap). Left `null` rather\nthan invented."
           },
           "remote_run_id": {
             "type": [
@@ -9438,7 +9438,7 @@
       },
       "MeasurementSourceSchema": {
         "type": "string",
-        "description": "Documents `tack_orch::execution::MeasurementSource`'s wire shape —\nused by `AttemptSummary.usage_economics` (III-F6b/III-F6e). Defined here,\nnot in `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope`\nabove is: this file must keep compiling standalone when a card-local\ntest loads it via `#[path]` (`c1_handlers_test.rs`, `c2_handlers_test.rs`)\n— a `crate::openapi` (or any other module's) reference would not resolve\nin that separate test-binary crate root. `tack-orch` has no `ToSchema`\n(see `usage_provenance.rs`'s own module doc), so this is a\nhand-verified mirror, never constructed or serialized by real code —\n`#[allow(dead_code)]` for the identical reason `RunnerV1ErrorEnvelope`\ncarries it. `not_measured` is the honest value whenever a figure\ngenuinely is not known — never a fabricated zero (III.2 rule 7).",
+        "description": "Documents `tack_orch::execution::MeasurementSource`'s wire shape —\nused by `AttemptSummary.usage_economics`. Defined here,\nnot in `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope`\nabove is: this file must keep compiling standalone when a card-local\ntest loads it via `#[path]` (`c1_handlers_test.rs`, `c2_handlers_test.rs`)\n— a `crate::openapi` (or any other module's) reference would not resolve\nin that separate test-binary crate root. `tack-orch` has no `ToSchema`\n(see `usage_provenance.rs`'s own module doc), so this is a\nhand-verified mirror, never constructed or serialized by real code —\n`#[allow(dead_code)]` for the identical reason `RunnerV1ErrorEnvelope`\ncarries it. `not_measured` is the honest value whenever a figure\ngenuinely is not known — never a fabricated zero (III.2 rule 7).",
         "enum": [
           "measured",
           "estimated",
@@ -9668,7 +9668,7 @@
               "string",
               "null"
             ],
-            "description": "Always `None` today — no pricing-snapshot mechanism exists yet\n(TODO.md §0 rule 6)."
+            "description": "Always `None` today — no pricing-snapshot mechanism exists yet."
           },
           "tokens_in": {
             "type": "integer",
@@ -9709,7 +9709,7 @@
               "null"
             ],
             "format": "double",
-            "description": "User-set cap, not a derived spend figure — deliberately unsuffixed\n(matches `orch_links.budget_usd`; TODO.md §0 rule 6)."
+            "description": "User-set cap, not a derived spend figure — deliberately unsuffixed\nMatches `orch_links.budget_usd`."
           },
           "control_plane_id": {
             "type": "string",
@@ -9839,7 +9839,7 @@
       },
       "PaginatedItems": {
         "type": "object",
-        "description": "Pagination envelope for the item-list endpoint (Phase 29.1). `total` is the\nunpaginated match count so clients can render \"N of M\".",
+        "description": "Pagination envelope for the item-list endpoint. `total` is the\nunpaginated match count so clients can render \"N of M\".",
         "required": [
           "data",
           "total",
@@ -9912,7 +9912,7 @@
               "string",
               "null"
             ],
-            "description": "`orch_approvals.agent` — populated from docket's `role` field on\ningestion (B1's handoff, TODO.md §6: \"role is the closest field\")."
+            "description": "`orch_approvals.agent` — populated from docket's `role` field on\ningestion. Role is the closest field docket's wire shape offers."
           },
           "control_plane_id": {
             "type": "string",
@@ -10500,7 +10500,7 @@
       },
       "ReworkStat": {
         "type": "object",
-        "description": "Rework-rate figure for one slice, plus the exact definition and truncation\ncaveat that produced it (TODO.md: \"make sure the number matches the words\").",
+        "description": "Rework-rate figure for one slice, plus the exact definition and truncation\ncaveat that produced it.",
         "required": [
           "attempts_total",
           "attempts_excluded_stale",
@@ -11068,7 +11068,7 @@
       },
       "StatusMap": {
         "type": "object",
-        "description": "`status_map` — TODO.md §1.3. All keys optional except `dispatch_from` (which\nmay be an empty list before a dispatch policy is configured — Wave 3 needs\nit non-empty to actually dispatch, but registering a link ahead of that is\na normal, valid state in this wave). Every named status is validated against\nthe project's `WorkflowConfig` at save time — see [`validate_status_map`].\nAn absent key means \"do not touch the item's status on that transition.\"",
+        "description": "`status_map`. All keys optional except `dispatch_from`, which may be an\nempty list before a dispatch policy is configured — dispatch needs it\nnon-empty, but registering a link ahead of that is a normal, valid state.\nEvery named status is validated against\nthe project's `WorkflowConfig` at save time — see [`validate_status_map`].\nAn absent key means \"do not touch the item's status on that transition.\"",
         "properties": {
           "dispatch_from": {
             "type": "array",
@@ -11186,7 +11186,7 @@
       },
       "TemplateStatusMap": {
         "type": "object",
-        "description": "A template's default `status_map` (TODO.md §1.3). Field-for-field\nidentical to `tack_api::handlers::orch::StatusMap` by design — the two\nare kept in lockstep deliberately (a template's map becomes a project's\n`orch_links.status_map` verbatim once something applies it) — but they\nstay two distinct Rust types because `tack-core` cannot depend on\n`tack-api` (crate boundary in `crates/tack-orch/src/lib.rs`'s comment\napplies here too: dependencies point inward, tack-core has zero I/O and\nzero knowledge of the HTTP layer). Validation is not duplicated: the\nhandler converts this into an `orch::StatusMap` and calls\n`orch::validate_status_map` directly — see\n`handlers::templates::validate_template_orchestration`.",
+        "description": "A template's default `status_map`. Field-for-field\nidentical to `tack_api::handlers::orch::StatusMap` by design — the two\nare kept in lockstep deliberately (a template's map becomes a project's\n`orch_links.status_map` verbatim once something applies it) — but they\nstay two distinct Rust types because `tack-core` cannot depend on\n`tack-api` (crate boundary in `crates/tack-orch/src/lib.rs`'s comment\napplies here too: dependencies point inward, tack-core has zero I/O and\nzero knowledge of the HTTP layer). Validation is not duplicated: the\nhandler converts this into an `orch::StatusMap` and calls\n`orch::validate_status_map` directly — see\n`handlers::templates::validate_template_orchestration`.",
         "properties": {
           "dispatch_from": {
             "type": "array",

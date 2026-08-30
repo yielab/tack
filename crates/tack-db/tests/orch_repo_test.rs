@@ -8,7 +8,7 @@
 //!     serialized (JSON) response body;
 //!   - batch upserts of N rows are idempotent — re-upserting the same batch produces
 //!     no duplicate rows and no error;
-//!   - unrecognised remote-state strings are stored and returned as-is (TODO.md §1.2).
+//! - unrecognised remote-state strings are stored and returned as-is.
 
 mod common;
 
@@ -443,7 +443,7 @@ async fn test_get_and_find_orch_task() {
         remote_task_id: "task-abc".into(),
         remote_run_id: None,
         // An unrecognised docket status string must round-trip untouched — this layer
-        // never validates/rejects it (TODO.md §1.2).
+        // never validates/rejects it.
         remote_status: "some_future_status_tack_has_never_seen".into(),
         attempt: 1,
         tokens_in: 0,
@@ -878,7 +878,6 @@ async fn test_orch_trace_cursor_is_deleted_when_its_control_plane_is_deleted() {
 
 // ════════════════════════════════════════════════════════════════════════════════════
 // list_pending_orch_approvals_with_context / mark_orch_approval_decided
-// (card D1, Wave 4, tasks 36.1/36.2)
 // ════════════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]

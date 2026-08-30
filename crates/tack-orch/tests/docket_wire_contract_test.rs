@@ -1,7 +1,7 @@
 //! Per-method wire oracle for `DocketAdapter` (TODO.md §Wave A, card O2,
 //! task 39.2) — the secondary regression oracle named in
 //! `docs/plans/agnostic-control-plane.md` §6. `docket_tick_contract_test.rs`
-//! (card O1, sibling file in this same `tests/golden/` tree) is the primary
+//! is the primary
 //! oracle: it drives a full reconciler tick and would catch a refactor that
 //! changes *which* requests get issued in steady state. This file is
 //! narrower and complementary — for **every one of the current thirteen
@@ -103,7 +103,7 @@ fn load_text_fixture(name: &str) -> String {
 /// shared because integration test binaries in this crate don't share a
 /// `tests/common` module (there isn't one — see `traces_ingestion_test.rs`
 /// and `docket_adapter_test.rs`, each self-contained) and this file's
-/// ownership (TODO.md §II.2) is deliberately scoped to not touch either.
+/// ownership is deliberately scoped to not touch either.
 fn load_json_fixture(name: &str) -> String {
     load_text_fixture(name)
         .lines()

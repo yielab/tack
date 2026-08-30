@@ -1,5 +1,5 @@
 //! Tests for migration 029 (`items.source`) — the sticky provenance/trust
-//! marker behind card C2's prompt-injection boundary (TODO.md §6, "C2").
+//! marker behind card C2's prompt-injection boundary.
 //!
 //! Covers the acceptance bar the card names explicitly:
 //!   - every creation path writes an explicit, correct `source`;

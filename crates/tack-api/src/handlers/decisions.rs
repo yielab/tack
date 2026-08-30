@@ -1,30 +1,16 @@
-//! III-F1 card-local operator decision-resolution repository/service/handler
-//! module. Not declared in `handlers.rs` and not wired into `router.rs` —
-//! both are explicitly out of this card's "Owns" line ("new decision
-//! repository/service/handler modules and focused tests; no router,
-//! migration or generated edits"). The Wave 5 integrator adds `pub mod
-//! decisions;` to `handlers.rs` and merges `decisions::routes(state)` into
-//! the operator router the same way C5 merged C1's `executions`/
-//! `runner_admin` routers in `router.rs`'s `operator_execution_routes` (see
-//! that function's doc comment) — i.e. **before** the `require_token` layer
-//! is applied and **with** `inject_operator_principal` layered directly on
-//! top, exactly like `operator_execution_routes` does today. Suggested
-//! snippet for that integration (see this card's handoff for the full
-//! rationale):
+//! Operator decision-resolution repository/service/handler
+//! module. Registered in `handlers.rs` and merged into the operator router
+//! in `router.rs`'s `operator_execution_routes` — **before** the
+//! `require_token` layer is applied and **with** `inject_operator_principal`
+//! layered directly on top, exactly like every other route that function
+//! merges.
 //!
-//! ```ignore
-//! let decision_state = decisions::DecisionOperatorState::with_clock(state.repo.clone(), clock)
-//!     .with_decision_token(state.config.execution_decision_token.clone());
-//! decisions::routes(decision_state)
-//!     .layer(middleware::from_fn_with_state(state.clone(), inject_operator_principal))
-//! ```
+//! # `TACK_EXECUTION_DECISION_TOKEN`
 //!
-//! # III-F6 amendment: `TACK_EXECUTION_DECISION_TOKEN`
-//!
-//! The Wave 5 integrator (III-F6) added [`require_decision_token`], mirroring
-//! `handlers::orch::require_approval_token` exactly, to close the gap this
-//! card's own handoff flagged and deliberately declined to decide
-//! unilaterally: `docs/contracts/runner-v1/protocol.json` names decision
+//! [`require_decision_token`] mirrors
+//! `handlers::orch::require_approval_token` exactly, closing a real
+//! contract-vs-implementation gap:
+//! `docs/contracts/runner-v1/protocol.json` names decision
 //! resolution a `"separately_scoped_operator_credential"` (distinct from the
 //! plain `operator_session_or_api_token` every other operator route uses),
 //! and `errors/forbidden.json`'s frozen example carries
@@ -59,17 +45,10 @@
 //! (`middleware::require_token`) is a single shared bearer token with no
 //! scope/claim system at all (see `middleware.rs`'s own
 //! `operator_principal_value` doc comment: "a single shared bearer token, not
-//! per-user sessions"), and building a second, decision-specific credential
-//! type would mean editing `config.rs`/`AppConfig` — a shared struct this
-//! card does not own and was not asked to extend. This is a genuine, open
-//! contract-vs-implementation gap (III.2 rule 13), not a corner I cut
-//! silently: I mount this route behind the same `require_token` gate every
-//! other operator route uses (satisfying this card's own instruction,
-//! verbatim: "operator-scoped (`/api` behind `require_token`), structurally
-//! separate — not an exemption entry on the runner surface") and record the
-//! stricter scoped-credential reading as a decision for A0/the wave
-//! integrator in the handoff, rather than inventing an unrequested `AppConfig`
-//! field or a second credential type with no contract-specified shape.
+//! per-user sessions"). This route is mounted behind the same `require_token`
+//! gate every other operator route uses — the stricter scoped-credential
+//! reading the contract describes remains an open contract-vs-implementation
+//! gap, not silently resolved.
 //!
 //! # No item-status mapping
 //!
@@ -114,14 +93,14 @@ use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
 /// creation, which this module implements.
 const DECISION_ANSWER_BYTES_MAX: u64 = 32_768;
 
-/// State for this card's local router. The Wave 5 integrator constructs this
+/// State for this module's local router, constructed
 /// from the shared API state the same way `operator_execution_routes`
 /// constructs `executions::OperatorExecutionState` today.
 #[derive(Clone)]
 pub struct DecisionOperatorState {
     pub repo: Repository,
     pub clock: Arc<dyn ExecutionClock>,
-    /// `TACK_EXECUTION_DECISION_TOKEN` (III-F6 amendment). `None` means
+    /// `TACK_EXECUTION_DECISION_TOKEN`. `None` means
     /// "not configured on this server" — the fail-closed default, same
     /// posture as `AppState::config.orch_approval_token` before
     /// `handlers::orch::require_approval_token` ever compares anything. See
@@ -132,9 +111,7 @@ pub struct DecisionOperatorState {
 impl DecisionOperatorState {
     /// `decision_token` defaults to `None` (fail-closed) — a caller must
     /// opt in via [`Self::with_decision_token`] to ever allow a resolve
-    /// through, matching this card's original two-argument constructor so
-    /// no existing call site silently starts granting more than it did
-    /// before this amendment.
+    /// through.
     pub fn with_clock(repo: Repository, clock: Arc<dyn ExecutionClock>) -> Self {
         Self {
             repo,
@@ -145,7 +122,7 @@ impl DecisionOperatorState {
 
     /// Builder, mirroring `runner_protocol::RunnerProtocolState::with_artifact_storage_root`'s
     /// established convention for an additive, post-construction config
-    /// value (III-F2).
+    /// value.
     pub fn with_decision_token(mut self, token: Option<String>) -> Self {
         self.decision_token = token;
         self
@@ -185,7 +162,7 @@ fn internal_error() -> (StatusCode, Json<Value>) {
 }
 
 /// Header carrying the operator's `TACK_EXECUTION_DECISION_TOKEN` on a
-/// decision-resolution request (III-F6 amendment). Deliberately not
+/// decision-resolution request. Deliberately not
 /// `Authorization` (already spoken for by the ordinary `TACK_API_TOKEN`
 /// Bearer gate — this is a second, independent credential, not a
 /// replacement for it) and deliberately a header, not a request-body field,
@@ -234,8 +211,8 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 /// The error details carry `required_scope: "operator:decisions"`, matching
 /// `docs/contracts/runner-v1/errors/forbidden.json`'s frozen example
 /// byte-for-byte in shape — this is the real, separately-scoped credential
-/// that fixture's wording called for (see the module doc comment's "III-F6
-/// amendment" section).
+/// that fixture's wording calls for (see the module doc comment's
+/// `TACK_EXECUTION_DECISION_TOKEN` section).
 fn require_decision_token(
     state: &DecisionOperatorState,
     headers: &HeaderMap,
@@ -287,8 +264,8 @@ fn principal(headers: &HeaderMap) -> Result<String, (StatusCode, Json<Value>)> {
 /// `FromIterator` so key order can never affect the serialized comparison
 /// used for idempotent-replay detection — mirrors
 /// `handlers/executions.rs`'s identical `canonical_json`/`canonical_string`
-/// pair (duplicated here, not imported, per this card's "new modules, no
-/// coupling to another card's file" scope).
+/// pair (duplicated here rather than imported, to avoid coupling this module
+/// to that file).
 fn canonical_json(value: Value) -> Value {
     match value {
         Value::Array(values) => Value::Array(values.into_iter().map(canonical_json).collect()),
@@ -316,11 +293,8 @@ pub fn routes(state: DecisionOperatorState) -> Router {
 }
 
 // ---------------------------------------------------------------------
-// Repository layer: the single read-then-write transaction this card's
-// acceptance bar is about. `BEGIN IMMEDIATE` per CLAUDE.md's "ten sites in
-// repo/execution.rs" rule — this is an eleventh read-then-write site, just
-// not in that file (see the module doc comment for why this card does not
-// touch `repo/execution.rs` or `repo.rs`).
+// Repository layer: `BEGIN IMMEDIATE` per CLAUDE.md's read-then-write rule
+// — this is a read-then-write site outside `repo/execution.rs`/`repo.rs`.
 // ---------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
@@ -500,12 +474,9 @@ pub async fn resolve_decision_row(
 /// Fail-closed bulk expiry sweep: transitions every still-`pending` decision
 /// whose `expires_at` has passed into `state='expired'` with a `system`
 /// `resolved_by` — the same terminal shape [`resolve_decision_row`] writes
-/// lazily for a single row. Exposed (not called by this card's own handler,
-/// which only ever touches one row at a time) for a future periodic caller —
-/// see this card's handoff, "Schema/API/contract change requested from
-/// another owner": wiring an actual scheduled sweep is III-F5's
-/// "startup/shutdown wiring" charter, not this card's "repository/service/
-/// handler modules" one.
+/// lazily for a single row. Not called by this module's own handler,
+/// which only ever touches one row at a time — wired instead as a periodic
+/// caller in `execution_runtime.rs`.
 pub async fn expire_overdue_decisions(
     pool: &SqlitePool,
     now: DateTime<Utc>,

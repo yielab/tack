@@ -1,4 +1,4 @@
-//! Card G3 (Wave B, Phase 41, plan §8.4): `handlers::items::maybe_auto_dispatch`
+//! `handlers::items::maybe_auto_dispatch`
 //! used to gate on `state.config.orch_enable` — `TACK_ORCH_ENABLE`'s raw,
 //! startup-only env value — while every HTTP orchestration route (and the
 //! Settings UI) reads

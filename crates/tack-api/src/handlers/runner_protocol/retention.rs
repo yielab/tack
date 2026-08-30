@@ -1,4 +1,4 @@
-//! III-F2: event/artifact retention behavior — one bounded sweep pass.
+//! Event/artifact retention behavior — one bounded sweep pass.
 //!
 //! This module owns the *logic* of what gets purged and how (the card's own
 //! "retention tests" charter). It deliberately does **not** own a recurring

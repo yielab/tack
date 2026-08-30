@@ -119,7 +119,7 @@ async fn test_fresh_db_migrates_all_orch_tables() {
         applied.iter().any(|m| m == "024_orch_approvals"),
         "024_orch_approvals must have been applied on a fresh db"
     );
-    // Not asserting 024 is the *last* migration applied: card B3 (Wave 2) added
+    // Not asserting 024 is the *last* migration applied: card B3 added
     // 025-027 after this test was written (see orch_metrics_test.rs for their
     // coverage), and a future card will add more after those. This test's job is
     // "the six Wave-1 orch tables exist," which the loop above already checks.
@@ -161,7 +161,7 @@ async fn test_upgrade_from_018_applies_new_orch_migrations_in_place() {
         .fetch_one(&pool)
         .await
         .expect("count migrations");
-    // >= 24 rather than == 24: card B3 (Wave 2) added migrations 025-027 after this
+    // >= 24 rather than == 24: card B3 added migrations 025-027 after this
     // test was written (see orch_metrics_test.rs), and later cards will add more.
     // The exact count isn't this test's job — "the six Wave-1 orch tables exist
     // after upgrading in place" (asserted above) is.

@@ -349,11 +349,11 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * `PATCH /api/control-planes/{id}`. Supports optimistic concurrency (card
-         *     G1, TODO.md §3b D4): an `If-Match: "<version>"` header, taken from a
+         * `PATCH /api/control-planes/{id}`. Supports optimistic concurrency: an
+         *     `If-Match: "<version>"` header, taken from a
          *     previous response's `ETag`, must match the row's current version or the
          *     request is rejected with `412` and nothing is written. **Omitting
-         *     `If-Match` behaves exactly as before this card** — the precondition
+         *     `If-Match` is not an error** — the precondition
          *     check is skipped entirely; the version still moves forward on every
          *     successful write either way, so a later conditional request from a
          *     different client can always detect this one.
@@ -732,7 +732,7 @@ export interface paths {
          *     doc), this direct/manual entry point has no request body asking the
          *     caller to state trust explicitly, so it resolves one via
          *     `dispatcher::resolve_default_trust` — a conservative stopgap pending
-         *     card C2's `source: imported` marker (task 35.7). See that function's own
+         *     item-provenance-driven trust resolution. See that function's own
          *     doc comment for exactly what it checks today and what it doesn't yet.
          */
         post: operations["dispatch_item"];
@@ -1118,7 +1118,7 @@ export interface paths {
         get: operations["get_orch_link"];
         /**
          * `PUT /api/projects/{id}/orch-link` — create or replace the project's
-         *     link. Supports optimistic concurrency (card G1, TODO.md §3b D4) the same
+         *     link. Supports optimistic concurrency the same
          *     way `PATCH /api/control-planes/{id}` does — see that handler's doc
          *     comment for the `If-Match`/`ETag` contract. One difference: this is a
          *     create-or-replace endpoint, so a nonexistent link and a version mismatch
@@ -2823,8 +2823,8 @@ export interface paths {
          * `POST /api/sprints/{id}/dispatch` — dispatch every dependency-ready item
          *     in the sprint, in topological order, bounded by `max_in_flight`
          *     concurrent control-plane calls. Each item's own `ItemSource` decides its
-         *     `trusted` flag (never a blanket value for the batch — TODO.md's
-         *     non-negotiable). A failure dispatching one item never aborts the rest;
+         *     `trusted` flag (never a blanket value for the batch). A failure
+         *     dispatching one item never aborts the rest;
          *     see `sprint_dispatch`'s module doc, decision 1.
          */
         post: operations["dispatch_sprint"];
@@ -3060,7 +3060,7 @@ export interface components {
              *     handoff, "Schema/API/contract change requested" item 2), so
              *     `runner_time_cost.cost_usd_estimated` is always `not_measured` in
              *     every real response from this endpoint. `#[schema(...)]` below
-             *     points the generated document at `UsageEconomicsSchema` (III-F6e),
+             *     points the generated document at `UsageEconomicsSchema`,
              *     the same fix as `model_provenance` above.
              */
             usage_economics: components["schemas"]["UsageEconomicsSchema"];
@@ -3136,7 +3136,7 @@ export interface components {
         /**
          * @description Wire mirror of `tack_orch::Capabilities` — what a control plane can
          *     actually do, so the UI can disable a control and explain why instead of
-         *     checking `kind` (TODO.md §II.0 rule 6).
+         *     checking `kind`.
          */
         CapabilitiesResponse: {
             artifacts: boolean;
@@ -3529,7 +3529,7 @@ export interface components {
             outcome: string;
             /**
              * @description Present only when `outcome == "blocked"` — the id of the guardrail
-             *     policy that fired (`OrchError::PolicyBlocked::policy_id`, card R1),
+             *     policy that fired (`OrchError::PolicyBlocked::policy_id`),
              *     as a typed field rather than something a caller has to parse back out
              *     of `message`.
              */
@@ -3543,7 +3543,7 @@ export interface components {
             status_applied?: string | null;
             /**
              * @description Set when the workflow engine refused the `status_map`-driven
-             *     transition (TODO.md §0 rule 7 / task 35.6's `status_map_rejected`
+             *     transition (`status_map_rejected`
              *     outcome). The item was left exactly as it was; this is the engine's
              *     own reason (e.g. an invalid transition or a WIP limit).
              */
@@ -3796,7 +3796,7 @@ export interface components {
          *     **Staleness must be representable.** `cost_usd_estimated` is `None`
          *     whenever the plane is `unreachable` — never coerced to zero — so the UI can
          *     grey the row and say "last seen Nm ago" instead of rendering a confident
-         *     zero (TODO.md §0 rule 6 / this card's acceptance bar). `Some(0.0)` means the
+         *     zero. `Some(0.0)` means the
          *     plane is reachable and genuinely has no mirrored cost yet. `tokens_in`/
          *     `tokens_out` are always a plain (never-null) sum — per A5's contract, the
          *     row component gates on `health`/`isStale()`, not per-field nullability, to
@@ -3826,11 +3826,11 @@ export interface components {
              */
             cost_usd_estimated?: number | null;
             /**
-             * @description `"active"` | `"inactive"` | `"unknown"`. **Always `"unknown"` in Wave
-             *     1** — `control_planes` has no persisted gateway column (see migration
-             *     019) and the reconciler only polls `/health` + `/status.json` for the
-             *     health state machine, not a stored gateway snapshot (card A2, 33.6). A
-             *     later wave that mirrors `FleetStatus.gateway` populates this for real.
+             * @description `"active"` | `"inactive"` | `"unknown"`. **Always `"unknown"` today** —
+             *     `control_planes` has no persisted gateway column (see migration 019) and
+             *     the reconciler only polls `/health` + `/status.json` for the health state
+             *     machine, not a stored gateway snapshot. Mirroring `FleetStatus.gateway`
+             *     would populate this for real.
              */
             gateway: string;
             /**
@@ -3843,8 +3843,7 @@ export interface components {
              * Format: date-time
              * @description Most recent `orch_tasks.dispatched_at` for this project's items, or
              *     `None` if nothing has ever been dispatched. Real data (not a
-             *     placeholder) — computed from the same join as the cost/token sums —
-             *     but will always be `None` until Wave 3 (C1) starts dispatching.
+             *     placeholder) — computed from the same join as the cost/token sums.
              */
             last_activity_at?: string | null;
             /** Format: date-time */
@@ -3853,26 +3852,25 @@ export interface components {
              * Format: int64
              * @description Pending docket approvals correlated to an item in this project (via
              *     `orch_approvals.item_id`). Approvals with no item correlation surface
-             *     in the fleet-wide approvals inbox (Wave 4 / D1) instead of here.
+             *     in the fleet-wide approvals inbox instead of here.
              */
             pending_approval_count: number;
             /**
              * @description Pricing-table snapshot date backing `cost_usd_estimated`. **Always
-             *     `None` in Wave 1** — no pricing-snapshot mechanism exists yet; a later
-             *     wave that adds one should populate this alongside real cost figures.
+             *     `None` today** — no pricing-snapshot mechanism exists. Whatever adds one
+             *     should populate this alongside real cost figures.
              */
             pricing_snapshot_at?: string | null;
             /** Format: uuid */
             project_id: string;
             project_name: string;
             remote_project: string;
-            /** @description Always `[]` in Wave 1 — see [`FleetRosterMember`]. */
+            /** @description Always `[]` — see [`FleetRosterMember`]. */
             roster: components["schemas"]["FleetRosterMember"][];
             /**
              * Format: int64
              * @description Summed from `orch_tasks.tokens_in`/`tokens_out` for this project's
-             *     items. Real data, always `0` until Wave 3 dispatches anything — not a
-             *     placeholder, just an honest current total.
+             *     items. Real data, not a placeholder — an honest current total.
              */
             tokens_in: number;
             /** Format: int64 */
@@ -3897,10 +3895,10 @@ export interface components {
         };
         /**
          * @description One roster member — projected from a future live `FleetAgent` snapshot.
-         *     **Always an empty list in Wave 1**: no agent-roster table exists yet
-         *     (migrations 019–024 mirror control planes/links/tasks/runs/events/
-         *     approvals only). A later wave that adds roster mirroring populates this;
-         *     until then the field stays on the wire as `[]` rather than being removed,
+         *     **Always an empty list today**: no agent-roster table exists (migrations
+         *     019–024 mirror control planes/links/tasks/runs/events/approvals only).
+         *     Whatever adds roster mirroring populates this; until then the field stays
+         *     on the wire as `[]` rather than being removed,
          *     so `frontend/src/features/fleet/api.ts`'s `FleetRow.roster` never needs a
          *     shape change.
          */
@@ -4021,8 +4019,8 @@ export interface components {
             events: components["schemas"]["ItemAgentEventResponse"][];
             /**
              * @description Always `null` — no pricing-snapshot mechanism exists anywhere in the
-             *     system yet (TODO.md §0 rule 6; same gap A4 found for the Fleet view's
-             *     identical field). Left `null` rather than invented.
+             *     system yet (the Fleet view has the identical gap). Left `null` rather
+             *     than invented.
              */
             pricing_snapshot_at?: string | null;
             remote_run_id?: string | null;
@@ -4139,7 +4137,7 @@ export interface components {
         };
         /**
          * @description Documents `tack_orch::execution::MeasurementSource`'s wire shape —
-         *     used by `AttemptSummary.usage_economics` (III-F6b/III-F6e). Defined here,
+         *     used by `AttemptSummary.usage_economics`. Defined here,
          *     not in `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope`
          *     above is: this file must keep compiling standalone when a card-local
          *     test loads it via `#[path]` (`c1_handlers_test.rs`, `c2_handlers_test.rs`)
@@ -4230,10 +4228,7 @@ export interface components {
              */
             health?: string | null;
             linked: boolean;
-            /**
-             * @description Always `None` today — no pricing-snapshot mechanism exists yet
-             *     (TODO.md §0 rule 6).
-             */
+            /** @description Always `None` today — no pricing-snapshot mechanism exists yet. */
             pricing_snapshot_at?: string | null;
             /**
              * Format: int64
@@ -4253,7 +4248,7 @@ export interface components {
             /**
              * Format: double
              * @description User-set cap, not a derived spend figure — deliberately unsuffixed
-             *     (matches `orch_links.budget_usd`; TODO.md §0 rule 6).
+             *     Matches `orch_links.budget_usd`.
              */
             budget_usd?: number | null;
             /** Format: uuid */
@@ -4313,7 +4308,7 @@ export interface components {
             tool_calls: components["schemas"]["ToolCallEntry"][];
         };
         /**
-         * @description Pagination envelope for the item-list endpoint (Phase 29.1). `total` is the
+         * @description Pagination envelope for the item-list endpoint. `total` is the
          *     unpaginated match count so clients can render "N of M".
          */
         PaginatedItems: {
@@ -4361,7 +4356,7 @@ export interface components {
             action?: string | null;
             /**
              * @description `orch_approvals.agent` — populated from docket's `role` field on
-             *     ingestion (B1's handoff, TODO.md §6: "role is the closest field").
+             *     ingestion. Role is the closest field docket's wire shape offers.
              */
             agent?: string | null;
             /** Format: uuid */
@@ -4580,7 +4575,7 @@ export interface components {
         };
         /**
          * @description Rework-rate figure for one slice, plus the exact definition and truncation
-         *     caveat that produced it (TODO.md: "make sure the number matches the words").
+         *     caveat that produced it.
          */
         ReworkStat: {
             /**
@@ -4828,10 +4823,10 @@ export interface components {
             wip_limit?: number | null;
         };
         /**
-         * @description `status_map` — TODO.md §1.3. All keys optional except `dispatch_from` (which
-         *     may be an empty list before a dispatch policy is configured — Wave 3 needs
-         *     it non-empty to actually dispatch, but registering a link ahead of that is
-         *     a normal, valid state in this wave). Every named status is validated against
+         * @description `status_map`. All keys optional except `dispatch_from`, which may be an
+         *     empty list before a dispatch policy is configured — dispatch needs it
+         *     non-empty, but registering a link ahead of that is a normal, valid state.
+         *     Every named status is validated against
          *     the project's `WorkflowConfig` at save time — see [`validate_status_map`].
          *     An absent key means "do not touch the item's status on that transition."
          */
@@ -4925,7 +4920,7 @@ export interface components {
             verify_cmd?: string | null;
         };
         /**
-         * @description A template's default `status_map` (TODO.md §1.3). Field-for-field
+         * @description A template's default `status_map`. Field-for-field
          *     identical to `tack_api::handlers::orch::StatusMap` by design — the two
          *     are kept in lockstep deliberately (a template's map becomes a project's
          *     `orch_links.status_map` verbatim once something applies it) — but they

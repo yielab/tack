@@ -1,4 +1,4 @@
-//! Tests for the orchestration control-plane API (card A4, task 33.5).
+//! Tests for the orchestration control-plane API.
 //!
 //! Covers: every route returns a 409 with `error.code: "orchestration_disabled"`
 //! while the effective orchestration setting is off (TODO.md §0 rule 8,
@@ -128,7 +128,7 @@ fn assert_no_token_leak(v: &Value, secret: &str) {
     );
 }
 
-// ─── Off by default (TODO.md §0 rule 8) ────────────────────────────────────
+// ─── Off by default ────────────────────────────────────
 
 #[tokio::test]
 async fn every_orch_route_409s_with_a_stable_code_when_disabled() {

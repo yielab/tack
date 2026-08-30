@@ -23,7 +23,7 @@
 //!       with Tack-generated volatility normalised away (see
 //!       "Normalisation" below).
 //!
-//! # Why a secondary, per-method wire test (card O2) is not enough on its own
+//! # Why a secondary, per-method wire test is not enough on its own
 //!
 //! A per-method golden proves "given this input, `DocketAdapter::traces`
 //! sends this request" — it says nothing about HOW MANY TIMES
@@ -49,8 +49,8 @@
 //! # Pattern copied, not invented
 //!
 //! The fetch-plus-persist-through-a-real-`spawn_reconcilers`-loop shape is
-//! `tests/ingestion_test.rs` (card B1) and `tests/traces_ingestion_test.rs`
-//! (card B2)'s, copied deliberately per this card's brief — both were read
+//! `tests/ingestion_test.rs` and `tests/traces_ingestion_test.rs`
+//!'s, copied deliberately per this card's brief — both were read
 //! in full before writing a line here. `TestRepoStore` below is the same
 //! mechanical, thin `ControlPlaneStore` impl those two files each define —
 //! duplicated rather than shared (same reasoning as
@@ -727,7 +727,7 @@ fn normalize_generated_id(
 async fn snapshot_rows(pool: &SqlitePool, control_plane_id: Uuid) -> GoldenRows {
     let cp = control_plane_id.to_string();
 
-    // `external_run_id`, not `run_id` — migration 037 (card G5b) rebuilt
+    // `external_run_id`, not `run_id` — migration 037 rebuilt
     // `orch_runs` around the widened primary key `(control_plane_id,
     // external_run_id, run_attempt)` and renamed the physical column; the
     // repo layer (`tack-db/src/repo/orch.rs`) aliases it back to `run_id` in

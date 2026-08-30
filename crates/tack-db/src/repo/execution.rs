@@ -210,8 +210,8 @@ pub struct ClaimedExecution {
 /// [`Repository::fetch_runner_scheduling_snapshot`]/
 /// [`Repository::list_eligible_queued_requests`], and hands the resulting
 /// choice back in here so the actual fenced write stays exactly as strict
-/// as it always was (TODO.md Part III, III-E1's boundary: "pure
-/// selection... never grants the authoritative lease").
+/// as it always was — pure
+/// selection never grants the authoritative lease.
 #[derive(Debug, Clone, Copy)]
 pub enum RequestSelection<'a> {
     /// The pre-Wave-4 behavior: `ORDER BY created_at LIMIT 1` over every
@@ -287,7 +287,7 @@ pub struct QueuedRequestForScheduling {
     /// JSON object string (`execution_requests.metadata`). The caller may
     /// read a `priority` key from this as a documented, best-effort
     /// convention — see `tack_orch::scheduler::wiring`'s module doc for why
-    /// no dedicated column exists yet (III-E1's own flagged gap).
+    /// no dedicated column exists yet.
     pub metadata: String,
 }
 
@@ -306,7 +306,7 @@ pub struct FleetConcurrencySnapshot {
     pub in_use: i64,
 }
 
-/// One row of `GET /api/runners` (card III-E6) — every column
+/// One row of `GET /api/runners` — every column
 /// `agent_runners` carries, minus `credential_hash`/`credential_expires_at`/
 /// `credential_rotated_at` (never read back to an operator; enrollment
 /// tokens/credentials are one-time-reveal by design), plus this runner's
@@ -367,7 +367,7 @@ pub struct EventListingRow {
     pub created_at: String,
 }
 
-/// III-F2: every column `execution_artifacts` carries for one manifest row.
+/// Every column `execution_artifacts` carries for one manifest row.
 /// `content_reference` is `None` until [`Repository::set_execution_artifact_content_reference`]
 /// commits a verified upload — its presence, not a separate status column
 /// (none exists; see the card's own "do not add a column" instruction), is
@@ -400,7 +400,7 @@ pub enum ArtifactContentCommitResult {
     Stale,
 }
 
-// ─── Card III-F5: runtime retention and observability ─────────────────────
+// ─── Runtime retention and observability ───────────────────────────────────
 
 /// Outcome of one bounded batch-purge call (which may run several bounded
 /// transactions internally — see the doc comments on
@@ -409,7 +409,7 @@ pub enum ArtifactContentCommitResult {
 /// mirror `tack_db::repo::orch::RollupStats`/`tack_orch::reconciler::RollupOutcome`
 /// on purpose — same shape, same reason (a `tack-orch` trait impl backed by
 /// this repo is a direct pass-through) — but this type is named `PurgeStats`,
-/// not `RollupStats`: nothing in this card aggregates rows into a daily
+/// not `RollupStats`: nothing here aggregates rows into a daily
 /// table before deleting them (see each method's own doc comment for why).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PurgeStats {
@@ -1250,8 +1250,8 @@ fn snapshot(row: &sqlx::sqlite::SqliteRow) -> Result<serde_json::Value, sqlx::Er
 /// Outcome of [`Repository::add_fleet_member`] — distinguishes an idempotent
 /// no-op (`AlreadyMember`) from either side of the pair not existing, so the
 /// handler can report a precise 404 instead of collapsing every failure into
-/// one generic error. Card III-H8: `agent_fleet_members` (migration 041) has
-/// existed since B2 as a scheduling *read* input
+/// one generic error. `agent_fleet_members` (migration 041) has
+/// existed as a scheduling *read* input
 /// (`fetch_runner_scheduling_snapshot`, `fetch_fleet_concurrency`, the
 /// claimable-request query below) but had no write path — an operator could
 /// never actually populate a fleet.
@@ -2075,7 +2075,7 @@ impl Repository {
         Ok(result.rows_affected() == 1)
     }
 
-    // III-H7: `runner_name` is accepted (the runner-v1 protocol requires the
+    // `runner_name` is accepted (the runner-v1 protocol requires the
     // field and validates its presence upstream in
     // `crates/tack-api/src/handlers/runner_protocol.rs::enroll`) but
     // deliberately NOT written to `agent_runners.name` here. `name` carries a
@@ -2086,10 +2086,9 @@ impl Repository {
     // from `TACK_RUNNER_ID`), so letting the self-reported value overwrite
     // the operator-assigned one made the *second* runner's enrollment race
     // the first's for that string and fail a `UNIQUE` constraint the caller
-    // never intended to touch — surfaced as an unhandled 500 (reproduced by
-    // III-H2). The operator-assigned name is authoritative for identity;
-    // the self-report is accepted for protocol-shape validation only. See
-    // `docs/agent-handoffs/part-iii/III-H7.md`.
+    // never intended to touch — surfaced as an unhandled 500.
+    // The operator-assigned name is authoritative for identity;
+    // the self-report is accepted for protocol-shape validation only.
     #[allow(clippy::too_many_arguments)] // protocol exchange fields must commit together
     pub async fn redeem_enrollment_token(
         &self,
@@ -2327,7 +2326,7 @@ impl Repository {
         }))
     }
 
-    /// Read-only model-policy input (card III-F3): `agent_profile_id`'s raw
+    /// Read-only model-policy input: `agent_profile_id`'s raw
     /// `limits` JSON blob (migration 042), unparsed — the convention read
     /// out of it (`{"default_model": ...}`) lives in
     /// `tack_orch::model_policy::wiring`, which cannot be called from here
@@ -2344,7 +2343,7 @@ impl Repository {
             .await
     }
 
-    /// Read-only model-policy input (card III-F3): `fleet_id`'s raw
+    /// Read-only model-policy input: `fleet_id`'s raw
     /// `default_policy` JSON blob (migration 039), unparsed — same
     /// convention/layering note as [`Self::fetch_agent_profile_limits`].
     /// `None` if `fleet_id` does not exist.
@@ -2359,10 +2358,9 @@ impl Repository {
     }
 
     /// Every enrolled runner, newest-created last, with its current fleet
-    /// roster. Backs `GET /api/runners` (card III-E6) — the read path E2,
-    /// E3 and E5 each independently flagged as missing (`agent_runners`
+    /// roster. Backs `GET /api/runners` — `agent_runners`
     /// itself has held this data since migration 040; nothing read it back
-    /// to an operator before this).
+    /// to an operator before this.
     pub async fn list_runners(&self) -> Result<Vec<RunnerListingRow>, sqlx::Error> {
         let rows = sqlx::query(
             "SELECT id, name, state, labels, total_capacity, available_capacity, \
@@ -2401,9 +2399,8 @@ impl Repository {
 
     /// Every attempt ever made against `request_id`, oldest first. Backs
     /// `GET /api/executions/{request_id}/attempts` — `execution_attempts`
-    /// (migration 045) has been written by the runner-v1 protocol since
-    /// Wave 2 with no operator read path until now (E2/E4/E5's independently
-    /// flagged gap).
+    /// (migration 045) has been written by the runner-v1 protocol with no
+    /// operator read path until now.
     pub async fn list_attempts_for_request(
         &self,
         request_id: &str,
@@ -2761,7 +2758,7 @@ impl Repository {
         Ok(true)
     }
 
-    /// III-F2: looks up one manifest row by its natural key. `Ok(None)`
+    /// Looks up one manifest row by its natural key. `Ok(None)`
     /// means no such artifact was ever manifested for this attempt —
     /// distinct from a manifested-but-not-yet-content-verified row (which is
     /// `Some` with `content_reference: None`).
@@ -2796,12 +2793,12 @@ impl Repository {
         }))
     }
 
-    /// III-F2: resolves an artifact the same way
+    /// Resolves an artifact the same way
     /// [`Repository::list_events_for_attempt_number`] resolves events — by
     /// the operator-facing `(request_id, attempt_number)` pair rather than
     /// the internal opaque `attempt_id` — so `GET
     /// /api/executions/{request_id}/attempts/{attempt_number}/artifacts/{artifact_id}/content`
-    /// (this card's recorded wiring request; see the F2 handoff) never needs
+    /// never needs
     /// to expose `attempt_id` to an operator caller. `Ok(None)` collapses
     /// "no such attempt" and "no such artifact on that attempt" into one
     /// not-found outcome, matching every other operator lookup in this file.
@@ -2825,7 +2822,7 @@ impl Repository {
         self.get_execution_artifact(&attempt_id, artifact_id).await
     }
 
-    /// III-F2: commits a verified artifact's storage reference. Mirrors
+    /// Commits a verified artifact's storage reference. Mirrors
     /// `record_execution_artifact`'s own `BEGIN IMMEDIATE` eligibility
     /// pattern (CLAUDE.md: read-then-write requires `BEGIN IMMEDIATE`) so a
     /// concurrent terminal transition cannot land a content reference
@@ -2872,8 +2869,8 @@ impl Repository {
         }
     }
 
-    /// III-F2 retention (behavior only — F5 owns the recurring background
-    /// task, startup/shutdown wiring, metrics and alerting). Bounded batch:
+    /// Retention (behavior only — startup/shutdown wiring, metrics and
+    /// alerting are the recurring background task's own concern). Bounded batch:
     /// the subquery `LIMIT` keeps one sweep pass cheap and interruptible
     /// rather than locking the table for an unbounded delete; the caller
     /// loops until `0` is returned. Deletes purely by `created_at` age, the
@@ -2895,7 +2892,7 @@ impl Repository {
         Ok(result.rows_affected())
     }
 
-    /// III-F2 retention: the read half of the two-phase artifact sweep — the
+    /// The read half of the two-phase artifact sweep — the
     /// blob referenced by `content_reference` must be unlinked from disk
     /// (a filesystem concern this crate does not own) *before* the row
     /// naming it disappears, so the caller fetches full rows here, deletes
@@ -2938,7 +2935,7 @@ impl Repository {
             .collect())
     }
 
-    /// III-F2 retention: the write half — deletes exactly the rows named by
+    /// The write half — deletes exactly the rows named by
     /// `ids` (each `execution_artifacts.id`, not `artifact_id`), so a
     /// caller that already unlinked their blobs cannot accidentally sweep a
     /// row it never inspected.
@@ -2966,7 +2963,7 @@ impl Repository {
         Ok(result.rows_affected())
     }
 
-    /// III-F6d: conditional counterpart to
+    /// Conditional counterpart to
     /// [`Repository::delete_execution_artifacts_by_row_ids`], scoped to rows
     /// whose `content_reference` is *still* `NULL` — i.e. rows the caller
     /// observed at list-time (`list_execution_artifacts_older_than`) as
@@ -3056,7 +3053,7 @@ impl Repository {
         Ok(true)
     }
 
-    // ─── Card III-F5: runtime retention and observability ─────────────────
+    // ─── Runtime retention and observability ───────────────────────────────
 
     /// Deletes stale rows from the six idempotency/replay bookkeeping tables
     /// (`execution_claim_replays`, `execution_heartbeat_replays`,
@@ -3158,9 +3155,8 @@ impl Repository {
     /// have its event history silently swept out from under it.
     ///
     /// **Purge only — not a roll-up.** No `execution_events_daily` (or
-    /// equivalent) aggregate table exists in this schema today. See this
-    /// card's handoff (`docs/agent-handoffs/part-iii/III-F5.md`) for the
-    /// exact `CREATE TABLE` DDL requested to add one, mirroring
+    /// equivalent) aggregate table exists in this schema today. Adding one
+    /// would mirror
     /// `orch_events`/`orch_events_daily`
     /// (`crates/tack-db/src/repo/orch.rs::rollup_and_purge_orch_events`).
     /// Until that migration lands, this purges raw rows outright — no

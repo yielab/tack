@@ -510,7 +510,7 @@ pub async fn save_project_as_template(
             Some(default_boards)
         },
         // Deliberately not derived from the source project's live
-        // `orch_link` (card D3, TODO.md §6). Unlike vocabulary/workflow —
+        // `orch_link`. Unlike vocabulary/workflow —
         // which describe *this* project's shape and transfer cleanly to any
         // future project created from the resulting template —
         // `orch_links.control_plane_id`/`remote_project` point at one

@@ -1,4 +1,4 @@
-//! III-C2 card-local HTTP tests. C5 owns global-router registration.
+//! Runner-protocol handler HTTP tests.
 //!
 //! Loads `handlers/runner_protocol.rs` the same way `c1_handlers_test.rs`
 //! loads its own handlers: via `#[path]`. `runner_protocol.rs`'s own
@@ -43,7 +43,7 @@ use uuid::Uuid;
 const RUNNER_ID: &str = "runner-c2";
 const RUNNER_CREDENTIAL: &str = "raw-test-runner-credential";
 /// The explicit model every `enqueue_request()` call requests, matching
-/// `full_capabilities()`'s declared combination — see III-E6's scheduler
+/// `full_capabilities()`'s declared combination — see the scheduler
 /// wiring note on both functions.
 const REQUESTED_MODEL_PROVIDER: &str = "openai";
 const REQUESTED_MODEL_ID: &str = "opaque/model-c2";
@@ -129,10 +129,10 @@ async fn setup() -> (Router, Repository, FakeClock, String) {
 
     let clock = FakeClock::new(Utc.with_ymd_and_hms(2026, 8, 6, 12, 0, 0).unwrap());
     let credential_hash = runner_protocol::runner_auth::credential_hash(RUNNER_CREDENTIAL);
-    // Card III-E6 wires `tack_orch::scheduler` into the real claim path, so
+    // `tack_orch::scheduler` is wired into the real claim path, so
     // `RUNNER_ID` must declare a real harness/model combination — an empty
-    // `"{}"` snapshot (this test's pre-Wave-4 shorthand for "not enrolled
-    // yet, doesn't matter") would now make every claim in this file
+    // `"{}"` snapshot ("not enrolled
+    // yet, doesn't matter") would make every claim in this file
     // eligibility-reject before ever reaching the fencing/idempotency/replay
     // behavior these tests actually exist to prove.
     let capability_snapshot = full_capabilities(clock.now(), 2, 2).to_string();
@@ -165,11 +165,10 @@ async fn setup() -> (Router, Repository, FakeClock, String) {
     .expect("profile");
 
     let state = runner_protocol::RunnerProtocolState::new(repo.clone(), Arc::new(clock.clone()));
-    // This card-local router is tested in isolation from any operator
+    // This router is tested in isolation from any operator
     // config, so `usize::MAX` here means "no additional global-config
     // restriction" — the effective limit still collapses to the fixed 4 MiB
-    // protocol ceiling via `effective_body_limit_bytes`, unchanged from this
-    // suite's pre-amendment behavior. The min-of-configured-and-ceiling
+    // protocol ceiling via `effective_body_limit_bytes`. The min-of-configured-and-ceiling
     // precedence itself is proven against the real production router in
     // `c5_integration_test.rs`, not here.
     let app = runner_protocol::routes(state, usize::MAX);
@@ -291,7 +290,7 @@ async fn send_as_runner(
 
 /// `harnesses` declares "codex"/"openai"/`REQUESTED_MODEL_ID` — every
 /// `enqueue_request()` call in this file requests exactly that pair (see
-/// its own doc comment) so the real scheduler (card III-E6) finds this
+/// its own doc comment) so the real scheduler finds this
 /// runner eligible, the same way a real runner's declared capabilities
 /// would need to match a real request for a claim to succeed.
 fn full_capabilities(reported_at: DateTime<Utc>, total: i64, available: i64) -> Value {
@@ -668,11 +667,11 @@ fn request_created_before(clock: &FakeClock) -> String {
 }
 
 // ---------------------------------------------------------------------
-// III-H7: two default-configured runners self-report the identical
+// Two default-configured runners self-report the identical
 // `runner_name` (both default it from `TACK_RUNNER_ID`), which used to
 // silently overwrite the operator-assigned, uniquely-named pending-runner
 // row and crash the second enrollment on `agent_runners`'s `UNIQUE` `name`
-// constraint (reproduced live by III-H2: two curl enrollments differing
+// constraint (two curl enrollments differing
 // only in token, first 200, second 500). Load-bearing: reverting the
 // `_runner_name`/removed `name=?` change in
 // `crates/tack-db/src/repo/execution.rs::redeem_enrollment_token` makes
@@ -733,8 +732,8 @@ async fn duplicate_self_reported_runner_name_enrolls_both_runners() {
     .await
     .expect("pending runner b");
 
-    // Both enroll bodies differ only in `enrollment_token` — the exact
-    // III-H2 repro shape — and self-report the identical `runner_name`, the
+    // Both enroll bodies differ only in `enrollment_token` and self-report
+    // the identical `runner_name`, the
     // way two default-configured runners on one host would (both defaulting
     // it from `TACK_RUNNER_ID`).
     let enroll_body = |token: &str| {
@@ -1293,8 +1292,7 @@ async fn recovery_observation_safe_requeue_requeues_the_request_and_replays_idem
 // This is the only test in the file that captures `tracing` output, and it
 // deliberately does *not* use a bare `tracing::subscriber::set_default`
 // thread-local override. That was tried first and is flaky under cargo's
-// default parallel execution (~1 in 10; see
-// docs/agent-handoffs/part-iii/III-C2.md for the measured before/after):
+// default parallel execution (~1 in 10):
 // `tracing`'s callsite-interest cache is process-global, not per-subscriber.
 // The *first* time any thread in this binary hits a given `event!` callsite
 // (e.g. the `tracing::info!(runner_id = ..., "runner enrolled")` in
@@ -1473,14 +1471,14 @@ async fn logs_never_contain_raw_credentials_only_ids() {
 
 // ---------------------------------------------------------------------
 // 9. A retryable stable code (`conflict`) carries `retryable: true` in the
-//    real, serialized JSON body — this is the amendment this card adopted
-//    from B1's single retryability authority (`StableErrorCode::retryable`,
+//    real, serialized JSON body — sourced from
+//    the single retryability authority (`StableErrorCode::retryable`,
 //    `crates/tack-orch/src/execution/types.rs`), not a locally re-derived
 //    classification. An event batch whose `previous_checkpoint` no longer
 //    matches the attempt's committed stream position hits
 //    `EventApplyResult::Conflict` — the benign, retryable, out-of-order-resync
-//    case B2's "Three-review fix-up" amendment split out of the old,
-//    collapsed `ReplayConflict` (docs/agent-handoffs/part-iii/III-B2.md).
+//    case split out of the old,
+//    collapsed `ReplayConflict`.
 //    This test drives *only* that benign path and asserts `retryable: true`;
 //    its sibling
 //    `event_batch_replay_changed_content_is_idempotency_conflict_and_writes_nothing`
@@ -1741,10 +1739,8 @@ async fn completion_replay_changed_content_is_idempotency_conflict_and_writes_no
 //     `Repository::rotate_runner_credential`. A rotation whose
 //     `expected_credential_hash` no longer matches the runner's current
 //     credential (because a prior rotation already won) is rejected as a
-//     retryable `conflict`, not silently applied last-writer-wins — proving
-//     the fix for the defect B2's "Three-review fix-up" amendment describes
-//     (docs/agent-handoffs/part-iii/III-B2.md, "Defect 3 — credential
-//     rotation had no compare-and-set").
+//     retryable `conflict`, not silently applied last-writer-wins — credential
+//     rotation now has a compare-and-set.
 // ---------------------------------------------------------------------
 
 #[tokio::test]
@@ -1753,7 +1749,7 @@ async fn refresh_rotation_with_stale_expected_hash_is_rejected_not_overwritten()
 
     // Two concurrent `/refresh` rotations, both still authenticated against
     // the same currently-valid `RUNNER_CREDENTIAL` bearer — the realistic
-    // shape of the race B2's amendment fixes: a retried or duplicated
+    // shape of the race this test proves is fixed: a retried or duplicated
     // rotation request. Each generates its own new raw credential
     // internally; only one write can win the CAS.
     //
@@ -1765,10 +1761,8 @@ async fn refresh_rotation_with_stale_expected_hash_is_rejected_not_overwritten()
     // the same way: one request's `authenticate` ran only *after* the
     // other's entire rotation had already committed, so it saw an
     // already-rotated hash and failed with a plain `unauthorized`, never
-    // reaching the CAS at all — no race occurred. This is the same
-    // non-determinism B2's own equivalent test found and fixed the same way
-    // (see docs/agent-handoffs/part-iii/III-B2.md, "Three-review fix-up...
-    // Defect 2"): fully await opening a manual `BEGIN IMMEDIATE` no-op write
+    // reaching the CAS at all — no race occurred. The fix: fully await
+    // opening a manual `BEGIN IMMEDIATE` no-op write
     // against the runner row *before* either rotation request is even
     // constructed, `tokio::spawn` both rotation requests as independently
     // scheduled tasks (not nested inside one `join!`), and give the runtime
@@ -1873,15 +1867,15 @@ async fn refresh_rotation_with_stale_expected_hash_is_rejected_not_overwritten()
 }
 
 // ---------------------------------------------------------------------
-// 12b. III-H4: the same defect, reproduced deterministically instead of by
+// 12b. The same defect, reproduced deterministically instead of by
 //     timing/luck. The test above (12) drives two rotations through a
 //     genuinely concurrent SQLite lock race, which is realistic but, as its
 //     own comment documents, cannot force a specific interleaving — locally
-//     it lands on the CAS-level `HashMismatch` -> `conflict` outcome (already
-//     correct before this card) far more often than the earlier,
-//     authenticate-level failure this card actually fixes, which is why CI's
+//     it lands on the CAS-level `HashMismatch` -> `conflict` outcome far more
+//     often than the earlier, authenticate-level failure this test actually
+//     targets, which is why CI's
 //     more contended scheduler saw it and a local run of 32 iterations did
-//     not (see docs/agent-handoffs/part-iii/III-H4.md).
+//     not.
 //
 //     The server has no way to distinguish "this stale credential belongs to
 //     a request that lost a real concurrent race" from "this stale
@@ -1920,7 +1914,7 @@ async fn refresh_rotation_with_already_superseded_credential_returns_conflict_no
     // The loser: presents the pre-rotation `RUNNER_CREDENTIAL` (still what a
     // client would hold if its rotation request lost the race) and also asks
     // to rotate. `authenticate`'s hash lookup finds no row for it at all —
-    // the exact failure this card's fix reclassifies.
+    // the exact failure `reclassify_refresh_auth_error` reclassifies.
     let (loser_status, loser_body) = send(
         &app,
         "POST",
@@ -1971,8 +1965,8 @@ async fn refresh_rotation_with_already_superseded_credential_returns_conflict_no
 // 13. Task 3: state-gate alignment. `submit_artifacts` must reject `lost`
 //     and `needs_operator` attempts exactly like `create_decision` already
 //     does — not just the three purely-terminal states. Both states exist
-//     precisely to mean "stop trusting this runner's reports" (TODO.md
-//     III.1.1); in both cases here the lease itself has not expired (the
+//     precisely to mean "stop trusting this runner's reports"; in both
+//     cases here the lease itself has not expired (the
 //     fake clock never advances), so a rejection can only come from the
 //     state gate, not `stale_lease`.
 // ---------------------------------------------------------------------

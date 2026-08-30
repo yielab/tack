@@ -5,7 +5,7 @@
 //!
 //! - **Cloud backup** (S3-compatible configuration) — see
 //!   [`effective_backup_config`].
-//! - **Orchestration enable** (card E1, 2026-08-05) — see
+//! - **Orchestration enable** — see
 //!   [`effective_orch_enabled`]. This one additionally starts/stops the
 //!   reconciler at runtime (`AppState::orch_runtime`) so the toggle takes
 //!   effect without a server restart; the Cloud Backup precedent has no
@@ -204,7 +204,7 @@ pub async fn put_backup_settings(
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// Orchestration enable (card E1, 2026-08-05)
+// Orchestration enable
 // ════════════════════════════════════════════════════════════════════════
 //
 // Replaces the old design where `TACK_ORCH_ENABLE` was the *only* switch —

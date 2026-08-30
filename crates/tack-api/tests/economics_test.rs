@@ -1,5 +1,4 @@
-//! Tests for `GET /api/economics/summary` and `GET /api/economics/items`
-//! (card D5, Wave 4, Phase 38, tasks 38.1-38.4).
+//! Tests for `GET /api/economics/summary` and `GET /api/economics/items`.
 //!
 //! The min-sample/staleness/negative-duration branches of the aggregation math
 //! itself are exhaustively unit-tested in `crates/tack-api/src/handlers/
@@ -211,7 +210,7 @@ async fn create_control_plane(app: &Router, name: &str) -> Uuid {
     Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
 }
 
-// ─── Off by default (TODO.md §0 rule 8) ────────────────────────────────────
+// ─── Off by default ────────────────────────────────────
 
 #[tokio::test]
 async fn both_routes_409_when_orch_disabled() {

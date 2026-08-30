@@ -3,9 +3,9 @@
 //! docket pod.
 //!
 //! `POST /api/templates/{id}/provision` — deliberately a **separate route**
-//! from the plain `POST /api/projects/from-template/{id}` (card D3) rather
+//! from the plain `POST /api/projects/from-template/{id}` rather
 //! than an extension of it, even though `router.rs`'s original placeholder
-//! comment (card A4) suggested reusing that endpoint via a `provision_pod:
+//! comment suggested reusing that endpoint via a `provision_pod:
 //! true` body flag. Reasons, disclosed since that comment is a real
 //! signal from a previous wave, not just discarded:
 //!
@@ -18,7 +18,7 @@
 //!    route costs one line in `router.rs` and one in `openapi.rs`.
 //! 2. **A cleaner privilege/gating story.** This route lives inside
 //!    `orch_routes()`, so `require_orch_enabled` 404s it for free
-//!    (TODO.md §0 rule 8) — the plain endpoint stays reachable with
+//!    — the plain endpoint stays reachable with
 //!    orchestration off, exactly as it always has. Folding provisioning
 //!    into the same handler would have meant hand-rolling that same check
 //!    inline instead of getting it from the router layer.
@@ -486,7 +486,7 @@ pub async fn create_project_with_pod(
     // project.
     let control_plane = resolve_control_plane(&state, body.provision_pod.control_plane_id).await?;
 
-    // Read the template's `orchestration` defaults (card D3) up front.
+    // Read the template's `orchestration` defaults up front.
     // `build_project_from_template` below re-reads the template itself —
     // a second, cheap lookup rather than restructuring that function to
     // hand its template back out to a caller in a different module.

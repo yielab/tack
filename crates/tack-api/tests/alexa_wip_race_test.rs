@@ -1,4 +1,4 @@
-//! Test for card R3 (Wave 3 follow-up, 2026-08-05): `handlers::alexa::
+//! Test for card R3: `handlers::alexa::
 //! complete_task` — the voice "mark done" path — used to do the exact same
 //! unguarded `count_items_by_status` read followed by an unlocked
 //! `Repository::update_item` write that card R2 fixed on the dispatch path

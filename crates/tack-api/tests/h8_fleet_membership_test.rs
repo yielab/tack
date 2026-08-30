@@ -1,4 +1,4 @@
-//! III-H8: `agent_fleet_members` (migration 041) has been a live scheduling
+//! `agent_fleet_members` (migration 041) has been a live scheduling
 //! *read* input since B2 — the claim path already joins it to resolve a
 //! `selector_kind = "fleet"` request onto any of the fleet's runners — but
 //! nothing could ever write to it. §III.6 requires selecting "an exact
@@ -286,7 +286,7 @@ async fn fleet_targeted_request_schedules_onto_a_populated_member_and_not_a_non_
     .unwrap();
     assert!(member_row_exists, "membership row was not persisted");
 
-    // `GET /api/runners?fleet_id=` (III-E6) reflects the new membership.
+    // `GET /api/runners?fleet_id=` reflects the new membership.
     let (status, roster) = send(
         &app,
         "GET",

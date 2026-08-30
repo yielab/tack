@@ -14,12 +14,12 @@
 //! 2. **Every remote-state string column stores whatever docket sent, unvalidated.**
 //!    `remote_status`, `state`, `event_type`, etc. are plain `TEXT` and plain `String`
 //!    on the Rust side — this layer never rejects an unrecognised value. Degrading
-//!    unknown values to "shown as-is" (TODO.md §1.2) is a whole-cycle non-negotiable;
+//!    unknown values to "shown as-is" is a whole-cycle non-negotiable;
 //!    validating/parsing into an enum happens above this layer, if at all.
 //!
 //! Batch upserts (`upsert_orch_tasks`, `upsert_orch_runs`, `upsert_orch_events`,
 //! `upsert_orch_approvals`) take a slice and run inside a single transaction — one
-//! commit per poll cycle, not one per row (TODO.md §0 rule 5: the reconciler polls
+//! commit per poll cycle, not one per row (the reconciler polls
 //! docket every `TACK_ORCH_POLL_SECS` (default 10s); per-row transactions would
 //! contend with the UI's writes and surface as `database is locked`). None of these
 //! functions make an HTTP call — callers fetch from docket first, then hand the
@@ -301,9 +301,9 @@ pub struct OrchLink {
     pub blueprint: Option<String>,
     pub auto_dispatch: bool,
     /// A user-set budget cap, not a derived spend figure — deliberately **not**
-    /// suffixed `_estimated` (see migration 020's comment / TODO.md §0 rule 6).
+    /// suffixed `_estimated` (see migration 020's comment).
     pub budget_usd: Option<f64>,
-    /// `status_map` JSON — see TODO.md §1.3. Save-time validation against the
+    /// `status_map` JSON.3. Save-time validation against the
     /// project's `WorkflowConfig` happens above this layer (tack-api), not here.
     pub status_map: serde_json::Value,
     pub created_at: DateTime<Utc>,
@@ -431,7 +431,7 @@ impl Repository {
 
     /// Total number of project ↔ control-plane links, across every plane.
     /// Used by `GET /api/settings/orchestration`'s `linked_project_count`
-    /// (card E1) — a cheap health signal for the settings UI ("orchestration
+    /// — a cheap health signal for the settings UI ("orchestration
     /// is on, but nothing is linked yet" vs. "N projects are linked").
     #[instrument(skip(self))]
     pub async fn count_orch_links(&self) -> Result<i64, sqlx::Error> {
@@ -459,10 +459,10 @@ pub struct OrchTask {
     pub item_id: Uuid,
     pub remote_task_id: String,
     pub remote_run_id: Option<String>,
-    /// docket's raw task status string — stored as-is, unvalidated (TODO.md §1.2).
+    /// docket's raw task status string — stored as-is, unvalidated.
     pub remote_status: String,
     pub attempt: i64,
-    /// Token counts are the primary measure (TODO.md §0 rule 6).
+    /// Token counts are the primary measure.
     pub tokens_in: i64,
     pub tokens_out: i64,
     /// Derived, estimated — never presented as actual spend.
@@ -614,7 +614,7 @@ impl Repository {
     }
 
     /// Looks up a task by docket's `remote_task_id` alone (item unknown) — used to
-    /// correlate an incoming approval's `context.taskId` to an item (Wave 2 / B1).
+    /// correlate an incoming approval's `context.taskId` to an item.
     /// Multiple items could theoretically share a stale `remote_task_id` only across
     /// different attempts of the *same* item (the PK is per-item), so this returns the
     /// most recently dispatched match.
@@ -635,8 +635,8 @@ impl Repository {
     }
 
     /// One row per item in `project_id` that has **at least one** `orch_tasks`
-    /// row (an inner join via `JOIN items` — see card B6's handoff, TODO.md §6,
-    /// for why the bulk badge endpoint keeps B5's inner-join contract rather
+    /// row (an inner join via `JOIN items` — the bulk badge endpoint keeps
+    /// this inner-join contract rather
     /// than a left join with an explicit null state), carrying only its
     /// *latest* attempt. "Latest" = highest `attempt` number, ties broken by
     /// `dispatched_at` desc, with a final tie-break on `remote_task_id` desc
@@ -768,7 +768,7 @@ impl OrchRunRow {
 }
 
 // `run_id` here is a SELECT alias, not the physical column — migration 037
-// (card G5b, docs/plans/agnostic-control-plane.md §II D6) renamed the real
+// renamed the real
 // column to `external_run_id` as part of widening the primary key to
 // `(control_plane_id, external_run_id, run_attempt)`. Aliasing it back to
 // `run_id` in every read keeps [`OrchRun`]/[`NewOrchRun`]'s Rust-level shape
@@ -776,7 +776,7 @@ impl OrchRunRow {
 // touches `.run_id`, never the raw column name — unchanged. `run_attempt`
 // and `correlation_id` are deliberately not read or written here yet: no
 // caller has a value for either until the reshape that actually dispatches
-// retries and mints correlation ids lands (Wave C), so this layer keeps
+// retries and mints correlation ids lands, so this layer keeps
 // treating every run as attempt 1 with no correlation id, which is exactly
 // what migration 037 backfilled onto every pre-existing row.
 const ORCH_RUN_COLUMNS: &str = "external_run_id AS run_id, control_plane_id, item_id, \
@@ -883,14 +883,14 @@ pub struct OrchEvent {
     pub item_id: Option<Uuid>,
     pub run_id: Option<String>,
     /// docket's raw trace event type, stored verbatim — including types Tack doesn't
-    /// yet recognise (TODO.md §1.2 / migration 023's comment).
+    /// yet recognise.
     pub event_type: String,
     pub payload: serde_json::Value,
     pub occurred_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
 }
 
-/// One event to upsert. `id` is caller-assigned: the ingester (Wave 2 / B2) must
+/// One event to upsert. `id` is caller-assigned: the ingester must
 /// derive a stable id from the source event (e.g. from docket's own event id/offset,
 /// or a deterministic hash of `(run_id, occurred_at, event_type)`) so that re-polling
 /// the same trace window is idempotent rather than duplicating rows. This layer has no
@@ -1143,7 +1143,7 @@ impl Repository {
     }
 
     /// Every approval for one item — pending **and** decided, since the item-detail
-    /// "Agent Activity" tab is a history view, not just a pending-inbox (card B6 /
+    /// "Agent Activity" tab is a history view, not just a pending-inbox (see
     /// `frontend/src/shared/agentActivity/api.ts`'s `ItemAgentActivity.approvals`
     /// doc comment). Newest-requested first, matching the tab's overall
     /// newest-first orientation (`list_orch_tasks_for_item`'s `attempt DESC`).
@@ -1164,8 +1164,8 @@ impl Repository {
     }
 
     /// Fleet-wide pending-approval inbox, **oldest first** — docket approvals fail
-    /// closed on timeout, so surfacing the longest-waiting one first has a real cost
-    /// (D1's rationale). Includes uncorrelated (`item_id IS NULL`) records.
+    /// closed on timeout, so surfacing the longest-waiting one first has a real cost.
+    /// Includes uncorrelated (`item_id IS NULL`) records.
     #[instrument(skip(self))]
     pub async fn list_pending_orch_approvals(&self) -> Result<Vec<OrchApproval>, sqlx::Error> {
         let rows: Vec<OrchApprovalRow> = sqlx::query_as(&format!(
@@ -1180,7 +1180,7 @@ impl Repository {
 
     /// The same fleet-wide, oldest-first pending inbox as
     /// [`Self::list_pending_orch_approvals`], enriched with the correlated
-    /// control plane / item / project — everything card D1's inbox UI needs
+    /// control plane / item / project — everything the inbox UI needs
     /// to show "the requesting agent, the action text, and the correlated
     /// item" in one round trip rather than N+1 follow-up reads. `LEFT JOIN`s
     /// against `items`/`projects` so an uncorrelated approval
@@ -1218,7 +1218,7 @@ impl Repository {
             .collect())
     }
 
-    /// Writes back docket's real decision (card D1, task 36.1) once
+    /// Writes back docket's real decision once
     /// [`tack_orch::ControlPlane::decide_approval`] has actually resumed or
     /// killed the gated task on docket's side — this is a **local mirror
     /// update only**, called after that HTTP call already succeeded, never
@@ -1270,8 +1270,8 @@ pub struct PendingOrchApproval {
     pub project_name: Option<String>,
     pub remote_task_id: Option<String>,
     /// `orch_approvals.agent` — populated from docket's `role` field on
-    /// ingestion (B1's handoff, TODO.md §6: "There's no separate 'agent'
-    /// concept on docket's wire shape — role is the closest field").
+    /// ingestion. There is no separate "agent"
+    /// concept on docket's wire shape — role is the closest field.
     pub agent: Option<String>,
     pub action: Option<String>,
     pub requested_at: DateTime<Utc>,
@@ -1316,14 +1316,14 @@ impl PendingOrchApprovalRow {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════
-// orch_metrics — append-only Prometheus scrape mirror (card B3, task 34.3)
+// orch_metrics — append-only Prometheus scrape mirror
 // ════════════════════════════════════════════════════════════════════════════════════
 //
-// `orch_metrics` was deferred out of the Wave 0 batch above — see migration 025's
+// See migration 025's
 // comment in `migrations.rs`. Unlike every other table in this file, there is no
 // `ON CONFLICT` upsert path here: a metric sample has no natural key across scrapes,
 // so `upsert_orch_metrics` (named for consistency with this file's other batch
-// functions, per A3's TODO.md §6 handoff asking for "the same shape") is a plain
+// functions) is a plain
 // batch `INSERT`, one transaction for the whole slice.
 
 fn labels_to_json(labels: &BTreeMap<String, String>) -> String {
@@ -1457,7 +1457,6 @@ impl Repository {
 
 // ════════════════════════════════════════════════════════════════════════════════════
 // Retention: roll orch_events / orch_metrics into per-day aggregates, then purge
-// (card B3, tasks 34.6/34.7)
 // ════════════════════════════════════════════════════════════════════════════════════
 
 fn day_bucket(rfc3339: &str) -> String {
@@ -1485,8 +1484,8 @@ impl Repository {
     /// `batch_size` rows at a time, looping until nothing older than `cutoff`
     /// remains.
     ///
-    /// **Why batched, not one transaction for the whole sweep:** TODO.md §0 rule 5
-    /// and this card's explicit hazard — SQLite allows exactly one writer at a
+    /// **Why batched, not one transaction for the whole sweep:**
+    /// SQLite allows exactly one writer at a
     /// time, so a single transaction spanning a large backlog (e.g. the first
     /// sweep after upgrading a long-running install with years of history) would
     /// hold that lock for its entire duration, blocking every other write in the
@@ -1773,7 +1772,7 @@ pub struct OrchMetricDailyAggregate {
 impl Repository {
     /// A control plane's rolled-up event-type totals, most recent day first. Read
     /// path for the retention sweep's output — exercised directly by tests, and
-    /// available to a future unit-economics view (Phase 38).
+    /// available to a future unit-economics view.
     #[instrument(skip(self))]
     pub async fn list_orch_events_daily(
         &self,
@@ -1851,7 +1850,7 @@ impl Repository {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════
-// orch_trace_cursors (migration 028, card B2 — trace ingestion, task 34.4)
+// orch_trace_cursors (migration 028 — trace ingestion)
 // ════════════════════════════════════════════════════════════════════════════════════
 //
 // Resume state for `GET /traces/{project}?since=` (docket P22-3), keyed by
@@ -1942,26 +1941,23 @@ impl Repository {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════
-// III-G1 — legacy Docket bridge: dual-dispatch prevention and stale-row reconciliation
+// Legacy Docket bridge: dual-dispatch prevention and stale-row reconciliation
 // ════════════════════════════════════════════════════════════════════════════════════
 //
-// The functions below are new for card III-G1 (Wave 6). Two problems, both scoped to
+// Two problems, both scoped to
 // this file even though the first one reads a table this file has never touched before:
 //
 // 1. **Dual dispatch.** `execution_requests`/`execution_attempts` (migrations 044/045,
 //    the neutral runner-v1 domain) and `orch_tasks` (migration 021, this file, the
 //    legacy Docket bridge) are two fully independent write paths that can both target
-//    the same `item_id` with no coordination whatsoever — confirmed by grep before this
-//    card started: nothing in `tack-orch::reconciler`, this file, or
-//    `tack-api::dispatcher` ever mentioned `execution_requests`, and nothing in
-//    `tack-api::handlers::executions` ever mentioned `orch_tasks`. [`Repository::
+//    the same `item_id` with no coordination whatsoever. [`Repository::
 //    has_active_execution_request_for_item`] is a **read-only** query against the
 //    neutral domain's table so `tack-api::dispatcher::dispatch_item` can enforce "one
 //    scheduling owner": if the item already has a live runner-v1 request, legacy Docket
-//    dispatch defers rather than racing it. This is the only direction III-G1's file
+//    dispatch defers rather than racing it. This is the only direction this file's
 //    ownership (`existing orch_*, Docket adapter/reconciler`) can enforce — the mirror
-//    guard on the `execution_requests` creation path belongs to whichever card owns
-//    `handlers/executions.rs`, and is requested rather than added here. No schema
+//    guard on the `execution_requests` creation path belongs to `handlers/executions.rs`,
+//    and is a request rather than added here. No schema
 //    changes; this reads a table `execution_requests` already exposes with no
 //    modification to `migrations.rs`.
 //
@@ -1969,16 +1965,15 @@ impl Repository {
 //    `orch_approvals.state` after the initial dispatch/poll except a fresh poll of a
 //    *reachable* plane (`dispatcher.rs`'s write, `reconciler.rs`'s `persist_approvals`).
 //    A plane that goes `unreachable` (already tracked by `control_planes.health`/
-//    `last_seen_at`, card A2) and never recovers leaves any row that was "active" at
+//    `last_seen_at`) and never recovers leaves any row that was "active" at
 //    that moment (`pending`/`running`/`waiting_approval` on `orch_tasks`, `pending` on
 //    `orch_approvals`) active forever — which also permanently blocks legacy
 //    redispatch, since `dispatcher.rs::is_active_task_status` treats those exact values
 //    as "still in flight." [`Repository::reconcile_stale_orch_tasks`] and
 //    [`Repository::reconcile_stale_orch_approvals`] are **local-only** sweeps: no HTTP
 //    call to docket, so they cannot perturb `docket_tick_contract_test.rs`'s pinned
-//    per-tick request sequence. Not wired to any scheduled task from this card — see
-//    the III-G1 handoff for the exact one-block addition an integrator needs (mirrors
-//    `spawn_retention_sweep`'s own "not yet spawned" precedent, card B3).
+//    per-tick request sequence. **Not wired to any scheduled task** —
+//    mirrors `spawn_retention_sweep`'s own "not yet spawned" gap.
 
 impl Repository {
     /// `true` iff `item_id` has an `execution_requests` row whose `state` is not one
@@ -1992,7 +1987,7 @@ impl Repository {
     /// scheduler; neither is a safe redispatch target on its own.
     ///
     /// Read-only against a table this file has never written — see this section's
-    /// module doc for why that's still III-G1's file to add, not a schema change.
+    /// module doc for why.
     #[instrument(skip(self))]
     pub async fn has_active_execution_request_for_item(
         &self,

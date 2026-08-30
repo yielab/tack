@@ -1,5 +1,4 @@
-//! `DocketAdapter` — the [`ControlPlane`] implementation for docket
-//! (TODO.md §Wave 1, card A1 / task 33.3).
+//! `DocketAdapter` — the [`ControlPlane`] implementation for docket.
 //!
 //! # Constructor
 //!
@@ -19,10 +18,10 @@
 //!
 //! # Auth split
 //!
-//! Per TODO.md §1.4: `/status.json`, `/metrics`, and `/health` never carry
+//! `/status.json`, `/metrics`, and `/health` never carry
 //! a Bearer token, even if one is configured — every other route
 //! (`/runs`, `/runs/{id}`, `/approvals`, `/tasks/{project}`,
-//! `/traces/{project}`, plus the Wave-3 write routes) does. This is
+//! `/traces/{project}`, plus the write routes) does. This is
 //! enforced structurally by [`DocketAdapter::get_unauthed`] vs.
 //! [`DocketAdapter::get_authed`] never sharing a code path that attaches
 //! the header — a future edit can't accidentally leak the token onto an
@@ -30,22 +29,21 @@
 //!
 //! # Write methods
 //!
-//! **`enqueue_task` (card C1, Wave 3), `decide_approval` (card D1, Wave 4,
-//! 2026-08-05), and `provision_pod` (card D4, Wave 4, 2026-08-05) are all
+//! **`enqueue_task`, `decide_approval`, and `provision_pod` are all
 //! implemented** — see below. [`ControlPlane::dispatch`]
 //! still returns [`OrchError::Disabled`] unconditionally — not because
 //! docket lacks the route (`POST /dispatch/{project}` is a real,
-//! live-verified endpoint too, card V1) but because it's a distinct
+//! live-verified endpoint too) but because it's a distinct
 //! pipeline-run trigger (body = arbitrary `variables`) with no consumer in
 //! Tack yet. Wiring it now, with no caller and no design for the
 //! surrounding safety properties, would just be dead code.
 //!
 //! `decide_approval`'s implementation sends a fixed `channel: "tack"` on
 //! every decision (verified against `approval.APPROVAL_CHANNELS` in
-//! `~/Sites/rack-cli/src/docket/core/approval.py`, which already lists
+//! docket's `core/approval.py`, which already lists
 //! `"tack"` alongside `cli`/`http`/`mcp`/`telegram`/`timeout`) — see the
 //! trait doc for why this isn't a parameter. The **separate**
-//! `TACK_ORCH_APPROVAL_TOKEN` gate D1's card requires sits one layer up, in
+//! `TACK_ORCH_APPROVAL_TOKEN` gate sits one layer up, in
 //! `tack-api`'s HTTP handler — this adapter has no concept of it, the same
 //! way it has no concept of Tack's ordinary `TACK_API_TOKEN`.
 //!
@@ -55,49 +53,37 @@
 //! [`ControlPlane::enqueue_task`]'s signature (`Result<String, OrchError>`)
 //! has nowhere to carry them out, and widening it is a separate, larger
 //! change than this method needs (see the trait doc's own note on this).
-//! The Wave-3 dispatcher (`tack-api`'s `dispatcher` module) recovers that
+//! `tack-api`'s `dispatcher` module recovers that
 //! information with one follow-up call to the already-fully-implemented
 //! [`ControlPlane::list_tasks`], matching the just-created task by the id
 //! this method returns. See that module's doc comment for the full
 //! reasoning; this adapter only needs to get the id right.
 //!
 //! A `pre_input` policy **block** (HTTP 400) is mapped to
-//! [`OrchError::PolicyBlocked`] (card R1, 2026-08-05) — the policy id is
+//! [`OrchError::PolicyBlocked`] — the policy id is
 //! parsed out of docket's own error text
 //! (`"task rejected by guardrail policy '<id>' at enqueue: <message>"`) by
-//! [`parse_policy_block`]. This used to be [`OrchError::Http`] with the
-//! message prefixed by a private `POLICY_BLOCK_PREFIX` constant, back when
-//! `OrchError`'s variant set was frozen (TODO.md §1.1's original Wave-0
-//! freeze) and had no dedicated variant for "the control plane refused this
-//! on purpose" — that freeze is lifted (§2.1) and the workaround is gone;
-//! `dispatcher.rs` now matches on the typed variant instead of stripping a
-//! string prefix.
+//! [`parse_policy_block`].
 //!
-//! # Verified live (card V1, 2026-08-05)
+//! # Verified live against a real docket server
 //!
-//! Every route this adapter (or a future Wave-3 write path) uses was
+//! Every route this adapter uses was
 //! exercised against a real, isolated `docket serve` instance — not just
-//! read from `serve.py`/`core/dispatch.py` source, which is as far as A1
-//! and B2 could each go. Full detail lives in TODO.md §6's V1 handoff; the
-//! two facts most load-bearing for whoever builds Wave 3 (card C1) are
-//! recorded here because they directly contradict what TODO.md §1.4's table
-//! says today:
+//! read from `serve.py`/`core/dispatch.py` source. The facts below are
+//! recorded because some directly contradict what docket's own docs say:
 //!
 //! - **`POST /tasks/{project}`'s success response is `{"ok": true, "task":
 //!   "<id>", "project": "...", "status": "pending"|"waiting_approval",
-//!   "approvalToken"?: "..."}`, not `{"taskId": "..."}`.** TODO.md §1.4's
-//!   summary line ("body `{description, priority, trusted}` → `{taskId}`")
-//!   is wrong about the response — confirmed by a live capture, not a
-//!   guess. The task id is under the key `"task"`, and a `require_approval`
+//!   "approvalToken"?: "..."}`, not `{"taskId": "..."}`.** The task id is
+//!   under the key `"task"`, and a `require_approval`
 //!   verdict adds `"approvalToken"` alongside `"status": "waiting_approval"`
 //!   rather than a separate response shape. [`NewRemoteTask`] (the request
 //!   body this adapter would send) is unaffected — only the response this
 //!   adapter doesn't parse yet (because [`ControlPlane::enqueue_task`] is
-//!   disabled) is wrong in the docs. Whoever wires this up for Wave 3 must
+//!   disabled) differs from docket's own docs. Whoever wires this up must
 //!   not deserialize a `taskId` field — it doesn't exist on the wire.
-//! - **The `pre_input` gate's three outcomes, and the `trusted` boundary,
-//!   both behave exactly as TODO.md §1.4 describes** — confirmed against a
-//!   real server, not assumed: a `block` verdict returns HTTP 400 with
+//! - **The `pre_input` gate's three outcomes, and the `trusted` boundary,**
+//!   confirmed against a real server: a `block` verdict returns HTTP 400 with
 //!   `{"ok": false, "error": "task rejected by guardrail policy '<id>' at
 //!   enqueue: <message>"}`; a `require_approval` verdict returns HTTP 200
 //!   with the task's real `status` (`"waiting_approval"`, never
@@ -106,25 +92,21 @@
 //!   policy from silently skipped to evaluated — while omitting `trusted`
 //!   entirely reproduces every existing caller's behavior (operator trust,
 //!   the policy skipped) exactly as `core/dispatch.py::enqueue_task`'s
-//!   docstring says. This is the prompt-injection boundary card C2 depends
-//!   on; it is now confirmed real, not just read from source.
+//!   docstring says. This is a prompt-injection boundary; it is confirmed
+//!   real, not just read from source.
 //! - **`POST /approvals/{token}` grant genuinely resumes a gated task**
 //!   (`waiting_approval` → `pending`, confirmed via a follow-up `GET
 //!   /tasks/{project}`) and returns `{"ok": true, "token": "...", "state":
 //!   "granted"}`; an unknown token 404s with `{"ok": false, "error":
-//!   "Approval not found: <token>"}`. V1 did **not** verify `deny` or the
-//!   409/`ApprovalNoop` (already-decided) path live — read directly from
-//!   `core/approval.py`'s source instead (`approval_grant`/`approval_deny`
-//!   raise `ApprovalNoop` only for "already granted"/"already denied or
-//!   expired" respectively; any other non-`pending` state raises the plain
-//!   `ApprovalError` that `serve.py` maps to 404 alongside a genuinely
-//!   unknown token) — `decide_approval`'s classification below (card D1,
-//!   2026-08-05) follows that reading, not a live capture, for the 409/404
-//!   split. Flagging this as read-from-source, not live-verified, per this
-//!   module's own discipline.
-//! - **`POST /pods` — verified live by card D4 (2026-08-05), closing the one
-//!   gap V1's own handoff explicitly named ("out of this card's endpoint
-//!   list ... not exercised").** Against an isolated `docket serve`
+//!   "Approval not found: <token>"}`. `deny` and the
+//!   409/`ApprovalNoop` (already-decided) path were not verified live — read
+//!   directly from `core/approval.py`'s source instead (`approval_grant`/
+//!   `approval_deny` raise `ApprovalNoop` only for "already granted"/
+//!   "already denied or expired" respectively; any other non-`pending` state
+//!   raises the plain `ApprovalError` that `serve.py` maps to 404 alongside
+//!   a genuinely unknown token) — `decide_approval`'s classification below
+//!   follows that reading, not a live capture, for the 409/404 split.
+//! - **`POST /pods`**, against an isolated `docket serve`
 //!   (`DOCKET_HOME` pointed at a scratch dir, `~/.docket`'s mtime confirmed
 //!   unchanged before and after): a fresh `POST /pods` returns `201
 //!   {"ok": true, "project", "blueprint", "members": [{"id", "role",
@@ -137,28 +119,24 @@
 //!   `decide_approval`); a request with no `Authorization` header returns
 //!   `401`. Ran this crate's own compiled [`DocketAdapter::provision_pod`]
 //!   against the live server (not just a hand-built `curl`), confirming the
-//!   happy path and the 409 both decode correctly end to end. See TODO.md
-//!   §6 "D4" for the full transcript.
+//!   happy path and the 409 both decode correctly end to end.
 //!
 //! # `list_tasks` / `traces`
 //!
-//! **Corrected 2026-08-05 (card B2, trace ingestion).** This section
-//! originally said neither route existed in docket; that was true when A1
-//! wrote it (Wave 1) but is stale — docket shipped both in its own Phase 22
-//! (`GET /tasks/{project}` in P22-2, `GET /traces/{project}?since=` in
-//! P22-3), verified directly against `serve.py`'s `do_GET`, not against
-//! docket's own `ROADMAP.md` (which still lists them `TODO`). If either
+//! Both routes exist in docket, shipped in its own Phase 22
+//! (`GET /tasks/{project}`, `GET /traces/{project}?since=`),
+//! verified directly against `serve.py`'s `do_GET`, not against
+//! docket's own `ROADMAP.md` (which still lists them `TODO` — a real
+//! staleness bug in that project's own docs). If either
 //! route 404s against a real docket instance today, that means the plane is
 //! running an older docket build, not that the endpoint is hypothetical —
 //! [`OrchError::NotFound`] still surfaces exactly as before so callers
-//! (B2's `reconciler::poll_traces`) can tell "this plane doesn't have the
+//! (`reconciler::poll_traces`) can tell "this plane doesn't have the
 //! capability yet" apart from a real outage ([`OrchError::Auth`]/
 //! [`OrchError::Http`] are unaffected by any of this).
 //!
 //! **`traces`'s wire-format trap, verified against `serve.py`'s
-//! `_traces_page`/`do_GET` directly (not the guessed shape
-//! `crates/tack-orch/tests/fixtures/traces_list.json`'s provenance comment
-//! flagged as unverified — that guess turned out wrong):** the real
+//! `_traces_page`/`do_GET` directly:** the real
 //! response is `{"events": [...], "next": "<cursor>"}`, but `events` is an
 //! array of **raw JSON strings**, not parsed objects — `_traces_page`
 //! returns the verbatim JSONL lines `core.trace.export_lines` read off
@@ -169,12 +147,10 @@
 //! `Vec<RemoteEvent>`). `next` is docket's own minted resume cursor
 //! (`serve.py`'s module comment above `_traces_page` documents the
 //! compound `"<ts>Z:<n>"` format and why a bare last-seen timestamp isn't
-//! enough) — **as of card R1 (2026-08-05), this adapter reads `next` and
-//! returns it verbatim** as [`TracesPage::next`], opaque to this crate.
-//! Earlier (A1/B2), [`ControlPlane::traces`]'s signature had nowhere to
-//! carry a second return value out, so `reconciler.rs` reimplemented
-//! docket's cursor algorithm client-side instead — that reconstruction is
-//! deleted; see the trait's own doc comment and TODO.md §2.1.
+//! enough) — this adapter reads `next` and
+//! returns it verbatim as [`TracesPage::next`], opaque to this crate. Do not
+//! reintroduce a client-side reconstruction of docket's cursor algorithm —
+//! see `reconciler.rs`'s module doc for why one was tried and removed.
 
 use std::time::Duration;
 
@@ -200,7 +176,7 @@ use crate::{
 const APPROVAL_CHANNEL: &str = "tack";
 
 /// Every request this adapter makes gets this timeout — docket runs on
-/// loopback in every deployment TODO.md describes, so 5s is generous for a
+/// loopback in every real deployment, so 5s is generous for a
 /// live plane and still fails fast against a hung/unreachable one rather
 /// than blocking a reconciler poll tick indefinitely.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
@@ -212,7 +188,7 @@ const ERROR_BODY_SNIPPET_LEN: usize = 500;
 
 /// Extracts the policy id docket names in a `pre_input` **block** response's
 /// `error` text (`"task rejected by guardrail policy '<id>' at enqueue:
-/// <message>"`, verified live by card V1) and builds the typed
+/// <message>"`) and builds the typed
 /// [`OrchError::PolicyBlocked`]. Falls back to `policy_id: "unknown"` rather
 /// than panicking or discarding the message if docket's wording ever drifts
 /// — this must degrade the same way the `Unknown(String)` remote-enum
@@ -373,13 +349,12 @@ struct ApprovalsResponse {
 }
 
 /// `GET /tasks/{project}` — real wire shape, confirmed by a live HTTP
-/// capture against a running `docket serve` (card V1, 2026-08-05; see the
-/// module doc's "Verified live" section). Wrapper key really is
-/// `{"tasks": [...]}`, matching `/runs`/`/approvals`'s own wrapping
-/// convention exactly as A1 guessed — `tests/fixtures/tasks_list.json` is
-/// now a genuine capture, not a derived projection.
+/// capture (see the module doc's "Verified live" section). Wrapper key
+/// really is `{"tasks": [...]}`, matching `/runs`/`/approvals`'s own
+/// wrapping convention — `tests/fixtures/tasks_list.json` is a genuine
+/// capture, not a derived projection.
 /// `POST /tasks/{project}`'s success response — real wire shape, confirmed
-/// by a live HTTP capture (card V1, 2026-08-05; see the module doc's
+/// by a live HTTP capture (see the module doc's
 /// "Write methods" section). Only `task` is modeled: `ok`/`project` are
 /// never read, and `status`/`approvalToken` — real fields, but this
 /// method's frozen return type has nowhere to carry them — are recovered by
@@ -402,7 +377,7 @@ struct DecideApprovalRequest<'a> {
 }
 
 /// `POST /approvals/{token}` success response: `{"ok": true, "token": "...",
-/// "state": "granted"|"denied"}` (card V1, live-verified for the grant
+/// "state": "granted"|"denied"}` (live-verified for the grant
 /// case). `ok`/`token` are never read — only `state` is modeled, same
 /// "unmodeled keys cost nothing" discipline as [`EnqueueTaskResponse`].
 #[derive(Debug, Deserialize)]
@@ -439,7 +414,7 @@ impl ControlPlane for DocketAdapter {
     /// The verified truth, not optimism — every field below is justified
     /// against this adapter's own implementation or `serve.py`'s real route
     /// table, not against what a docket-shaped provider *could* plausibly
-    /// do. See TODO.md card G1 and `docs/book/src/developer/orchestration.md`.
+    /// do. See `docs/book/src/developer/orchestration.md`.
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             // `ControlPlane::dispatch` (the trait method literally named
@@ -447,7 +422,7 @@ impl ControlPlane for DocketAdapter {
             // module's own doc comment, "Write methods". But the capability
             // named here is "can this plane accept new work at all," and
             // docket answers that with `enqueue_task`
-            // (`POST /tasks/{project}`, live-verified by card V1), which
+            // (`POST /tasks/{project}`, live-verified), which
             // this adapter fully implements and `dispatcher.rs` actually
             // calls. `false` here would misreport what docket can do to
             // satisfy the name of one dead trait method.
@@ -520,7 +495,7 @@ impl ControlPlane for DocketAdapter {
             runtimes: true,
             // `GET /metrics`, Prometheus text exposition (`adapters::prometheus`).
             plane_metrics: true,
-            // `POST /pods`, live-verified by card D4 — see this module's
+            // `POST /pods`, live-verified — see this module's
             // "Verified live" section.
             provisioning: true,
         }
@@ -576,7 +551,7 @@ impl ControlPlane for DocketAdapter {
     }
 
     async fn list_tasks(&self, project: &str) -> Result<Vec<RemoteTask>, OrchError> {
-        // Route confirmed live (card V1, 2026-08-05) — see the module doc's
+        // Route confirmed live — see the module doc's
         // "list_tasks / traces" section. A 404 still surfaces as
         // `OrchError::NotFound` via `Self::send`, same as any other 404 (a
         // real docket build old enough to lack this route, not a routing
@@ -629,7 +604,7 @@ impl ControlPlane for DocketAdapter {
     }
 
     async fn enqueue_task(&self, project: &str, task: NewRemoteTask) -> Result<String, OrchError> {
-        // POST /tasks/{project}, Bearer-authed (TODO.md §1.4). Built by hand
+        // POST /tasks/{project}, Bearer-authed. Built by hand
         // rather than through `get_authed`/`send` — those only ever GET, and
         // the `pre_input` policy **block** (HTTP 400) needs distinct
         // handling from `send`'s generic non-2xx branch (see the module doc
@@ -677,7 +652,7 @@ impl ControlPlane for DocketAdapter {
         _project: &str,
         _vars: serde_json::Value,
     ) -> Result<String, OrchError> {
-        // Gated behind TACK_ORCH_ENABLE and owned by Wave 3 — see the
+        // Gated behind TACK_ORCH_ENABLE — see the
         // module doc's "Write methods" section. Unlike `enqueue_task`,
         // `POST /dispatch/{project}` is a real, working docket route today;
         // it stays disabled here purely for the gate, not for lack of a
@@ -747,7 +722,7 @@ impl ControlPlane for DocketAdapter {
     }
 
     async fn provision_pod(&self, params: ProvisionPodParams) -> Result<ProvisionedPod, OrchError> {
-        // POST /pods, Bearer-authed (card D4, TODO.md §1.4). Built by hand
+        // POST /pods, Bearer-authed. Built by hand
         // rather than through `get_authed`/`send` — those only ever GET, and
         // this route needs 409 (`PodAlreadyExistsError`) classified
         // distinctly from `send`'s generic non-2xx branch, same reason

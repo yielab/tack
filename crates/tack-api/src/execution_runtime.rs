@@ -73,7 +73,7 @@ use crate::handlers::runner_protocol::retention::{
 /// deliberately narrow view (not `&AppConfig` itself) so this module never
 /// grows a temptation to reach for an unrelated config field.
 ///
-/// `storage_dir` (III-F6d) is `String`, not `Copy` — this type dropped its
+/// `storage_dir` is `String`, not `Copy` — this type dropped its
 /// `Copy` derive accordingly; every existing call site already passes it by
 /// value once per `start()` call, so this is a non-breaking widening, not a
 /// behavior change.
@@ -110,7 +110,7 @@ impl From<&AppConfig> for ExecutionRuntimeConfig {
 
 struct Running {
     retention_handle: Option<JoinHandle<()>>,
-    /// III-F6d: the artifact/event sweep + decision-expiry loop — see
+    /// The artifact/event sweep + decision-expiry loop — see
     /// [`spawn_artifact_and_decision_sweep`].
     artifact_decision_handle: Option<JoinHandle<()>>,
     health_handle: Option<JoinHandle<()>>,
@@ -261,7 +261,7 @@ async fn wait_until_stopped(rx: &mut watch::Receiver<bool>) {
     }
 }
 
-/// III-F6d: spawns the recurring caller `sweep_events`/`sweep_artifacts`
+/// Spawns the recurring caller `sweep_events`/`sweep_artifacts`
 /// (`handlers/runner_protocol/retention.rs`, card III-F2) and
 /// `expire_overdue_decisions` (`handlers/decisions.rs`, card III-F1) never
 /// had — both were built, tested in isolation, and explicitly deferred their

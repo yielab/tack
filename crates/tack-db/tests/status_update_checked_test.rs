@@ -1,5 +1,5 @@
 //! Sequential correctness tests for `Repository::update_item_status_checked`
-//! (card R2, 2026-08-05) — the atomic WIP-limit-check-then-write that
+//! — the atomic WIP-limit-check-then-write that
 //! replaced `dispatcher::apply_mapped_status`'s old, racy
 //! `count_items_by_status` + `update_item` pair. These are deterministic,
 //! single-writer checks of the method's own behaviour (applied vs.

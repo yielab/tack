@@ -186,7 +186,7 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
             call(client.post(&format!("/items/{item_id}/comments"), &body))
         }
 
-        // ── Execution/fleet/profile tools (III-E5) ─────────────────────────
+        // ── Execution/fleet/profile tools ─────────────────────────
         //
         // Deliberately a *subset* of what the CLI exposes: read tools cover
         // discovery (an agent needs valid fleet/profile ids before it can
@@ -785,7 +785,7 @@ mod tests {
         assert_eq!(v["result"]["isError"], true);
     }
 
-    // ── MCP write path: If-Match (card G4) ──────────────────────────────────
+    // ── MCP write path: If-Match ──────────────────────────────────
     //
     // `update_item`/`move_item` now read the item before writing it so they
     // can send back its `ETag` as `If-Match` — closing the race named in
@@ -986,7 +986,7 @@ mod tests {
         assert!(c.get("description").is_none());
     }
 
-    // ── Execution/fleet/profile tools (III-E5) ──────────────────────────────
+    // ── Execution/fleet/profile tools ──────────────────────────────
 
     fn create_execution_min_args() -> Value {
         json!({

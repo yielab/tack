@@ -1,16 +1,16 @@
-//! Claude Code harness adapter (card III-D2).
+//! Claude Code harness adapter.
 //!
 //! This file implements [`super::HarnessAdapter`] (`engine::HarnessAdapter`,
-//! frozen since Wave 2 — see the module docs on `super` for why this card
-//! does not redefine it) and [`super::HarnessProbe`] for the `claude` CLI
+//! see the module docs on `super` for why it is not redefined here) and
+//! [`super::HarnessProbe`] for the `claude` CLI
 //! (Anthropic's Claude Code), version `2.1.223` observed installed on the
-//! machine this card was written on.
+//! machine this was verified on.
 //!
 //! ## Observed vs. assumed — read this before trusting a claim below
 //!
 //! Every behavioral claim in this file was checked by actually invoking the
 //! installed `claude` binary from a disposable fixture directory (never this
-//! repository) during this card's implementation — the exact commands and
+//! repository) — the exact commands and
 //! outputs are recorded in `docs/agent-handoffs/part-iii/III-D2.md`. Where a
 //! design choice rests on something *not* independently invoked (e.g. the
 //! Bedrock/Vertex/Foundry provider families, confirmed only by `strings`
@@ -69,7 +69,7 @@
 //!   than an unverified static alias list ("report capabilities without
 //!   assuming models").
 //! - Actually exercising the Bedrock/Vertex/Foundry provider paths: doing so
-//!   needs real cloud credentials this card will not fabricate or request.
+//!   needs real cloud credentials this adapter does not fabricate or request.
 
 use std::{
     collections::BTreeMap,
@@ -98,8 +98,7 @@ use super::{
 use crate::{Clock, SystemClock, client::AttemptState, client::Timestamp};
 
 /// The wire value for this harness, matching
-/// `registry::HarnessKind::ClaudeCode.as_str()` (D5-owned `registry.rs`,
-/// read but not edited by this card).
+/// `registry::HarnessKind::ClaudeCode.as_str()`.
 const HARNESS_KIND: &str = "claude-code";
 
 /// Provider families the installed `claude` 2.1.223 binary genuinely knows
@@ -111,7 +110,7 @@ const HARNESS_KIND: &str = "claude-code";
 /// `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`,
 /// `CLAUDE_CODE_USE_FOUNDRY` all present) — static inspection of the shipped
 /// artifact, not a live provider switch (never attempted: it would need real
-/// cloud credentials this card will not fabricate). See the D2 handoff.
+/// cloud credentials that would not be fabricated for this).
 const KNOWN_PROVIDERS: &[&str] = &["anthropic", "bedrock", "vertex", "foundry"];
 
 /// Tool names that touch the network, matched case-insensitively against a
@@ -194,7 +193,7 @@ struct RunningEntry {
     limits: ProcessLimits,
     requested_provider: Option<String>,
     started_at: DateTime<Utc>,
-    /// Card III-D5 finding 2: needed so `wait()` can actually stage the raw
+    /// Needed so `wait()` can actually stage the raw
     /// run log it claims (`artifacts: Advisory`) — `start()` is the only
     /// place these are known; `wait()` only ever sees the opaque
     /// `LocalRunHandle`.
@@ -233,7 +232,7 @@ impl ClaudeCodeAdapter<SystemClock> {
         Ok(Self::with_binary(discover_installed_binary()?, SystemClock))
     }
 
-    /// Card III-D5, test-only: thin wrapper over the already-`pub`
+    /// Test-only: thin wrapper over the already-`pub`
     /// [`Self::with_binary`], named to match `codex.rs`'s/`opencode.rs`'s
     /// identical `for_fixture` so `harness::mod::tests`'s "same fixture
     /// completes through all three fake adapters" acceptance proof can
@@ -377,11 +376,10 @@ impl<C: Clock> ClaudeCodeAdapter<C> {
     }
 
     /// Stages the (already-scrubbed) combined stdout/stderr as a `log`
-    /// artifact inside the attempt's own workspace, via D4's
+    /// artifact inside the attempt's own workspace, via
     /// [`super::artifact::ArtifactStager`] — the exact pattern
-    /// `codex.rs`/`opencode.rs` already prove out, and this card's fix for
-    /// finding 2 (an adversarial Wave-3 review found `artifacts: Supported`
-    /// had no backing implementation: `wait()` never called this before).
+    /// `codex.rs`/`opencode.rs` already prove out. `artifacts: Supported`
+    /// once had no backing implementation: `wait()` never called this before.
     /// Stages under the workspace's own `.artifacts` directory, matching
     /// this adapter's live test's own choice (`ArtifactStager::new(workspace.join(".artifacts"))`)
     /// rather than a separate external staging root — `discover()` has no
@@ -761,9 +759,9 @@ fn feature_capabilities() -> FeatureCapabilities {
             ),
             additional: Default::default(),
         },
-        // Card III-D5 finding 2 (adversarial Wave-3 review): downgraded from
+        // Downgraded from
         // `Supported`. Real `Write`/`Edit` tool output genuinely lands in
-        // the workspace, but before this card `wait()` never actually
+        // the workspace, but `wait()` used not to actually
         // staged anything — `stage_run_log` below closes that gap by
         // staging the raw, already-redacted stdout/stderr transcript, the
         // same thing the Codex and OpenCode adapters honestly call
@@ -823,7 +821,7 @@ impl<C: Clock + Send + Sync> HarnessProbe for ClaudeCodeAdapter<C> {
             probe_error,
             probed_at,
             model_combinations: Vec::new(),
-            // III-H5 pass-through attestation: a claim about THIS adapter's
+            // A pass-through attestation: a claim about THIS adapter's
             // invocation contract (`run_arguments` appends `--model
             // <requested_model_id>` verbatim, asserted by unit test), not
             // about which models exist — the CLI validates the model itself
@@ -1100,7 +1098,7 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
         };
         let ended_at = DateTime::<Utc>::from(self.clock.now());
 
-        // Card III-D5 finding 2: `artifacts: Advisory` (downgraded from an
+        // `artifacts: Advisory` (downgraded from an
         // unbacked `Supported` — see `feature_capabilities`) is only honest
         // if `wait()` actually stages something. Best-effort, exactly like
         // `codex.rs`/`opencode.rs`'s identical `stage_run_log`: a staging
@@ -1496,8 +1494,7 @@ mod tests {
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 
-    /// Card III-D5 finding 2 (adversarial Wave-3 review): before this card,
-    /// `artifacts: Supported` had no backing implementation — `wait()` never
+    /// `artifacts: Supported` once had no backing implementation — `wait()` never
     /// called `ArtifactStager::stage_file`, only the live (billed, opt-in)
     /// test's own test body did, bypassing the adapter entirely. This proves
     /// the fix through the adapter's own `wait()`, via the free fake-binary
@@ -1776,13 +1773,13 @@ mod tests {
         }
     }
 
-    /// Card III-D5, direct regression guards for both capability corrections
-    /// this card made to this file: `cancel` was already `Advisory` (D2's
-    /// own, correctly evidenced finding — this card's registration-time gate
+    /// Direct regression guards for both capability corrections
+    /// made to this file: `cancel` was already `Advisory` (a correctly
+    /// evidenced finding — the registration-time gate
     /// in `harness::mod` relies on it staying that way); `artifacts` is
-    /// downgraded from an unbacked `Supported` to `Advisory` (finding 2, an
-    /// adversarial Wave-3 review: `wait()` never staged anything before this
-    /// card — see `fake_binary_success_stages_a_real_log_artifact` above for
+    /// downgraded from an unbacked `Supported` to `Advisory`
+    /// (`wait()` never staged anything before
+    /// this — see `fake_binary_success_stages_a_real_log_artifact` above for
     /// the fix itself).
     #[test]
     fn declared_capabilities_match_the_reconciled_iii_d5_values() {
@@ -1798,8 +1795,8 @@ mod tests {
 
     #[test]
     fn the_real_observed_claude_code_version_string_is_recognized() {
-        // Byte-for-byte what `claude --version` printed during this card's
-        // implementation (see the D2 handoff): "2.1.223 (Claude Code)\n".
+        // Byte-for-byte what `claude --version` printed on a real installed
+        // binary: "2.1.223 (Claude Code)\n".
         let (version, error) = parse_version_text("2.1.223 (Claude Code)\n");
         assert_eq!(version, "2.1.223");
         assert_eq!(error, None);
@@ -1833,7 +1830,7 @@ mod tests {
         assert_eq!(error, None);
     }
 
-    /// III-H5: the probe declares zero `model_combinations` (the CLI has no
+    /// The probe declares zero `model_combinations` (the CLI has no
     /// list-models command) and instead attests `model_passthrough:
     /// supported` — the claim the scheduler now relies on to make
     /// claude-code schedulable at all. It must be Supported, carry a

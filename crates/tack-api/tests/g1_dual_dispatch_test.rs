@@ -1,4 +1,4 @@
-//! III-G1 (Wave 6, Phase 57) — collision tests across the two scheduling planes:
+//! Collision tests across the two scheduling planes:
 //! the legacy Docket bridge (`orch_tasks`, dispatched via `dispatcher::dispatch_item`)
 //! and the neutral runner-v1 domain (`execution_requests`). See
 //! `crates/tack-orch/src/adapters/legacy_bridge.rs`'s module doc ("One scheduling

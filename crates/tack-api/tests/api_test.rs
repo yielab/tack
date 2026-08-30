@@ -1450,7 +1450,7 @@ async fn export_yaml_round_trips_through_import() {
     );
 }
 
-// ─── Item provenance / trust boundary (card C2) ────────────────────────────
+// ─── Item provenance / trust boundary ────────────────────────────
 
 /// The acceptance bar TODO.md's C2 card names explicitly: an item imported
 /// from GitHub is marked untrusted at creation time, and that marker

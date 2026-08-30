@@ -1,4 +1,4 @@
-//! Tests for `GET`/`PUT /api/settings/orchestration` (card E1, 2026-08-05) —
+//! Tests for `GET`/`PUT /api/settings/orchestration` —
 //! the runtime-toggleable replacement for the old `TACK_ORCH_ENABLE`-only
 //! design. See TODO.md §6's E1 handoff for the full design writeup.
 //!

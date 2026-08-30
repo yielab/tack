@@ -1,4 +1,4 @@
-//! III-F2: safe, streamed artifact-content storage.
+//! Safe, streamed artifact-content storage.
 //!
 //! Server-side counterpart to `tack-runner`'s `harness::artifact::ArtifactStager`
 //! (the local half — see that module's own doc comment: "no artifact-upload
@@ -327,7 +327,7 @@ mod tests {
         )
     }
 
-    /// III-H9: reproduces the exact `artifact_id` shape
+    /// Reproduces the exact `artifact_id` shape
     /// `tack-runner`'s `engine.rs::artifact_id` produces —
     /// `format!("art_{}", hex(format!("{attempt_id}:{fencing_token}:{sha256}")))`,
     /// itself already ~220 bytes before this module's own (former)

@@ -1,4 +1,4 @@
-//! III-G2: corrupt-journal adversarial coverage for the local runner
+//! Corrupt-journal adversarial coverage for the local runner
 //! journal. This card owns adversarial tests and the audit report only —
 //! no production source is touched here.
 //!

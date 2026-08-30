@@ -1,23 +1,17 @@
-//! III-C2 card-local runner-protocol handler modules. C5 owns global-router
-//! wiring under `/api/runner/v1` (see `docs/contracts/runner-v1/protocol.json`
-//! `base_path`). This router is deliberately unregistered in `handlers.rs`,
-//! mirroring C1's `executions`/`runner_admin` cards.
+//! Runner-protocol handler modules, mounted under `/api/runner/v1` (see
+//! `docs/contracts/runner-v1/protocol.json`'s `base_path`) by `router.rs`.
 //!
-//! Route layout is this card's own choice: only the additive
-//! `recovery-observation` operation has an explicit path in `protocol.json`
-//! (`/attempts/{attempt_id}/recovery-observation`, preserved here verbatim,
-//! relative to `base_path`); every other canonical exchange in
-//! `docs/contracts/runner-v1/` fixes payload shapes, not URLs, so C5 may
-//! rename these when it mounts the router.
+//! Only the additive `recovery-observation` operation has an explicit path in
+//! `protocol.json` (`/attempts/{attempt_id}/recovery-observation`, preserved
+//! here verbatim, relative to `base_path`); every other canonical exchange in
+//! `docs/contracts/runner-v1/` fixes payload shapes, not URLs.
 //!
 //! `runner_auth` lives at `handlers/runner_protocol/runner_auth.rs` (a
 //! submodule of this file) rather than a sibling `handlers/runner_auth.rs`.
-//! That nested layout is what keeps it unregistered in `handlers.rs` today —
 //! Rust resolves `mod runner_auth;` relative to *this file's own path*
 //! (`runner_protocol.rs` → `runner_protocol/`), so the submodule still
 //! resolves correctly when a test pulls this file in via
-//! `#[path = "../src/handlers/runner_protocol.rs"]`, exactly as the card
-//! brief requires.
+//! `#[path = "../src/handlers/runner_protocol.rs"]`.
 //!
 //! Every write below validates attempt id + runner identity (from the
 //! authenticated bearer credential, never a request-body field) + fencing
@@ -67,21 +61,19 @@ use uuid::Uuid;
 // rustc's mod-directory inference for an explicitly-`#[path]`-loaded file is
 // the file's own directory, not `<stem>/`, so an implicit `mod runner_auth;`
 // here resolves to the wrong (nonexistent) sibling path. This attribute
-// pins it to the actual nested file the card brief specifies.
+// pins it to the actual nested file.
 #[path = "runner_protocol/runner_auth.rs"]
 pub mod runner_auth;
 
-// III-F2: nested the same way `runner_auth` is (see that `mod` line's own
+// Nested the same way `runner_auth` is (see that `mod` line's own
 // comment) — declaring these as submodules of this already-registered file
-// keeps them reachable without touching `handlers/mod.rs`, which this card
-// must not edit. `artifact_storage` is the pure storage module (safe paths,
-// streaming write/read); `retention` is the pure event/artifact sweep logic
-// (F5 owns the recurring background task that calls it); `artifact_download`
-// is the operator-facing content-download handler, deliberately never merged
-// into this file's own `routes()` (that router is runner-credential-only —
-// see its own doc comment) — it is proven only via a locally-constructed
-// router in this card's own test file, with its real mounting recorded as a
-// wiring request in `docs/agent-handoffs/part-iii/III-F2.md`.
+// keeps them reachable without touching `handlers/mod.rs`.
+// `artifact_storage` is the pure storage module (safe paths,
+// streaming write/read); `retention` is the pure event/artifact sweep logic;
+// `artifact_download` is the operator-facing content-download handler,
+// deliberately never merged into this file's own `routes()` (that router is
+// runner-credential-only — see its own doc comment) — it is mounted
+// separately in `router.rs`.
 #[path = "runner_protocol/artifact_download.rs"]
 pub mod artifact_download;
 #[path = "runner_protocol/artifact_storage.rs"]
@@ -99,15 +91,14 @@ type HandlerResult = runner_auth::ProtocolResult<Json<Value>>;
 /// default, one level deeper so artifact blobs never collide with attachment
 /// files that already live directly under `TACK_STORAGE_DIR`. This is only
 /// ever used until the integrator wires the real, operator-configured
-/// `TACK_STORAGE_DIR` through — see the F2 handoff's recorded wiring
-/// request. `RunnerProtocolState::new`'s two-argument signature is
-/// deliberately left unchanged (production's one call site,
-/// `router.rs#runner_protocol_routes`, is off-limits to this card) so this
+/// `TACK_STORAGE_DIR` through. `RunnerProtocolState::new`'s two-argument
+/// signature stays unchanged (production's one call site is
+/// `router.rs#runner_protocol_routes`) so this
 /// default is additive, never a breaking change.
 const DEFAULT_ARTIFACT_STORAGE_ROOT: &str = "./storage/execution-artifacts";
 
-/// State for this card's local router. C5 constructs this from the shared API
-/// state when it performs the one permitted global-router integration.
+/// State for this module's local router, constructed from the shared API
+/// state in `router.rs`.
 #[derive(Clone)]
 pub struct RunnerProtocolState {
     pub repo: Repository,
@@ -148,9 +139,7 @@ impl RunnerProtocolState {
 /// further but never loosen it.
 const RUNNER_ROUTER_BODY_LIMIT_BYTES: usize = 4 * 1024 * 1024;
 
-/// The precedence rule an integrator-authorized cross-card fix (III-C2 /
-/// III-C5, see both handoffs' "Amendment: runner-v1 body limit respects the
-/// operator-configured global limit" sections) closed: `min(configured,
+/// The precedence rule: `min(configured,
 /// RUNNER_ROUTER_BODY_LIMIT_BYTES)`. An operator who tightens
 /// `TACK_MAX_BODY_SIZE`/`max_body_size_bytes` below the 4 MiB protocol
 /// ceiling gets a genuinely smaller runner-v1 surface; a loose or unset
@@ -186,7 +175,7 @@ pub fn routes(state: RunnerProtocolState, configured_max_body_size_bytes: usize)
             post(poll_decisions),
         )
         .route("/attempts/{attempt_id}/artifacts", post(submit_artifacts))
-        // III-F2: artifact content upload. A distinct, more-specific
+        // Artifact content upload. A distinct, more-specific
         // `DefaultBodyLimit` on this one route (mirroring
         // `attachments.rs`'s own fixed 50 MB ceiling, independent of the
         // operator-configured global limit) — the router-wide layer below
@@ -225,12 +214,11 @@ pub fn routes(state: RunnerProtocolState, configured_max_body_size_bytes: usize)
 // Nine of the fields below (each individually annotated) are read only by
 // `limits_constants_match_frozen_fixture_exactly`, never by a request-time
 // check in this file. That is not an oversight: every one of them bounds a
-// concern this card's handlers do not implement a code path for —
+// concern no handler in this file implements a code path for —
 // `environment_*` bounds the execution *request's* environment entries
-// (validated at enqueue time, owned by B2/C1, not by any runner-protocol
+// (validated at enqueue time, not by any runner-protocol
 // handler here); `decision_answer_bytes_max` bounds an operator's decision
-// *answer*, and decision resolution has no endpoint in this wave (see the
-// handoff's known limitations — it is scoped to a later wave, F5);
+// *answer*, and decision resolution has no endpoint here yet;
 // `request_timeout_seconds_max` bounds the execution request's timeout
 // policy (enqueue-time, not runner-protocol); `retention_event_days_default`/
 // `retention_artifact_days_default` are background-sweep/storage defaults,
@@ -243,12 +231,12 @@ pub fn routes(state: RunnerProtocolState, configured_max_body_size_bytes: usize)
 //
 // The struct still carries all 27 fields, unconditionally, so the fixture
 // test proves the *entire* frozen `docs/contracts/runner-v1/limits.json`
-// round-trips with no drift — not just the subset this card's handlers
+// round-trips with no drift — not just the subset these handlers
 // happen to enforce today. Each `#[allow(dead_code)]` below is therefore
 // scoped to exactly the field it excuses, not the whole struct or module —
-// unlike the blanket `#[allow(dead_code)]` C5 had to add to the
-// `pub mod runner_protocol;` line in its own `handlers.rs` to keep clippy
-// green once this module was first compiled as a real lib target. C5 may
+// unlike the blanket `#[allow(dead_code)]` on the
+// `pub mod runner_protocol;` line in `handlers.rs`, needed to keep clippy
+// green once this module was first compiled as a real lib target. This module
 // remove that allow now that the dead fields are excused precisely, here,
 // in the file that owns them.
 struct Limits {
@@ -321,8 +309,8 @@ const LIMITS: Limits = Limits {
 };
 
 /// Not fixed by `limits.json`: a reasonable, explicitly-chosen window for the
-/// manifest-accepted upload URL returned by `submit_artifacts`. III-F2 adds
-/// the real content-upload endpoint (`put_artifact_content`, below) this URL
+/// manifest-accepted upload URL returned by `submit_artifacts`. The real
+/// content-upload endpoint (`put_artifact_content`, below) is what this URL
 /// points at; the endpoint itself does not enforce this window (there is no
 /// fixture-defined field to check it against), so it is advisory to the
 /// runner today, not yet a hard server-side expiry.
@@ -330,10 +318,9 @@ const ARTIFACT_UPLOAD_WINDOW_SECONDS: i64 = 600;
 /// Header a runner sets on `PUT .../artifacts/{artifact_id}/content` to carry
 /// its fencing token — the request body *is* the artifact's raw bytes, so
 /// (unlike every other runner-protocol write) the fencing token cannot travel
-/// inside a JSON body. Not part of any frozen fixture: this whole route is
-/// this card's own addition (`docs/contracts/runner-v1/` only fixes the
-/// manifest exchange's payload shape, not this URL — see this file's own
-/// top-of-file doc comment on route-layout freedom).
+/// inside a JSON body. Not part of any frozen fixture: `docs/contracts/
+/// runner-v1/` only fixes the manifest exchange's payload shape, not this
+/// URL.
 const ARTIFACT_FENCING_TOKEN_HEADER: &str = "x-tack-fencing-token";
 /// Not fixed by any fixture: a reasonable no-work poll backoff hint.
 const NO_WORK_RETRY_AFTER_MS: u64 = 5_000;
@@ -431,7 +418,7 @@ fn json_byte_len(value: &Value) -> u64 {
         .unwrap_or(u64::MAX)
 }
 
-/// III-F2: a deliberately permissive `type/subtype` shape check — this is
+/// A deliberately permissive `type/subtype` shape check — this is
 /// not a MIME registry validator (registered types/suffixes/parameters are
 /// out of scope), just enough to reject garbage (empty, no slash, control
 /// characters, absurd length) while accepting every real value this repo's
@@ -500,36 +487,27 @@ async fn authenticate_attempt_request(
 }
 
 /// Validates the embedded runner capability payload shared by `/enroll` and
-/// `/refresh` against B1's [`EmbeddedCapabilitySnapshot`] — the type built
+/// `/refresh` against [`EmbeddedCapabilitySnapshot`] — the type built
 /// exactly for this wire shape (`crates/tack-orch/src/execution/capabilities.rs`),
 /// rather than a hand-rolled, field-by-field walk of the raw `Value`.
 ///
-/// **Adopted from B1's card brief** (III-C2 task 4): this card's original
-/// hand-rolled validator only checked `concurrency`/`labels` structurally and
-/// stored the rest of the payload (`harnesses`, `features`, `limits`,
-/// `reported_at`) as an opaque, size-bounded JSON blob, because strict
-/// `tack_orch::execution::RunnerCapabilities` parsing rejects
-/// `refresh.request.json`'s sparse `features: {}`/`harnesses: []` example
-/// (see the original handoff, "Capability payload shape ambiguity").
-/// `EmbeddedCapabilitySnapshot` is B1's answer to exactly that gap: `features`
-/// is opaque `serde_json::Value` there (so the sparse refresh fixture still
+/// Strict `tack_orch::execution::RunnerCapabilities` parsing rejects
+/// `refresh.request.json`'s sparse `features: {}`/`harnesses: []` example, so
+/// `EmbeddedCapabilitySnapshot` keeps `features` as an opaque
+/// `serde_json::Value` (so the sparse refresh fixture still
 /// parses) while `harnesses`, `limits`, `reported_at` and `concurrency` are
-/// now genuinely typed and structurally validated — a strict improvement
-/// over the previous "everything but concurrency/labels is an untyped blob"
-/// posture, closing that handoff ambiguity rather than merely working around
-/// it. `embedded_capability_snapshot_parses_full_and_sparse_fixtures` in
-/// `capabilities.rs` already proves both `enrollment.request.json` and
-/// `refresh.request.json` parse; `full_capabilities()` in this card's own
-/// `c2_handlers_test.rs` sends the same full shape, so no existing test
-/// payload needed changing.
+/// genuinely typed and structurally validated.
+/// `embedded_capability_snapshot_parses_full_and_sparse_fixtures` in
+/// `capabilities.rs` proves both `enrollment.request.json` and
+/// `refresh.request.json` parse; `full_capabilities()` in
+/// `c2_handlers_test.rs` sends the same full shape.
 ///
 /// This function still owns exactly two things `EmbeddedCapabilitySnapshot`
 /// does not and should not encode — a shape type has no opinion on protocol
 /// *limits* or *business rules*: the pre-parse `capabilities_bytes_max` byte
 /// cap (checked before the typed parse even runs, so an oversized payload
 /// never pays JSON-deserialization cost) and the `available <= total`
-/// business rule B1's brief explicitly called out as this card's own to
-/// keep.
+/// business rule.
 fn validate_capability_payload(
     capabilities: &Value,
 ) -> runner_auth::ProtocolResult<(String, i64, i64)> {
@@ -618,7 +596,7 @@ pub async fn enroll(State(state): State<RunnerProtocolState>, body: Bytes) -> Ha
         )
         .await
         .map_err(|err| {
-            // III-H7: a collision on `agent_runners`'s `UNIQUE` `name` column
+            // A collision on `agent_runners`'s `UNIQUE` `name` column
             // gets the frozen `conflict` outcome
             // (`docs/contracts/runner-v1/errors/conflict.json`), never an
             // unhandled 500 — the same classification
@@ -674,36 +652,33 @@ pub async fn enroll(State(state): State<RunnerProtocolState>, body: Bytes) -> Ha
 // Capability refresh. Runner-bearer authenticated; hashes and (optionally)
 // rotates the runner credential.
 //
-// Credential rotation (`rotate_credential: true`) uses B2's
+// Credential rotation (`rotate_credential: true`) uses
 // `Repository::rotate_runner_credential` — a compare-and-set keyed on the
-// *authenticated* credential hash (`principal.credential_hash`), added by
-// B2's "Three-review fix-up" amendment specifically because this handler's
-// prior direct-`pool()` write had no such predicate: two concurrent or
+// *authenticated* credential hash (`principal.credential_hash`). Without
+// that predicate, two concurrent or
 // retried rotations both authenticate against the same still-valid old
 // hash and silently last-writer-wins, leaving the loser holding/caching a
 // credential the server already discarded (recoverable only via a fresh
-// operator-issued enrollment token). See
-// docs/agent-handoffs/part-iii/III-B2.md, "Three-review fix-up... Defect 3".
+// operator-issued enrollment token).
 //
 // The capability/profile fields (`runner_version`, `name`, `labels`,
-// `capability_snapshot`) still have no dedicated B2 repository method (only
+// `capability_snapshot`) have no dedicated repository method (only
 // enrollment and revocation do), so they remain a direct `Repository::pool()`
-// write — the same precedent C1's `runner_admin.rs` uses for tables with no
+// write — the same precedent `runner_admin.rs` uses for tables with no
 // wrapper — run *after* the credential CAS succeeds (or, on the
 // non-rotating branch, unconditionally). Ordering the CAS first means a
 // rejected rotation (`HashMismatch`) never touches the capability columns.
 //
-// III-H4: a losing rotation can fail at *either* of two points, and both
+// A losing rotation can fail at *either* of two points, and both
 // must answer the same retryable `conflict`, not `unauthorized`. The later
 // point — the CAS itself losing (`CredentialRotationResult::HashMismatch`
-// below) — already did before this card. The earlier point did not:
+// below) — already does. The earlier point does not:
 // `runner_auth::authenticate` above runs a plain `SELECT ... WHERE
 // credential_hash=?` first, and if the *other* concurrent rotation already
 // committed its new hash by the time this request's `authenticate` runs,
 // that `SELECT` finds no row at all and fails "not recognized" (401) before
 // the CAS — the check that would have classified it correctly — ever runs.
-// See `reclassify_refresh_auth_error` immediately below and
-// `docs/agent-handoffs/part-iii/III-H4.md`.
+// See `reclassify_refresh_auth_error` immediately below.
 // ---------------------------------------------------------------------
 
 /// Remaps `authenticate`'s "credential not recognized" failure to the same
@@ -716,7 +691,7 @@ pub async fn enroll(State(state): State<RunnerProtocolState>, body: Bytes) -> Ha
 /// why that ambiguity is accepted rather than resolved). A non-rotating
 /// refresh, or any other `authenticate` failure (missing header, revoked,
 /// inactive, expired), is returned unchanged — none of those are the
-/// rotation-race case this card fixes.
+/// rotation-race case this fixes.
 ///
 /// Peeks `rotate_credential` from the raw, not-yet-validated body — cheap,
 /// side-effect-free, and used only to pick an error code; the real,
@@ -920,12 +895,10 @@ pub async fn claim(
     // type-checked the field and discarded the result — validating a value
     // that is never used implies an enforcement that does not exist. A real
     // cross-check would have to run either inside that same atomic claim
-    // transaction (out of this card's scope; `tack-db` is B2-owned) or as a
+    // transaction, or as a
     // separate, non-atomic read of `agent_runners.available_capacity`
-    // racing exactly the concurrent-claim hazard B2's `BEGIN IMMEDIATE` fix
-    // (see docs/agent-handoffs/part-iii/III-B2.md) was written to close.
-    // Deliberately dropped rather than kept as a vestigial shape check — an
-    // independent verifier's finding; see the handoff.
+    // racing exactly the concurrent-claim hazard the `BEGIN IMMEDIATE` fix
+    // closes. Deliberately dropped rather than kept as a vestigial shape check.
     let wait_ms = as_u64(&value, "wait_ms")?;
     if wait_ms > LIMITS.claim_wait_ms_max {
         return Err(payload_too_large(
@@ -934,7 +907,7 @@ pub async fn claim(
         ));
     }
 
-    // Card III-E6 (Wave 4 integrator): the pure `tack_orch::scheduler` decides
+    // The pure `tack_orch::scheduler` decides
     // *which* selector-eligible queued request (if any) this runner should
     // attempt, against live capacity/heartbeat/label/harness/model data —
     // replacing the pre-Wave-4 naive `ORDER BY created_at LIMIT 1` match.
@@ -974,14 +947,14 @@ pub async fn claim(
             request_snapshot,
         }) => {
             // `base_revision` is a required, immutable field on the frozen
-            // request snapshot (TODO.md III.1.2). `unwrap_or_default()`
+            // request snapshot. `unwrap_or_default()`
             // would silently turn "missing/unreadable" into `""` — a
             // structural zero standing in for unknown, which rule 7
             // forbids. Surface it as `internal_error` instead: B2's own
             // `claim_execution_idempotent_with_snapshot` already validates
             // the full snapshot shape before a request can be enqueued
             // (quarantining anything incomplete as `needs_operator` rather
-            // than leasing it — see III-B2's "Request snapshot hardening"),
+            // than leasing it),
             // so reaching this branch with an absent/malformed
             // `base_revision` indicates a persistence-layer contract
             // violation, not a client input error.
@@ -1332,15 +1305,13 @@ pub async fn submit_events(
             "duplicate_event_ids": batch.duplicate_event_ids,
             "committed_checkpoint": batch.committed_checkpoint,
         }))),
-        // B2's "Three-review fix-up" amendment split the old, collapsed
+        // Splits the old, collapsed
         // `ReplayConflict` into two causes carried by distinct variants: the
         // same `(attempt_id, checkpoint)` idempotency-scoped key reused with
         // different content (this can never succeed by retrying — the
         // non-retryable `idempotency_conflict` code) versus a benign
         // out-of-order resync or a defensive lost compare-and-set (genuinely
-        // retryable — the `conflict` code, unchanged from before this
-        // amendment). See docs/agent-handoffs/part-iii/III-B2.md, "Three-review
-        // fix-up: idempotency-conflict split...".
+        // retryable — the `conflict` code).
         EventApplyResult::IdempotencyConflict => Err(protocol_error(
             StatusCode::CONFLICT,
             StableErrorCode::IdempotencyConflict,
@@ -1638,11 +1609,9 @@ pub async fn submit_artifacts(
                         LIMITS.artifact_metadata_bytes_max,
                     ));
                 }
-                // III-F2: `media_type` had no shape check at all before this
-                // card — any string, of any length, was accepted verbatim.
-                // Not bounded by any `limits.json` field (unlike `sha256`,
-                // which the fixture's own value shape fixes), so this is a
-                // reasonable, explicitly-chosen check this card introduces:
+                // `media_type` is not bounded by any `limits.json` field
+                // (unlike `sha256`, which the fixture's own value shape fixes),
+                // so this is a reasonable, explicitly-chosen check:
                 // a plausible `type/subtype` MIME shape and a modest length
                 // cap, catching both garbage values and an unbounded-length
                 // field slipping through unmeasured.
@@ -1697,7 +1666,7 @@ pub async fn submit_artifacts(
     // decision. The prior blacklist form (`succeeded|failed|cancelled`) let
     // `lost` and `needs_operator` still accept artifact writes, even though
     // those states exist precisely to mean "stop trusting this runner's
-    // reports" (TODO.md III.1.1) — an independent verifier's finding.
+    // reports" — an independent verifier's finding.
     if !matches!(attempt_state.as_str(), "running" | "waiting_decision") {
         return Err(protocol_error(
             StatusCode::CONFLICT,
@@ -1788,8 +1757,7 @@ pub async fn submit_artifacts(
             "state": "manifest_accepted",
             "upload": {
                 "method": "PUT",
-                // III-F2: attempt-scoped (unlike the pre-F2 placeholder path
-                // this replaces) — `artifact_id` alone cannot disambiguate
+                // Attempt-scoped — `artifact_id` alone cannot disambiguate
                 // between two different attempts that happen to choose the
                 // same runner-supplied id, and the real endpoint needs the
                 // attempt to authenticate/fence against.
@@ -1810,7 +1778,7 @@ pub async fn submit_artifacts(
 }
 
 // ---------------------------------------------------------------------
-// III-F2: artifact content upload. Streams the request body straight to
+// Artifact content upload. Streams the request body straight to
 // `ArtifactStorage` (never buffers it whole — see that module's own doc
 // comment) and only commits `content_reference` once both the total byte
 // count and the SHA-256 exactly match the manifest `submit_artifacts`
@@ -2439,9 +2407,8 @@ mod tests {
     }
 
     /// The exact sparse shape `refresh.request.json` uses (`harnesses: []`,
-    /// `features: {}`) — the fixture this card's original handoff flagged as
-    /// unable to satisfy strict `RunnerCapabilities` parsing — must still
-    /// validate under `EmbeddedCapabilitySnapshot`, closing that ambiguity.
+    /// `features: {}`), which fails strict `RunnerCapabilities` parsing, must
+    /// still validate under `EmbeddedCapabilitySnapshot`.
     #[test]
     fn validate_capability_payload_accepts_refresh_fixtures_sparse_shape() {
         let raw = include_str!("../../../../docs/contracts/runner-v1/refresh.request.json");

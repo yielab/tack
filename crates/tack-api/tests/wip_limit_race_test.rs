@@ -1,4 +1,4 @@
-//! Test for card R2 (Wave 3 follow-up, 2026-08-05): `dispatcher::
+//! Test for card R2: `dispatcher::
 //! apply_mapped_status` used to read a WIP-limited column's item count and
 //! then write the new status as two separate, unlocked steps. C3's sprint
 //! dispatch made concurrent writes into the same column an ordinary

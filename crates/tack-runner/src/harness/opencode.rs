@@ -1,24 +1,23 @@
-//! OpenCode harness adapter/probe (card III-D3).
+//! OpenCode harness adapter/probe.
 //!
-//! Implements the frozen [`crate::harness::HarnessAdapter`] (`engine::HarnessAdapter`,
-//! unchanged by this card) and [`crate::harness::HarnessProbe`] for
-//! `harness_kind = "opencode"`, composing D4's shared process/redaction/artifact
+//! Implements [`crate::harness::HarnessAdapter`] and
+//! [`crate::harness::HarnessProbe`] for
+//! `harness_kind = "opencode"`, composing the shared process/redaction/artifact
 //! infrastructure (`crate::harness::{process, redact, artifact}`), the same
-//! seam D1's [`crate::harness::codex::CodexAdapter`] composes.
+//! seam [`crate::harness::codex::CodexAdapter`] composes.
 //!
-//! ## This card's advantage: `opencode` 1.18.0 is actually installed here
+//! ## Verified against a real `opencode` binary
 //!
-//! Unlike D1 (no `codex` binary present), every claim below marked
-//! **observed** was produced by actually invoking a real, unmodified
-//! `opencode` 1.18.0 binary (`which opencode` → a linuxbrew install), always
-//! inside an isolated `HOME`/`XDG_*` sandbox pointed at a throwaway temp
-//! directory (never this repository, never the developer's real
-//! `~/.local/share/opencode/auth.json`, which already holds unrelated live
-//! configuration on this machine), and always using opencode's own
+//! Every claim below marked **observed** was produced by actually invoking a
+//! real, unmodified `opencode` 1.18.0 binary (`which opencode` → a linuxbrew
+//! install), always inside an isolated `HOME`/`XDG_*` sandbox pointed at a
+//! throwaway temp directory (never this repository, never the developer's
+//! real `~/.local/share/opencode/auth.json`, which already holds unrelated
+//! live configuration on this machine), and always using opencode's own
 //! zero-credential `opencode/*` "zen" models — no real provider credential
 //! was ever passed, read, or logged. The exact commands are reproduced in
 //! `docs/agent-handoffs/part-iii/III-D3.md`. Everything else is marked
-//! **assumed** and is deliberately conservative (mirroring D1's `codex.rs`
+//! **assumed** and is deliberately conservative (mirroring `codex.rs`'s
 //! precedent, e.g. rejecting auto-selection) rather than guessed.
 //!
 //! **Observed facts this adapter's design rests on:**
@@ -55,7 +54,7 @@
 //!    prompt) — no orphaned processes, no partial stdout flushed. A prompt
 //!    that triggers a `bash` tool call proceeded **without** any interactive
 //!    approval event and without `--auto`, in the sandboxed environment this
-//!    card tested against (permission behavior could differ under a
+//!    was tested against (permission behavior could differ under a
 //!    different `opencode.json`; the configured attempt timeout is the
 //!    universal safety net regardless).
 //! 6. `opencode` needs a working `PATH` in its *own* environment (to find
@@ -73,40 +72,40 @@
 //!    JSON) whose `info.model.{providerID,id}` names the model **actually**
 //!    used, confirmed independent of what `--model` requested. This is the
 //!    one gap this adapter does **not** close (see "What this adapter does
-//!    not attempt" below) — flagged for a future card, not silently ignored.
+//!    not attempt" below) — flagged for future work, not silently ignored.
 //!
 //! ## What this adapter does not attempt
 //!
-//! - **Auto-selected models are rejected pre-spawn**, exactly like D1's
-//!   `codex.rs`. `ActualExecution.model_provider`/`model_id` are non-nullable
-//!   (III.1.3), and opencode's `--format json` event stream never names the
-//!   provider/model it used for *any* event type observed by this card
+//! - **Auto-selected models are rejected pre-spawn**, exactly like
+//!   `codex.rs`. `ActualExecution.model_provider`/`model_id` are non-nullable,
+//!   and opencode's `--format json` event stream never names the
+//!   provider/model it used for *any* event type observed
 //!   (`step_start`/`text`/`step_finish`/`error` — none carry a model field).
 //!   Fact 7 above shows a real fix exists (`opencode export`), but wiring a
 //!   *second* subprocess call into every successful `wait()` — with its own
-//!   timeout/failure handling — is real, additional scope this card
-//!   deliberately did not take on; it is not silently narrowed, and it is
-//!   the recommended shape for whichever future card wants full
-//!   auto-selection support. Two of three Wave 3 adapters independently
+//!   timeout/failure handling — is real, additional scope
+//!   deliberately not taken on here; it is not silently narrowed, and it is
+//!   the recommended shape for whoever wants full
+//!   auto-selection support. Two of three harness adapters independently
 //!   landing on the same "reject auto-selection, cannot honestly confirm
-//!   the actual model" conclusion is itself evidence for D5.
+//!   the actual model" conclusion is itself corroborating evidence.
 //! - **`opencode`'s own permission/tool policy is not translated from
 //!   `PermissionPolicy`.** OpenCode has its own permission model
 //!   (`opencode.json`, a `--auto` flag) that does not map cleanly onto the
 //!   generic cross-harness `{tools: Vec<String>, network: bool}` shape
-//!   without more evidence than this card gathered; inventing a mapping
+//!   without more evidence than was gathered here; inventing a mapping
 //!   risked looking like enforcement without being enforcement. `--auto` is
 //!   never passed (its own `--help` text calls it "(dangerous!)"); the
 //!   attempt's own timeout is the safety net if some other `opencode.json`
 //!   configuration would otherwise hang awaiting interactive approval.
 //! - **No opencode-specific artifact discovery** (e.g. a git diff of files
 //!   it changed). The raw, already-redacted event stream is staged as a log
-//!   artifact via D4's [`ArtifactStager`] (`artifacts: advisory`).
+//!   artifact via [`ArtifactStager`] (`artifacts: advisory`).
 //!
-//! ## Why this contrasts with `codex.rs`: the card's distinguishing requirement
+//! ## Why this contrasts with `codex.rs`
 //!
-//! Codex's `model_combinations` is always empty (assumption 7 in
-//! `codex.rs`'s own module docs) — Codex's real model-discovery mechanism is
+//! Codex's `model_combinations` is always empty (see `codex.rs`'s own module
+//! docs) — Codex's real model-discovery mechanism is
 //! unverified, so its `validate()` can only check that *some*
 //! provider/model pair was specified, never that the specific pair is real.
 //! This adapter's [`parse_model_combinations`] genuinely enumerates
@@ -115,7 +114,7 @@
 //! [`OpenCodeAdapter::check_pairing_supported`] validates the *exact pair*
 //! against them — catching a valid model id paired with a provider that
 //! never actually offers it, which a flattened list could never distinguish.
-//! This is the card's distinguishing requirement, made possible only because
+//! This distinguishing check was made possible only because
 //! a real `opencode` binary was available to observe.
 
 use std::{
@@ -147,11 +146,11 @@ use crate::harness::{
 const OPENCODE_HARNESS_KIND: &str = "opencode";
 const OPENCODE_PROGRAM_NAME: &str = "opencode";
 const DEFAULT_PROBE_TIMEOUT: Duration = Duration::from_secs(15);
-/// Reuses D1's exact convention for "this adapter cannot confirm which
+/// This adapter cannot confirm which
 /// model the harness actually used, so `ActualExecution` echoes the
-/// validated request instead" — see `codex.rs`'s identical constant. Card
-/// III-D5 centralized both adapters' shared literal into
-/// [`crate::harness::ModelObservationSource`]; this constant is unchanged.
+/// validated request instead — see `codex.rs`'s identical constant. Both
+/// adapters' shared literal is centralized in
+/// [`crate::harness::ModelObservationSource`].
 const MODEL_OBSERVATION_SOURCE: &str =
     crate::harness::ModelObservationSource::RequestedNotConfirmed.as_str();
 
@@ -168,9 +167,9 @@ enum OpenCodeLocator {
     /// A fixed program plus prefix args — how every fake-binary test in this
     /// file points the adapter at `crate::harness::fixtures::fake_harness_command`
     /// (or, for provider/model-enumeration and event-stream tests, a small
-    /// inline `/bin/sh -c '...'` this card writes at test time — never a new
-    /// checked-in fixture file, matching D1's identical choice to keep this
-    /// directory free of concurrent sibling path collisions). Never
+    /// inline `/bin/sh -c '...'` written at test time — never a new
+    /// checked-in fixture file, matching `codex.rs`'s identical choice to keep
+    /// this directory free of concurrent sibling path collisions). Never
     /// constructed by production code (only [`OpenCodeLocator::Search`] is,
     /// via [`OpenCodeAdapter::discover`]), so this variant is
     /// `#[cfg(test)]`-only — matches `codex.rs`'s identical
@@ -315,7 +314,7 @@ fn describe_capture(output: &CapturedOutput) -> serde_json::Value {
 }
 
 /// Terminal-state classification from the process exit alone. Observed fact
-/// 4 (the one real error case this card actually tested — a wrong
+/// 4 (the one real error case actually tested — a wrong
 /// provider/model pairing) exited nonzero, agreeing with the exit code; this
 /// adapter trusts exit code as authoritative rather than also flipping
 /// `terminal_state` on a parsed `{"type":"error"}` event, since doing the
@@ -382,7 +381,7 @@ fn parse_handle_pid(process_id: &str) -> Option<u32> {
 /// A line that doesn't contain a `/`, or that would produce an empty
 /// provider or model half, invalidates the *entire* batch (`Err`) rather
 /// than being silently skipped: dropping a malformed line would silently
-/// under-report a real combination to whatever scheduler (Wave 4's E1)
+/// under-report a real combination to whatever scheduler
 /// trusts this list to be complete. Empty output (no lines at all) is not
 /// itself an error — it means zero models are currently discoverable, a
 /// real, valid state, not a parse failure.
@@ -553,7 +552,7 @@ impl OpenCodeAdapter<crate::SystemClock> {
         )
     }
 
-    /// Card III-D5, `pub(crate)` and test-only: points this adapter at an
+    /// `pub(crate)` and test-only: points this adapter at an
     /// arbitrary fixture command instead of a real `opencode` binary, for
     /// the "same fixture completes through all three fake adapters"
     /// acceptance proof in `harness::mod::tests` (which needs to construct a
@@ -627,8 +626,8 @@ where
     /// `validate`; `start` relies on the engine's guaranteed
     /// validate-before-start ordering rather than re-probing on every
     /// attempt (mirrors `codex.rs`'s identical `check_selection`/`start`
-    /// split, applied to a check this card additionally has that Codex does
-    /// not).
+    /// split, applied to a check Codex does
+    /// not have).
     fn check_selection(&self, spec: &ExecutionSpec) -> Result<(String, String), HarnessError> {
         if spec.work.request.requested_harness_kind.as_str() != OPENCODE_HARNESS_KIND {
             let reason = format!(
@@ -870,19 +869,19 @@ where
         }
     }
 
-    /// Honest feature support (rule 7: real reasons, not guesses). Contrast
+    /// Honest feature support: real reasons, not guesses. Contrast
     /// with `codex.rs`'s `feature_capabilities`: `usage` is `advisory` here
-    /// (not `unsupported`) because this card *did* observe real token/cost
-    /// figures in opencode's own output — see [`summarize_events`].
+    /// (not `unsupported`) because real token/cost
+    /// figures were observed in opencode's own output — see [`summarize_events`].
     fn feature_capabilities(&self) -> FeatureCapabilities {
         FeatureCapabilities {
-            // Card III-D5 finding 1: downgraded from `Supported`. This
+            // Downgraded from `Supported`. This
             // adapter's only cancellation primitive is
             // `harness::process::SupervisedProcess::cancel` (a process-group
-            // SIGTERM/SIGKILL) — the exact mechanism D2 proved (via `ps`,
+            // SIGTERM/SIGKILL) — the exact mechanism proved (via `ps`,
             // twice, against real Claude Code) cannot reliably reach a
             // descendant a harness's own shell-tool spawns into a new OS
-            // session. An adversarial check against this card's own real
+            // session. An adversarial check against a real
             // `opencode` binary found the identical disjoint-session pattern
             // for a bash-tool subprocess (`ps`: the tool subprocess and its
             // own backgrounded child share a session/group disjoint from the
@@ -1034,7 +1033,7 @@ where
                 probe_error: Some(reason),
                 probed_at,
                 model_combinations: Vec::new(),
-                // III-H5: opencode is NOT pass-through — see the successful
+                // opencode is NOT pass-through — see the successful
                 // probe arm below; unchanged by a failed probe.
                 model_passthrough: Some(CapabilityValue {
                     support: CapabilitySupport::Unsupported,
@@ -1058,7 +1057,7 @@ where
                 probe_error: None,
                 probed_at,
                 model_combinations,
-                // III-H5: honestly Unsupported, not merely un-attested —
+                // Honestly Unsupported, not merely un-attested —
                 // `resolve_model` refuses any requested model that is not in
                 // the enumerated combinations, so a pass-through claim here
                 // would be false. Scheduling against opencode stays
@@ -1087,7 +1086,7 @@ where
                     )),
                     probed_at,
                     model_combinations: Vec::new(),
-                    // III-H5: same honest Unsupported as the arms above.
+                    // Same honest Unsupported as the arms above.
                     model_passthrough: Some(CapabilityValue {
                         support: CapabilitySupport::Unsupported,
                         reason: Some(
@@ -1472,8 +1471,8 @@ fi
     }
 
     /// A second inline fixture whose `run`-suffixed invocation prints a
-    /// real, observed-shaped JSONL event stream (adapted from this card's
-    /// actual `opencode run --format json` capture — see the handoff),
+    /// real, observed-shaped JSONL event stream (adapted from an
+    /// actual `opencode run --format json` capture),
     /// regardless of its own args. Only ever used to drive `start()`
     /// directly (never through the probe-based `validate()`), so it does
     /// not need to branch on its arguments the way
@@ -1656,7 +1655,7 @@ fi
         std::fs::remove_dir_all(empty_dir).expect("cleanup");
     }
 
-    /// Acceptance (this card's distinguishing requirement): a **valid**
+    /// A **valid**
     /// model id paired with the **wrong** provider is rejected pre-spawn,
     /// even though `gpt-4` is genuinely a real, discoverable model — just
     /// under `openai`, never `anthropic`. Proves the check is a real pairing
@@ -1933,7 +1932,7 @@ fi
         ));
     }
 
-    // ---- real-shaped event stream (this card's usage-extraction advantage) --
+    // ---- real-shaped event stream (usage extraction) ----------------------
 
     /// Drives a real, observed-shaped JSONL event stream (see
     /// [`jsonl_run_fixture_command`]) and proves usage is extracted as
@@ -2043,9 +2042,9 @@ fi
 
     #[test]
     fn parse_model_combinations_groups_by_provider_and_preserves_pairing() {
-        // The exact six lines this card observed from a real, freshly
-        // installed opencode 1.18.0 with zero configured credentials (see
-        // the handoff), plus two synthetic providers to prove grouping
+        // The exact six lines observed from a real, freshly
+        // installed opencode 1.18.0 with zero configured credentials,
+        // plus two synthetic providers to prove grouping
         // across more than one provider in the same batch.
         let stdout = "opencode/big-pickle\n\
                        opencode/deepseek-v4-flash-free\n\
@@ -2149,7 +2148,7 @@ fi
         assert_eq!(capability.installed_version, "1.18.0");
         assert_eq!(capability.probe_error, None);
         assert_eq!(capability.model_combinations.len(), 2);
-        // III-H5: opencode is declaration-based, not pass-through — the
+        // opencode is declaration-based, not pass-through — the
         // adapter refuses undeclared models pre-spawn, so the attestation
         // must be an explicit Unsupported, never Supported or absent.
         let passthrough = capability
@@ -2263,9 +2262,9 @@ fi
         );
     }
 
-    /// Card III-D5 finding 1, direct regression guard — mirrors `codex.rs`'s
-    /// identical test. An adversarial check against this card's own real
-    /// `opencode` binary found the same disjoint-session pattern D2 found
+    /// Direct regression guard — mirrors `codex.rs`'s
+    /// identical test. An adversarial check against a real
+    /// `opencode` binary found the same disjoint-session pattern found
     /// for Claude Code (a bash-tool subprocess in its own session/group,
     /// distinct from the top-level process), so `Supported` was never
     /// justified here either.
@@ -2379,9 +2378,9 @@ fi
 
     // ---- opt-in live test ------------------------------------------------
 
-    /// Acceptance: "an opt-in live test records version and artifact" — and,
-    /// because a real `opencode` binary is this card's specific advantage
-    /// over D1, this test goes further: a real non-interactive run against
+    /// An opt-in live test that records version and artifact — and,
+    /// because a real `opencode` binary is available here, this test goes
+    /// further than `codex.rs`'s: a real non-interactive run against
     /// a real (throwaway) fixture repo, using whichever zero-cost
     /// `opencode/*` model the live probe *actually* discovers (never
     /// hardcoded), recording real token usage. Sandboxes `HOME`/`XDG_*` to a
