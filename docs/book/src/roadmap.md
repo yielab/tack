@@ -1,6 +1,19 @@
 # Roadmap
 
-**Current version:** 0.1.0-beta.6 (unreleased work pending → `v0.1.0-beta.7`)  
+> **Where this project actually stands, as of 2026-08-30.** Phases 0–56 are delivered and
+> merged on `develop`. **Nothing since `v0.1.0-beta.6` (2026-06-22) has ever been released**,
+> so the entire runner fleet — the thing that distinguishes Tack — is not downloadable by
+> anyone. Phase 57's tag is refused: the live smoke fails, and `codex` has never completed a
+> live attempt. Two cycles are active in parallel: **Phase 58** (`tack serve --with-runner`,
+> packaging and first run) and **Phase 59** (adoption and the first real public release,
+> opened by the audit of 2026-08-30). Both are carded in [TODO.md](../../../TODO.md), Parts
+> IV and V. Sections below this banner describe **intent**; the boards describe what shipped.
+>
+> The rest of this file is long and mostly closed-phase history. If you are picking work up
+> cold, read the two _Next_ sections at the end — _Standalone Single-Binary Operation_ and
+> _Adoption & First Public Release_ — and skip everything between.
+
+**Current version:** 0.1.0-beta.6 (a large body of unreleased work is pending → `v0.1.0-beta.7`)  
 **Status:** All thirteen engineering phases complete, plus competitive/growth phases
 20 (MCP server), 22 (dev-native CLI), 23 (Table view), 24 (positioning & presets),
 and 25 (local-first). A full-repo audit (July 2026) produced the **audit-driven
@@ -2383,12 +2396,21 @@ three most common extension patterns.
 
 # Next — Harness-Agnostic Runner Fleet (Phases 50–57)
 
-**Status:** in progress — Phases 50–56 delivered (merged onto the branch, unreleased); Phase 57
-(the Docket bridge, recovery and release phase) is the only phase remaining, and its release
-blockers are now closed except one: `codex` is not installed on the development machine, so the
-three-harness live smoke cannot complete for that harness. Updated 2026-08-25 against `TODO.md`'s
-Part III board (integration SHA `6252f52`/`c193a77` on `develop`), the authority for wave status
-and accepted integration SHAs.
+**Status:** feature-complete, **release still refused.** Phases 50–56 delivered; Phase 57 (the
+Docket bridge, recovery and release phase) is the only phase remaining. Updated 2026-08-26
+against `TODO.md`'s Part III board (integration SHA `6252f52`/`c193a77` on `develop`), the
+authority for wave status and accepted integration SHAs.
+
+**Corrected 2026-08-26 — the previous reading of this line was wrong.** It said the only
+remaining blocker was that `codex` was not installed. `codex` has since been installed
+(`codex-cli 0.149.1`; the smoke now reports 3 of 3 harnesses present for the first time in
+this cycle) and `./scripts/smoke.sh --live` was run in full. It **failed**: the live
+`opencode` attempt never reached a terminal state within its 300 s budget, and all three
+harness kinds then failed step 8 — plausibly as a cascade of that hang saturating the
+capacity-1 runner, though that has explicitly **not** been verified. Installing `codex` moved
+the blocker; it did not clear it, and `codex` has still never completed a live attempt. The
+Wave 9 amendment on the Part III board carries the full observation and the four genuinely
+open items. Do not treat the release as one smoke run away.
 This section supersedes the unstarted implementation work in Phases 43–49. Phases 39–42 and
 every earlier section remain in this document as implementation and decision history.
 
@@ -2608,7 +2630,9 @@ lifecycle, decisions, artifacts and usage are first-class protocol values.
 | 54 | Fleet Scheduler & Item Assignment UX | ✅ Done — Wave 4, integration SHA `8a6e613` |
 | 55 | Decisions, Artifacts & Realtime Activity | ✅ Done — Wave 5, integration SHA `073aa4d` |
 | 56 | Model Profiles, Policy & Honest Usage | ✅ Done — Wave 5, integration SHA `073aa4d` |
-| 57 | Docket Bridge, Recovery & Release | **next** — unblocked now that Wave 5 is accepted |
+| 57 | Docket Bridge, Recovery & Release | **open** — feature work delivered through Wave 9; the tag is refused. `codex` is installed as of 2026-08-26 and the live smoke still fails; see the status correction above |
+| 58 | Standalone Single-Binary Operation | **active** — see _Next — Standalone Single-Binary Operation_ below; does not depend on Phase 57's release |
+| 59 | Adoption & First Public Release | **active** — see _Next — Adoption & First Public Release_ below; opened by the adoption audit of 2026-08-30 and independent of Phase 58 except for the demo card |
 
 ### Phase 50 — Boundary, Safety & Contract Freeze
 
@@ -2911,7 +2935,7 @@ orchestration row is erased to achieve the cutover.
 
 | Capability | State |
 |---|---|
-| Separate attempts through Codex / Claude Code / OpenCode | adapters exist for all three; claude-code and opencode proven live against their real CLIs. Codex remains unproven against its real binary — still never installed on any development machine that has run the smoke suite; scheduling itself is no longer the blocker (see next row) |
+| Separate attempts through Codex / Claude Code / OpenCode | adapters exist for all three; claude-code and opencode proven live against their real CLIs. **Updated 2026-08-26:** `codex` is now installed (`codex-cli 0.149.1`) and the smoke reports 3 of 3 harnesses present for the first time — but codex has still never _completed_ a live attempt, so this stays two of three, never rounded up. The live run that followed the install failed for an unrelated reason (the opencode attempt hung, then all three failed step 8, plausibly as a saturation cascade — unverified). Scheduling itself is not the blocker (see next row) |
 | Only a supported provider and opaque model | enforced pre-spawn, including wrong-provider pairings; resolution provenance (request → agent-profile → project → fleet → auto-select) wired onto the live create path (project tier still always resolves `None` — no storage exists). III-H5 closed the schedulability P0: claude-code/codex are schedulable via a pass-through capability attestation (`HarnessCapability.model_passthrough`), proven live with the real `claude` binary |
 | Exact runner or fleet selection | scheduler live-wired to real data (Wave 4) and proven end-to-end at the Rust/CLI/UI layers. `agent_fleet_members` now has a write route (III-H8) — an operator can populate a fleet over the API and a fleet-targeted request schedules onto a member, proven against real DB rows |
 | Requested vs. actual execution facts | recorded; actual model confirmable on Claude Code only (unchanged since Phase 53) |
@@ -2925,3 +2949,263 @@ Two release-blocking bugs found and closed since Phase 56: a losing credential-r
 answered a healthy runner with a false-fatal `401` instead of retryable `409` (III-H4), and a
 second same-named runner enrolling on one host 500'd instead of succeeding (III-H7). Neither is a
 capability gap in the table above, but both would have failed a real multi-runner deployment.
+
+---
+
+# Next — Standalone Single-Binary Operation (Phase 58)
+
+**Status:** not started. Decided in
+[`docs/adr/0058-standalone-single-binary-runner.md`](../../adr/0058-standalone-single-binary-runner.md).
+Execution is tracked card-by-card on the **Part IV board** in `TODO.md` (§IV.0–§IV.6), which is
+the authority for wave status, card ownership and accepted integration SHAs. This section
+records architectural intent; the board records what actually shipped.
+
+**Does not depend on Phase 57's release.** The two are independent: Phase 57 is about proving
+and tagging the fleet, Phase 58 is about how the product is packaged and first run.
+
+## Why this phase exists
+
+Tack's stated principle is a single `tack` binary. The runner fleet, correctly, ships as a
+second one. For a fleet of remote runners that is the right shape — but for the most common
+case, one developer on one machine, it means: build or install a second binary, create a
+pending runner, copy a one-time token out of terminal output, export three environment
+variables, and keep a second process alive. Four manual steps and two artifacts before the
+product does the thing it exists to do.
+
+The feedback that opened this phase was blunt: the split is "totalmente antiintuitivo" and
+"muy fraccionado para la mayoría de usos" against "su principio final de un solo binario".
+
+## The observation that resolves it
+
+**ADR 0050 separates roles, not binaries.** Its rules are about who schedules work, who owns
+processes, who holds credentials, and which direction connections open. None of them say
+anything about how many executables ship. The `tack` binary already hosts two distinct roles —
+HTTP server and API client — chosen by subcommand. A third is consistent with that design
+rather than a departure from it.
+
+## Product outcome
+
+One command, `tack serve --with-runner`, takes a machine with one harness installed and no
+prior Tack state to a completed agent attempt visible in the UI. No second binary. No pending
+runner to create. No one-time token to copy.
+
+Distributed operation is unchanged: a fleet of remote runners works exactly as before, through
+the same protocol and the same client, and `tack-runner` remains shippable on a machine that
+has no server.
+
+## Non-negotiable rules for this phase
+
+- **The embedded runner speaks runner-v1 over loopback HTTP, like any remote runner.** No
+  in-process handler calls, no shared `AppState`, no privileged path. There stays exactly one
+  protocol-client implementation and one server-side path serving it. An in-process shortcut
+  would be a second path free to drift from `docs/contracts/runner-v1/` — which the fixtures
+  exist to prevent — and a path `scripts/smoke.sh` does not exercise, making the mode most
+  users run the mode least proven.
+- **`tack-api` never depends on `tack-runner`.** The composition root is `tack-cli`, which
+  already depends on `tack-api`. ADR 0050's "the Tack API never starts a coding harness" stays
+  literally true of the API crate.
+- **Off by default; loud on failure.** An embedded runner executes arbitrary coding-agent
+  processes on the host serving the UI — strictly more dangerous than anything Tack currently
+  gates. It is opt-in (`--with-runner` / `TACK_LOCAL_RUNNER_ENABLE`), and a server that keeps
+  running after its runner failed to start is indistinguishable from a scheduler bug, so that
+  is an error rather than a log line.
+- **Auto-enrollment is refused on any non-loopback bind.** Tack served to a team on `0.0.0.0`
+  plus a self-enrolling agent executor is a remote-code-execution surface, not a convenience.
+  Refusal is a startup error, never a silent downgrade.
+- **Vendor credentials stay outside Tack.** Provider keys (Anthropic, OpenAI, OpenRouter, a
+  local endpoint) live in each harness's own environment on the machine running the runner
+  role. A Tack model gateway remains an explicit non-goal — see *Explicitly deferred* above,
+  unchanged.
+- **Packaging only.** No change to the runner-v1 contract, the scheduler, fleets, migrations,
+  the operator API or the frontend.
+
+## Scope
+
+- Extract the runner's composition root into a reusable library entry point so the standalone
+  binary and any embedder share one wiring rather than two that drift.
+- Add a readiness and bound-address signal to the server so an embedder can start a runner
+  against the real address once the listener accepts, without polling a guessed URL.
+- `tack runner start` — the runner role in the `tack` binary.
+- `tack serve --with-runner` — both roles in one supervised process, gated and loopback-checked.
+- Zero-touch local enrollment: self-provision a pending runner in-process, then redeem the
+  one-time token over loopback HTTP through the ordinary protocol path, storing the durable
+  credential owner-only. Hashes-only storage server-side is unchanged.
+- `tack runner doctor` — what this machine can run, what each harness declares, and where its
+  model credentials come from. This closes a real reported gap: today that information exists
+  only inside a capability snapshot posted to a server, so "how do I configure Claude, Codex,
+  OpenRouter or a local model" has no local answer.
+- A standalone smoke step that can genuinely fail, plus the configuration and provider-
+  credential documentation `docs/CONFIG.md` currently lacks entirely.
+
+## Explicitly deferred within this phase
+
+- `tack.toml` support for the enable gate. That file is `tack-api`'s configuration surface and
+  the gate belongs to `tack-cli`; a second reader of one file is not needed to deliver this.
+- Any change to how models are selected, resolved or validated. `model_profiles` (migration
+  043) remains consulted by nothing — a standing finding since Phase 56, untouched here.
+
+## Exit
+
+On a machine with one harness installed and no prior state, `tack serve --with-runner` is the
+only command needed to reach a completed attempt. The embedded runner is off unless enabled,
+refuses to auto-enroll on a non-loopback bind, and shares one code path with remote runners.
+Remote fleets are unaffected. `runner_contract`, `wave2_gate` and `openapi_contract` are
+unchanged and drift-free, because nothing in this phase may touch what they pin. Binary-size
+growth is measured and recorded as a real number, never estimated.
+
+---
+
+# Next — Adoption & First Public Release (Phase 59)
+
+**Status:** active, not started. Opened by the **adoption audit of 2026-08-30**, whose
+findings are consolidated below. Execution is tracked card-by-card on the **Part V board**
+in `TODO.md` (§V.0–§V.6), which is the authority for wave status, card ownership and
+accepted integration SHAs. This section records the audit and the intent; the board records
+what actually shipped.
+
+**Independent of Phase 58** except for one card: the demo (V-C2) needs `tack serve
+--with-runner` so the recording is one command rather than four steps and a copied token.
+
+## Why this phase exists
+
+Tack has been a public repository since 2026-03-15. On 2026-08-30 it had **zero stars, zero
+forks, zero human-filed issues and one human contributor**. Every open pull request was from
+Dependabot.
+
+That is not a verdict on the code. The same audit measured ~122k lines of Rust across six
+crates, ~45k lines of SolidJS, 1380 passing workspace tests, 57 migrations, a 92-path
+documented API, a ~113 ms cold start at ~11.7 MiB resident, and durable execution semantics
+— leases, fencing tokens, replay tables, recovery audits — that no competitor in the
+category has. It is a verdict on the fact that **the project has never been released,
+published, positioned, or shown to anybody.**
+
+The preceding eight phases asked "does it work?". This one asks "can a stranger get it, run
+it, and understand what it is?" — and today the answer is no, for reasons that are mostly
+not code.
+
+## What the audit found
+
+### The install path advertised to the public does not work
+
+`README.md` prints, as the headline install method:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh | sh
+```
+
+**There is no `main` branch.** The repository's default branch is `develop`;
+`git ls-remote --heads origin main` returns empty, and the URL has returned **404** since the
+repository was made public. The script itself is fine — served from `develop` it returns 200.
+Only the path is wrong, and `cargo install --git` masked it locally because cargo follows the
+default branch. Card **V-A1**.
+
+### The differentiator has never been downloadable
+
+The only release is `v0.1.0-beta.6`, cut **2026-06-22**, whose four assets are `tack-*`
+archives only. Everything that makes Tack distinct — the durable execution domain, the
+`tack-runner` binary, harness adapters, fleet scheduling, decisions, artifacts, model
+profiles: Phases 50 through 58 — postdates it entirely. A visitor who follows the README
+today downloads a Tack with no runner fleet at all.
+
+**A correction the audit made to itself, recorded so it is not repeated:** the first reading
+was that CI does not package the runner. That is **false**. `release.yml` has built
+`tack-runner` with `cargo auditable` and packaged it into its own per-platform archive, with
+the systemd unit, since `7d78de3` on 2026-08-19. The gap is that **no tag has been cut
+since**. Card **V-A3** cuts one; it does not fix CI.
+
+### The live smoke fails, and Phase 57's blocker was misdiagnosed
+
+Phase 57's tag was believed to be one `codex` installation away from green. It was installed
+on 2026-08-26 — three of three harnesses present for the first time — and
+`./scripts/smoke.sh --live` returned **`SMOKE FAILED`** for a different reason: a live
+attempt that never reached a terminal state, and a step-8 failure message that had been
+recorded as stale six days earlier and never reworded, which then misled two readers into
+seeing a regression that was not there. Card **V-A2** owns the four open questions the Wave 9
+amendment left. Codex has still never completed a live attempt.
+
+### The positioning names the category where Tack loses
+
+The repository description reads *"Self-hosted project manager in a single binary — no
+Docker, no database server."* It does not mention agents. That sentence enters Tack in the
+category of Plane (~54.6k ★), Huly (~26.9k ★), Focalboard (~26.3k ★), Leantime (~9.4k ★) and
+Vikunja (~3.8–5k ★) — mature tools with large communities — while omitting the one capability
+none of them has. The README's opening line then describes two products at once and assumes
+the reader knows what a harness is. Meanwhile the mdBook under `docs/book/` is good and
+**unpublished**: `yielab.github.io/tack` is a 404 and `homepageUrl` is empty. Card **V-A4**.
+
+### The identity model is undeclared rather than decided
+
+There is no users table, no sessions and no per-user permissions. `assignee` is a free-text
+column; `roles` is a per-project colour label attached to items, not an identity.
+Authorization is one shared bearer token, and when no token is configured `require_token`
+allows everything by design, for pure-local mode.
+
+That is a defensible design for a single operator. It is not "self-hosted for a team", and
+the documentation does not distinguish them — a reader who sees "self-hosted" reasonably
+assumes accounts exist. The posture also aged badly: Phase 27.2 made a non-loopback bind with
+no token a **warning**, which was proportionate when the product stored task text and is not
+now that the same server schedules agents that execute code. ADR 0058 already chose a startup
+**error** for that shape of risk. Card **V-B1** decides and records the posture; it does not
+build identity.
+
+### Two execution models coexist in the schema and the UI
+
+Parts I and II built a complete control plane against exactly one backend (docket): a
+`ControlPlane` trait, a reconciler, an adapter, 11 `orch_*` tables — including
+`orch_runs_new` and `orch_approvals_new`, leftovers of migration 037's rebuild — a
+`control_planes` table, an Approvals inbox and a ControlPlanesManager. Part III replaced that
+model with the native pull-based runner and kept docket as an optional legacy bridge. Both
+now sit side by side, and a reader cannot tell which "fleet" is current.
+
+The cost of removing it is not trivial and the audit will not pretend otherwise: **234 Rust
+doc comments cite `TODO.md` section numbers** from those cycles, and the docket half of
+`tack-orch` is interleaved with the runner-v1 execution domain that Part III depends on. Card
+**V-B2** measures the surface, writes the ADR, and gates — deletion, if chosen, is a later
+card that ADR authorizes.
+
+## The competitive situation, and why the timing is the argument
+
+The nearest thing to Tack that ever existed — **Vibe Kanban**, a kanban board orchestrating
+Claude Code, Codex and Gemini agents — **shut down on 2026-04-10** when its company (Bloop)
+closed. Its farewell states it had thousands of engineers using it daily and never found a
+business model. **Crystal**, the other popular open-source orchestrator, was **deprecated in
+February 2026**.
+
+What remains above Tack in that category is closed-source (Conductor — macOS-only, $22M
+Series A; Sculptor — Claude-only) or is not a board at all (OpenHands, Emdash). What remains
+in the project-management category executes nothing.
+
+**Tack is the only thing that is credibly both**, and there is an identifiable,
+currently-orphaned audience for exactly that. Emdash (YC W26) is collecting it now. The
+category's history carries one warning worth stating plainly: it killed its leader through
+failure to monetize, not failure to be useful — which for a project with no company behind it
+is an advantage rather than a risk.
+
+## What this phase deliberately does not do
+
+No card in Phase 59 adds a product feature. Three cards remove or gate; the rest are
+packaging, proof and truthfulness. The real feature gaps the audit found are recorded here
+and scheduled after adoption, not before it:
+
+- **Outbound notifications / SMTP** — zero references in the tree today; the only webhooks
+  are inbound from GitHub.
+- **Internationalization** — the UI is English-only with no locale infrastructure at all.
+- **Time tracking** — `estimate` exists; `time_spent` does not.
+- **In-UI diff review of agent artifacts** — the step where a human actually decides.
+- **A harness that asks a mid-run question** — the `decisions` path is built, contract-pinned
+  and has never been exercised, because no harness in this tree asks anything. It remains a
+  documented scope limit rather than a defect.
+- **Multi-user accounts** — gated behind V-B1's posture decision.
+
+The ten project-type presets (construction, legal, homework, events) are a live positioning
+question: they pull the story toward generic project management, which is the losing
+category. V-A4 records the trade-off for a human decision and changes no preset code.
+
+## Exit
+
+A stranger with no prior knowledge can find Tack, understand in fifteen lines what it is and
+what it does not do, install it with the command the README prints, run one command to reach
+a completed agent attempt, and watch a sixty-second recording of durable recovery that no
+competitor can produce. Every capability claim on the first screen traces to a proof. The
+identity posture is written down rather than inferred. Nothing is published without explicit
+human approval.
