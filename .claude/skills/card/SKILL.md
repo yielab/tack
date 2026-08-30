@@ -6,34 +6,46 @@ description: Pick up and deliver one card/task from this repo's active planning 
 # Work a board card
 
 > **Report using `.claude/reporting-contract.md`.** Lead with the capability in plain language — what someone can or cannot do now — and keep file and function names in the technical-detail section at the end. Explain every blocker as: what is missing, what it was for, what it blocks.
+>
+> **Budget your reading with `.claude/context-budget.md`** — `TODO.md` whole is ~184k tokens; the active boards are ~15k.
+> **Bound your scope with `.claude/scope-discipline.md`** — this tree's recurring defect is well-built mechanisms with no caller.
 
-
-You are delivering ONE unit of planned work from `TODO.md`. Works for any cycle (Part
-III today, whatever succeeds it tomorrow). The argument is the card/task id if given.
+You are delivering ONE unit of planned work from `TODO.md`. Works for any cycle (Parts IV
+and V today, whatever succeeds them tomorrow). The argument is the card/task id if given.
 
 ## 1. Discover the active cycle — never read TODO.md whole
 
-`TODO.md` is huge and mostly decision history of superseded cycles. Extract, don't read:
+`TODO.md` is ~11k lines. **Reading it whole costs ~184k tokens** — most of a context window,
+for a file that is ~90% closed-cycle history. It is laid out so you never have to:
 
 ```bash
-# The file's own header states which Part/cycle is ACTIVE — trust it over section order:
-head -30 TODO.md
-
-# Map the structure, then pull only what you need by line range:
-grep -n "^# \|^## " TODO.md
+head -55 TODO.md            # header: which Parts are ACTIVE, and the archive rule. ~1k tokens.
+grep -n "^# \|^## " TODO.md # the map. Do this before any sed.
 
 # Your card's section (headings follow "### <ID> — <title>"):
-n=$(grep -n "### <ID> " TODO.md | cut -d: -f1); sed -n "${n},$((n+45))p" TODO.md
+n=$(grep -n "### <ID> " TODO.md | cut -d: -f1); sed -n "${n},$((n+60))p" TODO.md
 ```
 
-From the active cycle's section, locate and read (line-ranged, not whole-file):
-- the **status board** table — which waves are accepted, at which SHA, what's open;
-- the **rules of engagement** for parallel agents;
-- the **shared-file ownership** table for the current wave;
-- your card's **Owns / Tasks / Acceptance**.
+**Current layout (since the 2026-08-30 depuration):** active boards first — **Part V**
+(adoption, §V) then **Part IV** (single-binary, §IV) — in roughly the first 1040 lines. Below
+them, an `# Archive` divider, then Parts I, II and III unchanged. The archive stays in this
+file because 234 Rust doc comments cite its section numbers; do not propose moving it.
 
-Then read only the handoffs in `docs/agent-handoffs/` that your card's section names as
-dependencies. CLAUDE.md (already in context) covers architecture — don't re-derive it.
+**Two Parts are active at once and they share `scripts/smoke.sh`, `README.md` and
+`docs/CONFIG.md`.** Read §V.3 before branching a card in either. It names which card goes
+first and which takes the merge.
+
+From your Part's section, read (line-ranged, not whole-file): the **status board** row for
+your wave, the **rules** section, the **shared-file ownership** table, and your card's
+**Owns / Context / Tasks / Acceptance**.
+
+Then read only the handoffs your card's `Context` names. All 48 handoffs together are ~221k
+tokens; a single large one is ~15k. CLAUDE.md is **already in your context** — don't re-derive
+architecture from source, and don't re-read it.
+
+**Facts a card states as measured are not yours to re-derive.** The boards carry measured
+evidence tables precisely so each agent does not re-measure them. If you think one is wrong,
+check that one row and say so.
 
 ## 2. Durable rules (these outlive any cycle)
 
@@ -74,10 +86,30 @@ git switch -c agent/<card-id-lowercase>-<slug> "$LINE"
 
 ## 3. Deliver, then gate
 
-Implement against the card's **Acceptance** list. Test the claim itself: for "writes
-nothing / rejects before X" claims, assert the absence directly (row counts, untouched
-checkpoint) and prove the test load-bearing by reverting the fix once. Run `/gate
-<scope>` before declaring done.
+Implement against the card's **Acceptance** list — it is the specification, not a floor.
+Test the claim itself: for "writes nothing / rejects before X" claims, assert the absence
+directly (row counts, untouched checkpoint) and prove the test load-bearing by reverting the
+fix once. Run `/gate <scope>` before declaring done.
+
+**Before you write code, check yourself against `.claude/scope-discipline.md`.** The four
+questions that catch most of the waste in this tree:
+
+- Can you name the caller of the thing you are about to write? If not, it belongs to the card
+  that has the caller.
+- Is anything in your diff absent from the card's Acceptance? That is unreviewed scope the
+  integrator did not agree to.
+- Are you adding a trait with one implementor, or a flag whose off-state nothing exercises?
+- Is the card ambiguous about whether X is included? Then it is not. Write the question into
+  the handoff and stop — widening scope to resolve ambiguity is how a packaging card becomes
+  a refactor.
+- **Does any comment you wrote name this card, its wave, its phase, or `TODO.md`?** Delete
+  it. Comments explain the code to a reader who has never seen the board; provenance belongs
+  in the handoff and in `git log`. A 2026-08-30 sweep removed ~1,900 such lines — do not add
+  the next one.
+
+The counter-rule matters as much: doing *less* than the card asks is not discipline, it is an
+unreported gap. No `unimplemented!()`, no silent fake success, no zero standing in for
+unknown.
 
 ## 4. Handoff (mandatory)
 

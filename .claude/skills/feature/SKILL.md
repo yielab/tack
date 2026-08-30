@@ -6,24 +6,47 @@ description: Add or finish a Tack feature (new entity, endpoint, UI view, config
 # Add / finish a feature the repo's way
 
 > **Report using `.claude/reporting-contract.md`.** Lead with the capability in plain language — what someone can or cannot do now — and keep file and function names in the technical-detail section at the end. Explain every blocker as: what is missing, what it was for, what it blocks.
+>
+> **Budget your reading with `.claude/context-budget.md`** — `TODO.md` whole is ~184k tokens,
+> the active boards ~15k, all handoffs together ~221k. Grep before you read; read a range
+> before a file. CLAUDE.md is already in your context — don't re-derive or re-read it.
+> **Bound your scope with `.claude/scope-discipline.md`** — this tree's recurring defect is
+> well-built mechanisms with no caller.
 
 
 For work that exists as a card on the active `TODO.md` board, use `/card` instead — it
 carries the ownership and handoff rules. This skill is the architectural path.
 
-## 0. Check it isn't already half-built
+## 0. Check it isn't already half-built — and that it should exist at all
 
-This codebase repeatedly grows mechanisms with zero callers (modeled-but-unwired columns,
-sweeps nothing invokes). Before designing:
+**This is the step this codebase skips, and it is the expensive one.** The tree carries
+`model_profiles` (a table, a repo module and a UI surface consulted by *nothing* since Phase
+56), a fully built and contract-pinned `decisions` path that no harness has ever exercised,
+and an entire docket control plane that Part III superseded but which cannot simply be
+deleted because 234 doc comments cite its board sections. All three were built well. None of
+them had a caller when they were written.
+
+Read `.claude/scope-discipline.md` before designing. Then:
 
 ```bash
 rg -n "<concept>" crates/ frontend/src | head -30        # existing code paths
-grep -n "<concept>" docs/agent-handoffs/*/*.md | head    # was it attempted/deferred?
+grep -rn "<concept>" docs/agent-handoffs/ | head         # was it attempted/deferred/rejected?
+grep -n "<concept>" TODO.md | head                       # is it already someone's card?
 ```
 
-Recorded open gaps live in the **latest wave's status-board entry** in `TODO.md` and the
-most recent handoffs — read those for current gaps and any already-proposed route shapes
-before inventing your own.
+Three questions to answer before writing anything, in the handoff or the reply:
+
+1. **Who calls it?** Name the caller. If it does not exist yet, this feature is that caller's
+   work, not its own.
+2. **Is it already carded?** Parts IV and V own specific files; §V.5 lists what is
+   *deliberately* out of scope (notifications, i18n, time tracking, accounts). Building one of
+   those off-board conflicts with a decision that was already made.
+3. **Is one implementor enough?** One backend needs no trait. Build for the second real case,
+   not the hypothetical fifth.
+
+Recorded open gaps live in the **active waves' status-board entries** in `TODO.md` (~line
+55 onward; never read the file whole — see `.claude/context-budget.md`) and the most recent
+handoffs.
 
 ## 1. The layering path (inward-out; each layer has its own tests)
 
