@@ -254,8 +254,8 @@ mod tests {
         assert_eq!(decode_base64url("not=valid"), None);
     }
 
-    /// The runner-v1 router (card C2) and the operator execution/fleet
-    /// router (card C1) each authenticate with their own distinct
+    /// The runner-v1 router and the operator execution/fleet
+    /// router each authenticate with their own distinct
     /// credential type and must never be listed here — `require_token`'s
     /// exemption check must stay exact-match, and neither router is mounted
     /// inside the `require_token`-gated sub-app in `router.rs` in the first

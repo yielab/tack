@@ -293,7 +293,7 @@ async fn run_import(
     for item in &data.items {
         // Preserve the imported item's own `source` rather than defaulting to
         // `Manual` — this is what makes the trust marker survive an
-        // export → import round-trip (TODO.md's C2 card acceptance bar). An
+        // export → import round-trip. An
         // export produced before this field existed, or any hand-built
         // payload that omits it, deserializes `item.source` to
         // `ItemSource::Unknown` (untrusted) via `Item`'s `#[serde(default)]`,

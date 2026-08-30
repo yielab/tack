@@ -275,7 +275,7 @@ mod tests {
         assert!(graph.would_create_cycle(id(3), id(1)));
     }
 
-    // ─── topological_order (card C3, sprint DAG dispatch) ─────────────────
+    // ─── topological_order ─────────────────
 
     #[test]
     fn topo_order_simple_chain() {

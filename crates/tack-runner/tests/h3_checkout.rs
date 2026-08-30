@@ -1,4 +1,4 @@
-//! III-H3 — a claimed attempt reaches a real harness process with its own
+//! A claimed attempt reaches a real harness process with its own
 //! checkout of a **real** git repository.
 //!
 //! `crash_matrix.rs` proves the engine's lifecycle against a fake

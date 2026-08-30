@@ -1,4 +1,4 @@
-//! III-G1 (Wave 6, Phase 57) — the Docket compatibility decision and its explicit
+//! The Docket compatibility decision and its explicit
 //! label/policy, plus the pure, DB-free pieces of "one scheduling owner."
 //!
 //! # Decision: maintain
@@ -35,7 +35,7 @@
 //!   design; not manufactured here to close this card early.
 //! - `TACK_ORCH_ENABLE` already makes Docket **optional** at the infrastructure
 //!   level — unset, the reconciler never spawns and every `orch_*` route returns
-//!   `409 orchestration_disabled` (card E1). "Maintain" does not mean "mandatory";
+//! `409 orchestration_disabled`. "Maintain" does not mean "mandatory";
 //!   it means "keep working, keep tested, keep optional."
 //!
 //! # The compatibility label
@@ -46,7 +46,7 @@
 //! label field, and adding one would be a `handlers/orch.rs` response-shape change —
 //! recorded as a request in the III-G1 handoff, not made here). It exists today as
 //! the one place this decision's name and meaning are written down for code to
-//! reference, and for `docs/GITHUB-SYNC.md`/`docs/MCP.md`-style operator docs (III-G3)
+//! reference, and for `docs/GITHUB-SYNC.md`/`docs/MCP.md`-style operator docs
 //! to quote verbatim rather than paraphrase.
 //!
 //! # One scheduling owner
@@ -103,7 +103,7 @@ use tack_db::repo::orch::OrchTask;
 pub const LEGACY_DOCKET_COMPATIBILITY_LABEL: &str = "legacy-docket:maintained-bridge-v1";
 
 /// Human-readable justification for [`LEGACY_DOCKET_COMPATIBILITY_LABEL`], suitable
-/// for direct embedding in operator-facing documentation (III-G3) without
+/// for direct embedding in operator-facing documentation without
 /// paraphrasing the module doc's "Decision: maintain" section.
 pub const LEGACY_DOCKET_COMPATIBILITY_POLICY: &str = "Docket is maintained as an optional legacy bridge (TACK_ORCH_ENABLE, default off). \
      It is never the owner of a new runner-v1 execution request; runner-v1 is this \

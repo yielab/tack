@@ -161,7 +161,7 @@ impl Repository {
 
     /// Distinct `item_id`s that have at least one `orch_events` row of type
     /// `rework_started`, `verification_failed`, or `tester_verdict_failed` — the
-    /// rework-signal definition card D5 chose (see TODO.md §6). Item-level, not
+    /// rework-signal definition card D5 chose. Item-level, not
     /// attempt-level — see this module's doc comment on why `run_id` correlation
     /// isn't usable today. Only reflects events still in the raw table: an item whose
     /// only qualifying event aged past `TACK_ORCH_EVENT_RETENTION_DAYS` and was rolled

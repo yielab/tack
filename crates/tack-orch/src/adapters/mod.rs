@@ -13,7 +13,7 @@ pub mod docket;
 pub mod github_actions;
 
 /// The Prometheus text-exposition parser card A1 built for `/metrics`
-/// (TODO.md §Wave 1, card A1, step 3). Declared here — rather than as a
+/// Declared here — rather than as a
 /// crate-root `pub mod prometheus;` in `lib.rs` — only because `lib.rs` is
 /// frozen after Wave 0 and doesn't already have a placeholder for it (unlike
 /// `adapters`/`reconciler`, which W0-A pre-declared). Card B3 (Wave 2)
@@ -21,7 +21,7 @@ pub mod github_actions;
 pub mod prometheus;
 
 /// One place every caller builds a live adapter from a `control_planes`
-/// row's `kind` (TODO.md card G1, Wave B / Phase 40) — see the module's own
+/// row's `kind` — see the module's own
 /// doc comment for what it replaces and why it lives here, not in
 /// `tack-api`.
 pub mod registry;

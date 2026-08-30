@@ -117,7 +117,7 @@ pub async fn serve() -> anyhow::Result<()> {
     // Start the orchestration reconciler, one task per registered control
     // plane, polling `/health` + `/status.json` (TODO.md §Wave 1, card A2 /
     // task 33.6) — if the *effective* setting says to. Off by default
-    // (TODO.md §0 rule 8, rewritten 2026-08-05 — card E1): the effective
+    //: the effective
     // value is the `app_meta`-stored flag if the UI has ever set one, else
     // `TACK_ORCH_ENABLE`'s startup value — same precedence Cloud Backup
     // already uses for its own settings. Unlike Cloud Backup, this one also
@@ -127,13 +127,13 @@ pub async fn serve() -> anyhow::Result<()> {
     // this boot-time call is just what makes the *initial* state agree with
     // whatever was last saved (or the env default, on a first-ever boot).
     if effective_orch_enabled(&state).await {
-        // Card B4 (Wave 2, realtime broadcast): the store gets a clone of the
+        // The store gets a clone of the
         // same broadcast sender every WebSocket subscriber shares, so it can
         // emit `BoardEvent::AgentRunUpdated`/`ApprovalPending` straight from
         // its `upsert_runs`/`upsert_approvals` — see orch_store.rs's module
         // doc for why the emit lives there and not in the reconciler.
         //
-        // Card C5 (Wave 3, second half of task 35.6): `with_app_context`
+        // `with_app_context`
         // hands the store the rest of what `AppState` carries, so
         // `upsert_runs` can run `dispatcher::apply_mapped_status` — the
         // workflow engine — when a run reaches a terminal state, exactly

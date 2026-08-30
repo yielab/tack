@@ -1,4 +1,4 @@
-//! CORS coverage (card G4). There was no CORS test anywhere in this repo
+//! CORS coverage. There was no CORS test anywhere in this repo
 //! before this file — the three gaps below shipped invisibly because nothing
 //! ever drove a real preflight against the router.
 //!
@@ -67,7 +67,7 @@ async fn preflight_allow_headers(app: &Router, uri: &str, method: &str) -> Strin
 
 /// Card G4, gap (a) + (b) + (c) in one shot: a browser preflight for a
 /// cross-origin `PATCH /api/items/{id}` — the shape both the ETag/If-Match
-/// write path (card G3) and the approval-decide call
+/// write path and the approval-decide call
 /// (`frontend/src/features/approvals/api.ts`) actually send — must list
 /// `if-match` and `x-tack-approval-token` in the allowed request headers,
 /// and a real (non-preflight) response must expose `ETag` so the browser's

@@ -1,4 +1,4 @@
-//! Card C3 (Wave 3, task 35.4): `POST /api/sprints/{id}/dispatch` and
+//! `POST /api/sprints/{id}/dispatch` and
 //! `GET /api/sprints/{id}/dispatch/dry-run` — dispatch a whole sprint's
 //! items to the project's linked control plane in dependency order.
 //!
@@ -29,8 +29,8 @@
 //!    fetch *its* project's workflow, check the category. A dispatch
 //!    inside this same call can never make a same-run dependency ready
 //!    — enqueueing only reaches `on_running`/`on_waiting_approval`
-//!    synchronously (card C1); Done only happens later, out of band, via
-//!    the reconciler (card C5) once a run actually finishes. So the plan
+//!    synchronously; Done only happens later, out of band, via
+//!    the reconciler once a run actually finishes. So the plan
 //!    is computed once, up front, and does not need to (and cannot
 //!    usefully) re-check readiness mid-run — see [`plan_sprint_dispatch`].
 //! 3. **Concurrency: a bounded worker pool, not one-at-a-time and not
@@ -47,7 +47,7 @@
 //!    here.** This module does not open a transaction of its own at all
 //!    — [`plan_sprint_dispatch`] is pure reads, and every write for a
 //!    dispatched item happens inside [`dispatcher::dispatch_item`]'s own
-//!    fetch → HTTP → short-write-txn sequence (card C1), one item at a
+//!    fetch → HTTP → short-write-txn sequence, one item at a
 //!    time, never spanning this module's loop over items.
 //! 5. **The dry-run and the real run share one planning function.**
 //!    [`plan_sprint_dispatch`] — the topological sort plus the
@@ -74,8 +74,8 @@
 //!   goes through [`dispatcher::dispatch_item`], so idempotency
 //!   (`orch_tasks` + the process-wide per-item lock), the `trusted`
 //!   boundary, and `status_map` application are exactly the same code
-//!   path as a single manual dispatch (card C1) or the auto-dispatch hook
-//!   (card C2). This module's only new logic is sprint-scoped: gather the
+//!   path as a single manual dispatch or the auto-dispatch hook
+//!   This module's only new logic is sprint-scoped: gather the
 //!   items, order them, gate them on dependency readiness, and run the
 //!   bounded pool.
 //! - It does not retry a `waiting_on_dependencies` item within the same
@@ -219,7 +219,7 @@ pub async fn plan_sprint_dispatch(
     // Cycles are supposed to be structurally impossible — the DAG validator
     // rejects a cycle-forming edge at creation time (`validate_new_edge`).
     // Fail loudly rather than deadlock or silently truncate the plan if
-    // that invariant is ever violated (TODO.md's explicit ask).
+    // that invariant is ever violated.
     let order = graph.topological_order(&item_ids).map_err(|e| {
         ApiError::Internal(anyhow::anyhow!(
             "sprint {sprint_id}'s dependency graph could not be topologically \

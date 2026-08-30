@@ -1,4 +1,4 @@
-//! Tests for the auto-dispatch hook (card C2, Wave 3, task 35.5):
+//! Tests for the auto-dispatch hook:
 //! `handlers::items::maybe_auto_dispatch`, wired into `PATCH /api/items/{id}`
 //! beside `maybe_sync_github`/`propagate_parent_completion`. When
 //! `orch_links.auto_dispatch` is on and an item's status changes into one of

@@ -1,4 +1,4 @@
-//! III-G1 (Wave 6, Phase 57) — stale `orch_tasks`/`orch_approvals` reconciliation.
+//! Stale `orch_tasks`/`orch_approvals` reconciliation.
 //!
 //! Nothing updates `orch_tasks.remote_status`/`orch_approvals.state` once dispatched
 //! except a poll of a *reachable* control plane (`tack-api::dispatcher`'s initial

@@ -51,7 +51,7 @@ pub enum BoardEvent {
     /// A mirrored approval became (newly) pending on an item this project can
     /// see. Deliberately narrower than a generic "approval updated" event: it
     /// only fires on the transition into `pending`, not on every re-poll or on
-    /// a grant/deny decision (Wave 3's write side owns that). Emitted from
+    /// a grant/deny decision. Emitted from
     /// `orch_store::RepoControlPlaneStore::upsert_approvals`.
     ApprovalPending {
         project_id: Uuid,
@@ -230,7 +230,7 @@ mod tests {
         assert!(!event_matches_project(&event, project_b));
     }
 
-    /// The client-side acceptance bar (TODO.md B4 card): an unknown event
+    /// The client-side acceptance bar: an unknown event
     /// variant on the wire must be ignored, not thrown. On the Rust side the
     /// analogous guarantee is that decoding never panics on a *future* tag —
     /// `#[serde(tag = "type", rename_all = "snake_case")]` on a closed enum

@@ -1,4 +1,4 @@
-//! Card G3 (Wave B, Phase 41): `items.version` (migration 034) is the
+//! `items.version` (migration 034) is the
 //! optimistic-concurrency counter `handlers::items`'s `ETag`/`If-Match`
 //! support is built on. A counter that only moves on the obvious write path
 //! is worse than none — a caller would trust a stale `ETag` computed from a

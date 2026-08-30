@@ -707,7 +707,7 @@ pub enum OrchBlueprint {
     AgenticProduct,
 }
 
-/// A template's default `status_map` (TODO.md §1.3). Field-for-field
+/// A template's default `status_map`. Field-for-field
 /// identical to `tack_api::handlers::orch::StatusMap` by design — the two
 /// are kept in lockstep deliberately (a template's map becomes a project's
 /// `orch_links.status_map` verbatim once something applies it) — but they

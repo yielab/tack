@@ -423,7 +423,7 @@ mod tests {
         );
     }
 
-    // ── error_msg: runner-v1 protocol error envelope (III-E5) ──────────────
+    // ── error_msg: runner-v1 protocol error envelope ──────────────
     //
     // The execution/fleet/runner/profile operator routes answer errors with
     // `{"error": {"code": ..., "message": ..., ...}}` — `error` is an

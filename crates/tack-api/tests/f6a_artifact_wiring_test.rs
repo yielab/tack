@@ -1,4 +1,4 @@
-//! III-F6a: proof that the two Wave 5 integrator wiring requests recorded in
+//! Proof that the two Wave 5 integrator wiring requests recorded in
 //! `docs/agent-handoffs/part-iii/III-F2.md`'s "Schema/API/contract change
 //! requested from another owner" section are actually load-bearing in
 //! *production*, not merely present as source text in `router.rs`.

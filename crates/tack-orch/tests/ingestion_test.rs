@@ -199,7 +199,7 @@ impl ControlPlaneStore for TestRepoStore {
             .map_err(|e| OrchError::Unavailable(e.to_string()))
     }
 
-    // Card B3 (Wave 2, metrics ingestion): added when `ControlPlaneStore` grew
+    // Added when `ControlPlaneStore` grew
     // `upsert_metrics`, mirroring the exact same mechanical-pass-through shape
     // every other method here already has. This test file's own tests don't
     // exercise metrics ingestion (see orch_metrics_test.rs / reconciler.rs's
@@ -216,7 +216,7 @@ impl ControlPlaneStore for TestRepoStore {
             .map_err(|e| OrchError::Unavailable(e.to_string()))
     }
 
-    // Card B2 (Wave 2, trace ingestion): added when `ControlPlaneStore` grew
+    // Added when `ControlPlaneStore` grew
     // three more methods for `orch_trace_cursors`/`orch_events`, same
     // mechanical-pass-through shape as everything above. This test file's
     // own tests don't exercise trace ingestion (see

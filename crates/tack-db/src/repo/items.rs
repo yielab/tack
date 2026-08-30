@@ -57,7 +57,7 @@ impl Repository {
     /// add`, the MCP tool, and the Alexa skill all go through this).
     /// External-data import paths must call
     /// [`create_item_with_source`](Self::create_item_with_source) instead so
-    /// the item's provenance is recorded truthfully — see TODO.md's C2 card
+    /// the item's provenance is recorded truthfully
     /// and `tack_core::models::ItemSource`.
     #[instrument(skip(self))]
     pub async fn create_item(
@@ -330,7 +330,7 @@ impl Repository {
         Ok(rows.into_iter().map(|r| r.into_item()).collect())
     }
 
-    /// Card G3 (Wave B): every branch below bumps `version`, not just the
+    /// Every branch below bumps `version`, not just the
     /// obvious one — a counter that only moves on the common path is worse
     /// than none, because a caller would trust a stale `ETag` computed from
     /// a version this method silently left behind. See

@@ -1,22 +1,22 @@
-//! Codex harness adapter/probe (card III-D1).
+//! Codex harness adapter/probe.
 //!
-//! Implements the frozen [`crate::harness::HarnessAdapter`] (`engine::HarnessAdapter`,
-//! unchanged by this card) and [`crate::harness::HarnessProbe`] for
-//! `harness_kind = "codex"`, composing D4's shared process/redaction/artifact
+//! Implements [`crate::harness::HarnessAdapter`] and
+//! [`crate::harness::HarnessProbe`] for
+//! `harness_kind = "codex"`, composing the shared process/redaction/artifact
 //! infrastructure (`crate::harness::{process, redact, artifact}`).
 //!
-//! ## Environment note this file was written under
+//! ## Unverified against a real binary
 //!
-//! **`codex` is not installed on the machine this card was implemented on.**
-//! Every fake-binary test below drives `crate::harness::fixtures::fake_harness_command`
-//! (D4's shared fixture), never a real `codex` process. The one opt-in live
+//! **No real `codex` binary backs any claim in this file.**
+//! Every fake-binary test below drives `crate::harness::fixtures::fake_harness_command`,
+//! never a real `codex` process. The one opt-in live
 //! test (bottom of the test module) resolves a real `codex` binary from
 //! `PATH` at run time and cleanly skips (prints and returns, no panic) when
 //! absent; it is additionally `#[ignore]`d so a plain `cargo test` never
 //! attempts it. Given that constraint, this adapter's shape for anything
 //! actually specific to Codex's real CLI is a documented **guess**, not a
 //! verified fact. Every such guess is called out here, in code comments at
-//! its point of use, and — exhaustively — in `docs/agent-handoffs/part-iii/III-D1.md`.
+//! its point of use.
 //!
 //! **Unverified assumptions about Codex's real CLI contract:**
 //!
@@ -37,7 +37,7 @@
 //!    → failed, killed-by-timeout → failed). It deliberately does not
 //!    special-case the shared fixture's `malformed` mode into a different
 //!    outcome — see [`classify_exit`] and the `malformed` test below for why
-//!    that would itself be inventing a contract this card cannot verify.
+//!    that would itself be inventing a contract that cannot be verified.
 //! 5. Whether/how Codex reports which model it actually used is unverified.
 //!    Rather than fabricate an "observed" model, [`ActualExecution`]'s
 //!    `model_provider`/`model_id` echo the **requested** selection with
@@ -66,7 +66,7 @@
 //! rejects a spec with no explicit `requested_model_provider`/`requested_model_id`
 //! **pre-spawn** (see [`CodexAdapter::check_selection`]). This is reported to
 //! D5 as a real, falsifying observation about the frozen contract, not
-//! something this card resolves unilaterally (rule 6).
+//! something not resolved unilaterally here.
 
 use std::{
     collections::BTreeMap,
@@ -339,7 +339,7 @@ impl CodexAdapter<crate::SystemClock> {
         )
     }
 
-    /// Card III-D5, `pub(crate)` and test-only: points this adapter at an
+    /// `pub(crate)` and test-only: points this adapter at an
     /// arbitrary fixture command instead of a real `codex` binary, for the
     /// "same fixture completes through all three fake adapters" acceptance
     /// proof in `harness::mod::tests` (which needs to construct a real
@@ -524,10 +524,10 @@ where
     /// `unsupported` rather than guessed, and why `artifacts` is `advisory`.
     fn feature_capabilities(&self) -> FeatureCapabilities {
         FeatureCapabilities {
-            // Card III-D5 finding 1: downgraded from `Supported`. This
+            // Downgraded from `Supported`. This
             // adapter's only cancellation primitive is
             // `harness::process::SupervisedProcess::cancel` (a process-group
-            // SIGTERM/SIGKILL), the exact same mechanism D2 proved (via `ps`,
+            // SIGTERM/SIGKILL), the exact same mechanism proved (via `ps`,
             // twice, against real Claude Code) cannot reliably reach a
             // descendant a harness's own shell-tool spawns into a new OS
             // session — and an equivalent check against the real `opencode`
@@ -669,7 +669,7 @@ where
             probed_at: DateTime::<Utc>::from(self.clock.now()),
             // Deliberately always empty — see module docs assumption (7).
             model_combinations: Vec::new(),
-            // III-H5 pass-through attestation: a claim about THIS adapter's
+            // A pass-through attestation: a claim about THIS adapter's
             // invocation contract (`--model <requested_model_id>` is passed
             // verbatim, and a spec without an explicit model is rejected
             // pre-spawn — see the module docs), not about which models
@@ -940,8 +940,8 @@ where
         }
         #[cfg(not(unix))]
         {
-            // "reconcile the journal only when reconciliation is genuinely
-            // supported" (III-D1 task): non-Unix has no portable liveness
+            // Reconcile the journal only when reconciliation is genuinely
+            // supported: non-Unix has no portable liveness
             // primitive here (matches `harness/process.rs`'s own documented
             // non-Unix cancellation fallback), so this is honestly reported
             // as unavailable rather than guessed.
@@ -1305,7 +1305,7 @@ mod tests {
 
         // The fixture's `malformed` mode exits 0; this adapter classifies
         // purely on exit code (assumption (4)), so this is `Succeeded`, not
-        // a fabricated `Failed` this card cannot honestly claim.
+        // a fabricated `Failed`.
         assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
         let preview = outcome.terminal_reason["stdout"]["text_preview"]
             .as_str()
@@ -1435,7 +1435,7 @@ mod tests {
         assert_eq!(capability.installed_version, "9.9.9");
         assert_eq!(capability.probe_error, None);
         assert!(capability.model_combinations.is_empty());
-        // III-H5: with no enumerable models, schedulability rests on the
+        // With no enumerable models, schedulability rests on the
         // pass-through attestation — it must be Supported and carry a reason.
         let passthrough = capability
             .model_passthrough
@@ -1537,11 +1537,11 @@ mod tests {
         );
     }
 
-    /// Card III-D5 finding 1, direct regression guard: this adapter's only
+    /// Direct regression guard: this adapter's only
     /// cancellation primitive is `harness::process::SupervisedProcess::cancel`
-    /// (a process-group SIGTERM/SIGKILL), which D2 proved cannot reliably
+    /// (a process-group SIGTERM/SIGKILL), which cannot reliably
     /// reach a descendant a harness's own shell-tool spawns into a new OS
-    /// session — and this card's own registration-time gate
+    /// session — and the registration-time gate
     /// (`AdapterRegistry::register_probe`) refuses to register any probe
     /// still claiming `Supported`. This pins the value directly, not only
     /// through the registration side effect.
@@ -1658,7 +1658,7 @@ mod tests {
     /// Acceptance: "an opt-in live test records version and artifact."
     ///
     /// Deliberately does **not** attempt a real, non-interactive `codex
-    /// exec` run: this card could not verify whether that requires network
+    /// exec` run: whether that requires network
     /// access and provider credentials, and rule 8 ("live harness tests ...
     /// never require secrets in CI") makes that an unacceptable risk to take
     /// on a guess. Instead this test performs two things that are safe
@@ -1694,7 +1694,7 @@ mod tests {
             capability.installed_version, capability.probe_error
         );
         // Deliberately not a stronger assertion than "probing completed
-        // without hanging or panicking": this card has no verified
+        // without hanging or panicking": there is no verified
         // expectation for the real version string's exact shape.
 
         let workspace = deterministic_fixture_repo("live-artifact");

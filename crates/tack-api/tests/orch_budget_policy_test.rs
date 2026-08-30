@@ -1,5 +1,5 @@
 //! Tests for `GET /api/projects/{id}/orch-budget` and
-//! `GET /api/projects/{id}/orch-policy` (card D2, Wave 4, tasks 36.3/36.4).
+//! `GET /api/projects/{id}/orch-policy`.
 //!
 //! Covers: 404 with `TACK_ORCH_ENABLE` unset (both routes); an unlinked
 //! project reports `linked: false` while still surfacing any real historical
@@ -183,7 +183,7 @@ fn metric(name: &str, labels: &[(&str, &str)], value: f64) -> NewOrchMetric {
     }
 }
 
-// ─── Off by default (TODO.md §0 rule 8) ────────────────────────────────────
+// ─── Off by default ────────────────────────────────────
 
 #[tokio::test]
 async fn both_new_routes_409_when_orch_disabled() {

@@ -22,7 +22,7 @@
 //! reimplemented, per this card's explicit instruction.
 //!
 //! **Three honesty decisions this module makes, spelled out because the card asked
-//! for them to be stated, not just implemented (TODO.md, card D5):**
+//! for them to be stated, not just implemented:**
 //!
 //! 1. **Minimum sample size — [`MIN_SAMPLE_SIZE`].** Below it, [`LeadTimeStat`] and
 //!    [`ReworkStat`] report `below_min_sample: true` and raw counts/durations, never
@@ -77,8 +77,7 @@ use crate::router::AppState;
 /// name.
 pub const MIN_SAMPLE_SIZE: i64 = 5;
 
-/// Rendered next to every agent-vs-human lead-time comparison, not buried in a doc
-/// (TODO.md's explicit instruction).
+/// Rendered next to every agent-vs-human lead-time comparison, not buried in a doc.
 pub const LEAD_TIME_SELECTION_BIAS_NOTE: &str = "Items dispatched to agents are not a random sample of all work — auto-dispatch \
      fires only on specific statuses, and people choose what to hand off. This is not \
      a controlled comparison, and no single \"agents are Nx faster\" figure is \
@@ -148,7 +147,7 @@ impl LeadTimeStat {
 }
 
 /// Rework-rate figure for one slice, plus the exact definition and truncation
-/// caveat that produced it (TODO.md: "make sure the number matches the words").
+/// caveat that produced it.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ReworkStat {
     /// Every dispatched item in scope, including ones excluded from the rate below.

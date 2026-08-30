@@ -937,7 +937,7 @@ const MIGRATION_024: [&str; 3] = [
     "CREATE INDEX IF NOT EXISTS idx_orch_approvals_state ON orch_approvals(state)",
 ];
 
-// ─── Phase 34 — metrics ingestion + retention (card B3, tasks 34.3/34.6/34.7) ─────
+// ─── Phase 34 — metrics ingestion + retention ─────
 //
 // `orch_metrics` was deliberately *not* part of the Wave 0 batch above: the roadmap's
 // own schema table for migrations 019-024 lists six tables, not seven, and assigns
@@ -1023,7 +1023,7 @@ const MIGRATION_027: [&str; 2] = [
     "CREATE INDEX IF NOT EXISTS idx_orch_metrics_daily_plane_day ON orch_metrics_daily(control_plane_id, day)",
 ];
 
-// ─── Phase 34 — trace ingestion (card B2, task 34.4) ──────────────────────────────
+// ─── Phase 34 — trace ingestion ──────────────────────────────
 //
 // docket's `/traces/{project}?since=` cursor (`serve.py`'s `_traces_page`) is a
 // compound `"<ts>Z:<n>"` token, not a bare timestamp or offset — see
@@ -1042,10 +1042,10 @@ const MIGRATION_028: [&str; 1] = ["CREATE TABLE IF NOT EXISTS orch_trace_cursors
         PRIMARY KEY (control_plane_id, remote_project)
     )"];
 
-// ─── Item provenance / trust boundary (card C2, task 35.7) ────────────────────
+// ─── Item provenance / trust boundary ────────────────────
 //
 // Tack imports items from GitHub Issues and Linear — text written by anyone who
-// can file an issue on a linked repo. Once Phase 35's dispatcher (card C1) sends
+// can file an issue on a linked repo. Once Phase 35's dispatcher sends
 // an item's title/description to docket as agent input, that text becomes
 // instructions to an autonomous agent. `source` is a sticky, creation-time-only
 // marker of where an item's text came from, read by the dispatcher
@@ -1089,7 +1089,7 @@ const MIGRATION_031: [&str; 1] = [
      WHERE completed_at IS NOT NULL",
 ];
 
-// ─── Agnostic Control Plane — Wave B additive columns (card G5a, tasks 40.2, 41.1) ─
+// ─── Agnostic Control Plane — Wave B additive columns ─
 //
 // Five single-statement ALTERs. §II.0 rule 4 (docs/plans/agnostic-control-plane.md
 // §4, "Two conventions throughout") is why each of these is its own migration name
@@ -1109,7 +1109,7 @@ const MIGRATION_031: [&str; 1] = [
 // column) — it ships as its own migration-runner release, with its own
 // half-applied-boot guard, so a partial rebuild is never silently retried.
 
-// Card G2 (Wave B) reads `control_planes.config` before it ever needs scrubbing —
+// Card G2 reads `control_planes.config` before it ever needs scrubbing —
 // this column is never a secret, so it is intentionally absent from
 // `remote_backup.rs::SENSITIVE_META_KEYS`/`scrub_snapshot_secrets`. A GitHub
 // Actions plane needs `{owner, repo, workflow_file, ref, api_base}`; today
@@ -1126,7 +1126,7 @@ const MIGRATION_032: [&str; 1] =
 // Write-only credentials JSON, alongside the existing single `token` column
 // (migration 019). One column, not two: a GitHub Actions plane needs *two*
 // secrets — a PAT/App credential to call the Actions API, and a webhook signing
-// secret for `POST /api/webhooks/github/{id}` (Phase 8) — and a provider-shaped
+// secret for `POST /api/webhooks/github/{id}` — and a provider-shaped
 // JSON blob is cheaper to extend than a new ALTER every time a future provider
 // needs a third. Nullable, not `DEFAULT '{}'`: `NULL` means "no secrets stored,"
 // distinct from `'{}'` ("a secrets block whose provider-specific keys are all

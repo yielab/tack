@@ -1,11 +1,11 @@
 //! Wires the orchestration reconciler (`tack-orch::reconciler`) to real
-//! persistence (`tack-db::Repository`, card A3's `repo/orch.rs`) and to a
+//! persistence (`tack-db::Repository`'s `repo/orch.rs`) and to a
 //! live per-plane adapter, built via `tack_orch::adapters::registry::build`
-//! (card G1) — today the registry only ever hands back a
+//! — today the registry only ever hands back a
 //! `tack_orch::adapters::docket::DocketAdapter`, but this module no longer
 //! needs to know that.
 //!
-//! This is the glue A2's `reconciler.rs` module doc / TODO.md §6 handoff
+//! This is the glue `reconciler.rs`'s module doc
 //! deliberately scoped out of `tack-orch` itself: `ControlPlaneStore` is a
 //! narrow trait rather than `tack_db::Repository` directly because turning a
 //! `control_planes` row into a live `Arc<dyn ControlPlane>` needs both the
@@ -15,7 +15,7 @@
 //! already depends on both, so both A2's and A4's handoff notes point here.
 //!
 //! Kept out of `server.rs`/`router.rs`/`config.rs`/`handlers/orch.rs` per
-//! A2's explicit recommendation (TODO.md §6) — this module has exactly one
+//! A2's explicit recommendation — this module has exactly one
 //! reason to change (a new control-plane `kind` needs a new adapter, or the
 //! persistence mapping shifts), not entangled with request routing or config
 //! parsing.
@@ -23,9 +23,8 @@
 //! **`registry::build`'s `config`/`secrets` parameters are placeholders
 //! here** (`&serde_json::json!({})` and `None`) — `tack_db::repo::orch::
 //! ControlPlane`, the read struct `list_registered` loops over below, does
-//! not yet surface the `config`/`secrets` columns migrations 032/033 added
-//! (repo/orch.rs is outside this card's file ownership — see TODO.md's
-//! file-ownership map). Harmless today: the only registered `kind`,
+//! not yet surface the `config`/`secrets` columns migrations 032/033 added.
+//! Harmless today: the only registered `kind`,
 //! `"docket"`, ignores both parameters (see `registry::build`'s own doc
 //! comment). Whoever gives those columns a typed field in the repo layer
 //! should thread the real values through here instead of the placeholders.
@@ -68,20 +67,19 @@ use crate::webhook::WebhookClient;
 #[derive(Clone)]
 pub struct RepoControlPlaneStore {
     repo: Repository,
-    /// Card B4 (Wave 2, realtime broadcast, task 34.5): the same channel
+    /// The same channel
     /// `AppState` hands every WebSocket subscriber. Threaded in here — rather
     /// than into `tack-orch::reconciler` — so `tack-orch` never grows a
-    /// websocket dependency; see the module doc above and TODO.md's B4 card
-    /// for the full reasoning.
+    /// websocket dependency; see the module doc above for the full reasoning.
     broadcast_tx: broadcast::Sender<BoardEvent>,
-    /// Card C5 (Wave 3, second half of task 35.6, 2026-08-05): everything
+    /// Everything
     /// else a full `AppState` carries. `dispatcher::apply_mapped_status`
-    /// (card C1) takes `&AppState`, not a narrower type, so applying
+    /// takes `&AppState`, not a narrower type, so applying
     /// `status_map`'s `on_succeeded`/`on_failed`/`on_cancelled` from inside
     /// `upsert_runs` needs one. `None` by default — every pre-existing call
-    /// site (built via `new()` alone, before this card existed) keeps
+    /// site (built via `new()` alone) keeps
     /// compiling and behaving identically; only `server.rs`'s production
-    /// wiring and this card's own tests call [`with_app_context`] to opt in.
+    /// wiring and this module's own tests call [`with_app_context`] to opt in.
     /// See `upsert_runs`'s doc comment for exactly what runs when this is
     /// `None`.
     ///
@@ -103,7 +101,7 @@ struct AppContext {
 
 /// Build the [`ControlPlaneStore`] the reconciler needs, from an
 /// already-built `AppState` — the exact wiring `server.rs`'s boot path
-/// used inline before card E1 (runtime enable/disable). Now shared between
+/// used inline before runtime enable/disable existed. Now shared between
 /// that boot path and `PUT /api/settings/orchestration`
 /// (`handlers/settings.rs`), which needs to start the same kind of store
 /// when an operator flips the setting on without a restart.
@@ -127,7 +125,7 @@ impl RepoControlPlaneStore {
         }
     }
 
-    /// Opt in to reconciler-driven `status_map` application (card C5). Call
+    /// Opt in to reconciler-driven `status_map` application. Call
     /// this once, right after `new()`, with the same `config`/`workspace_id`/
     /// `webhook` `server.rs` already builds its own `AppState` from — see
     /// `server.rs`'s production wiring for the intended call site.
@@ -149,7 +147,7 @@ impl RepoControlPlaneStore {
     /// optional [`AppContext`] — `None` when [`with_app_context`] was never
     /// called.
     ///
-    /// `orch_runtime` is a **fresh, inert** [`OrchRuntime`] (card E1), not
+    /// `orch_runtime` is a **fresh, inert** [`OrchRuntime`], not
     /// the live one `server.rs`/the settings handlers share — this
     /// reconstructed `AppState` only ever reaches
     /// `dispatcher::apply_mapped_status` (a workflow-engine status
@@ -178,7 +176,7 @@ impl RepoControlPlaneStore {
         let _ = self.broadcast_tx.send(event);
     }
 
-    /// Card G1 (TODO.md): record `health = "unconfigured"` for a plane
+    /// Record `health = "unconfigured"` for a plane
     /// `list_registered` could not even build an adapter for this cycle
     /// (unknown `kind`, or a known `kind`'s own constructor failing).
     ///
@@ -305,10 +303,10 @@ impl ControlPlaneStore for RepoControlPlaneStore {
             })
     }
 
-    // ── Card B1 (Wave 2, runs + approvals ingestion) ──
+    // ── Runs + approvals ingestion ──
     //
     // Every method below is a one-line pass-through to `repo/orch.rs`
-    // (card A3) — no correlation or business logic lives here, same as
+    // — no correlation or business logic lives here, same as
     // `record_health` above. Correlation (which item a run/approval
     // attributes to) happens in `tack-orch::reconciler`'s persistence phase,
     // not in this store; this impl only needs to expose the raw reads/writes
@@ -335,7 +333,7 @@ impl ControlPlaneStore for RepoControlPlaneStore {
         Ok(task.map(|t| t.item_id))
     }
 
-    // ── Card B4 (Wave 2, realtime broadcast, task 34.5) ──
+    // ── Broadcast on real change ──
     //
     // `upsert_runs`/`upsert_approvals` below broadcast a `BoardEvent` when —
     // and only when — the write actually changed something. The reconciler
@@ -357,13 +355,13 @@ impl ControlPlaneStore for RepoControlPlaneStore {
     // earlier poll. `r.item_id.or(old_item_id)` mirrors
     // `COALESCE(new, old)` exactly.
     //
-    // ── Card C5 (Wave 3, second half of task 35.6, 2026-08-05) ──
+    // ── Terminal status_map application ──
     //
     // `upsert_runs` is also where the *other* half of `status_map` lands:
     // once a run reaches a terminal `RunState` (`succeeded`/`failed`/
     // `cancelled`), `reconcile_terminal_status_map` (below) applies
     // `status_map.on_succeeded`/`on_failed`/`on_cancelled` through the
-    // workflow engine, mirroring card C1's dispatch-time `on_running`/
+    // workflow engine, mirroring the dispatch-time `on_running`/
     // `on_waiting_approval` application. It deliberately reuses this
     // method's own `is_new`/`state_changed`/`newly_attributed` determination
     // — the `continue` above already guarantees the call site below only
@@ -376,8 +374,7 @@ impl ControlPlaneStore for RepoControlPlaneStore {
     // the terminal `status_map` transition is skipped and recorded as a
     // `status_map_skipped_human_override` `orch_events` row instead of being
     // silently applied — see `reconcile_terminal_status_map`'s doc comment
-    // for the exact check and TODO.md's C5 handoff for the full reasoning.
-    // Docket's own state is never lost (it's already mirrored in
+    // for the exact check. Docket's own state is never lost (it's already mirrored in
     // `orch_runs` regardless), only the *board-visible status* is left
     // alone when a human has taken it over.
 
@@ -414,8 +411,8 @@ impl ControlPlaneStore for RepoControlPlaneStore {
             // A run with no Tack item has no project to filter a `BoardEvent`
             // into — `event_matches_project` (handlers/websocket.rs) filters
             // every event by `project_id` before it reaches a subscriber, and
-            // an uncorrelated run (e.g. dispatched from docket's own CLI, per
-            // TODO.md §1.2/B1's handoff — a normal state, not an error) can't
+            // an uncorrelated run (e.g. dispatched from docket's own CLI —
+            // a normal state, not an error) can't
             // be attributed to any board. The run is still fully persisted
             // above regardless; it will broadcast retroactively the first
             // poll that *does* learn its attribution, via `newly_attributed`.
@@ -465,8 +462,8 @@ impl ControlPlaneStore for RepoControlPlaneStore {
             // grant/deny decision or a re-poll of an already-pending approval.
             // In practice every approval this ingestion path sees already
             // arrives `pending` (docket's `/approvals` only ever returns the
-            // still-pending set, per B1's handoff) — this guard exists so a
-            // future control plane, or Wave 3's write-back, can't turn this
+            // still-pending set) — this guard exists so a
+            // future control plane, or a write-back path, can't turn this
             // into a noisy "approval updated" firehose by accident.
             if a.state != "pending" {
                 continue;
@@ -506,11 +503,11 @@ impl ControlPlaneStore for RepoControlPlaneStore {
         Ok(())
     }
 
-    // ── Card B3 (Wave 2, metrics ingestion) ──
+    // ── Metrics ingestion ──
     //
     // Same mechanical-pass-through shape as record_health/upsert_runs above —
     // no aggregation or business logic here, just a thin wrapper over
-    // repo/orch.rs (card A3's precedent, extended by B3).
+    // repo/orch.rs.
 
     async fn upsert_metrics(
         &self,
@@ -523,15 +520,13 @@ impl ControlPlaneStore for RepoControlPlaneStore {
             .map_err(|e| OrchError::Unavailable(format!("failed to persist mirrored metrics: {e}")))
     }
 
-    // ── Card B2 (Wave 2, trace ingestion, task 34.4) ──
+    // ── Trace ingestion ──
     //
-    // Thin pass-throughs to repo/orch.rs (card A3's precedent, extended by
-    // B2), same shape as upsert_metrics above. Deliberately **no**
-    // broadcast here, unlike upsert_runs/upsert_approvals: B4 (Wave 2,
-    // realtime broadcast) owns every `BoardEvent` variant and every
-    // broadcast call site in this file, and there is no trace-event
-    // `BoardEvent` variant to fire — adding one is out of this card's scope
-    // (see TODO.md's B2 card). Worth flagging for whoever picks that up
+    // Thin pass-throughs to repo/orch.rs, same shape as upsert_metrics above.
+    // Deliberately **no**
+    // broadcast here, unlike upsert_runs/upsert_approvals: there is no
+    // trace-event `BoardEvent` variant to fire.
+    // Worth flagging for whoever picks that up
     // later: a naive "broadcast on every upsert_events call" would be far
     // noisier than upsert_runs/upsert_approvals ever are — a single poll
     // tick can carry many trace events per project, not one state
@@ -579,10 +574,10 @@ impl ControlPlaneStore for RepoControlPlaneStore {
     }
 }
 
-// ── Card C5 (Wave 3, second half of task 35.6, 2026-08-05) ──
+// ── Terminal status_map application ──
 //
 // The reconciler-driven counterpart to `dispatcher::apply_mapped_status`
-// (card C1) — a plain (non-trait) impl block since these are internal
+// — a plain (non-trait) impl block since these are internal
 // helpers for `upsert_runs` above, not part of `ControlPlaneStore`. Called
 // only from `upsert_runs`, only on a genuine transition into a terminal
 // `RunState`, and only for a correlated run.
@@ -590,7 +585,7 @@ impl RepoControlPlaneStore {
     /// If `run` just reached a terminal `RunState` (`succeeded` / `failed` /
     /// `cancelled` — `queued`/`running` have no reconciler-driven trigger of
     /// their own; `on_running`/`on_waiting_approval` are applied once,
-    /// synchronously, at dispatch time by card C1, since the reconciler
+    /// synchronously, at dispatch time, since the reconciler
     /// never polls docket's `/tasks` endpoint) and `status_map` names a
     /// target status for it, applies that status through
     /// `dispatcher::apply_mapped_status` — **unless a human has moved the
@@ -608,21 +603,19 @@ impl RepoControlPlaneStore {
     /// into `orch_runs` regardless of this method — only the item's
     /// board-visible status is left alone. The audit trail
     /// (`status_map_skipped_human_override`) makes the "docket says done,
-    /// board says something else" gap visible rather than silent, which is
-    /// what TODO.md §0's non-negotiables ask for either way this was decided.
+    /// board says something else" gap visible rather than silent.
     ///
     /// # How "has a human moved it" is determined without a schema change
     ///
     /// There is no persisted "who/what last set this item's status" marker,
-    /// and this card was scoped to avoid both a new migration (`migrations.rs`
-    /// is frozen — see TODO.md §2) and any but a pure-visibility change to
-    /// `dispatcher.rs` (owned by C2 this round). So the check is a value
+    /// and neither a new migration nor a behavioural change to `dispatcher.rs`
+    /// is wanted here. So the check is a value
     /// comparison against the *one* `status_map` key the item's own latest
     /// dispatch attempt actually used — see [`card_has_diverged`] below for
     /// exactly which one, and why it has to be exactly one key, not a union
     /// of every key that might mean "still in flight" (a union produces a
     /// false "unchanged" reading whenever two `status_map` values happen to
-    /// coincide, e.g. the worked example in TODO.md §1.3 where
+    /// coincide, e.g. when
     /// `on_waiting_approval` and `on_failed` are both `"Blocked"`).
     ///
     /// This cannot detect a human re-choosing the *exact* status the
@@ -649,7 +642,7 @@ impl RepoControlPlaneStore {
             _ => return, // queued/running: no reconciler-driven trigger
         };
         let Some(target) = target else {
-            return; // absent key: "do not touch the item's status" (TODO.md §1.3)
+            return; // absent key: "do not touch the item's status"
         };
         if item.status == target {
             return; // already there — nothing to apply, nothing to protect
@@ -664,8 +657,7 @@ impl RepoControlPlaneStore {
         let Some(app_state) = self.as_app_state() else {
             // No production context attached — a store built via plain
             // `new()` (every pre-existing test, and any future call site
-            // that never opts in). This feature is simply inert there, same
-            // as before this card existed.
+            // that never opts in). This feature is simply inert there.
             return;
         };
         let Ok(Some(project)) = self.repo.get_project(item.project_id).await else {
@@ -759,7 +751,7 @@ impl RepoControlPlaneStore {
     }
 }
 
-// ── Card B3 (Wave 2, retention sweep, tasks 34.6/34.7) ──
+// ── Retention sweep ──
 //
 // A second, independent trait impl on the same struct — retention is
 // fleet-wide, not per-plane, and doesn't belong on `ControlPlaneStore` (see

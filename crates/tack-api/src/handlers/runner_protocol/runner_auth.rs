@@ -116,7 +116,7 @@ pub fn credential_hash(raw: &str) -> String {
 /// is merely revoked, inactive, or expired. Shared with
 /// [`is_credential_not_recognized`] so the two call sites (the emission
 /// here and the classification there) cannot drift apart; see that
-/// function's doc comment for why this distinction exists (III-H4).
+/// function's doc comment for why this distinction exists.
 const CREDENTIAL_NOT_RECOGNIZED_MESSAGE: &str = "The runner credential is not recognized";
 
 /// Authenticates `Authorization: Bearer <runner_credential>` against the

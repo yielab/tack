@@ -1,4 +1,4 @@
-//! III-F2: operator-facing verified-artifact content download.
+//! Operator-facing verified-artifact content download.
 //!
 //! This handler is **not** part of `runner_protocol`'s own `routes()` — that
 //! router is deliberately runner-credential-only and sits structurally
@@ -107,7 +107,7 @@ fn principal(headers: &HeaderMap) -> Result<String, Box<Response>> {
 }
 
 /// Operator-facing artifact-download router. Mounted in production by
-/// `router.rs#operator_execution_routes` (III-F6), inside the `require_token`
+/// `router.rs#operator_execution_routes`, inside the `require_token`
 /// operator surface — never under `runner_protocol_routes`. III-F2 authored
 /// this constructor before the mount existed; see this module's doc comment.
 pub fn routes(state: ArtifactDownloadState) -> Router {

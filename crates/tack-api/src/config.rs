@@ -106,10 +106,9 @@ pub struct AppConfig {
 
     // ── Agent-Factory Control Center (orchestration) ───────────────────────────
     /// Enables the orchestration reconciler and every control-plane API route
-    /// (`/api/control-planes`, `/api/projects/{id}/orch-link`, `/api/fleet`, and
-    /// their Wave 2-4 successors). **Off by default.** With this unset, no
-    /// reconciler task is spawned (see `server.rs`) and every orch route 404s
-    /// (TODO.md §0 rule 8 / §4 cross-cutting acceptance).
+    /// (`/api/control-planes`, `/api/projects/{id}/orch-link`, `/api/fleet`).
+    /// **Off by default.** With this unset, no reconciler task is spawned (see
+    /// `server.rs`) and every orch route 404s.
     #[serde(default)]
     pub orch_enable: bool,
 
@@ -118,14 +117,14 @@ pub struct AppConfig {
     #[serde(default = "default_orch_poll_secs")]
     pub orch_poll_secs: u64,
 
-    /// How many days of `orch_events` (and, once Wave 2 lands, `orch_metrics`)
+    /// How many days of `orch_events` (and, `orch_metrics`)
     /// history to keep before the retention sweep rolls old rows into per-day
     /// aggregates and deletes them. Default: 90.
     #[serde(default = "default_orch_event_retention_days")]
     pub orch_event_retention_days: u32,
 
     /// Shared secret required to grant/deny a docket approval via
-    /// `POST /api/approvals/{token}` (Wave 4). Deliberately separate from
+    /// `POST /api/approvals/{token}`. Deliberately separate from
     /// `TACK_API_TOKEN`: granting an approval is a materially higher-privilege
     /// act than editing a card, so holding the ordinary API token is not enough
     /// on its own. Consumed starting Wave 4; defined now so the config surface
@@ -171,8 +170,7 @@ pub struct AppConfig {
     pub execution_health_interval_secs: u64,
 
     /// Shared secret required to resolve a scoped execution decision via
-    /// `POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve`
-    /// (Wave 5 card III-F1, wired by the Wave 5 integrator III-F6).
+    /// `POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve`.
     /// Deliberately separate from `TACK_API_TOKEN`, mirroring
     /// `orch_approval_token`'s own precedent exactly: resolving a decision
     /// releases whatever the harness/runner is blocked on, a materially

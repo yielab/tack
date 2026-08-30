@@ -1,4 +1,4 @@
-//! Tests for card B4 (Wave 2, realtime broadcast, task 34.5): does
+//! Tests for card B4: does
 //! `RepoControlPlaneStore::upsert_runs`/`upsert_approvals`
 //! (`crates/tack-api/src/orch_store.rs`) emit `BoardEvent::AgentRunUpdated`/
 //! `ApprovalPending` when — and only when — a poll actually changes
@@ -327,7 +327,7 @@ async fn a_second_identical_pending_poll_broadcasts_nothing() {
 }
 
 /// `ApprovalPending` only fires on the transition into `pending` — a
-/// granted/denied approval (Wave 3's write side) is no longer actionable, so
+/// granted/denied approval is no longer actionable, so
 /// it must not re-trigger a "pending" board nudge.
 #[tokio::test]
 async fn upsert_approvals_does_not_broadcast_for_a_non_pending_state() {

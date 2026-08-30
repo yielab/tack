@@ -78,7 +78,7 @@ pub struct ErrorBody {
     pub code: Option<String>,
 }
 
-/// Pagination envelope for the item-list endpoint (Phase 29.1). `total` is the
+/// Pagination envelope for the item-list endpoint. `total` is the
 /// unpaginated match count so clients can render "N of M".
 #[derive(Serialize, ToSchema)]
 pub struct PaginatedItems {
@@ -98,8 +98,7 @@ pub struct ItemDetail {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Card C5: operator execution/fleet routes (card C1) + runner protocol v1
-// (card C2).
+// Operator execution/fleet routes + runner protocol v1.
 //
 // Both `handlers::executions`/`handlers::runner_admin` and
 // `handlers::runner_protocol` return raw `Json<serde_json::Value>` with no
@@ -138,14 +137,12 @@ fn json_content() -> utoipa::openapi::Content {
         .build()
 }
 
-/// III-F6e correction: every operation this is used by (`RunnerProtocolApiDoc`'s
+/// Every operation this is used by (`RunnerProtocolApiDoc`'s
 /// runner-protocol-v1 exchanges, plus `ExecutionOperatorExtrasApiDoc` below)
 /// returns `tack_orch::execution::ProtocolErrorEnvelope` on failure — never
 /// `ErrorEnvelope`, the ordinary `{status, message, code?}` shape
 /// `crate::error::ApiError` maps every plain `/api` handler's failure to.
-/// Before this fix, every runner-protocol-v1 error response in this file
-/// was documented against the wrong envelope shape (a pre-existing gap,
-/// not introduced by Wave 5 — see this card's handoff). `RunnerV1ErrorEnvelope`
+/// `RunnerV1ErrorEnvelope`
 /// (`handlers::executions`) already exists as the correct, doc-only mirror
 /// of `ProtocolErrorEnvelope` — reused here rather than declaring a second
 /// one.
@@ -273,15 +270,13 @@ fn json_operation(
     op
 }
 
-// Card III-E6 (Wave 4 integrator): the operator execution/fleet/runner/
+// The operator execution/fleet/runner/
 // profile routes used to be documented here as a hand-built `OperatorApiDoc`
 // fragment with every body typed as free-form JSON (`json_operation`'s
-// `json_content()`) — the reason E2/E3/E4/E5 each independently found this
-// domain's `docs/openapi.json` schemas empty (`{}`). C1's handler files
-// (`handlers::executions`, `handlers::runner_admin`) are no longer
-// off-limits to this card (III.3: C5 for runner/execution wiring, this card
-// for the Wave 4 integration boundary), so every one of their handlers now
-// carries its own `#[utoipa::path(...)]` annotation referencing real,
+// `json_content()`), which is why this
+// domain's `docs/openapi.json` schemas used to be empty (`{}`).
+// `handlers::executions`/`handlers::runner_admin`'s handlers now
+// each carry their own `#[utoipa::path(...)]` annotation referencing real,
 // `ToSchema`-derived request/response DTOs, exactly like every other
 // domain in this file (`handlers::orch`, `handlers::items`, …) — listed
 // directly in `ApiDoc`'s `paths(...)`/`components(schemas(...))` below
@@ -296,7 +291,7 @@ const RUNNER_PROTOCOL_NOTE: &str = "Authenticated by a hashed `Authorization: Be
     deliberately does not re-specify them as a second, driftable shape.";
 
 /// `PUT .../attempts/{attempt_id}/artifacts/{artifact_id}/content` —
-/// III-F2's artifact content-upload route (III-F6e: previously mounted in
+/// the artifact content-upload route (previously mounted in
 /// `router.rs` and served in production, but missing from this document
 /// entirely; `CLAUDE.md`'s own "13 `/api/runner/v1` runner-protocol paths"
 /// count already included it). Not part of the `op(...)` closure above:
@@ -376,7 +371,7 @@ fn artifact_content_upload_operation() -> OperationBuilder {
         )
 }
 
-/// Card C2's runner-protocol v1 routes, documented relative to
+/// The runner-protocol v1 routes, documented relative to
 /// `handlers::runner_protocol::routes` — nested at
 /// `docs/contracts/runner-v1/protocol.json`'s `base_path`
 /// (`/api/runner/v1`) below (see `router.rs::runner_protocol_routes`).
@@ -541,17 +536,14 @@ impl OpenApi for RunnerProtocolApiDoc {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Wave 5 integration (III-F6e): two operator-scoped routes whose handler
-// files are off-limits to this card (`handlers::decisions` — another Wave 5
-// agent is editing it directly right now; `handlers::runner_protocol::
-// artifact_download` — kept undisturbed for the same "don't touch a
-// sibling card's file" discipline even though it isn't formally locked).
-// Both were mounted onto the real `/api` operator surface by
+// Two operator-scoped routes (`handlers::decisions`,
+// `handlers::runner_protocol::artifact_download`) mounted onto the real
+// `/api` operator surface by
 // `router.rs#operator_execution_routes` (see that function's own doc
 // comment, "F1's decision-resolve route carries a second, independent
 // gate..." / "F2's artifact-download route points at the same operator-
 // configured TACK_STORAGE_DIR..."), so — exactly like `RunnerProtocolApiDoc`
-// above for card C2's un-annotated `Json<Value>` handlers — this is a
+// above for its un-annotated `Json<Value>` handlers — this is a
 // hand-built `OpenApi` fragment, not a `#[utoipa::path(...)]` annotation on
 // the real handler function. Every request/response shape below is a
 // schema-only mirror, hand-verified against `handlers::decisions::
@@ -620,8 +612,8 @@ pub struct ResolveDecisionResponseSchema {
     pub replayed: bool,
 }
 
-/// `POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve` (III-F1,
-/// mounted by III-F6). See `handlers::decisions`'s own module doc for the
+/// `POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve`.
+/// See `handlers::decisions`'s own module doc for the
 /// full security rationale this description summarizes.
 fn resolve_decision_operation() -> OperationBuilder {
     let params = vec![
@@ -734,7 +726,6 @@ fn resolve_decision_operation() -> OperationBuilder {
 }
 
 /// `GET /api/executions/{request_id}/attempts/{attempt_number}/artifacts/{artifact_id}/content`
-/// (III-F2, mounted by III-F6).
 fn download_artifact_content_operation() -> OperationBuilder {
     let params = vec![
         string_path_param("request_id", "Execution request ID (opaque)"),
@@ -804,7 +795,7 @@ fn download_artifact_content_operation() -> OperationBuilder {
         )
 }
 
-/// III-F1's decision-resolution route and III-F2's operator artifact-download
+/// The decision-resolution route and operator artifact-download
 /// route (see this section's own doc comment above), both nested at `/api`
 /// below — the same base every ordinary operator route in `ApiDoc.paths(...)`
 /// uses, since both are merged into the real `api` router *before*
@@ -948,8 +939,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::provisioning::create_project_with_pod,
         handlers::economics::get_economics_summary,
         handlers::economics::get_economics_items,
-        // ── Harness-agnostic runner fleet: operator execution API (Part III,
-        // card C1; typed OpenAPI documentation wired here by card III-E6) ──
+        // ── Harness-agnostic runner fleet: operator execution API ──────────
         handlers::executions::create_execution,
         handlers::executions::list_executions,
         handlers::executions::get_execution,
@@ -957,11 +947,10 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::executions::list_execution_attempt_events,
         handlers::executions::request_cancellation,
         handlers::executions::requeue_needs_operator,
-        // ── Harness-agnostic runner fleet: operator fleet/runner/profile API
-        // (Part III, card C1; typed OpenAPI documentation wired by III-E6) ──
+        // ── Harness-agnostic runner fleet: operator fleet/runner/profile API ──
         handlers::runner_admin::create_fleet,
         handlers::runner_admin::list_fleets,
-        // Fleet-membership write route (III-H8): populates
+        // Fleet-membership write route: populates
         // `agent_fleet_members`, the roster a fleet-selector scheduling
         // request resolves against.
         handlers::runner_admin::add_fleet_member,
@@ -1063,7 +1052,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::executions::RecoveryConfirmation,
         handlers::executions::RequeueResponse,
         // ── AttemptSummary.model_provenance/usage_economics real shape
-        // (III-F6b/III-F6e) — schema-only mirrors of `tack_orch::
+        // — schema-only mirrors of `tack_orch::
         // usage_provenance`, which has no `ToSchema`; see their doc
         // comments in `handlers::executions` for why they live there. ──────
         handlers::executions::ModelProvenanceSchema,
@@ -1071,9 +1060,8 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::executions::UsdMeasurementSchema,
         handlers::executions::RunnerTimeCostSchema,
         handlers::executions::UsageEconomicsSchema,
-        // ── Wave 5 operator-scoped decision resolution (III-F1, wired by
-        // III-F6e) — schema-only mirrors of `handlers::decisions`, a file
-        // off-limits to this card; see `ExecutionOperatorExtrasApiDoc`'s
+        // ── Operator-scoped decision resolution — schema-only mirrors of
+        // `handlers::decisions`; see `ExecutionOperatorExtrasApiDoc`'s
         // own doc comment above. ────────────────────────────────────────
         DecisionAnswerSchema,
         ResolveDecisionRequest,

@@ -1,4 +1,4 @@
-//! Card G3 (Wave B, Phase 41): optimistic concurrency for items —
+//! Optimistic concurrency for items —
 //! `GET /api/items/{id}` returns an `ETag` derived from the item's id +
 //! `version` (migration 034); `PATCH /api/items/{id}` honours `If-Match`,
 //! rejecting a stale value with `412 Precondition Failed`.

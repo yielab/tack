@@ -438,7 +438,7 @@ async fn a_fleet_default_model_the_runner_does_not_declare_never_leases() {
         .expect("no db error");
     assert_eq!(chosen_via_reexport, None);
 
-    // Step 2: the actual fenced claim transaction (card B2, untouched) must
+    // Step 2: the actual fenced claim transaction must
     // also refuse, honoring `Scheduled(None)` rather than falling back to a
     // naive match that could still lease it.
     let claimed = repo

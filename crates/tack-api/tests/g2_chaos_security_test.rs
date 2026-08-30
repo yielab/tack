@@ -1,4 +1,4 @@
-//! III-G2: chaos, fencing, security and recovery adversarial suite.
+//! Chaos, fencing, security and recovery adversarial suite.
 //!
 //! This card owns adversarial/integration tests and the audit report only —
 //! no production source is touched. Every test below drives the real

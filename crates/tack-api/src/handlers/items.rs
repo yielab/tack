@@ -28,7 +28,7 @@ fn item_etag(id: Uuid, version: i64) -> String {
 }
 
 /// A stale `If-Match` never becomes an [`ApiError`] — `error.rs` is off
-/// this card's file list (see TODO.md's II.2 ownership map), so this
+/// this card's file list, so this
 /// hand-builds the exact `{"error": {"status", "message"}}` envelope
 /// `ApiError`'s `IntoResponse` impl produces, rather than adding a new
 /// variant to a file another card owns. A client that already parses that
@@ -359,7 +359,7 @@ pub(crate) async fn propagate_parent_completion(state: &AppState, item: &Item, o
 
 /// Best-effort: when `orch_links.auto_dispatch` is on and `item` just
 /// entered one of the link's `status_map.dispatch_from` statuses, dispatch
-/// it automatically via `dispatcher::dispatch_item` (card C1), passing the
+/// it automatically via `dispatcher::dispatch_item`, passing the
 /// item's own **persisted** trust value (`item.source.is_trusted()` —
 /// `tack_core::models::ItemSource`, migration 029) rather than inferring
 /// anything at dispatch time (TODO.md's C2 card is explicit that inference
@@ -400,7 +400,7 @@ pub(crate) async fn propagate_parent_completion(state: &AppState, item: &Item, o
 /// inside `dispatch_item` itself.
 ///
 /// **The enable gate reads the *effective* setting, not the raw env flag**
-/// (card G3, docs/plans/agnostic-control-plane.md §8.4). Before this fix the
+/// Before this fix the
 /// check below was `!state.config.orch_enable` — `TACK_ORCH_ENABLE`'s
 /// startup value only — while every HTTP orchestration route gates on
 /// [`crate::handlers::settings::effective_orch_enabled`], which prefers

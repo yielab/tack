@@ -102,7 +102,7 @@ pub struct BackupManifest {
     /// Approximate bundle size in bytes.
     pub bundle_size_bytes: u64,
     /// Monotonic sync generation this snapshot represents. Bumped once per
-    /// successful backup; used for cross-device conflict detection (Phase 28.2).
+    /// successful backup; used for cross-device conflict detection.
     /// Defaults to 0 for older sidecars that predate the field.
     #[serde(default)]
     pub generation: u64,
@@ -797,7 +797,7 @@ pub async fn stage_restore(
 /// Verify a bundle without staging anything: checks `format_version`, that the
 /// snapshot schema is not newer than the running binary, and that the extracted
 /// database hashes to the manifest's `db_sha256`. Used by the "Verify" preview
-/// (Phase 28.5) so a restore can be validated before touching the live DB.
+/// so a restore can be validated before touching the live DB.
 pub async fn verify_bundle(
     bundle_bytes: Vec<u8>,
     manifest: &BackupManifest,

@@ -38,7 +38,7 @@ pub struct AppState {
     pub broadcast_tx: broadcast::Sender<websocket::BoardEvent>,
     /// Optional outbound webhook client (None when TACK_WEBHOOK_URL is unset)
     pub webhook: Option<WebhookClient>,
-    /// Toggleable handle to the orchestration reconciler (card E1). Cheap to
+    /// Toggleable handle to the orchestration reconciler. Cheap to
     /// clone (`Arc` underneath) — every handler gets the same live runtime,
     /// so `PUT /api/settings/orchestration` starts/stops the exact tasks
     /// `server.rs` spawned (or didn't) at boot.
@@ -64,18 +64,16 @@ fn content_security_policy(config: &AppConfig) -> HeaderValue {
     HeaderValue::from_str(&policy).expect("configured CSP must be a valid header value")
 }
 
-/// Agent-Factory Control Center routes (Phases 33–38). Every route this cycle
-/// needs is batched into this one function (card A4 / TODO.md §2: `router.rs`
-/// is a chokepoint file, touched once) — later-wave agents add their route to
-/// the appropriate section below and update `crate::openapi::ApiDoc` rather
-/// than restructuring this function or `build_router`.
+/// Orchestration control-center routes. A new route is added to
+/// the appropriate section below, with `crate::openapi::ApiDoc` updated
+/// alongside it, rather than restructuring this function or `build_router`.
 ///
 /// The whole sub-router is gated behind the *effective* orchestration
 /// setting (`app_meta`-stored value, falling back to `TACK_ORCH_ENABLE`) via
 /// [`orch::require_orch_enabled`] — with orchestration disabled, every route
 /// here returns `409 Conflict` with `error.code: "orchestration_disabled"`,
 /// naming where to enable it (`PUT /api/settings/orchestration`), rather
-/// than a bare 404 (TODO.md §0 rule 8, rewritten 2026-08-05 — card E1). The
+/// than a bare 404. The
 /// auth token gate (`require_token`) is layered on top of this in
 /// `build_router`, so it still applies as usual. `/api/settings/orchestration`
 /// itself lives outside this sub-router (registered directly in
@@ -83,7 +81,7 @@ fn content_security_policy(config: &AppConfig) -> HeaderValue {
 /// reachable while the feature is off — see that route's own comment.
 fn orch_routes(state: AppState) -> Router<AppState> {
     Router::new()
-        // ─── Control planes (Wave 1 / A4, 33.5) ───────────────────────────
+        // ─── Control planes ───────────────────────────
         .route(
             "/control-planes",
             post(orch::create_control_plane).get(orch::list_control_planes),
@@ -94,57 +92,57 @@ fn orch_routes(state: AppState) -> Router<AppState> {
                 .patch(orch::update_control_plane)
                 .delete(orch::delete_control_plane),
         )
-        // ─── Project ↔ control-plane link (Wave 1 / A4, 33.5) ─────────────
+        // ─── Project ↔ control-plane link ─────────────
         .route(
             "/projects/{id}/orch-link",
             get(orch::get_orch_link).put(orch::put_orch_link),
         )
-        // ─── Fleet view aggregate (Wave 1 / A4, 33.5) ──────────────────────
+        // ─── Fleet view aggregate ──────────────────────
         .route("/fleet", get(orch::get_fleet))
-        // ─── Wave 2 (Phase 34) — metrics ────────────────────────────────────
-        .route("/metrics", get(orch::get_metrics)) // B3, 34.3/34.7
-        // ─── Wave 2 (Phase 34) — item/project agent activity ───────────────
+        // ─── Metrics ──────────────────────────────────────────────
+        .route("/metrics", get(orch::get_metrics))
+        // ─── Item/project agent activity ───────────────────────────
         .route(
             "/items/{id}/agent-activity",
             get(orch::get_item_agent_activity),
-        ) // B6, 34.8/34.9
+        )
         .route(
             "/projects/{id}/agent-activity",
             get(orch::get_project_agent_activity),
-        ) // B6, 34.8/34.9
-        // ─── Wave 3 (Phase 35) — dispatch ───────────────────────────────────
-        .route("/items/{id}/dispatch", post(orch::dispatch_item)) // C1, 35.2/35.3/35.6
-        .route("/sprints/{id}/dispatch", post(orch::dispatch_sprint)) // C3, 35.4
+        )
+        // ─── Dispatch ─────────────────────────────────────────────
+        .route("/items/{id}/dispatch", post(orch::dispatch_item))
+        .route("/sprints/{id}/dispatch", post(orch::dispatch_sprint))
         .route(
             "/sprints/{id}/dispatch/dry-run",
             get(orch::dry_run_sprint_dispatch),
-        ) // C3, 35.4
-        // ─── Wave 4 (Phases 36–38) — approvals + provisioning ──────────────
-        .route("/approvals", get(orch::list_pending_approvals)) // D1, 36.1 — fleet-wide inbox, read-only
-        .route("/approvals/{token}", post(orch::decide_approval)) // D1, 36.1 — also gated on TACK_ORCH_APPROVAL_TOKEN (checked inside the handler, not this layer)
-        .route("/projects/{id}/orch-budget", get(orch::get_orch_budget)) // D2, 36.3 — budget cap vs. mirrored spend
-        .route("/projects/{id}/orch-policy", get(orch::get_orch_policy)) // D2, 36.4 — guardrail/tool-call/approval metrics (control-plane-wide)
+        )
+        // ─── Approvals + provisioning ───────────────────────────────
+        .route("/approvals", get(orch::list_pending_approvals)) // fleet-wide inbox, read-only
+        .route("/approvals/{token}", post(orch::decide_approval)) // also gated on TACK_ORCH_APPROVAL_TOKEN (checked inside the handler, not this layer)
+        .route("/projects/{id}/orch-budget", get(orch::get_orch_budget)) // budget cap vs. mirrored spend
+        .route("/projects/{id}/orch-policy", get(orch::get_orch_policy)) // guardrail/tool-call/approval metrics (control-plane-wide)
         .route(
             "/templates/{id}/provision",
             post(provisioning::create_project_with_pod),
-        ) // D4, 37.2 — provision a pod + create/link a Tack project from a template, rollback-on-failure (see handlers/provisioning.rs's module doc for why this is a separate route rather than a `provision_pod:true` extension of the existing endpoint)
-        .merge(crate::handlers::economics::economics_routes()) // D5, 38.1-38.4 — unit economics summary + per-item export; see handlers/economics.rs
+        ) // provision a pod + create/link a Tack project from a template, rollback-on-failure (see handlers/provisioning.rs's module doc for why this is a separate route rather than a `provision_pod:true` extension of the existing endpoint)
+        .merge(crate::handlers::economics::economics_routes()) // unit economics summary + per-item export; see handlers/economics.rs
         .layer(middleware::from_fn_with_state(
             state,
             orch::require_orch_enabled,
         ))
 }
 
-/// Card C1's operator execution/fleet routes — `/api/executions`,
+/// The operator execution/fleet routes — `/api/executions`,
 /// `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles`,
 /// `/api/model-profiles` (`crate::handlers::executions`,
-/// `crate::handlers::runner_admin`) — plus two Wave 5 additions mounted the
-/// same way: III-F1's decision resolution (`crate::handlers::decisions`) and
-/// III-F2's operator artifact download
+/// `crate::handlers::runner_admin`) — plus two additions mounted the
+/// same way: decision resolution (`crate::handlers::decisions`) and
+/// operator artifact download
 /// (`crate::handlers::runner_protocol::artifact_download`), both of which
 /// shipped as deliberately unwired card-local modules with a suggested
-/// integration snippet in their own doc comments — this function is the
-/// Wave 5 integrator (III-F6) performing that integration. Every card-local
+/// integration snippet in their own doc comments — this function is
+/// what performs that integration. Every card-local
 /// router already calls `with_state` internally (per its own `pub fn
 /// routes(state) -> Router` signature), producing a fully-resolved
 /// `Router<()>`; this re-labels that "no state missing" router's phantom
@@ -159,8 +157,8 @@ fn orch_routes(state: AppState) -> Router<AppState> {
 /// routes share the same operator authentication as the rest of `/api/*`
 /// (`operator_session_or_api_token` per
 /// `docs/contracts/runner-v1/protocol.json`) — never the runner router's
-/// distinct bearer-credential check. `inject_operator_principal` (card C5,
-/// `middleware.rs`) is layered directly on this sub-router so it runs for
+/// distinct bearer-credential check. `inject_operator_principal`
+/// (`middleware.rs`) is layered directly on this sub-router so it runs for
 /// every request these handlers see, strips any client-supplied
 /// `x-tack-principal`, and replaces it with a value derived from the
 /// request's own authenticated context — C1's handlers (and, as of this
@@ -170,7 +168,7 @@ fn orch_routes(state: AppState) -> Router<AppState> {
 /// **F1's decision-resolve route carries a second, independent gate on top**
 /// (`TACK_EXECUTION_DECISION_TOKEN`, checked inside
 /// `decisions::require_decision_token` — see that function's doc comment):
-/// an integrator security decision (III-F6) that resolves the gap F1's own
+/// an integrator security decision that resolves the gap F1's own
 /// handoff flagged and declined to decide unilaterally
 /// (`docs/contracts/runner-v1/protocol.json` names decision resolution a
 /// `"separately_scoped_operator_credential"`, distinct from the plain
@@ -208,7 +206,7 @@ fn operator_execution_routes(state: &AppState) -> Router<AppState> {
         .with_state::<AppState>(())
 }
 
-/// Card C2's runner-protocol v1 router
+/// The runner-protocol v1 router
 /// (`crate::handlers::runner_protocol`), mounted at
 /// `docs/contracts/runner-v1/protocol.json`'s `base_path`
 /// (`/api/runner/v1`). Nested as its own top-level branch in `build_router`
@@ -225,9 +223,7 @@ fn operator_execution_routes(state: &AppState) -> Router<AppState> {
 /// inherits every layer applied to `outer` in `build_router` (CORS,
 /// security headers, tracing) — only the operator-token check is skipped.
 ///
-/// The global body limit is a partial exception, corrected by an
-/// integrator-authorized cross-card amendment (see
-/// `docs/agent-handoffs/part-iii/III-C2.md` and `III-C5.md`): this router
+/// The global body limit is a partial exception: this router
 /// carries its own, more-specific `DefaultBodyLimit` layer (a fixed 4 MiB
 /// protocol ceiling), and axum always applies whichever `DefaultBodyLimit`
 /// is closest to the handler — so the plain global layer on `outer` alone
@@ -243,7 +239,7 @@ fn operator_execution_routes(state: &AppState) -> Router<AppState> {
 /// Artifact content storage is rooted at the operator-configured
 /// `TACK_STORAGE_DIR` (`state.config.storage_dir`), one level deeper than
 /// attachments (`<storage_dir>/execution-artifacts`) so the two never
-/// collide — fulfilling III-F2's recorded wiring request; without this,
+/// collide; without this,
 /// `RunnerProtocolState::new` alone would fall back to a hardcoded,
 /// process-CWD-relative default (see its own doc comment).
 fn runner_protocol_routes(state: &AppState) -> Router<AppState> {
@@ -278,15 +274,15 @@ pub fn build_router(state: AppState) -> Router {
             header::CONTENT_TYPE,
             header::AUTHORIZATION,
             header::ACCEPT,
-            // `If-Match` — card G3's optimistic-concurrency precondition on
+            // `If-Match` — the optimistic-concurrency precondition on
             // items/orch-links/control-planes PATCH/PUT. Without this, any
             // cross-origin browser client (anything through
             // `TACK_ALLOWED_ORIGINS` that isn't same-origin `embed-spa`)
             // fails preflight on every conditional write and silently falls
             // back to unconditional last-write-wins.
             header::IF_MATCH,
-            // `X-Tack-Approval-Token` — pre-existing bug, not something this
-            // cycle introduced: `frontend/src/features/approvals/api.ts`
+            // `X-Tack-Approval-Token` — a pre-existing bug:
+            // `frontend/src/features/approvals/api.ts`
             // sends this on every grant/deny and it has only ever worked
             // because production is same-origin via `embed-spa`. Reusing
             // the handler's own constant (rather than a hand-copied
@@ -294,9 +290,9 @@ pub fn build_router(state: AppState) -> Router {
             // `handlers::orch::decide_approval` actually reads.
             header::HeaderName::from_static(orch::APPROVAL_TOKEN_HEADER),
         ]))
-        // No `expose_headers` call existed before this card — a browser
+        // Without `expose_headers`, a browser
         // could read zero non-safelisted response headers from this API.
-        // `ETag` is the first one anything needs: cards G1/G3 add it to
+        // `ETag` is the first one anything needs: it is added to
         // `GET` responses so a client can send it back as `If-Match`, and
         // an unexposed response header is invisible to `fetch()`/`XHR`
         // regardless of what the server sends on the wire.
@@ -327,12 +323,12 @@ pub fn build_router(state: AppState) -> Router {
             "/settings/backup",
             get(settings::get_backup_settings).put(settings::put_backup_settings),
         )
-        // ─── Orchestration settings (UI-editable; card E1) ─────────────────
+        // ─── Orchestration settings (UI-editable) ──────────────────────────
         // Deliberately **outside** `orch_routes`'/`require_orch_enabled`'s
         // gate: this is the one orchestration-adjacent endpoint that must
         // stay reachable while orchestration is off — it's how an operator
         // discovers the feature exists and turns it on. See this file's
-        // `orch_routes` doc comment and TODO.md §0 rule 8.
+        // `orch_routes` doc comment.
         .route(
             "/settings/orchestration",
             get(settings::get_orch_settings).put(settings::put_orch_settings),
@@ -465,16 +461,14 @@ pub fn build_router(state: AppState) -> Router {
         .route("/boards/{id}/view", get(boards_multi::get_board_view))
         // ─── Alexa voice integration (skill-ID auth, exempt from token) ──
         .route("/alexa", post(alexa::handle_request))
-        // ─── Agent-Factory Control Center (Phase 33+, gated) ──────────────
-        // Every route this cycle needs is batched into this one sub-router so
-        // router.rs is structurally touched once (TODO.md §2's chokepoint
-        // note); later waves add their route to `orch_routes` below rather
-        // than restructuring this file. `require_orch_enabled` returns a 409
+        // ─── Orchestration control center (gated) ──────────────────────────
+        // Every orchestration route is batched into `orch_routes` below
+        // rather than restructuring this file. `require_orch_enabled` returns a 409
         // with `error.code: "orchestration_disabled"` for every route here
-        // while orchestration is off (TODO.md §0 rule 8, card E1).
+        // while orchestration is off.
         .merge(orch_routes(state.clone()))
-        // ─── Operator execution/fleet API (Part III, card C1; wired here
-        // by card C5) — `/executions`, `/runner-fleets`, `/runners/*`,
+        // ─── Operator execution/fleet API
+        // — `/executions`, `/runner-fleets`, `/runners/*`,
         // `/agent-profiles`, `/model-profiles`. Same operator auth as
         // everything else in this router: merged in *before*
         // `require_token` below. See `operator_execution_routes`'s doc
@@ -485,8 +479,8 @@ pub fn build_router(state: AppState) -> Router {
 
     let outer = Router::new()
         .nest("/api", api)
-        // ─── Runner protocol v1 (Part III, card C2; wired here by card
-        // C5) — deliberately a *sibling* nest, not merged into `api`
+        // ─── Runner protocol v1
+        // — deliberately a *sibling* nest, not merged into `api`
         // above, so it never passes through that router's
         // `require_token` layer. See `runner_protocol_routes`'s doc
         // comment. ──────────────────────────────────────────────────────

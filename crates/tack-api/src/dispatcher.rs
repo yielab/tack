@@ -1,4 +1,4 @@
-//! Card C1 (Wave 3, tasks 35.2/35.3/35.6, 2026-08-05): the write path that
+//! The write path that
 //! makes Tack a control center rather than a dashboard. Given a Tack item
 //! that has just entered (or is being manually pushed into) a
 //! dispatch-eligible status, [`dispatch_item`] enqueues a governed task on
@@ -7,7 +7,7 @@
 //! # What this module does, end to end
 //!
 //! 1. Resolve the item's project → `orch_links` row → `status_map`
-//!    (TODO.md §1.3). An unlinked project, or a `status_map` with an empty
+//!    An unlinked project, or a `status_map` with an empty
 //!    `dispatch_from`, are both valid, ordinary states — not errors — see
 //!    [`DispatchOutcome::NoDispatchPolicy`].
 //! 2. Refuse (without touching docket) if the item's current status isn't
@@ -17,14 +17,13 @@
 //!    again — [`DispatchOutcome::AlreadyInFlight`]. See "Idempotency and
 //!    `attempt`" below.
 //!
-//! **One scheduling owner (card III-G1, Wave 6).** If the item already has
+//! **One scheduling owner.** If the item already has
 //! an active runner-v1 `execution_requests` row, do **not** call docket at
 //! all — `Err(ApiError::Conflict(..))`, same shape the concurrent-dispatch
 //! lock already uses. Checked before any HTTP call. See
-//! `tack_db::repo::orch`'s "III-G1" module section for the exact "active"
-//! definition and why this is the only direction of the guard this card's
-//! file ownership can add.
-//! 4. Call `ControlPlane::enqueue_task` (`POST /tasks/{project}`, card V1's
+//! `tack_db::repo::orch`'s module section for the exact "active"
+//! definition.
+//! 4. Call `ControlPlane::enqueue_task` (`POST /tasks/{project}`,
 //!    live-verified three-outcome contract):
 //!    - **block** → [`DispatchOutcome::Blocked`], no `orch_tasks` row at
 //!      all (docket never created a task).
@@ -35,7 +34,7 @@
 //! 5. Persist `orch_tasks` (task id + attempt + trust), then apply the
 //!    `status_map`-named target status (`on_waiting_approval` or
 //!    `on_running`) **through the workflow engine** — never raw SQL
-//!    (TODO.md §0 rule 7). A transition the engine refuses (WIP limit, an
+//!    A transition the engine refuses (WIP limit, an
 //!    explicit-transition workflow like construction's) is recorded as a
 //!    `status_map_rejected` `orch_events` row and surfaced in the response;
 //!    the item is left exactly as it was.
@@ -47,14 +46,14 @@
 //! is deliberate: `core/dispatch.py::enqueue_task`'s own `trusted: bool |
 //! None` treats an omitted value as "trusted iff `source == \"operator\"\"`,
 //! which — since docket's `source` is hardcoded to `"operator"` on every
-//! call — silently grants operator trust (card V1 confirmed this live).
-//! Card C2 (untrusted-source handling) calls this function with
+//! call — silently grants operator trust.
+//! Untrusted-source handling calls this function with
 //! `trusted: false` for GitHub/Linear-imported items; this module's own
 //! HTTP entry point ([`handlers::orch::dispatch_item`]) defaults
 //! conservatively too — see that handler's doc comment. A required
 //! positional `bool` can't stop a caller from passing the wrong *value*,
-//! but it makes the *unsafe omission* — the actual failure mode V1
-//! documented — a compile error instead of a silent default.
+//! but it makes the *unsafe omission* a compile error instead of a silent
+//! default.
 //!
 //! # Idempotency and `attempt`
 //!
@@ -85,22 +84,18 @@
 //! # What this module deliberately does *not* do
 //!
 //! - **Terminal-state (`on_succeeded`/`on_failed`/`on_cancelled`)
-//!   application** is not wired here. TODO.md's task 35.6 describes the
-//!   reconciler applying these once a run polled by `orch_runs` (card B1)
-//!   reaches a terminal `RunState` — that requires a call site inside
-//!   `tack-orch::reconciler`'s `persist_runs` (via a new
-//!   `ControlPlaneStore` method, the same extension pattern B1 used for
-//!   `upsert_runs`/`upsert_approvals`), and `reconciler.rs` is not a file
-//!   this card owns. [`apply_mapped_status`] is written to be that call
-//!   site's engine — it is generic over "which target status, which
-//!   trigger name", not specific to `on_running`/`on_waiting_approval` —
-//!   but nothing currently calls it for a terminal run state. See this
-//!   card's TODO.md §6 handoff for the exact extension a future agent
-//!   needs to make.
+//!   application** is not wired *here* — the reconciler applies it once a
+//!   run polled by `orch_runs`
+//!   reaches a terminal `RunState`, via `orch_store.rs`'s
+//!   `reconcile_terminal_status_map`, a call site inside
+//!   `RepoControlPlaneStore::upsert_runs`. [`apply_mapped_status`] is the
+//!   shared engine both call sites use — it is generic over "which target
+//!   status, which trigger name", not specific to
+//!   `on_running`/`on_waiting_approval`.
 //! - **`ControlPlane::dispatch`** (`POST /dispatch/{project}`, pipeline
 //!   `variables`) is never called. Only `enqueue_task` is used — see
-//!   `adapters::docket`'s module doc and this card's handoff for why.
-//! - Auto-dispatch (C2) and sprint DAG-ordered dispatch (C3) both call
+//!   `adapters::docket`'s module doc for why.
+//! - Auto-dispatch and sprint DAG-ordered dispatch both call
 //!   [`dispatch_item`] rather than duplicating any of this.
 
 use std::collections::HashSet;
@@ -129,7 +124,7 @@ use crate::router::AppState;
 /// an item that can never be retried because of a status string this
 /// version of Tack doesn't understand.
 ///
-/// `pub(crate)`, not private: card C3's sprint-dispatch dry-run reads this
+/// `pub(crate)`, not private: sprint-dispatch dry-run reads this
 /// directly (via [`is_active_task_status`]) to preview whether a real run
 /// would report an item `already_in_flight`, without duplicating the
 /// definition of "active."
@@ -142,7 +137,7 @@ pub(crate) fn is_active_task_status(remote_status: &str) -> bool {
 }
 
 /// `true` iff `current_status` is one of `status_map.dispatch_from` — the
-/// single place this check is expressed. [`dispatch_item`] and card C3's
+/// single place this check is expressed. [`dispatch_item`] and the
 /// sprint-dispatch preview both call this rather than each writing their own
 /// membership check, so the two can never quietly disagree about what
 /// "eligible" means.
@@ -157,8 +152,8 @@ pub(crate) fn is_dispatch_eligible(status_map: &StatusMap, current_status: &str)
 /// A process-wide guard against two concurrent dispatch requests for the
 /// same item racing each other. Deliberately **not** a field on
 /// [`AppState`]: `AppState` is constructed via a plain struct literal in
-/// dozens of pre-existing test files across this crate that this card does
-/// not own, and adding a required field there would ripple into every one
+/// dozens of pre-existing test files across this crate, and adding a
+/// required field there would ripple into every one
 /// of them. A single `static` is the narrower change and is sufficient —
 /// Tack is a single-process, single-SQLite-writer binary (see this module's
 /// doc comment), so there is exactly one process whose in-memory state ever
@@ -196,9 +191,9 @@ fn try_acquire(item_id: Uuid) -> Option<DispatchGuard> {
 // ─────────────────────────────────────────────────────────────────────────
 
 /// The result of attempting to apply a `status_map`-named target status
-/// through the workflow engine (TODO.md §0 rule 7). Never an `Err` on its
+/// through the workflow engine. Never an `Err` on its
 /// own — a workflow-engine refusal is a normal, expected outcome
-/// (`status_map_rejected`, TODO.md task 35.6's acceptance bar), not a
+/// (`status_map_rejected`), not a
 /// failure of the dispatch itself.
 #[derive(Debug, Clone)]
 pub struct StatusApplication {
@@ -223,7 +218,7 @@ pub struct DispatchSuccess {
     pub approval_token: Option<String>,
     /// `None` when `status_map` named no target status for this trigger
     /// (`on_running` / `on_waiting_approval` absent — "do not touch the
-    /// item's status", per TODO.md §1.3).
+    /// item's status").
     pub status_application: Option<StatusApplication>,
 }
 
@@ -233,7 +228,7 @@ pub struct DispatchSuccess {
 #[derive(Debug, Clone)]
 pub enum DispatchOutcome {
     /// `status_map.dispatch_from` is empty — no dispatch policy configured
-    /// yet. Not an error (TODO.md's explicit non-negotiable).
+    /// yet. Not an error.
     NoDispatchPolicy,
     /// The item's current status isn't in `status_map.dispatch_from`.
     NotEligible {
@@ -247,8 +242,8 @@ pub enum DispatchOutcome {
     },
     /// docket's `pre_input` policy refused the request. `policy_id` is the
     /// id of the guardrail that fired (parsed by `adapters::docket` out of
-    /// docket's own error text — see [`tack_orch::OrchError::PolicyBlocked`],
-    /// card R1); `message` is docket's own text, verbatim, for display.
+    /// docket's own error text — see [`tack_orch::OrchError::PolicyBlocked`]);
+    /// `message` is docket's own text, verbatim, for display.
     Blocked {
         policy_id: String,
         message: String,
@@ -315,9 +310,9 @@ pub async fn dispatch_item(
         )));
     };
 
-    // III-G1 (Wave 6): one scheduling owner. If the item already has a live
+    // One scheduling owner. If the item already has a live
     // runner-v1 execution request (`execution_requests`, the neutral domain — see
-    // `tack_db::repo::orch`'s "III-G1" section for the exact "active" definition,
+    // `tack_db::repo::orch`'s section for the exact "active" definition,
     // which mirrors `ExecutionState::is_terminal` rather than redefining it), legacy
     // Docket dispatch defers rather than racing it: nothing is sent to docket and no
     // `orch_tasks` row is written. Checked before the existing `orch_tasks`
@@ -325,10 +320,10 @@ pub async fn dispatch_item(
     // lock is acquired first — a caller must never observe docket being contacted for
     // an item the runner-v1 scheduler already owns. Reuses the same `ApiError::
     // Conflict` shape this function already returns for the concurrent-dispatch lock
-    // case just above (not a new `DispatchOutcome` variant — see the III-G1 handoff
-    // for why: every existing exhaustive match on `DispatchOutcome` lives outside
-    // this card's file ownership, and `Conflict` already means exactly "another party
-    // owns this item's dispatch right now").
+    // case just above (not a new `DispatchOutcome` variant): every existing
+    // exhaustive match on `DispatchOutcome` lives outside this module, and
+    // `Conflict` already means exactly "another party owns this item's dispatch
+    // right now".
     if state
         .repo
         .has_active_execution_request_for_item(item_id)
@@ -470,7 +465,7 @@ pub async fn dispatch_item(
 /// Apply `target_status` to `item` **through the workflow engine** —
 /// `validate_transition` + an atomic WIP-limit check-and-write, exactly the
 /// same gate `handlers::items::update_item` applies to a human-driven status
-/// change (TODO.md §0 rule 7). A refusal is recorded as a
+/// change. A refusal is recorded as a
 /// `status_map_rejected` `orch_events` row and returned as
 /// `rejected_reason`; the item is left untouched. On success, mirrors
 /// `update_item`'s side effects (WebSocket broadcast, parent
@@ -479,22 +474,21 @@ pub async fn dispatch_item(
 ///
 /// **The WIP-limit check and the status write happen in one SQLite
 /// transaction** (`Repository::update_item_status_checked`), not as two
-/// separate steps. Card R2 (2026-08-05): this used to be a plain
-/// `count_items_by_status` read followed by an unguarded `update_item`
-/// write, which let two concurrent dispatches into the same WIP-limited
-/// column both observe "under the limit" and both commit — rare before
-/// card C3's sprint dispatch made concurrent writes into one column routine
-/// rather than coincidental. See that method's doc comment for the fix.
+/// separate steps — a plain `count_items_by_status` read followed by an
+/// unguarded `update_item`
+/// write would let two concurrent dispatches into the same WIP-limited
+/// column both observe "under the limit" and both commit. See that
+/// method's doc comment for the fix.
 /// `validate_transition` itself stays a separate, unguarded check above —
 /// it only depends on the project's static workflow config (explicit
 /// transitions), not on any row count, so it isn't subject to the same
 /// race.
 ///
 /// Generic over `target_status`/`trigger` so it can serve both the
-/// dispatch-time triggers this card wires up (`on_running`,
-/// `on_waiting_approval`) and a future reconciler-driven call for the
-/// terminal triggers (`on_succeeded`/`on_failed`/`on_cancelled`) — see the
-/// module doc's "What this module deliberately does not do".
+/// dispatch-time triggers here (`on_running`,
+/// `on_waiting_approval`) and the reconciler-driven call for the
+/// terminal triggers (`on_succeeded`/`on_failed`/`on_cancelled`) in
+/// `orch_store.rs`'s `reconcile_terminal_status_map`.
 pub async fn apply_mapped_status(
     state: &AppState,
     item: &Item,
@@ -622,7 +616,7 @@ async fn record_status_map_rejected(
 /// surface as a real error on this one request, not silently vanish from a
 /// list.
 ///
-/// Built on `adapters::registry::build` (card G1) — see that function's own
+/// Built on `adapters::registry::build` — see that function's own
 /// doc comment for why `config`/`secrets` are passed as placeholders here:
 /// `tack_db::repo::orch::ControlPlane` (the row type `get_control_plane`
 /// returns) doesn't yet surface those columns, and the one registered
@@ -685,9 +679,7 @@ fn map_priority(p: &Priority) -> Option<&'static str> {
 /// `handlers::orch::dispatch_item`) doesn't have a stronger signal of its
 /// own to pass instead.
 ///
-/// **Card C2 (task 35.7), superseding the `github_links`-sniffing stopgap
-/// this function used to be** (see git history / TODO.md's C1 handoff for
-/// the old body): item provenance is now a real, sticky, creation-time
+/// Item provenance is a real, sticky, creation-time
 /// column (`items.source` / `tack_core::models::ItemSource`, migration
 /// 029), not an inference from a side table. This function is now a thin
 /// read of that column — `ItemSource::is_trusted()` is the single source of

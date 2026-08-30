@@ -2,8 +2,8 @@
 //!
 //! Defines [`ControlPlane`], the trait every agent-fleet backend (docket today,
 //! something else tomorrow) implements, plus the DTOs that cross the
-//! Tack ⇄ control-plane boundary. Concrete adapters (`adapters::docket`, Wave 1)
-//! and the reconciler poll loop (`reconciler`, Wave 1) build on top of this.
+//! Tack ⇄ control-plane boundary. Concrete adapters (`adapters::docket`)
+//! and the reconciler poll loop (`reconciler`) build on top of this.
 //!
 //! # Dependency direction
 //!
@@ -13,7 +13,7 @@
 //! dispatch routes — not the other way around. If you're an agent reaching for
 //! `tack-api` types from in here (e.g. to reuse a handler DTO), stop: define the
 //! type here instead and let `tack-api` depend on it, or duplicate the small
-//! shape rather than inverting the graph. See `TODO.md` §1.1 and
+//! shape rather than inverting the graph. See
 //! `docs/book/src/developer/orchestration.md`.
 //!
 //! # Money is always an estimate
@@ -22,7 +22,7 @@
 //! `*_usd` alone) — token counts are the primary, trustworthy measure; docket's
 //! own driver does not report real spend (see `docket/core/dispatch.py`'s
 //! `pod_gating_cost`), so any dollar figure downstream of it is derived, not
-//! recorded. See `TODO.md` §0 rule 6.
+//! recorded.
 //!
 //! # Unknown enum values never fail a poll
 //!
@@ -40,7 +40,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub mod adapters;
 pub mod execution;
-// Card III-F5 (Wave 5): runtime retention and observability for the
+// Runtime retention and observability for the
 // execution domain. Siblings of `execution` (not submodules of it) because
 // both are I/O-bearing background tasks — see `execution_retention`'s
 // module doc for why that boundary matters.
@@ -93,13 +93,12 @@ pub enum OrchError {
 
     /// docket's `pre_input` policy gate deliberately refused a dispatch —
     /// a transport *success* carrying a considered "no", not a transport
-    /// failure. Card V1 verified live that a `block` verdict comes back as
+    /// failure. Verified live that a `block` verdict comes back as
     /// HTTP 400 naming the policy id that fired
     /// (`"task rejected by guardrail policy '<id>' at enqueue: <message>"`).
     /// `policy_id` is that id, parsed out once here so every caller gets a
-    /// typed field instead of pattern-matching a prefix on a string (see
-    /// TODO.md §2.1, card R1 — this variant replaces `adapters::docket`'s
-    /// old `POLICY_BLOCK_PREFIX` string-matching workaround). `message` is
+    /// typed field instead of pattern-matching a prefix on a string.
+    /// `message` is
     /// docket's own text, kept verbatim for display.
     #[error("blocked by guardrail policy {policy_id:?}: {message}")]
     PolicyBlocked { policy_id: String, message: String },
@@ -110,7 +109,7 @@ pub enum OrchError {
     /// past `APPROVAL_TIMEOUT`). Distinct from [`OrchError::NotFound`] (404 —
     /// no such token at all, or docket's `approval.ApprovalError` for an
     /// illegal state transition, which `serve.py` happens to report with the
-    /// same status) so a caller building an approvals inbox (card D1) can
+    /// same status) so a caller building an approvals inbox can
     /// render "someone already decided this" — a normal, expected race, not
     /// a hard error — and simply drop the stale row rather than surface a
     /// scary failure. `message` is docket's own text (e.g. `"Already
@@ -119,7 +118,7 @@ pub enum OrchError {
     AlreadyDecided(String),
 
     /// The remote resource we tried to create already exists — docket's
-    /// `PodAlreadyExistsError` (`POST /pods` → HTTP 409, card D4). Its own
+    /// `PodAlreadyExistsError` (`POST /pods` → HTTP 409). Its own
     /// doc comment (`core/pod_provisioning.py`) calls this "skip, don't
     /// clobber," matching the declarative `--from` path's long-standing
     /// idempotence contract. Distinct from [`OrchError::AlreadyDecided`] (an
@@ -132,7 +131,7 @@ pub enum OrchError {
 }
 
 // ---------------------------------------------------------------------------
-// Remote state enums — the exact strings docket emits (TODO.md §1.2), each
+// Remote state enums — the exact strings docket emits, each
 // with an `Unknown(String)` fallback that round-trips.
 // ---------------------------------------------------------------------------
 
@@ -274,8 +273,7 @@ remote_string_enum! {
 // trace/event records (`core/trace.py`) use snake_case — that split is real,
 // not an inconsistency introduced here, so each struct's `#[serde(...)]`
 // attributes follow the endpoint it actually came from rather than a single
-// blanket convention. See the module doc and this crate's Wave-0 handoff note
-// in TODO.md §6 for the endpoints that don't exist yet.
+// blanket convention.
 
 /// `GET /health` — liveness only. Format: `{"status":"ok","gateway":N}`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -333,8 +331,7 @@ pub struct FleetBinding {
 pub struct FleetStatus {
     /// docket's `SERVE_API_VERSION` — bumped on any breaking contract change.
     /// Check this on every poll; a mismatch should degrade the plane rather
-    /// than risk misparsing a shape that has silently changed underneath us
-    /// (see TODO.md §5, "Known risks").
+    /// than risk misparsing a shape that has silently changed underneath us.
     pub api_version: String,
     pub timestamp: String,
     /// `"active"` or `"inactive"`.
@@ -351,7 +348,7 @@ pub struct FleetStatus {
 /// `name` is the bare metric name (e.g. `docket_agent_cost_usd`); `labels` is
 /// the `{k="v", ...}` label set, if any; `value` is the trailing number.
 /// Comment (`#`) lines never produce a sample. The parser that produces these
-/// lives in `adapters::docket` (Wave 1, card A1) and is reused as-is by B3's
+/// lives in `adapters::docket` and is reused as-is by B3's
 /// metrics ingestion — do not write a second one.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MetricSample {
@@ -420,19 +417,14 @@ pub struct RemoteApproval {
     /// `serde_json::Value` rather than a typed struct so a caller with a
     /// different context shape (or none) still deserializes cleanly. Callers
     /// that want the dispatch correlation should look up `taskId` explicitly
-    /// and treat its absence as "an uncorrelated approval" (see TODO.md §
-    /// Wave 2, card B1), not as a parse error.
+    /// and treat its absence as "an uncorrelated approval", not as a parse
+    /// error.
     #[serde(default)]
     pub context: serde_json::Value,
 }
 
-/// `GET /tasks/{project}` (⚠️ does not exist yet — blocked on docket Phase 22,
-/// see TODO.md §1.4). Field shape is inferred from the **queued task record**
-/// docket already persists internally (`core/dispatch.py`'s `_normalize_task`/
-/// `enqueue_task`) since that is the closest real precedent for what the new
-/// endpoint is likely to expose — this is a best-effort projection, not a
-/// verified contract, and must be re-checked against the real endpoint once
-/// docket Phase 22 ships.
+/// `GET /tasks/{project}` — real wire shape, live-verified. See
+/// `adapters::docket`'s module doc, "Verified live", for the capture.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteTask {
@@ -458,16 +450,15 @@ pub struct RemoteTask {
     pub pending_approval_index: Option<i64>,
 }
 
-/// Body for `POST /tasks/{project}` (⚠️ does not exist yet — blocked on
-/// docket Phase 22; see TODO.md §1.4 and §Wave 3 card C1). `description` and
+/// Body for `POST /tasks/{project}` — real, live-verified endpoint. See
+/// `adapters::docket`'s module doc, "Verified live", for the capture.
+/// `description` and
 /// `priority` mirror `core/dispatch.py`'s `enqueue_task(project, description,
-/// priority)`. `trusted` is **speculative**: it is not a parameter of
+/// priority)`. `trusted` is not a parameter of
 /// `enqueue_task` today (which derives trust from a fixed `source ==
-/// "operator"` check), but TODO.md's Wave 3 card C2 requires imported items
-/// to enqueue with `trusted: false` so docket's `pre_input` guardrail policy
-/// evaluates them as untrusted, attacker-authored text — that requires the
-/// future endpoint to accept trust as an explicit input. Re-verify this
-/// field's name and presence once docket Phase 22 ships the real endpoint.
+/// "operator"` check); an imported item must enqueue with `trusted: false`
+/// so docket's `pre_input` guardrail policy
+/// evaluates it as untrusted, attacker-authored text.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NewRemoteTask {
@@ -482,7 +473,7 @@ pub struct NewRemoteTask {
     pub trusted: bool,
 }
 
-/// `POST /pods` request body (card D4, Wave 4, task 37.2) — verified
+/// `POST /pods` request body — verified
 /// directly against `serve.py::_handle_post_pods` and
 /// `core/pod_provisioning.py::provision_pod` (docket commit `0d84f47`,
 /// P22-5), not inferred: `{project, path, blueprint, pod, budget,
@@ -508,7 +499,7 @@ pub struct NewRemoteTask {
 /// - `budget` — a cap override (`None` = fall back to the blueprint's own
 ///   default). Unsuffixed (not `*_usd_estimated`) because this is an
 ///   operator-set ceiling, not a derived spend figure — same reasoning as
-///   `orch_links.budget_usd` (TODO.md §0 rule 6 governs *estimates*, not
+///   `orch_links.budget_usd` (estimates are governed separately from
 ///   caps).
 /// - `verify_cmd` — applied to Implementer member(s) at creation time.
 ///   docket validates it server-side (`validate_verify_cmd`: no NUL byte,
@@ -564,16 +555,14 @@ pub struct ProvisionedPod {
 /// to carry a remote-minted cursor back out, and `tack-orch`'s reconciler
 /// reimplemented docket's own compound `"<ts>Z:<n>"` cursor algorithm
 /// client-side to work around that gap — correct, but one silent algorithm
-/// change away from quietly skipping or duplicating events (see TODO.md
-/// §2.1, card R1, and the git history for `reconciler.rs`'s deleted
-/// `next_trace_cursor`/`decode_trace_cursor`). That reconstruction is gone;
-/// this field is the fix.
+/// change away from quietly skipping or duplicating events. That
+/// reconstruction is gone; this field is the fix.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct TracesPage {
     pub events: Vec<RemoteEvent>,
     /// `None` only if the remote genuinely didn't send one — defensive, not
     /// expected: docket always mints `next` on `GET /traces/{project}`
-    /// (card V1, verified live). A caller with `next: None` should treat the
+    /// A caller with `next: None` should treat the
     /// cursor as unchanged rather than erroring the poll.
     #[serde(default)]
     pub next: Option<String>,
@@ -583,8 +572,8 @@ pub struct TracesPage {
 /// exactly, **including its snake_case field names** — trace events are the
 /// one docket surface that is not camelCase (contrast every other DTO in this
 /// file, which mirrors a `serve.py` JSON endpoint). Produced by `GET
-/// /traces/{project}` (⚠️ does not exist yet — blocked on docket Phase 22; see
-/// TODO.md §1.4 and §Wave 2 card B2).
+/// /traces/{project}` — real, live-verified endpoint; see
+/// `adapters::docket`'s module doc.
 ///
 /// `event_type` is deliberately a plain `String`, not an enum: docket's
 /// `EVENT_TYPES` set (`core/trace.py`) is large, open to growth, and B2's
@@ -611,7 +600,7 @@ pub struct RemoteEvent {
 }
 
 // ---------------------------------------------------------------------------
-// Capabilities — what an adapter can actually do (TODO.md §II.1.2, card G1)
+// Capabilities — what an adapter can actually do
 // ---------------------------------------------------------------------------
 //
 // Why this exists: with one adapter, every UI control could safely assume
@@ -620,8 +609,8 @@ pub struct RemoteEvent {
 // to carry as a prose string). A second adapter with a genuinely different
 // shape (no pods, no roles, no approval store) breaks that assumption
 // silently unless "what can this plane do" becomes a value the caller reads,
-// not a fact baked into a component. TODO.md §II.0 rule 6: "a capability is
-// a value, never a provider check" — `rg -n "kind === 'docket'"` in
+// not a fact baked into a component. A capability is
+// a value, never a provider check — `rg -n "kind === 'docket'"` in
 // `frontend/src` must stay empty.
 
 /// Three-state support level for a capability that isn't a plain yes/no —
@@ -680,7 +669,7 @@ pub enum DecisionSupport {
 #[serde(rename_all = "snake_case")]
 pub enum UsageSupport {
     /// No token/cost figure exists for this provider (e.g. GitHub Actions
-    /// reports runner minutes, not model usage — TODO.md §II.0 rule 7: two
+    /// reports runner minutes, not model usage — two
     /// meters are never one number).
     NotMeasured,
     /// The provider's own driver estimates its cost/token usage and reports
@@ -691,7 +680,7 @@ pub enum UsageSupport {
 }
 
 /// Whether a caller-supplied model identifier actually reaches the work.
-/// TODO.md §II.0 rule 2: model identifiers are opaque strings Tack never
+/// Model identifiers are opaque strings Tack never
 /// parses or classifies — this only records what the *provider* does with
 /// one once Tack hands it over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -709,8 +698,8 @@ pub enum ModelSelection {
 /// Pairs a non-boolean capability's level with a human-readable reason —
 /// the whole point of this module. A bare `Support::Unsupported` tells a UI
 /// *that* a control is off; `reason` is what lets it say *why* without a
-/// provider-specific string hand-written into a component (TODO.md §II.0
-/// rule 6). The reason is always adapter-authored data, produced by the
+/// provider-specific string hand-written into a component. The reason is
+/// always adapter-authored data, produced by the
 /// same code that decided the level — never a caller-side literal invented
 /// after the fact.
 ///
@@ -733,8 +722,8 @@ impl<T> Rated<T> {
 }
 
 /// What one control plane can actually do — derived from the adapter's own
-/// static configuration, never guessed from `kind` by a caller (TODO.md
-/// §II.0 rule 6). Two ad-hoc capability bits this struct retires:
+/// static configuration, never guessed from `kind` by a caller. Two ad-hoc
+/// capability bits this struct retires:
 /// `PendingApprovalListResponse.grant_available` and
 /// `useAgentActivityMap`'s `orchAvailable()` used as a dispatch gate — both
 /// really meant "orchestration is on," not "this provider can do this,"
@@ -783,18 +772,17 @@ pub struct Capabilities {
 
 /// A control plane Tack can read fleet/run/approval/task state from and (from
 /// Phase 35 on, gated behind `TACK_ORCH_ENABLE`) dispatch work to. `docket` is
-/// the only implementor today (`adapters::docket::DocketAdapter`, Wave 1); the
+/// the only implementor today (`adapters::docket::DocketAdapter`); the
 /// trait exists so a second backend never has to touch the reconciler,
 /// handlers, or frontend that consume it.
 ///
-/// **No longer frozen.** TODO.md §1.1 specified these signatures exactly and
-/// every Wave 1–3 card built against them verbatim; §2.1 (card R1,
-/// 2026-08-05) lifted that freeze once it started forcing designs worse than
-/// the churn it was meant to prevent (see [`traces`](Self::traces)'s return
+/// **Not frozen.** These signatures changed once already when the original
+/// freeze started forcing designs worse than the churn it was meant to
+/// prevent (see [`traces`](Self::traces)'s return
 /// type and [`OrchError::PolicyBlocked`] for the two concrete cases). Treat
 /// the shape below as current, not eternal — change it again if the next
 /// design genuinely needs to, and update every implementor/caller in the
-/// same change, the way R1 did.
+/// same change.
 #[async_trait::async_trait]
 pub trait ControlPlane: Send + Sync {
     fn kind(&self) -> &'static str; // "docket"
@@ -826,11 +814,11 @@ pub trait ControlPlane: Send + Sync {
     async fn enqueue_task(&self, project: &str, task: NewRemoteTask) -> Result<String, OrchError>;
     async fn dispatch(&self, project: &str, vars: serde_json::Value) -> Result<String, OrchError>;
     /// Grant (`grant: true`) or deny (`grant: false`) a pending approval —
-    /// `POST /approvals/{token}` (card D1, Wave 4, task 36.1). Success
+    /// `POST /approvals/{token}`. Success
     /// carries docket's own resulting [`ApprovalState`] (`Granted`/`Denied`;
     /// modeled as `Unknown` rather than assumed if docket's wording ever
     /// changes) — mirrors the real response body, `{"ok":true,"token":...,
-    /// "state":...}` (card V1, verified live). The `channel` docket records
+    /// "state":...}`. The `channel` docket records
     /// alongside the decision in its hash-chained audit log (its P22-4) is
     /// **not** a parameter here — every caller of this trait is Tack itself,
     /// so `adapters::docket`'s implementation sends the fixed value `"tack"`
@@ -844,10 +832,9 @@ pub trait ControlPlane: Send + Sync {
     /// way) is [`OrchError::NotFound`].
     async fn decide_approval(&self, token: &str, grant: bool) -> Result<ApprovalState, OrchError>;
 
-    /// Provision a fresh pod from a blueprint — `POST /pods` (card D4, Wave
-    /// 4, task 37.2; docket P22-5, verified live against
-    /// `core/pod_provisioning.py`/`serve.py::_handle_post_pods`, commit
-    /// `0d84f47`). See [`ProvisionPodParams`] for the request shape.
+    /// Provision a fresh pod from a blueprint — `POST /pods`, verified live
+    /// against `core/pod_provisioning.py`/`serve.py::_handle_post_pods`.
+    /// See [`ProvisionPodParams`] for the request shape.
     ///
     /// **docket provisions atomically: either every member is created, or
     /// none are.** `core/pod_provisioning.py`'s module doc states the
@@ -875,8 +862,8 @@ pub trait ControlPlane: Send + Sync {
 mod tests {
     use super::*;
 
-    /// One "unrecognised value round-trips" test per enum (TODO.md's Wave-0
-    /// acceptance criterion) — deserializes to `Unknown(original)` instead of
+    /// One "unrecognised value round-trips" test per enum — deserializes
+    /// to `Unknown(original)` instead of
     /// erroring, and reserializes to exactly the same string.
     fn assert_unknown_round_trips<T>(wire_value: &str)
     where
@@ -1101,7 +1088,7 @@ mod tests {
         assert!(page.events.is_empty());
     }
 
-    // ── Capabilities (card G1) ──────────────────────────────────────────
+    // ── Capabilities ──────────────────────────────────────────
 
     #[test]
     fn support_serializes_to_the_wire_strings_the_openapi_contract_promises() {
@@ -1137,7 +1124,7 @@ mod tests {
 
     #[test]
     fn docket_capabilities_match_the_verified_facts() {
-        // Field-by-field against TODO.md card G1 / the plan's §II.1.4 table —
+        // Field-by-field against the verified facts —
         // a docket instance with no token configured is enough, since
         // `capabilities()` does no I/O and never reads the stored
         // credential.

@@ -1,4 +1,4 @@
-//! Tests for card B3 (Wave 2, metrics ingestion + retention, tasks 34.3/34.6/34.7):
+//! Tests for card B3:
 //! migrations 025 (`orch_metrics`), 026 (`orch_events_daily`), 027 (`orch_metrics_daily`),
 //! and the repository functions built on them
 //! (`upsert_orch_metrics`, `list_latest_orch_metrics`, `rollup_and_purge_orch_events`,

@@ -1,44 +1,21 @@
 //! Harness process/event infrastructure and the shared adapter-registration
-//! seam (card III-D4).
+//! seam.
 //!
-//! ## Correcting the card's premise: `HarnessAdapter` already exists
-//!
-//! This card was briefed on the premise that no `HarnessAdapter` trait
-//! exists in the tree yet, and that defining one here was part of the card.
-//! That premise does not match the checked-out tree: C3 (Wave 2, accepted at
-//! integration SHA `f931fc0`) already added
-//! [`crate::client::engine::HarnessAdapter`] to `engine.rs` — five methods
-//! (`validate`/`start`/`cancel`/`wait`/`reconcile`) built specifically as
-//! the seam later harness cards implement, down to its own doc comment:
-//! *"C3 tests use a fake adapter and later harness cards implement this
-//! contract in their own files without changing engine ownership."* C3's own
-//! handoff says so explicitly too: *"D1–D3 implement `HarnessAdapter` in
-//! adapter-owned files."* D1/D2/D3's task lists (`validate frozen spec`,
-//! `cancel process tree`, `reconcile journal only when proven supported`,
-//! ...) map onto that trait's five methods almost one-to-one.
-//!
-//! Given that, redefining a second, competing `HarnessAdapter` trait here
-//! would be actively harmful — exactly the "three agents invent three
-//! incompatible interfaces" outcome this card exists to prevent, just moved
-//! one level up. So this module does **not** redefine it. Instead:
-//!
-//! - [`crate::client::engine::HarnessAdapter`] (re-exported for convenience
-//!   as [`HarnessAdapter`] at this module's root) remains *the* frozen
-//!   per-attempt lifecycle interface D1/D2/D3 implement, unchanged.
-//! - This module supplies the genuinely missing piece: [`HarnessProbe`],
-//!   for harness discovery/capability reporting, which has no home in
-//!   `engine::HarnessAdapter` at all (see below for why that is a *separate*
-//!   concern, not an oversight).
-//! - [`AdapterRegistry`] is the "shared registry wiring" this card owns: a
-//!   struct that itself implements `engine::HarnessAdapter` by dispatching
-//!   to whichever concrete adapter matches a claimed attempt's requested
-//!   harness kind. `RunnerEngine<P, A, W, C>` only ever needs one concrete
-//!   `A: HarnessAdapter`; `AdapterRegistry` **is** that one `A`, so a runner
-//!   can serve all three harnesses through a single engine instance with
-//!   zero changes to `engine.rs`.
-//! - [`process`] and [`event_sink`] are the lower-level primitives
-//!   [`AdapterRegistry`]'s member adapters (D1/D2/D3's own structs) compose
-//!   inside their `validate`/`start`/`cancel`/`wait` implementations.
+//! [`crate::client::engine::HarnessAdapter`] (re-exported as
+//! [`HarnessAdapter`] at this module's root) is the frozen per-attempt
+//! lifecycle interface each concrete harness adapter (`codex.rs`,
+//! `claude_code.rs`, `opencode.rs`) implements. This module supplies the
+//! genuinely separate piece: [`HarnessProbe`], for harness
+//! discovery/capability reporting, which has no home in
+//! `engine::HarnessAdapter` at all (see "Why `HarnessProbe` is not a sixth
+//! `HarnessAdapter` method" below). [`AdapterRegistry`] is the shared
+//! registry wiring: a struct that itself implements `engine::HarnessAdapter`
+//! by dispatching to whichever concrete adapter matches a claimed attempt's
+//! requested harness kind, so `RunnerEngine<P, A, W, C>`'s single `A:
+//! HarnessAdapter` can serve all three harnesses through one engine
+//! instance. [`process`] and [`event_sink`] are the lower-level primitives
+//! the concrete adapters compose inside their own
+//! `validate`/`start`/`cancel`/`wait` implementations.
 //!
 //! ## Why `HarnessProbe` is not a sixth `HarnessAdapter` method
 //!
@@ -53,44 +30,28 @@
 //! separate trait for exactly that: "detect version, report capabilities,
 //! independent of any specific attempt."
 //!
-//! ## What D5 is expected to reconcile
+//! ## Two open interface gaps, proven by three real adapters
 //!
-//! This is a starting point, not a final answer — three real adapters will
-//! prove or falsify it:
-//!
-//! 1. **`HarnessProbe` vs. a sixth `HarnessAdapter` method.** If all three
-//!    real adapters end up wanting to probe capabilities as a side effect of
-//!    something already spec-shaped (e.g. `validate`), folding `probe` into
-//!    `engine::HarnessAdapter` may turn out simpler than keeping two traits.
-//!    Keep it separate only if capability discovery genuinely needs to run
-//!    (e.g. at startup, before any request exists) independent of a claimed
-//!    attempt.
-//! 2. **`LocalRunHandle` cannot name its own harness kind — a real interface
-//!    gap, not a style choice.** `cancel`/`wait` take only `&LocalRunHandle
-//!    { process_id: String }`, with no harness-kind field, so a dispatching
-//!    registry has no way to route a bare handle back to the adapter that
-//!    produced it. [`AdapterRegistry`] works around this by encoding the
-//!    kind into the opaque `process_id` string it hands back from `start`
-//!    (see `encode_handle`/`decode_handle` below) and decoding it again in
-//!    `cancel`/`wait`/`reconcile`. The straightforward fix — adding a
-//!    `harness_kind` field to `LocalRunHandle` — was evaluated and
-//!    deliberately **not** made here: `LocalRunHandle { process_id: ... }`
-//!    is constructed by literal in exactly one place this card may not
-//!    touch, `crates/tack-runner/tests/crash_matrix.rs:277` (C4-owned), and
-//!    any new required field breaks that construction. This is reported as
-//!    the falsifying fact rule 6 asks for: D5 is the only card that can
-//!    coordinate an `engine.rs` + `crash_matrix.rs` change together, and
-//!    should decide whether three real adapters make the field worth adding
-//!    once the workaround's actual cost is visible.
-//! 3. **Kind-key type duplication.** [`AdapterRegistry`] keys directly on
-//!    `tack_orch::execution::HarnessKind` (an opaque string, matching
-//!    `ExecutionRequestSnapshot::requested_harness_kind`). `registry.rs`
-//!    (D5-owned) separately defines its own `HarnessKind` enum
-//!    (`Codex`/`ClaudeCode`/`OpenCode`/`Other(String)`), left untouched by
-//!    this card since `registry.rs` is not in D4's ownership list. Whether
-//!    these two types should be unified, and whether `AdapterRegistry`
-//!    itself belongs in `registry.rs` instead of here, is exactly the kind
-//!    of registry-shape decision D5 owns.
+//! 1. **`LocalRunHandle` cannot name its own harness kind.** `cancel`/`wait`
+//!    take only `&LocalRunHandle { process_id: String }`, with no
+//!    harness-kind field, so a dispatching registry has no way to route a
+//!    bare handle back to the adapter that produced it. [`AdapterRegistry`]
+//!    works around this by encoding the kind into the opaque `process_id`
+//!    string it hands back from `start` (see `encode_handle`/`decode_handle`
+//!    below) and decoding it again in `cancel`/`wait`/`reconcile`. The
+//!    straightforward fix — adding a `harness_kind` field to
+//!    `LocalRunHandle` — is still not made: `LocalRunHandle { process_id:
+//!    ... }` is constructed by literal in `crates/tack-runner/tests/
+//!    crash_matrix.rs:277`, and any new required field breaks that
+//!    construction.
+//! 2. **Kind-key type duplication, still present.** [`AdapterRegistry`] keys
+//!    directly on `tack_orch::execution::HarnessKind` (an opaque string,
+//!    matching `ExecutionRequestSnapshot::requested_harness_kind`).
+//!    `registry.rs` separately defines its own `HarnessKind` enum
+//!    (`Codex`/`ClaudeCode`/`OpenCode`/`Other(String)`). Whether these two
+//!    types should be unified, and whether `AdapterRegistry` itself belongs
+//!    in `registry.rs` instead of here, remains an open registry-shape
+//!    decision.
 
 pub mod artifact;
 pub mod claude_code;
@@ -116,18 +77,17 @@ pub use crate::client::engine::{
 };
 pub use crate::client::{AttemptJournal, RecoveryObservation};
 
-/// Card III-D5 reconciliation of finding 3: a closed vocabulary for
+/// A closed vocabulary for
 /// `ActualExecution.model_observation_source`.
 ///
 /// `tack_orch::execution::ActualExecution.model_observation_source` is a
-/// bare `String` (`crates/tack-orch/src/**` is out of this card's
-/// ownership, so it stays that way on the wire), but three independently
-/// implemented adapters had already converged on exactly these three
-/// meanings before this card touched anything: D1 (`codex.rs`) introduced
+/// bare `String` on the wire, but three independently
+/// implemented adapters converged on exactly these three
+/// meanings: `codex.rs` introduced
 /// `"requested_not_confirmed"` for "this adapter cannot observe which model
 /// actually ran, so it echoes the request instead of fabricating a value";
-/// D3 (`opencode.rs`) reused that exact literal, unprompted, for the
-/// identical situation; D2 (`claude_code.rs`) independently produced
+/// `opencode.rs` reused that exact literal, unprompted, for the
+/// identical situation; `claude_code.rs` independently produced
 /// `"harness_reported"` (the frozen fixture's own exemplar value, used when
 /// a real `stream-json` `system`/`init` event names the model) and
 /// `"not_observed"` (used only when neither an observation nor a request
@@ -188,10 +148,10 @@ pub trait HarnessProbe: Send + Sync {
     /// "successful" a probe result as a healthy one, just less capable.
     async fn probe(&self) -> HarnessCapability;
 
-    /// Card III-D5 reconciliation of finding 1: the per-feature support this
+    /// The per-feature support this
     /// adapter honestly promises, independent of any specific attempt.
     ///
-    /// Before this card, the only place any adapter computed its own
+    /// The only place any adapter computed its own
     /// `FeatureCapabilities` was inside `HarnessAdapter::wait` — *after* a
     /// process had already run — so nothing in the pre-attempt path could
     /// ever check a claimed capability before spawning anything. Each real
@@ -228,7 +188,7 @@ pub trait HarnessProbe: Send + Sync {
 /// higher ceiling. No adapter in this tree has that mechanism today.
 pub const PROCESS_GROUP_CANCEL_CEILING: CapabilitySupport = CapabilitySupport::Advisory;
 
-/// Card III-D5: a probe rejected at registration, before it can ever back a
+/// A probe rejected at registration, before it can ever back a
 /// claimed attempt. Kept distinct from [`HarnessError`] (a per-attempt,
 /// per-`HarnessAdapter`-call error) since this is a registration-time,
 /// whole-probe rejection with nothing to do with any single attempt.
@@ -248,9 +208,9 @@ pub enum HarnessRegistrationError {
 
 /// Dispatches the frozen [`HarnessAdapter`] lifecycle across every
 /// registered harness kind, and aggregates [`HarnessProbe`] reports. This
-/// **is** the "shared registry wiring" this card owns: D5 registers each of
+/// **is** the shared registry wiring: each of
 /// D1/D2/D3's concrete adapters here (`registry.rs`'s own `HarnessRegistry`
-/// stays untouched by this card — see the module docs on what D5 should
+/// stays untouched by this module — see the module docs on the open
 /// reconcile about the two).
 ///
 /// Implements [`HarnessAdapter`] itself, so `RunnerEngine::new(protocol,
@@ -706,7 +666,7 @@ mod tests {
     struct FakeProbe {
         kind: &'static str,
         installed: bool,
-        /// Card III-D5: configurable so the same fake can play both an
+        /// Configurable so the same fake can play both an
         /// honest probe (the default every pre-existing test below uses) and
         /// a deliberately lying one, for
         /// `registering_a_probe_that_overclaims_cancel_support_is_rejected_before_any_attempt_exists`.
@@ -746,8 +706,8 @@ mod tests {
                     .expect("fixture timestamp")
                     .into(),
                 model_combinations: Vec::new(),
-                // Deliberately un-attested (III-H5): the fake probe stands in
-                // for a pre-III-H5 runner so scheduler tests can cover the
+                // Deliberately un-attested: the fake probe stands in
+                // for the runner so scheduler tests can cover the
                 // "no attestation" path; the real adapters each attest
                 // explicitly.
                 model_passthrough: None,
@@ -804,7 +764,7 @@ mod tests {
     }
 
     /// Acceptance gate: "a lying capability is caught before invocation."
-    /// Finding 1 (`docs/agent-handoffs/part-iii/III-D5.md`): the shared
+    /// The shared
     /// cancellation primitive (`harness::process::SupervisedProcess::cancel`,
     /// a process-group SIGTERM/SIGKILL) cannot reliably reach a descendant a
     /// harness's own shell-tool spawns into a new OS session — D2 proved
@@ -860,11 +820,11 @@ mod tests {
         );
     }
 
-    // ---- III-D5 acceptance: the real, reconciled three adapters ----------
+    // ---- The real, reconciled three adapters ------------------------------
     //
     // Everything above this point tests dispatch/routing with trait-level
     // fakes (D4's own choice, unchanged). These last tests are the two
-    // acceptance-gate proofs specific to this card that need the three
+    // acceptance-gate proofs that need the three
     // *real* adapters (`codex::CodexAdapter`, `claude_code::ClaudeCodeAdapter`,
     // `opencode::OpenCodeAdapter`), not stand-ins: "the same fixture
     // completes through all three fake adapters" and "registration of all
@@ -1060,7 +1020,7 @@ exit 0
     /// structurally cannot let "who registered first" become dispatch
     /// priority, and this proves it empirically, not just by code
     /// inspection. Also proves each real probe's declared cancellation
-    /// capability (all three now `Advisory`, card III-D5 finding 1) passes
+    /// capability (all three now `Advisory`) passes
     /// the registration-time ceiling check this same card added.
     #[tokio::test]
     async fn registering_all_three_real_adapters_is_order_independent() {
@@ -1159,7 +1119,7 @@ exit 0
             );
         }
 
-        // Card III-D5 finding 1's registration-time gate: every one of the
+        // The registration-time gate: every one of the
         // three real, now-reconciled probes registers cleanly (none still
         // claims `cancel: Supported`).
         let mut probe_registry = AdapterRegistry::new();

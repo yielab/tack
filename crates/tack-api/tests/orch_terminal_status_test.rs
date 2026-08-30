@@ -1,4 +1,4 @@
-//! Tests for card C5 (Wave 3, second half of task 35.6, 2026-08-05): the
+//! Tests for card C5: the
 //! reconciler-driven counterpart to card C1's dispatch-time `on_running`/
 //! `on_waiting_approval` application. When `RepoControlPlaneStore::upsert_runs`
 //! (`crates/tack-api/src/orch_store.rs`) sees a run reach a terminal
@@ -10,7 +10,7 @@
 //!
 //! Deliberately does *not* go through the HTTP router (unlike
 //! `orch_dispatch_test.rs`) — `upsert_runs` is called directly, the same way
-//! `orch_broadcast_test.rs` (card B4) already tests this file, since the
+//! `orch_broadcast_test.rs` already tests this file, since the
 //! whole surface under test is `RepoControlPlaneStore`, not an endpoint.
 
 use chrono::Utc;

@@ -1,4 +1,4 @@
-//! Control-plane link API (Phase 33 / card A4, task 33.5): register docket
+//! Control-plane link API: register docket
 //! control planes, link a Tack project to one, and read the Fleet view's
 //! aggregate.
 //!
@@ -10,13 +10,13 @@
 //! `GET`/`PUT /api/settings/orchestration`, `handlers/settings.rs`'s
 //! [`effective_orch_enabled`](crate::handlers::settings::effective_orch_enabled)),
 //! falling back to `TACK_ORCH_ENABLE` as a deployment default when the UI has
-//! never set one — mirrors the Cloud Backup precedent exactly (TODO.md §0
-//! rule 8, rewritten 2026-08-05 — card E1). With orchestration disabled, every
+//! never set one — mirroring the Cloud Backup precedent exactly. With
+//! orchestration disabled, every
 //! route here returns `409 Conflict` with a stable `error.code:
 //! "orchestration_disabled"` and a message naming where to enable it — not a
 //! 404. A 404 made "disabled" indistinguishable from "route doesn't exist",
-//! which hid the feature from its own operator; that was the bug this card
-//! fixes, not a security boundary being removed (the Bearer-token gate and
+//! which hid the feature from its own operator. This is not a security
+//! boundary being removed (the Bearer-token gate and
 //! the separate `TACK_ORCH_APPROVAL_TOKEN` check are unchanged).
 //!
 //! **Token discipline** mirrors the S3 backup secret precedent
@@ -114,9 +114,9 @@ where
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Capabilities (card G1) — wire mirror of tack_orch::Capabilities, surfaced
+// Capabilities — wire mirror of tack_orch::Capabilities, surfaced
 // on GET /api/control-planes/{id} and GET /api/fleet so the UI reads what a
-// plane can do instead of checking `kind` (TODO.md §II.0 rule 6).
+// plane can do instead of checking `kind`.
 // ════════════════════════════════════════════════════════════════════════════
 //
 // Local, non-generic mirrors rather than deriving `utoipa::ToSchema`
@@ -304,7 +304,7 @@ impl From<tack_orch::Rated<tack_orch::ModelSelection>> for ModelSelectionCapabil
 
 /// Wire mirror of `tack_orch::Capabilities` — what a control plane can
 /// actually do, so the UI can disable a control and explain why instead of
-/// checking `kind` (TODO.md §II.0 rule 6).
+/// checking `kind`.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct CapabilitiesResponse {
     pub dispatch: bool,
@@ -453,15 +453,14 @@ async fn get_control_plane_or_404(state: &AppState, id: Uuid) -> ApiResult<Contr
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Optimistic concurrency (card G1, TODO.md §3b D4) — ETag / If-Match for
+// Optimistic concurrency — ETag / If-Match for
 // PATCH /api/control-planes/{id} and PUT /api/projects/{id}/orch-link,
 // against the `version` columns migrations 035/036 added.
 // ════════════════════════════════════════════════════════════════════════════
 //
 // `crates/tack-db/src/repo/orch.rs` doesn't yet surface `version` through
 // `ControlPlane`/`OrchLink`'s typed read structs or `update_control_plane`/
-// `upsert_orch_link` (that file is outside this card's file ownership — see
-// TODO.md's file-ownership map). Everything below reads/writes the raw
+// `upsert_orch_link`. Everything below reads/writes the raw
 // column directly against `state.pool()` — the same escape hatch
 // `handlers::backup` already uses for its own raw `PRAGMA`/`VACUUM`
 // statements (see `get_backup`), not a new pattern in this codebase, just a
@@ -476,8 +475,7 @@ async fn get_control_plane_or_404(state: &AppState, id: Uuid) -> ApiResult<Contr
 // requests racing with the same expected version, exactly one `UPDATE`
 // matches a row and the other affects zero rows. That is what makes
 // `concurrent_patch_with_the_same_if_match_yields_one_200_and_one_412`
-// (TODO.md card G3's acceptance test, which this mechanism must also
-// satisfy for control planes and orch-links) true rather than a race
+// true rather than a race
 // between two independent `SELECT`s. The follow-up content write (via the
 // existing `state.repo.update_control_plane`/`upsert_orch_link`) is a
 // separate statement — this codebase's multi-statement writes are not
@@ -506,8 +504,7 @@ fn parse_if_match(raw: &str) -> Option<i64> {
 /// `412 Precondition Failed`, matching [`ApiError`]'s own `{"error":
 /// {status, message}}` envelope exactly (see `error.rs`'s `IntoResponse`
 /// impl) — this module doesn't add a variant to `ApiError` itself for this
-/// (that file has no owner card this wave; see TODO.md's file-ownership
-/// map), so both `If-Match`-gated handlers below build this response by
+/// so both `If-Match`-gated handlers below build this response by
 /// hand instead.
 fn precondition_failed(message: impl Into<String>) -> Response {
     let body = serde_json::json!({
@@ -681,11 +678,11 @@ pub async fn get_control_plane(
     Ok(Json(cp.into()))
 }
 
-/// `PATCH /api/control-planes/{id}`. Supports optimistic concurrency (card
-/// G1, TODO.md §3b D4): an `If-Match: "<version>"` header, taken from a
+/// `PATCH /api/control-planes/{id}`. Supports optimistic concurrency: an
+/// `If-Match: "<version>"` header, taken from a
 /// previous response's `ETag`, must match the row's current version or the
 /// request is rejected with `412` and nothing is written. **Omitting
-/// `If-Match` behaves exactly as before this card** — the precondition
+/// `If-Match` is not an error** — the precondition
 /// check is skipped entirely; the version still moves forward on every
 /// successful write either way, so a later conditional request from a
 /// different client can always detect this one.
@@ -795,10 +792,10 @@ pub async fn delete_control_plane(
 // orch_links (project_id is the PK — one link per project)
 // ════════════════════════════════════════════════════════════════════════════
 
-/// `status_map` — TODO.md §1.3. All keys optional except `dispatch_from` (which
-/// may be an empty list before a dispatch policy is configured — Wave 3 needs
-/// it non-empty to actually dispatch, but registering a link ahead of that is
-/// a normal, valid state in this wave). Every named status is validated against
+/// `status_map`. All keys optional except `dispatch_from`, which may be an
+/// empty list before a dispatch policy is configured — dispatch needs it
+/// non-empty, but registering a link ahead of that is a normal, valid state.
+/// Every named status is validated against
 /// the project's `WorkflowConfig` at save time — see [`validate_status_map`].
 /// An absent key means "do not touch the item's status on that transition."
 #[derive(Debug, Clone, Default, Serialize, Deserialize, utoipa::ToSchema)]
@@ -827,7 +824,7 @@ pub struct OrchLinkResponse {
     pub blueprint: Option<String>,
     pub auto_dispatch: bool,
     /// User-set cap, not a derived spend figure — deliberately unsuffixed
-    /// (matches `orch_links.budget_usd`; TODO.md §0 rule 6).
+    /// Matches `orch_links.budget_usd`.
     pub budget_usd: Option<f64>,
     pub status_map: StatusMap,
     pub created_at: DateTime<Utc>,
@@ -879,18 +876,16 @@ pub struct UpsertOrchLinkRequest {
 }
 
 /// Every named status in `status_map` must exist in the project's workflow —
-/// TODO.md §1.3's "validated against the project's WorkflowConfig at save
 /// time." Validation, not a raw-SQL status write: this never bypasses the
 /// workflow engine, it only checks the *names* used to configure future
-/// auto-transitions are real (TODO.md §0 rule 7 is about the transition itself,
-/// applied later by the dispatcher/reconciler — this is the save-time guard
-/// that keeps a typo from silently becoming a no-op transition).
+/// auto-transitions are real. The transition itself is applied later by the
+/// dispatcher/reconciler; this is the save-time guard that keeps a typo from
+/// silently becoming a no-op transition.
 ///
-/// `pub(crate)`, not private: card D3 (template `orchestration.status_map`,
-/// TODO.md §6) reuses this verbatim from `handlers::templates` rather than
-/// writing a second validator against the template's own workflow — see that
-/// module's `validate_template_orchestration`. Only the visibility changed;
-/// the logic below is untouched.
+/// `pub(crate)`, not private: `handlers::templates` reuses this verbatim for
+/// a template's `orchestration.status_map` rather than writing a second
+/// validator against the template's own workflow — see that module's
+/// `validate_template_orchestration`.
 pub(crate) fn validate_status_map(
     status_map: &StatusMap,
     workflow: &WorkflowConfig,
@@ -955,7 +950,7 @@ pub async fn get_orch_link(
 }
 
 /// `PUT /api/projects/{id}/orch-link` — create or replace the project's
-/// link. Supports optimistic concurrency (card G1, TODO.md §3b D4) the same
+/// link. Supports optimistic concurrency the same
 /// way `PATCH /api/control-planes/{id}` does — see that handler's doc
 /// comment for the `If-Match`/`ETag` contract. One difference: this is a
 /// create-or-replace endpoint, so a nonexistent link and a version mismatch
@@ -1052,18 +1047,17 @@ pub async fn put_orch_link(
 // GET /api/fleet — the Fleet view's aggregate
 // ════════════════════════════════════════════════════════════════════════════
 //
-// This shape is reconciled against `frontend/src/features/fleet/api.ts`
-// (agent A5, landed concurrently — see TODO.md §6 "A5 — 2026-08-04"), field
-// for field, so the frontend swap is mechanical. Where Wave 1 genuinely has
-// no data source yet (`gateway`, `roster`, `pricing_snapshot_at`), the field
-// is still present on the wire with an honest placeholder, so A5's existing
+// This shape is reconciled against `frontend/src/features/fleet/api.ts` field
+// for field, so the frontend swap is mechanical. Where there is genuinely no
+// data source yet (`gateway`, `roster`, `pricing_snapshot_at`), the field
+// is still present on the wire with an honest placeholder, so the existing
 // TypeScript needs no shape changes later — only real values flowing in.
 
 /// One roster member — projected from a future live `FleetAgent` snapshot.
-/// **Always an empty list in Wave 1**: no agent-roster table exists yet
-/// (migrations 019–024 mirror control planes/links/tasks/runs/events/
-/// approvals only). A later wave that adds roster mirroring populates this;
-/// until then the field stays on the wire as `[]` rather than being removed,
+/// **Always an empty list today**: no agent-roster table exists (migrations
+/// 019–024 mirror control planes/links/tasks/runs/events/approvals only).
+/// Whatever adds roster mirroring populates this; until then the field stays
+/// on the wire as `[]` rather than being removed,
 /// so `frontend/src/features/fleet/api.ts`'s `FleetRow.roster` never needs a
 /// shape change.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -1081,7 +1075,7 @@ pub struct FleetRosterMember {
 /// **Staleness must be representable.** `cost_usd_estimated` is `None`
 /// whenever the plane is `unreachable` — never coerced to zero — so the UI can
 /// grey the row and say "last seen Nm ago" instead of rendering a confident
-/// zero (TODO.md §0 rule 6 / this card's acceptance bar). `Some(0.0)` means the
+/// zero. `Some(0.0)` means the
 /// plane is reachable and genuinely has no mirrored cost yet. `tokens_in`/
 /// `tokens_out` are always a plain (never-null) sum — per A5's contract, the
 /// row component gates on `health`/`isStale()`, not per-field nullability, to
@@ -1104,26 +1098,24 @@ pub struct FleetEntry {
     /// What this row's control plane can actually do. `None` only in the
     /// `"unconfigured"` health case — see [`capabilities_for`].
     pub capabilities: Option<CapabilitiesResponse>,
-    /// `"active"` | `"inactive"` | `"unknown"`. **Always `"unknown"` in Wave
-    /// 1** — `control_planes` has no persisted gateway column (see migration
-    /// 019) and the reconciler only polls `/health` + `/status.json` for the
-    /// health state machine, not a stored gateway snapshot (card A2, 33.6). A
-    /// later wave that mirrors `FleetStatus.gateway` populates this for real.
+    /// `"active"` | `"inactive"` | `"unknown"`. **Always `"unknown"` today** —
+    /// `control_planes` has no persisted gateway column (see migration 019) and
+    /// the reconciler only polls `/health` + `/status.json` for the health state
+    /// machine, not a stored gateway snapshot. Mirroring `FleetStatus.gateway`
+    /// would populate this for real.
     pub gateway: String,
-    /// Always `[]` in Wave 1 — see [`FleetRosterMember`].
+    /// Always `[]` — see [`FleetRosterMember`].
     pub roster: Vec<FleetRosterMember>,
     /// Most recent `orch_tasks.dispatched_at` for this project's items, or
     /// `None` if nothing has ever been dispatched. Real data (not a
-    /// placeholder) — computed from the same join as the cost/token sums —
-    /// but will always be `None` until Wave 3 (C1) starts dispatching.
+    /// placeholder) — computed from the same join as the cost/token sums.
     pub last_activity_at: Option<DateTime<Utc>>,
     pub auto_dispatch: bool,
     pub blueprint: Option<String>,
     /// User-set cap, not a derived figure — deliberately unsuffixed.
     pub budget_usd: Option<f64>,
     /// Summed from `orch_tasks.tokens_in`/`tokens_out` for this project's
-    /// items. Real data, always `0` until Wave 3 dispatches anything — not a
-    /// placeholder, just an honest current total.
+    /// items. Real data, not a placeholder — an honest current total.
     pub tokens_in: i64,
     pub tokens_out: i64,
     /// Estimated cumulative spend, summed from `orch_tasks` for this
@@ -1131,12 +1123,12 @@ pub struct FleetEntry {
     /// `Some(0.0)` = plane reachable, nothing dispatched yet.
     pub cost_usd_estimated: Option<f64>,
     /// Pricing-table snapshot date backing `cost_usd_estimated`. **Always
-    /// `None` in Wave 1** — no pricing-snapshot mechanism exists yet; a later
-    /// wave that adds one should populate this alongside real cost figures.
+    /// `None` today** — no pricing-snapshot mechanism exists. Whatever adds one
+    /// should populate this alongside real cost figures.
     pub pricing_snapshot_at: Option<String>,
     /// Pending docket approvals correlated to an item in this project (via
     /// `orch_approvals.item_id`). Approvals with no item correlation surface
-    /// in the fleet-wide approvals inbox (Wave 4 / D1) instead of here.
+    /// in the fleet-wide approvals inbox instead of here.
     pub pending_approval_count: i64,
 }
 
@@ -1261,8 +1253,7 @@ async fn project_task_usage(
 }
 
 /// Pending docket approvals correlated to an item in `project_id`, for one
-/// control plane. Approval ingestion lands in Wave 2 (B1) — until then this
-/// reads as `0`.
+/// control plane.
 async fn count_pending_approvals(
     pool: &sqlx::SqlitePool,
     control_plane_id: Uuid,
@@ -1281,13 +1272,12 @@ async fn count_pending_approvals(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// GET /api/projects/{id}/orch-budget — budget cap vs. mirrored spend (card D2,
-// task 36.3)
+// GET /api/projects/{id}/orch-budget — budget cap vs. mirrored spend
 // ════════════════════════════════════════════════════════════════════════════
 //
 // Reuses `project_task_usage` and the exact unreachable-vs-zero staleness rule
-// `GET /api/fleet` already established (TODO.md §0 rule 6) — this endpoint
-// exists because a project detail panel (card D2) wants this data keyed by
+// `GET /api/fleet` already established — this endpoint
+// exists because a project detail panel wants this data keyed by
 // `project_id` alone, without pulling every other linked project's row the way
 // `/fleet` does.
 //
@@ -1315,9 +1305,8 @@ async fn count_pending_approvals(
 // would mean either guessing (wrong the moment a control plane has more than
 // one linked project) or a real ingestion change (persisting
 // `RemoteEvent.project`/a `remote_project` column and correlating
-// `paused_refused` at the project level, not the item level), which is out of
-// this card's scope. See TODO.md §6 (card D2) for the full write-up and the
-// proposed fix. This endpoint stays honest by omission rather than guessing.
+// `paused_refused` at the project level, not the item level.
+// This endpoint stays honest by omission rather than guessing.
 
 /// `GET /api/projects/{id}/orch-budget` response.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -1342,8 +1331,7 @@ pub struct OrchBudgetResponse {
     /// zero. `Some(0.0)` means the plane is reachable and genuinely has no
     /// mirrored cost yet.
     pub cost_usd_estimated: Option<f64>,
-    /// Always `None` today — no pricing-snapshot mechanism exists yet
-    /// (TODO.md §0 rule 6).
+    /// Always `None` today — no pricing-snapshot mechanism exists yet.
     pub pricing_snapshot_at: Option<String>,
 }
 
@@ -1406,7 +1394,7 @@ pub async fn get_orch_budget(
 
 // ════════════════════════════════════════════════════════════════════════════
 // GET /api/metrics — Tack's own work-tracking metrics merged with the latest
-// mirrored docket sample per metric/label set (card B3, task 34.7)
+// mirrored docket sample per metric/label set
 // ════════════════════════════════════════════════════════════════════════════
 //
 // Prometheus text exposition format — not JSON, unlike every other handler in
@@ -1420,9 +1408,8 @@ pub async fn get_orch_budget(
 // like docket's own `/metrics` — this endpoint lives in the same
 // TACK_ORCH_ENABLE-gated sub-router as `/fleet`/`/control-planes`, and A4's
 // `router.rs` marked exactly this insertion point for it, so it inherits that
-// sub-router's gates rather than getting a bespoke exemption. Documented as a
-// known deviation from the roadmap's "unauthenticated like docket's" wording
-// in the TODO.md §6 B3 handoff.
+// sub-router's gates rather than getting a bespoke exemption — a
+// known deviation from the roadmap's "unauthenticated like docket's" wording.
 
 fn escape_prometheus_label_value(v: &str) -> String {
     v.replace('\\', "\\\\")
@@ -1612,7 +1599,7 @@ pub async fn get_metrics(State(state): State<AppState>) -> ApiResult<Response> {
 
 // ════════════════════════════════════════════════════════════════════════════
 // GET /api/projects/{id}/orch-policy — guardrail/tool-call/approval metrics
-// for this project's linked control plane (card D2, task 36.4)
+// for this project's linked control plane
 // ════════════════════════════════════════════════════════════════════════════
 //
 // **Control-plane-wide, not project-scoped — read this before trusting a
@@ -1620,7 +1607,7 @@ pub async fn get_metrics(State(state): State<AppState>) -> ApiResult<Response> {
 // (`serve.py::render_metrics`/`_collect_trace_loop_metrics`, confirmed by
 // reading the source) folds every linked project's trace files together
 // fleet-wide; there is no per-project breakdown anywhere in docket's
-// guardrail/approval/tool-call counters. Card B3's ingestion mirrors that same
+// guardrail/approval/tool-call counters. Ingestion mirrors that same
 // fleet-wide shape into `orch_metrics`, keyed by `(control_plane_id, name,
 // labels)` — no `remote_project` label exists to filter on, because docket
 // never emits one. So every figure this endpoint returns describes *the whole
@@ -1804,14 +1791,13 @@ pub async fn get_orch_policy(
 
 // ════════════════════════════════════════════════════════════════════════════
 // GET /api/items/{id}/agent-activity, GET /api/projects/{id}/agent-activity
-// (Wave 2 / card B6, tasks 34.8/34.9's backend half)
 // ════════════════════════════════════════════════════════════════════════════
 //
-// Reconciled field-for-field against B5's boundary file
+// Reconciled field-for-field against the frontend boundary file
 // `frontend/src/shared/agentActivity/api.ts` — see that file's header comment
 // for the full field-provenance table (which migration/column backs each
 // field, and which `tack-orch` enum backs each raw status string). Two
-// decisions B5 left open (TODO.md §6 "B5 — 2026-08-04"), resolved here:
+// decisions B5 left open, resolved here:
 //
 // 1. **"Latest attempt" tie-break** — B5's own assumption, confirmed: highest
 //    `attempt` number wins; ties broken by `dispatched_at` desc. See
@@ -1835,11 +1821,9 @@ pub async fn get_orch_policy(
 // history may already be gone from the raw `orch_events` table this
 // endpoint reads. `events` itself is always exactly what's left in that
 // table — never silently presented as the complete history when it might
-// not be (this card's brief, echoing TODO.md §0 rule 6's spirit one level
-// up: an estimate presented as certainty is the same failure whether the
-// number is money or a timeline). Additive fields an old client ignores
-// safely; see this card's TODO.md §6 handoff for why the UI doesn't yet
-// render them (out of this card's file ownership).
+// not be: an estimate presented as certainty is the same failure whether the
+// number is money or a timeline. Additive fields an old client ignores
+// safely; the UI does not yet render them.
 
 /// One `orch_events` row. See `ItemAgentEventResponse` in
 /// `frontend/src/shared/agentActivity/api.ts`.
@@ -1903,8 +1887,8 @@ pub struct ItemAgentAttemptResponse {
     pub tokens_out: i64,
     pub cost_usd_estimated: Option<f64>,
     /// Always `null` — no pricing-snapshot mechanism exists anywhere in the
-    /// system yet (TODO.md §0 rule 6; same gap A4 found for the Fleet view's
-    /// identical field). Left `null` rather than invented.
+    /// system yet (the Fleet view has the identical gap). Left `null` rather
+    /// than invented.
     pub pricing_snapshot_at: Option<String>,
     pub run: Option<ItemAgentRunResponse>,
     pub events: Vec<ItemAgentEventResponse>,
@@ -2091,14 +2075,12 @@ pub async fn get_project_agent_activity(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// POST /api/items/{id}/dispatch (card C1, Wave 3, tasks 35.2/35.3/35.6)
+// POST /api/items/{id}/dispatch
 // ════════════════════════════════════════════════════════════════════════════
 //
 // The actual dispatch flow lives in `crate::dispatcher` — this section is
 // just the HTTP↔`DispatchOutcome` translation. See that module's doc
-// comment for the idempotency guarantee, the `trusted` boundary, and what
-// this card deliberately left unwired (terminal-state application via the
-// reconciler).
+// comment for the idempotency guarantee and the `trusted` boundary.
 
 /// A dispatched (or already-in-flight) `orch_tasks` row, projected for the
 /// dispatch response. Deliberately smaller than `ItemAgentAttemptResponse`
@@ -2144,7 +2126,7 @@ pub struct DispatchItemResponse {
     /// Present only when `outcome == "not_eligible"`.
     pub dispatch_from: Option<Vec<String>>,
     /// Present only when `outcome == "blocked"` — the id of the guardrail
-    /// policy that fired (`OrchError::PolicyBlocked::policy_id`, card R1),
+    /// policy that fired (`OrchError::PolicyBlocked::policy_id`),
     /// as a typed field rather than something a caller has to parse back out
     /// of `message`.
     pub policy_id: Option<String>,
@@ -2157,7 +2139,7 @@ pub struct DispatchItemResponse {
     /// rejected it (see `status_map_rejected` below).
     pub status_applied: Option<String>,
     /// Set when the workflow engine refused the `status_map`-driven
-    /// transition (TODO.md §0 rule 7 / task 35.6's `status_map_rejected`
+    /// transition (`status_map_rejected`
     /// outcome). The item was left exactly as it was; this is the engine's
     /// own reason (e.g. an invalid transition or a WIP limit).
     pub status_map_rejected: Option<String>,
@@ -2231,7 +2213,7 @@ impl From<DispatchOutcome> for DispatchItemResponse {
 /// doc), this direct/manual entry point has no request body asking the
 /// caller to state trust explicitly, so it resolves one via
 /// `dispatcher::resolve_default_trust` — a conservative stopgap pending
-/// card C2's `source: imported` marker (task 35.7). See that function's own
+/// item-provenance-driven trust resolution. See that function's own
 /// doc comment for exactly what it checks today and what it doesn't yet.
 #[utoipa::path(
     post,
@@ -2256,15 +2238,15 @@ pub async fn dispatch_item(
 
 // ════════════════════════════════════════════════════════════════════════════
 // POST /api/sprints/{id}/dispatch, GET /api/sprints/{id}/dispatch/dry-run
-// (card C3, Wave 3, task 35.4 — DAG-ordered sprint dispatch)
+// DAG-ordered sprint dispatch.
 // ════════════════════════════════════════════════════════════════════════════
 //
 // The planning (dependency order + readiness gating) and execution
 // (bounded-concurrency dispatch) logic lives in `crate::sprint_dispatch` —
-// see that module's doc comment for the five design decisions TODO.md
-// called out (partial failure, dependency readiness, concurrency, the
+// see that module's doc comment for the five design decisions
+// (partial failure, dependency readiness, concurrency, the
 // no-write-txn-across-HTTP rule, and dry-run honesty). This section is just
-// the HTTP↔domain-type translation, the same split C1 used for the
+// the HTTP↔domain-type translation, the same split used for the
 // single-item dispatch endpoint above.
 
 /// Query params shared by both sprint-dispatch routes. A bare query param
@@ -2523,8 +2505,8 @@ pub async fn dry_run_sprint_dispatch(
 /// `POST /api/sprints/{id}/dispatch` — dispatch every dependency-ready item
 /// in the sprint, in topological order, bounded by `max_in_flight`
 /// concurrent control-plane calls. Each item's own `ItemSource` decides its
-/// `trusted` flag (never a blanket value for the batch — TODO.md's
-/// non-negotiable). A failure dispatching one item never aborts the rest;
+/// `trusted` flag (never a blanket value for the batch). A failure
+/// dispatching one item never aborts the rest;
 /// see `sprint_dispatch`'s module doc, decision 1.
 #[utoipa::path(
     post,
@@ -2549,7 +2531,7 @@ pub async fn dispatch_sprint(
 
 // ════════════════════════════════════════════════════════════════════════════
 // GET /api/approvals, POST /api/approvals/{token}
-// (card D1, Wave 4, tasks 36.1/36.2 — approvals inbox + decision proxy)
+// Approvals inbox + decision proxy.
 // ════════════════════════════════════════════════════════════════════════════
 //
 // The fleet-wide inbox of approvals **currently blocking an agent fleet**,
@@ -2560,16 +2542,15 @@ pub async fn dispatch_sprint(
 // gate `router.rs` applies to the whole API), but *deciding* one needs the
 // separate `TACK_ORCH_APPROVAL_TOKEN` on top (see
 // `require_approval_token`'s own doc comment for the full "why", and
-// TODO.md §0 rule — "granting an approval is a higher-privilege action than
-// editing a card").
+// granting an approval is a higher-privilege action than editing a card).
 //
-// Uncorrelated approvals (`item_id: null` — B1 could not attribute the
-// gate to a Tack item, e.g. a CLI-dispatched run) are included here, not
+// Uncorrelated approvals (`item_id: null` — the gate could not be attributed
+// to a Tack item, e.g. a CLI-dispatched run) are included here, not
 // filtered out: the per-project Fleet view (`GET /fleet`) deliberately
-// excludes them (an inner join on `items`/`projects`, per A4's handoff)
+// excludes them (an inner join on `items`/`projects`)
 // specifically because this inbox is where they're meant to surface — an
 // approval Tack can't attribute to a project is the one most likely to be
-// silently blocking a fleet, per this card's own rationale.
+// silently blocking a fleet.
 
 /// Header carrying the operator's `TACK_ORCH_APPROVAL_TOKEN` on a decision
 /// request. Deliberately not `Authorization` (already spoken for by the
@@ -2595,7 +2576,7 @@ pub struct PendingApprovalResponse {
     pub project_name: Option<String>,
     pub remote_task_id: Option<String>,
     /// `orch_approvals.agent` — populated from docket's `role` field on
-    /// ingestion (B1's handoff, TODO.md §6: "role is the closest field").
+    /// ingestion. Role is the closest field docket's wire shape offers.
     pub agent: Option<String>,
     /// The gated action's description, already redacted by docket before it
     /// reached Tack's mirror.
@@ -2713,7 +2694,7 @@ fn require_approval_token(state: &AppState, headers: &HeaderMap) -> ApiResult<()
 }
 
 /// Resolve `control_plane_id` into a live control-plane client. Built on
-/// `adapters::registry::build` (card G1), which is what
+/// `adapters::registry::build`, which is what
 /// `dispatcher::build_control_plane` and `handlers::provisioning::
 /// resolve_control_plane` are now built on too — the three-near-identical-
 /// copies state this function's doc comment used to disclose ("if a third

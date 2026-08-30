@@ -1,4 +1,4 @@
-//! Black-box tests for the deterministic fleet scheduler (III-E1), exercised
+//! Black-box tests for the deterministic fleet scheduler, exercised
 //! only through `tack_orch::scheduler`'s public API — no access to private
 //! module internals, the same vantage point a later integration card has.
 //!

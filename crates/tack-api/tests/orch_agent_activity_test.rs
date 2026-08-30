@@ -2,7 +2,7 @@
 //! 34.8/34.9's backend half): `GET /api/items/{id}/agent-activity` and
 //! `GET /api/projects/{id}/agent-activity`.
 //!
-//! Covers: both routes 404 with `TACK_ORCH_ENABLE` unset (TODO.md §0 rule 8);
+//! Covers: both routes 404 with `TACK_ORCH_ENABLE` unset;
 //! an unknown item 404s on the detail endpoint; the bulk endpoint is an inner
 //! join (items with no `orch_tasks` row are absent, never a null-status row);
 //! the "latest attempt" tie-break (highest `attempt`, then `dispatched_at`

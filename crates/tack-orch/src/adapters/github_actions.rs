@@ -1,5 +1,5 @@
 //! `GithubActionsAdapter` — a **compile-only stub** for a second
-//! [`ControlPlane`] implementor (TODO.md card G1, Wave B).
+//! [`ControlPlane`] implementor.
 //!
 //! Its only job this wave is to make "both adapters compile against the
 //! trait" a fact CI can check today, rather than a discovery Wave D makes
@@ -90,7 +90,7 @@ impl ControlPlane for GithubActionsAdapter {
             ),
             // GitHub Actions bills and reports runner minutes, never model
             // or token usage — there is no usage figure to report here at
-            // all (TODO.md §II.0 rule 7: two meters are never one number).
+            // all.
             usage: Rated::new(
                 UsageSupport::NotMeasured,
                 "GitHub Actions reports runner minutes, not model/token usage; no usage \
