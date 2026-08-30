@@ -10,10 +10,18 @@ SolidJS frontend, single `tack` binary with the SPA embedded. Multiple workflows
 (Scrum/Kanban/phase) with per-project vocabulary; 10 project-type presets; MCP server
 (`tack mcp`); Alexa integration. Core is complete (backend, frontend, CLI).
 
-**Active cycle:** `TODO.md`'s header states which Part is active and its status board
-records what shipped, at which SHA — that board is the authority, `docs/book/src/roadmap.md`
-records only intent. Don't read `TODO.md` whole (~10k lines, mostly archive) — use the
-`/card` skill's extraction recipe.
+**Active cycles — two, in parallel:** **Part V** (Phase 59, adoption + first real public
+release) and **Part IV** (Phase 58, `tack serve --with-runner`). Both unstarted, both branch
+from `develop`, and they share `scripts/smoke.sh`, `README.md` and `docs/CONFIG.md` under the
+conflict rule in `TODO.md` §V.3 — read it before branching a card in either. The boards are
+the authority for what shipped; `docs/book/src/roadmap.md` records only intent.
+
+**Never read `TODO.md` whole — it costs ~184k tokens.** Active boards sit in its first ~1040
+lines; the archive (Parts I–III) is below and stays in-file because 234 doc comments cite its
+section numbers. Costs and extraction recipes for every big file:
+**`.claude/context-budget.md`**. Before designing anything, read
+**`.claude/scope-discipline.md`** — this tree's recurring defect is well-built mechanisms
+with no caller (`model_profiles`, the `decisions` path, the superseded docket control plane).
 
 **Skills:** `/card` (work a board card), `/feature` (feature work off the board),
 `/gate` (scoped verification), `/tokens` (usage measurement vs `.claude/token-baseline.md`), `/status` (where am I / what is next), `/integrate` (merge finished card branches and review them as one change). Prefer them over improvising the workflow.
@@ -122,6 +130,14 @@ notes (workflow validation, auto-status propagation, WebSocket events, attachmen
 `tracing` macros for logging; `#[instrument(skip(pool))]` on async fns; `thiserror` in
 core/db, `anyhow` in CLI; `chrono::DateTime<Utc>`; UUIDv4 stored as TEXT;
 `assert_matches!` in tests.
+
+**Comments explain the code, never the project's history.** Write what the code does when
+the name doesn't say it, why a non-obvious choice was made, what breaks if you change it,
+and what isn't true yet (an unwired column, a mechanism with no caller). Never write card,
+wave, phase or `TODO.md §` references, narratives of how the code got here, instructions
+aimed at a finished cycle, dates, attributions, or commented-out code — `git log` and the
+handoffs already hold all of that, and a reader with the code but not the board can't use
+it. Full rule, with the examples it was derived from: `.claude/scope-discipline.md`.
 
 ## Where everything else lives
 

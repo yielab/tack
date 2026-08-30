@@ -6,6 +6,10 @@ description: Run this repo's verification, cheapest-first and scoped to what cha
 # Verification — cheapest first, scoped to the diff
 
 > **Report using `.claude/reporting-contract.md`.** Lead with the capability in plain language — what someone can or cannot do now — and keep file and function names in the technical-detail section at the end. Explain every blocker as: what is missing, what it was for, what it blocks.
+>
+> **Budget your reading with `.claude/context-budget.md`** — `TODO.md` whole is ~184k tokens,
+> the active boards ~15k, all handoffs together ~221k. Grep before you read; read a range
+> before a file. CLAUDE.md is already in your context — don't re-derive or re-read it.
 
 
 Argument = scope: `core|db|orch|api|runner|frontend|contract|full`. If no scope given,

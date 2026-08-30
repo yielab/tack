@@ -9,6 +9,12 @@ Baseline of record: `.claude/token-baseline.md` (captured 2026-08-19, the day CL
 shrank from ~8.8k to ~1.8k tokens). Compare against it; re-capture it (same format, new
 date, keep the old file's header note) only when the user asks.
 
+**Where the tokens actually go in this repo** is measured in `.claude/context-budget.md`
+(2026-08-30): `TODO.md` whole ~184k, its active boards ~15k, all 48 handoffs ~221k,
+`docs/openapi.json` ~88k. When a session's context-per-call looks high, check whether an
+agent read one of those whole before looking anywhere else — that is the usual cause, and
+it is a finding worth naming, not a rounding error.
+
 ## 1. Project-scoped: per-transcript totals (no dependencies)
 
 ```bash

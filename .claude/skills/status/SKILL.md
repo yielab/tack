@@ -6,10 +6,19 @@ description: Answer "where is this project right now and what is next" — recon
 # Where am I / what's next
 
 > **Report using `.claude/reporting-contract.md`.** Lead with the capability in plain language — what someone can or cannot do now — and keep file and function names in the technical-detail section at the end. Explain every blocker as: what is missing, what it was for, what it blocks.
+>
+> **Budget your reading with `.claude/context-budget.md`** — `TODO.md` whole is ~184k tokens,
+> the active boards ~15k, all handoffs together ~221k. Grep before you read; read a range
+> before a file. CLAUDE.md is already in your context — don't re-derive or re-read it.
 
 
 State is NOT stored in one place and no file is kept "up to date" for you. It is derived
 from four sources of record. Run these, then report.
+
+**Two cycles are active in parallel** as of 2026-08-30: **Part V** (Phase 59 — adoption and
+the first real public release) and **Part IV** (Phase 58 — `tack serve --with-runner`). Both
+are unstarted, both branch from `develop`, and they share three files under a conflict rule
+in §V.3. A status report that names only one of them is wrong.
 
 ```bash
 # 1. What actually landed, and is the tree clean?
@@ -17,10 +26,11 @@ git log --oneline -8
 git status --porcelain          # empty = safe to branch cards from HEAD
 git branch --show-current
 
-# 2. The board: which wave is active, what is its base SHA, what is open
-head -30 TODO.md                          # names the active cycle
-grep -n "^| [0-9] — \|^| Wave " TODO.md   # the status-board rows
-# then read only the row for the active wave (sed -n '<line>p' TODO.md)
+# 2. The board: which waves are active, their base SHA, what is open.
+# TODO.md whole is ~184k tokens — never cat it. See .claude/context-budget.md.
+head -55 TODO.md                          # header: the active-Parts table + archive rule
+grep -n "^| [0-9]* — \|^| Wave " TODO.md  # the status-board rows across all Parts
+# then read only the rows for the active waves (sed -n '<line>p' TODO.md)
 
 # 3. The most recent decisions/corrections
 ls -t docs/agent-handoffs/*/ | head -5
@@ -50,10 +60,16 @@ For every branch that reports UNLANDED, classify it before reporting — never g
 
 | Pattern | Meaning |
 |---|---|
-| `agent/iii-<card>-<slug>` | one board card's work; merged by the wave integrator |
+| `agent/<card-id>-<slug>` | one board card's work (e.g. `agent/v-a2-smoke-truth`); merged by the wave integrator |
 | `worktree-agent-<hash>` | throwaway checkout created by agent isolation; not authored work |
-| `plan/<cycle-name>` | the cycle's integration line |
-| `develop`, `origin/*` | long-lived; `main` does NOT exist locally — do not assume it |
+| `plan/<cycle-name>` | an older cycle's integration line; Parts IV and V do NOT use one |
+| `develop`, `origin/*` | long-lived; `develop` is the repository's **default** branch |
+
+**`main` does not exist — not locally and not on the remote.** This is not a quirk to work
+around; it is a live defect. `README.md` advertises an install one-liner that fetches from
+`.../tack/main/install.sh`, which returns **HTTP 404** and has since the repository went
+public. Card **V-A1** owns the fix and the branch decision. Report it if you see anyone about
+to depend on `main` existing.
 
 ## Branch health — run this every time, it is how the trunk gets lost
 
