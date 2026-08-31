@@ -1,0 +1,45 @@
+name: Verify install URLs
+
+# Confirms the install URLs advertised in README.md/docs/install.sh actually
+# resolve. Independent of every other job here: a branch rename or a repo
+# move can 404 these without touching a single line of Rust, SolidJS, or the
+# spec — the OpenAPI/frontend/coverage gates would all stay green while the
+# public install path was broken. Runs on a schedule as well as on push/PR so
+# rot with no accompanying doc change (e.g. the branch these URLs point at
+# gets deleted) is still caught.
+
+on:
+  push:
+    branches: ["main", "develop"]
+    paths:
+      - "README.md"
+      - "install.sh"
+      - "docs/**"
+      - "scripts/verify-install-urls.sh"
+      - ".github/workflows/verify-install-urls.yml"
+  pull_request:
+    paths:
+      - "README.md"
+      - "install.sh"
+      - "docs/**"
+      - "scripts/verify-install-urls.sh"
+      - ".github/workflows/verify-install-urls.yml"
+  schedule:
+    - cron: "0 7 * * *" # daily — catches URL rot that no push triggers
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  verify:
+    name: Resolve advertised install URLs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check install URLs resolve
+        run: scripts/verify-install-urls.sh
