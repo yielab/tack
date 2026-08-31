@@ -1,5 +1,7 @@
 # Administration and Security
 
+Tack has no identity model: there are no user accounts, no sessions, and no per-user permissions. `assignee` is a free-text label on an item, not an account — anyone can type any name into it. Every request that authenticates at all authenticates as the same single operator, via one shared `TACK_API_TOKEN`. Tack is built for one operator (or a small team willing to share that one secret), not for telling users apart; see [ADR 0059](https://github.com/yielab/tack/blob/develop/docs/adr/0059-single-operator-identity-posture.md) for the reasoning and what was deliberately left out.
+
 Tack is local-first by default: it binds to `127.0.0.1`, requires no authentication, and stores everything in a single SQLite file. This page covers the configuration you apply when you move beyond a single-machine setup — locking down the API, controlling network exposure, enabling cloud backups, wiring up webhooks, and tuning logs. Every setting below is read from `tack.toml` or environment variables at startup; see [Configuration](configuration.md) for how those are loaded.
 
 All examples assume the default base URL `http://127.0.0.1:3210`.
@@ -55,11 +57,25 @@ List every origin you serve the UI from; entries are matched exactly, with no wi
 
 ## Network exposure and TLS
 
-Tack binds to `TACK_HOST` (default `127.0.0.1`) on `TACK_PORT` (default `3210`), so out of the box it is reachable only from the local machine. To serve it on a LAN, bind a routable address:
+Tack binds to `TACK_HOST` (default `127.0.0.1`) on `TACK_PORT` (default `3210`), so out of the box it is reachable only from the local machine. Because Tack has no per-user accounts (see above), a bind reachable from beyond the local machine with no `TACK_API_TOKEN` configured hands full read/write access — the board, and the runner-scheduling surface — to anyone who can reach the port. Tack refuses to start in that configuration:
 
 ```sh
 TACK_HOST=0.0.0.0 TACK_PORT=3210 tack serve
+# Error: refusing to bind 0.0.0.0 without TACK_API_TOKEN; bind to loopback,
+# set TACK_API_TOKEN, or set TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK=1
+# to accept the risk
 ```
+
+To serve it on a LAN, set a token alongside the routable bind:
+
+```sh
+TACK_HOST=0.0.0.0 TACK_PORT=3210 TACK_API_TOKEN='a-long-random-secret' tack serve
+```
+
+If a token genuinely cannot be configured — for example a container reachable only on a
+network you already trust — set `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK=1` to
+start anyway. This is an explicit acceptance of the risk above, not a default; leave it
+unset unless you have a specific reason to widen the bind without a credential.
 
 Tack does not terminate TLS itself. For any non-localhost deployment, place it behind a reverse proxy (Caddy, nginx, Traefik) that handles HTTPS and forwards to the local port. Keep `TACK_HOST=127.0.0.1` and let only the proxy reach it. See [Deployment](../developer/deployment.md) for full proxy and TLS setup.
 
@@ -258,10 +274,11 @@ Security- and administration-relevant settings, as read by the server at startup
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `TACK_HOST` | `127.0.0.1` | Bind address. Set to `0.0.0.0` to expose on a LAN (front with a TLS proxy) |
+| `TACK_HOST` | `127.0.0.1` | Bind address. Set to `0.0.0.0` to expose on a LAN (front with a TLS proxy). Requires `TACK_API_TOKEN` (or the opt-out below) once set to anything non-loopback — see [Network exposure and TLS](#network-exposure-and-tls) |
 | `TACK_PORT` | `3210` | Listen port |
 | `TACK_DATABASE_URL` | `sqlite:tack.db?mode=rwc` | SQLite database location |
 | `TACK_API_TOKEN` | _(none)_ | When set, requires `Authorization: Bearer <token>` on all `/api/*` routes except `/api/health` and `/api/alexa`. Never logged |
+| `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK` | `false` | Explicit opt-out for the non-loopback-without-token startup refusal (see [ADR 0059](https://github.com/yielab/tack/blob/develop/docs/adr/0059-single-operator-identity-posture.md)). Off by default — set only when a `TACK_HOST` reachable beyond the local machine is intentional and a token genuinely cannot be configured |
 | `TACK_ALLOWED_ORIGINS` | `http://localhost:8080,http://127.0.0.1:8080,https://tack.test` | Comma-separated CORS allow-list of exact origins |
 | `TACK_MAX_BODY_SIZE` | `2097152` | Max body size in bytes for non-attachment requests (2 MB). Uploads are always capped at 50 MB |
 | `TACK_STORAGE_DIR` | `./storage` | Attachment storage directory |
