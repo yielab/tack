@@ -19,4 +19,4 @@ pub mod webhook;
 
 // Re-export commonly used items
 pub use router::AppState;
-pub use server::serve;
+pub use server::{serve, serve_with_ready};
