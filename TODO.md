@@ -68,8 +68,8 @@ acceptance gate verifiable without trusting its author's handoff.
 | Wave | Cards | Phase | Status |
 |---|---|---|---|
 | 11 — Release blockers | V-A1 · V-A2 · V-A3 · V-A4 | 59 | **Done, all four integrated** at `45416e7` on `develop` (handoffs: `docs/agent-handoffs/part-v/V-A1.md` … `V-A4.md`). Local-only artifacts awaiting explicit user approval to publish: `main` branch (V-A1), tag `v0.1.0-beta.7` (V-A3), GitHub description/topics/Pages (V-A4) — see each handoff's Next step. |
-| 12 — Honest posture & prune | V-B1 · V-B2 | 59 | **not started.** May start in parallel with Wave 11; only V-B1's README text depends on it. |
-| 13 — Distribution & launch | V-C1 · V-C2 · V-C3 | 59 | **not started.** Blocked — see §V.3. V-C2 additionally needs Part IV Wave 10. |
+| 12 — Honest posture & prune | V-B1 · V-B2 | 59 | **Done, both integrated** at `990349f` on `develop` (handoffs: `docs/agent-handoffs/part-v/V-B1.md`, `V-B2.md`). V-B1: ADR 0059 (single-operator), non-loopback+no-token startup refusal now has an explicit opt-out (`TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK`); README paragraph proposed in the handoff, not yet merged (V-A4 already shipped this cycle). V-B2: ADR 0060 decides **keep** docket as a maintained optional bridge (not gate/delete), backed by measured numbers; no code/schema change shipped. |
+| 13 — Distribution & launch | V-C1 · V-C2 · V-C3 | 59 | V-C1 **done, integrated** at `135b941` (handoff: `docs/agent-handoffs/part-v/V-C1.md`) — Homebrew/AUR/Nix/ghcr.io recipes + cargo-binstall metadata, all four verified with real installs in disposable containers; found and fixed a pre-existing `Dockerfile` toolchain-ordering bug along the way. V-C2 and V-C3 remain **not started** — V-C2 needs Part IV Wave 10 (specifically IV-A4, zero-touch enrollment, not yet landed) + V-A2 (done); V-C3 needs V-C1/V-C2 plus everything in Wave 11/12. |
 
 **Integration line:** `develop`, the repository's default branch — same as Parts III and IV,
 and for the same reason. Branch every card from `develop`. Do not create a `plan/*` line.
@@ -683,7 +683,7 @@ gate verifiable without trusting its author's handoff.
 
 | Wave | Cards | Phase | Status |
 |---|---|---|---|
-| 10 — Standalone single binary | IV-A1 · A2 · A3 · A4 · A5 · A6 | 58 | **not started.** Base SHA for the first cards: `277868a` on `develop` — but see §IV.0, the working tree is NOT clean at the time of writing. |
+| 10 — Standalone single binary | IV-A1 · A2 · A3 · A4 · A5 · A6 | 58 | **IV-A1, A2, A3 done and integrated** at `cace43f` on `develop` (handoffs: `docs/agent-handoffs/part-iv/IV-A1.md` … `IV-A3.md`). `tack runner start` and `tack serve --with-runner` both proven live end-to-end; default `tack serve` starts no runner; non-loopback bind refuses to start `--with-runner`; binary-size delta measured at +0.83 MiB (+4.67%). **A4 and A5 in flight** (parallel, both need only A3). **A6 not started**, needs A4. Working-tree note from §IV.0 (uncommitted `harness/mod.rs` fix) is stale — that fix landed at `f4941f0` during Part V Wave 11 and is already on `develop`. |
 
 **Integration line:** `develop`, the repository's default branch — unchanged from Part III
 Wave 7 onward, and for the same reason (two naming failures in a row cost that cycle a
