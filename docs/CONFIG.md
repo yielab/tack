@@ -32,6 +32,7 @@ The API server loads configuration from `tack.toml` (if present) or environment 
 | `TACK_BACKUP_PREFIX` | `tack` | Object key prefix inside the bucket |
 | `TACK_BACKUP_INTERVAL_SECS` | _(none)_ | Auto-backup interval in seconds; omit for manual-only |
 | `TACK_BACKUP_RETENTION` | `10` | Number of remote backups to keep after each upload |
+| `TACK_LOCAL_RUNNER_ENABLE` | `false` | Enables the embedded runner started by `tack serve --with-runner` — the same gate the `--with-runner` flag sets; either satisfies it (`crates/tack-cli/src/local_runner.rs::with_runner_enabled`). `1` or `true` (case-insensitive) turn it on; anything else, including unset, is off. Read by the `tack` CLI binary, not `AppConfig` — there is no `tack.toml` equivalent (deliberate, see [Embedded runner](#embedded-runner-tack-serve---with-runner) below). Off by default and refused outright (never silently downgraded) on a non-loopback bind |
 | `TACK_ORCH_ENABLE` | `false` | Enables the orchestration reconciler and the `/api/control-planes`, `/api/projects/{id}/orch-link`, `/api/fleet` routes (and their later-wave successors). Unset ⇒ no reconciler task spawned, every orch route 404s |
 | `TACK_ORCH_POLL_SECS` | `10` | Reconciler base poll interval in seconds (before per-plane backoff + jitter) |
 | `TACK_ORCH_EVENT_RETENTION_DAYS` | `90` | Days of `orch_events` (and, once ingested, `orch_metrics`) history kept before the retention sweep rolls old rows into per-day aggregates and deletes them |
@@ -59,6 +60,77 @@ convention.
 
 The `TACK_BACKUP_*` values are **defaults**. Cloud-backup settings (endpoint, bucket, region, access/secret key, prefix, retention) can also be edited at runtime from the UI (**Settings → Cloud Backup**) and are stored in the `app_meta` table; UI values override the env defaults. `TACK_BACKUP_INTERVAL_SECS` (automatic scheduling) remains env-only and takes effect at startup. The secret key is write-only over the API — never returned to clients.
 
+## Embedded runner (`tack serve --with-runner`)
+
+`tack serve --with-runner` (or `TACK_LOCAL_RUNNER_ENABLE=1`) runs the runner role as a
+task inside the same process as the server, speaking runner-v1 over loopback HTTP
+exactly like a remote runner would — see
+[`docs/adr/0058-standalone-single-binary-runner.md`](adr/0058-standalone-single-binary-runner.md)
+for why that HTTP hop is kept rather than shortcut. This is the fewest-steps way to see
+a real agent attempt run against your own board: no second binary, no `tack runner
+enroll` call, no token to copy anywhere.
+
+- **Gate.** Off by default. `TACK_LOCAL_RUNNER_ENABLE` (table above) and `--with-runner`
+  are equivalent; either turns it on. Refused outright — before any socket or database
+  is opened — when the server is not bound to loopback (`TACK_HOST` other than
+  `127.0.0.1`/`localhost`/an equivalent loopback address); this is a startup error, never
+  a silent downgrade to a runner-less server, because an embedded runner executes
+  arbitrary coding-agent processes on the host serving the UI.
+- **First run.** A fresh state directory with no stored session self-provisions: it
+  creates its own pending-runner row and redeems its own one-time enrollment token
+  in-process, so no token is ever printed, copied, or configured by hand. A later start
+  against the same state directory reuses the credential already on disk instead of
+  provisioning a second runner.
+- **State directory.** `TACK_RUNNER_STATE_DIR` (default `.tack-runner`, relative to the
+  working directory `tack serve` was started from) holds the runner's credential
+  (`session.json`) and its attempt journal. Both are written owner-only
+  (`session.json` mode `0600`; the directory itself and journal entries `0700`/`0600`) —
+  confirmed with `stat -c '%a'` against a real run, not assumed from the write path.
+- **Vendor/provider credentials — Tack is never a model gateway.** Each harness
+  authenticates itself using its own mechanism; Tack does not read, store, forward, or
+  proxy any of it, embedded or standalone. `tack runner doctor` reports exactly what
+  this machine's own harnesses declare — run it yourself rather than trusting a stale
+  copy in this file. The three current harnesses, mirrored from a real `tack runner
+  doctor` run on a machine with all three installed:
+
+  | Harness | How it authenticates |
+  |---|---|
+  | `codex` | Its own CLI login flow or an API key it reads from its own environment/config (`codex --help`). This adapter forwards **no ambient host environment** into a run — only entries explicitly set on the execution request's own `environment` field ever reach the process. |
+  | `claude-code` | Typically an OAuth session under `$HOME/.claude` from its own login flow, or an API key from its own environment. This adapter forwards `HOME` and `PATH` from the runner process's own environment so the installed CLI can find its existing session. |
+  | `opencode` | Its own credential store (default `~/.local/share/opencode`), populated by `opencode auth login` or provider-specific configuration. This adapter forwards `PATH`, `HOME` and the `XDG_*` variables. |
+
+  OpenRouter access and local-model endpoints (llama.cpp and similar) are configured the
+  same way: through the harness's own configuration or environment, never through a Tack
+  setting — there is no `TACK_*` variable for a model provider or endpoint, by design.
+  See [`docs/adr/0050-runner-control-plane.md`](adr/0050-runner-control-plane.md) ("the
+  Tack API never starts a coding harness and never becomes a model proxy") and
+  [`docs/adr/0058-standalone-single-binary-runner.md`](adr/0058-standalone-single-binary-runner.md)
+  ("Vendor credentials remain outside Tack") for the decisions behind this.
+- **Log visibility.** The embedded runner's own log lines (self-provisioning,
+  enrollment, claim, completion — anything logged by `tack_runner::*` or by the `tack`
+  binary's own `local_runner`/`local_enrollment` modules) do **not** appear under
+  default logging. `init_tracing`'s default filter
+  (`tack_api={level},tack_db={level},tack_core={level},tower_http=debug`) only ever
+  names `tack_api`, `tack_db` and `tack_core` — `TACK_LOG_LEVEL` changes `{level}` for
+  those three crates but cannot add a target the filter string never mentions, so this
+  is not fixable by raising `TACK_LOG_LEVEL` alone. Set `RUST_LOG` explicitly to include
+  the runner's own targets:
+
+  ```bash
+  RUST_LOG=tack=info,tack_runner=info,tack_api=info,tack_db=info,tack_core=info \
+    tack serve --with-runner
+  ```
+
+  Verified on a fresh state directory: under default logging, `tack_runner::*` and
+  `tack::local_enrollment`/`tack::local_runner` produced zero log lines while the
+  embedded runner enrolled and ran a real attempt; with the `RUST_LOG` override above,
+  the same run showed `tack::local_enrollment: self-provisioned a local runner for the
+  embedded runner to redeem ...`, `tack_runner::runtime: runner runtime started ...` and
+  `tack_runner::client::transport: runner enrolled ...`. Server-side handler logs (e.g.
+  `tack_api::handlers::runner_protocol`'s own `runner enrolled runner_id=...` line) are
+  visible either way, since `tack_api` is already in the default filter — only the
+  *runner's own* log lines were missing.
+
 ## Debugging
 
 ```bash
@@ -70,5 +142,10 @@ RUST_LOG=tack_db=trace,tack_api=debug cargo run -p tack-cli -- serve
 
 # JSON logs (for log aggregators)
 TACK_LOG_JSON=true cargo run -p tack-cli -- serve
+
+# See the embedded runner's own log lines under `--with-runner` (see
+# "Embedded runner" above — off by default, silent by default)
+RUST_LOG=tack=info,tack_runner=info,tack_api=info,tack_db=info,tack_core=info \
+  cargo run -p tack-cli -- serve --with-runner
 ```
 

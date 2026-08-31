@@ -9,6 +9,11 @@
 #   8  the same neutral request through each harness kind, reported per kind
 #   9  restart recovery: kill the runner mid-attempt, prove no silent loss and
 #      no blind duplicate execution, then an explicit operator requeue
+#   10 standalone mode: `tack serve --with-runner` alone reaches a completed
+#      attempt, with no separate runner process and no operator-issued token
+#   11 default `tack serve` (no flag) starts no runner, checked against the
+#      live fleet endpoint rather than inferred from a log line
+#   12 a non-loopback bind refuses `--with-runner` before any listener opens
 #
 #   ./scripts/smoke.sh            # fake mode: shim harness binaries (free, deterministic)
 #   ./scripts/smoke.sh --live     # real harness binaries — a real model run happens
@@ -30,12 +35,14 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(mktemp -d)"; PORT=${SMOKE_PORT:-3399}
 API="http://127.0.0.1:$PORT"
 PRINCIPAL='x-tack-principal: smoke-operator'
-SERVER_PID=""; RUNNER_A_PID=""; RUNNER_B_PID=""; FAILED=0
+SERVER_PID=""; RUNNER_A_PID=""; RUNNER_B_PID=""; STANDALONE_PID=""; NORUNNER_PID=""; FAILED=0
 UNMET=()   # observed §III.6 shortfalls, printed in the release verdict
 
 cleanup() {
   [ -n "$RUNNER_A_PID" ] && kill "$RUNNER_A_PID" 2>/dev/null
   [ -n "$RUNNER_B_PID" ] && kill "$RUNNER_B_PID" 2>/dev/null
+  [ -n "$STANDALONE_PID" ] && kill "$STANDALONE_PID" 2>/dev/null
+  [ -n "$NORUNNER_PID" ] && kill "$NORUNNER_PID" 2>/dev/null
   # Shim harness processes record their pid in their marker file; a hung shim
   # is in the harness's own session (the documented process-group ceiling), so
   # kill it by recorded pid, not by group.
@@ -399,6 +406,125 @@ fi
 wait_for "attempts_json '$REQ9B' | jq -r '.data[] | select(.state==\"succeeded\") | .attempt_id' | head -1" 60 >/dev/null \
   && ok "the queued-while-saturated request completed once capacity freed" \
   || bad "the queued-while-saturated request never completed"
+
+step 10 "Standalone mode: 'tack serve --with-runner' reaches a completed attempt with zero manual enrollment"
+# The point of ADR 0058: one binary, one command, no separate runner process,
+# no operator-issued token ever copied anywhere. Fresh state dir, fresh
+# database — nothing here is inherited from steps 3-9's separately-enrolled
+# runner.
+STANDALONE_PORT=$((PORT + 1))
+STANDALONE_API="http://127.0.0.1:$STANDALONE_PORT"
+SA_WORK="$WORK/standalone"; mkdir -p "$SA_WORK/state"; chmod 700 "$SA_WORK/state"
+SA_PATH="$PATH"; [ "$LIVE" = 0 ] && SA_PATH="$SHIMS:$PATH"
+SA_DB_URL="sqlite:$SA_WORK/tack.db?mode=rwc"
+( cd "$SA_WORK" && exec env PATH="$SA_PATH" \
+    TACK_DATABASE_URL="$SA_DB_URL" TACK_PORT="$STANDALONE_PORT" \
+    TACK_STORAGE_DIR="$SA_WORK/storage" TACK_RUNNER_STATE_DIR="$SA_WORK/state" \
+    "$ROOT/target/debug/tack" serve --with-runner >"$SA_WORK/server.log" 2>&1 ) &
+STANDALONE_PID=$!
+for _ in $(seq 1 40); do curl -sf "$STANDALONE_API/api/health" >/dev/null 2>&1 && break; sleep 0.25; done
+if curl -sf "$STANDALONE_API/api/health" >/dev/null; then
+  ok "standalone 'tack serve --with-runner' up on $STANDALONE_PORT, one process, one command"
+else
+  bad "standalone server never came up"; tail -20 "$SA_WORK/server.log" | sed 's/^/   | /'
+fi
+
+SA_RUNNER=$(wait_for "curl -sf '$STANDALONE_API/api/runners' | jq -r '.data[] | select(.state==\"active\" and .last_heartbeat_at!=null) | .runner_id'" 30 || true)
+if [ -n "$SA_RUNNER" ]; then
+  ok "embedded runner $SA_RUNNER self-provisioned and active — no 'tack runner enroll', no token ever entered"
+else
+  bad "no embedded runner reached active — standalone mode never got off the ground"
+  tail -20 "$SA_WORK/server.log" | sed 's/^/   | /'
+fi
+
+SA_PROJ=$(curl -sf -X POST "$STANDALONE_API/api/projects" -H 'content-type: application/json' \
+  -d '{"name":"smoke-standalone","project_type":"software"}' | jq -r '.id // .project.id // empty')
+SA_ITEM=$(curl -sf -X POST "$STANDALONE_API/api/projects/$SA_PROJ/items" -H 'content-type: application/json' \
+  -d '{"title":"standalone smoke item","item_type":"task"}' | jq -r '.id // .item.id // empty')
+SA_PROFILE=$(curl -sf -X POST "$STANDALONE_API/api/agent-profiles" -H 'content-type: application/json' -H "$PRINCIPAL" \
+  -d '{"name":"smoke-standalone-profile","instructions":"Print the single word DONE and exit. Do not modify any files."}' \
+  | jq -r '.agent_profile_id // empty')
+if [ -n "$SA_PROJ" ] && [ -n "$SA_ITEM" ] && [ -n "$SA_PROFILE" ]; then
+  ok "standalone project/item/agent profile created"
+else
+  bad "could not set up the standalone project/item/agent profile"
+fi
+
+if [ -n "$SA_RUNNER" ] && [ -n "$SA_ITEM" ] && [ -n "$SA_PROFILE" ]; then
+  SA_CAPS=$(curl -sf "$STANDALONE_API/api/runners" | jq -c ".data[] | select(.runner_id==\"$SA_RUNNER\") | .capability_snapshot")
+  SA_PAIR=$(jq -r '[.harnesses[]? | select(.harness_kind=="opencode") | .model_combinations[]? |
+                 {p:.model_provider, m:.model_ids[0]}] |
+                (map(select(.p=="llamacpp")) + .) | first | "\(.p) \(.m)"' <<<"$SA_CAPS")
+  SA_PROVIDER="${SA_PAIR%% *}"; SA_MODEL="${SA_PAIR#* }"
+  if [ -z "$SA_PROVIDER" ] || [ "$SA_PROVIDER" = "null" ]; then
+    bad "the embedded runner declared no opencode model combination to schedule against"
+  else
+    # create_execution/attempts_json read $API (and create_execution reads
+    # $AGENT_PROFILE) as globals; swap them to the standalone server for this
+    # block only and restore immediately after, so nothing later in the
+    # script can accidentally address the standalone server or profile.
+    ORIGINAL_API="$API"; ORIGINAL_PROFILE="$AGENT_PROFILE"
+    API="$STANDALONE_API"; AGENT_PROFILE="$SA_PROFILE"
+    REQ10=$(create_execution "$SA_ITEM" "$SA_RUNNER" opencode "$SA_PROVIDER" "$SA_MODEL" 120 '{}' "smoke-s10-$$")
+    if [ -n "$REQ10" ]; then
+      ok "standalone execution request $REQ10 queued against the self-provisioned runner"
+      ST10=$(wait_for "attempts_json '$REQ10' | jq -r '.data[0] | select(.state==\"succeeded\" or .state==\"failed\" or .state==\"needs_operator\" or .state==\"lost\" or .state==\"cancelled\") | .state'" 150 || true)
+      if [ "$ST10" = "succeeded" ]; then
+        ok "PROOF: standalone mode reached a real completed attempt — one binary, one command, zero manual enrollment"
+      else
+        ATT10=$(attempts_json "$REQ10" | jq -c '.data[0] // {}')
+        bad "standalone attempt ended '$ST10' — terminal_reason: $(jq -c '.terminal_reason' <<<"$ATT10" | head -c 300)"
+      fi
+    else
+      bad "standalone execution request was refused outright"
+    fi
+    API="$ORIGINAL_API"; AGENT_PROFILE="$ORIGINAL_PROFILE"
+  fi
+fi
+
+kill "$STANDALONE_PID" 2>/dev/null; wait "$STANDALONE_PID" 2>/dev/null; STANDALONE_PID=""
+
+step 11 "Default 'tack serve' (no --with-runner, no env gate) starts no runner"
+NORUNNER_PORT=$((PORT + 2))
+NORUNNER_API="http://127.0.0.1:$NORUNNER_PORT"
+NR_WORK="$WORK/norunner"; mkdir -p "$NR_WORK"
+( cd "$NR_WORK" && exec env TACK_DATABASE_URL="sqlite:$NR_WORK/tack.db?mode=rwc" TACK_PORT="$NORUNNER_PORT" \
+    TACK_STORAGE_DIR="$NR_WORK/storage" \
+    "$ROOT/target/debug/tack" serve >"$NR_WORK/server.log" 2>&1 ) &
+NORUNNER_PID=$!
+for _ in $(seq 1 40); do curl -sf "$NORUNNER_API/api/health" >/dev/null 2>&1 && break; sleep 0.25; done
+if curl -sf "$NORUNNER_API/api/health" >/dev/null; then ok "default server up on $NORUNNER_PORT"
+else bad "default server never came up"; tail -20 "$NR_WORK/server.log" | sed 's/^/   | /'; fi
+
+# A settle window long enough for a wrongly-started self-provisioning runner
+# to have appeared and heartbeat at least once, so absence here is a real
+# absence rather than a race against the check.
+sleep 4
+NR_RUNNERS=$(curl -sf "$NORUNNER_API/api/runners" | jq '.data | length')
+if [ "${NR_RUNNERS:-1}" = "0" ]; then
+  ok "GET /api/runners is empty under default 'tack serve' — queried directly, not inferred from a log line"
+else
+  bad "default 'tack serve' started $NR_RUNNERS runner(s); the off-by-default gate has regressed"
+fi
+kill "$NORUNNER_PID" 2>/dev/null; wait "$NORUNNER_PID" 2>/dev/null; NORUNNER_PID=""
+
+step 12 "Non-loopback bind + --with-runner refuses to start before opening a listener"
+NL_PORT=$((PORT + 3))
+NL_WORK="$WORK/nonloopback"; mkdir -p "$NL_WORK"
+NL_OUT=$(cd "$NL_WORK" && env TACK_HOST=0.0.0.0 TACK_PORT="$NL_PORT" TACK_API_TOKEN=smoke-nonloopback-token \
+  TACK_DATABASE_URL="sqlite:$NL_WORK/tack.db?mode=rwc" TACK_STORAGE_DIR="$NL_WORK/storage" \
+  timeout 5 "$ROOT/target/debug/tack" serve --with-runner 2>&1)
+NL_EXIT=$?
+if [ "$NL_EXIT" != 0 ] && grep -qi "loopback" <<<"$NL_OUT"; then
+  ok "refused to start (exit $NL_EXIT): $(grep -i loopback <<<"$NL_OUT" | head -1)"
+else
+  bad "non-loopback + --with-runner did not refuse as expected (exit $NL_EXIT): $(head -c 300 <<<"$NL_OUT")"
+fi
+if curl -sf -m 1 "http://127.0.0.1:$NL_PORT/api/health" >/dev/null 2>&1; then
+  bad "a listener was opened on the refused non-loopback bind"
+else
+  ok "no listener was ever opened on the refused bind"
+fi
 
 printf '\n\033[1m== RESULT ==\033[0m\n'
 if [ "$LIVE" = 1 ]; then MODE_DESC="live, ${#AVAIL[@]}/3 real harnesses installed"; else MODE_DESC="fake shim harnesses, pipeline real"; fi
