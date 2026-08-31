@@ -67,7 +67,7 @@ acceptance gate verifiable without trusting its author's handoff.
 
 | Wave | Cards | Phase | Status |
 |---|---|---|---|
-| 11 — Release blockers | V-A1 · V-A2 · V-A3 · V-A4 | 59 | **V-A1, V-A2 integrated** at `98ca84c` on `develop` (handoffs: `docs/agent-handoffs/part-v/V-A1.md`, `V-A2.md`). V-A3, V-A4 **not started** — branch from `98ca84c`. |
+| 11 — Release blockers | V-A1 · V-A2 · V-A3 · V-A4 | 59 | **V-A1, V-A2, V-A4 integrated** at `877a6f7` on `develop` (handoffs: `docs/agent-handoffs/part-v/V-A1.md`, `V-A2.md`, `V-A4.md`). V-A3 **in progress** — branch from `877a6f7`. |
 | 12 — Honest posture & prune | V-B1 · V-B2 | 59 | **not started.** May start in parallel with Wave 11; only V-B1's README text depends on it. |
 | 13 — Distribution & launch | V-C1 · V-C2 · V-C3 | 59 | **not started.** Blocked — see §V.3. V-C2 additionally needs Part IV Wave 10. |
 
