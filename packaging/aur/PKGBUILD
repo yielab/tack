@@ -1,0 +1,31 @@
+# Maintainer: yielab <info@yielab.com>
+#
+# Prebuilt-binary package (fetches the release archive rather than
+# compiling) — release.yml's profile uses lto + opt-level="z" specifically
+# because that build is slow, so a "-bin" package that skips it is the point.
+pkgname=tack-bin
+# AUR forbids "-" in pkgver; the upstream release tag's pre-release suffix
+# ("0.1.0-beta.7") becomes dots here, and pkgrel tracks packaging-only
+# revisions of the same upstream version.
+pkgver=0.1.0.beta.7
+pkgrel=1
+pkgdesc="Single-binary project manager with an agent-execution runner"
+arch=('x86_64')
+url="https://github.com/yielab/tack"
+license=('MIT')
+provides=('tack')
+conflicts=('tack')
+_tag="v0.1.0-beta.7"
+_pkgdir="tack-${_tag}-linux-x86_64"
+source=("${url}/releases/download/${_tag}/${_pkgdir}.tar.gz")
+# Computed from a local build standing in for the real release asset (the
+# tag above is not yet published) — replace with the digest from the
+# published release's SHA256SUMS before submitting this package.
+sha256sums=('1f15ac5b69fca569e268a2a9bf334a4ae0630e32853d0716a5d6910a2808df6c')
+
+package() {
+  cd "$_pkgdir"
+  install -Dm755 tack "$pkgdir/usr/bin/tack"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 QUICKSTART.txt "$pkgdir/usr/share/doc/$pkgname/QUICKSTART.txt"
+}

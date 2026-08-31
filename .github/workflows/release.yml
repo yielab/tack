@@ -312,3 +312,52 @@ jobs:
           # Tags with a pre-release suffix (v0.1.0-beta.7) are marked as
           # GitHub pre-releases and excluded from /releases/latest.
           prerelease: ${{ contains(github.ref_name, '-') }}
+
+  container:
+    name: Publish container image (ghcr.io)
+    needs: [check-version, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: tags
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY}"
+          tags="$image:${GITHUB_REF_NAME}"
+          # Same rule release uses for GitHub's prerelease flag: a tag with a
+          # pre-release suffix (v0.1.0-beta.7) stays pinned-only so `latest`
+          # never points at a beta.
+          if [[ "$GITHUB_REF_NAME" != *-* ]]; then
+            tags="$(printf '%s\n%s' "$tags" "$image:latest")"
+          fi
+          {
+            echo "tags<<TAGS_EOF"
+            echo "$tags"
+            echo "TAGS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # The Dockerfile's backend stage hardcodes TARGET to
+      # x86_64-unknown-linux-musl rather than deriving it from buildx's
+      # target platform, so this publishes linux/amd64 only — a multi-arch
+      # manifest would need the Dockerfile to select the Rust target from
+      # $TARGETARCH first.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.tags.outputs.tags }}

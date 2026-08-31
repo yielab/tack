@@ -26,12 +26,17 @@ RUN npm run build
 # ── Stage 2: compile the static, SPA-embedding binary ─────────────────────
 FROM rust:1-bookworm AS backend
 ENV TARGET=x86_64-unknown-linux-musl
-RUN rustup target add "$TARGET" \
- && apt-get update \
+RUN apt-get update \
  && apt-get install -y --no-install-recommends musl-tools \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY . .
+# rust-toolchain.toml (copied in above) pins the toolchain `cargo` resolves
+# from this point on. Adding the target before COPY would add it to
+# rustup's bare image default instead — a different toolchain identity than
+# the pinned one `cargo build` below actually uses, so the target has to be
+# added after the pin is in scope.
+RUN rustup target add "$TARGET"
 # Bring in the SPA built in stage 1 so `embed-spa` has a dist/ to embed.
 COPY --from=frontend /frontend/dist ./frontend/dist
 RUN cargo build --release --target "$TARGET" -p tack-cli --features embed-spa \
