@@ -7,17 +7,13 @@
 //! flat [`MetricSample`] (`name` + `labels` + `value`) and nothing else,
 //! which is all [`crate::ControlPlane::metrics`] promises callers.
 //!
-//! Card A1 owns this module; card B3 (Wave 2, metrics
-//! ingestion) reuses it as-is — **do not write a second parser**.
+//! The metrics-ingestion path reuses this module as-is — **do not write a
+//! second parser**.
 //!
 //! # Public path
 //!
 //! This lives at `adapters::prometheus` (physically
-//! `src/adapters/prometheus.rs`), not at the crate root, purely because
-//! `lib.rs` is frozen after Wave 0 and only already declares
-//! `pub mod adapters;` / `pub mod reconciler;` — there was no way to add a
-//! new top-level `pub mod prometheus;` line without editing a file this
-//! card must not touch. B3: import it as
+//! `src/adapters/prometheus.rs`), not at the crate root — import it as
 //! `tack_orch::adapters::prometheus::parse`.
 //!
 //! # Never panics

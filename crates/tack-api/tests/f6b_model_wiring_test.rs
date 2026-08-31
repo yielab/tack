@@ -1,21 +1,16 @@
-//! Card III-F6b: proves the two wiring changes
-//! this card makes in `crates/tack-api/src/handlers/executions.rs` actually
-//! work through the *real* production router (`tack_api::router::build_router`
-//! — exactly what `tack serve` mounts), per this project's own rule that a
-//! card's own green tests are not evidence the integrated system works.
+//! Proves two wiring points in
+//! `crates/tack-api/src/handlers/executions.rs` work through the *real*
+//! production router (`tack_api::router::build_router` — exactly what `tack
+//! serve` mounts), not just a handler-local test harness.
 //!
-//! 1. `create_execution` now resolves an absent client model choice via
-//!    `tack_orch::model_policy::wiring::resolve_request_model_policy`
-//!    (card III-F3, previously built but never called from any live HTTP
-//!    path — see `docs/agent-handoffs/part-iii/III-F3.md`, "Schema/API/
-//!    contract change requested" item 3).
-//! 2. `GET /api/executions/{id}/attempts` now carries `model_provenance`/
-//!    `usage_economics` on each `AttemptSummary`, built via III-F3's
-//!    `derive_attempt_facts` (handoff item 4).
+//! 1. `create_execution` resolves an absent client model choice via
+//!    `tack_orch::model_policy::wiring::resolve_request_model_policy`.
+//! 2. `GET /api/executions/{id}/attempts` carries `model_provenance` and
+//!    `usage_economics` on each `AttemptSummary`, built via
+//!    `derive_attempt_facts`.
 //!
 //! Every claim below is proved against persisted database state or an exact
-//! JSON shape, not merely a 2xx status code, per `CLAUDE.md`'s "a test that
-//! asserts a status code has usually not proved the claim."
+//! JSON shape, not merely a 2xx status code.
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
@@ -140,8 +135,8 @@ fn bearer(token: &str) -> String {
 
 /// A runner declaring exactly the `openai`/`opaque/model-f6b` combination —
 /// every fixture in this file that needs a successful claim requests exactly
-/// this pair (matching card III-E6's `wave2_gate.rs` pattern of a scheduler
-/// that actually checks declared capability, not a naive FIFO match).
+/// this pair (matching `wave2_gate.rs`'s pattern of a scheduler that
+/// actually checks declared capability, not a naive FIFO match).
 fn full_capabilities() -> Value {
     let now = Utc::now().to_rfc3339();
     json!({
@@ -206,10 +201,9 @@ fn headers_ref(owned: &[(String, String); 1]) -> Vec<(&str, &str)> {
         .collect()
 }
 
-/// `limits` carries card III-F3's documented `{"default_model": ...}`
-/// convention (`tack_orch::model_policy::wiring::DEFAULT_MODEL_KEY`) —
-/// already fully operator-settable today via this same route, per that
-/// card's handoff.
+/// `limits` carries the documented `{"default_model": ...}` convention
+/// (`tack_orch::model_policy::wiring::DEFAULT_MODEL_KEY`), operator-settable
+/// via this same route.
 async fn create_agent_profile(app: &axum::Router, name: &str, limits: Value) -> String {
     let (status, profile) = send(
         app,
@@ -238,8 +232,8 @@ async fn create_fleet(app: &axum::Router, name: &str, default_policy: Value) -> 
 }
 
 /// `requested_model_provider`/`requested_model_id` are the two fields under
-/// test — `None` reproduces "client expressed no opinion", the case III-F6b
-/// wires to the resolver.
+/// test — `None` reproduces "client expressed no opinion", the case wired
+/// to the resolver.
 #[allow(clippy::too_many_arguments)]
 fn execution_request_body(
     item_id: &str,
@@ -317,8 +311,8 @@ async fn create_execution_resolves_agent_profile_default_when_client_omits_both_
     assert_eq!(status, StatusCode::OK, "{created}");
     let request_id = created["request_id"].as_str().unwrap().to_owned();
 
-    // The load-bearing assertion: the *stored row*, not just a 2xx. Before
-    // this card's wiring, this column pair would be NULL/NULL (the client
+    // The load-bearing assertion: the *stored row*, not just a 2xx. Without
+    // the resolver wiring, this column pair would be NULL/NULL (the client
     // sent no explicit choice and nothing ever called the resolver).
     let (provider, model_id) = stored_requested_model(&pool, &request_id).await;
     assert_eq!(
@@ -699,9 +693,9 @@ async fn attempt_summary_reports_matched_provenance_and_honest_runner_time_cost(
         json!({"value": 0.42, "source": "measured"})
     );
     // ...while the runner-time dimension stays independently `not_measured`
-    // — no infra cost-rate is stored anywhere in this schema today (III-F3
-    // handoff item 2), so this must never silently borrow the harness's own
-    // figure or default to 0. Asserted as an explicit null, not merely
+    // — no infra cost-rate is stored anywhere in this schema today, so this
+    // must never silently borrow the harness's own figure or default to 0.
+    // Asserted as an explicit null, not merely
     // "falsy" — a structural zero here would be the exact bug this project's
     // rule 7 forbids.
     let runner_cost = &attempt["usage_economics"]["runner_time_cost"]["cost_usd_estimated"];

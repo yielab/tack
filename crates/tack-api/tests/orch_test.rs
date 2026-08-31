@@ -1,10 +1,9 @@
 //! Tests for the orchestration control-plane API.
 //!
 //! Covers: every route returns a 409 with `error.code: "orchestration_disabled"`
-//! while the effective orchestration setting is off (TODO.md §0 rule 8,
-//! rewritten 2026-08-05 — card E1), and `/api/settings/orchestration` itself
-//! stays reachable throughout; the docket token never appears in a response
-//! body, in any shape (create,
+//! while the effective orchestration setting is off, and
+//! `/api/settings/orchestration` itself stays reachable throughout; the
+//! docket token never appears in a response body, in any shape (create,
 //! list, get, patch); the tri-state PATCH semantics for `token`
 //! (absent/null/value); `orch-link` save-time validation against the
 //! project's workflow; and the `/api/fleet` unreachable-vs-zero distinction.

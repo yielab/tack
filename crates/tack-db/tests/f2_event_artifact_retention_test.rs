@@ -1,4 +1,4 @@
-//! III-F2 repository-level tests: event-batch atomicity and event/artifact
+//! Repository-level tests: event-batch atomicity and event/artifact
 //! retention sweep behavior. HTTP-level artifact-content (streaming,
 //! checksum, path-safety) tests live in
 //! `crates/tack-api/tests/f2_artifact_events_test.rs`; this file only proves
@@ -41,7 +41,7 @@ async fn ready_repo() -> (Repository, String, FakeClock) {
 }
 
 /// Same seeding as [`ready_repo`], parameterized over an already-constructed
-/// `Repository` — lets the III-F6d race tests below point it at a
+/// `Repository` — lets the concurrent-upload race tests below point it at a
 /// *file-backed* pool instead (CLAUDE.md: "prove any new concurrency test
 /// load-bearing against a file-backed DB"), without duplicating this whole
 /// seeding block.
@@ -339,8 +339,8 @@ async fn event_batch_insert_failure_leaves_checkpoint_and_rows_untouched() {
     );
 }
 
-/// Same forced-failure technique, but asserts the absence in the case the
-/// card's acceptance text names literally first: a *fresh* attempt (no prior
+/// Same forced-failure technique, but asserts the absence in the simplest
+/// case: a *fresh* attempt (no prior
 /// successful batch) whose very first batch fails must leave
 /// `event_checkpoint` at `NULL`, not some other value, and zero rows.
 #[tokio::test]
@@ -717,7 +717,7 @@ async fn delete_execution_artifacts_by_row_ids_is_a_no_op_on_an_empty_list() {
 }
 
 // ---------------------------------------------------------------------
-// III-F6d: the concurrent-upload race
+// The concurrent-upload race
 // `delete_unresolved_execution_artifacts_by_row_ids` closes.
 //
 // `sweep_artifacts` (`crates/tack-api/src/handlers/runner_protocol/retention.rs`)

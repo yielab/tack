@@ -1,8 +1,8 @@
-//! Integration tests for the `orch` repository module (A3 / Wave 1, task 33.4) —
+//! Integration tests for the `orch` repository module —
 //! CRUD for `control_planes` and `orch_links`, plus batch upsert helpers for
 //! `orch_tasks`, `orch_runs`, `orch_events`, `orch_approvals`.
 //!
-//! Covers the card's acceptance bar:
+//! Covers:
 //!   - every function has at least one passing test against in-memory SQLite;
 //!   - the control-plane read DTO never carries the stored token, including in a
 //!     serialized (JSON) response body;
@@ -559,7 +559,7 @@ async fn test_orch_run_attribution_is_never_unlearned() {
     .await
     .unwrap();
 
-    // A later poll (or a Wave-3 dispatch) learns the attribution.
+    // A later poll learns the attribution.
     repo.upsert_orch_runs(
         plane_id,
         &[NewOrchRun {
@@ -799,14 +799,13 @@ async fn test_uncorrelated_approvals_still_appear_in_pending_inbox() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════
-// orch_metrics — explicitly out of scope for this card (deferred to Wave 2 / B3)
+// orch_metrics
 // ════════════════════════════════════════════════════════════════════════════════════
 
-// No `orch_metrics` table exists yet (see W0-B's handoff note in TODO.md §6) and this
-// module intentionally defines no repository functions for it.
+// Covered by `orch_metrics_test.rs`, not here.
 
 // ════════════════════════════════════════════════════════════════════════════════════
-// orch_trace_cursors (migration 028, card B2 — trace ingestion, task 34.4)
+// orch_trace_cursors (migration 028)
 // ════════════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]

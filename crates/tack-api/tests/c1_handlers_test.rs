@@ -1,4 +1,6 @@
-//! III-C1 card-local HTTP tests. C5 owns global-router registration.
+//! HTTP tests for `handlers/executions.rs` and `handlers/runner_admin.rs`,
+//! loaded via `#[path]` — global-router registration is proven separately
+//! (`c5_integration_test.rs`).
 
 #[path = "../src/handlers/executions.rs"]
 mod executions;
@@ -380,12 +382,12 @@ async fn enrollment_token_is_returned_once_hash_only_and_revoke_or_redeem_blocks
     );
 }
 
-/// The B1 amendment (`tack_orch::execution::ProtocolErrorEnvelope::new`) sets
-/// `retryable` from `StableErrorCode::retryable`, which the frozen fixtures
-/// classify `true` for `conflict`. This drives a real duplicate-name request
-/// through `create_fleet` and inspects the actual response body, not the
-/// envelope constructor in isolation, so it fails if a handler ever goes back
-/// to hand-rolling `retryable` or drops `conflict`'s `{}` details shape.
+/// `tack_orch::execution::ProtocolErrorEnvelope::new` sets `retryable` from
+/// `StableErrorCode::retryable`, which the frozen fixtures classify `true`
+/// for `conflict`. This drives a real duplicate-name request through
+/// `create_fleet` and inspects the actual response body, not the envelope
+/// constructor in isolation, so it fails if a handler ever goes back to
+/// hand-rolling `retryable` or drops `conflict`'s `{}` details shape.
 #[tokio::test]
 async fn duplicate_fleet_name_conflict_is_retryable_with_empty_details() {
     let (app, _repo, _item_id) = setup().await;
@@ -403,9 +405,9 @@ async fn duplicate_fleet_name_conflict_is_retryable_with_empty_details() {
 
 /// Companion to the conflict test above for a non-retryable code that also
 /// carries contract-shaped structured `details` (`not_found` ->
-/// `{"resource": ...}`), rather than the `"retryable":false,"details":{}`
-/// hand-rolled for every code before the B1 amendment landed. Drives
-/// `get_execution` for a request id that was never created.
+/// `{"resource": ...}`), rather than a hand-rolled
+/// `"retryable":false,"details":{}` for every code. Drives `get_execution`
+/// for a request id that was never created.
 #[tokio::test]
 async fn missing_execution_not_found_is_not_retryable_with_resource_detail() {
     let (app, _repo, _item_id) = setup().await;

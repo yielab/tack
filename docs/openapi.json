@@ -108,7 +108,7 @@
         "tags": [
           "orchestration"
         ],
-        "summary": "`POST /api/approvals/{token}` — grant or deny a pending approval,\nproxying to docket's own `POST /approvals/{token}` with `channel: \"tack\"`\nso the decision is honestly attributed in docket's hash-chained audit\nlog (its P22-4) rather than reading as an anonymous/CLI decision.",
+        "summary": "`POST /api/approvals/{token}` — grant or deny a pending approval,\nproxying to docket's own `POST /approvals/{token}` with `channel: \"tack\"`\nso the decision is honestly attributed in docket's hash-chained audit\nlog rather than reading as an anonymous/CLI decision.",
         "description": "**Not idempotent, not reversible** — see [`OrchError::AlreadyDecided`]'s\ndoc comment for what happens when the token was already resolved\nelsewhere (a normal race for an inbox like this, not a bug): this\nhandler reports it as `409`, not `500`, and the frontend treats it as\n\"remove this stale row,\" not as an error toast.",
         "operationId": "decide_approval",
         "parameters": [
@@ -1312,7 +1312,7 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "`GET /api/executions/{request_id}/attempts` — card III-E6. Closes the\ngap E2, E4 and E5 each independently hit: `execution_attempts`\n(migration 045) has been written by the runner-v1 protocol since Wave 2\nwith no operator read path — `GET /executions/{id}` returns only 5\nscalar columns (`request_id, item_id, state, cancellation_requested_at,\ncreated_at`), never attempt data. An empty list here is a real, honest\n\"no attempt yet\" (the request is still `queued`), not a placeholder —\ndistinct from the 404 an unknown `request_id` gets.",
+        "summary": "`GET /api/executions/{request_id}/attempts` — the operator read path\nfor attempt data. `execution_attempts` (migration 045) is written by\nthe runner-v1 protocol, but `GET /executions/{id}` returns only 5\nscalar columns (`request_id, item_id, state, cancellation_requested_at,\ncreated_at`), never attempt data; this endpoint closes that gap. An\nempty list here is a real, honest \"no attempt yet\" (the request is\nstill `queued`), not a placeholder — distinct from the 404 an unknown\n`request_id` gets.",
         "operationId": "list_execution_attempts",
         "parameters": [
           {
@@ -1449,7 +1449,7 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "`GET /api/executions/{request_id}/attempts/{attempt_number}/events` —\ncard III-E6, the other half of the attempts/events gap above. Returns\n`404` naming which resource is missing (`execution_request` vs\n`execution_attempt`) rather than a single ambiguous not-found, since a\nclient can otherwise not distinguish \"wrong request id\" from \"this\nattempt number never existed.\"",
+        "summary": "`GET /api/executions/{request_id}/attempts/{attempt_number}/events` —\nthe other half of the attempts/events read path above. Returns\n`404` naming which resource is missing (`execution_request` vs\n`execution_attempt`) rather than a single ambiguous not-found, since a\nclient can otherwise not distinguish \"wrong request id\" from \"this\nattempt number never existed.\"",
         "operationId": "list_execution_attempt_events",
         "parameters": [
           {
@@ -5528,7 +5528,7 @@
         "tags": [
           "execution-operator"
         ],
-        "summary": "`GET /api/runners[?fleet_id=]` — card III-E6. Closes the gap E2, E3 and\nE5 each independently hit: `agent_runners` (migration 040) has always\nstored capacity/health/capability data, but nothing read it back to an\noperator before this route existed. `capability_snapshot`/`labels` are\nparsed JSON (matching every other list handler in this file); a\ncorrupt/unparseable value is reported per-runner as `null` with the raw\nstring preserved separately, rather than failing the whole list for one\nbad row — a operator inspecting runner health must not lose visibility\ninto every *other* runner because one has a malformed blob.",
+        "summary": "`GET /api/runners[?fleet_id=]` — the read path for `agent_runners`\n(migration 040) capacity/health/capability data. `capability_snapshot`/\n`labels` are parsed JSON (matching every other list handler in this\nfile); a corrupt/unparseable value is reported per-runner as `null`\nwith the raw string preserved separately, rather than failing the whole\nlist for one bad row — an operator inspecting runner health must not\nlose visibility into every *other* runner because one has a malformed\nblob.",
         "operationId": "list_runners",
         "parameters": [
           {
@@ -6321,7 +6321,7 @@
     "schemas": {
       "AddFleetMember": {
         "type": "object",
-        "description": "Request body for `POST /api/runner-fleets/{fleet_id}/members` — card\nIII-H8. `agent_fleet_members` (migration 041) has been a live scheduling\n*read* input since B2 (`fetch_runner_scheduling_snapshot`,\n`fetch_fleet_concurrency`, the fleet-selector claim query), but nothing\ncould ever write to it: §III.6 requires selecting \"an exact runner or\nfleet\", and the fleet half was undemonstrable end to end because no\nroute populated a fleet's roster.",
+        "description": "Request body for `POST /api/runner-fleets/{fleet_id}/members`.\n`agent_fleet_members` (migration 041) is a live scheduling *read* input\n(`fetch_runner_scheduling_snapshot`, `fetch_fleet_concurrency`, the\nfleet-selector claim query); this endpoint is the write path that\npopulates a fleet's roster, since an execution request can select\neither an exact runner or a fleet.",
         "required": [
           "runner_id"
         ],
@@ -6584,7 +6584,7 @@
               },
               {
                 "$ref": "#/components/schemas/ModelProvenanceSchema",
-                "description": "`tack_orch::usage_provenance::ModelProvenance` (`matched` /\n`auto_select_observed` / `mismatched`), or `null` when the attempt\nhas not yet reported `actual_execution` — card III-F3's\n`derive_attempt_facts`, wired here by III-F6. Runtime type stays\nuntyped `Value` (the real type lives in `tack-orch`, which does not\ndepend on `utoipa`); `#[schema(...)]` below points the *generated\nOpenAPI document* at `ModelProvenanceSchema`, this file's\nhand-verified mirror, instead of the untyped-`Value` default\n(III-F6e — was previously an empty `{}` schema, the exact spec-drift\nproblem Wave 4's integrator eliminated elsewhere in this API)."
+                "description": "`tack_orch::usage_provenance::ModelProvenance` (`matched` /\n`auto_select_observed` / `mismatched`), or `null` when the attempt\nhas not yet reported `actual_execution` — populated by\n`derive_attempt_facts`. Runtime type stays untyped `Value` (the real\ntype lives in `tack-orch`, which does not depend on `utoipa`);\n`#[schema(...)]` below points the *generated OpenAPI document* at\n`ModelProvenanceSchema`, this file's hand-verified mirror, instead of\nthe untyped-`Value` default — an untyped default would generate an\nempty `{}` schema, the same spec-drift problem this API avoids\nelsewhere."
               }
             ]
           },
@@ -6608,11 +6608,11 @@
             "type": "string"
           },
           "usage": {
-            "description": "`tack_orch::execution::Usage` once reported, else `null` — never a\nfabricated zero (III.2 rule 7)."
+            "description": "`tack_orch::execution::Usage` once reported, else `null` — never a\nfabricated zero."
           },
           "usage_economics": {
             "$ref": "#/components/schemas/UsageEconomicsSchema",
-            "description": "`tack_orch::usage_provenance::UsageEconomics` — two\nindependently-provenanced dollar dimensions, never summed. Absent\nusage/timestamps serialize as `{\"value\": null, \"source\":\n\"not_measured\"}`, never a structural zero (III.2 rule 7); no runner\ninfra cost-rate is stored anywhere in this schema today (III-F3\nhandoff, \"Schema/API/contract change requested\" item 2), so\n`runner_time_cost.cost_usd_estimated` is always `not_measured` in\nevery real response from this endpoint. `#[schema(...)]` below\npoints the generated document at `UsageEconomicsSchema`,\nthe same fix as `model_provenance` above."
+            "description": "`tack_orch::usage_provenance::UsageEconomics` — two\nindependently-provenanced dollar dimensions, never summed. Absent\nusage/timestamps serialize as `{\"value\": null, \"source\":\n\"not_measured\"}`, never a structural zero; no runner infra cost-rate\nis stored anywhere in this schema today, so\n`runner_time_cost.cost_usd_estimated` is always `not_measured` in\nevery real response from this endpoint. `#[schema(...)]` below\npoints the generated document at `UsageEconomicsSchema`, the same\nfix as `model_provenance` above."
           },
           "workspace_id": {
             "type": [
@@ -7034,7 +7034,7 @@
           },
           "health": {
             "type": "string",
-            "description": "`\"unknown\"` (pre-first-poll default) | `\"healthy\"` | `\"degraded\"` |\n`\"unreachable\"` (the reconciler's health state machine,\n`tack-orch::reconciler`, persisted verbatim) | `\"unconfigured\"` (card\nG1 — this build of Tack could not even build a live adapter for\n`kind`, so the reconciler's state machine never ran against this\nplane at all; see `orch_store::RepoControlPlaneStore::\nmark_unconfigured`'s doc comment)."
+            "description": "`\"unknown\"` (pre-first-poll default) | `\"healthy\"` | `\"degraded\"` |\n`\"unreachable\"` (the reconciler's health state machine,\n`tack-orch::reconciler`, persisted verbatim) | `\"unconfigured\"`\n(this build of Tack could not even build a live adapter for\n`kind`, so the reconciler's state machine never ran against this\nplane at all; see `orch_store::RepoControlPlaneStore::\nmark_unconfigured`'s doc comment)."
           },
           "id": {
             "type": "string",
@@ -7667,7 +7667,7 @@
               },
               {
                 "$ref": "#/components/schemas/TemplateOrchestration",
-                "description": "See [`ProjectTemplate::orchestration`]. Validated at save time by\n`tack-api`'s `handlers::templates::create_template` — this type is\npure data (tack-core has zero I/O), so the validation itself lives\none layer up, reusing `handlers::orch::validate_status_map` (card\nA4's `status_map` validator) rather than duplicating it."
+                "description": "See [`ProjectTemplate::orchestration`]. Validated at save time by\n`tack-api`'s `handlers::templates::create_template` — this type is\npure data (tack-core has zero I/O), so the validation itself lives\none layer up, reusing `handlers::orch::validate_status_map` (the\n`status_map` validator) rather than duplicating it."
               }
             ]
           },
@@ -7906,7 +7906,7 @@
       },
       "DecideApprovalResponse": {
         "type": "object",
-        "description": "`POST /api/approvals/{token}` response — docket's own resulting state\n(`\"granted\"`/`\"denied\"`, or an unrecognised value shown as-is per this\nwhole cycle's \"never fail on an unknown remote value\" discipline).",
+        "description": "`POST /api/approvals/{token}` response — docket's own resulting state\n(`\"granted\"`/`\"denied\"`, or an unrecognised value shown as-is — this API\nnever fails on an unknown remote value).",
         "required": [
           "token",
           "state"
@@ -7940,7 +7940,7 @@
       },
       "DecisionResolvedBySchema": {
         "type": "object",
-        "description": "Schema-only mirror of `resolved_by`'s two observed shapes:\n`{\"kind\": \"operator\", \"subject_id\": <x-tack-principal>}` for a live\nresolve, or `{\"kind\": \"system\", \"subject_id\": \"expiry\"}` for a\nfail-closed lazy expiry. Deliberately not a closed/tagged enum — nothing\nin `docs/contracts/runner-v1/` fixes this shape (decision resolution has\nno runner-v1 fixture at all; see `handlers::decisions`'s own module doc,\n\"No item-status mapping\"), so this stays an open two-field object rather\nthan an invented contract (III.2 rule 13).",
+        "description": "Schema-only mirror of `resolved_by`'s two observed shapes:\n`{\"kind\": \"operator\", \"subject_id\": <x-tack-principal>}` for a live\nresolve, or `{\"kind\": \"system\", \"subject_id\": \"expiry\"}` for a\nfail-closed lazy expiry. Deliberately not a closed/tagged enum — nothing\nin `docs/contracts/runner-v1/` fixes this shape (decision resolution has\nno runner-v1 fixture at all; see `handlers::decisions`'s own module doc,\n\"No item-status mapping\"), so this stays an open two-field object rather\nthan an invented contract.",
         "required": [
           "kind",
           "subject_id"
@@ -8095,7 +8095,7 @@
       },
       "DispatchedTaskResponse": {
         "type": "object",
-        "description": "A dispatched (or already-in-flight) `orch_tasks` row, projected for the\ndispatch response. Deliberately smaller than `ItemAgentAttemptResponse`\n(B6, `GET /items/{id}/agent-activity`) — no `run`/`events`/token-cost\nfields, since a task this fresh has none of that mirrored yet.",
+        "description": "A dispatched (or already-in-flight) `orch_tasks` row, projected for the\ndispatch response. Deliberately smaller than `ItemAgentAttemptResponse`\n(`GET /items/{id}/agent-activity`) — no `run`/`events`/token-cost\nfields, since a task this fresh has none of that mirrored yet.",
         "required": [
           "remote_task_id",
           "remote_status",
@@ -8333,7 +8333,7 @@
               "null"
             ],
             "format": "double",
-            "description": "`cost_usd_estimated / agent_completed_count`. `None` whenever\n`agent_completed_count < MIN_SAMPLE_SIZE` — the headline \"cost per shipped\nitem\" figure is exactly the kind of small-sample-noise ratio TODO.md's card\nwarns about, so it is withheld below the stated minimum rather than shown\nfrom a handful of items."
+            "description": "`cost_usd_estimated / agent_completed_count`. `None` whenever\n`agent_completed_count < MIN_SAMPLE_SIZE` — the headline \"cost per shipped\nitem\" figure is exactly the kind of small-sample-noise ratio this module\nguards against elsewhere, so it is withheld below the stated minimum\nrather than shown from a handful of items."
           },
           "human_completed_count": {
             "type": "integer",
@@ -8355,7 +8355,7 @@
               "string",
               "null"
             ],
-            "description": "Always `None` today — no pricing-snapshot mechanism exists yet (rule 6)."
+            "description": "Always `None` today — no pricing-snapshot mechanism exists yet."
           },
           "rework": {
             "$ref": "#/components/schemas/ReworkStat"
@@ -8622,7 +8622,7 @@
       },
       "ExecutionSummary": {
         "type": "object",
-        "description": "One row of `GET /api/executions` / the `GET /api/executions/{id}`\ndetail. Deliberately five scalar columns today — see\n`docs/agent-handoffs/part-iii/III-E2.md`'s Gap 2 for the attempt/event\ndata this does *not* carry, now available separately via `GET\n/api/executions/{id}/attempts`.",
+        "description": "One row of `GET /api/executions` / the `GET /api/executions/{id}`\ndetail. Deliberately five scalar columns today — attempt/event detail\nis not carried here; it is available separately via `GET\n/api/executions/{id}/attempts`.",
         "required": [
           "request_id",
           "item_id",
@@ -8652,7 +8652,7 @@
       },
       "FleetEntry": {
         "type": "object",
-        "description": "One row per Tack project that has an `orch_links` row, joining: the link,\nits control plane's reconciler-observed health, and mirrored cost/token/\napproval data summed from `orch_tasks`/`orch_approvals`.\n\n**Staleness must be representable.** `cost_usd_estimated` is `None`\nwhenever the plane is `unreachable` — never coerced to zero — so the UI can\ngrey the row and say \"last seen Nm ago\" instead of rendering a confident\nzero. `Some(0.0)` means the\nplane is reachable and genuinely has no mirrored cost yet. `tokens_in`/\n`tokens_out` are always a plain (never-null) sum — per A5's contract, the\nrow component gates on `health`/`isStale()`, not per-field nullability, to\ndecide whether a number is trustworthy to render.",
+        "description": "One row per Tack project that has an `orch_links` row, joining: the link,\nits control plane's reconciler-observed health, and mirrored cost/token/\napproval data summed from `orch_tasks`/`orch_approvals`.\n\n**Staleness must be representable.** `cost_usd_estimated` is `None`\nwhenever the plane is `unreachable` — never coerced to zero — so the UI can\ngrey the row and say \"last seen Nm ago\" instead of rendering a confident\nzero. `Some(0.0)` means the\nplane is reachable and genuinely has no mirrored cost yet. `tokens_in`/\n`tokens_out` are always a plain (never-null) sum — the row component\ngates on `health`/`isStale()`, not per-field nullability, to decide\nwhether a number is trustworthy to render.",
         "required": [
           "project_id",
           "project_name",
@@ -9006,7 +9006,7 @@
           },
           "source": {
             "$ref": "#/components/schemas/ItemSource",
-            "description": "Sticky provenance marker (Phase 35, card C2 — the prompt-injection\ntrust boundary): set once at creation time by whichever handler\ncreated the item, and never mutated afterward — `UpdateItem` has no\n`source` field, and the repository's `update_item` has no code path\nthat writes this column, so an item's source can never change once\nset. `#[serde(default)]` matters here: any JSON that predates this\nfield (an old export, or a hand-built import payload) deserializes\nto [`ItemSource::default()`] (`Unknown`), which [`ItemSource::is_trusted`]\ntreats as untrusted — the same \"unverifiable provenance resolves to\nuntrusted\" rule migration 029 applies to pre-existing database rows."
+            "description": "Sticky provenance marker for the prompt-injection\ntrust boundary: set once at creation time by whichever handler\ncreated the item, and never mutated afterward — `UpdateItem` has no\n`source` field, and the repository's `update_item` has no code path\nthat writes this column, so an item's source can never change once\nset. `#[serde(default)]` matters here: any JSON that predates this\nfield (an old export, or a hand-built import payload) deserializes\nto [`ItemSource::default()`] (`Unknown`), which [`ItemSource::is_trusted`]\ntreats as untrusted — the same \"unverifiable provenance resolves to\nuntrusted\" rule migration 029 applies to pre-existing database rows."
           },
           "sprint_id": {
             "type": [
@@ -9302,7 +9302,7 @@
       },
       "ItemSource": {
         "type": "string",
-        "description": "Where an item's title/description text came from. Backend for the\nprompt-injection trust boundary (Phase 35, card C2): text imported from\nGitHub Issues, Linear, or any bulk import is written by parties Tack\ncannot vouch for, and becomes literal instructions to an autonomous\nagent the moment the item is dispatched. [`is_trusted`](ItemSource::is_trusted)\nis the single place that rule is encoded — nothing else in this codebase\nshould independently decide whether a `source` counts as trusted.",
+        "description": "Where an item's title/description text came from. Backend for the\nprompt-injection trust boundary: text imported from\nGitHub Issues, Linear, or any bulk import is written by parties Tack\ncannot vouch for, and becomes literal instructions to an autonomous\nagent the moment the item is dispatched. [`is_trusted`](ItemSource::is_trusted)\nis the single place that rule is encoded — nothing else in this codebase\nshould independently decide whether a `source` counts as trusted.",
         "enum": [
           "manual",
           "github",
@@ -9438,7 +9438,7 @@
       },
       "MeasurementSourceSchema": {
         "type": "string",
-        "description": "Documents `tack_orch::execution::MeasurementSource`'s wire shape —\nused by `AttemptSummary.usage_economics`. Defined here,\nnot in `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope`\nabove is: this file must keep compiling standalone when a card-local\ntest loads it via `#[path]` (`c1_handlers_test.rs`, `c2_handlers_test.rs`)\n— a `crate::openapi` (or any other module's) reference would not resolve\nin that separate test-binary crate root. `tack-orch` has no `ToSchema`\n(see `usage_provenance.rs`'s own module doc), so this is a\nhand-verified mirror, never constructed or serialized by real code —\n`#[allow(dead_code)]` for the identical reason `RunnerV1ErrorEnvelope`\ncarries it. `not_measured` is the honest value whenever a figure\ngenuinely is not known — never a fabricated zero (III.2 rule 7).",
+        "description": "Documents `tack_orch::execution::MeasurementSource`'s wire shape —\nused by `AttemptSummary.usage_economics`. Defined here,\nnot in `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope`\nabove is: this file must keep compiling standalone when a test loads it\nvia `#[path]` (`c1_handlers_test.rs`, `c2_handlers_test.rs`) — a\n`crate::openapi` (or any other module's) reference would not resolve in\nthat separate test-binary crate root. `tack-orch` has no `ToSchema`\n(see `usage_provenance.rs`'s own module doc), so this is a\nhand-verified mirror, never constructed or serialized by real code —\n`#[allow(dead_code)]` for the identical reason `RunnerV1ErrorEnvelope`\ncarries it. `not_measured` is the honest value whenever a figure\ngenuinely is not known — never a fabricated zero.",
         "enum": [
           "measured",
           "estimated",
@@ -9578,7 +9578,7 @@
             }
           }
         ],
-        "description": "Documents `tack_orch::usage_provenance::ModelProvenance` —\n`AttemptSummary.model_provenance`'s real shape (`null` while the attempt\nhas not yet reported `actual_execution`). A tagged union carrying every\nobserved fact, never coalesced into a bare boolean \"matched\" flag, so a\ncaller (F4's frontend rendering) can show both sides of a mismatch."
+        "description": "Documents `tack_orch::usage_provenance::ModelProvenance` —\n`AttemptSummary.model_provenance`'s real shape (`null` while the attempt\nhas not yet reported `actual_execution`). A tagged union carrying every\nobserved fact, never coalesced into a bare boolean \"matched\" flag, so a\ncaller (the frontend's rendering) can show both sides of a mismatch."
       },
       "ModelSelectionCapability": {
         "type": "object",
@@ -9606,7 +9606,7 @@
       },
       "OrchBlueprint": {
         "type": "string",
-        "description": "docket pod blueprint names (`core/blueprints.py`, verified 2026-08-05).",
+        "description": "docket pod blueprint names (`core/blueprints.py`).",
         "enum": [
           "software",
           "research",
@@ -10112,7 +10112,7 @@
               },
               {
                 "$ref": "#/components/schemas/TemplateOrchestration",
-                "description": "Optional agent-fleet defaults for a project created from this\ntemplate (Phase 37, card D3). `#[serde(default)]` — absent means\n\"this template does not touch orchestration,\" the same\nabsent-means-nothing rule `Item::source` (migration 029, card C2)\nestablished for backward compatibility. `None` is the value every\ntemplate had before this field existed and every built-in has today;\nnothing reads this field unless it is `Some`, so a template with no\n`orchestration` block behaves exactly as it did before this cycle."
+                "description": "Optional agent-fleet defaults for a project created from this\ntemplate. `#[serde(default)]` — absent means\n\"this template does not touch orchestration,\" the same\nabsent-means-nothing rule `Item::source` (migration 029) established\nfor backward compatibility. `None` is the value every\ntemplate had before this field existed and every built-in has today;\nnothing reads this field unless it is `Some`, so a template with no\n`orchestration` block behaves exactly as it did before this field\nexisted."
               }
             ]
           },
@@ -10685,7 +10685,7 @@
       },
       "RunnerTimeCostSchema": {
         "type": "object",
-        "description": "Documents `tack_orch::usage_provenance::RunnerTimeCost`.\n`cost_usd_estimated` is `{\"value\": null, \"source\": \"not_measured\"}` in\nevery real response today — no runner infra cost-rate is stored anywhere\nin this schema (see `CLAUDE.md`'s `TACK_EXECUTION_*` config table and the\nIII-F3 handoff's \"Schema/API/contract change requested\" item 2).\n`wall_clock_ms` is a plain derivable fact, not itself a `Measurement` —\n`null` only until both the attempt's `started_at`/`ended_at` are known.",
+        "description": "Documents `tack_orch::usage_provenance::RunnerTimeCost`.\n`cost_usd_estimated` is `{\"value\": null, \"source\": \"not_measured\"}` in\nevery real response today — no runner infra cost-rate is stored anywhere\nin this schema (see `CLAUDE.md`'s `TACK_EXECUTION_*` config table);\n`runner_rate_usd_per_hour` must be supplied by the caller for a real\ndollar figure to appear. `wall_clock_ms` is a plain derivable fact, not\nitself a `Measurement` — `null` only until both the attempt's\n`started_at`/`ended_at` are known.",
         "required": [
           "cost_usd_estimated"
         ],
@@ -10735,7 +10735,7 @@
       },
       "RunnerV1ErrorEnvelope": {
         "type": "object",
-        "description": "Documents `tack_orch::execution::ProtocolErrorEnvelope`'s real wire shape\n(`docs/contracts/runner-v1/errors/*.json`) for every operator execution/\nfleet/runner/profile route (card III-E6), which returns that envelope —\nnot `crate::openapi::ErrorEnvelope`, a different, incompatible shape\n(`{status,message,code?}` vs `{code,message,request_id,retryable,\ndetails}`). This is a doc-only mirror, not a second runtime authority:\n`tack-orch` must stay free of an OpenAPI-generation dependency (see that\ncrate's own architecture boundary), so the real type cannot derive\n`ToSchema` itself. Defined here (not in `crate::openapi`) so this file\nkeeps compiling standalone when a card-local test loads it via\n`#[path = \"../src/handlers/executions.rs\"]` (`c1_handlers_test.rs`,\n`c2_handlers_test.rs`) — a `crate::openapi` import would not resolve in\nthat separate test-binary crate root. `code` is documented as a free\nstring rather than an enum because `StableErrorCode` lives in\n`tack-orch` for the same reason; its fifteen frozen values are\nenumerated in `docs/contracts/runner-v1/README.md`.\n\n`allow(dead_code)`: this type is a pure OpenAPI schema marker — utoipa's\n`#[utoipa::path(responses(... body = RunnerV1ErrorEnvelope ...))]`\nannotations reference it by *type* (calling `ToSchema`'s associated\nfunctions) but no code anywhere ever constructs a *value* of it, since\nevery real error response is built from the actual runtime type,\n`tack_orch::execution::ProtocolErrorEnvelope`. In the real `tack-api`\nlibrary crate this is invisible to `dead_code` (a `pub` item in a\nlibrary is assumed reachable by external callers); it only surfaces\nwhen this file is compiled standalone into a test *binary* via\n`#[path]` (`c1_handlers_test.rs`/`c2_handlers_test.rs`), which has no\nexternal callers at all.",
+        "description": "Documents `tack_orch::execution::ProtocolErrorEnvelope`'s real wire shape\n(`docs/contracts/runner-v1/errors/*.json`) for every operator execution/\nfleet/runner/profile route, which returns that envelope — not\n`crate::openapi::ErrorEnvelope`, a different, incompatible shape\n(`{status,message,code?}` vs `{code,message,request_id,retryable,\ndetails}`). This is a doc-only mirror, not a second runtime authority:\n`tack-orch` must stay free of an OpenAPI-generation dependency (see that\ncrate's own architecture boundary), so the real type cannot derive\n`ToSchema` itself. Defined here (not in `crate::openapi`) so this file\nkeeps compiling standalone when a test loads it via\n`#[path = \"../src/handlers/executions.rs\"]` (`c1_handlers_test.rs`,\n`c2_handlers_test.rs`) — a `crate::openapi` import would not resolve in\nthat separate test-binary crate root. `code` is documented as a free\nstring rather than an enum because `StableErrorCode` lives in\n`tack-orch` for the same reason; its fifteen frozen values are\nenumerated in `docs/contracts/runner-v1/README.md`.\n\n`allow(dead_code)`: this type is a pure OpenAPI schema marker — utoipa's\n`#[utoipa::path(responses(... body = RunnerV1ErrorEnvelope ...))]`\nannotations reference it by *type* (calling `ToSchema`'s associated\nfunctions) but no code anywhere ever constructs a *value* of it, since\nevery real error response is built from the actual runtime type,\n`tack_orch::execution::ProtocolErrorEnvelope`. In the real `tack-api`\nlibrary crate this is invisible to `dead_code` (a `pub` item in a\nlibrary is assumed reachable by external callers); it only surfaces\nwhen this file is compiled standalone into a test *binary* via\n`#[path]` (`c1_handlers_test.rs`/`c2_handlers_test.rs`), which has no\nexternal callers at all.",
         "required": [
           "error"
         ],
@@ -11135,14 +11135,14 @@
       },
       "TemplateOrchestration": {
         "type": "object",
-        "description": "Agent-fleet defaults captured on a template (Phase 37 / card D3, tasks\n37.1 + 37.3). Nothing in this struct is applied automatically anywhere —\n`create_project_from_template` stores it and moves on. Turning it into a\nlive `orch_links` row needs a `control_plane_id` pointing at an\nalready-registered, specific docket instance, which cannot exist yet at\ntemplate-apply time; that wiring is card D4's (blocked on docket\nprovisioning), not this one's. This block is the *offer* a future\nprovisioning flow reads defaults from — inert data until then, which is\nwhat keeps it correct under TODO.md §0 rule 8 (off by default) without\nneeding `TACK_ORCH_ENABLE` to gate anything here: there is no route, no\nreconciler, no dispatch — just a JSON blob riding along with the template.",
+        "description": "Agent-fleet defaults captured on a template. Plain\n`create_project_from_template` stores it and moves on — nothing in this\nstruct is applied automatically there. Turning it into a live\n`orch_links` row needs a `control_plane_id` pointing at one specific,\nalready-registered docket instance, which that plain from-template path\nnever has; `handlers::provisioning::create_project_with_pod` is the\nroute that reads these fields as defaults (the request body overrides\nthem) when actually provisioning a pod, and that route is gated behind\n`TACK_ORCH_ENABLE`. On this struct itself there is no route, no\nreconciler, no dispatch — just a JSON blob riding along with the template.",
         "properties": {
           "auto_dispatch": {
             "type": "boolean"
           },
           "blueprint": {
             "$ref": "#/components/schemas/OrchBlueprint",
-            "description": "docket pod blueprint. Verified against `core/blueprints.py`\n(2026-08-05): exactly these five values exist server-side today.\nUnlike the remote-state enums in `tack-orch` (`RunState` etc.),\nthis is a value Tack *sends*, not one it decodes from docket's\noutput, so — per TODO.md §1.2's own scoping of the `Unknown(String)`\nrule to remote-emitted state — no `Unknown` fallback here: an\nunrecognised blueprint name is a real authoring mistake worth\nrejecting, not a forward-compat case to shrug off."
+            "description": "docket pod blueprint. Verified against `core/blueprints.py`:\nexactly these five values exist server-side today.\nUnlike the remote-state enums in `tack-orch` (`RunState` etc.),\nthis is a value Tack *sends*, not one it decodes from docket's\noutput, so no `Unknown` fallback here: an\nunrecognised blueprint name is a real authoring mistake worth\nrejecting, not a forward-compat case to shrug off."
           },
           "budget_usd": {
             "type": [
@@ -11150,14 +11150,14 @@
               "null"
             ],
             "format": "double",
-            "description": "Default budget *cap* for a project created from this template — an\noperator-set ceiling, not a derived spend figure, so it stays\nunsuffixed exactly like `orch_links.budget_usd` (card A4's\nprecedent, TODO.md §6 \"A4\" point 4). TODO.md §0 rule 6 governs\n*estimated spend* fields (`cost_usd_estimated`); a cap the operator\nchooses is a different thing and was never in scope for that rule."
+            "description": "Default budget *cap* for a project created from this template — an\noperator-set ceiling, not a derived spend figure, so it stays\nunsuffixed exactly like `orch_links.budget_usd`. The naming rule\nthat requires an `_estimated` suffix governs *estimated spend*\nfields (`cost_usd_estimated`); a cap the operator chooses is a\ndifferent thing and is out of that rule's scope."
           },
           "pipeline_file": {
             "type": [
               "string",
               "null"
             ],
-            "description": "A pipeline docket already knows about by name/path, for a template\nthat would rather point at one than ship inline YAML. Mirrors\n`orch_links.pipeline_file`. Not mutually exclusive with\n`pipeline_yaml`; which one wins if both are set is D4's call at\nprovisioning time, not this card's."
+            "description": "A pipeline docket already knows about by name/path, for a template\nthat would rather point at one than ship inline YAML. Mirrors\n`orch_links.pipeline_file`. Not mutually exclusive with\n`pipeline_yaml`, but only this field currently reaches docket:\n`handlers::provisioning` has no `POST /pods` field for inline YAML\nyet, so a template with `pipeline_yaml` set and no `pipeline_file`\nsurfaces a non-fatal warning instead of silently dropping it."
           },
           "pipeline_yaml": {
             "type": [
@@ -11171,7 +11171,7 @@
               "string",
               "null"
             ],
-            "description": "Mirrors docket's `POST /pods` `pod` field, which as of 2026-08-05\n(`serve.py::_handle_post_pods`) accepts only `\"full\"` or absent.\nStored permissively here (no enum, no validation) — enforcing that\nexact constraint is D4's job at provisioning time, when it builds\nthe real `POST /pods` body; guessing at it here would just be a\nsecond, driftable copy of a one-value check."
+            "description": "Mirrors docket's `POST /pods` `pod` field, which\n(`serve.py::_handle_post_pods`) accepts only `\"full\"` or absent.\nStored permissively here (no enum, no validation) — enforcing that\nexact constraint happens at provisioning time, when the real\n`POST /pods` body is built; guessing at it here would just be a\nsecond, driftable copy of a one-value check."
           },
           "status_map": {
             "$ref": "#/components/schemas/TemplateStatusMap"
@@ -11651,7 +11651,7 @@
       },
       "UsdMeasurementSchema": {
         "type": "object",
-        "description": "Documents `tack_orch::execution::Measurement<f64>` — every dollar figure\nin this API (`*_usd_estimated`) uses this shape. `value` is `null`\nwhenever `source` is `not_measured`; `tack-orch`'s own\n`absent_usage_never_serializes_as_zero` test asserts the literal JSON,\nnot just the Rust type, for exactly this reason (III.2 rule 7:\n\"unmeasured is nullable\" — this is documented as genuinely nullable,\nnever a number defaulting to `0`).",
+        "description": "Documents `tack_orch::execution::Measurement<f64>` — every dollar figure\nin this API (`*_usd_estimated`) uses this shape. `value` is `null`\nwhenever `source` is `not_measured`; `tack-orch`'s own\n`absent_usage_never_serializes_as_zero` test asserts the literal JSON,\nnot just the Rust type: unmeasured is documented as genuinely nullable,\nnever a number defaulting to `0`.",
         "required": [
           "source"
         ],

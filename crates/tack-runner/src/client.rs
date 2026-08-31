@@ -116,7 +116,8 @@ impl AttemptState {
     }
 }
 
-/// Runner protocol boundary retained from the B3 lifecycle skeleton.
+/// The runner's top-level protocol boundary: implementors run the whole
+/// daemon loop inside `serve`, until `shutdown` fires.
 #[async_trait]
 pub trait RunnerProtocolClient: Send + Sync {
     async fn serve(&self, shutdown: Shutdown) -> Result<(), RunnerError>;
@@ -265,7 +266,7 @@ pub enum ClaimedWorkError {
 }
 
 impl ClaimedWork {
-    /// Validates the redundant lease envelope against its preserved B1 snapshots,
+    /// Validates the redundant lease envelope against its preserved snapshots,
     /// then derives the only repository input a workspace may consume.
     pub fn workspace_repository(&self) -> Result<RepositorySpec, ClaimedWorkError> {
         if self.attempt.request_id.as_str() != self.request.request_id.as_str() {
@@ -404,9 +405,9 @@ pub struct CompletionResponse {
     pub committed_at: Timestamp,
 }
 
-/// Typed transport seam. The frozen fixtures specify payloads but not an
-/// operation-path map, so C3 must not invent an HTTP route authority ahead of
-/// C2/C5 integration.
+/// Typed transport seam: the frozen fixtures specify payloads but not an
+/// operation-path map, so this trait defines no HTTP route authority —
+/// only implementations like `transport::HttpPullProtocol` do.
 #[async_trait]
 pub trait PullProtocol: Send + Sync {
     async fn enroll(
@@ -533,11 +534,11 @@ where
 
 /// Every failure a [`PullProtocol`] implementation may report.
 ///
-/// `StaleLease` and `RunnerRevoked` predate III-H1 and stay separate
-/// variants because the engine's fencing and revocation handling branch on
-/// them by name; III-H1 added [`ProtocolClientError::Protocol`] so the other
-/// thirteen `docs/contracts/runner-v1/` stable codes arrive **typed** rather
-/// than collapsed into the bare `Rejected` a pre-transport seam had to use.
+/// `StaleLease` and `RunnerRevoked` stay separate variants because the
+/// engine's fencing and revocation handling branch on them by name;
+/// [`ProtocolClientError::Protocol`] carries the other thirteen
+/// `docs/contracts/runner-v1/` stable codes **typed** rather than collapsed
+/// into the bare `Rejected` a pre-transport seam had to use.
 /// `Rejected` is retained with a narrowed meaning: the server refused the
 /// request but its body was not a parseable v1 error envelope, so there is
 /// no stable code to report. That is a real, distinguishable condition — a

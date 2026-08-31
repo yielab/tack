@@ -371,8 +371,8 @@ pub struct ControlPlaneResponse {
     pub api_version: Option<String>,
     /// `"unknown"` (pre-first-poll default) | `"healthy"` | `"degraded"` |
     /// `"unreachable"` (the reconciler's health state machine,
-    /// `tack-orch::reconciler`, persisted verbatim) | `"unconfigured"` (card
-    /// G1 — this build of Tack could not even build a live adapter for
+    /// `tack-orch::reconciler`, persisted verbatim) | `"unconfigured"`
+    /// (this build of Tack could not even build a live adapter for
     /// `kind`, so the reconciler's state machine never ran against this
     /// plane at all; see `orch_store::RepoControlPlaneStore::
     /// mark_unconfigured`'s doc comment).
@@ -1077,9 +1077,9 @@ pub struct FleetRosterMember {
 /// grey the row and say "last seen Nm ago" instead of rendering a confident
 /// zero. `Some(0.0)` means the
 /// plane is reachable and genuinely has no mirrored cost yet. `tokens_in`/
-/// `tokens_out` are always a plain (never-null) sum — per A5's contract, the
-/// row component gates on `health`/`isStale()`, not per-field nullability, to
-/// decide whether a number is trustworthy to render.
+/// `tokens_out` are always a plain (never-null) sum — the row component
+/// gates on `health`/`isStale()`, not per-field nullability, to decide
+/// whether a number is trustworthy to render.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct FleetEntry {
     pub project_id: Uuid,
@@ -1293,11 +1293,12 @@ async fn count_pending_approvals(
 // fields entirely — verified by reading both functions' exact output line by
 // line, not inferred — even though `core/models.py::AgentMeta` tracks them
 // internally. The one proxy that exists, a `paused_refused` trace event
-// (`core/dispatch.py::_claim_next_task`), already flows into Tack via card
-// B2's trace-event ingestion (`orch_events`) — but not attributably: that
+// (`core/dispatch.py::_claim_next_task`), already flows into Tack via
+// trace-event ingestion (`orch_events`) — but not attributably: that
 // event's `session_id` is the generic `"agent:<project>:dispatch"` form,
-// which B2's own per-item correlation (`reconciler::session_id_task_id`)
-// never matches (by design — it isn't a task id), so it lands with
+// which the reconciler's own per-item correlation
+// (`reconciler::session_id_task_id`) never matches (by design — it isn't a
+// task id), so it lands with
 // `item_id = NULL`; and `orch_events` has no `remote_project` column at all,
 // only `control_plane_id`, which is many-to-one against Tack projects
 // (`orch_links`). So a `paused_refused` row cannot be resolved back to
@@ -1399,17 +1400,16 @@ pub async fn get_orch_budget(
 //
 // Prometheus text exposition format — not JSON, unlike every other handler in
 // this module. Round-trips cleanly through `tack_orch::adapters::prometheus::
-// parse` (A1's parser); see `tests/orch_metrics_test.rs`'s
+// parse`; see `tests/orch_metrics_test.rs`'s
 // `get_metrics_response_parses_with_the_real_prometheus_parser` for the proof.
 //
 // Sits behind the same gates as every other route in this sub-router
 // (`require_orch_enabled`, plus the ordinary Bearer-token gate applied to the
 // whole `/api` router in `router.rs`) rather than being fully unauthenticated
 // like docket's own `/metrics` — this endpoint lives in the same
-// TACK_ORCH_ENABLE-gated sub-router as `/fleet`/`/control-planes`, and A4's
-// `router.rs` marked exactly this insertion point for it, so it inherits that
-// sub-router's gates rather than getting a bespoke exemption — a
-// known deviation from the roadmap's "unauthenticated like docket's" wording.
+// TACK_ORCH_ENABLE-gated sub-router as `/fleet`/`/control-planes`, so it
+// inherits that sub-router's gates rather than getting a bespoke exemption —
+// a known deviation from the roadmap's "unauthenticated like docket's" wording.
 
 fn escape_prometheus_label_value(v: &str) -> String {
     v.replace('\\', "\\\\")
@@ -1621,8 +1621,8 @@ pub async fn get_metrics(State(state): State<AppState>) -> ApiResult<Response> {
 // Chain-verification of the audit log backing these counters (tamper
 // detection) is deliberately not reimplemented here — `docket audit verify`
 // (CLI-only) already does this against the pod's own `DOCKET_HOME`; the
-// frontend panel links out to it as a command to run, per the card's explicit
-// instruction not to build a second verifier in Rust.
+// frontend panel links out to it as a command to run rather than this
+// building a second verifier in Rust.
 
 /// One `docket_tool_calls_total{decision=...}` sample.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -1797,13 +1797,13 @@ pub async fn get_orch_policy(
 // `frontend/src/shared/agentActivity/api.ts` — see that file's header comment
 // for the full field-provenance table (which migration/column backs each
 // field, and which `tack-orch` enum backs each raw status string). Two
-// decisions B5 left open, resolved here:
+// decisions resolved here:
 //
-// 1. **"Latest attempt" tie-break** — B5's own assumption, confirmed: highest
-//    `attempt` number wins; ties broken by `dispatched_at` desc. See
+// 1. **"Latest attempt" tie-break** — highest `attempt` number wins; ties
+//    broken by `dispatched_at` desc. See
 //    `Repository::list_latest_orch_task_status_for_project`'s doc comment for
 //    the (purely mechanical) final tie-break that makes the SQL deterministic.
-// 2. **Inner join vs. left join for the bulk badge endpoint** — kept B5's
+// 2. **Inner join vs. left join for the bulk badge endpoint** — uses an
 //    inner join. An item with no `orch_tasks` row simply has no row in
 //    `AgentBadgeResponse`, which is exactly the "no chip" signal
 //    `useAgentActivityMap` already implements on the frontend. A left join
@@ -1811,9 +1811,9 @@ pub async fn get_orch_policy(
 //    "dispatched, but the reconciler hasn't polled since" — no UI reads that
 //    distinction today, so it isn't worth the wire-shape complexity yet.
 //
-// One field each endpoint adds beyond B5's original contract:
+// One field each endpoint adds:
 // `ItemAgentActivityResponse.events_truncated` / `.events_retention_days`.
-// `orch_events_daily` (B3's retention rollup) aggregates by
+// `orch_events_daily` (the retention rollup) aggregates by
 // day/control_plane_id/event_type only — it drops `item_id` entirely, so
 // there is no way to ask "were *this item's* events rolled up." The honest
 // signal this endpoint can give instead: whether the item has any attempt
@@ -2084,7 +2084,7 @@ pub async fn get_project_agent_activity(
 
 /// A dispatched (or already-in-flight) `orch_tasks` row, projected for the
 /// dispatch response. Deliberately smaller than `ItemAgentAttemptResponse`
-/// (B6, `GET /items/{id}/agent-activity`) — no `run`/`events`/token-cost
+/// (`GET /items/{id}/agent-activity`) — no `run`/`events`/token-cost
 /// fields, since a task this fresh has none of that mirrored yet.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct DispatchedTaskResponse {
@@ -2317,7 +2317,7 @@ impl SprintDispatchItemResponse {
     }
 
     /// Overlay `DispatchItemResponse`'s fields (produced from a real
-    /// `DispatchOutcome` via C1's own `From` impl — reused verbatim, not
+    /// `DispatchOutcome` via its own `From` impl — reused verbatim, not
     /// reimplemented) onto this row.
     fn with_dispatch_outcome(mut self, mapped: DispatchItemResponse) -> Self {
         self.decision = mapped.outcome;
@@ -2650,9 +2650,9 @@ pub async fn list_pending_approvals(
     }))
 }
 
-/// The gate this whole card exists for. Granting or denying a docket
-/// approval releases whatever an autonomous agent was paused for — a
-/// materially higher-privilege action than the ordinary `TACK_API_TOKEN`
+/// Granting or denying a docket approval releases whatever an autonomous
+/// agent was paused for — a materially higher-privilege action than the
+/// ordinary `TACK_API_TOKEN`
 /// Bearer gate already covers (which lets a caller move any card on the
 /// board). So it requires the **separate** `TACK_ORCH_APPROVAL_TOKEN` on
 /// top, checked here rather than as a blanket middleware layer (unlike
@@ -2749,8 +2749,8 @@ pub struct DecideApprovalRequest {
 }
 
 /// `POST /api/approvals/{token}` response — docket's own resulting state
-/// (`"granted"`/`"denied"`, or an unrecognised value shown as-is per this
-/// whole cycle's "never fail on an unknown remote value" discipline).
+/// (`"granted"`/`"denied"`, or an unrecognised value shown as-is — this API
+/// never fails on an unknown remote value).
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct DecideApprovalResponse {
     pub token: String,
@@ -2760,7 +2760,7 @@ pub struct DecideApprovalResponse {
 /// `POST /api/approvals/{token}` — grant or deny a pending approval,
 /// proxying to docket's own `POST /approvals/{token}` with `channel: "tack"`
 /// so the decision is honestly attributed in docket's hash-chained audit
-/// log (its P22-4) rather than reading as an anonymous/CLI decision.
+/// log rather than reading as an anonymous/CLI decision.
 ///
 /// **Not idempotent, not reversible** — see [`OrchError::AlreadyDecided`]'s
 /// doc comment for what happens when the token was already resolved

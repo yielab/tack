@@ -1821,9 +1821,9 @@ fn cmd_field_unset(client: &TackClient, item: String, field: String) -> anyhow::
 //
 // Every body sent below is built by `tack_cli::execution` — the same module
 // `mcp.rs`'s execution tools call into — so the CLI and MCP entry points can
-// never construct a differently-shaped request for the same operation
-// (III-E5 acceptance: "a CLI/MCP-issued request produces the same payload
-// shape as the UI would"). See `execution.rs`'s module doc for why the
+// never construct a differently-shaped request for the same operation:
+// a CLI/MCP-issued request produces the same payload
+// shape as the UI would. See `execution.rs`'s module doc for why the
 // backend's own request structs, not a hand-written contract fixture, are
 // the shape authority for this surface.
 
@@ -1934,7 +1934,7 @@ fn cmd_execution_get(client: &TackClient, id: String, as_json: bool) -> anyhow::
     if let Some(cancel_at) = resp["cancellation_requested_at"].as_str() {
         println!("  cancellation requested at: {cancel_at}");
     }
-    // III-E5 acceptance: needs_operator/lost are surfaced as visibly
+    // needs_operator/lost are surfaced as visibly
     // distinct outcomes, not collapsed into the same quiet summary as
     // every other state — a single-record view has room to say what to do
     // about it, not just flag that it happened.
@@ -1960,7 +1960,7 @@ fn cmd_execution_cancel(client: &TackClient, id: String, as_json: bool) -> anyho
         return Ok(());
     }
     // The server's `state` here is the literal string "cancellation_requested"
-    // — not one of the frozen III.1.1 lifecycle states — because cancellation
+    // — not one of the frozen `tack_orch::execution::ExecutionState` lifecycle states — because cancellation
     // is recorded as a request only; the runner observes and reports the
     // actual outcome (succeeded/failed/cancelled/lost). Say that plainly
     // rather than implying the request is already terminal.

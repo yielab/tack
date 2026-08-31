@@ -123,7 +123,7 @@
 //!
 //! # `list_tasks` / `traces`
 //!
-//! Both routes exist in docket, shipped in its own Phase 22
+//! Both routes exist in docket
 //! (`GET /tasks/{project}`, `GET /traces/{project}?since=`),
 //! verified directly against `serve.py`'s `do_GET`, not against
 //! docket's own `ROADMAP.md` (which still lists them `TODO` — a real

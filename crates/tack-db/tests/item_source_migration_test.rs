@@ -1,13 +1,13 @@
 //! Tests for migration 029 (`items.source`) — the sticky provenance/trust
-//! marker behind card C2's prompt-injection boundary.
+//! marker behind the prompt-injection trust boundary (`ItemSource::is_trusted`).
 //!
-//! Covers the acceptance bar the card names explicitly:
+//! Covers:
 //!   - every creation path writes an explicit, correct `source`;
 //!   - `update_item` never mutates it once set (the "sticky" requirement —
 //!     untrusted text must stay untrusted for the item's whole lifetime);
 //!   - an item that existed before this migration ran resolves to the
 //!     *safe* value (untrusted), never to `manual` by accident — the
-//!     "unsafe state is never the accidental default" rule from the card.
+//!     "unsafe state is never the accidental default" rule.
 
 mod common;
 
@@ -142,11 +142,12 @@ async fn upgrade_in_place_backfills_pre_migration_items_to_untrusted() {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
 
     // Simulate an installed tack.db stopped at "028_orch_trace_cursors" —
-    // i.e. every migration through the end of Phase 34, before this card's
-    // 029 (and its `items.source` column) ever existed. This also covers
-    // installs where an item was imported from GitHub *before this whole
-    // Phase 35 cycle* (migration 018/github_links predates it) — exactly
-    // the case this migration's default must not silently trust.
+    // i.e. every migration before 029 (and its `items.source` column) ever
+    // existed. This also covers
+    // installs where an item was imported from GitHub *before the
+    // `items.source` column existed* (migration 018/github_links predates
+    // it) — exactly the case this migration's default must not silently
+    // trust.
     migrations::run_up_to(&pool, "028_orch_trace_cursors")
         .await
         .expect("apply migrations up to 028");

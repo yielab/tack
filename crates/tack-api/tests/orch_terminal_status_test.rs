@@ -1,6 +1,6 @@
-//! Tests for card C5: the
-//! reconciler-driven counterpart to card C1's dispatch-time `on_running`/
-//! `on_waiting_approval` application. When `RepoControlPlaneStore::upsert_runs`
+//! Tests for the reconciler-driven counterpart to `orch_dispatch_test.rs`'s
+//! dispatch-time `on_running`/`on_waiting_approval` application. When
+//! `RepoControlPlaneStore::upsert_runs`
 //! (`crates/tack-api/src/orch_store.rs`) sees a run reach a terminal
 //! `RunState` (`succeeded`/`failed`/`cancelled`), it applies
 //! `status_map.on_succeeded`/`on_failed`/`on_cancelled` through the workflow
@@ -114,7 +114,7 @@ async fn link(repo: &Repository, project_id: Uuid, plane_id: Uuid, status_map: V
     .expect("upsert_orch_link");
 }
 
-/// Simulates card C1's `dispatch_item` having already run: an `orch_tasks`
+/// Simulates `dispatch_item` having already run: an `orch_tasks`
 /// attempt row exists with the given `remote_status`, and (separately,
 /// mirroring what `dispatcher::apply_mapped_status` would have done) the
 /// item's status is set directly.
@@ -252,12 +252,12 @@ async fn on_failed_moves_the_item_when_the_run_that_reached_waiting_approval_the
 #[tokio::test]
 async fn a_human_move_since_dispatch_blocks_on_succeeded_even_when_the_value_collides_with_on_waiting_approval()
  {
-    // The exact scenario from the card brief: on_running parks the item at
-    // "In Progress"; a human drags it to "In Review" — which, deliberately,
-    // is also this status_map's own on_waiting_approval *and* on_failed
-    // value (mirrors TODO.md §1.3's worked example, where on_waiting_approval
-    // and on_failed both name "Blocked"). A naive "is the current status any
-    // status_map value" check would misread this as untouched; the real
+    // on_running parks the item at "In Progress"; a human drags it to "In
+    // Review" — which, deliberately, is also this status_map's own
+    // on_waiting_approval *and* on_failed value (both naming the same
+    // status is a real configuration shape, not just a test artifact). A
+    // naive "is the current status any status_map value" check would
+    // misread this as untouched; the real
     // check must compare against only the one key this attempt actually
     // used (on_running, since remote_status is "running", not
     // "waiting_approval") and correctly see the divergence.

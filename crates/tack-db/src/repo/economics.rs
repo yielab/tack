@@ -1,26 +1,27 @@
-//! Unit economics (Phase 38 / card D5, task 38.1) — read-only aggregate queries over
+//! Unit economics — read-only aggregate queries over
 //! `items` + `orch_tasks` (+ `orch_events` for the rework signal). Deliberately its own
-//! module rather than an extension of `repo/orch.rs`: card D4 (provisioning) is
-//! concurrently editing that file this wave, and every query here is additive/read-only
-//! against tables `repo/orch.rs` already owns, so a separate file removes the collision
-//! entirely rather than timing around it.
+//! module rather than an extension of `repo/orch.rs`: every query here is
+//! additive/read-only against tables `repo/orch.rs` already owns, so a separate file
+//! avoids colliding with unrelated edits to that file.
 //!
 //! Two things worth knowing before extending this module:
 //!
-//! 1. **`orch_events.run_id` is always `NULL` in this codebase today.** Every
-//!    `NewOrchEvent` constructed anywhere (`tack-orch::reconciler`'s trace ingestion,
-//!    `tack-api::dispatcher`'s `status_map_rejected` recording) hardcodes `run_id:
-//!    None` — verified by reading both call sites directly, not inferred. So a
-//!    per-*attempt* correlation via `orch_events.run_id = orch_tasks.remote_run_id`
-//!    (the shape card B6's item-detail endpoint documents) would silently match
-//!    nothing in practice; it isn't a fit for "how often did agent work need rework"
-//!    here. What *is* populated reliably is `orch_events.item_id` (via
-//!    `reconciler::session_id_task_id` → `find_orch_task_by_remote_task_id`), so
+//! 1. **The rework-signal event types (`rework_started`, `verification_failed`,
+//!    `tester_verdict_failed`) only ever arrive via `tack-orch::reconciler`'s trace
+//!    ingestion, which always sets `orch_events.run_id: None`** — docket's trace
+//!    payload carries no `run_id`, only `session_id`, and the ingestion code leaves
+//!    `run_id` unset rather than guessing at a lookup it doesn't have. `orch_events.
+//!    run_id` is not `NULL` for every row in the table — `tack-api::orch_store`'s
+//!    `status_map_skipped_human_override` recording does set it — but for these three
+//!    event types specifically, a per-*attempt* correlation via `orch_events.run_id =
+//!    orch_tasks.remote_run_id` would silently match nothing in practice; it isn't a
+//!    fit for "how often did agent work need rework" here. What *is* populated
+//!    reliably is `orch_events.item_id` (via `reconciler::session_id_task_id` →
+//!    `find_orch_task_by_remote_task_id`), so
 //!    [`Repository::list_item_ids_with_rework_signal`] correlates at the item level
 //!    instead. This is a real, disclosed gap for whoever next needs per-attempt (not
-//!    per-item) event correlation — see TODO.md §6, card D5's handoff, and the "Known
-//!    gaps" list.
-//! 2. **Only `orch_events`/`orch_metrics` are subject to the Phase 34.6 retention
+//!    per-item) rework-signal correlation.
+//! 2. **Only `orch_events`/`orch_metrics` are subject to the retention
 //!    sweep — `orch_tasks` is never purged.** So `tokens_in`/`tokens_out`/
 //!    `cost_usd_estimated`/lead-time figures below are never truncated by
 //!    `TACK_ORCH_EVENT_RETENTION_DAYS`; only the rework-signal correlation (which
@@ -120,7 +121,7 @@ impl Repository {
     /// Every completed item (`completed_at IS NOT NULL`), with its project's
     /// `project_type` and its `orch_tasks` totals folded in via one `LEFT JOIN` +
     /// `GROUP BY` — a single query rather than an N+1 per item. Unpaginated by
-    /// design (like `list_items_for_sprint`, card C3): a unit-economics dashboard that
+    /// design (like `list_items_for_sprint`): a unit-economics dashboard that
     /// silently truncated at some page size would misreport the very totals it exists
     /// to get right. See `idx_items_completed_at` (migration 031) — without it this is
     /// a full scan of `items` on an instance with many projects, since the query has
@@ -160,8 +161,8 @@ impl Repository {
     }
 
     /// Distinct `item_id`s that have at least one `orch_events` row of type
-    /// `rework_started`, `verification_failed`, or `tester_verdict_failed` — the
-    /// rework-signal definition card D5 chose. Item-level, not
+    /// `rework_started`, `verification_failed`, or `tester_verdict_failed` — this
+    /// module's rework-signal definition. Item-level, not
     /// attempt-level — see this module's doc comment on why `run_id` correlation
     /// isn't usable today. Only reflects events still in the raw table: an item whose
     /// only qualifying event aged past `TACK_ORCH_EVENT_RETENTION_DAYS` and was rolled

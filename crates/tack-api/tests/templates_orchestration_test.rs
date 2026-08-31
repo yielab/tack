@@ -1,16 +1,16 @@
-//! Tests for the template `orchestration` block (Phase 37, card D3, tasks
-//! 37.1/37.3): `POST /api/templates`'s save-time validation.
+//! Tests for the template `orchestration` block: `POST /api/templates`'s
+//! save-time validation.
 //!
-//! Covers the card's two hard requirements: `orchestration.status_map` is
-//! rejected with a 400 naming the bad key when it references a status the
+//! Covers two hard requirements: `orchestration.status_map` is rejected
+//! with a 400 naming the bad key when it references a status the
 //! template's *own* workflow doesn't have (reusing
 //! `handlers::orch::validate_status_map` — the same function `PUT
-//! /orch-link` uses, card A4); and `orchestration.pipeline_yaml`, when
-//! supplied inline, is rejected when it isn't even parseable YAML. Also
-//! covers backward compatibility: a template with no `orchestration` key at
-//! all behaves exactly as before this cycle, with no `TACK_ORCH_ENABLE`
-//! dependency anywhere in this path (§0 rule 8 — nothing here is gated,
-//! because nothing here does anything beyond storing a JSON blob).
+//! /orch-link` uses); and `orchestration.pipeline_yaml`, when supplied
+//! inline, is rejected when it isn't even parseable YAML. Also covers
+//! backward compatibility: a template with no `orchestration` key at all
+//! behaves exactly as before, with no `TACK_ORCH_ENABLE` dependency
+//! anywhere in this path — nothing here is gated, because nothing here does
+//! anything beyond storing a JSON blob.
 
 mod common;
 
@@ -41,8 +41,8 @@ async fn body_json(res: axum::response::Response) -> Value {
 }
 
 /// A template with no `orchestration` key at all — the shape every template
-/// had before this cycle, and the shape every built-in still has — must
-/// keep working unchanged. This is TACK_ORCH_ENABLE-independent: the
+/// had before `orchestration` was added, and the shape every built-in still
+/// has — must keep working unchanged. This is TACK_ORCH_ENABLE-independent: the
 /// default test app has orchestration disabled entirely, and this must
 /// still succeed.
 #[tokio::test]
@@ -84,7 +84,7 @@ async fn create_template_with_null_orchestration_still_works() {
     assert_eq!(res.status(), StatusCode::OK);
 }
 
-/// The card's headline acceptance bar: an unknown status name in
+/// The headline acceptance bar: an unknown status name in
 /// `orchestration.status_map` is rejected with a 400 naming the bad key —
 /// not silently stored, not caught only later when a dispatch misbehaves.
 #[tokio::test]
@@ -176,8 +176,8 @@ async fn create_template_validates_status_map_against_its_own_workflow() {
 
 /// `pipeline_yaml`, when supplied inline, must at least parse as YAML.
 /// (Deliberately not a check against docket's real pipeline schema — see
-/// `handlers::templates::validate_template_orchestration`'s doc comment and
-/// TODO.md §6 "D3" for why.)
+/// `handlers::templates::validate_template_orchestration`'s doc comment for
+/// why.)
 #[tokio::test]
 async fn create_template_rejects_unparseable_pipeline_yaml() {
     let (app, _workspace_id) = common::test_app().await;

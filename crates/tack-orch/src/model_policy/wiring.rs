@@ -1,6 +1,5 @@
 //! Live wiring between the pure [`super::resolve_model_policy`] and real
-//! `agent_profiles.limits` / `agent_fleets.default_policy` rows (`TODO.md`
-//! Part III, card III-F3).
+//! `agent_profiles.limits` / `agent_fleets.default_policy` rows.
 //!
 //! # Where each tier's data actually lives today
 //!
@@ -19,27 +18,23 @@
 //! - **Project default**: **no storage exists**. `projects` (migration 002)
 //!   has `vocabulary`/`workflow` JSON columns, both semantically owned by
 //!   the workflow engine, and no third general-purpose settings column.
-//!   [`resolve_request_model_policy`] always passes `None` for this tier —
-//!   see this card's handoff, "Schema/API/contract change requested," which
-//!   requests either a real `projects.default_model_policy` column or an
-//!   explicitly documented reuse of an existing column, decided by whoever
-//!   owns the next migration batch (`crates/tack-db/src/migrations.rs` is
-//!   not this card's file to edit — III.3).
+//!   [`resolve_request_model_policy`] always passes `None` for this tier.
+//!   Filling it in needs either a real `projects.default_model_policy`
+//!   column or an explicitly documented reuse of an existing column,
+//!   decided by whoever owns the next migration batch.
 //!
 //! This mirrors `crate::scheduler::wiring`'s own established shape
 //! (`priority_from_metadata` reading a documented, non-binding convention
 //! out of `execution_requests.metadata` because no real `priority` column
-//! exists) — a documented stopgap, not a second frozen contract, and named
-//! as such per this card's own instruction not to build on a stopgap
-//! silently.
+//! exists) — a documented stopgap, not a second frozen contract.
 //!
 //! # Capability intersection before claim
 //!
 //! This module does not itself check a resolved model against any runner's
 //! declared capability — that check already exists, untouched, in
-//! `crate::scheduler::select::select_runner` (card III-E1) and is wired to
-//! live data by `crate::scheduler::wiring::choose_request_for_runner` (card
-//! III-E6). Once a [`ResolvedModelPolicy`](super::ResolvedModelPolicy)'s
+//! `crate::scheduler::select::select_runner` and is wired to
+//! live data by `crate::scheduler::wiring::choose_request_for_runner`.
+//! Once a [`ResolvedModelPolicy`](super::ResolvedModelPolicy)'s
 //! selector is persisted as an `execution_requests` row's
 //! `requested_model_provider`/`requested_model_id` (or left `NULL` for
 //! `AutoSelect`), the existing, unmodified claim path enforces "unavailable

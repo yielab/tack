@@ -4,10 +4,9 @@
 //! access baked in (callers pass `now` explicitly — see [`super::select`]).
 //! The scheduler's job is to turn a [`SchedulingRequest`] plus a candidate
 //! [`RunnerCandidate`] slice into a [`SelectionOutcome`] and nothing else —
-//! it never grants the authoritative lease (`TODO.md` III-E1's acceptance
-//! criterion; that stays the repository/API's job once a later integration
-//! card wires this module to the real `agent_runners`/`agent_fleet_members`
-//! tables, see `crates/tack-db/src/migrations.rs` migrations 039–041).
+//! it never grants the authoritative lease; that stays the repository/API's
+//! job, reading and writing the real `agent_runners`/`agent_fleet_members`
+//! tables (see `crates/tack-db/src/migrations.rs` migrations 039–041).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -32,17 +31,15 @@ pub enum RunnerState {
     Revoked,
 }
 
-/// Caller-supplied scheduling priority. `TODO.md` III-E1's task list names
-/// "priority/fairness" as a required behavior, but no `execution_requests`
-/// column carries a priority value today (see migration 044 in
+/// Caller-supplied scheduling priority. No `execution_requests` column
+/// carries a priority value today (see migration 044 in
 /// `crates/tack-db/src/migrations.rs` — `state`, `selector_kind`,
-/// `requested_harness_kind`, etc., but no `priority`). This type is this
-/// card's typed answer to that gap: [`crate::scheduler::batch::schedule`]
-/// orders by it, and a later integration card must supply a real value
-/// (from a future column, or a policy read out of `execution_requests.metadata`)
-/// rather than a caller inventing one ad hoc. `Normal` is the explicit
-/// default so an unset priority never silently sorts as the *most* urgent
-/// request in a batch.
+/// `requested_harness_kind`, etc., but no `priority`), so this type is a
+/// typed stand-in for that gap: [`crate::scheduler::batch::schedule`] orders
+/// by it, and a caller must supply a real value (from a future column, or a
+/// policy read out of `execution_requests.metadata`) rather than inventing
+/// one ad hoc. `Normal` is the explicit default so an unset priority never
+/// silently sorts as the *most* urgent request in a batch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum Priority {
     Low,
@@ -54,16 +51,16 @@ pub enum Priority {
 /// The requested model, or an explicit request for the runner/harness to
 /// auto-select one. Uses [`RequestedModelProvider`]/[`RequestedModelId`] —
 /// not the bare `ModelProvider`/`ModelId` a runner uses to *declare*
-/// support — because III.0's "vocabulary that must remain distinct" rule
-/// treats requested and declared/actual as different namespaces even though
-/// both wrap an opaque string; [`super::select`] compares across the two via
-/// `.as_str()` rather than conflating the types.
+/// support — because requested and declared/actual are treated as different
+/// namespaces even though both wrap an opaque string; [`super::select`]
+/// compares across the two via `.as_str()` rather than conflating the
+/// types.
 ///
 /// Deliberately makes the "one of provider/model set, the other absent"
 /// shape unrepresentable: `execution::ExecutionRequestSnapshot` carries
 /// `requested_model_provider`/`requested_model_id` as two independently
-/// nullable fields (III.1.2), so a caller building a [`SchedulingRequest`]
-/// from that snapshot must reconcile them through [`ModelSelector::from_parts`],
+/// nullable fields, so a caller building a [`SchedulingRequest`] from that
+/// snapshot must reconcile them through [`ModelSelector::from_parts`],
 /// which surfaces the partial case as a typed
 /// [`super::select::SchedulingError`] instead of silently guessing.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,13 +94,13 @@ impl ModelSelector {
 }
 
 /// A request awaiting runner assignment. Pure data — no reference to any
-/// database row or HTTP payload — built by whatever later integration card
-/// wires this module to the real `execution_requests` table.
+/// database row or HTTP payload — built by whatever caller wires this
+/// module to the real `execution_requests` table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchedulingRequest {
     pub request_id: ExecutionRequestId,
-    /// Exact runner, fleet, or `Any` — `execution::RunnerSelector` verbatim
-    /// (III.1.2), not a re-declared copy.
+    /// Exact runner, fleet, or `Any` — `execution::RunnerSelector` verbatim,
+    /// not a re-declared copy.
     pub selector: RunnerSelector,
     pub priority: Priority,
     pub requested_harness_kind: HarnessKind,
@@ -123,7 +120,7 @@ pub struct SchedulingRequest {
 /// heartbeat freshness come from `agent_runners`' own live columns
 /// (`available_capacity`, `last_heartbeat_at`), not from the runner's
 /// self-reported `capability_snapshot` — that JSON blob is refreshed only on
-/// enroll/refresh (III.1.4) and can be stale relative to the DB's live
+/// enroll/refresh and can be stale relative to the DB's live
 /// capacity ledger, which every claim/heartbeat/completion call updates
 /// directly (`crates/tack-db/src/repo/execution.rs`). `harnesses` is the one
 /// piece of the capability snapshot the scheduler does read: whichever
@@ -149,9 +146,8 @@ pub struct RunnerCandidate {
 }
 
 /// Why one candidate was rejected. Every variant names the exact fact that
-/// disqualified it — `TODO.md` III.2 rule 7 ("unsupported is typed, unknown
-/// is explicit") and III-E1's acceptance criterion ("invalid combinations
-/// name reasons, not a bare boolean").
+/// disqualified it — unsupported is typed, unknown is explicit, and invalid
+/// combinations name reasons rather than collapsing to a bare boolean.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IneligibleReason {
     /// `selector` was `ExactRunner { runner_id }` and this candidate is not
@@ -163,9 +159,8 @@ pub enum IneligibleReason {
     /// Only [`RunnerState::Active`] is schedulable.
     RunnerNotActive { state: RunnerState },
     /// `last_heartbeat_at` is missing, or older than the policy's
-    /// `max_heartbeat_age` as of `now`. Mirrors the Wave 3 carry-forward
-    /// instruction (`TODO.md`, "Wave 3 carry-forward"): the scheduler reads
-    /// freshness, it does not assume a runner is alive.
+    /// `max_heartbeat_age` as of `now`: the scheduler reads freshness, it
+    /// does not assume a runner is alive.
     HeartbeatStale {
         last_heartbeat_at: Option<DateTime<Utc>>,
         max_age: Duration,
@@ -198,19 +193,18 @@ pub enum IneligibleReason {
     },
     /// [`ModelSelector::AutoSelect`] was requested. No capability field in
     /// runner-v1 v1 (`docs/contracts/runner-v1/capabilities.json`) records
-    /// whether a harness safely accepts an unspecified model — the Wave 3
-    /// carry-forward found that two of three real adapters (Codex, OpenCode)
-    /// reject auto-select pre-spawn rather than fabricate a selection. Until
-    /// a capability snapshot can attest to this, every candidate is reported
-    /// ineligible for an auto-select request with this named reason rather
-    /// than silently narrowing to whichever harness the scheduler happens to
-    /// guess is safe. See this card's handoff, "Known limitations".
+    /// whether a harness safely accepts an unspecified model — two of three
+    /// real adapters (Codex, OpenCode) reject auto-select pre-spawn rather
+    /// than fabricate a selection. Until a capability snapshot can attest to
+    /// this, every candidate is reported ineligible for an auto-select
+    /// request with this named reason rather than silently narrowing to
+    /// whichever harness the scheduler happens to guess is safe.
     AutoSelectNotVerified { harness: HarnessKind },
 }
 
 /// A successful, advisory placement: this runner is the scheduler's pick,
-/// not yet a granted lease. Only the repository's fenced claim (III.1.5) can
-/// make a lease valid — see this module's top doc comment.
+/// not yet a granted lease. Only the repository's fenced claim can make a
+/// lease valid — see this module's top doc comment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Selection {
     pub runner_id: RunnerId,

@@ -198,7 +198,7 @@ fn dispatch_tool(client: &TackClient, name: &str, args: &Value) -> Result<Value,
         // template/role/field management) off the agent-facing tool
         // surface (see docs/MCP.md). `reconcile` specifically is an
         // operator's explicit, audited recovery decision after reviewing an
-        // ambiguous `needs_operator` state (III.1.1) — not something an
+        // ambiguous `needs_operator` state — not something an
         // agent should be able to trigger on its own say-so. `runner
         // enroll` additionally returns a one-time secret; keeping it out of
         // the MCP surface means that secret can never end up in an agent's
@@ -278,8 +278,8 @@ fn call<T>(result: anyhow::Result<T>) -> Result<T, String> {
 /// Read-modify-write an item with an `If-Match` precondition, so the two MCP
 /// tools that mutate an existing item (`update_item`, `move_item`) can never
 /// clobber a change made by a human in the UI or another agent between the
-/// read and the write — the exact agent-versus-human race card G3 added
-/// `version`/`ETag`/`If-Match` to catch, on exactly the write path that
+/// read and the write — the exact agent-versus-human race that
+/// `version`/`ETag`/`If-Match` catches, on exactly the write path that
 /// previously had no way to send the header at all. When the server sends
 /// no `ETag` (no concurrency support on this route yet, or an older server),
 /// `if_match` is `None` and `patch_if_match` sends no header — identical to
@@ -695,7 +695,7 @@ mod tests {
         .unwrap();
         let v: Value = serde_json::from_str(&resp).unwrap();
         let tools = v["result"]["tools"].as_array().unwrap();
-        // The original 8 item/project tools plus III-E5's 7 execution/fleet/
+        // The original 8 item/project tools plus 7 execution/fleet/
         // profile tools (list_fleets, list_agent_profiles,
         // list_model_profiles, list_executions, get_execution,
         // cancel_execution, create_execution).
@@ -711,7 +711,7 @@ mod tests {
         assert!(names.contains(&"get_execution"));
         assert!(names.contains(&"cancel_execution"));
         assert!(names.contains(&"create_execution"));
-        // III-E5 deliberately keeps admin/secret-bearing actions off the MCP
+        // This module deliberately keeps admin/secret-bearing actions off the MCP
         // surface (see the dispatch-time doc comment) — pin their absence so
         // a future edit can't add them without a second look.
         for excluded in [
@@ -791,8 +791,8 @@ mod tests {
     // can send back its `ETag` as `If-Match` — closing the race named in
     // `docs/plans/agnostic-control-plane.md` trap T2: an agent write via MCP
     // was the one path in the whole system with no way to attach a header
-    // at all, so it was unconditionally last-write-wins even after G3 gave
-    // every other writer a precondition to send.
+    // at all, so it was unconditionally last-write-wins even after every
+    // other writer already had a precondition to send.
 
     // Run a blocking closure on a thread allowed to block. `TackClient` is
     // synchronous `reqwest`; calling it directly from a `#[tokio::test]`
@@ -888,10 +888,10 @@ mod tests {
         assert_eq!(v["result"]["isError"], false, "unexpected error: {v}");
     }
 
-    /// D4: an absent `ETag` on the read must produce an unconditional write
+    /// An absent `ETag` on the read must produce an unconditional write
     /// (no `If-Match` at all), never a failure — the precondition is
     /// opt-in from the server's side, and a route/server that doesn't send
-    /// an `ETag` yet must keep working exactly as it did before this card.
+    /// an `ETag` yet must keep working exactly as it did before.
     #[tokio::test]
     async fn mcp_update_item_omits_if_match_when_server_sends_no_etag() {
         struct NoIfMatch;

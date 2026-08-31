@@ -1,4 +1,4 @@
-//! Card-local operator fleet, runner, and profile handlers. C5 owns wiring.
+//! Operator fleet, runner, and profile handlers, mounted into the global router.
 
 use axum::{
     Json, Router,
@@ -20,11 +20,11 @@ use uuid::Uuid;
 
 use super::executions::{OperatorExecutionState, RunnerV1ErrorEnvelope};
 
-/// C5 replaces this non-secret sentinel with the request correlation ID once it
-/// mounts these card-local routes in the global API router.
+/// Static request-correlation id placeholder. No per-request correlation
+/// id is wired into these error envelopes yet.
 const OPERATOR_REQUEST_ID: &str = "req_operator";
 
-/// Builds the stable v1 error envelope via B1's `ProtocolErrorEnvelope::new`,
+/// Builds the stable v1 error envelope via `ProtocolErrorEnvelope::new`,
 /// which derives `retryable` from `code` (`StableErrorCode::retryable`) so it
 /// can never drift from `docs/contracts/runner-v1/errors/*.json`. `details`
 /// must follow the per-code shape documented in
@@ -352,13 +352,12 @@ pub async fn list_fleets(
     }))
 }
 
-/// Request body for `POST /api/runner-fleets/{fleet_id}/members` — card
-/// III-H8. `agent_fleet_members` (migration 041) has been a live scheduling
-/// *read* input since B2 (`fetch_runner_scheduling_snapshot`,
-/// `fetch_fleet_concurrency`, the fleet-selector claim query), but nothing
-/// could ever write to it: §III.6 requires selecting "an exact runner or
-/// fleet", and the fleet half was undemonstrable end to end because no
-/// route populated a fleet's roster.
+/// Request body for `POST /api/runner-fleets/{fleet_id}/members`.
+/// `agent_fleet_members` (migration 041) is a live scheduling *read* input
+/// (`fetch_runner_scheduling_snapshot`, `fetch_fleet_concurrency`, the
+/// fleet-selector claim query); this endpoint is the write path that
+/// populates a fleet's roster, since an execution request can select
+/// either an exact runner or a fleet.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct AddFleetMember {
     pub runner_id: String,
@@ -484,15 +483,14 @@ pub struct ListRunnersQuery {
     pub fleet_id: Option<String>,
 }
 
-/// `GET /api/runners[?fleet_id=]` — card III-E6. Closes the gap E2, E3 and
-/// E5 each independently hit: `agent_runners` (migration 040) has always
-/// stored capacity/health/capability data, but nothing read it back to an
-/// operator before this route existed. `capability_snapshot`/`labels` are
-/// parsed JSON (matching every other list handler in this file); a
-/// corrupt/unparseable value is reported per-runner as `null` with the raw
-/// string preserved separately, rather than failing the whole list for one
-/// bad row — a operator inspecting runner health must not lose visibility
-/// into every *other* runner because one has a malformed blob.
+/// `GET /api/runners[?fleet_id=]` — the read path for `agent_runners`
+/// (migration 040) capacity/health/capability data. `capability_snapshot`/
+/// `labels` are parsed JSON (matching every other list handler in this
+/// file); a corrupt/unparseable value is reported per-runner as `null`
+/// with the raw string preserved separately, rather than failing the whole
+/// list for one bad row — an operator inspecting runner health must not
+/// lose visibility into every *other* runner because one has a malformed
+/// blob.
 #[utoipa::path(
     get,
     path = "/api/runners",

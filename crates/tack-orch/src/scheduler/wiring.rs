@@ -1,7 +1,6 @@
 //! Live wiring between the pure [`super::select`]/[`super::batch`] decision
 //! functions and real `agent_runners`/`agent_fleet_members`/
-//! `execution_requests` rows (`TODO.md` Part III, card III-E6's task 1 —
-//! "Wire the scheduler").
+//! `execution_requests` rows.
 //!
 //! [`choose_request_for_runner`] is the one entry point:
 //! `crates/tack-api/src/handlers/runner_protocol.rs`'s `claim` handler calls
@@ -16,27 +15,27 @@
 //! `tack-orch`, so the pure scheduler cannot be called from inside the
 //! claim transaction itself).
 //!
-//! # Two gaps E1 flagged and this module resolves
+//! # Two gaps this module resolves
 //!
-//! - **No `priority` column exists on `execution_requests`.** E1's handoff
-//!   named two options: add a migration (forbidden outside B2 per III.3)
-//!   or derive a policy from `execution_requests.metadata`. This module
-//!   takes the second option: [`priority_from_metadata`] reads an optional
-//!   `{"priority": "low" | "normal" | "high"}` key (case-insensitive),
-//!   defaulting to [`super::types::Priority::Normal`] — i.e. FIFO — for a
-//!   missing key, a non-object `metadata`, or any other value. This is a
-//!   convention this module introduces and documents, not a contract any
-//!   other card is required to honor; a request created without this key
-//!   schedules exactly as it always has (FIFO among same-priority peers).
-//! - **`agent_fleets.concurrency_limit` was not enforced anywhere.**
-//!   [`fleet_is_saturated`] checks a fleet-selector request's target fleet
-//!   against [`tack_db::repo::execution::FleetConcurrencySnapshot`] before
-//!   that request is ever handed to the pure scheduler at all — a saturated
-//!   fleet's requests are filtered out up front rather than taught to the
-//!   scheduler's per-runner eligibility model (which has no notion of a
-//!   cross-runner fleet ceiling and, per III-E1's own boundary, is not the
-//!   layer to add one to). This keeps `crates/tack-orch/src/scheduler/select.rs`/
-//!   `batch.rs` — E1's owned files — completely unmodified.
+//! - **No `priority` column exists on `execution_requests`.** Adding one
+//!   needs its own migration; until then, this module derives a policy
+//!   from `execution_requests.metadata` instead: [`priority_from_metadata`]
+//!   reads an optional `{"priority": "low" | "normal" | "high"}` key
+//!   (case-insensitive), defaulting to [`super::types::Priority::Normal`] —
+//!   i.e. FIFO — for a missing key, a non-object `metadata`, or any other
+//!   value. This is a convention this module introduces and documents, not
+//!   a contract any other caller is required to honor; a request created
+//!   without this key schedules exactly as it always has (FIFO among
+//!   same-priority peers).
+//! - **`agent_fleets.concurrency_limit` is not enforced by the pure
+//!   scheduler.** [`fleet_is_saturated`] checks a fleet-selector request's
+//!   target fleet against [`tack_db::repo::execution::FleetConcurrencySnapshot`]
+//!   before that request is ever handed to the pure scheduler at all — a
+//!   saturated fleet's requests are filtered out up front rather than
+//!   taught to the scheduler's per-runner eligibility model, which has no
+//!   notion of a cross-runner fleet ceiling and is not the layer to add one
+//!   to. This keeps `crates/tack-orch/src/scheduler/select.rs`/`batch.rs`
+//!   completely unmodified.
 
 use std::collections::BTreeMap;
 
@@ -57,9 +56,9 @@ use crate::execution::{
 /// (`crates/tack-db/src/migrations.rs`, migration 040) to the typed
 /// [`RunnerState`]. An unrecognised string (never written by this codebase,
 /// but a raw `TEXT` column has no enum constraint) maps to
-/// [`RunnerState::Revoked`] — the most conservative reading, matching III.2
-/// rule 7 ("unsupported is typed, unknown is explicit") rather than
-/// treating unknown data as schedulable.
+/// [`RunnerState::Revoked`] — the most conservative reading: unsupported is
+/// typed, unknown is explicit, rather than treating unknown data as
+/// schedulable.
 fn runner_state_from_str(state: &str) -> RunnerState {
     match state {
         "pending_enrollment" => RunnerState::PendingEnrollment,
@@ -199,7 +198,7 @@ pub async fn choose_request_for_runner(
     // (`crates/tack-db/src/repo/execution.rs`'s `heartbeat_batch`) — a
     // runner with zero active attempts never calls it, so a freshly
     // enrolled runner polling for its very first claim has `NULL` here.
-    // Reading that `NULL` as "stale" (E1's `evaluate_candidate` does, for
+    // Reading that `NULL` as "stale" (`evaluate_candidate` does, for
     // any `None`) would make every runner permanently unschedulable until
     // it had already been granted a lease once — a deadlock this module
     // resolves by falling back to the capability snapshot's own

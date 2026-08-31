@@ -3,18 +3,8 @@
 //! This handler is **not** part of `runner_protocol`'s own `routes()` — that
 //! router is deliberately runner-credential-only and sits structurally
 //! outside `require_token` (see `router.rs#runner_protocol_routes`'s own doc
-//! comment). An operator download must instead live under the operator
-//! `/api` surface, which means the actual mounting touches `router.rs`/
-//! `handlers/mod.rs` — both off-limits to this card. So, per this card's own
-//! brief ("If a route must be mounted ... write the handler in your own
-//! module and record the wiring request in your handoff"), this module was
-//! written self-contained, and III-F2 proved it only via [`routes`]'s own
-//! locally-constructed router. The recorded wiring request (path, auth
-//! expectations) is in `docs/agent-handoffs/part-iii/III-F2.md`.
-//!
-//! **Amendment (III-F6/F6a):** that request has since been granted — the
-//! Wave 5 integrator mounted [`routes`] under the real operator surface in
-//! `router.rs#operator_execution_routes` as
+//! comment). An operator download instead lives under the operator `/api`
+//! surface: `router.rs#operator_execution_routes` mounts [`routes`] as
 //! `GET /api/executions/{request_id}/attempts/{attempt_number}/artifacts/{artifact_id}/content`,
 //! sharing the `TACK_STORAGE_DIR`-derived artifact root with
 //! `runner_protocol_routes`. `crates/tack-api/tests/f6a_artifact_wiring_test.rs`
@@ -29,22 +19,19 @@
 //! `executions.rs`'s own `principal()`), never a runner bearer credential.
 //!
 //! Streams the file back chunk-by-chunk (`futures::stream::unfold` over a
-//! `tokio::fs::File`, no whole-file read into memory) — the read-side half of
-//! this card's "streaming content" charter, complementing
-//! `artifact_storage.rs`'s write-side streaming.
+//! `tokio::fs::File`, no whole-file read into memory) — the read-side half
+//! of the streaming design `artifact_storage.rs` uses on the write side.
 //!
-//! Module-level `dead_code` allow: every item here is reachable and
-//! exercised by this card's own `f2_artifact_events_test.rs` (which loads
-//! this file the same way), but `crates/tack-api/tests/c2_handlers_test.rs`
-//! — a pre-existing, unrelated test binary this card does not own — also
-//! pulls in `runner_protocol.rs` via `#[path]` for its own auth
-//! non-substitution test, and never calls into this module. Dead-code
-//! analysis is per compiled binary, so *that* binary alone would otherwise
-//! flag every item here as unused. This mirrors the exact, already-documented
-//! precedent in `runner_protocol.rs` itself (`RunnerV1ErrorEnvelope` in
-//! `executions.rs`, and the individually-annotated `Limits` fields) — an
-//! honest reflection of "not yet wired into production" (see this module's
-//! own recorded wiring request), not a mask over a genuine bug.
+//! Module-level `dead_code` allow: every item here is reachable in
+//! production (mounted via `router.rs#operator_execution_routes`) and
+//! exercised directly by `f2_artifact_events_test.rs` (which loads this
+//! file the same way), but `crates/tack-api/tests/c2_handlers_test.rs` — an
+//! unrelated test binary — also pulls in `runner_protocol.rs` via `#[path]`
+//! for its own auth non-substitution test, and never calls into this
+//! module. Dead-code analysis is per compiled binary, so *that* binary
+//! alone would otherwise flag every item here as unused. This mirrors the
+//! same precedent in `runner_protocol.rs` itself (`RunnerV1ErrorEnvelope` in
+//! `executions.rs`, and the individually-annotated `Limits` fields).
 #![allow(dead_code)]
 
 use std::sync::Arc;
@@ -71,9 +58,10 @@ pub struct ArtifactDownloadState {
     pub artifact_storage: Arc<ArtifactStorage>,
 }
 
-/// Placeholder request-correlation id, matching `executions.rs`'s own
-/// `OPERATOR_REQUEST_ID` convention — the real integrator replaces this with
-/// the request's actual correlation id once mounted for real.
+/// Static request-correlation id placeholder, matching `executions.rs`'s
+/// own `OPERATOR_REQUEST_ID` convention. No per-request correlation id is
+/// wired into this envelope yet — every response returns this same literal
+/// string.
 const REQUEST_ID: &str = "req_operator_artifact_download";
 
 fn error(status: StatusCode, code: StableErrorCode, message: &str, details: Value) -> Response {
@@ -108,8 +96,7 @@ fn principal(headers: &HeaderMap) -> Result<String, Box<Response>> {
 
 /// Operator-facing artifact-download router. Mounted in production by
 /// `router.rs#operator_execution_routes`, inside the `require_token`
-/// operator surface — never under `runner_protocol_routes`. III-F2 authored
-/// this constructor before the mount existed; see this module's doc comment.
+/// operator surface — never under `runner_protocol_routes`.
 pub fn routes(state: ArtifactDownloadState) -> Router {
     Router::new()
         .route(

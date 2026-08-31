@@ -1,14 +1,13 @@
 //! Black-box tests for the deterministic fleet scheduler, exercised
 //! only through `tack_orch::scheduler`'s public API — no access to private
-//! module internals, the same vantage point a later integration card has.
+//! module internals, the same vantage point an external caller has.
 //!
 //! These complement (do not duplicate) the table tests inside
 //! `crates/tack-orch/src/scheduler/{select,batch}.rs`: this file's job is
 //! the property-style "identical input selects identically, regardless of
 //! arrival order" claim, exercised over every permutation of a small
 //! candidate/request set rather than a couple of hand-picked reorderings.
-//! No `proptest`/`quickcheck` dependency is added — workspace `Cargo.lock`
-//! is B3's chokepoint this wave (`TODO.md` III.3) — so permutations are
+//! No `proptest`/`quickcheck` dependency is added, so permutations are
 //! enumerated by hand with a small recursive generator, the same
 //! no-new-dependency discipline `reconciler.rs`'s deterministic jitter
 //! already uses instead of pulling in `rand`.
@@ -211,8 +210,8 @@ fn batch_schedule_outcome_is_identical_across_every_permutation_of_requests() {
 
 #[test]
 fn advisory_selection_never_claims_to_be_a_lease() {
-    // III-E1's acceptance gate: "only the repository claim can make a lease
-    // valid." This is a documentation-level property, not something the type
+    // Only the repository claim can make a lease valid. This is a
+    // documentation-level property, not something the type
     // system alone proves, so pin it down structurally: `Selection` carries
     // no fencing token, no lease timestamps, and no state transition — those
     // fields exist only on `execution::AttemptSnapshot`, which this crate's
@@ -236,11 +235,11 @@ fn advisory_selection_never_claims_to_be_a_lease() {
 
 #[test]
 fn stale_heartbeat_wins_over_capacity_when_both_would_otherwise_pass() {
-    // Adversarial case named in the Wave 3 carry-forward: a scheduler must
-    // read freshness, not assume a quiet runner is still alive. This proves
-    // the check is load-bearing, not merely present: a candidate with ample
-    // capacity and a perfectly matching harness is still rejected once its
-    // heartbeat is one second past the policy's max age.
+    // A scheduler must read freshness, not assume a quiet runner is still
+    // alive. This proves the check is load-bearing, not merely present: a
+    // candidate with ample capacity and a perfectly matching harness is
+    // still rejected once its heartbeat is one second past the policy's max
+    // age.
     let policy = SchedulingPolicy::default();
     let mut stale = candidate("runner-a", 5);
     stale.last_heartbeat_at = Some(now() - policy.max_heartbeat_age - chrono::Duration::seconds(1));
@@ -257,7 +256,7 @@ fn stale_heartbeat_wins_over_capacity_when_both_would_otherwise_pass() {
     assert!(matches!(outcome, SelectionOutcome::Selected(_)));
 }
 
-// ---- III-H5: model_passthrough attestation --------------------------------
+// ---- model_passthrough attestation -----------------------------------------
 
 /// A harness that (like the real claude-code and codex adapters) declares no
 /// `model_combinations` at all, with a pass-through attestation at the given
@@ -272,9 +271,9 @@ fn passthrough_harness(kind: &str, support: CapabilitySupport) -> HarnessCapabil
     h
 }
 
-/// The III-H2 step-8 failure, as a unit test: an explicit request for a
-/// pairing the harness never declared. Before III-H5 this was structurally
-/// unschedulable; with a `supported` pass-through attestation it selects.
+/// An explicit request for a pairing the harness never declared is
+/// structurally unschedulable on its own; with a `supported` pass-through
+/// attestation it selects.
 #[test]
 fn undeclared_pairing_selects_when_the_harness_attests_supported_passthrough() {
     let mut runner = candidate("runner-a", 1);
@@ -294,7 +293,7 @@ fn undeclared_pairing_selects_when_the_harness_attests_supported_passthrough() {
 }
 
 /// `Advisory` is an unverified claim and `Unsupported` is a refusal: both
-/// must reject exactly like the pre-III-H5 "no attestation" case, with the
+/// must reject exactly like the no-attestation case, with the
 /// same named reason — capability claims are load-bearing, so nothing short
 /// of `supported` schedules.
 #[test]

@@ -20,8 +20,7 @@ pub struct ListTemplatesQuery {
     pub project_type: Option<ProjectType>,
 }
 
-/// Validate a template's `orchestration` block before it's stored (Phase 37,
-/// card D3, task 37.1 — TODO.md's "validate, don't trust" requirement).
+/// Validate a template's `orchestration` block before it's stored.
 /// `workflow` must be the workflow *this template will actually create*
 /// (`create_template` resolves the same `data.workflow` /
 /// `simple_workflow()` fallback `repo::templates::create_template` uses,
@@ -32,35 +31,30 @@ pub struct ListTemplatesQuery {
 /// Two checks, deliberately not three:
 ///
 /// 1. **`status_map`** — every named status must exist in `workflow`. Reuses
-///    `handlers::orch::validate_status_map` (card A4's `orch-link` validator,
-///    TODO.md §1.3) via a field-for-field conversion into `orch::StatusMap`,
-///    rather than a second copy of the same three lines of logic — TODO.md's
-///    explicit instruction for this card, precedent: A4 built exactly this
-///    for `PUT /orch-link` already.
+///    `handlers::orch::validate_status_map` via a field-for-field conversion
+///    into `orch::StatusMap`, rather than a second copy of the same three
+///    lines of logic.
 /// 2. **`pipeline_yaml`**, if inline text is supplied, must at least parse as
 ///    YAML. This is deliberately *not* a check against docket's pipeline
 ///    schema (step ids, gate/rework edges, variable-name rules, duplicate-id
 ///    detection, …) — that real validator is `docket pipeline validate`
 ///    (`core.pipeline.validate_pipeline` in
 ///    `~/Sites/rack-cli/src/docket/core/pipeline.py`), reachable only as a
-///    local CLI subcommand as of 2026-08-05: `serve.py` has no HTTP route
-///    for it (verified by reading every `do_GET`/`do_POST` branch), and
-///    shelling out to a local `docket` binary from `tack-api` would be
-///    wrong even if one were installed — Tack's server talks to every
-///    control plane over HTTP (`tack-orch::ControlPlane`), never a local
-///    process, and a control plane is not necessarily on the same host as
-///    the API server. Reimplementing docket's schema in Rust instead is
-///    exactly the class of mistake TODO.md already paid down once (B2's
-///    client-side cursor reimplementation, undone by R1) — a second,
-///    hand-maintained copy of docket's `PipelineSpec` would drift the first
-///    time docket adds a step kind or a gate variant.
+///    local CLI subcommand: `serve.py` has no HTTP route for it (verified by
+///    reading every `do_GET`/`do_POST` branch), and shelling out to a local
+///    `docket` binary from `tack-api` would be wrong even if one were
+///    installed — Tack's server talks to every control plane over HTTP
+///    (`tack-orch::ControlPlane`), never a local process, and a control
+///    plane is not necessarily on the same host as the API server.
+///    Reimplementing docket's schema in Rust instead would risk exactly
+///    that: a second, hand-maintained copy of docket's `PipelineSpec` would
+///    drift the first time docket adds a step kind or a gate variant.
 ///
 ///    So this is the one check Tack *can* make honestly without drifting:
 ///    "is this text YAML at all" — not "is this a valid docket pipeline."
-///    The gap is recorded upstream: `~/Sites/rack-cli/ROADMAP.md` Phase 22,
-///    new card **P22-8 — `pipeline validate` over HTTP** (see TODO.md §6
-///    "D3" for the full writeup). Once that route exists, this function
-///    should call it instead of `serde_yaml`'s bare parse.
+///    The gap is recorded upstream in `~/Sites/rack-cli/ROADMAP.md`. Once a
+///    `pipeline validate` HTTP route exists there, this function should call
+///    it instead of `serde_yaml`'s bare parse.
 fn validate_template_orchestration(
     orch: &TemplateOrchestration,
     workflow: &WorkflowConfig,
@@ -137,9 +131,9 @@ pub async fn create_template(
     // *this template will actually create* — mirroring
     // `repo::templates::create_template`'s own `data.workflow.unwrap_or_else
     // (simple_workflow)` fallback so the two never resolve to a different
-    // "effective" workflow (TODO.md §6 "D3": "validate the map against the
-    // workflow the template will actually create, not against whatever
-    // project happens to be applying it").
+    // "effective" workflow: the map must validate against the workflow the
+    // template will actually create, not against whatever project happens
+    // to be applying it.
     if let Some(ref orch) = data.orchestration {
         let effective_workflow = data
             .workflow
@@ -240,9 +234,9 @@ pub struct CreateProjectFromTemplate {
     pub description: Option<String>,
 }
 
-/// The actual "build a project from a template" work — extracted (card D4,
-/// 2026-08-05) so `handlers::provisioning::create_project_with_pod` can
-/// reuse the exact same project-creation path (workflow/vocabulary/custom
+/// The actual "build a project from a template" work — extracted so
+/// `handlers::provisioning::create_project_with_pod` can reuse the exact
+/// same project-creation path (workflow/vocabulary/custom
 /// fields/boards) rather than a second, driftable copy of it, before going
 /// on to provision a pod and write the `orch_links` row. `pub(crate)`, not
 /// `pub` — this is an internal seam between two handler modules, not part

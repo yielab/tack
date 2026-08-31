@@ -2,7 +2,7 @@
 //! real, file-backed-shape (in-memory) `tack_db::Repository` — not the pure
 //! unit tests in `scheduler/wiring.rs` itself, which only cover the small
 //! pure helper functions. This file is the actual "wire the scheduler to
-//! live data" proof for TODO.md Part III card III-E6's task 1: real
+//! live data" proof: real
 //! `agent_runners`/`agent_fleet_members`/`agent_fleets`/`execution_requests`
 //! rows, inserted through the same repository methods the real API handlers
 //! use, then handed to `choose_request_for_runner` exactly as

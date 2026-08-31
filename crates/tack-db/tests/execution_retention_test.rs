@@ -1,4 +1,4 @@
-//! Real-database proof for card III-F5's retention/observability repository
+//! Real-database proof for the retention/observability repository
 //! methods (`Repository::purge_stale_execution_replays`,
 //! `purge_stale_terminal_execution_events`, `execution_fleet_snapshot`).
 //!
@@ -550,14 +550,14 @@ async fn execution_fleet_snapshot_reports_bounded_id_free_counts() {
 /// into small batches, so both callers' `SELECT`+`DELETE` windows
 /// realistically overlap.
 ///
-/// Verified manually while developing this card, per CLAUDE.md's own
+/// Verified manually per CLAUDE.md's own
 /// instruction ("prove any new concurrency test load-bearing... by
 /// reverting the fix and watching it fail"): temporarily replacing
 /// `self.pool().begin_with("BEGIN IMMEDIATE")` with `self.pool().begin()` in
 /// `purge_stale_execution_replays` made this test fail nondeterministically
 /// with `sqlx::Error::Database(... "database table is locked" ...)` within
 /// the first handful of iterations; restoring `BEGIN IMMEDIATE` made it pass
-/// consistently again. See `docs/agent-handoffs/part-iii/III-F5.md`.
+/// consistently again.
 #[tokio::test]
 async fn concurrent_purges_never_deadlock_against_a_file_backed_database() {
     for i in 0..8 {
@@ -610,7 +610,7 @@ async fn concurrent_purges_never_deadlock_against_a_file_backed_database() {
 /// IMMEDIATE` transaction. Verified manually the same way: reverting that
 /// method's `begin_with("BEGIN IMMEDIATE")` to a plain `.begin()` reproduces
 /// `database is locked` under this exact race; restoring it passes
-/// consistently. See `docs/agent-handoffs/part-iii/III-F5.md`.
+/// consistently.
 #[tokio::test]
 async fn concurrent_event_purges_never_deadlock_against_a_file_backed_database() {
     for i in 0..8 {

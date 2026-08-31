@@ -1169,9 +1169,9 @@ async fn test_board_grouping_types() {
     assert_eq!(all_boards.len(), 4);
 }
 
-// ─── Phase 26 correctness hotfix regressions ─────────────────
+// ─── Correctness hotfix regressions ─────────────────
 
-/// 26.1 — `update_item` must persist a sprint assignment and later clear it when
+/// `update_item` must persist a sprint assignment and later clear it when
 /// the PATCH sends `null` (double-`Option` `Some(None)`), while an absent field
 /// (outer `None`) leaves the value untouched.
 #[tokio::test]
@@ -1245,7 +1245,7 @@ async fn test_update_item_persists_and_clears_sprint_id() {
     );
 }
 
-/// 26.1 — same absent/set/clear contract for `due_date`.
+/// Same absent/set/clear contract for `due_date`.
 #[tokio::test]
 async fn test_update_item_persists_and_clears_due_date() {
     let repo = setup_test_db().await;
@@ -1290,7 +1290,7 @@ async fn test_update_item_persists_and_clears_due_date() {
     );
 }
 
-/// 26.2 — moving an item across status categories maintains started_at /
+/// Moving an item across status categories maintains started_at /
 /// completed_at: enter in-progress → stamp started_at; enter done → stamp
 /// completed_at; leave done → clear completed_at (keeping started_at).
 #[tokio::test]
@@ -1366,7 +1366,7 @@ async fn test_status_transition_timestamps() {
     );
 }
 
-/// 26.3 — foreign keys are enforced on every pooled connection, so an insert
+/// Foreign keys are enforced on every pooled connection, so an insert
 /// that references a non-existent project is rejected instead of orphaning.
 #[tokio::test]
 async fn test_foreign_key_rejects_orphan_item() {

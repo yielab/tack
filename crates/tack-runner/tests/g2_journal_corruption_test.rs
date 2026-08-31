@@ -1,11 +1,10 @@
 //! Corrupt-journal adversarial coverage for the local runner
-//! journal. This card owns adversarial tests and the audit report only —
+//! journal. This file owns adversarial tests and the audit report only —
 //! no production source is touched here.
 //!
 //! `OwnerOnlyJournal` already has in-module unit tests for a symlinked
 //! journal/quarantine directory and a filename that disagrees with its own
-//! record (`journal.rs`'s own test module, referenced in
-//! `docs/agent-handoffs/part-iii/III-C4.md`). This file targets a case
+//! record (`journal.rs`'s own test module). This file targets a case
 //! neither covers: a journal file whose *bytes* are corrupted on disk
 //! outside any journal API call — simulating bit rot, a truncated write
 //! after a crash mid-`fsync`, or an operator/tooling mistake — and,
@@ -95,8 +94,7 @@ fn a_bit_rotted_journal_file_is_a_typed_malformed_error_not_a_panic() {
 //    blind respawn, no silent data loss) but flags it as an audit finding:
 //    a single corrupted attempt's journal can currently deny recovery to
 //    every other, healthy, unresolved attempt on the same runner restart.
-//    Not fixed here — `Owns` is tests/audit only; escalated in the G2
-//    handoff to the journal's owning card (B3/D-series lineage).
+//    Not fixed here — this file's scope is tests/audit only.
 // =======================================================================
 #[test]
 fn one_corrupted_journal_file_currently_blocks_recovery_of_every_other_attempt() {

@@ -127,18 +127,16 @@ pub struct AppConfig {
     /// `POST /api/approvals/{token}`. Deliberately separate from
     /// `TACK_API_TOKEN`: granting an approval is a materially higher-privilege
     /// act than editing a card, so holding the ordinary API token is not enough
-    /// on its own. Consumed starting Wave 4; defined now so the config surface
-    /// for this cycle lands in one place. Never logged.
+    /// on its own. Never logged.
     #[serde(default)]
     pub orch_approval_token: Option<String>,
 
-    // ── Execution runtime retention/observability (card III-F5) ───────────────
+    // ── Execution runtime retention/observability ───────────────
     /// Enables the execution-domain retention sweep (replay/idempotency
     /// bookkeeping + terminal `execution_events` purge — see
-    /// `tack_orch::execution_retention`). **Off by default** (III-F6
-    /// amendment — F5's own original default was `true`; see
+    /// `tack_orch::execution_retention`). **Off by default** — see
     /// `default_execution_retention_enable`'s doc comment for the full
-    /// rationale). This sweep deletes rows; data deletion must be an
+    /// rationale. This sweep deletes rows; data deletion must be an
     /// operator opt-in, the same posture `TACK_ORCH_ENABLE` already
     /// establishes for this codebase.
     #[serde(default = "default_execution_retention_enable")]
@@ -160,8 +158,7 @@ pub struct AppConfig {
     /// counts; logs a `warn!` on stale-lease/`needs_operator` onset — see
     /// `tack_orch::execution_observability`). **On by default** — unlike
     /// retention above, this reads and logs only; it deletes nothing, so it
-    /// carries none of retention's data-loss risk and keeps F5's original
-    /// default.
+    /// carries none of retention's data-loss risk.
     #[serde(default = "default_execution_health_enable")]
     pub execution_health_enable: bool,
 
@@ -266,11 +263,7 @@ fn default_orch_event_retention_days() -> u32 {
 }
 
 fn default_execution_retention_enable() -> bool {
-    // III-F6 amendment: F5's own handoff shipped this default as `true`
-    // ("a deliberate departure from `TACK_ORCH_ENABLE`'s off-by-default
-    // precedent... flagged here explicitly in case a reviewer disagrees
-    // with the default direction"). The Wave 5 integrator does: this sweep
-    // deletes rows (`purge_stale_execution_replays`,
+    // This sweep deletes rows (`purge_stale_execution_replays`,
     // `purge_stale_terminal_execution_events`) — data deletion must be
     // opt-in, matching `TACK_ORCH_ENABLE`'s own off-by-default posture, not
     // read-only hygiene the operator never asked for. `execution_health_enable`

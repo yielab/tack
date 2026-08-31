@@ -15,8 +15,7 @@
 //! real `~/.local/share/opencode/auth.json`, which already holds unrelated
 //! live configuration on this machine), and always using opencode's own
 //! zero-credential `opencode/*` "zen" models — no real provider credential
-//! was ever passed, read, or logged. The exact commands are reproduced in
-//! `docs/agent-handoffs/part-iii/III-D3.md`. Everything else is marked
+//! was ever passed, read, or logged. Everything else is marked
 //! **assumed** and is deliberately conservative (mirroring `codex.rs`'s
 //! precedent, e.g. rejecting auto-selection) rather than guessed.
 //!
@@ -372,11 +371,11 @@ fn parse_handle_pid(process_id: &str) -> Option<u32> {
 /// Parses `opencode models`' plain-text output (observed fact 2: one
 /// `<providerID>/<modelID>` line per model). Splits each line on the
 /// *first* `/` only: the left half becomes the provider (a known, explicit
-/// namespace field — never a bare `provider` per III.0's vocabulary rule),
+/// namespace field, never a bare `provider`),
 /// the right half is retained byte-for-byte as the opaque model id, even if
 /// it itself contains further `/` characters. This reads the CLI's own
 /// documented `--model provider/model` combination syntax; it never parses
-/// or interprets the model id itself (Part III B1's rule).
+/// or interprets the model id itself.
 ///
 /// A line that doesn't contain a `/`, or that would produce an empty
 /// provider or model half, invalidates the *entire* batch (`Err`) rather
@@ -478,7 +477,7 @@ fn summarize_events(events: &[serde_json::Value]) -> EventSummary {
 
 /// State for one in-flight `start()` → (`cancel()` | `wait()`) pair. Not
 /// `Debug`: several fields (`secrets`, the captured process handle) must
-/// never be printable by accident (rule 12) — omitting the derive entirely
+/// never be printable by accident — omitting the derive entirely
 /// is simpler than auditing a hand-written impl every time a field is added.
 struct RunningOpenCodeProcess {
     process: SupervisedProcess,
@@ -500,7 +499,7 @@ struct RunningOpenCodeProcess {
 ///
 /// Time is injected via `C: crate::Clock` (never `SystemTime::now()`
 /// directly) so tests can assert exact `started_at`/`ended_at`/`probed_at`
-/// values without a real sleep (rule 9).
+/// values without a real sleep.
 pub struct OpenCodeAdapter<C = crate::SystemClock> {
     command: OpenCodeLocator,
     process_limits: ProcessLimits,
@@ -959,7 +958,7 @@ where
     }
 
     /// Stages the (already-scrubbed) combined stdout/stderr as a `log`
-    /// artifact inside the attempt's own workspace, via D4's
+    /// artifact inside the attempt's own workspace, via
     /// [`ArtifactStager`]. Best-effort: staging failure never fails the
     /// attempt itself. `media_type` reflects whether stdout actually parsed
     /// as the expected event stream — an honest, small extra precision over
@@ -1155,9 +1154,8 @@ where
                 env.insert(key.clone(), literal.clone());
             }
             // `secret_reference` entries are deliberately never resolved
-            // here: no secret-store client exists in tack-runner yet (the
-            // same, already-documented gap D4 flagged for event/artifact
-            // transport, and D1 flagged identically for codex).
+            // here: no secret-store client exists in tack-runner yet — the
+            // same gap `codex.rs` has for its own environment resolution.
         }
 
         let timeout = if spec.work.request.timeout_seconds > 0 {
@@ -1424,10 +1422,9 @@ mod tests {
 
     /// A minimal, deterministic "fixture repo" workspace, generated fresh
     /// per test rather than checked into the tree — mirrors `codex.rs`'s
-    /// identical choice, made for the identical reason: D1/D2 are
-    /// concurrently adding their own sibling files to this same directory,
-    /// and generating fixtures at test time sidesteps any possible
-    /// path-ownership ambiguity between the three cards.
+    /// identical choice: generating fixtures at test time sidesteps any
+    /// path-ownership ambiguity with sibling adapter files in the same
+    /// directory.
     fn deterministic_fixture_repo(label: &str) -> PathBuf {
         let root = temp_dir(label);
         std::fs::write(root.join("README.md"), b"# fixture repo\n").expect("write README");
@@ -1781,7 +1778,7 @@ fi
                 .contains("fake-harness-ok")
         );
         // `"fake-harness-ok"` is not JSON, so this run's usage cannot be
-        // honestly claimed as measured (rule 7: unmeasured is nullable).
+        // honestly claimed as measured — unmeasured is nullable.
         assert_eq!(
             outcome.usage.tokens_in.source,
             MeasurementSource::NotMeasured
@@ -1878,7 +1875,8 @@ fi
     }
 
     /// Acceptance: cancel kills descendants, proved through the adapter's
-    /// own `start`/`cancel`, not raw `ProcessSpec` (that is D4's own test).
+    /// own `start`/`cancel`, not raw `ProcessSpec` (covered separately in
+    /// `process.rs`).
     #[tokio::test]
     async fn cancel_kills_the_whole_descendant_tree_via_the_adapter() {
         let adapter = adapter();
@@ -1986,7 +1984,7 @@ fi
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 
-    // ---- redaction (rule 12) -------------------------------------------
+    // ---- redaction -------------------------------------------------------
 
     /// Acceptance: arguments/environment are redacted in logs and events.
     /// Plants a canary in both the requested environment and (indirectly,
@@ -2168,7 +2166,7 @@ fi
 
     /// Acceptance: unknown version. The fixture's `unknown_version` mode
     /// exits 0 with a string that is not a clean version line; this is an
-    /// explicit `probe_error`, never a fabricated clean version (rule 7).
+    /// explicit `probe_error`, never a fabricated clean version.
     #[tokio::test]
     async fn probe_reports_an_unrecognized_version_string_as_an_explicit_probe_error() {
         let adapter =
@@ -2393,7 +2391,7 @@ fi
     /// self-skipping at every stage if `opencode`, or a zero-credential
     /// model, is not available — never the only proof of anything the
     /// fake-binary tests above already cover independently, and never
-    /// dependent on a secret (rule 8).
+    /// dependent on a secret.
     #[tokio::test]
     #[ignore = "opt-in: requires a real `opencode` binary on PATH (and outbound network access \
                 to opencode's own free zen models); run with `cargo test -p tack-runner --lib \

@@ -1,15 +1,11 @@
-//! `agent_fleet_members` (migration 041) has been a live scheduling
-//! *read* input since B2 — the claim path already joins it to resolve a
-//! `selector_kind = "fleet"` request onto any of the fleet's runners — but
-//! nothing could ever write to it. §III.6 requires selecting "an exact
-//! runner **or fleet**"; until this card, the fleet half of that
-//! requirement was undemonstrable end to end because no route populated a
-//! fleet's roster (standing since E6, restated by H2's Wave 8 escalation
-//! list because it is release-relevant).
+//! `agent_fleet_members` (migration 041) is both a live scheduling *read*
+//! input — the claim path joins it to resolve a `selector_kind = "fleet"`
+//! request onto any of the fleet's runners — and now writable: an operator
+//! route populates a fleet's roster.
 //!
-//! This file proves the acceptance claim directly against the real
-//! production router (`tack_api::router::build_router`, exactly what `tack
-//! serve` mounts): an operator can populate a fleet over the API, and a
+//! This file proves that end to end, directly against the real production
+//! router (`tack_api::router::build_router`, exactly what `tack serve`
+//! mounts): an operator can populate a fleet over the API, and a
 //! fleet-targeted request then schedules onto a runner that is a member of
 //! that fleet — not merely that the write endpoint itself returns 200.
 
@@ -97,8 +93,8 @@ fn bearer(token: &str) -> String {
 }
 
 /// Every fixture in this file declares this exact harness/model pairing so
-/// the real scheduler (wired in by III-E6) treats it as eligible — matching
-/// the convention `wave2_gate.rs` established for the same reason.
+/// the real scheduler treats it as eligible — matching the convention
+/// `wave2_gate.rs` uses for the same reason.
 fn full_capabilities() -> Value {
     let now = Utc::now().to_rfc3339();
     json!({

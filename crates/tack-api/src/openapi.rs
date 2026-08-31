@@ -7,9 +7,9 @@
 //! is committed to `docs/openapi.json`; a drift-gate test
 //! (`tests/openapi_contract.rs`) fails CI if the two diverge.
 //!
-//! ## Known imprecise / manual spots (handoffs for a fully-precise spec)
-//! - **`Json<serde_json::Value>` handlers.** Phase 29.2 deferred typed-DTO
-//!   conversion for most handlers. Where a concrete DTO exists it is declared as
+//! ## Known imprecise / manual spots
+//! - **`Json<serde_json::Value>` handlers.** Most handlers return untyped
+//!   JSON rather than a concrete DTO. Where a concrete DTO exists it is declared as
 //!   the response `body`; where the JSON is genuinely ad-hoc — `{"deleted": true}`
 //!   / `{"updated": true}`, import counters, backup manifests, the masked backup
 //!   settings view — the response is modelled as a free-form `Object`. Those are
@@ -98,33 +98,36 @@ pub struct ItemDetail {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Operator execution/fleet routes + runner protocol v1.
+// Runner protocol v1 + the operator decision/artifact-download routes.
 //
-// Both `handlers::executions`/`handlers::runner_admin` and
-// `handlers::runner_protocol` return raw `Json<serde_json::Value>` with no
-// `#[utoipa::path(...)]` annotation, and per III.2 rule 2 those files are
-// owned by other Part III cards — C5 may create modules and mount routes,
-// but may not edit a card-local handler file to add one. Building small
-// `utoipa::OpenApi`-implementing document fragments here (this file, C5's
-// own) and composing them into `ApiDoc` via `#[openapi(nest(...))]` below is
-// the only way to document the real, mounted route surface without
-// touching an unowned file — `OpenApi::nest`'s path-prefixing is exactly
-// what turns each fragment's relative paths (e.g. `/executions`, `/enroll`)
-// into the real mounted paths (`/api/executions`, `/api/runner/v1/enroll`).
+// `handlers::runner_protocol` and the decision-resolution/
+// artifact-download routes in `handlers::decisions`/
+// `handlers::runner_protocol::artifact_download` return raw
+// `Json<serde_json::Value>` with no `#[utoipa::path(...)]` annotation
+// (unlike `handlers::executions`/`handlers::runner_admin`, which carry
+// native annotations and are listed directly in `ApiDoc`'s `paths(...)`
+// below). Building small `utoipa::OpenApi`-implementing document fragments
+// here (`RunnerProtocolApiDoc`, `ExecutionOperatorExtrasApiDoc`) and
+// composing them into `ApiDoc` via `#[openapi(nest(...))]` below is how
+// this spec documents that route surface — `OpenApi::nest`'s
+// path-prefixing is exactly what turns each fragment's relative paths
+// (e.g. `/enroll`, `/attempts/{attempt_id}/decisions/{decision_id}/resolve`)
+// into the real mounted paths (`/api/runner/v1/enroll`,
+// `/api/attempts/{attempt_id}/decisions/{decision_id}/resolve`).
 //
 // Bodies use the same free-form `serde_json::Value` schema this file
 // already uses for every other ad hoc JSON handler (see the module doc's
 // "`Json<serde_json::Value>` handlers" note above) — this is *not* a
 // second, hand-maintained shape for the runner-v1 wire format. That
-// contract remains solely governed by `docs/contracts/runner-v1/`
-// (III.1.6: "hand-written feature DTOs are not another authority"); the
-// per-operation `description` below points back to it instead of
-// re-specifying field shapes OpenAPI can't independently verify against
-// the frozen fixtures. `x-tack-principal` is deliberately **not**
-// documented as a request header anywhere below: it is stripped and
-// server-injected (`crate::middleware::inject_operator_principal`), never
-// something a caller may set, so documenting it as a settable input would
-// misrepresent the security model.
+// contract remains solely governed by `docs/contracts/runner-v1/`, never a
+// hand-written feature DTO; the per-operation `description` below points
+// back to it instead of re-specifying field shapes OpenAPI can't
+// independently verify against the frozen fixtures. `x-tack-principal` is
+// deliberately **not** documented as a request header anywhere below: it
+// is stripped and server-injected
+// (`crate::middleware::inject_operator_principal`), never something a
+// caller may set, so documenting it as a settable input would misrepresent
+// the security model.
 // ─────────────────────────────────────────────────────────────────────────
 
 fn json_value_schema() -> RefOr<Schema> {
@@ -583,7 +586,7 @@ pub struct ResolveDecisionRequest {
 /// in `docs/contracts/runner-v1/` fixes this shape (decision resolution has
 /// no runner-v1 fixture at all; see `handlers::decisions`'s own module doc,
 /// "No item-status mapping"), so this stays an open two-field object rather
-/// than an invented contract (III.2 rule 13).
+/// than an invented contract.
 #[derive(Debug, Serialize, ToSchema)]
 #[allow(dead_code)]
 pub struct DecisionResolvedBySchema {
@@ -917,7 +920,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::settings::put_backup_settings,
         handlers::settings::get_orch_settings,
         handlers::settings::put_orch_settings,
-        // ── Orchestration (Agent-Factory Control Center, Phase 33+) ────────
+        // ── Orchestration (Agent-Factory Control Center) ────────────────────
         handlers::orch::create_control_plane,
         handlers::orch::list_control_planes,
         handlers::orch::get_control_plane,

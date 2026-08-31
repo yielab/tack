@@ -4,14 +4,13 @@
 //! rejecting a stale value with `412 Precondition Failed`.
 //!
 //! **The gate is the sequential tests, not the concurrent ones** — see
-//! `docs/plans/agnostic-control-plane.md` Phase 2.3's 2026-08-06 correction.
+//! `docs/plans/agnostic-control-plane.md` for the reasoning.
 //! `patch_with_a_stale_if_match_is_rejected_with_412_and_the_standard_envelope`,
 //! `patch_with_an_if_match_for_a_different_item_is_rejected`, and
 //! `a_stale_if_match_is_rejected_with_412_with_no_racer_involved` each capture
 //! an `ETag`, let a write land and complete, then replay a now-stale value and
-//! require `412` — deterministically, with no scheduler dependence. Wave B's
-//! adversarial pass proved why that distinction matters: an implementation
-//! that drops the header-*value* comparison but keeps
+//! require `412` — deterministically, with no scheduler dependence. An
+//! implementation that drops the header-*value* comparison but keeps
 //! `claim_item_version`'s atomic `UPDATE ... WHERE version = ?` underneath
 //! still passes the two-racer test below most of the time, because two
 //! racers sharing one still-valid version coincidentally reproduce the
@@ -19,9 +18,9 @@
 //! comment for the full explanation of what it does and does not prove.
 //!
 //! Also required: a plain `PATCH` with no `If-Match` header at all must
-//! still succeed exactly as it did before this card — the non-breaking
-//! guarantee that keeps the MCP tools and the Alexa skill working unchanged
-//! until they're updated to send the header.
+//! still succeed exactly as it did before — the non-breaking guarantee that
+//! keeps the MCP tools and the Alexa skill working unchanged until they're
+//! updated to send the header.
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -153,7 +152,7 @@ async fn get_item_returns_an_etag_derived_from_id_and_version() {
     let item_id = create_item(&app, project_id, "Has an ETag").await;
 
     let etag = get_etag(&app, item_id).await;
-    // Card G3's format: a quoted "<id>-<version>" string. Not a public
+    // The ETag format: a quoted "<id>-<version>" string. Not a public
     // contract clients should parse — just confirming it embeds what the
     // doc comment says it embeds, for a freshly created (version 1) item.
     assert_eq!(etag, format!("\"{item_id}-1\""));
@@ -181,7 +180,7 @@ async fn patch_with_no_if_match_header_succeeds_exactly_as_before_this_card() {
     // A second such PATCH must also succeed — an absent If-Match is not a
     // one-shot allowance, it means "no concurrency check requested" every
     // time, for every caller that never adopts the header (MCP tools,
-    // Alexa skill, any pre-G3 client).
+    // Alexa skill, any client that predates the If-Match header).
     let res2 = req(
         &app,
         Method::PATCH,
@@ -292,12 +291,12 @@ async fn patch_with_an_if_match_for_a_different_item_is_rejected() {
 /// and fully complete, then replay that now-stale `ETag` on a second,
 /// independent `PATCH`. There is no race here for a scheduler to decide —
 /// if `check_if_match` only performed the atomic version-claim and never
-/// actually compared `provided` against the header's expected value (Wave
-/// B's adversarial mutation), the second `PATCH` would simply read the
-/// item's current version fresh, claim it uncontested, and return `200`.
-/// That makes this test fail 100% of the time against that mutation, with
-/// no scheduler dependence — verified deterministic over 20+ local runs
-/// (see `docs/plans/agnostic-control-plane.md` Phase 2.3's correction).
+/// actually compared `provided` against the header's expected value, the
+/// second `PATCH` would simply read the item's current version fresh,
+/// claim it uncontested, and return `200`. That makes this test fail 100%
+/// of the time against that mutation, with no scheduler dependence —
+/// verified deterministic over 20+ local runs (see
+/// `docs/plans/agnostic-control-plane.md` for the full reasoning).
 #[tokio::test]
 async fn a_stale_if_match_is_rejected_with_412_with_no_racer_involved() {
     let (app, _state) = app_with_state().await;
@@ -357,9 +356,9 @@ async fn a_stale_if_match_is_rejected_with_412_with_no_racer_involved() {
 /// version regardless of what string either one actually sent, so an
 /// implementation that silently drops the header-value comparison but still
 /// funnels every `PATCH` through `claim_item_version` reproduces the
-/// identical one-`200`/one-`412` shape this test watches for. Wave B's
-/// adversarial pass confirmed exactly that: the mutation passed this test
-/// most of the time (caught only 5/15 runs). For a deterministic proof that
+/// identical one-`200`/one-`412` shape this test watches for. A mutation
+/// that drops the header-value comparison passed this test most of the
+/// time in practice (caught only 5/15 runs). For a deterministic proof that
 /// the header's value — not merely the presence of a race — decides the
 /// outcome, see the sequential tests instead:
 /// `patch_with_a_stale_if_match_is_rejected_with_412_and_the_standard_envelope`,
@@ -416,9 +415,9 @@ async fn two_concurrent_patches_sharing_one_still_valid_version_yield_exactly_on
 /// `PATCH` through `claim_item_version`, can still produce more than one
 /// winner here — a racer that reads the version *after* an earlier racer in
 /// the same batch has already committed sees a new "current" version and
-/// wins again too. That is why Wave B's adversarial pass caught that
-/// mutation more often with this test (7/10 runs) than with the pair test
-/// above, but still not every time. Treat this as a more sensitive smoke
+/// wins again too. That mutation was caught more often with this test
+/// (7/10 runs) than with the pair test above, but still not every time.
+/// Treat this as a more sensitive smoke
 /// test for the same failure mode, not a deterministic gate — see
 /// `patch_with_a_stale_if_match_is_rejected_with_412_and_the_standard_envelope`,
 /// `patch_with_an_if_match_for_a_different_item_is_rejected`, and
@@ -461,7 +460,7 @@ async fn concurrent_patches_at_higher_fanout_still_yield_exactly_one_winner() {
     assert_eq!(precondition_failed_count, N - 1);
 }
 
-// ─── Wave III-A2 atomic PATCH invariants ──────────────────────────────────
+// ─── Atomic PATCH invariants ────────────────────────────────────────────────
 
 #[tokio::test]
 async fn multi_field_wip_rejection_writes_nothing_and_does_not_bump_version() {

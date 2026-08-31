@@ -1,4 +1,4 @@
-//! OpenAPI contract tests (Phase 29.3).
+//! OpenAPI contract tests.
 //!
 //! 1. **Drift gate** — the committed `docs/openapi.json` must byte-for-byte equal
 //!    the spec generated from the annotated handlers + DTOs. Regenerate with:

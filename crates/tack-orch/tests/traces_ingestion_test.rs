@@ -1,5 +1,5 @@
-//! End-to-end integration tests for card B2 (Wave 2, trace ingestion, task
-//! 34.4): a real `tack_db::Repository` (in-memory SQLite, real migrations),
+//! End-to-end integration tests for trace ingestion: a real
+//! `tack_db::Repository` (in-memory SQLite, real migrations),
 //! a real `DocketAdapter` pointed at a `wiremock` stand-in for docket, and
 //! the real `reconciler::spawn_reconcilers` loop.
 //!
@@ -9,22 +9,20 @@
 //!
 //!   1. **Row-count idempotency through the real `orch_events` table** —
 //!      re-polling an overlapping cursor window, including a deliberately
-//!      rewound cursor, must produce **zero** new rows (the card's explicit
-//!      acceptance bar), which only a real `ON CONFLICT(id) DO UPDATE`
-//!      table can actually demonstrate.
+//!      rewound cursor, must produce **zero** new rows, which only a real
+//!      `ON CONFLICT(id) DO UPDATE` table can actually demonstrate.
 //!   2. **Retention composition** — an event re-ingested after its row was
 //!      already rolled up into `orch_events_daily` and purged must not
 //!      resurrect a raw row that then gets double-counted by a later
 //!      rollup. This needs the real repo-layer rollup function
-//!      (`Repository::rollup_and_purge_orch_events`, card B3) alongside real
+//!      (`Repository::rollup_and_purge_orch_events`) alongside real
 //!      ingestion — exercising both together is the whole point.
 //!
 //! `TestRepoStore` mirrors `ingestion_test.rs`'s local, test-only
 //! `ControlPlaneStore` impl (see that file's module doc for why this can't
 //! just import `tack-api::orch_store::RepoControlPlaneStore` — `tack-orch`
-//! must never depend on `tack-api`). Duplicated here rather than shared,
-//! per this cycle's file-ownership rules (`ingestion_test.rs` is card B1's;
-//! this file is card B2's).
+//! must never depend on `tack-api`). Duplicated here rather than shared
+//! with `ingestion_test.rs`.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -277,7 +275,7 @@ async fn mount_common(server: &MockServer) {
         .respond_with(ResponseTemplate::new(200).set_body_string(STATUS_BODY))
         .mount(server)
         .await;
-    // Card B2 doesn't exercise runs/approvals, but a linked project makes
+    // This file doesn't exercise runs/approvals, but a linked project makes
     // poll_runs fire too — mock it empty so it never errors this test's
     // health assertions or logs.
     Mock::given(method("GET"))
@@ -547,7 +545,7 @@ async fn retention_composition_re_ingesting_a_purged_event_does_not_double_count
         "the stale-but-not-yet-retained event must land"
     );
 
-    // Phase 2: roll it up and purge it — simulating B3's retention sweep
+    // Phase 2: roll it up and purge it — simulating the retention sweep
     // having already run past this event's age.
     let cutoff = Utc::now();
     let stats = repo

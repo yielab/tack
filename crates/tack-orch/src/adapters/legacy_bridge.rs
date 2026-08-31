@@ -3,19 +3,20 @@
 //!
 //! # Decision: maintain
 //!
-//! Three real options were on the table (TODO.md's own framing: "choose
-//! maintain/export/deprecate and justify it from evidence"). This card chose
-//! **maintain**, on this evidence, gathered by reading the code rather than assuming:
+//! Three options exist for the legacy Docket bridge: maintain, export, or
+//! deprecate it. This module maintains it, on this evidence, gathered by
+//! reading the code rather than assuming:
 //!
 //! - The legacy Docket bridge (`adapters::docket`, `reconciler.rs`, `tack-api::
 //!   dispatcher`, `tack-api::sprint_dispatch`, `tack-api::handlers::orch`, the
 //!   `orch_*` tables) is not a stub or a dead prototype. It is live-verified against
-//!   a real `docket serve` instance (card V1's transcript, referenced throughout
-//!   `adapters::docket`'s module doc), wired into auto-dispatch, sprint DAG-ordered
-//!   dispatch, an approvals inbox, agent-fleet status, and economics — none of which
-//!   the runner-v1 domain replaces today. `runner-v1` has no DAG-ordered sprint
-//!   dispatch and no `pre_input` guardrail-policy engine; deprecating the bridge
-//!   would delete working capability with no replacement, not retire dead code.
+//!   a real `docket serve` instance (see `adapters::docket`'s module doc,
+//!   "Verified live against a real docket server"), wired into auto-dispatch, sprint
+//!   DAG-ordered dispatch, an approvals inbox, agent-fleet status, and economics —
+//!   none of which the runner-v1 domain replaces today. `runner-v1` has no
+//!   DAG-ordered sprint dispatch and no `pre_input` guardrail-policy engine;
+//!   deprecating the bridge would delete working capability with no replacement,
+//!   not retire dead code.
 //! - It carries real regression coverage that would need to be reproduced from
 //!   scratch under "deprecate": `docket_adapter_test.rs`, `docket_wire_contract_test.
 //!   rs` (per-method wire oracle), `docket_tick_contract_test.rs` (tick-level
@@ -30,9 +31,9 @@
 //!   identity, capability snapshot used for validation) docket's wire protocol has
 //!   no source data for. Forcing a Docket-origin task into that shape would mean
 //!   inventing values for fields the runner-v1 contract requires to be either
-//!   measured or explicitly `not_measured`/typed-absent — exactly the "structural
-//!   zero" this cycle's rules forbid. A real export needs its own migration and
-//!   design; not manufactured here to close this card early.
+//!   measured or explicitly `not_measured`/typed-absent — the kind of structural
+//!   zero this codebase's rules forbid. A real export needs its own migration and
+//!   design.
 //! - `TACK_ORCH_ENABLE` already makes Docket **optional** at the infrastructure
 //!   level — unset, the reconciler never spawns and every `orch_*` route returns
 //! `409 orchestration_disabled`. "Maintain" does not mean "mandatory";
@@ -40,39 +41,37 @@
 //!
 //! # The compatibility label
 //!
-//! [`LEGACY_DOCKET_COMPATIBILITY_LABEL`] is the one explicit, stable string this
-//! card's acceptance bar asks for. It is not wired into any API response by this
-//! card (no route in `tack-api::handlers::orch` currently surfaces a compatibility
-//! label field, and adding one would be a `handlers/orch.rs` response-shape change —
-//! recorded as a request in the III-G1 handoff, not made here). It exists today as
-//! the one place this decision's name and meaning are written down for code to
-//! reference, and for `docs/GITHUB-SYNC.md`/`docs/MCP.md`-style operator docs
-//! to quote verbatim rather than paraphrase.
+//! [`LEGACY_DOCKET_COMPATIBILITY_LABEL`] is the one explicit, stable string
+//! naming this decision. It is not wired into any API response — no route
+//! in `tack-api::handlers::orch` currently surfaces a compatibility label
+//! field, and adding one would be a `handlers/orch.rs` response-shape
+//! change. It exists today as the one place this decision's name and
+//! meaning are written down for code to reference, and for
+//! `docs/GITHUB-SYNC.md`/`docs/MCP.md`-style operator docs to quote
+//! verbatim rather than paraphrase.
 //!
 //! # One scheduling owner
 //!
 //! [`SchedulingOwner`] names the two planes that can claim a Tack item's execution.
-//! The invariant this cycle requires — "Docket is optional and has one documented
-//! compatibility state" (III.6) plus "prevent runner and Docket dual dispatch" (this
-//! card's acceptance bar) — reduces to one rule: **runner-v1 always outranks legacy
-//! Docket.** If an item has an active `execution_requests` row, legacy dispatch must
-//! defer; the reverse is not enforced by this card (see below) but is asymmetric by
-//! design, not by oversight — runner-v1 is this cycle's plan-of-record scheduler
-//! (III.0's "Architectural boundary"; Docket is explicitly "optional... never the
-//! owner of a new runner request").
+//! The invariant — Docket is optional and has one documented compatibility state,
+//! and runner-v1 and Docket must never dual-dispatch the same item — reduces to
+//! one rule: **runner-v1 always outranks legacy Docket.** If an item has an active
+//! `execution_requests` row, legacy dispatch must defer; the reverse is not
+//! enforced (see below) but is asymmetric by design, not by oversight — runner-v1
+//! is the plan-of-record scheduler, and Docket is explicitly optional and never
+//! the owner of a new runner request.
 //!
 //! [`decide_scheduling_owner`] is the pure decision function — no I/O, fully unit
-//! tested here. The actual enforcement (reading `execution_requests`, refusing to call
-//! docket) lives in `tack_api::dispatcher::dispatch_item`, in the one direction this
-//! card's file ownership can reach: `tack_db::repo::orch::Repository::
-//! has_active_execution_request_for_item` is a read-only query added to
-//! `repo/orch.rs` (III-G1's file), and `dispatcher.rs`'s call site is documented
-//! there. **The mirror guard is not implemented by this card** — `tack-api::handlers::
-//! executions` (`POST /api/executions`) belongs to another card's ownership, and nothing
-//! there currently checks `orch_tasks` before creating a new request. This is recorded
-//! as a requested change in the III-G1 handoff, and proven as a still-open gap by a
-//! collision test (`crates/tack-api/tests/g1_dual_dispatch_test.rs`) that documents —
-//! rather than hides — the asymmetry.
+//! tested here. The actual enforcement (reading `execution_requests`, refusing to
+//! call docket) lives in `tack_api::dispatcher::dispatch_item`:
+//! `tack_db::repo::orch::Repository::has_active_execution_request_for_item` is a
+//! read-only query in `repo/orch.rs`, and `dispatcher.rs`'s call site is
+//! documented there. **The mirror guard is not implemented** —
+//! `tack-api::handlers::executions` (`POST /api/executions`) does not check
+//! `orch_tasks` before creating a new request, so a caller can still create a
+//! runner-v1 request that collides with an item Docket already owns. A collision
+//! test (`crates/tack-api/tests/g1_dual_dispatch_test.rs`) documents — rather than
+//! hides — this open asymmetry.
 //!
 //! # Provider-scoped ids and the normalized-attempt projection
 //!
@@ -80,22 +79,22 @@
 //! namespace of its own — nothing stops it from colliding, in principle, with an
 //! opaque model id or a runner-v1 attempt id if either were ever displayed
 //! side-by-side. [`provider_scoped_task_id`] prefixes it with the fixed provider tag
-//! `"docket"` (`docket:<remote_task_id>`), mirroring the shape III.1.2 requires of a
-//! genuine runner-v1 request snapshot ("requested model-provider and opaque model
-//! id... each nullable") without claiming to *be* one. [`LegacyAttemptProjection`] is
-//! a read-only, in-memory view that maps an `OrchTask` (the existing
-//! `tack_db::repo::orch::OrchTask` read-side struct) into that provider-scoped shape
-//! for display — it does not write into `execution_attempts`, does not claim runner-v1
-//! provenance, and is not consulted by the scheduler. It exists so a future operator
-//! surface (III-G3's docs, or a later card) has one normalized place to render "what
-//! is this legacy row, using which provider-scoped id, under which scheduling owner"
-//! without re-deriving the mapping.
+//! `"docket"` (`docket:<remote_task_id>`), mirroring the shape a genuine runner-v1
+//! request snapshot uses for its requested model-provider and opaque model id
+//! (each independently nullable) without claiming to *be* one.
+//! [`LegacyAttemptProjection`] is a read-only, in-memory view that maps an
+//! `OrchTask` (the existing `tack_db::repo::orch::OrchTask` read-side struct) into
+//! that provider-scoped shape for display — it does not write into
+//! `execution_attempts`, does not claim runner-v1 provenance, and is not consulted
+//! by the scheduler. It exists so a future operator surface has one normalized
+//! place to render "what is this legacy row, using which provider-scoped id, under
+//! which scheduling owner" without re-deriving the mapping.
 
 use tack_db::repo::orch::OrchTask;
 
-/// The one explicit, stable compatibility label this cycle's III.6 definition of done
-/// requires ("Docket is optional and has one documented compatibility state"). See
-/// the module doc's "Decision: maintain" section for the evidence behind it.
+/// The one explicit, stable compatibility label naming this decision ("Docket is
+/// optional and has one documented compatibility state"). See the module doc's
+/// "Decision: maintain" section for the evidence behind it.
 ///
 /// Format is deliberately machine-quotable (`<decision>:<scope>-v<n>`) rather than a
 /// prose sentence, so operator docs and a future API field can both embed it
@@ -117,7 +116,7 @@ pub const LEGACY_DOCKET_COMPATIBILITY_POLICY: &str = "Docket is maintained as an
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchedulingOwner {
     /// The neutral runner-v1 domain (`execution_requests`/`execution_attempts`) —
-    /// this cycle's plan-of-record scheduler.
+    /// the plan-of-record scheduler.
     RunnerV1,
     /// The legacy Docket bridge (`orch_tasks`, dispatched via
     /// `tack_orch::adapters::docket::DocketAdapter`).

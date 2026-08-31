@@ -791,12 +791,12 @@ const MIGRATION_018: [&str; 1] = [
     )",
 ];
 
-// ─── Agent-Factory Control Center (Phases 33–38) ──────────────────────────
+// ─── Agent-Factory Control Center ──────────────────────────
 //
 // Schema for the tack-orch integration: Tack holds desired state, an external
 // "control plane" (docket) executes agent work, and a reconciler mirrors progress
-// back through these tables. See docs/book/src/roadmap.md → "Next — Agent-Factory
-// Control Center" for the full design; that section's schema table is authoritative
+// back through these tables. See docs/book/src/roadmap.md's Agent-Factory Control
+// Center section for the full design; that section's schema table is authoritative
 // for these six migrations.
 //
 // Every FK to items/projects/control_planes is ON DELETE CASCADE, matching the
@@ -852,9 +852,10 @@ const MIGRATION_021: [&str; 2] = [
     // key: an item can be redispatched (retries, reruns), and each dispatch gets its
     // own task row rather than overwriting the last one. `remote_run_id` correlates to
     // orch_runs.run_id but is deliberately not a hard FK — orch_runs is populated by a
-    // separate poll step and a task may briefly (or permanently, pre-Phase-35) have no
-    // known run. Token counts are the primary measure; cost_usd_estimated is derived
-    // and named accordingly per the "never present an estimate as spend" rule.
+    // separate poll step and a task may briefly (or, for data predating write-side
+    // dispatch, permanently) have no known run. Token counts are the primary measure;
+    // cost_usd_estimated is derived and named accordingly per the "never present an
+    // estimate as spend" rule.
     "CREATE TABLE IF NOT EXISTS orch_tasks (
         item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
         remote_task_id TEXT NOT NULL,
@@ -876,7 +877,7 @@ const MIGRATION_021: [&str; 2] = [
 const MIGRATION_022: [&str; 2] = [
     // Mirror of docket's GET /runs. `item_id` is nullable: a run dispatched from the
     // docket CLI (not through Tack) mirrors "unattributed" until a matching orch_tasks
-    // row correlates it — that is the normal case pre-Phase-35 and must not error.
+    // row correlates it — a case this schema must not error on.
     "CREATE TABLE IF NOT EXISTS orch_runs (
         run_id TEXT PRIMARY KEY NOT NULL,
         control_plane_id TEXT NOT NULL REFERENCES control_planes(id) ON DELETE CASCADE,
@@ -898,7 +899,7 @@ const MIGRATION_023: [&str; 3] = [
     // etc. `event_type` stores docket's event type verbatim (including types Tack does
     // not yet recognise) so a docket upgrade degrades to "shown as-is" rather than a
     // dropped or errored row. Two indexes: one for an item's timeline, one for the
-    // Phase 34.6 retention sweep (delete-by-age scans occurred_at across all items).
+    // retention sweep (delete-by-age scans occurred_at across all items).
     "CREATE TABLE IF NOT EXISTS orch_events (
         id TEXT PRIMARY KEY NOT NULL,
         control_plane_id TEXT NOT NULL REFERENCES control_planes(id) ON DELETE CASCADE,
@@ -937,13 +938,10 @@ const MIGRATION_024: [&str; 3] = [
     "CREATE INDEX IF NOT EXISTS idx_orch_approvals_state ON orch_approvals(state)",
 ];
 
-// ─── Phase 34 — metrics ingestion + retention ─────
+// ─── Metrics ingestion + retention ─────
 //
-// `orch_metrics` was deliberately *not* part of the Wave 0 batch above: the roadmap's
-// own schema table for migrations 019-024 lists six tables, not seven, and assigns
-// `orch_metrics` to Phase 34 (see W0-B's TODO.md §6 handoff, which flagged this
-// explicitly for whoever picked up metrics ingestion). It gets its own migration here,
-// 025, plus two new rollup tables (026, 027) for the 34.6 retention sweep.
+// `orch_metrics` gets its own migration here, 025, plus two rollup tables (026, 027)
+// for the retention sweep.
 
 const MIGRATION_025: [&str; 4] = [
     // One row per scrape per metric per label set. Append-only time series: unlike
@@ -970,7 +968,7 @@ const MIGRATION_025: [&str; 4] = [
         scraped_at TEXT NOT NULL DEFAULT (datetime('now')),
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )",
-    // Retention sweep scan (34.6): oldest-first, unscoped by plane.
+    // Retention sweep scan: oldest-first, unscoped by plane.
     "CREATE INDEX IF NOT EXISTS idx_orch_metrics_scraped ON orch_metrics(scraped_at)",
     // Per-plane timeline / bounded-retention-batch queries.
     "CREATE INDEX IF NOT EXISTS idx_orch_metrics_plane_scraped ON orch_metrics(control_plane_id, scraped_at)",
@@ -980,13 +978,13 @@ const MIGRATION_025: [&str; 4] = [
 
 const MIGRATION_026: [&str; 2] = [
     // Per-day rollup of orch_events, written by the retention sweep before the
-    // corresponding raw rows are deleted (34.6). Grouped at (day, control_plane_id,
+    // corresponding raw rows are deleted. Grouped at (day, control_plane_id,
     // event_type) — deliberately NOT per-item: SQLite treats NULL as distinct from
     // every other NULL in a UNIQUE constraint, so a nullable item_id in the uniqueness
     // key would silently allow duplicate aggregate rows for uncorrelated events.
     // Per-item event history is expected to age out along with the raw rows once
-    // retention passes; the day/plane/type total (what Phase 38's unit economics
-    // needs) is what survives.
+    // retention passes; the day/plane/type total (what the unit-economics queries
+    // need) is what survives.
     "CREATE TABLE IF NOT EXISTS orch_events_daily (
         id TEXT PRIMARY KEY NOT NULL,
         day TEXT NOT NULL,
@@ -1003,7 +1001,7 @@ const MIGRATION_026: [&str; 2] = [
 const MIGRATION_027: [&str; 2] = [
     // Per-day rollup of orch_metrics: count/sum/min/max per (day, control_plane_id,
     // metric_name, labels), written before the corresponding raw scrape rows are
-    // deleted (34.6). `labels` is non-nullable (default '{}'), so — unlike the item_id
+    // deleted. `labels` is non-nullable (default '{}'), so — unlike the item_id
     // concern on orch_events_daily above — including it in the UNIQUE key is safe:
     // SQLite's NULL-distinctness quirk only bites nullable columns.
     "CREATE TABLE IF NOT EXISTS orch_metrics_daily (
@@ -1023,7 +1021,7 @@ const MIGRATION_027: [&str; 2] = [
     "CREATE INDEX IF NOT EXISTS idx_orch_metrics_daily_plane_day ON orch_metrics_daily(control_plane_id, day)",
 ];
 
-// ─── Phase 34 — trace ingestion ──────────────────────────────
+// ─── Trace ingestion ──────────────────────────────
 //
 // docket's `/traces/{project}?since=` cursor (`serve.py`'s `_traces_page`) is a
 // compound `"<ts>Z:<n>"` token, not a bare timestamp or offset — see
@@ -1045,7 +1043,7 @@ const MIGRATION_028: [&str; 1] = ["CREATE TABLE IF NOT EXISTS orch_trace_cursors
 // ─── Item provenance / trust boundary ────────────────────
 //
 // Tack imports items from GitHub Issues and Linear — text written by anyone who
-// can file an issue on a linked repo. Once Phase 35's dispatcher sends
+// can file an issue on a linked repo. Once the dispatcher sends
 // an item's title/description to docket as agent input, that text becomes
 // instructions to an autonomous agent. `source` is a sticky, creation-time-only
 // marker of where an item's text came from, read by the dispatcher
@@ -1055,17 +1053,17 @@ const MIGRATION_028: [&str; 1] = ["CREATE TABLE IF NOT EXISTS orch_trace_cursors
 // full enum and the trust rule (`is_trusted()`).
 //
 // Default is deliberately `'unknown'`, not `'manual'`: every *existing* row in
-// every existing install — including items imported via GitHub before this Phase
-// 35 cycle even existed (migration 018 predates it) — backfills to `'unknown'`,
+// every existing install — including items imported via GitHub before this trust
+// mechanism existed (migration 018 predates it) — backfills to `'unknown'`,
 // which `ItemSource::is_trusted()` treats as untrusted. `'manual'` is a value only
 // ever written explicitly, by the ordinary create-item code path, never assumed.
-// This is the "unsafe state is never the accidental default" rule from this
-// card's brief, applied literally: a NULL/legacy/unrecognised source resolves to
-// "do not trust this text with operator privileges," not the reverse.
+// This is the "unsafe state is never the accidental default" rule, applied
+// literally: a NULL/legacy/unrecognised source resolves to "do not trust this
+// text with operator privileges," not the reverse.
 const MIGRATION_029: [&str; 1] =
     ["ALTER TABLE items ADD COLUMN source TEXT NOT NULL DEFAULT 'unknown'"];
 
-// Phase 37 / card D3, task 37.1: `TemplateOrchestration` (tack-core). A
+// Holds a serialized `TemplateOrchestration` (tack-core). A
 // nullable column, not `NOT NULL DEFAULT '{}'` — `NULL` means "this template
 // has no orchestration block," distinct from `'{}'` ("an orchestration block
 // with every field at its default"). Every row that predates this migration
@@ -1076,7 +1074,7 @@ const MIGRATION_029: [&str; 1] =
 // here to a column instead of a JSON payload key.
 const MIGRATION_030: [&str; 1] = ["ALTER TABLE project_templates ADD COLUMN orchestration TEXT"];
 
-// Phase 38 / card D5, task 38.1: unit economics. `GET /api/economics/summary` and
+// Unit economics: `GET /api/economics/summary` and
 // `GET /api/economics/items` both start from "every item where completed_at IS NOT
 // NULL" — a query the existing indexes don't cover: `idx_items_status` and friends are
 // all `(project_id, ...)` composites, but this scan is deliberately NOT scoped to one
@@ -1089,34 +1087,32 @@ const MIGRATION_031: [&str; 1] = [
      WHERE completed_at IS NOT NULL",
 ];
 
-// ─── Agnostic Control Plane — Wave B additive columns ─
+// ─── Agnostic Control Plane additive columns ─
 //
-// Five single-statement ALTERs. §II.0 rule 4 (docs/plans/agnostic-control-plane.md
-// §4, "Two conventions throughout") is why each of these is its own migration name
-// with exactly one statement: `apply_migrations` above runs every statement in a
-// migration with no wrapping transaction and only records the name once every
-// statement in it has succeeded. A migration carrying more than one ALTER that
-// fails partway records nothing, so the next boot replays the statements that
-// already applied, hits SQLite's "duplicate column name", and the server never
-// boots again — there is no down-migration to fall back to. 029 and 030 already
-// established the one-ALTER precedent; these five follow it without exception.
+// Five single-statement ALTERs, one per migration name: `apply_migrations` above
+// runs every statement in a migration with no wrapping transaction and only
+// records the name once every statement in it has succeeded. A migration carrying
+// more than one ALTER that fails partway records nothing, so the next boot replays
+// the statements that already applied, hits SQLite's "duplicate column name", and
+// the server never boots again — there is no down-migration to fall back to. 029
+// and 030 already established the one-ALTER precedent; these five follow it
+// without exception.
 //
 // The two table rebuilds this same design needs (037 `orch_runs`, 038
-// `orch_approvals` — see docs/plans/agnostic-control-plane.md §3b D6 and §4 Phase
-// 3) are deliberately NOT in this batch. A `CREATE …_new` / copy / `DROP` /
-// `RENAME` sequence is exactly the kind of multi-statement, non-atomic operation
-// rule 4 warns about, just with higher stakes (existing rows, not just an empty
-// column) — it ships as its own migration-runner release, with its own
-// half-applied-boot guard, so a partial rebuild is never silently retried.
+// `orch_approvals`) are deliberately NOT in this batch. A `CREATE …_new` / copy /
+// `DROP` / `RENAME` sequence is exactly the kind of multi-statement, non-atomic
+// operation the one-ALTER rule warns about, just with higher stakes (existing
+// rows, not just an empty column) — it ships as its own migration-runner release,
+// with its own half-applied-boot guard, so a partial rebuild is never silently
+// retried.
 
-// Card G2 reads `control_planes.config` before it ever needs scrubbing —
-// this column is never a secret, so it is intentionally absent from
+// `control_planes.config` is never a secret, so it is intentionally absent from
 // `remote_backup.rs::SENSITIVE_META_KEYS`/`scrub_snapshot_secrets`. A GitHub
 // Actions plane needs `{owner, repo, workflow_file, ref, api_base}`; today
 // `control_planes` (migration 019) has only `base_url` and one `token`, with
 // nowhere to put provider-shaped configuration that isn't a credential. `config`
-// is opaque JSON at this layer — the registry (`tack-orch::adapters::registry`,
-// card G1) is what gives it a per-`kind` shape; this migration only makes room.
+// is opaque JSON at this layer — the registry (`tack-orch::adapters::registry`)
+// is what gives it a per-`kind` shape; this migration only makes room.
 // `NOT NULL DEFAULT '{}'` so every row that predates this column — including
 // every docket plane already registered — reads back as "no extra config," which
 // is exactly what a docket plane has today.
@@ -1132,31 +1128,31 @@ const MIGRATION_032: [&str; 1] =
 // distinct from `'{}'` ("a secrets block whose provider-specific keys are all
 // absent") — same discipline migration 030 used for `orchestration TEXT`.
 //
-// THIS COLUMN MUST STAY UNUSED — nothing may write to it — until card G2 adds a
-// `control_planes.secrets` block to `remote_backup.rs::scrub_snapshot_secrets`
+// `remote_backup.rs::scrub_snapshot_secrets` already nulls this column before
+// every downloadable/uploadable backup snapshot, alongside `control_planes.token`
 // (that function's own doc comment states the rule: every secret-bearing column
 // gets its own null-before-VACUUM block there, run before the trailing `VACUUM`).
-// Writing this column before G2 lands ships raw provider credentials inside every
-// downloadable and uploadable backup snapshot. G2 is a separate card in this same
-// wave; this migration only reserves the column.
+// The column is still unused in practice: `tack_db::repo::orch::ControlPlane`
+// (the read struct the real `registry::build` callers loop over) does not yet
+// surface `config`/`secrets`, so nothing writes a real value into it — but
+// backup scrubbing already covers it whenever a caller does.
 const MIGRATION_033: [&str; 1] = ["ALTER TABLE control_planes ADD COLUMN secrets TEXT"];
 
-// ─── Optimistic concurrency columns (D4) ──────────────────────────────────────
+// ─── Optimistic concurrency columns ──────────────────────────────────────
 //
 // `version INTEGER NOT NULL DEFAULT 1` on the three tables an HTTP client can
-// read an ETag from and later PATCH: items, orch_links, control_planes. This
-// card only reserves the column and its default — bumping it on write and
-// wiring `ETag`/`If-Match` is card G3 (Phase 2, tasks 40.3+). `DEFAULT 1` (not
+// read an ETag from and later PATCH: items, orch_links, control_planes.
+// Bumping it on write and wiring `ETag`/`If-Match` lives in
+// `tack-api::handlers::items`/`handlers::orch`. `DEFAULT 1` (not
 // 0): a row that predates this column has been written exactly once (its
 // `INSERT`), so its version number under the new scheme is 1, matching what a
 // freshly created row gets going forward — an `If-Match: 1` sent by a client
 // that fetched the row *before* this migration ran is still correct against the
 // row *after* the migration ran.
 
-// items is the highest-traffic write target in the schema and the one the plan's
-// T2 trap (concurrent HTTP PATCH vs. an MCP write vs. the reconciler's own
-// `apply_mapped_status` call) is about — see docs/plans/agnostic-control-plane.md
-// §7 T2.
+// items is the highest-traffic write target in the schema and the one most
+// exposed to a lost-update race (concurrent HTTP PATCH vs. an MCP write vs. the
+// reconciler's own `apply_mapped_status` call).
 const MIGRATION_034: [&str; 1] =
     ["ALTER TABLE items ADD COLUMN version INTEGER NOT NULL DEFAULT 1"];
 
@@ -1172,10 +1168,10 @@ const MIGRATION_035: [&str; 1] =
 const MIGRATION_036: [&str; 1] =
     ["ALTER TABLE control_planes ADD COLUMN version INTEGER NOT NULL DEFAULT 1"];
 
-// ─── Table rebuilds (D6, card G5b, Phase 42) — THE IRREVERSIBLE MIGRATIONS ────
+// ─── Table rebuilds — THE IRREVERSIBLE MIGRATIONS ────
 //
 // 037 and 038 are the one place in this file that breaks the "every migration
-// is a single-statement ALTER" rule (§II.0 rule 4) on purpose, because the
+// is a single-statement ALTER" rule on purpose, because the
 // change each needs cannot be expressed as an ALTER at all:
 //
 // `orch_runs.run_id` (migration 022) is a *global* primary key with
@@ -1196,10 +1192,9 @@ const MIGRATION_036: [&str; 1] =
 //
 // `orch_approvals.control_plane_id` (migration 024) is `NOT NULL REFERENCES
 // control_planes(id)`. A decision raised by a `PreToolUse` hook inside a run
-// that was never dispatched through a *registered* plane (see D5's per-run
-// credential) has no control-plane row to reference at the moment it's
-// raised. `NOT NULL` makes that insert fail outright; only a column-level
-// rebuild can widen it to nullable.
+// that was never dispatched through a *registered* plane has no control-plane
+// row to reference at the moment it's raised. `NOT NULL` makes that insert
+// fail outright; only a column-level rebuild can widen it to nullable.
 //
 // Both rebuilds use SQLite's documented copy/swap procedure inside one
 // transaction. Foreign keys remain enabled: neither table is a parent of a
@@ -1224,9 +1219,11 @@ const MIGRATION_036: [&str; 1] =
 // 0: a row that predates the column has implicitly already had exactly one
 // "version" of whatever the column now counts.
 const MIGRATION_037_STATEMENTS: [&str; 6] = [
-    // 037/038 were never released. Remove only their reserved staging name;
-    // the source remains authoritative and this is inside the surrounding
-    // transaction, so an interrupted retry cannot leave an orphan or lose rows.
+    // No released version of Tack has ever depended on partial state from an
+    // earlier draft of this rebuild, so it's always safe to unconditionally
+    // drop any pre-existing staging table before rebuilding — and this is
+    // inside the surrounding transaction, so an interrupted retry cannot
+    // leave an orphan or lose rows.
     "DROP TABLE IF EXISTS orch_runs_new",
     "CREATE TABLE IF NOT EXISTS orch_runs_new (
         control_plane_id TEXT NOT NULL REFERENCES control_planes(id) ON DELETE CASCADE,
@@ -1321,7 +1318,7 @@ const MIGRATION_038: RebuildMigration = RebuildMigration {
         updated_at FROM orch_approvals_new",
 };
 
-// ─── Harness-agnostic runner fleet (Part III, card B2) ─────────────────────
+// ─── Harness-agnostic runner fleet ─────────────────────
 //
 // These tables are deliberately additive. The existing `orch_*` history is a
 // legacy Docket bridge and is neither renamed nor reused for neutral execution
@@ -1516,7 +1513,7 @@ const MIGRATION_048: [&str; 3] = [
     "CREATE INDEX idx_execution_decisions_attempt ON execution_decisions(attempt_id)",
 ];
 
-// Wave-2 B2 amendment: durable credential/token and protocol idempotency seams.
+// Durable credential/token and protocol idempotency seams.
 const MIGRATION_049: [&str; 5] = [
     "ALTER TABLE agent_runners ADD COLUMN runner_version TEXT",
     "ALTER TABLE agent_runners ADD COLUMN credential_expires_at TEXT",

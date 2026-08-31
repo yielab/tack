@@ -1,5 +1,4 @@
-//! The deterministic fleet scheduler (`TODO.md` Part III, Wave 4, card
-//! III-E1).
+//! The deterministic fleet scheduler.
 //!
 //! This module is a pure decision library: given a candidate set of runners
 //! (their current health/capacity/labels/declared harness and model
@@ -8,14 +7,12 @@
 //! selected runner or a typed reason none qualify. It performs **no I/O**
 //! — no database, no reconciler, no network client — and it **never grants
 //! the authoritative lease**; only the repository's fenced claim
-//! (`docs/contracts/runner-v1/`, III.1.5) can do that. A later integration
-//! card wires this module's inputs to the real `agent_runners` /
-//! `agent_fleet_members` / `execution_requests` tables
-//! (`crates/tack-db/src/migrations.rs`, migrations 039–044) and calls it
-//! ahead of, or as a replacement for, the naive `ORDER BY created_at LIMIT
-//! 1` match in `crates/tack-db/src/repo/execution.rs`'s claim query — see
-//! this card's handoff (`docs/agent-handoffs/part-iii/III-E1.md`) for the
-//! exact seam.
+//! (`docs/contracts/runner-v1/`) can do that.
+//! [`wiring::choose_request_for_runner`] wires this module's inputs to the
+//! real `agent_runners` / `agent_fleet_members` / `execution_requests`
+//! tables (`crates/tack-db/src/migrations.rs`, migrations 039–044) and is
+//! called ahead of, or as a replacement for, the naive `ORDER BY created_at
+//! LIMIT 1` match in `crates/tack-db/src/repo/execution.rs`'s claim query.
 //!
 //! # Two entry points
 //!
@@ -35,10 +32,9 @@
 //! `RunnerSelector`, `HarnessCapability`, …) without pulling in HTTP,
 //! `sqlx`, or any transport concern.
 //!
-//! # Live wiring (card III-E6)
+//! # Live wiring
 //!
-//! [`wiring::choose_request_for_runner`] is the integration seam this
-//! module's own doc comment above pointed to: it fetches real
+//! [`wiring::choose_request_for_runner`] fetches real
 //! `agent_runners`/`agent_fleet_members`/`execution_requests` rows via a
 //! live `tack_db::Repository`, builds the [`RunnerCandidate`]/
 //! [`SchedulingRequest`] values above from them, and calls

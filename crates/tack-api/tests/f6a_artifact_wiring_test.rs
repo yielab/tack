@@ -1,13 +1,10 @@
-//! Proof that the two Wave 5 integrator wiring requests recorded in
-//! `docs/agent-handoffs/part-iii/III-F2.md`'s "Schema/API/contract change
-//! requested from another owner" section are actually load-bearing in
-//! *production*, not merely present as source text in `router.rs`.
+//! Proof that two artifact-download wiring points are actually load-bearing
+//! in *production*, not merely present as source text in `router.rs`.
 //!
 //! Unlike `f2_artifact_events_test.rs` (which loads `runner_protocol.rs` via
 //! `#[path]` and constructs `artifact_download::routes(...)` as its own,
-//! separately-mounted local router — deliberately, per that card's brief,
-//! which was off-limits to touch `router.rs`), this file imports **zero**
-//! test infrastructure from any card and drives only the public
+//! separately-mounted local router), this file imports **zero** test
+//! infrastructure from any other test file and drives only the public
 //! `tack_api::router::build_router`/`tack_api::AppState` — the exact
 //! function `tack serve` calls, over pure HTTP end to end (mirroring
 //! `wave2_gate.rs`'s own established convention for proving claims against

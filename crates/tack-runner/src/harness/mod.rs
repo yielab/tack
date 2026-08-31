@@ -124,7 +124,7 @@ impl ModelObservationSource {
 /// claimed attempt. See the module docs for why this is not a sixth
 /// [`HarnessAdapter`] method.
 ///
-/// Capability honesty (rule 7) is inherited directly from the existing,
+/// Capability honesty is inherited directly from the existing,
 /// already-frozen `tack_orch::execution::capabilities` types this trait
 /// returns: [`HarnessCapability`] carries a nullable `probe_error` (so
 /// "this harness could not be probed, because X" is representable without
@@ -165,10 +165,9 @@ pub trait HarnessProbe: Send + Sync {
     /// exceeds [`PROCESS_GROUP_CANCEL_CEILING`] — the honest ceiling for the
     /// only cancellation primitive this runner implements
     /// (`harness::process::SupervisedProcess::cancel`, a process-group
-    /// SIGTERM/SIGKILL). D2 proved, twice, with `ps`
-    /// (`docs/agent-handoffs/part-iii/III-D2.md`), that mechanism cannot
-    /// reliably reach a descendant a harness's own shell-tool spawns into a
-    /// new OS session — and a same-shaped adversarial check against the real
+    /// SIGTERM/SIGKILL). Checking with `ps`, twice, showed that mechanism
+    /// cannot reliably reach a descendant a harness's own shell-tool spawns
+    /// into a new OS session — and a same-shaped adversarial check against the real
     /// `opencode` binary found the identical disjoint-session pattern for a
     /// bash-tool subprocess, confirming this is not a Claude-Code-specific
     /// quirk. Neither the Codex nor the OpenCode adapter has adapter-specific
@@ -208,8 +207,8 @@ pub enum HarnessRegistrationError {
 
 /// Dispatches the frozen [`HarnessAdapter`] lifecycle across every
 /// registered harness kind, and aggregates [`HarnessProbe`] reports. This
-/// **is** the shared registry wiring: each of
-/// D1/D2/D3's concrete adapters here (`registry.rs`'s own `HarnessRegistry`
+/// **is** the shared registry wiring: each of the concrete adapters is
+/// registered here (`registry.rs`'s own `HarnessRegistry`
 /// stays untouched by this module — see the module docs on the open
 /// reconcile about the two).
 ///
@@ -241,8 +240,8 @@ impl AdapterRegistry {
     }
 
     /// Registers a probe, first checking its own [`HarnessProbe::declared_capabilities`]
-    /// against [`PROCESS_GROUP_CANCEL_CEILING`] (finding 1's "a lying
-    /// capability is caught before invocation"). A probe that overclaims is
+    /// against [`PROCESS_GROUP_CANCEL_CEILING`] — a lying capability is
+    /// caught before invocation. A probe that overclaims is
     /// rejected here and never inserted — `capabilities()`/dispatch never
     /// see it — rather than silently accepted and only discovered wrong once
     /// a real cancellation against a live attempt fails to reach a detached
@@ -268,7 +267,7 @@ impl AdapterRegistry {
 
     /// Harness kinds with a registered adapter, in deterministic sorted
     /// order (`BTreeMap` iteration order), never insertion order — so which
-    /// card registered first can never become accidental dispatch priority.
+    /// adapter registered first can never become accidental dispatch priority.
     pub fn registered_kinds(&self) -> Vec<String> {
         self.adapters.keys().cloned().collect()
     }
@@ -767,9 +766,9 @@ mod tests {
     /// The shared
     /// cancellation primitive (`harness::process::SupervisedProcess::cancel`,
     /// a process-group SIGTERM/SIGKILL) cannot reliably reach a descendant a
-    /// harness's own shell-tool spawns into a new OS session — D2 proved
-    /// this twice with `ps` against real Claude Code, and an equivalent
-    /// check against the real `opencode` binary found the identical
+    /// harness's own shell-tool spawns into a new OS session — checking
+    /// with `ps`, twice, against real Claude Code found this, and an
+    /// equivalent check against the real `opencode` binary found the identical
     /// disjoint-session pattern. A probe that nonetheless claims
     /// `cancel: Supported` is rejected here, at registration — never
     /// silently accepted only to be discovered wrong the first time a real
@@ -823,13 +822,13 @@ mod tests {
     // ---- The real, reconciled three adapters ------------------------------
     //
     // Everything above this point tests dispatch/routing with trait-level
-    // fakes (D4's own choice, unchanged). These last tests are the two
+    // fakes. These last tests are the two
     // acceptance-gate proofs that need the three
     // *real* adapters (`codex::CodexAdapter`, `claude_code::ClaudeCodeAdapter`,
     // `opencode::OpenCodeAdapter`), not stand-ins: "the same fixture
     // completes through all three fake adapters" and "registration of all
     // three is order-independent." Each real adapter's own file already has
-    // its own exhaustive fixture-driven test suite (D1/D2/D3's own cards);
+    // its own exhaustive fixture-driven test suite;
     // these two tests are deliberately narrow, cross-cutting proofs that
     // only make sense here, where all three are in scope together.
 
@@ -847,7 +846,7 @@ mod tests {
     }
 
     /// One deterministic fixture script, driven identically by all three
-    /// real adapters. Never D4's shared `fake_harness_command()` — that
+    /// real adapters. Never the shared `fake_harness_command()` — that
     /// fixture is env-var-driven and single-purpose per spawn, which cannot
     /// honestly answer OpenCode's *own* version/model-listing/run calls (three
     /// different purposes) in one adapter instance without also faking a
@@ -861,7 +860,7 @@ mod tests {
     /// adapters' own `wait()` honestly classifies as `Succeeded` from the
     /// exit code alone (Codex always does; Claude Code and OpenCode fall
     /// back to exit-code classification when stdout does not parse as their
-    /// own structured output, exactly as D2/D3 document).
+    /// own structured output).
     fn cross_adapter_fixture_command() -> (PathBuf, Vec<String>) {
         let dir = cross_adapter_temp_dir("script");
         let script_path = dir.join("fixture.sh");
@@ -1021,7 +1020,7 @@ exit 0
     /// priority, and this proves it empirically, not just by code
     /// inspection. Also proves each real probe's declared cancellation
     /// capability (all three now `Advisory`) passes
-    /// the registration-time ceiling check this same card added.
+    /// the registration-time ceiling check.
     #[tokio::test]
     async fn registering_all_three_real_adapters_is_order_independent() {
         let staging_root = cross_adapter_temp_dir("order-artifacts");

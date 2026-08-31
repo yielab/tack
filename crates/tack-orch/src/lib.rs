@@ -348,8 +348,8 @@ pub struct FleetStatus {
 /// `name` is the bare metric name (e.g. `docket_agent_cost_usd`); `labels` is
 /// the `{k="v", ...}` label set, if any; `value` is the trailing number.
 /// Comment (`#`) lines never produce a sample. The parser that produces these
-/// lives in `adapters::docket` and is reused as-is by B3's
-/// metrics ingestion — do not write a second one.
+/// lives in `adapters::prometheus` (`adapters::docket`'s `metrics()` calls
+/// it) — do not write a second one.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MetricSample {
     pub name: String,
@@ -576,10 +576,10 @@ pub struct TracesPage {
 /// `adapters::docket`'s module doc.
 ///
 /// `event_type` is deliberately a plain `String`, not an enum: docket's
-/// `EVENT_TYPES` set (`core/trace.py`) is large, open to growth, and B2's
-/// acceptance criteria requires unknown types to be **stored verbatim** —
-/// exactly the property a plain string gives for free, without needing this
-/// crate's `Unknown(String)` machinery at all.
+/// `EVENT_TYPES` set (`core/trace.py`) is large, open to growth, and an
+/// unknown type must be **stored verbatim** — exactly the property a plain
+/// string gives for free, without needing this crate's `Unknown(String)`
+/// machinery at all.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RemoteEvent {
     /// `"YYYY-MM-DDTHH:MM:SSZ"` (`core/trace.py`'s `_now_iso()`).
@@ -770,8 +770,8 @@ pub struct Capabilities {
 // The ControlPlane trait
 // ---------------------------------------------------------------------------
 
-/// A control plane Tack can read fleet/run/approval/task state from and (from
-/// Phase 35 on, gated behind `TACK_ORCH_ENABLE`) dispatch work to. `docket` is
+/// A control plane Tack can read fleet/run/approval/task state from and,
+/// gated behind `TACK_ORCH_ENABLE`, dispatch work to. `docket` is
 /// the only implementor today (`adapters::docket::DocketAdapter`); the
 /// trait exists so a second backend never has to touch the reconciler,
 /// handlers, or frontend that consume it.
@@ -810,7 +810,7 @@ pub trait ControlPlane: Send + Sync {
     /// [`TracesPage::next`] must be persisted and passed back verbatim next
     /// time — never parsed, decoded, or recomputed by the caller.
     async fn traces(&self, project: &str, since: Option<&str>) -> Result<TracesPage, OrchError>;
-    // Phase 35+ — write side, gated behind TACK_ORCH_ENABLE.
+    // Write side, gated behind TACK_ORCH_ENABLE.
     async fn enqueue_task(&self, project: &str, task: NewRemoteTask) -> Result<String, OrchError>;
     async fn dispatch(&self, project: &str, vars: serde_json::Value) -> Result<String, OrchError>;
     /// Grant (`grant: true`) or deny (`grant: false`) a pending approval —
@@ -819,7 +819,7 @@ pub trait ControlPlane: Send + Sync {
     /// modeled as `Unknown` rather than assumed if docket's wording ever
     /// changes) — mirrors the real response body, `{"ok":true,"token":...,
     /// "state":...}`. The `channel` docket records
-    /// alongside the decision in its hash-chained audit log (its P22-4) is
+    /// alongside the decision in its hash-chained audit log is
     /// **not** a parameter here — every caller of this trait is Tack itself,
     /// so `adapters::docket`'s implementation sends the fixed value `"tack"`
     /// (verified against `approval.APPROVAL_CHANNELS`, which already lists

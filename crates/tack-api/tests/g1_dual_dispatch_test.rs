@@ -1,16 +1,14 @@
-//! Collision tests across the two scheduling planes:
-//! the legacy Docket bridge (`orch_tasks`, dispatched via `dispatcher::dispatch_item`)
-//! and the neutral runner-v1 domain (`execution_requests`). See
-//! `crates/tack-orch/src/adapters/legacy_bridge.rs`'s module doc ("One scheduling
-//! owner") for the policy this proves, and `docs/agent-handoffs/part-iii/III-G1.md`
-//! for the one direction this card could not close.
+//! Collision tests across the two scheduling planes: the legacy Docket
+//! bridge (`orch_tasks`, dispatched via `dispatcher::dispatch_item`) and the
+//! neutral runner-v1 domain (`execution_requests`). See
+//! `crates/tack-orch/src/adapters/legacy_bridge.rs`'s module doc ("One
+//! scheduling owner") for the policy this proves — one direction of it is
+//! still an open gap, documented near the bottom of this file.
 //!
 //! Drives the real, mounted `POST /api/items/{id}/dispatch` route through
-//! `build_router` — not a card-local scaffold — so the guard is proven against the
-//! production request path, matching this repo's wave-gate discipline
-//! (`docs/CLAUDE.md`'s "A status-code assertion alone proves little" rule): every
-//! "writes nothing" claim below is backed by a direct row-count assertion, not just a
-//! status code.
+//! `build_router` — not a test-local scaffold — so the guard is proven
+//! against the production request path: every "writes nothing" claim below
+//! is backed by a direct row-count assertion, not just a status code.
 
 mod common;
 
@@ -29,9 +27,9 @@ use uuid::Uuid;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-// ─── Harness (mirrors orch_dispatch_test.rs's own, deliberately not shared —
-// that file is not this card's to edit, and a private copy avoids coupling this
-// card's tests to another card's helper signatures changing later) ────────────
+// ─── Harness (mirrors orch_dispatch_test.rs's own helpers, deliberately not
+// shared — a private copy avoids coupling this file's tests to that file's
+// helper signatures changing later) ────────────
 
 fn orch_config() -> AppConfig {
     AppConfig {
@@ -159,12 +157,13 @@ async fn dispatch(app: &Router, item_id: Uuid) -> axum::response::Response {
     .await
 }
 
-/// Inserts a minimal, valid `execution_requests` row directly — the runner-v1
-/// creation path (`tack-api::handlers::executions`) is not this card's file to call
-/// through (it requires a registered `agent_runners`/fleet fixture this card has no
-/// reason to build); a direct row insert is the standard way this table is seeded in
-/// other cards' tests too and exercises exactly the column this card's guard reads
-/// (`state`), nothing more.
+/// Inserts a minimal, valid `execution_requests` row directly rather than
+/// going through the runner-v1 creation path
+/// (`tack-api::handlers::executions`), which would require a registered
+/// `agent_runners`/fleet fixture this file has no reason to build. A direct
+/// row insert is the standard way this table is seeded elsewhere too, and
+/// exercises exactly the column the guard below reads (`state`), nothing
+/// more.
 async fn insert_active_execution_request(state: &AppState, item_id: Uuid) {
     let now = Utc::now().to_rfc3339();
     let id = Uuid::new_v4().to_string();
@@ -202,8 +201,8 @@ async fn dispatch_refuses_when_item_has_active_runner_v1_request() {
     let mock = MockServer::start().await;
     // A docket mock that WOULD succeed if reached — deliberately, so this test is
     // load-bearing: without the guard, `dispatch_item` would sail through to a real
-    // `orch_tasks` row (proven by temporarily reverting the guard during review — see
-    // the III-G1 handoff), not merely fail some other way that happens to also 409.
+    // `orch_tasks` row (proven by temporarily reverting the guard during review),
+    // not merely fail some other way that happens to also 409.
     Mock::given(method("POST"))
         .and(path("/tasks/demo"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -305,9 +304,10 @@ async fn dispatch_proceeds_when_runner_v1_request_is_terminal() {
     );
 }
 
-/// Direct, unit-level proof of the read this card's guard is built on — isolates the
-/// "terminal doesn't count as active" claim from any HTTP/docket-transport noise the
-/// full-router test above can't fully separate out.
+/// Direct, unit-level proof of the read the guard above is built on —
+/// isolates the "terminal doesn't count as active" claim from any
+/// HTTP/docket-transport noise the full-router test above can't fully
+/// separate out.
 #[tokio::test]
 async fn has_active_execution_request_for_item_ignores_terminal_states() {
     let (_app, state) = app_with_state(orch_config()).await;
@@ -393,10 +393,10 @@ async fn has_active_execution_request_for_item_ignores_terminal_states() {
 
 // ─── The documented, still-open gap: the reverse guard does not exist ─────────
 
-/// **Known limitation, not a bug this card fixes — recorded in the III-G1 handoff.**
-/// `tack-api::handlers::executions::create_execution` belongs to another card's file
-/// ownership and does not check `orch_tasks` before creating a new
-/// `execution_requests` row. This test documents that gap against the real,
+/// **Known limitation, not something this file's guard fixes.**
+/// `tack-api::handlers::executions::create_execution` does not check
+/// `orch_tasks` before creating a new `execution_requests` row. This test
+/// documents that gap against the real,
 /// production `POST /api/executions` handler — full enrollment flow, no shortcuts —
 /// rather than leaving it merely asserted in prose: an item with an active legacy
 /// Docket task can still have a runner-v1 execution request created today. If a
@@ -434,8 +434,9 @@ async fn creating_a_runner_v1_request_does_not_yet_check_for_an_active_docket_ta
     .expect("insert orch_tasks fixture row");
 
     // Full production enrollment flow (mirrors wave2_gate.rs's own `enroll_runner`,
-    // duplicated rather than imported — that file is not this card's to couple to)
-    // so `selector_kind: "exact_runner"` resolves against a real, active runner.
+    // duplicated rather than imported to avoid coupling this file to that one's
+    // helper signatures) so `selector_kind: "exact_runner"` resolves against a
+    // real, active runner.
     let profile_res = req(
         &app,
         Method::POST,

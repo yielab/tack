@@ -1,26 +1,26 @@
 //! Tests for migrations 019–038: the Agent-Factory Control Center schema
 //! (`control_planes`, `orch_links`, `orch_tasks`, `orch_runs`, `orch_events`,
-//! `orch_approvals`) plus the Agnostic Control Plane cycle's card G5a additive
+//! `orch_approvals`) plus additive
 //! columns — 032 `control_planes.config`, 033 `control_planes.secrets`, 034
 //! `items.version`, 035 `orch_links.version`, 036 `control_planes.version` — and
-//! card G5b's two table rebuilds, 037 (`orch_runs`) and 038 (`orch_approvals`).
-//! See `docs/plans/agnostic-control-plane.md` §4 Phase 1/2/3 and §10.3, and
-//! `TODO.md` §II, for the design; `crates/tack-db/src/migrations.rs`'s own
+//! two table rebuilds, 037 (`orch_runs`) and 038 (`orch_approvals`).
+//! See `docs/plans/agnostic-control-plane.md` §4 Phase 1/2/3 and §10.3 for
+//! the design; `crates/tack-db/src/migrations.rs`'s own
 //! comments above `MIGRATION_032` and `MIGRATION_037` are authoritative for why
 //! 032-036 are single-statement ALTERs while 037/038 are not.
 //!
-//! Covers the W0-B acceptance bar for 019-024:
+//! Covers, for migrations 019-024:
 //!   - a fresh database migrates cleanly and ends up with all six new tables;
 //!   - an existing database stopped at "018_github_links" upgrades in place when
 //!     `run_all` is called again (simulating an installed `tack.db` picking up a new
 //!     Tack release);
-//!   - foreign-key enforcement (landed in Phase 26.3, see
+//!   - foreign-key enforcement (see
 //!     `test_foreign_key_rejects_orphan_item` in `integration_test.rs`) still holds for
 //!     every new table that has an incoming FK. `control_planes` is the root of this
 //!     schema's FK graph — it has no FK columns of its own — so there is nothing to
 //!     orphan and no test for it here.
 //!
-//! Plus the card G5a acceptance bar for 032-036:
+//! Plus, for migrations 032-036:
 //!   - each new column exists after its migration and does not exist before it;
 //!   - a fresh database migrates cleanly all the way through 036;
 //!   - an existing database stopped at "031_items_completed_at_index" (the last
@@ -31,11 +31,11 @@
 //!     `ALTER` statement backfills into existing rows, not for a value an
 //!     application layer would need to supply.
 //!
-//! Plus the card G5b acceptance bar for 037-038 — the table rebuilds. This is
-//! the one migration batch in the whole cycle that rewrites existing rows
+//! Plus, for migrations 037-038 — the table rebuilds. This is
+//! the one migration batch that rewrites existing rows
 //! rather than only adding columns, so "the table exists afterwards" is not
-//! enough; every test below checks one of the four things the card brief
-//! demands: identical row counts and per-row field equality across the
+//! enough; every test below checks one of four things:
+//! identical row counts and per-row field equality across the
 //! rebuild, an empty `PRAGMA foreign_key_check`, the old primary key's
 //! uniqueness still holding under the new composite key, and a deliberately
 //! half-applied rebuild refusing to boot with a named error instead of
@@ -79,9 +79,9 @@ async fn column_exists(pool: &sqlx::SqlitePool, table: &str, column: &str) -> bo
         .any(|row| row.get::<String, _>("name") == column)
 }
 
-/// Inserts a single `control_planes` row directly (no repository layer exists yet —
-/// that lands in Wave 1 / A3) and returns its id, for use as a valid FK target in the
-/// orphan tests below.
+/// Inserts a single `control_planes` row directly with raw SQL, independent
+/// of `Repository::create_control_plane`, and returns its id, for use as a
+/// valid FK target in the orphan tests below.
 async fn insert_control_plane(pool: &sqlx::SqlitePool) -> Uuid {
     let id = Uuid::new_v4();
     sqlx::query(
@@ -119,10 +119,10 @@ async fn test_fresh_db_migrates_all_orch_tables() {
         applied.iter().any(|m| m == "024_orch_approvals"),
         "024_orch_approvals must have been applied on a fresh db"
     );
-    // Not asserting 024 is the *last* migration applied: card B3 added
-    // 025-027 after this test was written (see orch_metrics_test.rs for their
-    // coverage), and a future card will add more after those. This test's job is
-    // "the six Wave-1 orch tables exist," which the loop above already checks.
+    // Not asserting 024 is the *last* migration applied: migrations
+    // 025-027 landed after this test was written (see orch_metrics_test.rs for their
+    // coverage), and later migrations will add more after those. This test's job is
+    // "the six orch tables from 019-024 exist," which the loop above already checks.
 }
 
 // ─── Upgrade-in-place from an existing 18-migration database ──────────────
@@ -161,9 +161,9 @@ async fn test_upgrade_from_018_applies_new_orch_migrations_in_place() {
         .fetch_one(&pool)
         .await
         .expect("count migrations");
-    // >= 24 rather than == 24: card B3 added migrations 025-027 after this
-    // test was written (see orch_metrics_test.rs), and later cards will add more.
-    // The exact count isn't this test's job — "the six Wave-1 orch tables exist
+    // >= 24 rather than == 24: migrations 025-027 landed after this
+    // test was written (see orch_metrics_test.rs), and later migrations will add more.
+    // The exact count isn't this test's job — "the six orch tables from 019-024 exist
     // after upgrading in place" (asserted above) is.
     assert!(
         count >= 24,
@@ -318,7 +318,7 @@ async fn test_orch_tasks_composite_pk_allows_redispatch_same_item() {
     );
 }
 
-// ─── Card G5a: migrations 032-036, additive columns only ──────────────────
+// ─── Migrations 032-036, additive columns only ──────────────────
 //
 // Each column-existence test pins the migration *immediately before* the one
 // under test as the "column must not exist yet" checkpoint, and the migration
@@ -467,7 +467,7 @@ async fn test_upgrade_from_031_applies_card_g5a_migrations_in_place() {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
 
     // Simulate an installed tack.db that has only ever seen migrations 001-031 —
-    // i.e. everything up to but not including this card's batch.
+    // i.e. everything up to but not including migrations 032-036.
     migrations::run_up_to(&pool, "031_items_completed_at_index")
         .await
         .expect("apply migrations up to 031");
@@ -506,7 +506,7 @@ async fn test_upgrade_from_031_applies_card_g5a_migrations_in_place() {
 async fn test_preexisting_rows_backfill_default_config_and_version() {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
 
-    // Stop at 031 — one migration short of this card's batch — and insert one
+    // Stop at 031 — one migration short of migrations 032-036 — and insert one
     // row per table the batch touches, via raw SQL (no repository layer call,
     // so nothing here depends on tack-db's Rust API already knowing about
     // columns this same migration run is about to add).
@@ -597,7 +597,7 @@ async fn test_preexisting_rows_backfill_default_config_and_version() {
     );
 }
 
-// ─── Card G5b: migrations 037-038, the two table rebuilds ─────────────────
+// ─── Migrations 037-038, the two table rebuilds ─────────────────
 //
 // Unlike 032-036, these rewrite existing rows rather than only adding a
 // column, so "the column/table exists afterwards" is not the bar — see the
@@ -683,7 +683,7 @@ async fn test_migration_037_rebuild_preserves_every_row_and_field_equality() {
     let plane_id = insert_control_plane(&pool).await;
     let item_id = seed_item(&pool).await;
 
-    // One run correlated to an item, one unattributed (the pre-Phase-35 "CLI
+    // One run correlated to an item, one unattributed (the "CLI
     // dispatch" case migration 022's own comment documents) — both must
     // survive the rebuild with every non-renamed column byte-for-byte intact.
     sqlx::query(

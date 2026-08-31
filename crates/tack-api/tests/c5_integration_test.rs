@@ -1,14 +1,12 @@
-//! III-C5 integration tests.
+//! Integration tests against the real, fully wired production router.
 //!
-//! Unlike `c1_handlers_test.rs`/`c2_handlers_test.rs` (card-local routers)
-//! and `runner_vertical_slice.rs` (C4's repository/runner-fake seam), every
-//! test in this file drives the real, fully wired production router —
-//! `tack_api::router::build_router` — exactly as `tack serve` would run it.
-//! That is the one thing no other Part III Wave 2 card could prove: this
-//! file is the evidence that the acceptance gate's "production router
-//! completes the mock vertical slice" and "runner routes are outside the
-//! operator auth exemption" claims hold for the *actual* mounted app, not a
-//! stand-in.
+//! Unlike `c1_handlers_test.rs`/`c2_handlers_test.rs` (routers built local to
+//! those files) and `runner_vertical_slice.rs` (a repository/runner-fake
+//! seam), every test in this file drives
+//! `tack_api::router::build_router` — exactly as `tack serve` would run it —
+//! so the claims that the production router completes the mock vertical
+//! slice, and that runner routes sit outside the operator auth exemption,
+//! hold for the *actual* mounted app, not a stand-in.
 
 mod common;
 
@@ -29,7 +27,7 @@ use uuid::Uuid;
 const OPERATOR_TOKEN: &str = "c5-operator-secret-token";
 
 // ---------------------------------------------------------------------
-// Setup: builds the real `AppState`/`build_router`, not a card-local
+// Setup: builds the real `AppState`/`build_router`, not a test-local
 // stand-in, and keeps the `Repository`/`Uuid` handles a test needs for
 // fixture setup, direct DB assertions, and simulating a restart by
 // rebuilding a fresh router/AppState around the *same* pool.
@@ -52,8 +50,8 @@ async fn app_state(config: AppConfig, pool: sqlx::SqlitePool, workspace_id: Uuid
 
 /// Builds a fresh production router over a clean in-memory database, plus a
 /// fixture project/item created directly through the repository (the same
-/// setup precedent every other Part III test file uses — the fixture data
-/// itself is not what's under test here).
+/// setup precedent every other test file in this crate uses — the fixture
+/// data itself is not what's under test here).
 async fn setup(config: AppConfig) -> (axum::Router, Repository, sqlx::SqlitePool, Uuid, String) {
     let pool = init_pool("sqlite::memory:").await.expect("pool");
     migrations::run_all(&pool).await.expect("migrations");
@@ -159,7 +157,7 @@ fn bearer(token: &str) -> String {
 /// body in this file requests exactly that pair (see `requested_harness_kind`
 /// call sites) — and uses the *real* current wall-clock time as
 /// `reported_at`/`probed_at`, not a frozen fixture date: this file drives
-/// the real production router (`SystemExecutionClock`), and card III-E6's
+/// the real production router (`SystemExecutionClock`), and
 /// `tack_orch::scheduler::wiring` falls back to a capability report's own
 /// `reported_at` as a liveness signal for a runner that has never sent a
 /// `/heartbeat` yet (true of every runner here). A hardcoded past date
@@ -224,9 +222,9 @@ fn completion_body(runner_id: &str, attempt_id: &str, fencing_token: i64) -> Val
 }
 
 // ---------------------------------------------------------------------
-// 1. The Wave 2 integration gate itself: a mock runner enrolled on a clean
-//    database, through the *production* router, can claim, start, stream,
-//    complete, and the result survives an API restart.
+// 1. A mock runner enrolled on a clean database, through the *production*
+//    router, can claim, start, stream, complete, and the result survives an
+//    API restart.
 // ---------------------------------------------------------------------
 
 #[tokio::test]
@@ -423,8 +421,8 @@ async fn production_router_completes_the_mock_vertical_slice_and_survives_restar
     assert_eq!(replayed["committed_at"], completed["committed_at"]);
 
     // No credential material ever appeared in a response body across the
-    // whole lifecycle (rule 12 / C1+C2's own redaction guarantees, verified
-    // here end-to-end through the real mounted router).
+    // whole lifecycle — the redaction guarantee, verified here end-to-end
+    // through the real mounted router.
     let stored_hash: String =
         sqlx::query_scalar("SELECT credential_hash FROM agent_runners WHERE id=?")
             .bind(&runner_id)
@@ -733,8 +731,8 @@ async fn every_execution_and_runner_v1_path_requires_authentication_live() {
 }
 
 /// Cross-checks the generated OpenAPI document's route surface against
-/// what's actually mounted: every operator/runner-v1 path this card added
-/// appears at exactly the expected, fully-composed location.
+/// what's actually mounted: every operator/runner-v1 route appears at
+/// exactly the expected, fully-composed location.
 #[tokio::test]
 async fn openapi_document_enumerates_the_mounted_operator_and_runner_v1_routes() {
     let doc = ApiDoc::openapi();
@@ -829,19 +827,16 @@ async fn runner_v1_and_execution_routes_share_the_global_cors_policy() {
 }
 
 // ---------------------------------------------------------------------
-// 6. Runner-v1 body limit precedence: an integrator-authorized cross-card
-//    fix (III-C2 / III-C5 — see both handoffs' "Amendment: runner-v1 body
-//    limit respects the operator-configured global limit" sections) closing
-//    a defect where the runner-v1 sub-router's own, more-specific
-//    `DefaultBodyLimit` layer (a fixed 4 MiB protocol ceiling) always won
-//    over the plain global `DefaultBodyLimit` layered on `outer` in
-//    `router.rs`, regardless of `TACK_MAX_BODY_SIZE`/
-//    `AppConfig::max_body_size_bytes`. An operator hardening a deployment
-//    below 4 MiB could configure a tighter global limit and it would
-//    silently have no effect on `/api/runner/v1/*` — proven live by an
-//    independent verifier: with the global limit configured to 2 KiB, a 512
-//    KiB body to `/api/runner/v1/claim` was read in full and the handler ran
-//    (a bad credential returned 401, not 413).
+// 6. Runner-v1 body limit precedence: without `effective_body_limit_bytes`,
+//    the runner-v1 sub-router's own, more-specific `DefaultBodyLimit` layer
+//    (a fixed 4 MiB protocol ceiling) always wins over the plain global
+//    `DefaultBodyLimit` layered on `outer` in `router.rs`, regardless of
+//    `TACK_MAX_BODY_SIZE`/`AppConfig::max_body_size_bytes`. An operator
+//    hardening a deployment below 4 MiB could configure a tighter global
+//    limit and it would silently have no effect on `/api/runner/v1/*` —
+//    proven live: with the global limit configured to 2 KiB, a 512 KiB body
+//    to `/api/runner/v1/claim` was read in full and the handler ran (a bad
+//    credential returned 401, not 413).
 // ---------------------------------------------------------------------
 
 /// Shared setup for both precedence-direction tests below: an operator

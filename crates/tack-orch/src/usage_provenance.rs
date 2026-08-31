@@ -1,16 +1,14 @@
 //! Requested-vs-actual model provenance and honest, provenance-separated
-//! usage economics (`TODO.md` Part III, card III-F3).
+//! usage economics.
 //!
 //! Two independent pure concerns, neither performing I/O:
 //!
 //! - [`compare_model_provenance`]: the request's resolved model (or "no
 //!   model requested", i.e. auto-select) against the attempt's
-//!   `ActualExecution` observation — visible, never silently reconciled
-//!   (this card's acceptance bar: "requested/actual mismatch visible").
+//!   `ActualExecution` observation — visible, never silently reconciled.
 //! - [`build_usage_economics`]: keeps runner-observed wall-clock time cost
 //!   structurally separate from the harness/vendor's own self-reported
-//!   token/dollar usage — never summed into one opaque number (this card's
-//!   task list: "runner time cost separate from model/token cost").
+//!   token/dollar usage — never summed into one opaque number.
 //!
 //! Every dollar-valued field here is named `*_usd_estimated`, matching this
 //! crate's own module-level convention (`crate::lib`'s "Money is always an
@@ -30,8 +28,8 @@ use crate::execution::{
 /// The comparison between what an execution request asked for and what an
 /// attempt actually ran on. All three variants carry the full observed
 /// facts — never coalesced into a bare boolean "matched" flag, so a caller
-/// (F4's frontend rendering, in particular) can show *both* sides of a
-/// mismatch rather than just "something changed."
+/// (the frontend's attempt rendering, in particular) can show *both* sides
+/// of a mismatch rather than just "something changed."
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ModelProvenance {
@@ -56,14 +54,14 @@ pub enum ModelProvenance {
     },
 }
 
-/// Compares a resolved request (`None` for auto-select — III.1.2's
+/// Compares a resolved request (`None` for auto-select — the request's
 /// nullable-pair shape) against an attempt's actually-observed model.
 /// Compares via `.as_str()`, never by unwrapping into a shared type — the
 /// *requested* namespace ([`RequestedModelProvider`]/[`RequestedModelId`])
 /// and the *actual* namespace ([`ActualModelProvider`]/[`ActualModelId`])
-/// stay textually distinct types all the way through (III.0's vocabulary
-/// rule), exactly as `crate::scheduler::select::evaluate_candidate` already
-/// does for requested-vs-declared.
+/// stay textually distinct types all the way through, exactly as
+/// `crate::scheduler::select::evaluate_candidate` already does for
+/// requested-vs-declared.
 pub fn compare_model_provenance(
     requested: Option<(&RequestedModelProvider, &RequestedModelId)>,
     actual_provider: &ActualModelProvider,
@@ -109,9 +107,8 @@ fn not_measured() -> Measurement<f64> {
 ///   [`Measurement`] (there is no "estimated" wall clock; it either is or
 ///   is not known yet).
 /// - `cost_usd_estimated` stays `not_measured` unless a caller supplies an
-///   infra rate. **No such rate is stored anywhere in this schema today**
-///   — see this card's handoff, "Schema/API/contract change requested."
-///   `runner_rate_usd_per_hour` is therefore always caller-supplied, never
+///   infra rate. **No such rate is stored anywhere in this schema today**,
+///   so `runner_rate_usd_per_hour` is always caller-supplied, never
 ///   invented by this module.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RunnerTimeCost {
@@ -185,13 +182,13 @@ pub fn build_usage_economics(
     }
 }
 
-/// Every derived fact this card produces for one attempt, in one call —
-/// the "repository/service handler" convenience this card owns. Takes the
+/// Every derived fact this module produces for one attempt, in one call —
+/// a repository/service-handler convenience. Takes the
 /// same raw column shapes `tack_db::repo::execution::AttemptListingRow`
 /// already carries (`actual_execution`/`usage` as raw JSON text, possibly
 /// absent) plus the request's resolved requested provider/model, so a
-/// caller (a future handler) can pass real row data straight through
-/// without this module depending on `tack-db`'s row type directly.
+/// caller (`tack-api`'s executions handler) can pass real row data straight
+/// through without this module depending on `tack-db`'s row type directly.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AttemptFacts {
     /// `None` only when the attempt has not yet reported `actual_execution`
@@ -281,9 +278,9 @@ mod tests {
         );
     }
 
-    /// The card's own acceptance bar: "requested/actual mismatch visible."
-    /// Both sides must be present in the result, not silently reconciled to
-    /// whichever the caller might expect.
+    /// A requested/actual mismatch must stay visible: both sides must be
+    /// present in the result, not silently reconciled to whichever the
+    /// caller might expect.
     #[test]
     fn mismatch_carries_both_requested_and_actual_values() {
         let requested = (
@@ -352,9 +349,9 @@ mod tests {
         );
     }
 
-    /// The card's other acceptance bar: "absent usage never serializes as
-    /// zero." Asserts the literal JSON shape, not just the Rust value, per
-    /// CLAUDE.md's "assert the absence directly."
+    /// Absent usage must never serialize as zero. Asserts the literal JSON
+    /// shape, not just the Rust value, per CLAUDE.md's "assert the absence
+    /// directly."
     #[test]
     fn absent_usage_never_serializes_as_zero() {
         let economics = build_usage_economics(None, None, None, None);

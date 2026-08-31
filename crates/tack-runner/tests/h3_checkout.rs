@@ -5,7 +5,7 @@
 //! provisioner: it answers "does the engine call provisioning at the right
 //! moment", not "does a checkout exist when the harness starts". This file
 //! answers the second question end to end — real `git`, real repository, real
-//! child process — because the gap III-H3 closes was invisible to every test
+//! child process — because that gap was invisible to every test
 //! that used a fake provisioner (an empty directory satisfied all of them).
 
 use std::{
@@ -47,8 +47,8 @@ static NEXT_ROOT: AtomicUsize = AtomicUsize::new(0);
 /// resolves a bare program name can observe that empty `PATH` and fail with a
 /// spurious "binary not found". This was found as a one-in-many-runs failure
 /// of `a_checkout_of_a_different_revision_is_never_reused` during
-/// `cargo test --workspace`; see the III-H3 handoff, which escalates the
-/// shared-state hazard to that test's owner.
+/// `cargo test --workspace` — a shared-state hazard from a concurrently
+/// running test overwriting `PATH`.
 fn git_program() -> PathBuf {
     for candidate in [
         "/usr/bin/git",
@@ -423,10 +423,9 @@ async fn a_claimed_attempt_reaches_a_real_harness_process_with_its_own_checkout(
     std::fs::remove_dir_all(&source).expect("cleanup");
 }
 
-/// The complement of the test above, and the reason this card exists: with the
-/// provisioner that shipped before III-H3, the identical run cannot reach the
-/// harness at all. Reverting the fix is therefore proven to break the claim,
-/// rather than assumed to.
+/// The complement of the test above: without a real provisioner, the
+/// identical run cannot reach the harness at all. Reverting the fix is
+/// therefore proven to break the claim, rather than assumed to.
 #[tokio::test]
 async fn without_a_real_provisioner_the_same_attempt_never_reaches_the_harness() {
     let (source, commit) = source_repository();
@@ -531,7 +530,7 @@ async fn a_cancelled_attempt_leaves_no_checkout_behind() {
 /// Crash recovery: a runner killed after provisioning leaves a checkout on
 /// disk with an unresolved journal record. The restart must resolve the
 /// attempt and remove that checkout — the "no unusable worktree survives a
-/// kill" half of the card, at the engine level rather than inside the
+/// kill" invariant, proven at the engine level rather than inside the
 /// provisioner.
 #[tokio::test]
 async fn a_checkout_left_by_a_killed_runner_is_removed_by_the_restart() {

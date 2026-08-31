@@ -1,8 +1,7 @@
 //! Integration tests for `adapters::docket::DocketAdapter` against a
 //! `wiremock` server, using the fixtures in `tests/fixtures/` (see each
 //! fixture's own header comment for provenance — captured live from a real
-//! `docket serve` vs. constructed/derived from source, per TODO.md §Wave 1
-//! card A1, step 4/5).
+//! `docket serve` vs. constructed/derived from source).
 //!
 //! Every read method of `ControlPlane` gets at least one passing test here;
 //! `adapters::prometheus`'s own unit tests (in `src/adapters/prometheus.rs`)
@@ -209,9 +208,8 @@ async fn list_approvals_happy_path() {
 
 #[tokio::test]
 async fn list_tasks_happy_path_against_a_live_captured_shape() {
-    // Card V1 (2026-08-05): `tasks_list.json` is now a genuine live HTTP
-    // capture (previously a derived-not-captured guess at the wrapper key
-    // and field shape, per A1's original note) — confirms the `{"tasks":
+    // `tasks_list.json` is a genuine live HTTP capture, not a derived guess
+    // at the wrapper key and field shape — confirms the `{"tasks":
     // [...]}` wrapper and `RemoteTask`'s field shape both match the real
     // endpoint exactly, no adapter changes needed.
     let server = MockServer::start().await;
@@ -237,12 +235,13 @@ async fn list_tasks_happy_path_against_a_live_captured_shape() {
 // ---------------------------------------------------------------------------
 // enqueue_task — POST /tasks/{project}
 //
-// All three of docket's real `pre_input` outcomes (card V1's live
-// verification): allow (200, task id), block (400, typed `PolicyBlocked`
+// All three of docket's real `pre_input` outcomes, live-verified against the
+// real endpoint: allow (200, task id), block (400, typed `PolicyBlocked`
 // carrying the policy id), require_approval (200, same shape as allow —
 // `status`/`approvalToken` are real but this method's return type can't
 // carry them, see the module doc). Plus the `trusted` flag really reaching
-// the wire, since that's the prompt-injection boundary C2 builds on.
+// the wire — this is the boundary that keeps content imported from external
+// sources from ever being treated as trusted input downstream.
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -344,9 +343,9 @@ async fn enqueue_task_block_maps_to_policy_blocked_naming_the_policy() {
 
 #[tokio::test]
 async fn enqueue_task_sends_the_trusted_flag_on_the_wire() {
-    // The one boundary card V1 called out as most load-bearing for Wave 3:
-    // an explicit `false` must actually reach docket's JSON body, not be
-    // dropped or defaulted away.
+    // The most load-bearing boundary of the `trusted` flag: an explicit
+    // `false` must actually reach docket's JSON body, not be dropped or
+    // defaulted away.
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/tasks/demo"))
@@ -400,13 +399,11 @@ async fn enqueue_task_unauthorized_maps_to_auth_error() {
 
 #[tokio::test]
 async fn traces_happy_path_decodes_the_double_encoded_events_array() {
-    // Card V1 (2026-08-05): `traces_list.json` is now a genuine live HTTP
-    // capture (previously only verified by reading `serve.py` source,
-    // per B2's handoff note) — `events` really is an array of raw JSON
-    // *strings* over the wire, each requiring a second decode. This test
-    // would fail loudly (a `Decode` error) against the old fixture shape,
-    // which is exactly the bug card B2 found and fixed in
-    // `DocketAdapter::traces`.
+    // `traces_list.json` is a genuine live HTTP capture, not derived only
+    // from reading `serve.py` source — `events` really is an array of raw
+    // JSON *strings* over the wire, each requiring a second decode. This
+    // test would fail loudly (a `Decode` error) if `DocketAdapter::traces`
+    // stopped performing that second decode.
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/traces/demo"))

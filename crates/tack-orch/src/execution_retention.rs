@@ -1,4 +1,4 @@
-//! Cancellable retention sweep for the execution domain (card III-F5, Wave 5).
+//! Cancellable retention sweep for the execution domain.
 //!
 //! # Why this is a sibling module, not `execution::retention`
 //!
@@ -15,7 +15,7 @@
 //! `reconciler::spawn_retention_sweep` computes its cutoff from `Utc::now()`
 //! directly and has no cancellation signal at all — dropping its
 //! `JoinHandle` is the only way to stop it, which cannot prove "shutdown
-//! joins task" (this card's own acceptance bar). This module fixes both for
+//! joins task". This module fixes both for
 //! the execution domain: [`RetentionClock`] makes "now" injectable (tests
 //! never depend on real wall-clock time to decide what counts as stale),
 //! and [`spawn_execution_retention_sweep`] takes a `stop_rx` raced against
@@ -25,14 +25,12 @@
 //! # No roll-up table for `execution_events` exists yet
 //!
 //! Unlike orch (`orch_events` -> `orch_events_daily`), the execution domain
-//! has no daily-aggregate table for `execution_events`. This card was
-//! explicitly told not to add a migration. See
+//! has no daily-aggregate table for `execution_events`. See
 //! `tack_db::Repository::purge_stale_terminal_execution_events`'s doc
-//! comment and this card's handoff
-//! (`docs/agent-handoffs/part-iii/III-F5.md`) for the exact `CREATE TABLE`
-//! DDL requested to add real rollup later — until then, this purges
-//! terminal-attempt event rows outright rather than aggregating them first,
-//! and is documented as doing exactly that, not mislabeled as a "roll up."
+//! comment: adding one would mirror `orch_events`/`orch_events_daily`, but
+//! until that migration lands, this purges terminal-attempt event rows
+//! outright rather than aggregating them first, and is documented as doing
+//! exactly that, not mislabeled as a "roll up."
 
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -83,8 +81,8 @@ pub trait ExecutionRetentionStore: Send + Sync {
     /// Purge `execution_events` rows belonging to terminated attempts, older
     /// than `cutoff`. See
     /// `tack_db::Repository::purge_stale_terminal_execution_events`'s doc
-    /// comment for the terminal-only scoping and the roll-up migration this
-    /// card requests instead of silently discarding an aggregate.
+    /// comment for the terminal-only scoping and the roll-up migration that
+    /// would be needed to preserve an aggregate instead of discarding one.
     async fn purge_stale_terminal_events(
         &self,
         cutoff: DateTime<Utc>,
@@ -94,9 +92,9 @@ pub trait ExecutionRetentionStore: Send + Sync {
 
 /// The real, production implementation: a thin pass-through to
 /// `tack_db::Repository`. Lives here (not in `tack-api`) because `tack-orch`
-/// already depends on `tack-db` directly (card III-E6 added the dependency
-/// for `scheduler::wiring`) — a second, `tack-api`-side wrapper would just
-/// be forwarding calls with no logic of its own.
+/// already depends on `tack-db` directly (`scheduler::wiring` needs it too)
+/// — a second, `tack-api`-side wrapper would just be forwarding calls with
+/// no logic of its own.
 #[derive(Clone)]
 pub struct RepoExecutionRetentionStore(pub tack_db::Repository);
 

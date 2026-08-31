@@ -94,8 +94,8 @@ pub struct Item {
     pub due_date: Option<DateTime<Utc>>,
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
-    /// Sticky provenance marker (Phase 35, card C2 — the prompt-injection
-    /// trust boundary): set once at creation time by whichever handler
+    /// Sticky provenance marker for the prompt-injection
+    /// trust boundary: set once at creation time by whichever handler
     /// created the item, and never mutated afterward — `UpdateItem` has no
     /// `source` field, and the repository's `update_item` has no code path
     /// that writes this column, so an item's source can never change once
@@ -111,7 +111,7 @@ pub struct Item {
 }
 
 /// Where an item's title/description text came from. Backend for the
-/// prompt-injection trust boundary (Phase 35, card C2): text imported from
+/// prompt-injection trust boundary: text imported from
 /// GitHub Issues, Linear, or any bulk import is written by parties Tack
 /// cannot vouch for, and becomes literal instructions to an autonomous
 /// agent the moment the item is dispatched. [`is_trusted`](ItemSource::is_trusted)
@@ -584,13 +584,14 @@ pub struct ProjectTemplate {
     pub custom_fields: Vec<CustomFieldDefinition>,
     pub default_boards: Vec<BoardTemplate>,
     /// Optional agent-fleet defaults for a project created from this
-    /// template (Phase 37, card D3). `#[serde(default)]` — absent means
+    /// template. `#[serde(default)]` — absent means
     /// "this template does not touch orchestration," the same
-    /// absent-means-nothing rule `Item::source` (migration 029, card C2)
-    /// established for backward compatibility. `None` is the value every
+    /// absent-means-nothing rule `Item::source` (migration 029) established
+    /// for backward compatibility. `None` is the value every
     /// template had before this field existed and every built-in has today;
     /// nothing reads this field unless it is `Some`, so a template with no
-    /// `orchestration` block behaves exactly as it did before this cycle.
+    /// `orchestration` block behaves exactly as it did before this field
+    /// existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub orchestration: Option<TemplateOrchestration>,
     pub is_builtin: bool,
@@ -623,32 +624,30 @@ pub struct CreateProjectTemplate {
     /// See [`ProjectTemplate::orchestration`]. Validated at save time by
     /// `tack-api`'s `handlers::templates::create_template` — this type is
     /// pure data (tack-core has zero I/O), so the validation itself lives
-    /// one layer up, reusing `handlers::orch::validate_status_map` (card
-    /// A4's `status_map` validator) rather than duplicating it.
+    /// one layer up, reusing `handlers::orch::validate_status_map` (the
+    /// `status_map` validator) rather than duplicating it.
     #[serde(default)]
     pub orchestration: Option<TemplateOrchestration>,
 }
 
-/// Agent-fleet defaults captured on a template (Phase 37 / card D3, tasks
-/// 37.1 + 37.3). Nothing in this struct is applied automatically anywhere —
-/// `create_project_from_template` stores it and moves on. Turning it into a
-/// live `orch_links` row needs a `control_plane_id` pointing at an
-/// already-registered, specific docket instance, which cannot exist yet at
-/// template-apply time; that wiring is card D4's (blocked on docket
-/// provisioning), not this one's. This block is the *offer* a future
-/// provisioning flow reads defaults from — inert data until then, which is
-/// what keeps it correct under TODO.md §0 rule 8 (off by default) without
-/// needing `TACK_ORCH_ENABLE` to gate anything here: there is no route, no
+/// Agent-fleet defaults captured on a template. Plain
+/// `create_project_from_template` stores it and moves on — nothing in this
+/// struct is applied automatically there. Turning it into a live
+/// `orch_links` row needs a `control_plane_id` pointing at one specific,
+/// already-registered docket instance, which that plain from-template path
+/// never has; `handlers::provisioning::create_project_with_pod` is the
+/// route that reads these fields as defaults (the request body overrides
+/// them) when actually provisioning a pod, and that route is gated behind
+/// `TACK_ORCH_ENABLE`. On this struct itself there is no route, no
 /// reconciler, no dispatch — just a JSON blob riding along with the template.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TemplateOrchestration {
-    /// docket pod blueprint. Verified against `core/blueprints.py`
-    /// (2026-08-05): exactly these five values exist server-side today.
+    /// docket pod blueprint. Verified against `core/blueprints.py`:
+    /// exactly these five values exist server-side today.
     /// Unlike the remote-state enums in `tack-orch` (`RunState` etc.),
     /// this is a value Tack *sends*, not one it decodes from docket's
-    /// output, so — per TODO.md §1.2's own scoping of the `Unknown(String)`
-    /// rule to remote-emitted state — no `Unknown` fallback here: an
+    /// output, so no `Unknown` fallback here: an
     /// unrecognised blueprint name is a real authoring mistake worth
     /// rejecting, not a forward-compat case to shrug off.
     #[serde(default)]
@@ -666,35 +665,37 @@ pub struct TemplateOrchestration {
     /// A pipeline docket already knows about by name/path, for a template
     /// that would rather point at one than ship inline YAML. Mirrors
     /// `orch_links.pipeline_file`. Not mutually exclusive with
-    /// `pipeline_yaml`; which one wins if both are set is D4's call at
-    /// provisioning time, not this card's.
+    /// `pipeline_yaml`, but only this field currently reaches docket:
+    /// `handlers::provisioning` has no `POST /pods` field for inline YAML
+    /// yet, so a template with `pipeline_yaml` set and no `pipeline_file`
+    /// surfaces a non-fatal warning instead of silently dropping it.
     #[serde(default)]
     pub pipeline_file: Option<String>,
     #[serde(default)]
     pub verify_cmd: Option<String>,
     /// Default budget *cap* for a project created from this template — an
     /// operator-set ceiling, not a derived spend figure, so it stays
-    /// unsuffixed exactly like `orch_links.budget_usd` (card A4's
-    /// precedent, TODO.md §6 "A4" point 4). TODO.md §0 rule 6 governs
-    /// *estimated spend* fields (`cost_usd_estimated`); a cap the operator
-    /// chooses is a different thing and was never in scope for that rule.
+    /// unsuffixed exactly like `orch_links.budget_usd`. The naming rule
+    /// that requires an `_estimated` suffix governs *estimated spend*
+    /// fields (`cost_usd_estimated`); a cap the operator chooses is a
+    /// different thing and is out of that rule's scope.
     #[serde(default)]
     pub budget_usd: Option<f64>,
     #[serde(default)]
     pub status_map: TemplateStatusMap,
     #[serde(default)]
     pub auto_dispatch: bool,
-    /// Mirrors docket's `POST /pods` `pod` field, which as of 2026-08-05
+    /// Mirrors docket's `POST /pods` `pod` field, which
     /// (`serve.py::_handle_post_pods`) accepts only `"full"` or absent.
     /// Stored permissively here (no enum, no validation) — enforcing that
-    /// exact constraint is D4's job at provisioning time, when it builds
-    /// the real `POST /pods` body; guessing at it here would just be a
+    /// exact constraint happens at provisioning time, when the real
+    /// `POST /pods` body is built; guessing at it here would just be a
     /// second, driftable copy of a one-value check.
     #[serde(default)]
     pub pod_shape: Option<String>,
 }
 
-/// docket pod blueprint names (`core/blueprints.py`, verified 2026-08-05).
+/// docket pod blueprint names (`core/blueprints.py`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -1305,7 +1306,7 @@ mod tests {
         assert_eq!(with_cat.status_category, None);
     }
 
-    // ─── ItemSource — the C2 prompt-injection trust boundary ──────────────
+    // ─── ItemSource — the prompt-injection trust boundary ─────────────────
 
     #[test]
     fn item_source_only_manual_is_trusted() {
@@ -1400,11 +1401,11 @@ mod tests {
         assert!(!item.source.is_trusted());
     }
 
-    // ─── Card D3 — template `orchestration` block ─────────────────────────
+    // ─── Template `orchestration` block ────────────────────────────────────
 
-    /// TODO.md §0 rule 8 / D3's backward-compatibility requirement: a
+    /// Backward compatibility: a
     /// `ProjectTemplate` payload that predates this field (every built-in
-    /// seed, every template saved before this cycle) has no `orchestration`
+    /// seed, every template saved before this field existed) has no `orchestration`
     /// key at all — it must deserialize to `None`, not fail or default to
     /// `Some(TemplateOrchestration::default())`.
     #[test]
@@ -1460,8 +1461,8 @@ mod tests {
         assert_eq!(orch, round_tripped);
     }
 
-    /// docket's five real blueprint names (`core/blueprints.py`, verified
-    /// 2026-08-05), including the one with a hyphen — `serde`'s
+    /// docket's five real blueprint names (`core/blueprints.py`),
+    /// including the one with a hyphen — `serde`'s
     /// `rename_all = "kebab-case"` must actually produce `"agentic-product"`,
     /// not `"agentic_product"` or `"AgenticProduct"`.
     #[test]

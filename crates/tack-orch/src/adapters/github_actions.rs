@@ -1,16 +1,13 @@
 //! `GithubActionsAdapter` — a **compile-only stub** for a second
 //! [`ControlPlane`] implementor.
 //!
-//! Its only job this wave is to make "both adapters compile against the
-//! trait" a fact CI can check today, rather than a discovery Wave D makes
-//! when it starts wiring the real thing. Every method but
+//! Its only job is to make "both adapters compile against the trait" a fact
+//! CI can check, ahead of wiring the real thing. Every method but
 //! [`kind`](GithubActionsAdapter::kind) and
 //! [`capabilities`](GithubActionsAdapter::capabilities) is `unimplemented!()`
 //! — there is no HTTP client, no request/response handling, nothing that
-//! could plausibly talk to a real GitHub Actions instance. Don't add any;
-//! that work belongs to Wave D (see `docs/plans/agnostic-control-plane.md`
-//! §4 Phase 6, card N2), which also owns this file from that point on (see
-//! TODO.md's file-ownership map).
+//! could plausibly talk to a real GitHub Actions instance. Don't add any
+//! until the real adapter is actually being wired.
 //!
 //! **Not registered.** `adapters::registry::build` has no `"github-actions"`
 //! match arm — see that function's own doc comment for why: registering an
@@ -21,12 +18,12 @@
 //! real, though, and deliberately so: it's the one method this stub can
 //! answer honestly without making a network call, and having it right now
 //! lets `docs/plans/agnostic-control-plane.md` §II.1.3's `RunState`
-//! normalization table and the capability-gated UI (card G1's frontend
-//! follow-up) be designed and tested against GitHub Actions' real shape
-//! before a single line of HTTP-calling code exists. Every value below is
-//! checked against GitHub's REST API documentation (`docs/plans/
-//! agnostic-control-plane.md` §II.1.4, "Verified external facts") — not
-//! guessed from what a docket-shaped provider would need.
+//! normalization table and the capability-gated UI be designed and tested
+//! against GitHub Actions' real shape before a single line of
+//! HTTP-calling code exists. Every value below is checked against GitHub's
+//! REST API documentation (`docs/plans/agnostic-control-plane.md` §II.1.4,
+//! "Verified external facts") — not guessed from what a docket-shaped
+//! provider would need.
 
 use async_trait::async_trait;
 

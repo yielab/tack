@@ -1,5 +1,5 @@
-//! Tests for `POST /api/items/{id}/dispatch` (card C1, Wave 3, tasks
-//! 35.2/35.3/35.6) and the `dispatcher` module it's backed by.
+//! Tests for `POST /api/items/{id}/dispatch` and the `dispatcher` module
+//! it's backed by.
 //!
 //! Covers: 404 with `TACK_ORCH_ENABLE` unset and for an unknown item; 409
 //! for an unlinked project; the `no_dispatch_policy`/`not_eligible`

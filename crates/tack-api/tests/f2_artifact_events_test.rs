@@ -1,15 +1,16 @@
-//! III-F2 card-local HTTP tests: artifact content upload/download and the
-//! redaction guarantee over event/artifact payloads.
+//! HTTP tests: artifact content upload/download and the redaction guarantee
+//! over event/artifact payloads.
 //!
 //! Loads `handlers/runner_protocol.rs` (and, through it, its own
 //! `artifact_storage`/`retention`/`artifact_download` submodules) the same
-//! way `c2_handlers_test.rs` does — via `#[path]` — mirroring that file's own
-//! established convention for this card-local, not-yet-globally-mounted
-//! router. `artifact_download::routes(...)` is proven here as its own,
+//! way `c2_handlers_test.rs` does — via `#[path]`.
+//! `artifact_download::routes(...)` is proven here as its own,
 //! separately-constructed local router (never merged with the runner-only
-//! `runner_protocol::routes(...)` router), matching that module's own doc
-//! comment: "only proven via a locally-constructed router in this card's
-//! test file."
+//! `runner_protocol::routes(...)` router), isolating this file's
+//! fencing/immutability/path-safety/redaction claims from the production
+//! router's own auth and mounting. That route is also mounted in the real
+//! production router (`router.rs#operator_execution_routes`) and proven end
+//! to end by `f6a_artifact_wiring_test.rs`.
 //!
 //! Repository-level atomicity/retention proofs (forced insert failure,
 //! bounded-batch purge) live in
