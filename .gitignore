@@ -7,6 +7,10 @@
 *.db-shm
 *.db-wal
 
+# Automatic pre-upgrade snapshots (create_pre_upgrade_backup_if_needed in
+# tack-db's migrations.rs; named "<db-file>.before-<migration-name>.sqlite")
+*.before-*.sqlite
+
 # Config (keep the example)
 tack.toml
 
