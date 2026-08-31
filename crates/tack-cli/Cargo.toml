@@ -75,6 +75,11 @@ embed-spa = ["tack-api/embed-spa"]
 # The server runs in-process via `tack serve` (and bare `tack`), so the single
 # `tack` binary is both the app and the CLI client.
 tack-api = { path = "../tack-api" }
+# Hosts the runner role in-process for `tack runner start` and
+# `tack serve --with-runner` — the same composition root the standalone
+# tack-runner binary uses. No cycle: tack-runner depends on tack-orch only.
+tack-runner = { path = "../tack-runner" }
+tracing = { workspace = true }
 tokio = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }

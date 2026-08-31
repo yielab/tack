@@ -8,6 +8,8 @@ use tack_cli::execution;
 use tack_cli::git;
 use tack_cli::vocab;
 
+mod local_runner;
+
 // ─── CLI structure ────────────────────────────────────────────────────────────
 
 #[derive(Parser)]
@@ -33,7 +35,14 @@ struct Cli {
 enum Commands {
     /// Start the Tack server and web UI (this is the default when you run
     /// `tack` with no subcommand)
-    Serve,
+    Serve {
+        /// Also start an embedded runner in this process, speaking runner-v1
+        /// over loopback HTTP exactly like a remote runner. Off by default;
+        /// also settable via TACK_LOCAL_RUNNER_ENABLE=1. Refused on startup
+        /// if the server is not bound to loopback.
+        #[arg(long)]
+        with_runner: bool,
+    },
 
     /// Create a new project
     Init {
@@ -690,6 +699,25 @@ enum RunnerAction {
         #[arg(long)]
         json: bool,
     },
+    /// Run the runner role in this process, speaking runner-v1 over HTTP
+    /// against a Tack server exactly like the standalone tack-runner binary.
+    Start {
+        /// Optional TOML configuration file.
+        #[arg(long)]
+        config: Option<std::path::PathBuf>,
+        /// Runner protocol endpoint. Overrides file and environment configuration.
+        #[arg(long)]
+        api_url: Option<String>,
+        /// Stable identifier sent to the control plane.
+        #[arg(long)]
+        runner_id: Option<String>,
+        /// Local directory for runner state. Overrides file and environment configuration.
+        #[arg(long)]
+        state_dir: Option<std::path::PathBuf>,
+        /// Enrollment credential. Prefer TACK_RUNNER_ENROLLMENT_TOKEN so it is not visible in shell history.
+        #[arg(long, hide_env_values = true)]
+        enrollment_token: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -754,28 +782,50 @@ fn main() -> anyhow::Result<()> {
     // Bare `tack` (no subcommand) launches the server + web UI — the primary,
     // UI-first experience. `tack serve` does the same explicitly.
     let Some(command) = cli.command else {
-        return run_server();
+        return run_server(local_runner::with_runner_enabled(false));
     };
 
-    // Serve, Config and Completions don't need a live API client.
-    match &command {
-        Commands::Serve => return run_server(),
+    // Serve, Runner Start, Config and Completions don't need a live API
+    // client: Serve and Runner Start each build their own async runtime and
+    // speak the runner-v1/HTTP protocol directly, never through `TackClient`.
+    let command = match command {
+        Commands::Serve { with_runner } => {
+            return run_server(local_runner::with_runner_enabled(with_runner));
+        }
+        Commands::Runner {
+            action:
+                RunnerAction::Start {
+                    config,
+                    api_url,
+                    runner_id,
+                    state_dir,
+                    enrollment_token,
+                },
+        } => {
+            return local_runner::run_standalone(
+                config,
+                api_url,
+                runner_id,
+                state_dir,
+                enrollment_token,
+            );
+        }
         Commands::Config { url, token, show } => {
             return cmd_config(
                 url.as_deref(),
                 token.as_deref(),
-                *show,
+                show,
                 &cli.api_url,
                 &cli.token,
             );
         }
         Commands::Completions { shell } => {
             let mut cmd = Cli::command();
-            clap_complete::generate(*shell, &mut cmd, "tack", &mut std::io::stdout());
+            clap_complete::generate(shell, &mut cmd, "tack", &mut std::io::stdout());
             return Ok(());
         }
-        _ => {}
-    }
+        other => other,
+    };
 
     let config = Config::load(cli.api_url, cli.token);
     let client = TackClient::new(&config)?;
@@ -1005,6 +1055,8 @@ fn main() -> anyhow::Result<()> {
                 token_id,
                 json,
             } => cmd_runner_revoke_token(&client, runner_id, token_id, json),
+            // Already handled above; unreachable but required for exhaustiveness.
+            RunnerAction::Start { .. } => unreachable!(),
         },
 
         Commands::AgentProfile { action } => match action {
@@ -1032,17 +1084,24 @@ fn main() -> anyhow::Result<()> {
         },
 
         // Already handled above; unreachable but required for exhaustiveness.
-        Commands::Serve | Commands::Config { .. } | Commands::Completions { .. } => unreachable!(),
+        Commands::Serve { .. } | Commands::Config { .. } | Commands::Completions { .. } => {
+            unreachable!()
+        }
     }
 }
 
-/// Start the in-process HTTP server (the app + embedded web UI).
+/// Start the in-process HTTP server (the app + embedded web UI), optionally
+/// with an embedded runner as a second task in the same process.
 ///
 /// The rest of the CLI is synchronous (it uses a blocking HTTP client), so we
 /// build a Tokio runtime on demand here rather than making `main` async.
-fn run_server() -> anyhow::Result<()> {
+fn run_server(with_runner: bool) -> anyhow::Result<()> {
     let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(tack_api::serve())
+    if with_runner {
+        runtime.block_on(local_runner::serve_with_embedded_runner())
+    } else {
+        runtime.block_on(tack_api::serve())
+    }
 }
 
 // ─── Command implementations ─────────────────────────────────────────────────
