@@ -15,6 +15,7 @@ edition = "2024"
 rust-version = "1.85"
 license = "MIT"
 authors = ["Tack Contributors"]
+repository = "https://github.com/yielab/tack"
 
 [workspace.dependencies]
 # Async runtime
