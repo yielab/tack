@@ -6,8 +6,7 @@
 //! There is no `docs/contracts/runner-v1/` fixture for this surface — that
 //! directory is the frozen authority for the *runner* wire protocol
 //! (`/api/runner/v1/*`), a different, deliberately distinct domain from the
-//! *operator* execution/fleet/runner/profile API this module targets (see
-//! TODO.md III.0, "Vocabulary that must remain distinct"). The shape
+//! *operator* execution/fleet/runner/profile API this module targets. The shape
 //! authority for these routes is instead the request structs the handlers
 //! themselves deserialize (`tack_api::handlers::executions::CreateExecution`
 //! and `tack_api::handlers::runner_admin::{CreateFleet, CreateProfile,
@@ -24,8 +23,8 @@ use serde_json::{Value, json};
 /// appropriate for a single scalar field value), these arguments always map
 /// onto a structured `Value` field on the wire — silently downgrading bad
 /// JSON to a string here would send a request shaped nothing like what the
-/// caller asked for. Fail with a clear, field-named message instead (III.2
-/// rule 7: unsupported/invalid is reported, never quietly reinterpreted).
+/// caller asked for. Fail with a clear, field-named message instead —
+/// unsupported/invalid input is reported, never quietly reinterpreted.
 pub fn parse_json_field(raw: &str, field: &str) -> Result<Value, String> {
     serde_json::from_str(raw).map_err(|e| format!("--{field} must be valid JSON: {e}"))
 }
@@ -289,9 +288,9 @@ pub fn build_enroll_runner_body(args: &EnrollRunnerArgs<'_>) -> Result<Value, St
 /// Short, fixed-width-friendly annotation for an execution request's
 /// `state`, used in both `execution list`'s table and `execution get`'s
 /// detail view so `needs_operator` and `lost` never render as if they were
-/// just another quiet in-progress value (III-E5 acceptance: distinct,
-/// visible outcomes, not collapsed into one generic line). States come from
-/// the frozen III.1.1 lifecycle; an unrecognized value is flagged rather
+/// just another quiet in-progress value — distinct, visible outcomes, not
+/// collapsed into one generic line. States come from
+/// the frozen `tack_orch::execution::ExecutionState` lifecycle; an unrecognized value is flagged rather
 /// than silently printed bare, in case a newer server adds one this CLI
 /// doesn't know about yet. `execution get` prints additional guidance below
 /// this marker for `needs_operator`/`lost` — see `main.rs`'s
@@ -390,7 +389,7 @@ mod tests {
         // And confirm the historical failure mode really does fail — `{}`
         // for permission_policy specifically, since that was the exact
         // shape that produced "missing field `network`" against a live
-        // server during this card's manual smoke test.
+        // server.
         let empty: Result<PermissionPolicy, _> = serde_json::from_str("{}");
         assert!(
             empty.is_err(),

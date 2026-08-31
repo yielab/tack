@@ -1,23 +1,19 @@
-//! III-F1 card-local tests for `handlers/decisions.rs` (operator-scoped
-//! decision resolution). Loaded via `#[path]`, the same technique
-//! `c1_handlers_test.rs`/`c2_handlers_test.rs` already use on their own
-//! card-local, deliberately-unregistered handler modules — this module is
-//! not declared in `handlers.rs` (see its own doc comment), so nothing
-//! outside this test binary exercises it today. C5-successor integration
-//! (the Wave 5 integrator) is expected to mount `decisions::routes(...)`
-//! into the real operator router; until then, this file is the only proof
-//! this card's behavior is real.
+//! Tests for `handlers/decisions.rs` (operator-scoped decision resolution).
+//! Loaded via `#[path]`, the same technique `c1_handlers_test.rs`/
+//! `c2_handlers_test.rs` use on their own handler modules, even though
+//! `decisions` is also registered in `handlers.rs` and mounted into the
+//! production router (see that module's own doc comment) — loading it here
+//! gives this file its own directly-constructed router, isolated from that
+//! mounting.
 //!
 //! Every test builds its own tiny operator router directly from
 //! `decisions::routes(...)` — no production `router.rs`/`require_token`
-//! layering — per this card's instruction: "Prove your handler behavior by
-//! calling it directly / through a locally-constructed router in your own
-//! test file, not by editing the production `router.rs`." The
-//! `require_token` gate itself is out of scope here (it belongs to whoever
-//! mounts this router); what this file proves is everything *this module*
-//! is responsible for: that it reads no runner credential, that it is
-//! fail-closed on expiry, that it is idempotent/replay-safe, and that it
-//! never touches item status.
+//! layering — so a defect in this module cannot hide behind the production
+//! router's own gates. The `require_token` gate itself is out of scope here
+//! (it belongs to whoever mounts this router); what this file proves is
+//! everything *this module* is responsible for: that it reads no runner
+//! credential, that it is fail-closed on expiry, that it is
+//! idempotent/replay-safe, and that it never touches item status.
 
 #[path = "../src/handlers/decisions.rs"]
 mod decisions;
@@ -161,15 +157,15 @@ async fn setup() -> (Repository, FakeClock, String) {
 
 /// Enqueues a minimal, `RequestSelection::Naive`-eligible execution request
 /// (bypasses the real scheduler's capability matching entirely, so no
-/// harness/model capability needs to be declared — this card does not touch
-/// scheduling).
+/// harness/model capability needs to be declared — decision resolution does
+/// not touch scheduling).
 fn new_request<'a>(id: &'a str, item_id: &'a str, key: &'a str) -> NewExecutionRequest<'a> {
     // `claim_execution_idempotent_with_snapshot` deserializes
     // `request_snapshot` into `tack_orch::execution::ExecutionRequestSnapshot`
     // and fails the claim if it doesn't round-trip, so this must be a fully
     // well-formed snapshot — mirrors `execution_repo_test.rs`'s own
-    // `request()` helper template exactly (field-for-field), not a
-    // this-card invention.
+    // `request()` helper template exactly (field-for-field), rather than
+    // inventing a new shape here.
     let request_snapshot: &'static str = Box::leak(
         format!(
             r#"{{"request_id":"{id}","item_id":"{item_id}","idempotency_key":"{key}","created_by":{{"source":"test","subject_id":"f1-test"}},"created_at":"2026-08-12T12:00:00Z","selector":{{"kind":"exact_runner","runner_id":"{RUNNER_ID}"}},"agent_profile_id":"{PROFILE_ID}","resolved_agent_profile":{{"name":"P","instructions":"work","tool_policy":{{"mode":"safe"}},"timeout_seconds":60,"budgets":{{}}}},"requested_harness_kind":"codex","requested_model_provider":null,"requested_model_id":null,"repository":{{"kind":"git","remote":"https://example.test/f1.git","base_revision":"abc123","subdirectory":null}},"permission_policy":{{"tools":[],"network":false}},"timeout_seconds":60,"budgets":{{}},"status_map_policy_id":null,"environment":{{}},"metadata":{{}}}}"#
@@ -202,8 +198,8 @@ fn new_request<'a>(id: &'a str, item_id: &'a str, key: &'a str) -> NewExecutionR
 
 /// Claims a fresh attempt (via the real production claim path, `Naive`
 /// selection) and bumps it straight to `running` — the same
-/// state-independent shortcut `execution_repo_test.rs`'s own tests use, since
-/// this card's resolve path does not gate on attempt state (only on the
+/// state-independent shortcut `execution_repo_test.rs`'s own tests use,
+/// since decision resolution does not gate on attempt state (only on the
 /// decision row's own `state`/`expires_at`).
 async fn claim_running_attempt(
     repo: &Repository,
@@ -237,8 +233,8 @@ async fn claim_running_attempt(
 }
 
 /// Inserts a decision via the real production insert path
-/// (`create_execution_decision`, C2's own method — this card does not
-/// duplicate decision *creation* logic, only resolution).
+/// (`create_execution_decision`) rather than duplicating decision *creation*
+/// logic here — this file only exercises resolution.
 #[allow(clippy::too_many_arguments)]
 async fn seed_decision(
     repo: &Repository,
@@ -316,9 +312,9 @@ async fn item_status(repo: &Repository, item_id: &str) -> String {
 /// The test suite's configured `TACK_EXECUTION_DECISION_TOKEN` — every test
 /// below that exercises real handler *behavior* (as opposed to the token
 /// gate itself) presents this via [`DECISION_TOKEN`] in its header list, the
-/// same way it presents `x-tack-principal` via [`OPERATOR`]. Added by
-/// III-F6 alongside `require_decision_token` — see that function's doc
-/// comment in `decisions.rs` for why an unconfigured token fails closed.
+/// same way it presents `x-tack-principal` via [`OPERATOR`]. See
+/// `require_decision_token`'s doc comment in `decisions.rs` for why an
+/// unconfigured token fails closed.
 const TEST_DECISION_TOKEN: &str = "f1-test-decision-token-never-a-real-secret";
 
 fn app(repo: &Repository, clock: &FakeClock) -> Router {
@@ -919,8 +915,8 @@ async fn logs_never_contain_the_raw_answer_text_or_prompt_only_ids() {
 }
 
 // ---------------------------------------------------------------------
-// 18/19/20. III-F6 amendment: TACK_EXECUTION_DECISION_TOKEN is fail-closed,
-// distinct from and layered on top of the ordinary operator principal gate.
+// 18/19/20. TACK_EXECUTION_DECISION_TOKEN is fail-closed, distinct from and
+// layered on top of the ordinary operator principal gate.
 // ---------------------------------------------------------------------
 
 #[tokio::test]
@@ -1031,9 +1027,8 @@ async fn the_correct_decision_token_alongside_a_valid_principal_resolves() {
 //
 // Manually verified load-bearing: temporarily changing
 // `resolve_decision_row`'s `"BEGIN IMMEDIATE"` to `"BEGIN"` and re-running
-// only this test was observed to fail (see this card's handoff for the
-// exact recorded failure) before being reverted back to the committed
-// `BEGIN IMMEDIATE` form below.
+// only this test reproduces the race and fails, before reverting back to
+// the committed `BEGIN IMMEDIATE` form below.
 // ---------------------------------------------------------------------
 
 #[tokio::test]

@@ -1,31 +1,23 @@
-//! Wave 2 integration gate (TODO.md:9578-9582, the "Wave 2 integration gate"
-//! entry under "Wave 2 — Phase 52, pull protocol vertical slice"):
+//! Integration gate: proves a mock runner enrolled on a clean database can
+//! claim, start, stream, complete, and survive an API/runner restart, with
+//! security, fencing, payload, and OpenAPI drift all passing.
 //!
-//! > A mock runner enrolled on a clean database can claim, start, stream,
-//! > complete and survive API/runner restart. Security, fencing, payload and
-//! > OpenAPI drift gates pass. No real harness card starts earlier.
+//! This file is independent proof, not another handler's own
+//! self-verification: it imports no other test file's infrastructure, and
+//! builds its own clean database, its own
+//! `AppState`/`tack_api::router::build_router` production router, and its
+//! own fixtures from scratch — so a defect specific to any one handler's
+//! own test assumptions cannot hide behind this file agreeing with it.
 //!
-//! No single card proves this. C1/C2 test their own handlers behind a
-//! card-local router; C4 drives repository/runner seams with fakes; C5's own
-//! `c5_integration_test.rs` is strong evidence but is still that card's own
-//! self-verification. This file is the wave integrator's independent proof:
-//! it is authored by neither C1, C2, nor C5, imports none of their test
-//! infrastructure, and builds its own clean database, its own
-//! `AppState`/`tack_api::router::build_router` production router, and its own
-//! fixtures from scratch — so a defect specific to any one card's own test
-//! assumptions cannot hide behind this file agreeing with it.
-//!
-//! Every assertion below reads persisted database state directly (not merely
-//! HTTP status codes), per the task brief. No test sleeps or depends on a
-//! fake clock: the production router hard-codes `SystemExecutionClock`
-//! (`router.rs`'s `operator_execution_routes`/`runner_protocol_routes`, which
-//! construct it internally and take no clock parameter), so nothing here can
-//! inject one — instead, every scenario that needs a state transition to
-//! "just happen" drives it explicitly over HTTP (a runner-reported recovery
-//! observation, a second event batch, a restart) rather than waiting on wall
-//! time. That satisfies rule 9 ("no blocking sleeps in tests") the only way
-//! available to a test that must drive the real, unmodified production
-//! router.
+//! Every assertion below reads persisted database state directly, not
+//! merely HTTP status codes. No test sleeps or depends on a fake clock: the
+//! production router hard-codes `SystemExecutionClock`
+//! (`router.rs`'s `operator_execution_routes`/`runner_protocol_routes`,
+//! which construct it internally and take no clock parameter), so nothing
+//! here can inject one — instead, every scenario that needs a state
+//! transition to "just happen" drives it explicitly over HTTP (a
+//! runner-reported recovery observation, a second event batch, a restart)
+//! rather than waiting on wall time.
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
@@ -42,7 +34,8 @@ const OPERATOR_TOKEN: &str = "wave2-gate-operator-token";
 /// fixture in this file. Nothing here validates it beyond "some string is
 /// present" (checked directly against the handler/type sources this file was
 /// written from), but keeping it consistent with the 40-hex-character shape
-/// C1/C2/C5's own tests already use avoids relying on that being untested.
+/// `c1_handlers_test.rs`/`c2_handlers_test.rs`/`c5_integration_test.rs`
+/// already use avoids relying on that being untested.
 const BASE_REVISION: &str = "abc123def456abc123def456abc123def456abc";
 
 // ---------------------------------------------------------------------
@@ -127,12 +120,12 @@ fn bearer(token: &str) -> String {
     format!("Bearer {token}")
 }
 
-/// The mock runner's declared capability snapshot. Card III-E6 wires
-/// `tack_orch::scheduler` into the real claim path (`crates/tack-db/src/repo/execution.rs`'s
-/// `claim_execution_idempotent_with_snapshot`), which — unlike the pre-Wave-4
-/// naive `ORDER BY created_at LIMIT 1` match this gate originally proved a
-/// lifecycle against — actually checks a claiming runner's declared
-/// harness/model combinations before it may lease a request. `harnesses`
+/// The mock runner's declared capability snapshot. `tack_orch::scheduler`
+/// is wired into the real claim path (`crates/tack-db/src/repo/execution.rs`'s
+/// `claim_execution_idempotent_with_snapshot`), which actually checks a
+/// claiming runner's declared harness/model combinations before it may
+/// lease a request, rather than a naive `ORDER BY created_at LIMIT 1`
+/// match. `harnesses`
 /// therefore declares "codex"/"openai"/"opaque/model-wave2" here, and every
 /// `execution_request_body()` fixture below requests exactly that pair, so
 /// this file keeps proving "claim, start, stream, complete, survive
@@ -244,7 +237,7 @@ async fn create_project_and_item(app: &axum::Router) -> (String, String) {
 /// Operator creates an agent profile, a pending runner and its one-time
 /// enrollment token, then a mock runner redeems it — returning the runner id
 /// and a ready-to-use `Authorization` header pair carrying the raw runner
-/// credential (issued exactly once, per III.1.5/the enrollment fixture).
+/// credential (issued exactly once by the enrollment fixture).
 async fn enroll_runner(app: &axum::Router, name: &str) -> (String, String, [(String, String); 1]) {
     let (status, profile) = send(
         app,
@@ -521,9 +514,9 @@ async fn wave2_gate_claim_start_stream_complete_and_survive_restart() {
 
     // --- Step 6: API restart. Rebuild the router/AppState around the *same*
     //     pool, mid-flight (the attempt is still `running`, not terminal) —
-    //     every in-process value C5's own restart test also discards
-    //     (broadcast channel, orch runtime, router/middleware closures) is
-    //     newly constructed here too. ---
+    //     every in-process value `c5_integration_test.rs`'s own restart test
+    //     also discards (broadcast channel, orch runtime, router/middleware
+    //     closures) is newly constructed here too. ---
     let app = router_for(pool.clone(), workspace_id, config.clone()).await;
 
     // The runner continues with its *existing* credential and fence: a
@@ -689,8 +682,8 @@ async fn superseded_fence_is_rejected_as_stale_lease_and_writes_nothing() {
     let fence_a = claimed_a["lease"]["fencing_token"].as_i64().unwrap();
     assert_eq!(fence_a, 1);
 
-    // The runner reports it crashed before ever spawning a process — B2's
-    // `recover_attempt` disposition `safe_pre_spawn_requeue`
+    // The runner reports it crashed before ever spawning a process —
+    // `recover_attempt`'s disposition `safe_pre_spawn_requeue`
     // (docs/contracts/runner-v1/recovery-observation.{request,response}.json):
     // a safe, pre-spawn recovery that requeues the *request* on its own,
     // with no operator action required. This is what genuinely supersedes

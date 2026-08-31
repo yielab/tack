@@ -1,6 +1,6 @@
-//! Deterministic model-selection precedence (`TODO.md` Part III, card
-//! III-F3): request override → agent-profile default → project default →
-//! fleet default → (nothing configured) auto-select.
+//! Deterministic model-selection precedence: request override →
+//! agent-profile default → project default → fleet default → (nothing
+//! configured) auto-select.
 //!
 //! [`resolve_model_policy`] is pure: no I/O, no clock, no database handle —
 //! see [`wiring`] for the live `tack-db`-backed caller that fetches each
@@ -8,7 +8,7 @@
 //! `crate::scheduler`'s own pure-core/live-wiring split
 //! (`select`/`batch` vs `wiring`).
 //!
-//! # Vocabulary discipline (III.0)
+//! # Vocabulary discipline
 //!
 //! Every tier's value is a [`crate::scheduler::types::ModelSelector`], which
 //! itself carries [`crate::execution::RequestedModelProvider`]/
@@ -18,18 +18,16 @@
 //! that `crate::usage_provenance` compares against. A resolved value from
 //! this module is always still a *request*, whichever tier supplied it —
 //! intersecting it against a runner's declared capability is
-//! [`crate::scheduler::select::select_runner`]'s job (unmodified by this
-//! card; see [`wiring`]'s module doc comment for the integration proof).
+//! [`crate::scheduler::select::select_runner`]'s job — unmodified by this
+//! module; see [`wiring`]'s module doc comment for the integration proof.
 
 pub mod wiring;
 
 use crate::scheduler::types::ModelSelector;
 
-/// The four precedence tiers, most specific first. This fixed order is the
-/// card's own acceptance bar ("all presence combinations deterministic...
-/// with the precedence order pinned") — see `mod.rs`'s test module for the
-/// exhaustive 2^4 table proving every presence combination resolves to
-/// exactly this order.
+/// The four precedence tiers, most specific first. See `mod.rs`'s test
+/// module for the exhaustive 2^4 table proving every presence combination
+/// resolves to exactly this order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ModelPolicyTier {
     RequestOverride,
@@ -62,8 +60,7 @@ impl ModelPolicyTier {
 pub struct ModelPolicySources {
     pub request_override: Option<ModelSelector>,
     pub agent_profile_default: Option<ModelSelector>,
-    /// No `projects` table storage exists for a default model policy today
-    /// — see this card's handoff, "Schema/API/contract change requested."
+    /// No `projects` table storage exists for a default model policy today.
     /// The type carries this tier so precedence is fully expressed and
     /// future-proof; [`wiring::resolve_request_model_policy`] always passes
     /// `None` here until such storage exists.
@@ -89,9 +86,9 @@ pub struct ResolvedModelPolicy {
     pub selector: ModelSelector,
     /// Which tier supplied `selector`. `None` only when every tier was
     /// absent — in that case `selector` is `ModelSelector::AutoSelect` by
-    /// construction (the request-shape III.1.2 already allows: both
-    /// `requested_model_provider`/`requested_model_id` nullable), not any
-    /// tier's own opinion.
+    /// construction (the request shape already allows both
+    /// `requested_model_provider`/`requested_model_id` to be nullable), not
+    /// any tier's own opinion.
     pub source: Option<ModelPolicyTier>,
 }
 
@@ -127,12 +124,10 @@ mod tests {
         }
     }
 
-    /// The card's own acceptance bar, verbatim: "all presence combinations
-    /// deterministic... table test over the 2^4 presence combinations of
-    /// request override / agent profile / project / fleet — including
-    /// all-absent — with the precedence order pinned." Each tier gets a
-    /// distinct sentinel value so a wrong winner is caught, not just "some
-    /// value came back."
+    /// Exhaustive table test over the 2^4 presence combinations of request
+    /// override / agent profile / project / fleet — including all-absent —
+    /// with the precedence order pinned. Each tier gets a distinct sentinel
+    /// value so a wrong winner is caught, not just "some value came back."
     #[test]
     fn every_presence_combination_resolves_to_the_pinned_precedence_order() {
         for mask in 0u8..16 {

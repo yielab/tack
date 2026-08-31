@@ -1,4 +1,4 @@
-//! Production-runtime proof for card III-F5: the real spawned background
+//! Production-runtime proof for the real spawned background
 //! tasks (`spawn_execution_retention_sweep`, `spawn_execution_health_watch`)
 //! driving the real `tack_db::Repository`-backed stores against a real
 //! SQLite database, with an injected clock — not the fake-store unit tests
@@ -130,7 +130,7 @@ async fn seed_real_db(now: DateTime<Utc>) -> (Repository, String) {
     (repo, attempt_id)
 }
 
-/// The retention card's own headline claim: "stale raw rows roll up/purge
+/// The headline claim: "stale raw rows roll up/purge
 /// in production runtime." This spawns the *real* task
 /// (`spawn_execution_retention_sweep`) wired to the *real*
 /// `RepoExecutionRetentionStore` over a *real*, file-backed

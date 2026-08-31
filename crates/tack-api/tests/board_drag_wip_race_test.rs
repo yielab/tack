@@ -1,11 +1,12 @@
-//! Test for card R3: `handlers::items::
-//! update_item` — the ordinary board-drag / API PATCH path — used to read a
-//! WIP-limited column's item count and then write the new status as two
-//! separate, unlocked steps (`Repository::count_items_by_status` followed by
-//! a plain `Repository::update_item`), exactly the race card R2 fixed on the
-//! dispatch path (`crates/tack-api/tests/wip_limit_race_test.rs`) but only on
-//! that one call site. This is the everyday path: a human dragging cards on
-//! the board, or any API client calling `PATCH /api/items/{id}` directly.
+//! Tests `handlers::items::update_item` — the ordinary board-drag / API
+//! PATCH path — used to read a WIP-limited column's item count and then
+//! write the new status as two separate, unlocked steps
+//! (`Repository::count_items_by_status` followed by a plain
+//! `Repository::update_item`), the same race
+//! `crates/tack-api/tests/wip_limit_race_test.rs` guards against on the
+//! dispatch path, but only on that one call site. This is the everyday
+//! path: a human dragging cards on the board, or any API client calling
+//! `PATCH /api/items/{id}` directly.
 //!
 //! This drives `N` genuinely concurrent `PATCH /api/items/{id}` requests —
 //! `N` distinct items, all eligible, all targeting the same WIP-limited
@@ -17,9 +18,7 @@
 //! in-process. The race window here is the handful of `.await` points
 //! between the count read and the status write, plus contention over the
 //! pool's five connections when twelve requests arrive at once on a
-//! multi-thread runtime; that's enough to reproduce the race reliably (see
-//! the handoff note in TODO.md §6 for the exact pre-fix repro counts
-//! observed while writing this test).
+//! multi-thread runtime; that's enough to reproduce the race reliably.
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -202,8 +201,8 @@ async fn concurrent_board_drags_into_the_same_wip_limited_column_never_exceed_th
 
 /// A `PATCH` that only touches non-status fields (title here) must not pay
 /// for the WIP-checked transaction path at all — it should behave exactly
-/// as it did before this card, going straight through the ordinary
-/// field-by-field `Repository::update_item`.
+/// as it did before, going straight through the ordinary field-by-field
+/// `Repository::update_item`.
 #[tokio::test]
 async fn patch_without_a_status_change_is_unaffected() {
     let (app, _state) = app_with_state().await;

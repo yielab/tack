@@ -1,19 +1,19 @@
 //! Proves `tack_orch::model_policy::wiring::resolve_request_model_policy`
-//! against a real `tack_db::Repository`, and — the card's own load-bearing
-//! safety claim — that once a resolved model is persisted as an
+//! against a real `tack_db::Repository`, and its own load-bearing
+//! safety claim: that once a resolved model is persisted as an
 //! `execution_requests` row's `requested_model_provider`/`requested_model_id`,
-//! a runner that does not declare that model can never lease it: the
-//! existing, unmodified claim path (`tack_orch::scheduler::wiring`, card
-//! III-E6, and `Repository::claim_execution_idempotent_with_snapshot`, card
-//! B2) rejects it before any `execution_attempts` row, fencing token, or
+//! a runner that does not declare that model can never lease it. The
+//! existing, unmodified claim path (`tack_orch::scheduler::wiring` and
+//! `Repository::claim_execution_idempotent_with_snapshot`) rejects it before
+//! any `execution_attempts` row, fencing token, or
 //! capacity change is ever committed.
 //!
 //! This is a genuine integration proof, not a unit test dressed up as one:
 //! every step below goes through the same repository methods the real API
 //! handlers use, and the "never leases" assertions check the database
 //! directly (row counts, request state, runner capacity) rather than only a
-//! function's return value — the discipline `CLAUDE.md` and this card's own
-//! brief both name explicitly ("assert the absence directly").
+//! function's return value — the discipline CLAUDE.md names explicitly
+//! ("assert the absence directly").
 
 use chrono::{Duration as ChronoDuration, Utc};
 use tack_core::models::{CreateItem, ItemType, Priority as ItemPriority, ProjectType};
@@ -382,7 +382,7 @@ async fn no_tier_configured_resolves_to_auto_select() {
 // The load-bearing safety claim: unavailable choice never leases
 // ---------------------------------------------------------------------
 
-/// Full pipeline: resolve a fleet's default model (this card), persist it
+/// Full pipeline: resolve a fleet's default model, persist it
 /// as the queued request's `requested_model_provider`/`requested_model_id`
 /// (exactly what a wired `POST /executions` handler would do), then run it
 /// through the real, unmodified claim path. The runner only declares
@@ -423,8 +423,8 @@ async fn a_fleet_default_model_the_runner_does_not_declare_never_leases() {
     )
     .await;
 
-    // Step 1: the pure-scheduler wiring (card III-E6, untouched by this
-    // card) must find no eligible pick.
+    // Step 1: the pure-scheduler wiring, untouched here, must find no
+    // eligible pick.
     let chosen = choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
         .await
         .expect("no db error");

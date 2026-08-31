@@ -10,14 +10,13 @@
 //!
 //! Every behavioral claim in this file was checked by actually invoking the
 //! installed `claude` binary from a disposable fixture directory (never this
-//! repository) — the exact commands and
-//! outputs are recorded in `docs/agent-handoffs/part-iii/III-D2.md`. Where a
-//! design choice rests on something *not* independently invoked (e.g. the
-//! Bedrock/Vertex/Foundry provider families, confirmed only by `strings`
-//! against the installed binary, never by an actual provider switch), the
-//! handoff calls that out explicitly. Nothing here should be read as "this
-//! is how Claude Code definitely behaves on every machine" — only "this is
-//! what the one installed copy actually did."
+//! repository). Where a design choice rests on something *not* independently
+//! invoked (e.g. the Bedrock/Vertex/Foundry provider families, confirmed
+//! only by `strings` against the installed binary, never by an actual
+//! provider switch), the comment at that point calls it out explicitly.
+//! Nothing here should be read as "this is how Claude Code definitely
+//! behaves on every machine" — only "this is what the one installed copy
+//! actually did."
 //!
 //! Concrete findings that shaped this implementation:
 //!
@@ -120,8 +119,8 @@ const KNOWN_PROVIDERS: &[&str] = &["anthropic", "bedrock", "vertex", "foundry"];
 const NETWORK_TOOLS: &[&str] = &["webfetch", "websearch"];
 
 /// From `docs/contracts/runner-v1/limits.json`'s `request_timeout_seconds_max`
-/// (frozen, A0/D5-owned; not re-read from disk here since this file may not
-/// depend on contract JSON parsing, but the value itself is copied verbatim).
+/// (frozen; not re-read from disk here since this file may not depend on
+/// contract JSON parsing, but the value itself is copied verbatim).
 const MAX_TIMEOUT_SECONDS: u64 = 86_400;
 
 /// Generous but bounded stdout/stderr caps for a real coding-assistant
@@ -201,9 +200,9 @@ struct RunningEntry {
     attempt_id: String,
 }
 
-/// The Claude Code harness adapter. `C` is the injected [`Clock`] (rule 9 —
-/// no adapter method sleeps or reads `SystemTime::now()` directly; every
-/// timestamp comes from `self.clock`), matching
+/// The Claude Code harness adapter. `C` is the injected [`Clock`] — no
+/// adapter method sleeps or reads `SystemTime::now()` directly; every
+/// timestamp comes from `self.clock` — matching
 /// `RunnerEngine<P, A, W, C = SystemClock>`'s own generic-with-default shape.
 pub struct ClaudeCodeAdapter<C = SystemClock> {
     binary: HarnessBinary,
@@ -624,7 +623,7 @@ fn malformed_outcome(result: &ProcessResult, note: &str) -> ParsedRun {
 /// Used when the process produced **no** JSON-shaped stdout at all (empty,
 /// or text that never once parsed as a JSON value — e.g. the shared fake
 /// harness's generic `success`/`failure` modes, which are not shaped like
-/// Claude Code's real output at all by design; see the D2 handoff). The only
+/// Claude Code's real output at all by design). The only
 /// honest signal left is the raw exit code, and the resulting
 /// `terminal_reason` says so explicitly rather than presenting this as a
 /// fully-observed result.
@@ -1459,7 +1458,7 @@ mod tests {
     /// Acceptance: fake-binary success. Drives the real shared fixture
     /// through `start`/`wait`; since the generic fake binary's `success`
     /// mode is not shaped like Claude Code's real stream-json output (by
-    /// design — see the D2 handoff), this proves the honest exit-code
+    /// design), this proves the honest exit-code
     /// fallback path end to end (spawn, capture, redact, parse), not a
     /// structured-result parse.
     #[tokio::test]
@@ -1647,7 +1646,7 @@ mod tests {
     /// a real, still-alive pid to cancel against; this test's own concern is
     /// this adapter's `cancel` correctly observing the process stop and
     /// cleaning up its own bookkeeping — grandchild-tree coverage itself is
-    /// D4's `process::tests::cancel_kills_the_whole_descendant_tree_...`.
+    /// `process::tests::cancel_kills_the_whole_descendant_tree_...`.
     #[tokio::test]
     async fn cancel_stops_the_process_and_forgets_its_own_bookkeeping_entry() {
         let adapter = adapter_with_fake_binary();
@@ -1702,7 +1701,7 @@ mod tests {
         ));
     }
 
-    // ---- redaction (rule 12) ---------------------------------------------
+    // ---- redaction ---------------------------------------------------------
 
     /// Acceptance: arguments and environment are redacted in logs and
     /// events; a canary appears nowhere. Plants a canary as a plain
@@ -1899,8 +1898,7 @@ mod tests {
         // Reproduces (trimmed to the fields this parser reads) the actual
         // `--output-format stream-json --verbose` transcript observed for
         // `claude -p "Print exactly this string..." --model sonnet`, minus
-        // fields irrelevant to parsing. See the D2 handoff for the full,
-        // unedited capture.
+        // fields irrelevant to parsing.
         concat!(
             r#"{"type":"system","subtype":"init","cwd":"/tmp/fixture","session_id":"s1","tools":[],"#,
             r#""model":"claude-sonnet-5","claude_code_version":"2.1.223"}"#,
@@ -2081,7 +2079,7 @@ mod tests {
         let pid: u32 = handle.process_id.parse().expect("numeric pid");
 
         let journal = journal_with_process(Some(&handle.process_id));
-        // Bounded poll, not a fixed sleep (rule 9). `spawn_child` mode's own
+        // Bounded poll, not a fixed sleep. `spawn_child` mode's own
         // process never execs (see the comment above), so unlike the
         // earlier `hang`-mode attempt this converges rather than being
         // structurally unable to: under heavy parallel test load, reading
@@ -2169,10 +2167,10 @@ mod tests {
 
     // ---- live, opt-in test against the real installed `claude` ----------
 
-    /// Opt-in, matching D1 (`codex.rs`) and D3 (`opencode.rs`)'s own
+    /// Opt-in, matching `codex.rs` and `opencode.rs`'s own
     /// `#[ignore]`-gated live tests: never runs under a plain `cargo test`,
     /// never required in CI, and never fails just because `claude` is
-    /// absent (rule 8). Unlike Codex's live test (version probe plus a
+    /// absent. Unlike Codex's live test (version probe plus a
     /// purely local artifact stage, no real model call) or OpenCode's
     /// (routed to a genuinely free zen model), a real Claude Code
     /// invocation is billed — so this test additionally requires

@@ -1,12 +1,11 @@
 //! Event/artifact retention behavior — one bounded sweep pass.
 //!
-//! This module owns the *logic* of what gets purged and how (the card's own
-//! "retention tests" charter). It deliberately does **not** own a recurring
-//! background task, cancellation, startup/shutdown wiring, or metrics — that
-//! is III-F5's charter ("Runtime retention and observability... startup/
-//! shutdown wiring assigned at integration"). `sweep_events`/`sweep_artifacts`
-//! below are plain async functions F5 can call on whatever interval/task
-//! shape it builds; nothing here spawns a task or sleeps.
+//! This module owns the *logic* of what gets purged and how. It
+//! deliberately does **not** own a recurring background task, cancellation,
+//! startup/shutdown wiring, or metrics — `sweep_events`/`sweep_artifacts`
+//! below are plain async functions; `execution_runtime.rs`'s
+//! `spawn_artifact_and_decision_sweep` is the recurring caller that invokes
+//! them on an interval. Nothing here spawns a task or sleeps.
 //!
 //! Two independent policies, matching `limits.json`'s two separate
 //! `retention_*_days_default` fields — an artifact's blob can outlive or be
@@ -35,31 +34,26 @@ impl Default for RetentionPolicy {
     }
 }
 
-// `sweep_events`/`sweep_artifacts`/`SweepOutcome` are wired into production
-// as of III-F6d: `crates/tack-api/src/execution_runtime.rs`'s
-// `spawn_artifact_and_decision_sweep` is the recurring caller F5's own doc
-// comment above deferred to "whatever interval/task shape it builds" —
-// riding the same `TACK_EXECUTION_RETENTION_*` schedule/gate as
-// `tack_orch::execution_retention`'s replay/event purge. (Prior to III-F6d
-// these had no caller anywhere but their own tests, and — contrary to this
-// comment's own former claim — not even that: `f2_artifact_events_test.rs`
-// exercises the HTTP upload/download surface, never these functions
+// `sweep_events`/`sweep_artifacts`/`SweepOutcome` are wired into production:
+// `crates/tack-api/src/execution_runtime.rs`'s
+// `spawn_artifact_and_decision_sweep` is the recurring caller, riding the
+// same `TACK_EXECUTION_RETENTION_*` schedule/gate as
+// `tack_orch::execution_retention`'s replay/event purge. Their own direct
+// tests live in this file's test module below; `f2_artifact_events_test.rs`
+// exercises the HTTP upload/download surface instead, never these functions
 // directly. See `crates/tack-db/tests/f2_event_artifact_retention_test.rs`
-// for the functions this module calls; III-F6d added the first tests of
-// `sweep_events`/`sweep_artifacts` themselves, in this file's own test
-// module below.)
+// for the functions this module calls.
 //
-// The `#[allow(dead_code)]` below is *not* a residual of that old gap: it
-// exists solely because `f2_artifact_events_test.rs` and
-// `crates/tack-api/tests/c2_handlers_test.rs` both load this file via
+// The `#[allow(dead_code)]` below exists because `f2_artifact_events_test.rs`
+// and `crates/tack-api/tests/c2_handlers_test.rs` both load this file via
 // `#[path]` (pulling in `runner_protocol.rs` and its submodules) without
 // also loading `execution_runtime.rs`, which lives outside that `#[path]`
 // tree. Dead-code analysis is per compiled binary, so those two binaries
 // alone would otherwise flag every item below as unused even though the
 // real `tack-api` library (and every other test binary that links it
 // normally, e.g. `f6d_execution_sweep_wiring_test.rs`) has a live caller.
-// Exact precedent already established for this same `#[path]` duplication
-// in `artifact_download.rs`'s own module-level allow.
+// The same `#[path]` duplication exists in `artifact_download.rs`'s own
+// module-level allow.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SweepOutcome {
@@ -67,7 +61,7 @@ pub struct SweepOutcome {
     pub artifacts_deleted: u64,
     /// Count of manifest rows this pass *observed* with no `content_reference`
     /// at list-time (not an error — see `ArtifactStorage::remove_blob`'s own
-    /// doc comment). Diagnostic, not a promise of deletion: III-F6d's
+    /// doc comment). Diagnostic, not a promise of deletion: the
     /// concurrent-upload guard (see
     /// `Repository::delete_unresolved_execution_artifacts_by_row_ids`'s doc
     /// comment) means a small number of these may survive this pass rather
@@ -80,8 +74,8 @@ pub struct SweepOutcome {
 /// One bounded pass over `execution_events` older than `policy.event_retention`
 /// as of `now`. Returns the number of rows deleted this pass — `0` means
 /// "caught up," a non-zero result at exactly `batch_limit` is the caller's
-/// signal to call again (F5's recurring task loops until it sees fewer than
-/// `batch_limit`).
+/// signal to call again (the recurring sweep loop in `execution_runtime.rs`
+/// loops until it sees fewer than `batch_limit`).
 #[allow(dead_code)] // per-compiled-binary artifact — see SweepOutcome's doc comment above
 pub async fn sweep_events(
     repo: &Repository,
@@ -100,7 +94,7 @@ pub async fn sweep_events(
 /// see `Repository::list_execution_artifacts_older_than`'s own doc comment
 /// for why the ordering matters.
 ///
-/// # III-F6d: split delete, guarding the no-blob-observed branch
+/// # Split delete, guarding the no-blob-observed branch
 ///
 /// The final delete is split into two calls, not one: rows observed with
 /// `Some(reference)` had their blob already unlinked above and are safe to

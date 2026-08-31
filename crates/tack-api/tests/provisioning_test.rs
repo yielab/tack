@@ -1,7 +1,6 @@
-//! Tests for `POST /api/templates/{id}/provision` (card D4, Wave 4, tasks
-//! 37.2/37.4) — the end-to-end "create a project from a template, provision
-//! a docket pod, link the two" flow, and its rollback behavior on partial
-//! failure.
+//! Tests for `POST /api/templates/{id}/provision` — the end-to-end "create
+//! a project from a template, provision a docket pod, link the two" flow,
+//! and its rollback behavior on partial failure.
 //!
 //! Covers: 409 `orchestration_disabled` while orchestration is off; a full happy-path run that
 //! creates the project, calls `POST /pods`, and writes `orch_links`; an
@@ -401,8 +400,8 @@ async fn orch_link_write_failure_after_a_successful_pod_leaves_both_standing() {
 
     // Force the one remaining write to fail deterministically, simulating
     // the rare "docket succeeded, Tack's own DB write then failed" case
-    // this card's acceptance bar is about — without needing to fault-inject
-    // application code.
+    // this test is about — without needing to fault-inject application
+    // code.
     sqlx::query("DROP TABLE orch_links")
         .execute(state.pool())
         .await

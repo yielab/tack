@@ -36,9 +36,9 @@ pub enum BoardEvent {
     /// Sprint changed
     SprintUpdated { project_id: Uuid, sprint_id: Uuid },
     /// An orchestrated agent run mirrored from a control plane (docket) changed
-    /// state, or was newly attributed to this item (card B4 / TODO.md §Wave 2,
-    /// task 34.5). Emitted from `orch_store::RepoControlPlaneStore::upsert_runs`
-    /// — never from the reconciler itself, which has no WebSocket dependency.
+    /// state, or was newly attributed to this item. Emitted from
+    /// `orch_store::RepoControlPlaneStore::upsert_runs` — never from the
+    /// reconciler itself, which has no WebSocket dependency.
     AgentRunUpdated {
         project_id: Uuid,
         item_id: Uuid,

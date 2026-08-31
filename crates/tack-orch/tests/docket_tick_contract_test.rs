@@ -1,7 +1,6 @@
-//! The tick-level contract oracle (TODO.md Part II, Wave A, card O1 / Phase
-//! 39, task 39.1) — see `docs/plans/agnostic-control-plane.md` §6 ("How
-//! docket is proven not to have regressed") for why this file exists and
-//! exactly what it has to survive.
+//! The tick-level contract oracle — see `docs/plans/agnostic-control-plane.md`
+//! §6 ("How docket is proven not to have regressed") for why this file
+//! exists and exactly what it has to survive.
 //!
 //! # The gap this closes
 //!
@@ -9,7 +8,7 @@
 //! `docket_adapter_test.rs` assert what actually LEAVES the process on the
 //! wire — the other 33 assert decoding only (plan §1.10). A trait reshape
 //! could change what docket receives on nine methods and every existing test
-//! would stay green. This file is the primary oracle Wave C's reshape has to
+//! would stay green. This file is the primary oracle any such reshape has to
 //! be proved against: it drives one full reconciler tick — the fetch phase
 //! AND the whole persist phase, not `reconcile_once` in isolation — against
 //! a real `wiremock` docket and a real in-memory SQLite, and snapshots two
@@ -44,19 +43,18 @@
 //!     purged, double-counting it on the next rollup (see
 //!     `rewound_cursor_re_delivers_overlapping_events_without_resurrecting_a_purged_row`);
 //!   - changing `derive_event_id`'s separator/field order/namespace — out of
-//!     THIS file's scope; see card O2's pinned-literal test.
+//!     THIS file's scope; see the pinned-literal test in `reconciler.rs`.
 //!
 //! # Pattern copied, not invented
 //!
 //! The fetch-plus-persist-through-a-real-`spawn_reconcilers`-loop shape is
-//! `tests/ingestion_test.rs` and `tests/traces_ingestion_test.rs`
-//!'s, copied deliberately per this card's brief — both were read
-//! in full before writing a line here. `TestRepoStore` below is the same
+//! `tests/ingestion_test.rs` and `tests/traces_ingestion_test.rs`'s, copied
+//! deliberately rather than reinvented. `TestRepoStore` below is the same
 //! mechanical, thin `ControlPlaneStore` impl those two files each define —
 //! duplicated rather than shared (same reasoning as
 //! `traces_ingestion_test.rs`'s own module doc: `tack-orch` must never
 //! depend on `tack-api`, so there is no single real implementation to
-//! import, and each card's test file stays scoped to its own concerns).
+//! import, and each test file stays scoped to its own concerns).
 //! Unlike those two files, THIS file deliberately never seeds an
 //! `orch_tasks` row or an item to correlate against — correlation
 //! (task_ids/context.taskId/session_id matching) is already covered there;
@@ -130,16 +128,14 @@
 //!
 //! Not automated here (it would defeat its own point — a permanently broken
 //! store would just make this test permanently fail instead of proving
-//! anything about a REGRESSION). Done once, by hand, per this card's
-//! acceptance bar: temporarily make
+//! anything about a REGRESSION). Done once, by hand: temporarily make
 //! `three_linked_projects_issues_three_per_project_calls_each` link zero
 //! projects instead of three (comment out the `link_project` call inside
 //! its loop) while leaving its golden-file names pointed at the real
 //! (three-project) goldens, run just that test, confirm it fails with
 //! `assert_eq!` printing the full committed JSON (which names `demo-b`/
 //! `demo-c`'s `/runs`/`/traces` requests) against a shorter actual JSON that
-//! is missing them, then revert. See this card's handoff note in TODO.md §
-//! II.6 for the exact transcript captured.
+//! is missing them, then revert.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -240,7 +236,8 @@ async fn link_project(repo: &Repository, project_id: Uuid, plane_id: Uuid, remot
 /// A [`ControlPlaneStore`] backed directly by a real `Repository` — the
 /// test-only stand-in for `tack-api::orch_store::RepoControlPlaneStore` (see
 /// the module doc for why this can't just import that type, and why it is
-/// duplicated here rather than shared with the other two Wave-2 test files).
+/// duplicated here rather than shared with `ingestion_test.rs` and
+/// `traces_ingestion_test.rs`).
 struct TestRepoStore {
     repo: Repository,
 }
@@ -571,8 +568,8 @@ fn canonical_json(value: &serde_json::Value) -> serde_json::Value {
     }
 }
 
-/// "The body canonicalised (parse JSON and re-serialise with sorted keys;
-/// non-JSON bodies as-is)" — this card's brief, verbatim. Every request this
+/// The body canonicalised: parse JSON and re-serialise with sorted keys;
+/// non-JSON bodies as-is. Every request this
 /// file's scenarios capture is a bodyless `GET`, so this always returns
 /// `None` in practice; the JSON/non-JSON branches exist so the golden format
 /// does not have to change the day a future scenario captures a `POST`.
@@ -640,7 +637,7 @@ struct GoldenRows {
 /// column in these five tables uses: `orch_metrics.value` (`REAL`, nullable
 /// — see migration 025's comment on why it can't be `NOT NULL`) and
 /// `orch_runs.run_attempt` (`INTEGER NOT NULL DEFAULT 1`, added by migration
-/// 037's rebuild, card G5b — sqlx's SQLite driver rejects decoding a
+/// 037's rebuild — sqlx's SQLite driver rejects decoding a
 /// declared-`INTEGER` column as `Option<String>` outright rather than
 /// coercing, so without this branch every scenario that touches `orch_runs`
 /// panics on the first row).
@@ -735,7 +732,8 @@ async fn snapshot_rows(pool: &SqlitePool, control_plane_id: Uuid) -> GoldenRows 
     // this is a raw `SELECT *` against the table itself, which sees the
     // physical name. Ordering by it (rather than the full new PK) is still
     // sufficient here: every scenario in this file uses a single
-    // `control_plane_id`, and `run_attempt` is always 1 pre-Phase-35.
+    // `control_plane_id`, and every run it seeds has `run_attempt` 1 (no
+    // scenario exercises retries).
     let mut orch_runs = fetch_table(pool, "SELECT * FROM orch_runs ORDER BY external_run_id").await;
     let mut orch_approvals = fetch_table(pool, "SELECT * FROM orch_approvals ORDER BY token").await;
     let mut orch_events = fetch_table(
@@ -781,7 +779,7 @@ async fn snapshot_rows(pool: &SqlitePool, control_plane_id: Uuid) -> GoldenRows 
 
 // ---------------------------------------------------------------------------
 // Golden-file harness — mirrors crates/tack-api/tests/openapi_contract.rs's
-// UPDATE_OPENAPI=1 gate exactly, renamed for this card's UPDATE_GOLDEN=1.
+// UPDATE_OPENAPI=1 gate exactly, renamed here to UPDATE_GOLDEN=1.
 // ---------------------------------------------------------------------------
 
 fn golden_dir() -> PathBuf {

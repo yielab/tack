@@ -1,13 +1,12 @@
-//! Provisioning flow (Phase 37, card D4, tasks 37.2/37.4): the end-to-end
-//! path from "I want a new product" to a Tack project wired to a live
-//! docket pod.
+//! Provisioning flow: the end-to-end path from "I want a new product" to a
+//! Tack project wired to a live docket pod.
 //!
 //! `POST /api/templates/{id}/provision` — deliberately a **separate route**
 //! from the plain `POST /api/projects/from-template/{id}` rather
 //! than an extension of it, even though `router.rs`'s original placeholder
 //! comment suggested reusing that endpoint via a `provision_pod:
-//! true` body flag. Reasons, disclosed since that comment is a real
-//! signal from a previous wave, not just discarded:
+//! true` body flag. Reasons for diverging from that suggestion, disclosed
+//! rather than silently overridden:
 //!
 //! 1. **No response-shape change to a widely-used endpoint.** The plain
 //!    endpoint returns a bare `Project` and at least one existing frontend
@@ -28,15 +27,14 @@
 //! internal function the plain endpoint calls — then goes on to provision
 //! a pod and write the `orch_links` row.
 //!
-//! # Rollback design — the reason this card exists
+//! # Rollback design
 //!
 //! Three systems, two of them external, one HTTP call that cannot be
 //! undone once it succeeds. Verified directly against
 //! `~/Sites/rack-cli/src/docket/serve.py::_handle_post_pods` and
-//! `core/pod_provisioning.py` (commit `0d84f47`, P22-5) before designing
-//! any of this — not against docket's `ROADMAP.md`, which still marks
-//! P22-5 `TODO` (a real staleness bug over there; see TODO.md's top-of-file
-//! correction and card D3's handoff, which found the same route).
+//! `core/pod_provisioning.py` before designing any of this — not against
+//! docket's `ROADMAP.md`, which does not reliably reflect what has shipped
+//! there.
 //!
 //! **The real `POST /pods` contract:**
 //! - Request: `{project, path, blueprint, pod, budget, verifyCmd}` — every
@@ -92,9 +90,9 @@
 //!    [`ProvisioningOutcome::PodCreatedLinkFailed`], naming the exact
 //!    control plane + remote project the operator now owns and pointing
 //!    at the existing manual-link UI
-//!    (`features/settings/orchestration/LinkForm.tsx`, card D2) to finish
-//!    the job — which only needs a `PUT /orch-link` call, never a second
-//!    `POST /pods`.
+//!    (`features/settings/orchestration/LinkForm.tsx`) to finish the job —
+//!    which only needs a `PUT /orch-link` call, never a second `POST
+//!    /pods`.
 //!
 //! **What this module deliberately does not attempt:** retrying a failed
 //! `orch_links` write automatically, or inventing a way to "adopt" a 409
@@ -107,18 +105,18 @@
 //!
 //! # Privilege — deliberately *not* gated behind `TACK_ORCH_APPROVAL_TOKEN`
 //!
-//! D1's separate approval-decision credential exists for one specific
-//! reason (see that card's TODO.md §6 note): *overriding a guardrail
-//! policy's deliberate block* is a categorically different, narrower
-//! privilege than "using the orchestration API at all" — its safe default
-//! had to be "nothing can release a gated action" precisely because that
-//! action is a human override of a considered "no."
+//! The separate approval-decision credential exists for one specific
+//! reason: *overriding a guardrail policy's deliberate block* is a
+//! categorically different, narrower privilege than "using the
+//! orchestration API at all" — its safe default had to be "nothing can
+//! release a gated action" precisely because that action is a human
+//! override of a considered "no."
 //!
 //! Provisioning is consequential (it creates real infrastructure and can
 //! spend real budget) but it is not that kind of override — it is ordinary
 //! use of the same privilege class as manual dispatch
-//! (`POST /items/{id}/dispatch`, card C1) and sprint-wide dispatch
-//! (`POST /sprints/{id}/dispatch`, card C3), both of which can also spend
+//! (`POST /items/{id}/dispatch`) and sprint-wide dispatch
+//! (`POST /sprints/{id}/dispatch`), both of which can also spend
 //! real budget across many items in one call and are gated only by the
 //! ordinary `TACK_API_TOKEN` + `TACK_ORCH_ENABLE` pair. Requiring a second
 //! credential *only* for provisioning, while sprint-wide dispatch needs
@@ -127,8 +125,8 @@
 //! instead (`frontend/src/features/provisioning/ProvisioningWizard.tsx`):
 //! a dedicated confirmation step naming the real docket project name,
 //! blueprint, and budget cap, with no single-click path from "open the
-//! wizard" to "a pod exists" — the same non-reversible-action pattern D1
-//! built for approval decisions and C4 built for sprint dispatch.
+//! wizard" to "a pod exists" — the same non-reversible-action pattern used
+//! elsewhere for approval decisions and sprint dispatch.
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -260,8 +258,8 @@ pub struct CreateProjectWithPodResponse {
 // ════════════════════════════════════════════════════════════════════════════
 
 /// docket's exact wire strings for `OrchBlueprint` (`core/blueprints.py`,
-/// verified 2026-08-05 — same source card D3 verified `OrchBlueprint`'s
-/// `rename_all = "kebab-case"` against). A plain `match`, not a
+/// the same source `OrchBlueprint`'s `rename_all = "kebab-case"` is
+/// verified against). A plain `match`, not a
 /// `serde_json` round-trip through the enum's own `Serialize` impl: a
 /// non-exhaustive match here is a compile error the moment a variant is
 /// added, which is a better safety net than trusting the derive stays in
@@ -310,15 +308,14 @@ fn resolve_status_map(
 }
 
 /// Resolve `control_plane_id` into a live adapter, 404ing distinctly if
-/// the id doesn't exist. Built on `adapters::registry::build` (card G1,
-/// which also deleted the "if a third caller ever needs this, that's the
-/// point to actually share it" comment this function and its two siblings —
+/// the id doesn't exist. Built on `adapters::registry::build`, the shared
+/// point this function and its siblings —
 /// `dispatcher::build_control_plane`, `handlers::orch::
-/// build_control_plane_for_decision` — used to carry: there were already
-/// three callers, not a hypothetical third, so the registry is that shared
-/// point). Each of the three keeps its own request-scoped error mapping —
-/// see `registry::build`'s own doc comment for why that duplication (not
-/// the adapter-construction logic itself) is the part staying separate.
+/// build_control_plane_for_decision` — all resolve through, rather than
+/// each duplicating adapter-construction logic. Each of the three keeps its
+/// own request-scoped error mapping — see `registry::build`'s own doc
+/// comment for why that duplication (not the adapter-construction logic
+/// itself) is the part staying separate.
 async fn resolve_control_plane(
     state: &AppState,
     control_plane_id: Uuid,
@@ -351,8 +348,8 @@ async fn resolve_control_plane(
 }
 
 /// `handlers::templates::build_project_from_template` returns a bare
-/// `StatusCode` (unchanged from before this card — see that function's doc
-/// comment). Map it onto this endpoint's richer error envelope.
+/// `StatusCode` — see that function's doc comment. Map it onto this
+/// endpoint's richer error envelope.
 fn status_to_api_error(status: StatusCode, context: &str) -> ApiError {
     match status {
         StatusCode::NOT_FOUND => ApiError::NotFound(format!("{context}: template not found")),
@@ -386,9 +383,9 @@ fn map_provision_error(e: OrchError) -> ApiError {
 /// Delete the project created moments earlier for this failed attempt.
 /// Returns a human-readable clause describing what happened to the
 /// rollback itself — appended to the caller's error message so a rollback
-/// failure is surfaced, never swallowed (this card's explicit acceptance
-/// bar). Every outcome is also logged at the appropriate level regardless
-/// of what the HTTP response ends up saying.
+/// failure is surfaced, never swallowed. Every outcome is also logged at
+/// the appropriate level regardless of what the HTTP response ends up
+/// saying.
 async fn rollback_project(state: &AppState, project_id: Uuid) -> String {
     match state.repo.delete_project(project_id).await {
         Ok(true) => {
@@ -495,7 +492,7 @@ pub async fn create_project_with_pod(
         .map_err(|_| ApiError::NotFound(format!("template {template_id} not found")))?;
     let template_orch = template.orchestration.as_ref();
 
-    // ── 1. Create the Tack project — card D3's existing, unchanged path.
+    // ── 1. Create the Tack project — the existing project-creation path.
     //        Nothing to roll back if this itself fails: nothing exists yet.
     let create_data = templates::CreateProjectFromTemplate {
         name: body.name.clone(),
@@ -592,11 +589,11 @@ pub async fn create_project_with_pod(
         })
         .collect();
 
-    // ── 5. Write orch_links — short, additive, no HTTP call inside (§0
-    //        rule 5: the only HTTP call in this whole flow already
-    //        happened above). Never rolled back past this point — see the
-    //        module doc for why deleting the project here would make
-    //        things strictly worse, not better.
+    // ── 5. Write orch_links — short, additive, no HTTP call inside (the
+    //        only HTTP call in this whole flow already happened above).
+    //        Never rolled back past this point — see the module doc for
+    //        why deleting the project here would make things strictly
+    //        worse, not better.
     let status_map_json =
         serde_json::to_value(&status_map).unwrap_or_else(|_| serde_json::json!({}));
     let link_result = state

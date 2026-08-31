@@ -255,8 +255,8 @@ fn config_save_and_reload() {
     assert_eq!(cfg.base_url, "http://test:9999");
     assert_eq!(cfg.token.as_deref(), Some("tok123"));
 
-    // III-E5: `~/.tackrc` carries `TACK_API_TOKEN` — a credential — so
-    // `config::save` now goes through `secure_fs::write_owner_only_atomic`
+    // `~/.tackrc` carries `TACK_API_TOKEN` — a credential — so
+    // `config::save` goes through `secure_fs::write_owner_only_atomic`
     // instead of a plain `fs::write`. Prove that end-to-end through the real
     // save path, not just against the isolated `secure_fs` unit tests: the
     // file this test just read back from must itself be owner-only.

@@ -196,23 +196,18 @@ mod tests {
         assert_eq!(filesystem_calls.load(Ordering::SeqCst), 1);
     }
 
-    /// **III-H1 update — this test no longer pins a release blocker.**
+    /// This test no longer pins a release blocker: `UnavailableProtocolClient`
+    /// used to be the *only* production `RunnerProtocolClient` in the tree,
+    /// so the packaged binary could not reach a server at all.
+    /// `main.rs` now wires `transport::HttpRunnerClient` instead, closing
+    /// that gap.
     ///
-    /// It was written to pin the P0 III-G5 refused to tag on:
-    /// `UnavailableProtocolClient` was the *only* production
-    /// `RunnerProtocolClient` in the tree, so the packaged binary could not
-    /// reach a server at all. III-H1 added `transport::HttpRunnerClient` and
-    /// `main.rs` now wires that instead, so the gap this assertion described
-    /// is closed.
-    ///
-    /// It is **updated rather than retired** deliberately. The type it covers
+    /// The test stays rather than being retired: `UnavailableProtocolClient`
     /// still exists and is still reachable — any future composition that
     /// omits a transport gets it — and its whole value is that such a
     /// composition fails as a typed `ProtocolUnavailable` rather than
     /// reporting success and idling forever. Deleting the test would remove
-    /// the only guard on that fallback's honesty; what changed is what the
-    /// test *means*, which is why this comment replaces the old framing
-    /// instead of the assertion being dropped.
+    /// the only guard on that fallback's honesty.
     #[tokio::test]
     async fn unavailable_protocol_is_a_typed_failure_not_success() {
         let runtime = RunnerRuntime::new(

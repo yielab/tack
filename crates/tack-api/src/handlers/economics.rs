@@ -1,28 +1,27 @@
-//! Unit economics (Phase 38 / card D5, tasks 38.1-38.4): tokens, estimated cost,
-//! agent-vs-human lead time, and rework rate, sliced by `project_type` and
-//! `item_type`. Read-only aggregate endpoints over `Repository::
+//! Unit economics: tokens, estimated cost, agent-vs-human lead time, and
+//! rework rate, sliced by `project_type` and `item_type`. Read-only
+//! aggregate endpoints over `Repository::
 //! list_completed_item_economics`/`list_item_ids_with_rework_signal`
-//! (`tack_db::repo::economics`) — no live docket call, so a plane outage can never
-//! turn into a 500 here, the same discipline `handlers::orch`'s module doc names for
-//! `GET /api/fleet`.
+//! (`tack_db::repo::economics`) — no live docket call, so a plane outage can
+//! never turn into a 500 here, the same discipline `handlers::orch`'s
+//! module doc names for `GET /api/fleet`.
 //!
 //! **Gated behind `TACK_ORCH_ENABLE`.** [`economics_routes`] is merged into
 //! `router.rs`'s `orch_routes()`, which applies `orch::require_orch_enabled` once as a
 //! layer over the whole sub-router — every route below inherits it without a
-//! per-handler check, and 404s (not 200-with-empty-data) when the flag is unset,
-//! matching TODO.md §0 rule 8.
+//! per-handler check, and 404s (not 200-with-empty-data) when the flag is unset.
 //!
-//! **Rule 6, applied on every response this module returns.** Token counts
-//! (`tokens_in`/`tokens_out`) are always present and rendered first; every dollar
-//! figure is named `cost_usd_estimated` (never "cost" or "spend") and travels with a
-//! `pricing_snapshot_at` that is honestly `None` today (no pricing-snapshot mechanism
-//! exists anywhere in this codebase yet — confirmed against A4's and D2's own
-//! handoffs, which found the identical gap). The frontend must render it through
-//! `shared/agentActivity/format.ts#formatEstimatedCost` — reused verbatim, not
-//! reimplemented, per this card's explicit instruction.
+//! **Money is honestly represented on every response this module returns.**
+//! Token counts (`tokens_in`/`tokens_out`) are always present and rendered
+//! first; every dollar figure is named `cost_usd_estimated` (never "cost"
+//! or "spend") and travels with a `pricing_snapshot_at` that is honestly
+//! `None` today — no pricing-snapshot mechanism exists anywhere in this
+//! codebase yet. The frontend must render it through
+//! `shared/agentActivity/format.ts#formatEstimatedCost` — reused verbatim,
+//! never reimplemented.
 //!
-//! **Three honesty decisions this module makes, spelled out because the card asked
-//! for them to be stated, not just implemented:**
+//! **Three honesty decisions this module makes, spelled out rather than left
+//! implicit:**
 //!
 //! 1. **Minimum sample size — [`MIN_SAMPLE_SIZE`].** Below it, [`LeadTimeStat`] and
 //!    [`ReworkStat`] report `below_min_sample: true` and raw counts/durations, never
@@ -35,11 +34,11 @@
 //!    "people dispatch the easy stuff" as with "agents are faster." This module
 //!    deliberately never computes a single "agents are Nx faster" ratio: both
 //!    populations' stats are reported side by side and left for the reader to
-//!    compare, exactly the discipline card D2's handoff set for cost ratios ("never
-//!    shows a bare percentage / ratio without the caveat attached").
+//!    compare — the same discipline this module applies to cost ratios, never
+//!    showing a bare percentage/ratio without the caveat attached.
 //! 3. **Retention truncation — [`REWORK_RATE_DEFINITION`] / [`REWORK_TRUNCATION_NOTE`].**
 //!    `orch_tasks` (tokens, cost, dispatch timestamps) is never purged — only
-//!    `orch_events`/`orch_metrics` are, by the Phase 34.6 retention sweep. So token,
+//!    `orch_events`/`orch_metrics` are, by the retention sweep. So token,
 //!    cost, and lead-time figures below are NOT subject to truncation, and this
 //!    module says so rather than blanket-hedging every number on the page. Only the
 //!    rework signal (which lives in `orch_events`) can go stale: an item whose only
@@ -70,11 +69,10 @@ use crate::router::AppState;
 // ════════════════════════════════════════════════════════════════════════════
 
 /// Below this many samples, a slice reports raw counts/durations instead of a
-/// derived average or rate. Stated, not statistically derived (TODO.md's card asked
-/// for a chosen minimum, not an optimal one): 5 is small enough that a real board
-/// reaches it quickly, and large enough that a single outlier item can't masquerade
-/// as a trend — the exact "3x faster from 2 items" mistake the card calls out by
-/// name.
+/// derived average or rate. Stated as a chosen minimum, not a statistically
+/// derived optimum: 5 is small enough that a real board reaches it quickly,
+/// and large enough that a single outlier item can't masquerade as a trend —
+/// avoiding a "3x faster from 2 items" mistake.
 pub const MIN_SAMPLE_SIZE: i64 = 5;
 
 /// Rendered next to every agent-vs-human lead-time comparison, not buried in a doc.
@@ -204,13 +202,13 @@ pub struct EconomicsSlice {
     /// items. `None` only when `agent_completed_count == 0` (nothing to sum);
     /// `Some(0.0)` means agent items exist but none report a cost yet.
     pub cost_usd_estimated: Option<f64>,
-    /// Always `None` today — no pricing-snapshot mechanism exists yet (rule 6).
+    /// Always `None` today — no pricing-snapshot mechanism exists yet.
     pub pricing_snapshot_at: Option<String>,
     /// `cost_usd_estimated / agent_completed_count`. `None` whenever
     /// `agent_completed_count < MIN_SAMPLE_SIZE` — the headline "cost per shipped
-    /// item" figure is exactly the kind of small-sample-noise ratio TODO.md's card
-    /// warns about, so it is withheld below the stated minimum rather than shown
-    /// from a handful of items.
+    /// item" figure is exactly the kind of small-sample-noise ratio this module
+    /// guards against elsewhere, so it is withheld below the stated minimum
+    /// rather than shown from a handful of items.
     pub cost_usd_estimated_per_item: Option<f64>,
     pub agent_lead_time: LeadTimeStat,
     pub human_lead_time: LeadTimeStat,

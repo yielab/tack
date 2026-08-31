@@ -2,8 +2,8 @@ pub mod config;
 pub mod debug;
 pub mod dispatcher;
 pub mod error;
-// Card III-F5: execution-domain retention sweep + health watch
-// runtime wiring — see the module's own doc comment.
+// Execution-domain retention sweep + health watch runtime wiring — see the
+// module's own doc comment.
 pub mod execution_runtime;
 pub mod github_sync;
 pub mod handlers;

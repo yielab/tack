@@ -1,5 +1,4 @@
-//! Tests for `GET /api/approvals` and `POST /api/approvals/{token}` (card
-//! D1, Wave 4, tasks 36.1/36.2).
+//! Tests for `GET /api/approvals` and `POST /api/approvals/{token}`.
 //!
 //! Covers: 404 with `TACK_ORCH_ENABLE` unset (both routes); the fleet-wide
 //! inbox is oldest-first and includes uncorrelated (`item_id: null`)

@@ -1,6 +1,6 @@
 //! Tests for `GET`/`PUT /api/settings/orchestration` —
 //! the runtime-toggleable replacement for the old `TACK_ORCH_ENABLE`-only
-//! design. See TODO.md §6's E1 handoff for the full design writeup.
+//! design.
 //!
 //! Covers: the settings endpoint stays reachable while orchestration is
 //! disabled (the entire point — a UI on a server that has never turned this
@@ -197,7 +197,7 @@ async fn put_false_after_put_true_stays_database_sourced() {
     );
 }
 
-// ─── The point of the card: runtime start/stop, no restart ────────────────
+// ─── Runtime start/stop, no restart ────────────────────────────────────────
 
 #[tokio::test]
 async fn put_true_starts_the_reconciler_for_an_already_registered_plane() {
@@ -303,7 +303,7 @@ async fn put_true_while_already_running_does_not_spawn_a_duplicate() {
     assert_eq!(second["reconciler_running"], true);
 }
 
-// ─── Reachable while disabled — the entire point of this card ─────────────
+// ─── Reachable while disabled ──────────────────────────────────────────────
 
 #[tokio::test]
 async fn settings_route_is_never_gated_by_orchestration_itself() {

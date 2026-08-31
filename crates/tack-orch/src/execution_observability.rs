@@ -1,4 +1,4 @@
-//! Execution fleet health/observability (card III-F5, Wave 5).
+//! Execution fleet health/observability.
 //!
 //! Computes a periodic, id-free snapshot of runner/queue/lease/event counts
 //! and logs stuck/ambiguous alerts from it. See `execution_retention.rs`'s
@@ -11,10 +11,10 @@
 //! vocabularies this domain has (`agent_runners.state`: 3 values;
 //! `execution_requests.state`: the 10-value `ExecutionState` vocabulary) —
 //! never by attempt/request/runner id. That is not an incidental design
-//! choice: III.2 rule 12 and this card's own charter ("no prompt/model
-//! contents in metric labels... never label by attempt id, decision id, or
-//! anything unbounded") make an unbounded label set a defect, not a style
-//! preference. `tests::snapshot_label_set_is_bounded_and_id_free` proves it.
+//! choice: no prompt/model contents belong in metric labels, and nothing
+//! here labels by attempt id, decision id, or anything else unbounded — an
+//! unbounded label set is a defect, not a style preference.
+//! `tests::snapshot_label_set_is_bounded_and_id_free` proves it.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -103,8 +103,8 @@ impl AlertSummary {
 }
 
 /// A stale lease or a `needs_operator` request is *always* worth surfacing
-/// — both are, by definition (III.1.1), states nothing else in the system
-/// resolves on its own (a stale lease has already outlived the recovery
+/// — both are, by definition, states nothing else in the system resolves
+/// on its own (a stale lease has already outlived the recovery
 /// service's own window without being reconciled; `needs_operator` is never
 /// automatically retried). `count > 0` is deliberately the entire
 /// condition — there is no "acceptable" number of ambiguous requests to
@@ -298,8 +298,9 @@ mod tests {
         assert!(alerts.needs_operator_alert);
     }
 
-    /// The bounded-label-set proof this card's charter demands: no matter
-    /// how large the underlying `agent_runners`/`execution_requests` tables
+    /// The bounded-label-set proof this module's cardinality guarantee
+    /// demands: no matter how large the underlying
+    /// `agent_runners`/`execution_requests` tables
     /// get, the snapshot's two map fields can never grow past the fixed,
     /// closed state vocabularies (3 + 10 = 13 possible keys total) — never
     /// one entry per row, never a row id as a key. This is a structural
@@ -437,9 +438,9 @@ mod tests {
         // mutable snapshot, and confirming the call count (proxy for tick
         // count) still advances each cycle even though nothing asserts on
         // log output directly (log content is covered by manual/CI review
-        // per this card's redaction rule; tick cadence is what's mechanical
-        // here). A snapshot with a stale lease must never panic or stop the
-        // loop.
+        // against this codebase's log-redaction rules; tick cadence is
+        // what's mechanical here). A snapshot with a stale lease must never
+        // panic or stop the loop.
         let store = Arc::new(FakeStore::default());
         *store.snapshot.lock().unwrap() = snapshot_with(2, 0);
         let clock: Arc<dyn ObservabilityClock> = Arc::new(FakeClock::new(Utc::now()));

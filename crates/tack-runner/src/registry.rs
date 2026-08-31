@@ -20,8 +20,10 @@ impl HarnessKind {
     }
 }
 
-/// The registry is deliberately empty until Wave 3 adapters are added. It is
-/// total: unknown or not-yet-installed harnesses return a stable typed error.
+/// Always empty — nothing ever adds an adapter to it. Real harness adapters
+/// are wired through [`crate::harness::AdapterRegistry`] instead; this type
+/// is unused outside its own tests. It is total: unknown or
+/// not-yet-installed harnesses return a stable typed error.
 #[derive(Debug, Default)]
 pub struct HarnessRegistry;
 

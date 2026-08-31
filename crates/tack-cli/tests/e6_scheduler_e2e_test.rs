@@ -1,13 +1,13 @@
-//! III-E6 card: cross-surface end-to-end proof for the CLI side of the
-//! wave's acceptance bar — "healthy fleet selection, saturation, exact
-//! runner, unsupported model... pass through production routes... in the
-//! CLI." Every operator action below shells out to the real `tack` binary
+//! Cross-surface end-to-end proof for the CLI side of scheduler behavior —
+//! healthy fleet selection, saturation, exact
+//! runner, unsupported model — passing through production routes in the
+//! CLI. Every operator action below shells out to the real `tack` binary
 //! (`env!("CARGO_BIN_EXE_tack")`) against a real `tack serve` subprocess
-//! (a real SQLite file, the real production router — not a card-local
+//! (a real SQLite file, the real production router — not a
 //! stand-in, not a mock). The one thing the CLI itself has no command for —
 //! acting as a *runner* (enroll/refresh/claim) — is done via direct HTTP
 //! against the same live server, exactly as `tack-runner` would, since that
-//! is a different binary/actor than the `tack` operator CLI this card is
+//! is a different binary/actor than the `tack` operator CLI this file is
 //! proving.
 //!
 //! No blocking sleeps beyond the unavoidable "wait for a real subprocess to

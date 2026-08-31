@@ -1,7 +1,11 @@
-//! III-C4 production-repository crash matrix.
+//! Production-repository crash matrix.
 //!
-//! C5 owns the global production router, so this card keeps its API-side
-//! coverage at the repository seam until that router is available.
+//! Exercises `Repository` directly at the repository seam — crash/fault
+//! injection around claim, event batching, completion, cancellation,
+//! enrollment, and heartbeat, proving each rolls back and replays exactly
+//! once — rather than through HTTP; `c5_integration_test.rs` and
+//! `wave2_gate.rs` cover the same lifecycle through the real production
+//! router.
 
 #[path = "runner_vertical_slice/repository_crash.rs"]
 mod repository_crash;

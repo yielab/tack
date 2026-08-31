@@ -1,5 +1,5 @@
-//! End-to-end integration tests for card B1 (Wave 2, runs + approvals
-//! ingestion, tasks 34.1/34.2): a real `tack_db::Repository` (in-memory
+//! End-to-end integration tests for runs + approvals ingestion: a real
+//! `tack_db::Repository` (in-memory
 //! SQLite, real migrations), a real `DocketAdapter` pointed at a `wiremock`
 //! stand-in for docket, and the real `reconciler::spawn_reconcilers` loop —
 //! proving the whole chain (fetch → correlate → persist) composes
@@ -8,8 +8,8 @@
 //! `TestRepoStore` below is a local, test-only `ControlPlaneStore` impl
 //! wrapping `Repository` directly. It cannot be the real
 //! `tack-api::orch_store::RepoControlPlaneStore` — `tack-orch` must never
-//! depend on `tack-api` (see this crate's `Cargo.toml` header comment and
-//! TODO.md §1.1) — but it is deliberately written to the exact same
+//! depend on `tack-api` (see this crate's `Cargo.toml` header comment) —
+//! but it is deliberately written to the exact same
 //! mechanical shape `orch_store.rs` needs (a thin pass-through per method,
 //! no correlation logic), so a passing test here is strong evidence the
 //! trait is straightforward to implement for real.

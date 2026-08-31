@@ -5,9 +5,9 @@
 //! spawning the harness CLI, capturing its stdout/stderr under a hard memory
 //! bound, enforcing a timeout, and killing the *entire* descendant process
 //! tree on cancellation — not just the direct child, which a plain
-//! `Child::kill()` would leave behind (Phase 52/53 roadmap requirement: a
-//! long-running harness must never buffer an entire run in memory, and a
-//! cancelled attempt must not leave orphaned descendants running).
+//! `Child::kill()` would leave behind. A long-running harness must never
+//! buffer an entire run in memory, and a cancelled attempt must not leave
+//! orphaned descendants running.
 //!
 //! ## Process-group cancellation
 //!
@@ -24,7 +24,7 @@
 //! Non-Unix targets fall back to killing only the direct child
 //! (`tokio::process::Child::kill`), matching the same best-effort pattern
 //! already used for non-Unix permissions in `workspace.rs`/`journal.rs`; this
-//! is a documented limitation, not a silent gap (see the D4 handoff).
+//! is a documented limitation, not a silent gap.
 
 use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 
@@ -291,8 +291,7 @@ async fn kill_tree(
         let _ = pid;
         let _ = grace;
         // Documented limitation: no portable process-group primitive here,
-        // so only the direct child is targeted. See the module docs and the
-        // D4 handoff.
+        // so only the direct child is targeted.
         let _ = child.start_kill();
         let _ = child.wait().await;
         Ok(CancelOutcome::Killed)
@@ -363,8 +362,7 @@ mod unix {
     use std::io;
 
     // A bare `extern "C"` block avoids adding the `libc` crate as a new
-    // `tack-runner` dependency (root/crate `Cargo.toml` is B3-owned) for the
-    // one POSIX syscall this module needs. `libc` is already resolved
+    // `tack-runner` dependency for the one POSIX syscall this module needs. `libc` is already resolved
     // transitively in `Cargo.lock` (tokio depends on it), but Cargo does not
     // let a crate call into a dependency it has not declared directly, so
     // that transitive presence cannot be relied on here. `kill(2)`'s
@@ -505,8 +503,8 @@ mod tests {
     /// must see A's own content and never B's, proving workspace assignment
     /// is never accidentally shared or aliased across attempts. (A harness
     /// that deliberately path-traverses via `../` once running is a
-    /// different, OS-sandboxing problem — chroot/namespaces/landlock — that
-    /// this card does not attempt; see the D4 handoff's known limitations.
+    /// different, OS-sandboxing problem — chroot/namespaces/landlock — not
+    /// attempted here.
     /// The structural half above, refusing a working directory outside its
     /// declared root before spawn, is what actually stops a *misconfigured*
     /// adapter from pointing at the wrong workspace in the first place.)
@@ -719,11 +717,10 @@ mod tests {
     }
 
     /// Not itself one of the five acceptance bullets, but every mode
-    /// documented at the top of `fake_harness.sh` for D1/D2/D3's own future
-    /// use (`version`, `unknown_version`, `malformed`) is exercised here at
-    /// least once, so a regression in the shared fixture is caught by this
-    /// card rather than discovered later by whichever adapter card reaches
-    /// for it first.
+    /// documented at the top of `fake_harness.sh` (`version`,
+    /// `unknown_version`, `malformed`) is exercised here at least once, so a
+    /// regression in the shared fixture is caught here rather than
+    /// discovered later by whichever adapter reaches for it first.
     #[tokio::test]
     async fn every_documented_fixture_mode_behaves_as_documented() {
         let limits = generous_limits();

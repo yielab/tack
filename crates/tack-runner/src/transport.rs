@@ -1,10 +1,9 @@
-//! The real HTTP transport for runner protocol v1 (card III-H1).
+//! The real HTTP transport for runner protocol v1.
 //!
-//! Until this module existed, [`crate::UnavailableProtocolClient`] was the
-//! only production [`RunnerProtocolClient`] in the tree and `reqwest` was not
+//! Without this module, [`crate::UnavailableProtocolClient`] is the only
+//! production [`RunnerProtocolClient`] in the tree and `reqwest` is not
 //! a dependency of this crate — so a packaged `tack-runner` binary could not
-//! enroll, claim, heartbeat or report against a live server. That was the P0
-//! III-G5 refused to tag Part III on.
+//! enroll, claim, heartbeat or report against a live server.
 //!
 //! Two seams live here and they are deliberately separate:
 //!
@@ -43,7 +42,8 @@
 //! hold a credential the runner never received. Resending would burn a token
 //! and could not recover the credential anyway. It is reported as a typed
 //! transport failure instead — the same "never blind-retry an ambiguous
-//! post-spawn state" rule C4 applied to spawning, applied to credentials.
+//! post-spawn state" principle, applied here to credentials instead of
+//! process spawning.
 //!
 //! ## Secrets
 //!
@@ -266,8 +266,8 @@ fn normalize_base_url(raw: &str) -> String {
 ///
 /// The **body's** stable code wins over the status line: two different codes
 /// share a status (`conflict` and `idempotency_conflict` are both 409;
-/// `stale_lease` is 409 too), so branching on status alone is exactly the
-/// "stale_lease arrives as a generic conflict" defect this card had to avoid.
+/// `stale_lease` is 409 too), so branching on status alone would misreport
+/// `stale_lease` as a generic conflict.
 /// A body that is not a v1 envelope yields [`ProtocolClientError::Rejected`],
 /// which claims no stable code at all rather than guessing one.
 fn map_error_body(status: StatusCode, body: &[u8]) -> ProtocolClientError {
@@ -510,7 +510,7 @@ impl PullProtocol for HttpPullProtocol {
     ) -> Result<(), ProtocolClientError> {
         // Both phases are required by the server to carry `workspace_id` and
         // `base_revision`. `StartReport` models them as optional because the
-        // B3 seam predates that requirement; an absent value is reported as
+        // type predates that requirement; an absent value is reported as
         // a typed invalid_request instead of being sent as `null` for the
         // server to reject with a less specific message.
         let (workspace_id, base_revision) = match (&report.workspace_id, &report.base_revision) {
@@ -647,13 +647,13 @@ impl PullProtocol for HttpPullProtocol {
 
 /// The five attempt-scoped operations [`PullProtocol`] does not model.
 ///
-/// They are a **separate trait**, not new methods on `PullProtocol`, for one
-/// reason: `engine.rs` is not owned by this card and has no call site for any
-/// of them (a repo-wide read confirms the runner never submits an event
-/// batch, opens a decision or uploads an artifact today — see this card's
-/// handoff, which requests that wiring from the engine's owner). Widening
-/// `PullProtocol` would have forced edits to unowned test fakes for methods
-/// nothing calls. This trait is the ready seam for that wiring.
+/// A **separate trait**, not new methods on `PullProtocol`: widening
+/// `PullProtocol` would force edits to every test fake for methods some of
+/// them never call. `engine.rs` calls `submit_events` and
+/// `submit_terminal_evidence` (artifacts) through this trait;
+/// `create_decision`/`poll_decisions` are implemented but still have no
+/// caller — no harness adapter in this tree ever asks a question a decision
+/// could answer.
 #[async_trait]
 pub trait AttemptDataProtocol: Send + Sync {
     async fn submit_events(

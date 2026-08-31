@@ -1,5 +1,5 @@
-//! Per-method wire oracle for `DocketAdapter` (TODO.md §Wave A, card O2,
-//! task 39.2) — the secondary regression oracle named in
+//! Per-method wire oracle for `DocketAdapter` — the secondary regression
+//! oracle named in
 //! `docs/plans/agnostic-control-plane.md` §6. `docket_tick_contract_test.rs`
 //! is the primary
 //! oracle: it drives a full reconciler tick and would catch a refactor that
@@ -33,8 +33,7 @@
 //!   `{"outcome":"err","error":"<Display text>"}` for a method that errors.
 //!
 //! **Header names only, never values** — `grep -rn "Bearer"
-//! tests/golden/wire/` must stay clean; the acceptance check in TODO.md's
-//! card O2 runs exactly that. The bearer token used by these tests is a
+//! tests/golden/wire/` must stay clean. The bearer token used by these tests is a
 //! throwaway fixture constant, never a real credential, but the discipline
 //! is enforced structurally here regardless: [`RequestTranscript`] has no
 //! field a header *value* could land in.
@@ -52,10 +51,9 @@
 //! today and issues no HTTP call at all (see `adapters::docket`'s module
 //! doc, "Write methods"). That is captured here as a golden with zero
 //! requests and an `err` outcome, exactly like every other method — not
-//! skipped. The day a future card wires this method up for real, this
+//! skipped. The day this method is wired up for real, this
 //! golden fails immediately (a `requests: []` golden gaining entries, or an
-//! `err` outcome turning into `ok`), which is the whole reason TODO.md's
-//! card O2 calls this out explicitly rather than letting "obviously nothing
+//! `err` outcome turning into `ok`) rather than letting "obviously nothing
 //! to test" reasoning skip it.
 //!
 //! # Auth split, preserved in the golden
@@ -166,8 +164,8 @@ fn err(e: OrchError) -> Outcome {
 /// `ProvisionedPod` derives only `Deserialize` in `lib.rs` (it's a response
 /// DTO this crate decodes, never re-encodes) — so unlike every other DTO
 /// this file snapshots via [`ok`]'s generic `Serialize` bound, its golden
-/// value is built by hand instead. Not a `lib.rs` change to widen its derive
-/// list for a test file this card doesn't own that struct's file to edit.
+/// value is built by hand instead: widening the derive list would mean
+/// editing `lib.rs`, which is out of scope for this test file.
 fn provisioned_pod_to_value(p: &tack_orch::ProvisionedPod) -> serde_json::Value {
     serde_json::json!({
         "project": p.project,
@@ -243,7 +241,7 @@ fn golden_path(method: &str) -> PathBuf {
 /// Compares (or, under `UPDATE_GOLDEN=1`, writes) `golden` against
 /// `tests/golden/wire/<method>.json`. Mirrors
 /// `crates/tack-api/tests/openapi_contract.rs`'s `UPDATE_OPENAPI` pattern
-/// exactly, per TODO.md's card O2.
+/// exactly.
 fn assert_matches_golden(method: &str, golden: &MethodGolden) {
     let path = golden_path(method);
     let rendered = serde_json::to_string_pretty(golden).expect("serialize golden") + "\n";
@@ -506,8 +504,9 @@ async fn traces_wire_contract() {
 async fn enqueue_task_wire_contract() {
     // The `trusted: false` case, reusing
     // `enqueue_task_sends_the_trusted_flag_on_the_wire`'s scenario from
-    // `docket_adapter_test.rs` — the prompt-injection boundary card C2 will
-    // build on, and the one place this crate already had a wire assertion
+    // `docket_adapter_test.rs` — the wire-level half of the prompt-injection
+    // trust boundary that `ItemSource::is_trusted` enforces at the data
+    // layer, and the one place this crate already had a wire assertion
     // to reuse rather than invent.
     let server = MockServer::start().await;
     Mock::given(method("POST"))

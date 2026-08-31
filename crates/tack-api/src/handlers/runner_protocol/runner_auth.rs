@@ -1,14 +1,14 @@
 //! Runner-credential authentication for `/api/runner/v1`.
 //!
 //! This module is the single seam every runner-protocol write passes through
-//! before touching any B2 repository method. It resolves a `runner_bearer_credential`
+//! before touching any repository method. It resolves a `runner_bearer_credential`
 //! (an `Authorization: Bearer <credential>` header, per `protocol.json`) to
 //! exactly one active, non-revoked, non-expired runner identity.
 //!
 //! Deliberately narrow: this reads only the `Authorization` header. It never
-//! reads `x-tack-principal` (the operator-auth header C1/C5 use), which is
-//! what makes operator auth structurally unable to substitute for runner auth
-//! and vice versa — the two auth paths do not share a header, a table
+//! reads `x-tack-principal` (the operator-auth header used elsewhere), which
+//! is what makes operator auth structurally unable to substitute for runner
+//! auth and vice versa — the two auth paths do not share a header, a table
 //! lookup, or an error path.
 //!
 //! Credentials are hashed with SHA-256 before every comparison; the raw
@@ -43,18 +43,18 @@ pub struct RunnerPrincipal {
 pub type ProtocolErrorResponse = (StatusCode, Json<Value>);
 pub type ProtocolResult<T> = Result<T, ProtocolErrorResponse>;
 
-/// C5 replaces this non-secret sentinel with the request correlation ID once
-/// it mounts these card-local routes in the global API router (mirrors C1's
-/// `OPERATOR_REQUEST_ID` convention for its own card-local router).
+/// Static request-correlation id placeholder. No per-request correlation id
+/// is wired into the runner protocol's error envelopes yet — mirrors the
+/// identical `OPERATOR_REQUEST_ID` convention on the operator side.
 pub const RUNNER_REQUEST_ID: &str = "req_runner";
 
-/// Builds the stable v1 error envelope via B1's `ProtocolErrorEnvelope::new`,
-/// which derives `retryable` from `code` (`StableErrorCode::retryable`) so it
-/// can never drift from `docs/contracts/runner-v1/errors/*.json` — B1 is the
-/// single authority for that classification (see the "Retryability-authority
-/// amendment" in `docs/agent-handoffs/part-iii/III-B1.md` and rule III.1.6:
-/// hand-written feature DTOs are not another authority). `details` must
-/// follow the per-code shape documented in `docs/contracts/runner-v1/README.md`.
+/// Builds the stable v1 error envelope via `ProtocolErrorEnvelope::new`,
+/// which derives `retryable` from `code` (`StableErrorCode::retryable`) so
+/// it can never drift from `docs/contracts/runner-v1/errors/*.json` —
+/// `StableErrorCode::retryable` is the single authority for that
+/// classification, never a second, hand-written per-feature DTO. `details`
+/// must follow the per-code shape documented in
+/// `docs/contracts/runner-v1/README.md`.
 pub fn protocol_error(
     status: StatusCode,
     code: StableErrorCode,
@@ -218,9 +218,9 @@ pub async fn authenticate(
 /// expired, or missing-header credential.
 ///
 /// This distinction exists for one caller: `/refresh`'s rotation-race
-/// handling (III-H4, see `runner_protocol.rs::reclassify_refresh_auth_error`).
+/// handling (see `runner_protocol.rs::reclassify_refresh_auth_error`).
 /// SQLite has no history of a credential once it is rotated away — the
-/// `UPDATE ... SET credential_hash=?` in `rotate_runner_credential` (B2)
+/// `UPDATE ... SET credential_hash=?` in `rotate_runner_credential`
 /// overwrites the old hash in place — so a `/refresh` request that loses a
 /// concurrent rotation race and a `/refresh` request carrying a genuinely
 /// bogus credential are indistinguishable by a second query: both hit this

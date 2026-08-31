@@ -1,21 +1,20 @@
 //! Chaos, fencing, security and recovery adversarial suite.
 //!
-//! This card owns adversarial/integration tests and the audit report only —
+//! This file owns adversarial/integration tests and the audit report only —
 //! no production source is touched. Every test below drives the real
 //! production router (`tack_api::router::build_router`, the exact function
 //! `tack serve` calls), mirroring the house convention `wave2_gate.rs` and
 //! `f6a_artifact_wiring_test.rs` established, and every "writes nothing" /
 //! "rejects before X" claim reads persisted database state directly rather
-//! than trusting a status code alone (CLAUDE.md's "a status-code assertion
-//! alone proves little").
+//! than trusting a status code alone.
 //!
 //! Two tests (`two_distinct_runners_in_the_same_fleet_race_...` and
 //! `a_duplicated_credential_used_concurrently_...`) prove real concurrency
-//! against a **file-backed** SQLite database, per CLAUDE.md's rule that
-//! concurrency claims must not be proven only against the shared in-memory
-//! harness (a single-connection `:memory:` pool can accidentally serialize
-//! what looks like a race). Every other test uses an in-memory database,
-//! matching every other adversarial test file in this crate.
+//! against a **file-backed** SQLite database — concurrency claims must not
+//! be proven only against the shared in-memory harness (a single-connection
+//! `:memory:` pool can accidentally serialize what looks like a race).
+//! Every other test uses an in-memory database, matching every other
+//! adversarial test file in this crate.
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
@@ -434,12 +433,10 @@ async fn two_distinct_runners_in_the_same_fleet_race_to_claim_one_request_and_ex
     let runner_a = enroll_runner(&app, "Fleet racer A").await;
     let runner_b = enroll_runner(&app, "Fleet racer B").await;
 
-    // Fleet membership has no write route anywhere on this codebase's API
-    // surface (a gap III-E6/III-F4 both already recorded independently, not
-    // a regression this card introduces) — direct SQL is the only available
-    // way to set up two runners eligible for the same fleet-selector
-    // request, exactly as `repository_crash.rs` inserts fixture rows
-    // directly for setup it cannot reach through HTTP.
+    // Direct SQL, not `POST /api/runner-fleets/{fleet_id}/members`, so this
+    // fixture setup doesn't depend on that route's own behavior — exactly
+    // as `repository_crash.rs` inserts fixture rows directly for setup it
+    // cannot reach through HTTP.
     let fleet_id = "fleet-g2-race";
     let now = Utc::now().to_rfc3339();
     sqlx::query(
@@ -783,15 +780,15 @@ async fn stale_fence_writes_nothing_on_heartbeat_decisions_artifacts_cancellatio
     // observed error code here is `conflict`, not `stale_lease` — this
     // attempt is `lost` (not merely "superseded while still active"), and
     // `heartbeat_batch` reports that as a state conflict rather than routing
-    // it through `HeartbeatBatchResult::StaleLease`. Recorded as an audit
-    // finding (see the handoff): every other fenced endpoint in this file
-    // returns the stable `stale_lease` code for the identical scenario
-    // (an attempt superseded by recovery), so a runner cannot rely on one
-    // consistent error code to detect "my fence was superseded" across all
-    // of heartbeat/events/decisions/artifacts/cancellation/recovery — it is
-    // a genuinely different code on this one route. Not re-litigated here
-    // (out of this card's `Owns`), but the status code and "writes nothing"
-    // invariant are still what matters for safety and are proven below.
+    // it through `HeartbeatBatchResult::StaleLease`. A known inconsistency:
+    // every other fenced endpoint in this file returns the stable
+    // `stale_lease` code for the identical scenario (an attempt superseded
+    // by recovery), so a runner cannot rely on one consistent error code to
+    // detect "my fence was superseded" across all of
+    // heartbeat/events/decisions/artifacts/cancellation/recovery — it is a
+    // genuinely different code on this one route. Not fixed here, but the
+    // status code and "writes nothing" invariant are still what matters for
+    // safety and are proven below.
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert!(
         matches!(

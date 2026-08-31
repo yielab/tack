@@ -1,19 +1,16 @@
-//! III-F6d integration tests: the artifact/event retention sweep and the
-//! overdue-decision expiry sweep, wired into the real production
-//! `ExecutionRuntime` — closing two Wave 5 integration gaps an audit found:
-//! `sweep_artifacts`/`sweep_events` (`handlers/runner_protocol/retention.rs`,
-//! card III-F2) and `expire_overdue_decisions` (`handlers/decisions.rs`, card
-//! III-F1) previously had no caller anywhere in production, only their own
-//! (or, for the former pair, not even their own) tests.
+//! Proves the artifact/event retention sweep and the overdue-decision
+//! expiry sweep are wired into the real production `ExecutionRuntime`:
+//! `sweep_artifacts`/`sweep_events` (`handlers/runner_protocol/retention.rs`)
+//! and `expire_overdue_decisions` (`handlers/decisions.rs`) are exercised
+//! through the runtime's own start/stop lifecycle, not called directly.
 //!
 //! Every test here drives the real `ExecutionRuntime::start`/`stop`
 //! lifecycle (`src/execution_runtime.rs`) — never a hand-rolled loop calling
 //! the sweep functions directly. That distinction is the whole point: a
-//! card's own green tests already proved the sweep *functions* work in
-//! isolation; nothing before this proved anything in the running server
-//! actually calls them. Reachable normally via `tack_api::execution_runtime`
-//! and `tack_api::handlers::*` (both `pub mod`, fully integrated production
-//! code — unlike the still-card-local `f1_decisions_test.rs`/
+//! unit test can prove the sweep *functions* work in isolation; only this
+//! file proves the running server actually calls them. Reachable normally
+//! via `tack_api::execution_runtime` and `tack_api::handlers::*` (both `pub
+//! mod`, fully integrated production code — unlike `f1_decisions_test.rs`/
 //! `f2_artifact_events_test.rs`, this file needs no `#[path]` loading).
 
 use std::time::Duration as StdDuration;
@@ -162,7 +159,7 @@ fn new_request<'a>(
 /// Claims a fresh attempt against a real, long-lived lease (10 minutes —
 /// comfortably longer than any sweep-wait loop below) and bumps it straight
 /// to `running`, mirroring `f1_decisions_test.rs::claim_running_attempt`'s
-/// own shortcut (this card's resolve/expiry paths don't gate on how an
+/// own shortcut (the resolve/expiry paths under test don't gate on how an
 /// attempt got to `running`, only on its current state/lease).
 async fn running_attempt(repo: &Repository, item_id: &str, tag: &str) -> (String, i64) {
     let request_id = format!("req-{tag}");
@@ -445,7 +442,7 @@ async fn retention_disabled_by_default_leaves_the_same_expired_artifact_row_and_
 
 /// The immutability guard (`set_execution_artifact_content_reference`'s own
 /// `WHERE content_reference IS NULL`) means a manifested-but-never-uploaded
-/// artifact is exactly the shape III-F6d's race guard cares about. This test
+/// artifact is exactly the shape the race guard below cares about. This test
 /// does not attempt to win that race against the real background sweep
 /// (inherently timing-dependent — the deterministic proof lives in
 /// `crates/tack-db/tests/f2_event_artifact_retention_test.rs`); it only
@@ -607,8 +604,8 @@ async fn overdue_decision_expires_via_the_periodic_sweep_while_a_future_one_stay
 }
 
 /// Retention disabled (the default) must not silently also disable decision
-/// expiry's periodic caller — III-F6d's own design note explains why the two
-/// currently share a gate. This confirms the *current* wiring's actual
+/// expiry's periodic caller — the two currently share a gate. This confirms
+/// the *current* wiring's actual
 /// behavior (both riding `retention_enable`), so a future change to that
 /// design shows up here as a deliberate, reviewed test change rather than a
 /// silent behavior drift.

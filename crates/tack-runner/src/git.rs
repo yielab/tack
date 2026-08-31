@@ -10,8 +10,8 @@
 //!    lock file and a `gitdir` pointer) inside one shared repository. Two
 //!    attempts provisioning at once contend on that repository's index lock,
 //!    and a runner killed mid-add leaves a registered-but-absent worktree that
-//!    a later attempt inherits — exactly the two failures this card must not
-//!    have. Recovering from it needs `git worktree prune` against shared
+//!    a later attempt inherits — exactly the two failure modes a private
+//!    clone avoids. Recovering from it needs `git worktree prune` against shared
 //!    mutable state that another live attempt may be using at that moment.
 //! 2. `git worktree add` refuses a target directory that already exists and is
 //!    not empty. Every attempt directory already carries the `.tack-attempt`
@@ -530,8 +530,7 @@ mod tests {
     /// resolves a bare program name can observe that empty `PATH` and fail with a
     /// spurious "binary not found". This was found as a one-in-many-runs failure
     /// of `a_checkout_of_a_different_revision_is_never_reused` during
-    /// `cargo test --workspace`; see the III-H3 handoff, which escalates the
-    /// shared-state hazard to that test's owner.
+    /// `cargo test --workspace`.
     fn git_program() -> PathBuf {
         for candidate in [
             "/usr/bin/git",

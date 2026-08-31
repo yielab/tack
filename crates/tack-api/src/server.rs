@@ -75,7 +75,7 @@ pub async fn serve() -> anyhow::Result<()> {
     // The interval itself is env-only (`TACK_BACKUP_INTERVAL_SECS`), but whether
     // the destination is *configured* can also come from UI-saved settings, so
     // spawn whenever an interval is set and re-check the effective config each
-    // tick — a UI-only cloud config still schedules (28.1).
+    // tick — a UI-only cloud config still schedules.
     if let Some(interval_secs) = config.backup_interval_secs {
         const MIN_BACKUP_INTERVAL_SECS: u64 = 60;
         let interval_secs = if interval_secs < MIN_BACKUP_INTERVAL_SECS {
@@ -115,9 +115,8 @@ pub async fn serve() -> anyhow::Result<()> {
     }
 
     // Start the orchestration reconciler, one task per registered control
-    // plane, polling `/health` + `/status.json` (TODO.md §Wave 1, card A2 /
-    // task 33.6) — if the *effective* setting says to. Off by default
-    //: the effective
+    // plane, polling `/health` + `/status.json` — if the *effective*
+    // setting says to. Off by default; the effective
     // value is the `app_meta`-stored flag if the UI has ever set one, else
     // `TACK_ORCH_ENABLE`'s startup value — same precedence Cloud Backup
     // already uses for its own settings. Unlike Cloud Backup, this one also
@@ -146,11 +145,12 @@ pub async fn serve() -> anyhow::Result<()> {
                 store,
                 reconciler::ReconcilerConfig {
                     poll_secs: config.orch_poll_secs,
-                    // Card B2 (trace ingestion): must be the same cutoff
-                    // `spawn_retention_sweep` uses (config.orch_event_retention_days
-                    // both places) — persist_events' retention-composition guard
-                    // depends on the two agreeing. See reconciler.rs's
-                    // `ReconcilerConfig` doc comment.
+                    // Trace ingestion's event_retention_days must be the same
+                    // cutoff `spawn_retention_sweep` uses
+                    // (config.orch_event_retention_days both places) —
+                    // persist_events' retention-composition guard depends on
+                    // the two agreeing. See reconciler.rs's `ReconcilerConfig`
+                    // doc comment.
                     event_retention_days: config.orch_event_retention_days,
                     ..Default::default()
                 },
@@ -164,8 +164,7 @@ pub async fn serve() -> anyhow::Result<()> {
     }
 
     // Start the execution-domain retention sweep, the artifact/event sweep +
-    // decision-expiry sweep, and the health watch (cards III-F5/III-F2/III-F1,
-    // wired together by the Wave 5 integrator, III-F6d) — three cancellable
+    // decision-expiry sweep, and the health watch — three cancellable
     // background tasks gated by two flags
     // (`TACK_EXECUTION_RETENTION_ENABLE`/`TACK_EXECUTION_HEALTH_ENABLE`): the
     // artifact/event/decision sweep shares `retention_enable` with the
@@ -174,8 +173,7 @@ pub async fn serve() -> anyhow::Result<()> {
     // comment for why artifact deletion must never be gated any more loosely
     // than that purge already is. Health defaults on (read-only: no outbound
     // call, no new API surface, just logging a `warn!` on a stale
-    // lease/`needs_operator` request). Retention defaults **off** (Wave 5
-    // integrator III-F6 amendment — F5's own original default was `true`; see
+    // lease/`needs_operator` request). Retention defaults **off** (see
     // `config.rs#default_execution_retention_enable`'s doc comment): it
     // deletes rows, so — unlike health — it needs an explicit operator
     // opt-in, the same posture `TACK_ORCH_ENABLE` already establishes for
@@ -287,8 +285,8 @@ async fn ensure_default_workspace(pool: &sqlx::SqlitePool) -> anyhow::Result<Uui
 ///
 /// When the restore originated from a remote bundle, an attachments staging dir
 /// (`<storage_dir>.restore/`) may also exist. The swap is fail-safe: on any
-/// failure it rolls back to the original files rather than booting an empty DB
-/// (28.3). Stale `-wal`/`-shm` sidecars of the old DB are deleted first so
+/// failure it rolls back to the original files rather than booting an empty DB.
+/// Stale `-wal`/`-shm` sidecars of the old DB are deleted first so
 /// SQLite cannot replay them onto the freshly restored database.
 fn apply_staged_restore(config: &AppConfig) {
     use std::path::Path;
@@ -447,9 +445,9 @@ async fn shutdown_signal() {
 }
 
 /// Run a scheduled remote backup. Reads the *effective* config each tick so
-/// UI-saved settings (bucket/prefix/creds/retention) are honored (28.1), and
-/// runs the conflict-safe upload path (28.2) — on a cross-device conflict it
-/// warns and skips rather than clobbering another device's newer work.
+/// UI-saved settings (bucket/prefix/creds/retention) are honored, and runs
+/// the conflict-safe upload path — on a cross-device conflict it warns and
+/// skips rather than clobbering another device's newer work.
 async fn run_scheduled_backup(state: &AppState) {
     let cfg = crate::handlers::settings::effective_backup_config(state).await;
     if !cfg.remote_backup_enabled() {
@@ -519,7 +517,7 @@ mod tests {
         d
     }
 
-    /// 28.3: the DB swap succeeds but the storage swap fails — the whole
+    /// The DB swap succeeds but the storage swap fails — the whole
     /// operation must roll back so the original DB is intact and bootable.
     #[test]
     fn restore_swap_rolls_back_when_storage_swap_fails() {

@@ -1,8 +1,8 @@
 //! The pure single-request selection algorithm.
 //!
-//! [`select_runner`] performs no I/O, reads no clock (`now` is a caller-
-//! supplied parameter — III.2 rule 9, "no blocking sleeps in tests, inject
-//! fake time"), and never grants a lease. It is deterministic: the same
+//! [`select_runner`] performs no I/O, reads no clock (`now` is a
+//! caller-supplied parameter, so tests inject fake time instead of blocking
+//! on a real sleep), and never grants a lease. It is deterministic: the same
 //! `(request, candidates, now, policy)` tuple always produces the same
 //! [`SelectionOutcome`], and the outcome does not depend on `candidates`'
 //! slice order (see the order-independence tests in
@@ -139,9 +139,8 @@ fn evaluate_candidate(
     match &request.requested_model {
         // No runner-v1 v1 capability field attests that a harness accepts
         // an unspecified model — see IneligibleReason::AutoSelectNotVerified's
-        // doc comment and this card's handoff. Every candidate is rejected
-        // identically rather than the scheduler guessing which harness is
-        // safe.
+        // doc comment. Every candidate is rejected identically rather than
+        // the scheduler guessing which harness is safe.
         ModelSelector::AutoSelect => {
             return Err(IneligibleReason::AutoSelectNotVerified {
                 harness: request.requested_harness_kind.clone(),
@@ -155,13 +154,13 @@ fn evaluate_candidate(
                         .iter()
                         .any(|declared_id| declared_id.as_str() == model_id.as_str())
             });
-            // III-H5: an undeclared pairing is still eligible when the
-            // harness attests `model_passthrough: supported` — the adapter
-            // forwards the operator's model verbatim and the harness itself
+            // An undeclared pairing is still eligible when the harness
+            // attests `model_passthrough: supported` — the adapter forwards
+            // the operator's model verbatim and the harness itself
             // validates it at run time. Only `Supported` schedules;
             // `Advisory` is an unverified claim and capability claims are
             // load-bearing, so it is rejected exactly like `Unsupported`
-            // and like an absent attestation (pre-III-H5 snapshots).
+            // and like an absent attestation.
             let passthrough = harness
                 .model_passthrough
                 .as_ref()
@@ -184,13 +183,13 @@ fn evaluate_candidate(
 /// and never grants a lease — see this module's and [`super::types`]'s doc
 /// comments.
 ///
-/// Tie-break among eligible candidates (the "fairness" half of III-E1's
-/// "priority/fairness" task, applied here per single request; batch-level
-/// request ordering is [`super::batch::schedule`]'s job): the candidate with
-/// the most `available_capacity` wins, spreading load rather than always
-/// picking a fixed favorite; a true tie is broken by ascending `runner_id`,
-/// purely for full, order-independent determinism (III-E1's acceptance
-/// criterion: "identical input selects identically").
+/// Tie-break among eligible candidates (the "fairness" half of
+/// priority/fairness selection, applied here per single request;
+/// batch-level request ordering is [`super::batch::schedule`]'s job): the
+/// candidate with the most `available_capacity` wins, spreading load rather
+/// than always picking a fixed favorite; a true tie is broken by ascending
+/// `runner_id`, purely for full, order-independent determinism — identical
+/// input selects identically.
 pub fn select_runner(
     request: &SchedulingRequest,
     candidates: &[RunnerCandidate],

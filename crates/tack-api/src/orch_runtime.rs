@@ -14,8 +14,8 @@
 //! registered control plane) loops: fetch → decide → persist → sleep.
 //! Stopping it cleanly needs a signal the task can observe at a safe point
 //! — never mid-HTTP-call to docket, and never while a SQLite write is open
-//! (TODO.md §0 rule 5; unaffected either way, since persistence already
-//! happens strictly after the fetch phase completes and before the sleep).
+//! (unaffected either way, since persistence already happens strictly
+//! after the fetch phase completes and before the sleep).
 //!
 //! [`tokio::sync::watch`] is that signal: a single `bool` channel, `false`
 //! meaning "keep going". [`OrchRuntime::stop`] flips it to `true`; every
@@ -109,10 +109,10 @@ impl OrchRuntime {
 
     /// Start a self-healing reconciler run: one poller per
     /// currently-registered control plane, kept in sync with
-    /// `control_planes` for as long as this generation stays running (card
-    /// E3, 2026-08-05 — see `reconciler::spawn_reconcilers_supervised`'s doc
-    /// comment for why a one-time snapshot wasn't enough: a control plane
-    /// registered *after* `start()` used to never get polled, silently).
+    /// `control_planes` for as long as this generation stays running — see
+    /// `reconciler::spawn_reconcilers_supervised`'s doc comment for why a
+    /// one-time snapshot isn't enough: a control plane registered *after*
+    /// `start()` would otherwise never get polled, silently.
     /// Idempotent: a `start()` while a generation is already running is a
     /// no-op — it does not spawn a duplicate set alongside the live one.
     /// (Calling `start()` twice in a row happens naturally if the operator
@@ -372,8 +372,8 @@ mod tests {
     /// control plane being registered *after* `OrchRuntime::start()` has
     /// already been called, the exact sequence the setup wizard walks users
     /// through (enable orchestration -> register a control plane -> link a
-    /// project). See `a_plane_registered_after_start_gets_polled` below —
-    /// this is card E3's bug-reproduction fixture.
+    /// project). See `a_plane_registered_after_start_gets_polled` below,
+    /// which reproduces exactly that case.
     struct MutableFakeStore {
         planes: std::sync::Mutex<Vec<Uuid>>,
     }
@@ -467,8 +467,8 @@ mod tests {
         }
     }
 
-    /// **The bug this card fixes.** Before card E3, `OrchRuntime::start`
-    /// called `spawn_reconcilers_cancellable`, which read
+    /// **The bug this test guards against.** `OrchRuntime::start` used to
+    /// call `spawn_reconcilers_cancellable`, which read
     /// `store.list_registered()` exactly once and spawned one task per
     /// plane found at that instant — the list was never re-read. A control
     /// plane registered after `start()` (enable -> register -> link, the

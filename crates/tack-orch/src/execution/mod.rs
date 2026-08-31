@@ -2,17 +2,16 @@
 //!
 //! This module deliberately has no transport, persistence, or vendor adapter
 //! dependencies. It represents the immutable values exchanged by the runner
-//! protocol and is the seam consumed by the later API, database, and runner
-//! cards.
+//! protocol and is the seam consumed by the API, database, and runner
+//! layers.
 
 mod capabilities;
 mod lifecycle;
 mod types;
 
-// III-H1 added `CapabilityLimits` below: it is the type of the public field
-// `RunnerCapabilities::limits`, but was the only capability type this list
-// omitted — so no downstream crate could name it to construct a capability
-// report. Purely an export-list omission; no type, field or behaviour changed.
+// `CapabilityLimits` is exported here because it's the type of the public
+// field `RunnerCapabilities::limits` — without it, no downstream crate can
+// name the type to construct a capability report.
 pub use capabilities::{
     CapabilityLimits, CapabilitySupport, CapabilityValue, Concurrency, EmbeddedCapabilitySnapshot,
     FeatureCapabilities, HarnessCapability, ModelCombination, RunnerCapabilities,

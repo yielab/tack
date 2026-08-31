@@ -1,11 +1,9 @@
-//! III-E6 card: focused tests for the two operator read routes this card
-//! adds — `GET /api/runners` and `GET /api/executions/{id}/attempts`
-//! (+ `/attempts/{n}/events`) — proving they return real data through the
-//! actual production router (`tack_api::router::build_router`, exactly what
-//! `tack serve` mounts), not a card-local stand-in. E2/E3/E4/E5's own
-//! handoffs each independently flagged both routes as missing; this file is
-//! the record that they now exist and return honest data (including the
-//! honest "empty, not yet" and 404 cases).
+//! Focused tests for the two operator read routes `GET /api/runners` and
+//! `GET /api/executions/{id}/attempts` (+ `/attempts/{n}/events`) —
+//! proving they return real data through the actual production router
+//! (`tack_api::router::build_router`, exactly what `tack serve` mounts),
+//! not a test-local stand-in, including the honest "empty, not yet" and
+//! 404 cases.
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};

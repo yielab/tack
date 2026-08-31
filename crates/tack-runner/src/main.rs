@@ -79,9 +79,9 @@ async fn run(cli: Cli) -> Result<(), tack_runner::RunnerError> {
     // is intentionally never included in diagnostics or tracing fields.
     config.require_enrollment_credential()?;
 
-    // III-H1: the real transport replaces `UnavailableProtocolClient`, which
-    // was the only production `RunnerProtocolClient` in the tree until this
-    // card and could not reach a server at all.
+    // The real transport replaces `UnavailableProtocolClient`, the stub that
+    // is otherwise the only production `RunnerProtocolClient` in the tree
+    // and cannot reach a server at all.
     let staging_root = config.state_dir.join("staging");
     let adapters = build_adapter_registry(&staging_root);
     let capabilities = report_capabilities(&adapters, &SystemClock).await;
@@ -94,24 +94,18 @@ async fn run(cli: Cli) -> Result<(), tack_runner::RunnerError> {
         Arc::clone(&protocol),
         adapters,
         OwnerOnlyJournal::new(config.state_dir.join("journal")),
-        // III-H3: every claimed attempt now gets its own real git checkout
-        // under the runner's state directory. This replaces
-        // `UnavailableWorktreeProvisioner`, which refused every provision with
-        // a typed `WorktreeUnavailable` — the gap III-H1 found and could not
-        // close inside its own ownership.
+        // Every claimed attempt gets its own real git checkout under the
+        // runner's state directory. This replaces
+        // `UnavailableWorktreeProvisioner`, which refuses every provision
+        // with a typed `WorktreeUnavailable`.
         WorkspaceManager::new(
             config.state_dir.join("workspaces"),
             GitWorktreeProvisioner::default(),
         ),
     )
-    // III-H6: `HttpPullProtocol` has implemented `AttemptDataProtocol` since
-    // III-H1, but nothing ever attached it to the engine — this is that one
-    // remaining wiring point. `engine.rs` (this card's ownership) now has
-    // real call sites; without this line they would never run in the
-    // production binary and the events/artifacts §III.6 gap this card
-    // exists to close would stay open in practice even though the code
-    // compiles. See this card's handoff for why `main.rs` is touched despite
-    // not being named in `Owns`.
+    // `HttpPullProtocol` implements `AttemptDataProtocol`; without attaching
+    // it here, `engine.rs`'s real call sites for events/artifacts would
+    // never run in the production binary even though the code compiles.
     .with_data_protocol(Arc::clone(&protocol) as Arc<dyn tack_runner::client::AttemptDataProtocol>);
     let client = HttpRunnerClient::new(protocol, engine, config.clone(), SystemClock, capabilities);
 
@@ -214,23 +208,22 @@ fn build_adapter_registry(staging_root: &std::path::Path) -> AdapterRegistry {
 /// offer only what a runner says it can do.
 ///
 /// - `cancel` reports [`PROCESS_GROUP_CANCEL_CEILING`] (advisory), the honest
-///   ceiling of a process-group signal — III-D2 proved twice that it cannot
-///   reliably reach a descendant a harness spawns into a new OS session.
-/// - `artifacts` reports **advisory**: III-H6 gave `engine.rs` a real call
-///   site (`RunnerEngine::submit_terminal_evidence`), so a completed attempt
-///   with a staged artifact now genuinely uploads it — but only when an
+///   ceiling of a process-group signal, which cannot reliably reach a
+///   descendant a harness spawns into a new OS session.
+/// - `artifacts` reports **advisory**: `engine.rs` has a real call site
+///   (`RunnerEngine::submit_terminal_evidence`), so a completed attempt
+///   with a staged artifact genuinely uploads it — but only when an
 ///   adapter happens to stage one (`terminal_reason.artifact`), and only
 ///   best-effort (a transport failure is logged, never retried or replayed
 ///   on restart, and never blocks the attempt's own completion). That
 ///   conditionality is exactly what `advisory` is for; `supported` would
 ///   overclaim an upload this runner cannot yet guarantee.
-/// - `decisions` still reports **unsupported**. III-H1 implemented the wire
-///   operations, and `AttemptDataProtocol::create_decision`/`poll_decisions`
-///   are reachable from `engine.rs` since this card, but no harness adapter
-///   in this tree ever asks a question a decision could answer — there is
-///   still no call site that would ever open one. Claiming support for a
-///   path nothing calls is exactly the kind of lie the "capability claims
-///   are load-bearing" rule forbids.
+/// - `decisions` still reports **unsupported**. `AttemptDataProtocol::
+///   create_decision`/`poll_decisions` are implemented and reachable from
+///   `engine.rs`, but no harness adapter in this tree ever asks a question a
+///   decision could answer — there is still no call site that would ever
+///   open one. Claiming support for a path nothing calls is exactly the kind
+///   of lie the "capability claims are load-bearing" rule forbids.
 async fn report_capabilities<C: Clock>(
     adapters: &AdapterRegistry,
     clock: &C,

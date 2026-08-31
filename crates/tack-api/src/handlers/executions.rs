@@ -1,4 +1,4 @@
-//! Card-local operator execution handlers. C5 owns their global-router wiring.
+//! Operator execution handlers, mounted into the global router.
 
 use std::sync::Arc;
 
@@ -27,14 +27,14 @@ use uuid::Uuid;
 
 /// Documents `tack_orch::execution::ProtocolErrorEnvelope`'s real wire shape
 /// (`docs/contracts/runner-v1/errors/*.json`) for every operator execution/
-/// fleet/runner/profile route (card III-E6), which returns that envelope —
-/// not `crate::openapi::ErrorEnvelope`, a different, incompatible shape
+/// fleet/runner/profile route, which returns that envelope — not
+/// `crate::openapi::ErrorEnvelope`, a different, incompatible shape
 /// (`{status,message,code?}` vs `{code,message,request_id,retryable,
 /// details}`). This is a doc-only mirror, not a second runtime authority:
 /// `tack-orch` must stay free of an OpenAPI-generation dependency (see that
 /// crate's own architecture boundary), so the real type cannot derive
 /// `ToSchema` itself. Defined here (not in `crate::openapi`) so this file
-/// keeps compiling standalone when a card-local test loads it via
+/// keeps compiling standalone when a test loads it via
 /// `#[path = "../src/handlers/executions.rs"]` (`c1_handlers_test.rs`,
 /// `c2_handlers_test.rs`) — a `crate::openapi` import would not resolve in
 /// that separate test-binary crate root. `code` is documented as a free
@@ -81,15 +81,15 @@ pub struct RunnerV1Error {
 /// Documents `tack_orch::execution::MeasurementSource`'s wire shape —
 /// used by `AttemptSummary.usage_economics`. Defined here,
 /// not in `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope`
-/// above is: this file must keep compiling standalone when a card-local
-/// test loads it via `#[path]` (`c1_handlers_test.rs`, `c2_handlers_test.rs`)
-/// — a `crate::openapi` (or any other module's) reference would not resolve
-/// in that separate test-binary crate root. `tack-orch` has no `ToSchema`
+/// above is: this file must keep compiling standalone when a test loads it
+/// via `#[path]` (`c1_handlers_test.rs`, `c2_handlers_test.rs`) — a
+/// `crate::openapi` (or any other module's) reference would not resolve in
+/// that separate test-binary crate root. `tack-orch` has no `ToSchema`
 /// (see `usage_provenance.rs`'s own module doc), so this is a
 /// hand-verified mirror, never constructed or serialized by real code —
 /// `#[allow(dead_code)]` for the identical reason `RunnerV1ErrorEnvelope`
 /// carries it. `not_measured` is the honest value whenever a figure
-/// genuinely is not known — never a fabricated zero (III.2 rule 7).
+/// genuinely is not known — never a fabricated zero.
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[allow(dead_code)]
@@ -103,9 +103,8 @@ pub enum MeasurementSourceSchema {
 /// in this API (`*_usd_estimated`) uses this shape. `value` is `null`
 /// whenever `source` is `not_measured`; `tack-orch`'s own
 /// `absent_usage_never_serializes_as_zero` test asserts the literal JSON,
-/// not just the Rust type, for exactly this reason (III.2 rule 7:
-/// "unmeasured is nullable" — this is documented as genuinely nullable,
-/// never a number defaulting to `0`).
+/// not just the Rust type: unmeasured is documented as genuinely nullable,
+/// never a number defaulting to `0`.
 #[derive(Debug, Serialize, ToSchema)]
 #[allow(dead_code)]
 pub struct UsdMeasurementSchema {
@@ -116,10 +115,11 @@ pub struct UsdMeasurementSchema {
 /// Documents `tack_orch::usage_provenance::RunnerTimeCost`.
 /// `cost_usd_estimated` is `{"value": null, "source": "not_measured"}` in
 /// every real response today — no runner infra cost-rate is stored anywhere
-/// in this schema (see `CLAUDE.md`'s `TACK_EXECUTION_*` config table and the
-/// III-F3 handoff's "Schema/API/contract change requested" item 2).
-/// `wall_clock_ms` is a plain derivable fact, not itself a `Measurement` —
-/// `null` only until both the attempt's `started_at`/`ended_at` are known.
+/// in this schema (see `CLAUDE.md`'s `TACK_EXECUTION_*` config table);
+/// `runner_rate_usd_per_hour` must be supplied by the caller for a real
+/// dollar figure to appear. `wall_clock_ms` is a plain derivable fact, not
+/// itself a `Measurement` — `null` only until both the attempt's
+/// `started_at`/`ended_at` are known.
 #[derive(Debug, Serialize, ToSchema)]
 #[allow(dead_code)]
 pub struct RunnerTimeCostSchema {
@@ -143,7 +143,7 @@ pub struct UsageEconomicsSchema {
 /// `AttemptSummary.model_provenance`'s real shape (`null` while the attempt
 /// has not yet reported `actual_execution`). A tagged union carrying every
 /// observed fact, never coalesced into a bare boolean "matched" flag, so a
-/// caller (F4's frontend rendering) can show both sides of a mismatch.
+/// caller (the frontend's rendering) can show both sides of a mismatch.
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[allow(dead_code)]
@@ -167,8 +167,8 @@ pub enum ModelProvenanceSchema {
     },
 }
 
-/// State for C1's card-local router. C5 can construct this from the shared API
-/// state when it performs the one permitted global-router integration.
+/// State for the operator execution router — constructed from the shared
+/// API state's repository and clock when mounted in `router.rs`.
 #[derive(Clone)]
 pub struct OperatorExecutionState {
     pub repo: Repository,
@@ -181,11 +181,11 @@ impl OperatorExecutionState {
     }
 }
 
-/// C5 replaces this non-secret sentinel with the request correlation ID once it
-/// mounts these card-local routes in the global API router.
+/// Static request-correlation id placeholder. No per-request correlation
+/// id is wired into these error envelopes yet.
 const OPERATOR_REQUEST_ID: &str = "req_operator";
 
-/// Builds the stable v1 error envelope via B1's `ProtocolErrorEnvelope::new`,
+/// Builds the stable v1 error envelope via `ProtocolErrorEnvelope::new`,
 /// which derives `retryable` from `code` (`StableErrorCode::retryable`) so it
 /// can never drift from `docs/contracts/runner-v1/errors/*.json`. `details`
 /// must follow the per-code shape documented in
@@ -325,9 +325,8 @@ pub struct CreateExecutionResponse {
 }
 
 /// One row of `GET /api/executions` / the `GET /api/executions/{id}`
-/// detail. Deliberately five scalar columns today — see
-/// `docs/agent-handoffs/part-iii/III-E2.md`'s Gap 2 for the attempt/event
-/// data this does *not* carry, now available separately via `GET
+/// detail. Deliberately five scalar columns today — attempt/event detail
+/// is not carried here; it is available separately via `GET
 /// /api/executions/{id}/attempts`.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ExecutionSummary {
@@ -376,7 +375,7 @@ pub struct AttemptSummary {
     pub actual_execution: Option<Value>,
     pub terminal_reason: Option<Value>,
     /// `tack_orch::execution::Usage` once reported, else `null` — never a
-    /// fabricated zero (III.2 rule 7).
+    /// fabricated zero.
     pub usage: Option<Value>,
     pub started_at: Option<String>,
     pub ended_at: Option<String>,
@@ -384,26 +383,25 @@ pub struct AttemptSummary {
     pub updated_at: String,
     /// `tack_orch::usage_provenance::ModelProvenance` (`matched` /
     /// `auto_select_observed` / `mismatched`), or `null` when the attempt
-    /// has not yet reported `actual_execution` — card III-F3's
-    /// `derive_attempt_facts`, wired here by III-F6. Runtime type stays
-    /// untyped `Value` (the real type lives in `tack-orch`, which does not
-    /// depend on `utoipa`); `#[schema(...)]` below points the *generated
-    /// OpenAPI document* at `ModelProvenanceSchema`, this file's
-    /// hand-verified mirror, instead of the untyped-`Value` default
-    /// (III-F6e — was previously an empty `{}` schema, the exact spec-drift
-    /// problem Wave 4's integrator eliminated elsewhere in this API).
+    /// has not yet reported `actual_execution` — populated by
+    /// `derive_attempt_facts`. Runtime type stays untyped `Value` (the real
+    /// type lives in `tack-orch`, which does not depend on `utoipa`);
+    /// `#[schema(...)]` below points the *generated OpenAPI document* at
+    /// `ModelProvenanceSchema`, this file's hand-verified mirror, instead of
+    /// the untyped-`Value` default — an untyped default would generate an
+    /// empty `{}` schema, the same spec-drift problem this API avoids
+    /// elsewhere.
     #[schema(value_type = Option<ModelProvenanceSchema>, nullable)]
     pub model_provenance: Option<Value>,
     /// `tack_orch::usage_provenance::UsageEconomics` — two
     /// independently-provenanced dollar dimensions, never summed. Absent
     /// usage/timestamps serialize as `{"value": null, "source":
-    /// "not_measured"}`, never a structural zero (III.2 rule 7); no runner
-    /// infra cost-rate is stored anywhere in this schema today (III-F3
-    /// handoff, "Schema/API/contract change requested" item 2), so
+    /// "not_measured"}`, never a structural zero; no runner infra cost-rate
+    /// is stored anywhere in this schema today, so
     /// `runner_time_cost.cost_usd_estimated` is always `not_measured` in
     /// every real response from this endpoint. `#[schema(...)]` below
-    /// points the generated document at `UsageEconomicsSchema`,
-    /// the same fix as `model_provenance` above.
+    /// points the generated document at `UsageEconomicsSchema`, the same
+    /// fix as `model_provenance` above.
     #[schema(value_type = UsageEconomicsSchema)]
     pub usage_economics: Value,
 }
@@ -536,7 +534,7 @@ pub async fn create_execution(
             json!({}),
         )
     })?;
-    // An exact retry must be allowed to reach B2's durable replay record even
+    // An exact retry must be allowed to reach the durable replay record even
     // if a mutable runner status changed after the original create.
     if existing_snapshot.is_none() && input.selector_kind == "exact_runner" {
         let eligible: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agent_runners WHERE id = ? AND state = 'active' AND revoked_at IS NULL)")
@@ -566,14 +564,13 @@ pub async fn create_execution(
             json!({"field": "selector_kind"}),
         ));
     }
-    // Card III-F3 built `resolve_request_model_policy` (request override →
-    // agent-profile default → project default → fleet default →
-    // auto-select) but left it unwired from any live HTTP path — see that
-    // card's handoff, "Schema/API/contract change requested" item 3. Only
-    // resolve when the client expressed no explicit choice: an explicit
-    // `requested_model_provider`/`requested_model_id` pair is itself the
-    // highest-precedence tier (`ModelPolicyTier::RequestOverride`) and must
-    // never be overridden by a lower tier's default.
+    // `resolve_request_model_policy` resolves the model via request
+    // override → agent-profile default → project default → fleet default →
+    // auto-select. Only resolve when the client expressed no explicit
+    // choice: an explicit `requested_model_provider`/`requested_model_id`
+    // pair is itself the highest-precedence tier
+    // (`ModelPolicyTier::RequestOverride`) and must never be overridden by
+    // a lower tier's default.
     let (resolved_model_provider, resolved_model_id) =
         if input.requested_model_provider.is_none() && input.requested_model_id.is_none() {
             let fleet_id = (input.selector_kind == "fleet").then_some(input.selector_id.as_str());
@@ -876,14 +873,14 @@ pub async fn get_execution(
     }))
 }
 
-/// `GET /api/executions/{request_id}/attempts` — card III-E6. Closes the
-/// gap E2, E4 and E5 each independently hit: `execution_attempts`
-/// (migration 045) has been written by the runner-v1 protocol since Wave 2
-/// with no operator read path — `GET /executions/{id}` returns only 5
+/// `GET /api/executions/{request_id}/attempts` — the operator read path
+/// for attempt data. `execution_attempts` (migration 045) is written by
+/// the runner-v1 protocol, but `GET /executions/{id}` returns only 5
 /// scalar columns (`request_id, item_id, state, cancellation_requested_at,
-/// created_at`), never attempt data. An empty list here is a real, honest
-/// "no attempt yet" (the request is still `queued`), not a placeholder —
-/// distinct from the 404 an unknown `request_id` gets.
+/// created_at`), never attempt data; this endpoint closes that gap. An
+/// empty list here is a real, honest "no attempt yet" (the request is
+/// still `queued`), not a placeholder — distinct from the 404 an unknown
+/// `request_id` gets.
 #[utoipa::path(
     get,
     path = "/api/executions/{request_id}/attempts",
@@ -898,11 +895,11 @@ pub async fn list_execution_attempts(
     State(state): State<OperatorExecutionState>,
     Path(request_id): Path<String>,
 ) -> Result<Json<AttemptListResponse>, (StatusCode, Json<Value>)> {
-    // Also carries `requested_model_provider`/`requested_model_id` — card
-    // III-F3's `derive_attempt_facts` needs the *requested* side of
-    // provenance, which lives on `execution_requests`, not on any one
-    // attempt row. Replaces the plain `EXISTS(...)` check this handler used
-    // before III-F6b: same not-found semantics, one query instead of two.
+    // Also carries `requested_model_provider`/`requested_model_id` —
+    // `derive_attempt_facts` needs the *requested* side of provenance,
+    // which lives on `execution_requests`, not on any one attempt row.
+    // Same not-found semantics as a plain `EXISTS(...)` check, one query
+    // instead of two.
     let request_row = sqlx::query(
         "SELECT requested_model_provider, requested_model_id FROM execution_requests WHERE id = ?",
     )
@@ -942,13 +939,13 @@ pub async fn list_execution_attempts(
     let data: Vec<AttemptSummary> = attempts
         .into_iter()
         .map(|attempt| {
-            // III-F3's own convenience "service handler" — takes the exact
-            // raw column shapes `AttemptListingRow` already carries, so
-            // nothing here re-derives provenance/economics logic. No runner
-            // infra cost-rate is stored anywhere in this schema today (see
-            // that card's handoff), so `runner_rate_usd_per_hour` is always
-            // `None` here — `runner_time_cost.cost_usd_estimated` stays
-            // honestly `not_measured`, never a fabricated rate.
+            // `derive_attempt_facts` is a convenience "service handler" —
+            // takes the exact raw column shapes `AttemptListingRow` already
+            // carries, so nothing here re-derives provenance/economics
+            // logic. No runner infra cost-rate is stored anywhere in this
+            // schema today, so `runner_rate_usd_per_hour` is always `None`
+            // here — `runner_time_cost.cost_usd_estimated` stays honestly
+            // `not_measured`, never a fabricated rate.
             let facts = derive_attempt_facts(
                 requested_model_provider.as_deref(),
                 requested_model_id.as_deref(),
@@ -1003,7 +1000,7 @@ pub async fn list_execution_attempts(
 }
 
 /// `GET /api/executions/{request_id}/attempts/{attempt_number}/events` —
-/// card III-E6, the other half of the attempts/events gap above. Returns
+/// the other half of the attempts/events read path above. Returns
 /// `404` naming which resource is missing (`execution_request` vs
 /// `execution_attempt`) rather than a single ambiguous not-found, since a
 /// client can otherwise not distinguish "wrong request id" from "this

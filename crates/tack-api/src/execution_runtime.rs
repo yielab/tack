@@ -1,17 +1,17 @@
 //! Runtime start/stop control for the execution-domain retention sweep and
-//! health watch (card III-F5, Wave 5).
+//! health watch.
 //!
 //! Mirrors `orch_runtime.rs`'s own start/stop shape (a `tokio::sync::watch`
 //! stop signal, one "generation" tracked at a time) with one deliberate
 //! difference: [`ExecutionRuntime::stop`] *joins* both background tasks
 //! before returning, where `OrchRuntime::stop` explicitly does not (its own
 //! doc comment: "does not block waiting for the tasks to actually exit").
-//! This card's acceptance bar is "shutdown joins task" — a real `.await` on
-//! the `JoinHandle`, not merely a signal-and-return — so this type cannot
-//! reuse that precedent's semantics even though the surrounding shape is
-//! the same. `server.rs` calls this once, after `axum::serve(...)` returns
-//! from graceful shutdown, so a slightly-blocking join here costs nothing:
-//! by that point every HTTP request has already stopped.
+//! Shutdown here must join the task — a real `.await` on the `JoinHandle`,
+//! not merely a signal-and-return — so this type cannot reuse that
+//! precedent's semantics even though the surrounding shape is the same.
+//! `server.rs` calls this once, after `axum::serve(...)` returns from
+//! graceful shutdown, so a slightly-blocking join here costs nothing: by
+//! that point every HTTP request has already stopped.
 //!
 //! # Why this file is thin
 //!
@@ -25,13 +25,12 @@
 //! the repository into those spawn functions and gives `server.rs` one
 //! `start()`/`stop()` pair to call.
 //!
-//! # III-F6d amendment: a third, `tack-api`-local sweep
+//! # A second, `tack-api`-local sweep
 //!
-//! `sweep_artifacts`/`sweep_events` (`handlers/runner_protocol/retention.rs`,
-//! card III-F2) and `expire_overdue_decisions` (`handlers/decisions.rs`, card
-//! III-F1) were both built and tested in isolation, then correctly deferred
-//! their own recurring-task wiring to "whatever interval/task shape" this
-//! card built — and nothing ever did. They cannot be added to
+//! `sweep_artifacts`/`sweep_events` (`handlers/runner_protocol/retention.rs`)
+//! and `expire_overdue_decisions` (`handlers/decisions.rs`) are both built
+//! and tested in isolation, with no recurring-task wiring of their own —
+//! this module is that wiring. They cannot be added to
 //! `tack_orch::execution_retention::spawn_execution_retention_sweep` the way
 //! the "why this file is thin" section above describes, because both live in
 //! `tack-api`, and `tack-orch` must never depend on `tack-api` (CLAUDE.md:
@@ -120,15 +119,13 @@ struct Running {
 /// Handle to the execution-domain retention sweep + health watch. One
 /// instance is constructed and started in `server.rs::serve()`; `stop()` is
 /// called after `axum::serve(...)` returns so both background tasks are
-/// guaranteed joined before the process exits (CLAUDE.md/this card's
-/// "shutdown joins task" acceptance bar).
+/// guaranteed joined before the process exits.
 ///
 /// Not stored on `AppState` (unlike [`crate::orch_runtime::OrchRuntime`]):
-/// nothing in the current HTTP surface needs to toggle this at runtime, and
-/// `AppState` lives in `router.rs`, which this card must not edit. A local
-/// variable in `server.rs::serve()` is sufficient — see this card's handoff
-/// for the exact wiring and why a future runtime-toggle route would need
-/// `router.rs`'s owner to add the field.
+/// nothing in the current HTTP surface needs to toggle this at runtime. A
+/// local variable in `server.rs::serve()` is sufficient; a future
+/// runtime-toggle route would need to add the field to `AppState` in
+/// `router.rs`.
 pub struct ExecutionRuntime {
     inner: Mutex<Option<Running>>,
 }
@@ -174,7 +171,7 @@ impl ExecutionRuntime {
             stop_rx.clone(),
         );
 
-        // III-F6d: same storage-root expression `router.rs`'s
+        // Same storage-root expression `router.rs`'s
         // `operator_execution_routes` uses for its own artifact-download
         // `ArtifactStorage` — see `ExecutionRuntimeConfig::storage_dir`'s doc
         // comment for why these two independently-constructed instances must
@@ -262,10 +259,10 @@ async fn wait_until_stopped(rx: &mut watch::Receiver<bool>) {
 }
 
 /// Spawns the recurring caller `sweep_events`/`sweep_artifacts`
-/// (`handlers/runner_protocol/retention.rs`, card III-F2) and
-/// `expire_overdue_decisions` (`handlers/decisions.rs`, card III-F1) never
-/// had — both were built, tested in isolation, and explicitly deferred their
-/// own task/interval wiring to this card. Returns `None` (spawns nothing,
+/// (`handlers/runner_protocol/retention.rs`) and
+/// `expire_overdue_decisions` (`handlers/decisions.rs`) otherwise lack —
+/// both are built and tested in isolation, with no task/interval wiring of
+/// their own; this loop is that wiring. Returns `None` (spawns nothing,
 /// touches neither the repo nor the filesystem) when `enabled` is `false`,
 /// exactly like `execution_retention::spawn_execution_retention_sweep`.
 ///
@@ -294,8 +291,7 @@ async fn wait_until_stopped(rx: &mut watch::Receiver<bool>) {
 /// see [`ExecutionRuntimeConfig::storage_dir`]'s doc comment. Two
 /// independently-constructed `ArtifactStorage` values pointed at the same
 /// path is intentional (no shared `Arc<ArtifactStorage>` crosses from
-/// `router.rs` into this module, which would require touching `router.rs`,
-/// not this card's file to edit); they never race against each other,
+/// `router.rs` into this module); they never race against each other,
 /// because both open files by path, not by holding any in-process lock this
 /// module could instead share.
 ///

@@ -5,10 +5,9 @@
 //! method yet ... this module is the local half only"). This module is the
 //! remote half: it receives whatever bytes a runner PUTs against
 //! `/api/runner/v1/attempts/{attempt_id}/artifacts/{artifact_id}/content`
-//! (this card's own route — see the F2 handoff's wiring notes) and commits
-//! them to `TACK_STORAGE_DIR` only after they are proven to match the
-//! manifest's declared `size_bytes`/`sha256` — a mismatch of either kind
-//! stages nothing (no blob, no `content_reference`).
+//! and commits them to `TACK_STORAGE_DIR` only after they are proven to
+//! match the manifest's declared `size_bytes`/`sha256` — a mismatch of
+//! either kind stages nothing (no blob, no `content_reference`).
 //!
 //! Three properties this module exists to guarantee, all proved by its own
 //! test suite below:
@@ -80,19 +79,16 @@ pub struct StoredArtifactContent {
 /// `harness/artifact.rs#encode_id` uses on the local side) **and** is always
 /// exactly 64 bytes regardless of `value`'s own length.
 ///
-/// III-H9: this used to hex-encode every byte of `value` literally, which
-/// doubled its length. `tack-runner`'s own `engine.rs::artifact_id` derives
-/// an `artifact_id` by hex-encoding `"{attempt_id}:{fencing_token}:{sha256}"`
-/// (already ~220 bytes), so the doubled encoding here — used twice per
-/// filename, once for the temp name and once for the final blob name — blew
-/// past Linux's 255-byte `NAME_MAX`, and every real upload failed with
-/// `ENAMETOOLONG` inside `Io`, surfaced to the caller as a bare `500`.
-/// Reproduced live via `./scripts/smoke.sh`: every `PUT
-/// .../artifacts/{artifact_id}/content` 500'd with
-/// `Os { code: 36, kind: InvalidFilename, message: "File name too long" }`.
-/// Hashing bounds the length unconditionally; content is never read back by
-/// literal id (`open_for_read` takes the already-produced
-/// `content_reference`), so losing reversibility costs nothing.
+/// This must hash rather than hex-encode `value` literally: `tack-runner`'s
+/// own `engine.rs::artifact_id` derives an `artifact_id` by hex-encoding
+/// `"{attempt_id}:{fencing_token}:{sha256}"` (already ~220 bytes), and this
+/// value is used twice per filename (once for the temp name, once for the
+/// final blob name). A literal hex-encode of that id blows past Linux's
+/// 255-byte `NAME_MAX`, so every write fails with `ENAMETOOLONG` inside
+/// `Io`, surfaced to the caller as a bare `500`. Hashing bounds the length
+/// unconditionally; content is never read back by literal id
+/// (`open_for_read` takes the already-produced `content_reference`), so
+/// losing reversibility costs nothing.
 fn encode_id(value: &str) -> String {
     hex::encode(Sha256::digest(value.as_bytes()))
 }
@@ -276,7 +272,7 @@ impl ArtifactStorage {
             .map_err(|_| ArtifactContentError::Io)
     }
 
-    /// III-F2 retention: best-effort blob removal for a swept artifact row.
+    /// Best-effort blob removal for a swept artifact row.
     /// "Best effort" — a blob that is already gone (or was never written,
     /// `content_reference: None`) is not an error; the caller is purging a
     /// DB row either way.
@@ -455,14 +451,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// Load-bearing proof performed by hand (not left in the tree):
-    /// temporarily commented out the `if total_written != declared_size_bytes
-    /// { ... }` early return in `store_streaming`. Re-ran this exact test: it
-    /// failed — `store_streaming` returned `Ok(...)` (committing a blob)
-    /// instead of `Err(SizeMismatch)` for a stream that delivered only 5 of
-    /// its declared 105 bytes. Restored the check and confirmed the test
-    /// passes again. See the F2 handoff, "Failure/adversarial case proved,"
-    /// for every guard proved this way.
+    /// Load-bearing: temporarily removing the
+    /// `if total_written != declared_size_bytes { ... }` early return in
+    /// `store_streaming` makes this test fail — it returns `Ok(...)`
+    /// (committing a blob) instead of `Err(SizeMismatch)` for a stream that
+    /// delivers only 5 of its declared 105 bytes.
     #[tokio::test]
     async fn undersize_stream_is_a_size_mismatch_not_a_silent_success() {
         let root = temp_root("undersize");
