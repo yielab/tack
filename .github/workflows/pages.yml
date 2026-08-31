@@ -1,0 +1,67 @@
+name: Deploy docs to GitHub Pages
+
+# Builds the mdBook under docs/book/ and publishes it to GitHub Pages. Triggers
+# on push to develop: at the time this workflow was added, develop is both the
+# repository's default branch and the only branch that exists on the remote —
+# main is referenced by the install docs but has not been pushed yet. If main
+# later becomes the published/release branch, point this trigger at main so
+# the deployed book tracks released state instead of the development tip.
+#
+# This workflow only uploads and deploys a Pages artifact; it does not enable
+# Pages itself. Enabling Pages (Settings -> Pages -> Source: GitHub Actions)
+# is a one-time repository setting change outside this file's control.
+
+on:
+  push:
+    branches: ["develop"]
+    paths:
+      - "docs/book/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deployment runs at a time; a new push waits for the current
+# deployment instead of racing it, so a slow build can never overwrite a
+# faster, more recent one.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build mdBook
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install mdBook
+        run: cargo install mdbook --locked --version 0.4.40
+      - name: Build book
+        run: mdbook build docs/book
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs/book/book
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
