@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use chrono::Utc;
+use tokio::sync::oneshot;
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -20,6 +21,23 @@ use tack_orch::reconciler;
 /// Boot the Tack HTTP server: load config, run migrations, start background
 /// tasks, and serve until a shutdown signal is received.
 pub async fn serve() -> anyhow::Result<()> {
+    serve_inner(None).await
+}
+
+/// Like [`serve`], but sends the real bound [`SocketAddr`] over `ready_tx`
+/// once the listener is open and accepting connections, before this
+/// function blocks on `axum::serve`. An in-process embedder can wait on the
+/// receiving end to learn the exact address instead of polling a guessed
+/// one — the only way to know it for certain when the configured port is
+/// `0` and the OS picks the real one.
+///
+/// If the receiver has already been dropped, the send is a no-op: the
+/// server still starts and runs normally, it just has nobody to tell.
+pub async fn serve_with_ready(ready_tx: oneshot::Sender<SocketAddr>) -> anyhow::Result<()> {
+    serve_inner(Some(ready_tx)).await
+}
+
+async fn serve_inner(ready_tx: Option<oneshot::Sender<SocketAddr>>) -> anyhow::Result<()> {
     // Load configuration
     let config = AppConfig::load();
 
@@ -156,8 +174,14 @@ pub async fn serve() -> anyhow::Result<()> {
                 },
             )
             .await;
+        // Resolved before the `info!` call, not inline in its arguments: an
+        // `.await` inside a tracing macro's argument list holds a non-`Send`
+        // formatting temporary across the await point, which makes the
+        // enclosing function's future non-`Send` — fatal for a caller that
+        // wants to `tokio::spawn` the server rather than only `block_on` it.
+        let control_planes = state.orch_runtime.live_task_count().await;
         info!(
-            control_planes = state.orch_runtime.live_task_count().await,
+            control_planes,
             poll_secs = config.orch_poll_secs,
             "Orchestration reconciler enabled"
         );
@@ -194,6 +218,16 @@ pub async fn serve() -> anyhow::Result<()> {
     info!(%addr, "Server listening");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
+
+    // `bind` already puts the socket in the listening state, so a
+    // connection attempt against `bound_addr` succeeds from this point on
+    // even before `axum::serve` below starts its accept loop — the kernel
+    // queues it. That makes here, not function entry, the earliest correct
+    // place to signal readiness.
+    let bound_addr = listener.local_addr()?;
+    if let Some(tx) = ready_tx {
+        let _ = tx.send(bound_addr);
+    }
 
     // Plain-stdout banner for end users running the distributed binary —
     // visible regardless of log level/format.
@@ -610,5 +644,84 @@ mod tests {
         assert_eq!(fs::read(&db_path).unwrap(), b"RESTORED");
 
         fs::remove_dir_all(&dir).ok();
+    }
+
+    // Serializes the tests below that must mutate process env vars to steer
+    // `AppConfig::load()`, since env vars are process-global and `cargo
+    // test` runs this binary's tests concurrently. An async-aware mutex
+    // because the guard needs to stay held across this test's `.await`s.
+    static SERVE_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    /// Puts back whatever `TACK_PORT`/`TACK_DATABASE_URL` held before the
+    /// test ran, including on panic, so a failure here can't leak a stray
+    /// `TACK_PORT=0` into a test that runs after it in the same process.
+    struct EnvRestore {
+        port: Option<String>,
+        database_url: Option<String>,
+    }
+
+    impl Drop for EnvRestore {
+        fn drop(&mut self) {
+            // SAFETY: the caller holds `SERVE_ENV_LOCK` for the guard's
+            // whole lifetime, so no other thread in this test binary reads
+            // or writes these two vars concurrently with this restore.
+            unsafe {
+                match &self.port {
+                    Some(v) => std::env::set_var("TACK_PORT", v),
+                    None => std::env::remove_var("TACK_PORT"),
+                }
+                match &self.database_url {
+                    Some(v) => std::env::set_var("TACK_DATABASE_URL", v),
+                    None => std::env::remove_var("TACK_DATABASE_URL"),
+                }
+            }
+        }
+    }
+
+    /// Acceptance case for the readiness seam: start the server through
+    /// `serve_with_ready`, wait on the oneshot (no sleep, no retry loop),
+    /// then make one real HTTP request against the address it reports.
+    /// Requesting port 0 forces an OS-assigned port, so a passing request
+    /// also proves the signaled address is the real one, not the guess a
+    /// caller would otherwise have to poll.
+    #[tokio::test]
+    async fn serve_with_ready_signals_the_real_bound_address() {
+        let _env_guard = SERVE_ENV_LOCK.lock().await;
+        let _restore = EnvRestore {
+            port: std::env::var("TACK_PORT").ok(),
+            database_url: std::env::var("TACK_DATABASE_URL").ok(),
+        };
+        // SAFETY: serialized by `SERVE_ENV_LOCK` above.
+        unsafe {
+            std::env::set_var("TACK_PORT", "0");
+            std::env::set_var("TACK_DATABASE_URL", "sqlite::memory:");
+        }
+
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let server = tokio::spawn(serve_with_ready(ready_tx));
+
+        let addr = ready_rx.await.expect("readiness signal never arrived");
+        assert_ne!(
+            addr.port(),
+            0,
+            "signaled address must be the real OS-assigned port, not the configured 0"
+        );
+
+        let response = reqwest::get(format!("http://{addr}/api/health"))
+            .await
+            .expect("request against the signaled address must succeed");
+        assert!(response.status().is_success());
+
+        server.abort();
+    }
+
+    /// The unmodified `serve()` entry point must still exist and behave the
+    /// same as before this seam was added: no readiness channel, same boot
+    /// sequence. This doesn't run it (that's `cargo run -p tack-cli -- serve`,
+    /// verified manually), it just pins the call shape so `serve_inner`'s
+    /// `None` path can't silently drift from what `tack-cli` calls.
+    #[test]
+    fn serve_still_takes_no_arguments() {
+        let _: fn() -> _ = serve;
     }
 }
