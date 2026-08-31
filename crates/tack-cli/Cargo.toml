@@ -4,10 +4,63 @@ description = "CLI companion for Tack"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "tack"
 path = "src/main.rs"
+
+# cargo-binstall reads this table from the *member crate's* own manifest, not
+# the workspace root: the root is a virtual manifest with no [package], and a
+# [package.metadata.*] table there makes Cargo treat it as a package missing
+# required fields, failing `cargo metadata`/`cargo build` for the whole
+# workspace — so it has to live here regardless of which manifest a given
+# tool's docs assume.
+#
+# The release archive names (`tack-v<version>-<platform>.tar.gz`, e.g.
+# `tack-v0.1.0-beta.7-linux-x86_64.tar.gz` — see .github/workflows/release.yml's
+# `platform` matrix and `STAGE` naming) don't follow Cargo's target-triple
+# convention, so the generic `{ target }` placeholder can't build them
+# directly. Each target release.yml actually builds gets its own exact
+# override below; the top-level default is left templated on `{ target }` so
+# any target we do *not* ship (e.g. aarch64-unknown-linux-gnu) resolves to a
+# URL that doesn't exist and binstall fails over to `cargo install` instead of
+# silently handing out a binary built for the wrong CPU.
+#
+# `pkg-fmt = "tgz"` covers both ".tgz" and ".tar.gz" (binstall tries both
+# suffixes against the real GitHub Release and uses whichever exists), which
+# is why `{ archive-suffix }` doesn't have to literally spell "tar.gz".
+#
+# Linux ships one target (musl, statically linked) but binstall probes
+# `x86_64-unknown-linux-gnu` before falling back to
+# `x86_64-unknown-linux-musl` on a glibc host (see cargo-binstall's
+# `detect_targets()`) — no override is defined for the gnu triple, so that
+# probe 404s cleanly and it falls through to the musl override below, which
+# is the one release.yml actually produces.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/tack-v{ version }-{ target }{ archive-suffix }"
+bin-dir = "tack-v{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-unknown-linux-musl]
+pkg-url = "{ repo }/releases/download/v{ version }/tack-v{ version }-linux-x86_64{ archive-suffix }"
+bin-dir = "tack-v{ version }-linux-x86_64/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.aarch64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/tack-v{ version }-macos-aarch64{ archive-suffix }"
+bin-dir = "tack-v{ version }-macos-aarch64/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/tack-v{ version }-macos-x86_64{ archive-suffix }"
+bin-dir = "tack-v{ version }-macos-x86_64/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/tack-v{ version }-windows-x86_64{ archive-suffix }"
+bin-dir = "tack-v{ version }-windows-x86_64/{ bin }{ binary-ext }"
+pkg-fmt = "zip"
 
 [lib]
 name = "tack_cli"
