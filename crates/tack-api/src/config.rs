@@ -177,6 +177,18 @@ pub struct AppConfig {
     /// logged.
     #[serde(default)]
     pub execution_decision_token: Option<String>,
+
+    /// Explicit escape hatch for `validate_security`'s refusal to start an
+    /// unauthenticated non-loopback server. Tack has no per-user identity
+    /// model, so a missing `TACK_API_TOKEN` on a reachable bind exposes full
+    /// read/write access to whoever can reach the port; a container
+    /// deployment that necessarily binds `0.0.0.0` on a network the operator
+    /// already trusts (a private Docker network, a host firewall) is the one
+    /// legitimate case for accepting that risk anyway. **Off by default** —
+    /// setting it is a deliberate, documented choice, never a silent
+    /// fallback the code takes on its own.
+    #[serde(default)]
+    pub allow_unauthenticated_nonloopback: bool,
 }
 
 impl Default for AppConfig {
@@ -216,6 +228,7 @@ impl Default for AppConfig {
             execution_health_enable: default_execution_health_enable(),
             execution_health_interval_secs: default_execution_health_interval_secs(),
             execution_decision_token: None,
+            allow_unauthenticated_nonloopback: false,
         }
     }
 }
@@ -305,9 +318,12 @@ impl AppConfig {
     /// Reject a configuration that would expose an unauthenticated API or
     /// send credentials to a malformed configured endpoint.
     pub fn validate_security(&self) -> anyhow::Result<()> {
-        if !self.binds_loopback() && self.api_token.as_deref().is_none_or(str::is_empty) {
+        if !self.binds_loopback()
+            && self.api_token.as_deref().is_none_or(str::is_empty)
+            && !self.allow_unauthenticated_nonloopback
+        {
             anyhow::bail!(
-                "refusing to bind {} without TACK_API_TOKEN; bind to loopback or configure authentication",
+                "refusing to bind {} without TACK_API_TOKEN; bind to loopback, set TACK_API_TOKEN, or set TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK=1 to accept the risk",
                 self.host
             );
         }
@@ -509,6 +525,9 @@ impl AppConfig {
         {
             config.execution_decision_token = Some(v);
         }
+        if let Ok(v) = std::env::var("TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK") {
+            config.allow_unauthenticated_nonloopback = v == "1" || v.eq_ignore_ascii_case("true");
+        }
         config
     }
 }
@@ -554,7 +573,49 @@ mod tests {
             host: "0.0.0.0".into(),
             ..AppConfig::default()
         };
-        assert!(config.validate_security().is_err());
+        let err = config
+            .validate_security()
+            .expect_err("non-loopback bind with no token and no opt-out must fail to start");
+        let message = err.to_string();
+        assert!(message.contains("TACK_API_TOKEN"));
+        assert!(message.contains("TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK"));
+    }
+
+    #[test]
+    fn unsafe_non_loopback_startup_with_a_token_is_accepted() {
+        let config = AppConfig {
+            host: "0.0.0.0".into(),
+            api_token: Some("a-real-token".into()),
+            ..AppConfig::default()
+        };
+        assert!(config.validate_security().is_ok());
+    }
+
+    #[test]
+    fn unsafe_non_loopback_startup_with_the_documented_opt_out_is_accepted() {
+        let config = AppConfig {
+            host: "0.0.0.0".into(),
+            allow_unauthenticated_nonloopback: true,
+            ..AppConfig::default()
+        };
+        assert!(config.validate_security().is_ok());
+    }
+
+    #[test]
+    fn loopback_startup_with_no_token_is_unaffected_by_the_opt_out_flag() {
+        // The opt-out only ever relaxes the non-loopback branch; it must never
+        // become a second way to fail a loopback bind that today always
+        // succeeds — pure-local mode is the design's baseline case, not one
+        // this flag should be able to touch either way.
+        let config = AppConfig::default();
+        assert!(config.binds_loopback());
+        assert!(config.validate_security().is_ok());
+
+        let config_with_flag_set = AppConfig {
+            allow_unauthenticated_nonloopback: true,
+            ..AppConfig::default()
+        };
+        assert!(config_with_flag_set.validate_security().is_ok());
     }
 
     #[test]
