@@ -112,6 +112,53 @@ state. Revoke an unredeemed enrollment token without touching the runner record 
 
 ---
 
+## Standalone mode: `tack serve --with-runner`
+
+Everything above assumes two processes: an operator running `tack serve`, and a
+separate `tack-runner` process enrolled against it by hand. `tack serve --with-runner`
+(or `TACK_LOCAL_RUNNER_ENABLE=1`) collapses that to one binary and one command — the
+common case of one developer running an agent against their own board. It is off by
+default; the full configuration reference (gate, state directory, provider-credential
+story per harness) is `docs/CONFIG.md`, section "Embedded runner". This section covers
+what changes about the enrollment/credential story above when you use it.
+
+- **Not a shortcut.** The embedded runner runs as a task inside the server's own
+  process, but speaks runner-v1 over loopback HTTP exactly like a remote runner — the
+  same client, the same server-side path, the same contract fixtures. See
+  `docs/adr/0058-standalone-single-binary-runner.md`.
+- **Zero-touch enrollment on a fresh state directory.** The first start with no stored
+  session self-provisions: it creates its own pending-runner row and redeems its own
+  one-time token in-process. No `tack runner enroll` call is needed, and no token is
+  ever printed, copied, or configured by hand. A second start against the same state
+  directory reuses the stored credential on disk instead of provisioning a second
+  runner — no second pending-runner row, no second token.
+- **Loopback-only, refused before anything opens.** `TACK_HOST` must be a loopback
+  address for `--with-runner` to start at all; a non-loopback bind is refused as a
+  startup error — before any socket or database is opened — never downgraded to a
+  runner-less server. Verified by `crates/tack-cli/src/local_runner.rs`'s
+  `embedded_runner_refuses_non_loopback_bind` test and, live, by `scripts/smoke.sh`
+  step 12: a real attempt to bind non-loopback with `--with-runner` exits non-zero
+  naming "loopback", and no listener is ever opened on the refused port.
+- **Off by default.** Plain `tack serve` — no flag, no environment variable — starts no
+  runner at all. Verified live by `scripts/smoke.sh` step 11, which queries
+  `GET /api/runners` directly after a settle window and finds it empty, not merely the
+  absence of a log line.
+- **Proven end to end.** `scripts/smoke.sh` step 10 drives `tack serve --with-runner` on
+  a fresh state directory with no token, through self-provisioning, an active runner,
+  and a real completed attempt, using the same fake-harness shim pattern the rest of the
+  smoke script uses. See `docs/agent-handoffs/part-iv/IV-A6.md` for the recorded run.
+- **Log visibility.** The embedded runner's own log lines are silent under default
+  logging (a pre-existing tracing-filter gap, not specific to this mode) — see
+  `docs/CONFIG.md`'s "Embedded runner" section for the exact `RUST_LOG` setting that
+  surfaces them.
+
+Everything else on this page — the capability matrix, workspace/artifact storage,
+`needs_operator` recovery, version compatibility — applies identically whether the
+runner is embedded or a separate process; the wire contract does not know the
+difference.
+
+---
+
 ## Local credential handling
 
 - The enrollment token is a bearer secret; the durable credential the runner receives
@@ -289,6 +336,13 @@ unset (the route rejects rather than silently falling back to the ordinary opera
 token) and never logged. See `docs/CONFIG.md` for every `TACK_*` variable in this
 domain.
 
+`tack serve --with-runner` (see "Standalone mode" above) adds a second, stricter
+loopback requirement on top of all of this: an embedded runner executes arbitrary
+coding-agent processes on the same host serving the UI, so `--with-runner` itself
+refuses to start unless `TACK_HOST` is a loopback address — independent of, and checked
+before, whichever `TACK_API_TOKEN`/`TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK` posture
+the server would otherwise apply.
+
 ---
 
 ## Usage economics and "Not measured"
@@ -353,31 +407,27 @@ the retention/expiry sweeps — see `crates/tack-api/tests/wave2_gate.rs`,
 `crates/tack-orch/tests/runner_contract.rs` (byte-pins all 46 frozen fixtures), and the
 Wave 5/6 integrator test files referenced throughout this page.
 
-**Not yet wired: the `tack-runner` binary's own network transport.** The runner-v1
-protocol *server side* is fully implemented and tested (above). The runner-v1 protocol
-*client* — the code that would let a running `tack-runner` process actually call
-`claim`/`heartbeat`/etc. over HTTP against a live server — does not exist yet.
-`crates/tack-runner/src/main.rs` wires the binary's runtime to
-`UnavailableProtocolClient`, whose only behavior is to fail immediately with a typed
-`RunnerError::ProtocolUnavailable`:
+**The `tack-runner` binary's own network transport is wired and proven — this section
+used to say otherwise; that gap has since closed.** `tack_runner::bootstrap::build_runtime`
+(the one composition root both the standalone `tack-runner` binary and the embedded
+`tack serve --with-runner`/`tack runner start` paths call — see "Standalone mode"
+above) wires the real `HttpPullProtocol`, not `UnavailableProtocolClient`.
+`UnavailableProtocolClient` still exists in the crate as an explicit no-client
+fallback — reachable only if something constructs a runtime without attaching a
+protocol client — and stays pinned by
+`runtime::tests::unavailable_protocol_is_a_typed_failure_not_success` precisely so that
+path fails as a typed `RunnerError::ProtocolUnavailable` rather than a silent success;
+it is not what a real `tack-runner` startup wires today.
 
-```sh
-$ TACK_RUNNER_API_URL=... TACK_RUNNER_ID=... TACK_RUNNER_ENROLLMENT_TOKEN=... tack-runner
-tack-runner: runner protocol client is not configured
-```
-
-Reproduced by hand for this page against a live server (the process above enrolled
-successfully via the CLI, then failed exactly this way when started). This is not
-silent — `runtime::tests::unavailable_protocol_is_a_typed_failure_not_success` pins
-the failure as a deliberate, typed outcome rather than a hidden fake success, matching
-this project's rule against `unimplemented!()` or structural zeros standing in for
-"unknown." Everything the runner *would* do once connected — the three harness
-adapters, the workspace/journal machinery, the capability probes — is real,
-implemented, and exercised in `tack-runner`'s own test suite via fake HTTP transports
-and the fake-harness fixture (`crates/tack-runner/src/harness/fixtures/
-fake_harness.sh`); only the live wire connection between the binary and a real Tack
-server is missing. **A fresh-machine operator today can enroll, list, and revoke
-runners, and drive the entire execution lifecycle through the API/CLI directly, but
-cannot yet point a real `tack-runner` process at a real server and watch it pick up
-work.** This gap is not recorded in any earlier Part III handoff; it is escalated in
-full in `docs/agent-handoffs/part-iii/III-G3.md`.
+Live, end-to-end proof of the real client: `crates/tack-runner/tests/
+bootstrap_entrypoint.rs` proves the composition root itself is reachable and
+shutdown-controllable from outside the crate against a real (mocked) HTTP enrollment
+exchange. Every run of `scripts/smoke.sh` exercises the real client against a real
+server: steps 6-9 enroll a separate `tack-runner` process and drive a real attempt
+through claim → checkout → harness → completion, restart recovery included; step 10
+does the same inside a single `tack serve --with-runner` process. **A fresh-machine
+operator today can enroll a runner and point a real `tack-runner` process (standalone
+or embedded) at a real server and watch it enroll, claim, and complete real work** —
+see `docs/agent-handoffs/part-iv/` (`IV-A1` through `IV-A6`) for how this was built and
+proven, and `docs/agent-handoffs/part-iii/III-G3.md` for the original escalation this
+section used to describe.

@@ -33,8 +33,16 @@ with the UI embedded):
 
 ```bash
 cargo install --git https://github.com/yielab/tack tack-cli --features embed-spa
-tack            # starts the server + web UI at http://localhost:3210
+tack serve --with-runner   # server + web UI + an embedded agent runner, one process
 ```
+
+`--with-runner` is what makes the run-it-yourself claim above real: it self-provisions
+a runner inside this same process — no second binary, no token to copy anywhere — so an
+item assigned to `claude-code`, `opencode`, or `codex` (whichever of those you have
+installed and logged in) actually executes. It's off by default and loopback-only; see
+[Agent Runners](docs/book/src/user-guide/agent-runners.md#standalone-mode-tack-serve---with-runner)
+and [`docs/CONFIG.md`](docs/CONFIG.md#embedded-runner-tack-serve---with-runner). Plain
+`tack` (no flag) still starts just the server and board UI, with no runner.
 
 **One line (Linux / macOS)** — the intended path once a tagged release ships; right
 now it 404s because the `main` branch it fetches from hasn't been published (see
@@ -42,7 +50,7 @@ now it 404s because the `main` branch it fetches from hasn't been published (see
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh | sh
-tack
+tack serve --with-runner
 ```
 
 **Or download** the archive for your system from the
@@ -52,10 +60,10 @@ tack
 # Linux / macOS
 tar xzf tack-*.tar.gz
 cd tack-*/
-./tack
+./tack serve --with-runner
 ```
 
-**Windows:** extract the zip and run `tack.exe`.
+**Windows:** extract the zip and run `tack.exe serve --with-runner`.
 
 Open **`http://localhost:3210`**. Project data lives in `tack.db`; attachments live in
 `storage/`. Back up both.
