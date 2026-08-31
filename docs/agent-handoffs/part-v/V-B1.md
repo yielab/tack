@@ -1,7 +1,9 @@
 # V-B1 handoff
 
 - Base SHA / branch / final SHA: base `81e66e5` (develop tip at worktree creation) /
-  `agent/v-b1-identity-posture` / final `6dd8fdf`.
+  `agent/v-b1-identity-posture` / all substantive changes (code, ADR, docs) land in
+  `6dd8fdf`. Commits after `6dd8fdf` on this branch, if any, only edit this handoff's
+  own SHA references and carry no other change.
 - Files changed (must equal ownership list): `crates/tack-api/src/middleware.rs`,
   `crates/tack-api/src/config.rs`, `docs/CONFIG.md` (one row),
   `docs/book/src/user-guide/administration.md`, `docs/adr/0059-single-operator-identity-posture.md`,
