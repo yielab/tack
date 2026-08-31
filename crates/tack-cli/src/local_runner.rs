@@ -137,18 +137,17 @@ fn ensure_loopback(config: &tack_api::config::AppConfig) -> anyhow::Result<()> {
 /// (`tack serve --with-runner`).
 ///
 /// Refuses to start (before opening a socket or a database) when the server
-/// is not bound to loopback, or when no enrollment credential is available —
-/// both are startup errors, never a silent downgrade to a runner-less
-/// server. Once the server signals the address it actually bound, the
-/// embedded runner is pointed at that exact address and handed to
-/// [`supervise`], which makes either side dying take the whole process down
-/// loudly.
+/// is not bound to loopback — a startup error, never a silent downgrade to a
+/// runner-less server. Once the server signals the address it actually
+/// bound, the runner config is given a credential (manual, a stored session,
+/// or a freshly self-provisioned one — see [`ensure_runner_credential`]),
+/// pointed at that exact address, and handed to [`supervise`], which makes
+/// either side dying take the whole process down loudly.
 pub async fn serve_with_embedded_runner() -> anyhow::Result<()> {
     let server_config = tack_api::config::AppConfig::load();
     ensure_loopback(&server_config)?;
 
-    let runner_config = load_runner_config(ConfigOverrides::default(), None)?;
-    runner_config.require_enrollment_credential()?;
+    let mut runner_config = load_runner_config(ConfigOverrides::default(), None)?;
 
     let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
     let mut server_task = tokio::spawn(tack_api::serve_with_ready(ready_tx));
@@ -168,17 +167,64 @@ pub async fn serve_with_embedded_runner() -> anyhow::Result<()> {
         }
     };
 
-    let mut runner_config = runner_config;
     // Only the address the listener actually bound is authoritative — the
     // configured port may have been 0, letting the OS choose it, and any
     // `api_base_url` sourced from file or environment describes a different
     // (remote-runner) deployment shape that does not apply here.
     runner_config.api_base_url = format!("http://{bound_addr}/api/runner/v1");
 
+    // The server is up and its database is open; a credential failure past
+    // this point must take the server down with it rather than leave it
+    // running with no runner attached to it.
+    if let Err(error) = ensure_runner_credential(&mut runner_config, &server_config).await {
+        server_task.abort();
+        return Err(error);
+    }
+
     let (shutdown, shutdown_handle) = Shutdown::channel();
     let mut runner_task = tokio::spawn(bootstrap::run(runner_config, runner_limits(), shutdown));
 
     supervise(&mut server_task, &mut runner_task, &shutdown_handle).await
+}
+
+/// Makes sure `runner_config` carries something the embedded runner can
+/// redeem, in order of preference:
+///
+/// 1. a manually configured `enrollment_credential` — always wins, and is
+///    left untouched;
+/// 2. a durable session already on disk under `state_dir` — reused as is.
+///    [`crate::local_enrollment::self_provision`] is not called, so a
+///    restart against an already-enrolled `state_dir` never mints a second
+///    one-time token or creates a second pending runner row. The config's
+///    credential is still set, to a placeholder
+///    (`local_enrollment::stored_session_placeholder`) rather than left
+///    empty — `tack_runner::bootstrap::build_runtime` requires *some*
+///    credential before it ever looks at `state_dir`, a precondition that
+///    predates this card (see that placeholder's own doc comment for the
+///    full explanation and why it is not transmitted on a normal restart);
+/// 3. otherwise, a one-time token self-provisioned in-process against the
+///    server's own database (legitimate here specifically because the
+///    operator and the runner are the same person on the same machine — see
+///    `docs/adr/0058-standalone-single-binary-runner.md`).
+///
+/// Only ever called after [`ensure_loopback`] has already passed, since it
+/// runs after the server has started inside [`serve_with_embedded_runner`] —
+/// self-provisioning inherits that guard rather than re-deriving it.
+async fn ensure_runner_credential(
+    runner_config: &mut RunnerConfig,
+    server_config: &tack_api::config::AppConfig,
+) -> anyhow::Result<()> {
+    if runner_config.enrollment_credential.is_some() {
+        return Ok(());
+    }
+    if crate::local_enrollment::has_stored_session(&runner_config.state_dir) {
+        runner_config.enrollment_credential =
+            Some(crate::local_enrollment::stored_session_placeholder());
+        return Ok(());
+    }
+    let credential = crate::local_enrollment::self_provision(&server_config.database_url).await?;
+    runner_config.enrollment_credential = Some(credential);
+    Ok(())
 }
 
 /// Waits on whichever of the server or embedded-runner task finishes first
@@ -306,5 +352,100 @@ mod tests {
             result.is_ok(),
             "a clean shutdown must not surface an error: {result:?}"
         );
+    }
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "tack-local-runner-test-{label}-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("create test temp dir");
+        dir
+    }
+
+    /// A `database_url` that fails at parse time, before any filesystem or
+    /// network I/O — so a test built against it proves whether
+    /// `tack_db::init_pool` (and therefore self-provisioning) was ever
+    /// reached, without needing a real database.
+    fn unreachable_database_url() -> tack_api::config::AppConfig {
+        tack_api::config::AppConfig {
+            database_url: "not-a-real-database-url".to_owned(),
+            ..tack_api::config::AppConfig::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn ensure_runner_credential_leaves_a_manual_credential_untouched() {
+        let state_dir = unique_temp_dir("manual");
+        let mut runner_config = RunnerConfig {
+            enrollment_credential: Some(EnrollmentCredential::new("manually-configured-token")),
+            state_dir: state_dir.clone(),
+            ..RunnerConfig::defaults()
+        };
+        let server_config = unreachable_database_url();
+
+        let result = ensure_runner_credential(&mut runner_config, &server_config).await;
+
+        assert!(
+            result.is_ok(),
+            "a manual credential must never require touching the database: {result:?}"
+        );
+        assert_eq!(
+            runner_config
+                .enrollment_credential
+                .expect("credential must remain set")
+                .expose(),
+            "manually-configured-token",
+            "a manual credential must win over both the stored-session placeholder and self-provisioning"
+        );
+        std::fs::remove_dir_all(&state_dir).ok();
+    }
+
+    #[tokio::test]
+    async fn ensure_runner_credential_reuses_a_stored_session_without_self_provisioning() {
+        let state_dir = unique_temp_dir("stored-session");
+        std::fs::write(state_dir.join("session.json"), "{}").expect("write session.json");
+        let mut runner_config = RunnerConfig {
+            enrollment_credential: None,
+            state_dir: state_dir.clone(),
+            ..RunnerConfig::defaults()
+        };
+        // Deliberately unreachable: if this path wrongly called
+        // `local_enrollment::self_provision`, opening the pool would fail
+        // and this assertion below would see an `Err`, not an `Ok`.
+        let server_config = unreachable_database_url();
+
+        let result = ensure_runner_credential(&mut runner_config, &server_config).await;
+
+        assert!(
+            result.is_ok(),
+            "a stored session must satisfy the credential requirement without opening the database: {result:?}"
+        );
+        assert!(
+            runner_config.enrollment_credential.is_some(),
+            "build_runtime's precondition still needs a credential to be present"
+        );
+        std::fs::remove_dir_all(&state_dir).ok();
+    }
+
+    #[tokio::test]
+    async fn ensure_runner_credential_attempts_self_provisioning_when_nothing_else_is_available() {
+        let state_dir = unique_temp_dir("no-session");
+        let mut runner_config = RunnerConfig {
+            enrollment_credential: None,
+            state_dir: state_dir.clone(),
+            ..RunnerConfig::defaults()
+        };
+        let server_config = unreachable_database_url();
+
+        let result = ensure_runner_credential(&mut runner_config, &server_config).await;
+
+        assert!(
+            result.is_err(),
+            "with no manual credential and no stored session, self-provisioning must actually be \
+             attempted — proved here by its failure against a deliberately unreachable database, \
+             the same database_url the previous test proves does NOT get touched when a session exists"
+        );
+        std::fs::remove_dir_all(&state_dir).ok();
     }
 }
