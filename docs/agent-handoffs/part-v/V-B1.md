@@ -1,8 +1,7 @@
 # V-B1 handoff
 
 - Base SHA / branch / final SHA: base `81e66e5` (develop tip at worktree creation) /
-  `agent/v-b1-identity-posture` / final SHA recorded in the commit created immediately
-  after this file — see `git log -1` on this branch.
+  `agent/v-b1-identity-posture` / final `6dd8fdf`.
 - Files changed (must equal ownership list): `crates/tack-api/src/middleware.rs`,
   `crates/tack-api/src/config.rs`, `docs/CONFIG.md` (one row),
   `docs/book/src/user-guide/administration.md`, `docs/adr/0059-single-operator-identity-posture.md`,
