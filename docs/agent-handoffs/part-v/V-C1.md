@@ -1,7 +1,7 @@
 # V-C1 handoff
 
 - Base SHA / branch / final SHA: base `develop` tip at branch creation (`81e66e5`), branch
-  `agent/v-c1-distribution`, final SHA — see the commit this handoff ships in.
+  `agent/v-c1-distribution`, final SHA `fc76ca81073b7b76329bd4d5c386b241b506d4b6`.
 - Files changed (must equal ownership list):
   - `packaging/homebrew/tack.rb` (new)
   - `packaging/aur/PKGBUILD` (new)
