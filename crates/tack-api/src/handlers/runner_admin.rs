@@ -11,8 +11,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::Row;
+use tack_db::Repository;
 use tack_db::repo::execution::{
-    AddFleetMemberOutcome, EnrollmentToken, NewAgentProfile, NewRunner,
+    AddFleetMemberOutcome, EnrollmentToken, ExecutionClock, NewAgentProfile, NewRunner,
+    SystemExecutionClock,
 };
 use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
 use utoipa::ToSchema;
@@ -607,103 +609,189 @@ pub async fn create_pending_runner(
     State(state): State<OperatorExecutionState>,
     Json(input): Json<CreatePendingRunner>,
 ) -> Result<Json<CreatePendingRunnerResponse>, (StatusCode, Json<Value>)> {
-    if input.enrollment_lifetime_seconds <= 0 {
-        return Err(error(
-            StatusCode::BAD_REQUEST,
-            StableErrorCode::InvalidRequest,
-            "enrollment_lifetime_seconds must be positive",
-            json!({"field": "enrollment_lifetime_seconds"}),
-        ));
-    }
-    let runner_id = format!("runr_{}", Uuid::new_v4());
-    let token_id = format!("ent_{}", Uuid::new_v4());
-    let raw_token = format!("enr_{}", Uuid::new_v4());
-    let now = state.clock.now();
-    let enrollment_lifetime =
-        Duration::try_seconds(input.enrollment_lifetime_seconds).ok_or_else(|| {
-            error(
+    provision_pending_runner(&state.repo, state.clock.as_ref(), input)
+        .await
+        .map(Json)
+        .map_err(|err| match err {
+            ProvisionError::InvalidLifetime => error(
+                StatusCode::BAD_REQUEST,
+                StableErrorCode::InvalidRequest,
+                "enrollment_lifetime_seconds must be positive",
+                json!({"field": "enrollment_lifetime_seconds"}),
+            ),
+            ProvisionError::LifetimeOutOfRange => error(
                 StatusCode::BAD_REQUEST,
                 StableErrorCode::InvalidRequest,
                 "enrollment_lifetime_seconds is out of range",
                 json!({"field": "enrollment_lifetime_seconds"}),
-            )
-        })?;
-    let expires_at = now.checked_add_signed(enrollment_lifetime).ok_or_else(|| {
-        error(
-            StatusCode::BAD_REQUEST,
-            StableErrorCode::InvalidRequest,
-            "enrollment_lifetime_seconds is out of range",
-            json!({"field": "enrollment_lifetime_seconds"}),
-        )
-    })?;
-    let labels = serde_json::to_string(&input.labels).map_err(|_| {
-        error(
-            StatusCode::BAD_REQUEST,
-            StableErrorCode::InvalidRequest,
-            "labels cannot be serialized",
-            json!({"field": "labels"}),
-        )
-    })?;
-    let capabilities = serde_json::to_string(&input.capability_snapshot).map_err(|_| {
-        error(
-            StatusCode::BAD_REQUEST,
-            StableErrorCode::InvalidRequest,
-            "capability_snapshot cannot be serialized",
-            json!({"field": "capability_snapshot"}),
-        )
-    })?;
-    let enrollment_token_hash = token_hash(&raw_token);
-    state
-        .repo
-        .create_pending_runner_and_issue_token(
-            NewRunner {
-                id: &runner_id,
-                name: &input.name,
-                credential_hash: "pending:no-credential",
-                labels: &labels,
-                total_capacity: input.total_capacity,
-                available_capacity: input.available_capacity,
-                capability_snapshot: &capabilities,
-                protocol_version: input.protocol_version,
-            },
-            EnrollmentToken {
-                id: &token_id,
-                runner_id: &runner_id,
-                token_hash: &enrollment_token_hash,
-                expires_at,
-            },
-            state.clock.as_ref(),
-        )
-        .await
-        .map_err(|err| match err {
-            // The repo layer reports out-of-bounds capacity/expiry via
-            // `sqlx::Error::Protocol` — a genuine client input problem.
-            sqlx::Error::Protocol(_) => error(
+            ),
+            ProvisionError::LabelsNotSerializable => error(
+                StatusCode::BAD_REQUEST,
+                StableErrorCode::InvalidRequest,
+                "labels cannot be serialized",
+                json!({"field": "labels"}),
+            ),
+            ProvisionError::CapabilitySnapshotNotSerializable => error(
+                StatusCode::BAD_REQUEST,
+                StableErrorCode::InvalidRequest,
+                "capability_snapshot cannot be serialized",
+                json!({"field": "capability_snapshot"}),
+            ),
+            ProvisionError::InvalidCapacityOrWindow => error(
                 StatusCode::BAD_REQUEST,
                 StableErrorCode::InvalidRequest,
                 "Pending runner capacity or enrollment window is invalid",
                 json!({"field": "total_capacity"}),
             ),
-            _ if is_unique_violation(&err) => error(
+            ProvisionError::NameConflict => error(
                 StatusCode::CONFLICT,
                 StableErrorCode::Conflict,
                 "Runner name already exists",
                 json!({}),
             ),
-            _ => error(
+            ProvisionError::Internal => error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
                 "Could not create pending runner",
                 json!({}),
             ),
-        })?;
-    Ok(Json(CreatePendingRunnerResponse {
+        })
+}
+
+/// Failure from [`provision_pending_runner`], independent of any transport.
+/// [`create_pending_runner`] maps each variant to the exact status code and
+/// error envelope the HTTP route has always returned; [`provision_local_runner`]
+/// surfaces the same variants to its own in-process caller instead.
+#[derive(Debug, thiserror::Error)]
+pub enum ProvisionError {
+    #[error("enrollment_lifetime_seconds must be positive")]
+    InvalidLifetime,
+    #[error("enrollment_lifetime_seconds is out of range")]
+    LifetimeOutOfRange,
+    #[error("labels cannot be serialized")]
+    LabelsNotSerializable,
+    #[error("capability_snapshot cannot be serialized")]
+    CapabilitySnapshotNotSerializable,
+    #[error("pending runner capacity or enrollment window is invalid")]
+    InvalidCapacityOrWindow,
+    #[error("runner name already exists")]
+    NameConflict,
+    #[error("could not create pending runner")]
+    Internal,
+}
+
+/// Validates `input`, generates the runner/token ids and the raw one-time
+/// token, hashes it, and persists the pending runner via
+/// `create_pending_runner_and_issue_token`. The raw token is returned only in
+/// [`CreatePendingRunnerResponse::enrollment_token`] and is never stored —
+/// only its hash is. Shared by the HTTP route (`create_pending_runner`) and
+/// by in-process local provisioning (`provision_local_runner`); neither the
+/// validation nor the storage differs between the two callers, only how the
+/// result is reported back.
+pub async fn provision_pending_runner(
+    repo: &Repository,
+    clock: &dyn ExecutionClock,
+    input: CreatePendingRunner,
+) -> Result<CreatePendingRunnerResponse, ProvisionError> {
+    if input.enrollment_lifetime_seconds <= 0 {
+        return Err(ProvisionError::InvalidLifetime);
+    }
+    let runner_id = format!("runr_{}", Uuid::new_v4());
+    let token_id = format!("ent_{}", Uuid::new_v4());
+    let raw_token = format!("enr_{}", Uuid::new_v4());
+    let now = clock.now();
+    let enrollment_lifetime = Duration::try_seconds(input.enrollment_lifetime_seconds)
+        .ok_or(ProvisionError::LifetimeOutOfRange)?;
+    let expires_at = now
+        .checked_add_signed(enrollment_lifetime)
+        .ok_or(ProvisionError::LifetimeOutOfRange)?;
+    let labels =
+        serde_json::to_string(&input.labels).map_err(|_| ProvisionError::LabelsNotSerializable)?;
+    let capabilities = serde_json::to_string(&input.capability_snapshot)
+        .map_err(|_| ProvisionError::CapabilitySnapshotNotSerializable)?;
+    let enrollment_token_hash = token_hash(&raw_token);
+    repo.create_pending_runner_and_issue_token(
+        NewRunner {
+            id: &runner_id,
+            name: &input.name,
+            credential_hash: "pending:no-credential",
+            labels: &labels,
+            total_capacity: input.total_capacity,
+            available_capacity: input.available_capacity,
+            capability_snapshot: &capabilities,
+            protocol_version: input.protocol_version,
+        },
+        EnrollmentToken {
+            id: &token_id,
+            runner_id: &runner_id,
+            token_hash: &enrollment_token_hash,
+            expires_at,
+        },
+        clock,
+    )
+    .await
+    .map_err(|err| match err {
+        // The repo layer reports out-of-bounds capacity/expiry via
+        // `sqlx::Error::Protocol` — a genuine client input problem.
+        sqlx::Error::Protocol(_) => ProvisionError::InvalidCapacityOrWindow,
+        _ if is_unique_violation(&err) => ProvisionError::NameConflict,
+        _ => ProvisionError::Internal,
+    })?;
+    Ok(CreatePendingRunnerResponse {
         protocol_version: 1,
         runner_id,
         token_id,
         enrollment_token: raw_token,
         expires_at: expires_at.to_rfc3339(),
-    }))
+    })
+}
+
+/// Failure from [`provision_local_runner`]: either the short-lived pool it
+/// opens against `database_url` could not be established, or the
+/// provisioning call itself failed.
+#[derive(Debug, thiserror::Error)]
+pub enum ProvisionLocalRunnerError {
+    #[error("could not open the database: {0}")]
+    Pool(#[from] sqlx::Error),
+    #[error(transparent)]
+    Provision(#[from] ProvisionError),
+}
+
+/// Self-provisions a single local runner by calling
+/// [`provision_pending_runner`] in-process against `database_url` — the same
+/// URL `tack_api::server`'s own boot sequence opens — instead of over HTTP.
+/// Exists for `tack serve --with-runner`'s zero-touch local case: the
+/// operator and the runner are the same person on the same machine, so
+/// creating the pending runner and minting its one-time token is an
+/// admin/bootstrap concern, not the runner protocol. The returned token
+/// still has to be *redeemed* over real runner-v1 HTTP by the runner role —
+/// nothing about that path changes or is bypassed here. The runner name is
+/// suffixed with a fresh UUID so repeated self-provisioning (e.g. a retry
+/// after a crash between provisioning and storing the resulting session)
+/// cannot collide with a still-pending runner from an earlier attempt.
+///
+/// Opens and drops its own connection pool rather than reusing the server's:
+/// `tack_api::serve_with_ready` does not hand its `Repository` back to the
+/// caller, and SQLite's WAL mode (which `tack_db::init_pool` enables) makes a
+/// second, short-lived pool against the same file safe — it is one more
+/// connection to the database, not a competing writer racing the server's
+/// own pool.
+pub async fn provision_local_runner(
+    database_url: &str,
+) -> Result<CreatePendingRunnerResponse, ProvisionLocalRunnerError> {
+    let pool = tack_db::init_pool(database_url).await?;
+    let repo = Repository::new(pool);
+    let input = CreatePendingRunner {
+        name: format!("local-{}", Uuid::new_v4()),
+        labels: empty(),
+        total_capacity: 1,
+        available_capacity: 1,
+        capability_snapshot: empty(),
+        protocol_version: protocol_v1(),
+        enrollment_lifetime_seconds: default_enrollment_lifetime_seconds(),
+    };
+    let response = provision_pending_runner(&repo, &SystemExecutionClock, input).await?;
+    Ok(response)
 }
 
 #[utoipa::path(

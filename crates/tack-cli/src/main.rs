@@ -8,6 +8,7 @@ use tack_cli::execution;
 use tack_cli::git;
 use tack_cli::vocab;
 
+mod local_enrollment;
 mod local_runner;
 
 // ─── CLI structure ────────────────────────────────────────────────────────────
