@@ -1102,18 +1102,28 @@ exit 0
         );
 
         // Dispatch itself, not only the registered-kind set, is order
-        // independent: an auto-selected (unsupported) spec is rejected the
-        // same way regardless of which registry instance handles it.
+        // independent. The fixture's requested model (provider "openai",
+        // id "opaque/model-alpha") is unsupported by claude-code (unknown
+        // provider family) and by opencode (not a real declared pairing),
+        // so both reject it pre-spawn regardless of registry order. codex
+        // is a pass-through harness: it cannot independently
+        // verify a model's identity, so it accepts any *explicit*
+        // provider/id pre-spawn and defers the real check to the harness
+        // at run time — with a real `codex` binary now installed, that is
+        // an accepted dispatch, not a rejection.
         for kind in ["codex", "claude-code", "opencode"] {
             let spec = spec_requesting(kind);
             let forward_result = forward.validate(&spec).await;
             let backward_result = backward.validate(&spec).await;
-            assert!(
-                matches!(forward_result, Err(HarnessError::Rejected { .. })),
+            let expect_ok = kind == "codex";
+            assert_eq!(
+                forward_result.is_ok(),
+                expect_ok,
                 "kind {kind}: forward registry"
             );
-            assert!(
-                matches!(backward_result, Err(HarnessError::Rejected { .. })),
+            assert_eq!(
+                backward_result.is_ok(),
+                expect_ok,
                 "kind {kind}: backward registry"
             );
         }
