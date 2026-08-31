@@ -272,12 +272,42 @@ for kind in codex claude-code opencode; do
   if [ -n "$GOT" ]; then
     STATE=$(wait_for "attempts_json '$REQ' | jq -r '.data[0] | select(.state==\"succeeded\" or .state==\"failed\") | .state'" 150 || true)
     if [ "$STATE" = "succeeded" ]; then ok "$kind: attempt succeeded through the full pipeline"
-    else bad "$kind: attempt ended '$STATE'"; fi
-  elif [ "$kind" = opencode ]; then
-    bad "$kind: request was never claimed despite a declared model combination"
+    else
+      # A claimed-and-ran failure is a real harness result, not a scheduling
+      # question — surface what the harness actually said (code/message plus
+      # a bounded stdout preview, where an adapter that only classifies by
+      # exit code, like codex's, puts the substance) instead of just the
+      # bare state.
+      TR=$(attempts_json "$REQ" | jq -c '.data[0].terminal_reason // {}')
+      TR_CODE=$(jq -r '.code // "unknown"' <<<"$TR")
+      TR_MSG=$(jq -r '.message // empty' <<<"$TR")
+      TR_STDOUT=$(jq -r '.stdout.text_preview // empty' <<<"$TR" | head -c 900)
+      bad "$kind: attempt was claimed and ran, then ended '$STATE' (code=$TR_CODE): $TR_MSG${TR_STDOUT:+ | stdout: $TR_STDOUT}"
+    fi
   else
-    bad "$kind: request never claimable — the $kind adapter's probe deliberately declares zero model_combinations and the scheduler requires the requested pairing to be declared (crates/tack-orch/src/scheduler/select.rs, ModelCombinationNotDeclared; AutoSelect is likewise always rejected), so NO $kind execution can ever be scheduled on a live runner"
-    unmet "§III.6 'attempts through Codex, Claude Code and OpenCode': $kind is structurally unschedulable regardless of an installed binary"
+    # Never claimed. Read the runner's OWN declaration for this harness
+    # (fetched in step 6, before any of step 8's requests existed) instead
+    # of assuming a cause: a probe failure, an undeclared/unattested model,
+    # and a momentarily-saturated runner are three different problems with
+    # three different owners, and look identical from the outside (no
+    # attempt ever appears). Reporting the wrong one of the three is exactly
+    # how this step's old canned text went stale in the first place.
+    HARNESS_CAP=$(jq -c --arg k "$kind" '.harnesses[]? | select(.harness_kind==$k) // {}' <<<"$CAPS")
+    PROBE_ERROR=$(jq -r '.probe_error // empty' <<<"$HARNESS_CAP")
+    PASSTHROUGH=$(jq -r '.model_passthrough.support // "none"' <<<"$HARNESS_CAP")
+    DECLARED=$(jq -r --arg p "$provider" --arg m "$model" \
+      '([.model_combinations[]? | select(.model_provider==$p) | .model_ids[]? | select(.==$m)] | length) > 0' \
+      <<<"$HARNESS_CAP")
+    if [ -n "$PROBE_ERROR" ]; then
+      bad "$kind: request never claimable — this runner's own probe of the $kind binary failed ($PROBE_ERROR), so the scheduler will not place any $kind work on it regardless of model declarations (crates/tack-api/src/handlers/runner_protocol.rs HarnessProbeError, checked before model eligibility)"
+      unmet "§III.6 'attempts through Codex, Claude Code and OpenCode': $kind is unschedulable on this runner because its probe failed, not because of a model policy"
+    elif [ "$DECLARED" = "true" ] || [ "$PASSTHROUGH" = "supported" ]; then
+      bad "$kind: request was never claimed even though the runner declares $provider/$model schedulable (declared=$DECLARED, model_passthrough=$PASSTHROUGH) — the runner most likely had no free capacity at the time; step 8 shares this runner with whatever step 7 left it doing"
+      unmet "§III.6 'attempts through Codex, Claude Code and OpenCode': $kind was declared schedulable but not claimed within this run's wait window — retry against an otherwise-idle runner before concluding $kind itself is broken"
+    else
+      bad "$kind: request never claimable — the $kind adapter declares no matching model_combinations and no supported model_passthrough attestation for $provider/$model, so the scheduler has no eligible pairing to place (crates/tack-orch/src/scheduler/select.rs, ModelCombinationNotDeclared; AutoSelect is likewise always rejected)"
+      unmet "§III.6 'attempts through Codex, Claude Code and OpenCode': $kind/$provider/$model is not declared schedulable by this runner"
+    fi
     curl -sf -X POST "$API/api/executions/$REQ/cancel" >/dev/null 2>&1
   fi
 done
