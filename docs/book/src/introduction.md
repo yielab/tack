@@ -2,11 +2,13 @@
 
 [![CI](https://github.com/yielab/tack/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/yielab/tack/actions/workflows/ci.yml)
 
-**Local-first, single-binary project management for solo developers and small teams.**
+**Tack assigns board items to AI coding agents — Codex, Claude Code, or OpenCode — and keeps
+the run as part of the project's history, in one self-hosted binary.**
 
 Tack tracks work for any domain — software sprints, a kitchen renovation, thesis chapters, a
-maintenance schedule — through fully configurable vocabulary and workflow columns. No accounts.
-No cloud. No subscriptions. One binary, one SQLite file.
+maintenance schedule — through fully configurable vocabulary and workflow columns, and can hand
+any item that's agent-eligible to a real coding-agent run instead of just tracking it. No
+accounts. No cloud. No subscriptions. One binary, one SQLite file.
 
 ---
 
