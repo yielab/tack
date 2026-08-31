@@ -27,6 +27,14 @@ use super::{
     workspace::{Workspace, WorkspaceError, WorkspaceManager, WorktreeProvisioner},
 };
 
+/// How often [`RunnerEngine::wait_with_lease_renewal`] re-heartbeats a
+/// still-running attempt. Must stay comfortably under the server's
+/// lease-grant window (`request_timeout_seconds_max` allows harness runs far
+/// longer than any single lease) so a heartbeat lands well before the
+/// previous one's grant would expire, including a missed cycle or two under
+/// transient network trouble.
+const LEASE_RENEWAL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(20);
+
 /// `Rejected` carries a `reason`.
 ///
 /// Two harness adapters independently hit the same gap: `validate`/`start`
@@ -431,7 +439,10 @@ where
             return Ok(cycle);
         }
 
-        let outcome = match self.adapter.wait(&handle).await {
+        let outcome = match self
+            .wait_with_lease_renewal(session, &record, &handle)
+            .await
+        {
             Ok(outcome) => outcome,
             Err(_) => return self.quarantine_after_spawn(session, &record, &handle).await,
         };
@@ -537,6 +548,51 @@ where
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
         format!("hb_{opaque}")
+    }
+
+    /// Runs `self.adapter.wait(handle)` to completion while sending a
+    /// heartbeat for `record`'s attempt every [`LEASE_RENEWAL_INTERVAL`].
+    ///
+    /// The lease this attempt holds is granted for a bounded window at claim
+    /// time and only extended by a subsequent heartbeat that names the
+    /// attempt (see `heartbeat_request`). A harness run can take up to the
+    /// request's own `timeout_seconds` (bounded at 86,400 by
+    /// `request_timeout_seconds_max`), so waiting on the harness without
+    /// heartbeating meanwhile lets the lease expire long before the process
+    /// exits: the eventual completion report is then rejected as a stale
+    /// lease, and nothing durably retries it during live operation (only a
+    /// runner restart replays a journaled `TerminalReportPending` record,
+    /// and that replay carries the same now-expired fencing token so it
+    /// fails identically) — the attempt is stuck `running` forever from the
+    /// API's point of view. Renewing periodically here, concurrently with
+    /// the wait, keeps the lease alive for the run's real duration. A failed
+    /// renewal is logged and does not interrupt the wait: the harness is
+    /// still running regardless, and the worst case (a renewal never lands
+    /// again before the harness exits) is the same stale-lease outcome this
+    /// loop exists to avoid, not a new failure mode.
+    async fn wait_with_lease_renewal(
+        &self,
+        session: &RunnerSession,
+        record: &AttemptJournal,
+        handle: &LocalRunHandle,
+    ) -> Result<HarnessOutcome, HarnessError> {
+        let mut wait_future = self.adapter.wait(handle);
+        loop {
+            tokio::select! {
+                biased;
+                outcome = &mut wait_future => return outcome,
+                () = tokio::time::sleep(LEASE_RENEWAL_INTERVAL) => {
+                    let request = self.heartbeat_request(session, record);
+                    if let Err(error) = self.protocol.heartbeat(session, request).await {
+                        tracing::warn!(
+                            %error,
+                            attempt_id = record.attempt_id.as_str(),
+                            "lease-renewal heartbeat failed while the harness is still running"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     // -----------------------------------------------------------------
@@ -1455,6 +1511,10 @@ mod tests {
         // harness adapters already stage) without touching any other test's fixed
         // expectation of the plain `{code, message}` default.
         completion_terminal_reason: serde_json::Value,
+        // Zero for every existing test (no behavior change): `wait()` only
+        // sleeps when a test explicitly sets this, to simulate a harness
+        // that outlives one or more lease-renewal intervals.
+        wait_delay: std::time::Duration,
     }
 
     #[async_trait]
@@ -1480,6 +1540,9 @@ mod tests {
         }
 
         async fn wait(&self, _handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError> {
+            if !self.wait_delay.is_zero() {
+                tokio::time::sleep(self.wait_delay).await;
+            }
             Ok(HarnessOutcome {
                 terminal_state: AttemptState::Succeeded,
                 terminal_reason: self.completion_terminal_reason.clone(),
@@ -1698,6 +1761,7 @@ mod tests {
                 "code": "completed",
                 "message": "Harness exited successfully"
             }),
+            wait_delay: std::time::Duration::ZERO,
         }
     }
 
@@ -1932,6 +1996,69 @@ mod tests {
         assert_eq!(heartbeats[0].protocol_version, ProtocolVersion::v1());
         assert_eq!(heartbeats[0].runner_id.as_str(), "runner");
         assert_eq!(heartbeats[0].sent_at.as_str(), "2026-08-06T12:20:15Z");
+        std::fs::remove_dir_all(root).expect("remove temporary root");
+    }
+
+    /// Acceptance: a harness that outlives several lease-renewal intervals
+    /// still gets its lease renewed throughout, not just once at the start.
+    /// Uses tokio's paused/auto-advancing clock so the wait genuinely spans
+    /// multiple [`LEASE_RENEWAL_INTERVAL`] ticks without the test itself
+    /// taking minutes; `FakeAdapter::wait`'s own sleep and the engine's
+    /// renewal sleep race on the same virtual clock, so the assertion is
+    /// exercising the real `tokio::select!` loop, not a mocked timer.
+    #[tokio::test(start_paused = true)]
+    async fn wait_periodically_renews_the_lease_while_the_harness_still_runs() {
+        let root = temporary_root("lease-renewal");
+        let journal = OwnerOnlyJournal::new(&root);
+        let protocol = protocol(work(), false, false);
+        let long_running_adapter = FakeAdapter {
+            wait_delay: LEASE_RENEWAL_INTERVAL * 3 + std::time::Duration::from_secs(1),
+            ..adapter(journal.journal_path(&AttemptId::new("attempt")))
+        };
+        // `AdvancingClock` (not the default `SystemClock`) so each heartbeat
+        // this test observes carries a distinct `sent_at`/`heartbeat_id`:
+        // tokio's paused clock advances *tokio* timers, not `SystemTime`, so
+        // a real per-call clock is needed for the renewal loop's repeated
+        // heartbeats to be distinguishable rather than rejected as replays.
+        let base: SystemTime = chrono::DateTime::parse_from_rfc3339("2026-08-06T12:20:15Z")
+            .expect("timestamp")
+            .into();
+        let engine = RunnerEngine::with_clock(
+            protocol.clone(),
+            long_running_adapter,
+            journal.clone(),
+            WorkspaceManager::new(
+                root.join("workspaces"),
+                FakeWorktree {
+                    expected_journal: journal.journal_path(&AttemptId::new("attempt")),
+                    provision_after_journal: Arc::new(AtomicBool::new(false)),
+                },
+            ),
+            AdvancingClock {
+                base,
+                calls: Arc::new(AtomicUsize::new(0)),
+            },
+        );
+
+        assert!(matches!(
+            engine
+                .run_once(&session(), claim_request())
+                .await
+                .expect("cycle"),
+            RunCycle::Completed { .. }
+        ));
+
+        // One heartbeat right after start, plus at least three renewals
+        // while `wait()` was still pending.
+        let heartbeat_count = protocol
+            .received_heartbeats
+            .lock()
+            .expect("fake protocol lock")
+            .len();
+        assert!(
+            heartbeat_count >= 4,
+            "expected the lease to be renewed periodically during a long wait, got {heartbeat_count} heartbeat(s)"
+        );
         std::fs::remove_dir_all(root).expect("remove temporary root");
     }
 
