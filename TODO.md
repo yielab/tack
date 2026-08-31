@@ -67,7 +67,7 @@ acceptance gate verifiable without trusting its author's handoff.
 
 | Wave | Cards | Phase | Status |
 |---|---|---|---|
-| 11 — Release blockers | V-A1 · V-A2 · V-A3 · V-A4 | 59 | **not started.** Base SHA for the first cards: `277868a` on `develop` — but see §V.0, the working tree is NOT clean at the time of writing. |
+| 11 — Release blockers | V-A1 · V-A2 · V-A3 · V-A4 | 59 | **V-A1, V-A2 integrated** at `98ca84c` on `develop` (handoffs: `docs/agent-handoffs/part-v/V-A1.md`, `V-A2.md`). V-A3, V-A4 **not started** — branch from `98ca84c`. |
 | 12 — Honest posture & prune | V-B1 · V-B2 | 59 | **not started.** May start in parallel with Wave 11; only V-B1's README text depends on it. |
 | 13 — Distribution & launch | V-C1 · V-C2 · V-C3 | 59 | **not started.** Blocked — see §V.3. V-C2 additionally needs Part IV Wave 10. |
 
@@ -150,7 +150,8 @@ behind it that is an advantage, and the positioning card (V-A4) should not shy f
   `registering_all_three_real_adapters_is_order_independent` fix inherited from Part IV
   §IV.0. **Land or discard it deliberately before branching any card**; do not let it ride
   into a card's diff unexamined. It is the same change Part IV's capsule describes; the two
-  Parts must not both claim it.
+  Parts must not both claim it. **Landed** at `f4941f0`, before any Wave 11 card branched —
+  the fix matched a real `codex` binary now being installed on this machine.
 - `docs/adr/0058-standalone-single-binary-runner.md`, `docs/agent-handoffs/part-iv/` —
   untracked Part IV material.
 - `tack.db.before-037_orch_runs_rebuild.sqlite` — an untracked database snapshot sitting in
