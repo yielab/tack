@@ -451,3 +451,55 @@ async fn changed_payload_idempotency_conflict_is_not_retryable_with_key_detail()
         serde_json::json!({"idempotency_key": "same-key"})
     );
 }
+
+/// `provision_local_runner` opens its own connection pool against a
+/// `database_url` rather than reusing an existing `Repository`, since that
+/// is exactly what an in-process caller in a different crate (`tack-cli`,
+/// which cannot see this router's `AppState`) has to do. Uses a genuine
+/// file-backed database, migrated first exactly like a real server's boot
+/// sequence, so the row this function writes through its own pool has to be
+/// independently visible through a second, already-open pool against the
+/// same file to pass.
+#[tokio::test]
+async fn provision_local_runner_writes_through_its_own_pool_to_the_same_database() {
+    let db_path =
+        std::env::temp_dir().join(format!("tack-api-c1-local-provision-{}.db", Uuid::new_v4()));
+    let database_url = format!("sqlite://{}?mode=rwc", db_path.display());
+    let pool = init_pool(&database_url).await.expect("file-backed pool");
+    migrations::run_all(&pool).await.expect("migrations");
+    let repo = Repository::new(pool);
+
+    let response = runner_admin::provision_local_runner(&database_url)
+        .await
+        .expect("local provisioning should succeed against a migrated, file-backed database");
+
+    assert!(response.runner_id.starts_with("runr_"));
+    assert!(!response.enrollment_token.is_empty());
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agent_runners WHERE id = ?")
+        .bind(&response.runner_id)
+        .fetch_one(repo.pool())
+        .await
+        .expect("count");
+    assert_eq!(
+        count, 1,
+        "the runner provisioned through provision_local_runner's own pool must be visible \
+         through a separate, already-open pool against the same database file"
+    );
+}
+
+/// Negative-space companion to the test above: an unparseable `database_url`
+/// must fail before ever reaching `provision_pending_runner`, proving
+/// `provision_local_runner` really does open its own pool rather than
+/// silently falling back to some other connection.
+#[tokio::test]
+async fn provision_local_runner_fails_on_an_unparseable_database_url() {
+    let error = runner_admin::provision_local_runner("not-a-real-database-url")
+        .await
+        .expect_err("an unparseable database_url must not silently succeed");
+
+    assert!(matches!(
+        error,
+        runner_admin::ProvisionLocalRunnerError::Pool(_)
+    ));
+}
