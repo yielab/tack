@@ -3014,7 +3014,7 @@ dependencies = [
 
 [[package]]
 name = "tack-api"
-version = "0.1.0-beta.6"
+version = "0.1.0-beta.7"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -3053,7 +3053,7 @@ dependencies = [
 
 [[package]]
 name = "tack-cli"
-version = "0.1.0-beta.6"
+version = "0.1.0-beta.7"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3071,7 +3071,7 @@ dependencies = [
 
 [[package]]
 name = "tack-core"
-version = "0.1.0-beta.6"
+version = "0.1.0-beta.7"
 dependencies = [
  "assert_matches",
  "chrono",
@@ -3088,7 +3088,7 @@ dependencies = [
 
 [[package]]
 name = "tack-db"
-version = "0.1.0-beta.6"
+version = "0.1.0-beta.7"
 dependencies = [
  "assert_matches",
  "chrono",
@@ -3104,7 +3104,7 @@ dependencies = [
 
 [[package]]
 name = "tack-orch"
-version = "0.1.0-beta.6"
+version = "0.1.0-beta.7"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3123,7 +3123,7 @@ dependencies = [
 
 [[package]]
 name = "tack-runner"
-version = "0.1.0-beta.6"
+version = "0.1.0-beta.7"
 dependencies = [
  "async-trait",
  "chrono",

@@ -9,66 +9,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-> **Nothing in this section has ever been released.** The most recent tag is
-> `v0.1.0-beta.6` (2026-06-22). Everything below postdates it, which means the entire
-> runner fleet is currently undownloadable — the only published archives are `tack-*` from
-> June and contain no `tack-runner`. Cutting `v0.1.0-beta.7` is card **V-A3** on the Part V
-> board.
->
-> ---
->
-> **Harness-agnostic runner fleet (Phases 50–57, August 2026).** A durable execution
-> domain, pull-based `tack-runner` binary, real Codex/Claude Code/OpenCode harness
-> adapters, fleet scheduling, decisions, artifacts, and model profiles — tracked on the
-> Part III board in [TODO.md](TODO.md) and the
-> [roadmap](docs/book/src/roadmap.md#next--harness-agnostic-runner-fleet-phases-5057).
-> Phases 50–56 are delivered and merged onto `develop`. Not summarized item-by-item here —
-> see the roadmap's definition-of-done table for current capability status and
-> `docs/agent-handoffs/part-iii/` for per-card evidence.
->
-> **Status correction (2026-08-26), superseding the earlier note in this section.** This
-> entry previously said the release tag was "blocked only on installing `codex` locally to
-> complete the three-harness live smoke". That was tested and is **false**. `codex` was
-> installed (`codex-cli 0.149.1`, alongside `claude` 2.1.236 and `opencode` 1.18.0 — three
-> of three present for the first time), both binaries were rebuilt in release, and
-> `./scripts/smoke.sh --live` returned **`SMOKE FAILED`**. Steps 1–6 and 9 passed, including
-> the full restart-recovery proof. Step 7's live attempt never reached a terminal state
-> (`terminal_reason: null` after the 300 s budget), and step 8 failed for all three harness
-> kinds while printing a message the board had already recorded as stale six days earlier.
-> The leading hypothesis — that step 8 is a cascade of step 7 saturating a capacity-1 runner
-> — is explicitly **unverified**. **`codex` has never completed a live attempt.** The four
-> open questions are card **V-A2**.
->
-> ---
->
-> **Adoption & first public release (Phase 59, opened 2026-08-30).** A full adoption audit
-> against the open-source ecosystem opened a new cycle, carded as Part V in
-> [TODO.md](TODO.md). It found no code defects it did not already know about, and several
-> distribution ones it did not:
->
-> - The install command printed in `README.md` returns **HTTP 404** and always has — it
->   names a `main` branch that does not exist in this repository (card V-A1).
-> - The repository has been public since 2026-03-15 with **0 stars, 0 forks, 0 human-filed
->   issues and 1 human contributor**; every open PR is Dependabot's.
-> - The mdBook under `docs/book/` is unpublished (`yielab.github.io/tack` → 404) and
->   `homepageUrl` is empty (card V-A4).
-> - Tack has **no identity model** — no users, no sessions, no per-user permissions;
->   `assignee` is free text and `roles` is a colour label. This is a legitimate
->   single-operator design that has never been written down as one (card V-B1).
-> - The docket control plane from Phases 33–49 and the native runner from Phases 50–58 now
->   coexist in the schema and the UI, with 11 `orch_*` tables including two rebuild
->   leftovers (card V-B2).
->
-> One earlier claim in this audit was **corrected before it reached this file**: CI does
-> package `tack-runner` into its own per-platform archive, and has since `7d78de3`
-> (2026-08-19). The release gap is the missing tag, not the workflow.
+Nothing yet.
+
+---
+
+## [0.1.0-beta.7] - 2026-08-31
+
+The harness-agnostic runner fleet built since `v0.1.0-beta.6` — a durable execution
+domain, the pull-based `tack-runner` binary, and real Codex/Claude Code/OpenCode harness
+adapters (Phases 50–57; see the
+[roadmap](docs/book/src/roadmap.md#next--harness-agnostic-runner-fleet-phases-5057) for the
+full capability table) — is downloadable for the first time in this release. CI has
+packaged `tack-runner` into its own per-platform archive since `7d78de3` (2026-08-19); the
+gap since then was purely that no tag had been cut to put it on a release page.
+
+**Live-harness status, measured against the real `claude`, `opencode`, and `codex`
+binaries (`./scripts/smoke.sh --live`):** `claude-code` and `opencode` complete real live
+attempts end to end. `codex` now runs the full production pipeline for the first time —
+claimed, checked out, spawned, given a real network call, and its error captured and
+reported correctly — but has not completed a live attempt on this machine. The remaining
+blocker is external: the connected Codex account does not have access to the specific
+model the smoke test requests (`"The 'gpt-5-codex' model is not supported when using Codex
+with a ChatGPT account."`), an account-tier limitation, not a defect in this codebase. Two
+real defects that were obscuring this picture until now are fixed below.
+
+**Known issue, not fixed by this release:** the install command in `README.md`
+(`curl -fsSL … | sh`) still returns HTTP 404 — it names a `main` branch that does not yet
+exist on the remote. The script and every URL that documents it are already correct; a new
+CI job (`verify-install-urls.yml`) now checks them continuously, so this cannot silently
+recur once `main` is published without being caught. Until `main` exists, install by
+downloading the archive matching your platform below and verifying it against
+`SHA256SUMS`, or via `cargo install --git … tack-cli --features embed-spa`.
+
+### Fixed
+
+- **A long-running live task no longer gets stuck at "running" forever.** Any harness
+  (Codex, Claude Code, or OpenCode — any model) whose real task ran past about 60 seconds
+  had its server-side lease silently expire while `tack-runner` still believed it held it;
+  the eventual completion report was then rejected as stale and the task was left
+  permanently `running` with no error, even across a runner restart. `tack-runner` now
+  renews its lease every 20 seconds for as long as the harness is actually still running.
+- **Codex could never be scheduled, on any machine.** Its startup version probe required
+  the installed binary's `--version` output to be a bare `X.Y.Z` string with nothing else;
+  the real `codex-cli` binary prints a program name first (`codex-cli 0.149.1`), so the
+  probe always rejected it and the scheduler refused to place any work on it regardless of
+  what else it declared. The probe now scans for a version token instead of requiring the
+  whole line to be one.
+- **A failed heartbeat could retry without backoff.** Observed only as a side effect of the
+  stuck-task bug above (thousands of heartbeat attempts a second against a lease that could
+  never become valid again); `tack-runner` now backs off before retrying a failed heartbeat,
+  matching its other retry paths.
 
 ### Added
 
-- **`tack-runner` release archives.** The release workflow now builds `tack-runner` with
-  `cargo auditable` and packages it per platform in its own archive, alongside the systemd
-  unit and env example, so a fleet host can be provisioned without the server/SPA bundle.
-  (Part III, III-G4.) *Not yet visible on any release page — no tag has been cut since.*
+- **`tack-runner` release archives**, first available on a release page with this tag. The
+  release workflow builds `tack-runner` with `cargo auditable` and packages it per platform
+  in its own archive, alongside the systemd unit and env example, so a fleet host can be
+  provisioned without the server/SPA bundle. (Part III, III-G4.)
+- **Install URL verification.** `scripts/verify-install-urls.sh` and a matching CI workflow
+  resolve every install URL this project documents and fail on any non-2xx response, so a
+  broken install path (see Known issue above) cannot silently persist or recur.
+- **Harness-agnostic runner fleet (Phases 50–57).** A durable execution domain, the
+  pull-based `tack-runner` binary, real Codex/Claude Code/OpenCode harness adapters, fleet
+  scheduling, decisions, artifacts, and model profiles. See the
+  [roadmap](docs/book/src/roadmap.md#next--harness-agnostic-runner-fleet-phases-5057) for
+  the definition-of-done table and `docs/agent-handoffs/part-iii/` for per-card evidence.
 
 ### Security
 
