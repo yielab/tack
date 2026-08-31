@@ -79,6 +79,10 @@ tack-api = { path = "../tack-api" }
 # `tack serve --with-runner` — the same composition root the standalone
 # tack-runner binary uses. No cycle: tack-runner depends on tack-orch only.
 tack-runner = { path = "../tack-runner" }
+# `tack runner doctor` renders the RunnerCapabilities/FeatureCapabilities
+# tack-runner's bootstrap module reports, so this crate needs their real
+# types rather than re-declaring shadow copies of its own.
+tack-orch = { path = "../tack-orch" }
 tracing = { workspace = true }
 tokio = { workspace = true }
 clap = { workspace = true }
@@ -101,8 +105,3 @@ tokio = { workspace = true }
 # those direct HTTP calls. Already a workspace dependency (tack-api,
 # tack-db, ...); not newly introduced to the lockfile.
 chrono = { workspace = true }
-# Test-only: proves execution.rs's request-body builders deserialize into
-# the real nested snapshot types (`AgentProfileSnapshot`, `RepositorySnapshot`,
-# `PermissionPolicy`) the operator API validates against, one level deeper
-# than `tack-api`'s own `CreateExecution` struct. Not a production dependency.
-tack-orch = { path = "../tack-orch" }

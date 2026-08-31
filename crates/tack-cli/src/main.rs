@@ -8,6 +8,7 @@ use tack_cli::execution;
 use tack_cli::git;
 use tack_cli::vocab;
 
+mod doctor;
 mod local_runner;
 
 // ─── CLI structure ────────────────────────────────────────────────────────────
@@ -718,6 +719,16 @@ enum RunnerAction {
         #[arg(long, hide_env_values = true)]
         enrollment_token: Option<String>,
     },
+    /// Report which harness binaries this machine has, what each declares
+    /// it can do, and where its credentials come from — the same
+    /// discovery/capability probe `runner start` performs, without
+    /// enrolling anything or requiring a server.
+    Doctor {
+        /// Output the raw capability snapshot as JSON instead of the
+        /// human-readable report.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -785,9 +796,11 @@ fn main() -> anyhow::Result<()> {
         return run_server(local_runner::with_runner_enabled(false));
     };
 
-    // Serve, Runner Start, Config and Completions don't need a live API
-    // client: Serve and Runner Start each build their own async runtime and
-    // speak the runner-v1/HTTP protocol directly, never through `TackClient`.
+    // Serve, Runner Start, Runner Doctor, Config and Completions don't need a
+    // live API client: Serve and Runner Start each build their own async
+    // runtime and speak the runner-v1/HTTP protocol directly, never through
+    // `TackClient`; Runner Doctor only probes this machine's own harness
+    // installations and talks to no server at all.
     let command = match command {
         Commands::Serve { with_runner } => {
             return run_server(local_runner::with_runner_enabled(with_runner));
@@ -809,6 +822,11 @@ fn main() -> anyhow::Result<()> {
                 state_dir,
                 enrollment_token,
             );
+        }
+        Commands::Runner {
+            action: RunnerAction::Doctor { json },
+        } => {
+            return doctor::run(json);
         }
         Commands::Config { url, token, show } => {
             return cmd_config(
@@ -1057,6 +1075,7 @@ fn main() -> anyhow::Result<()> {
             } => cmd_runner_revoke_token(&client, runner_id, token_id, json),
             // Already handled above; unreachable but required for exhaustiveness.
             RunnerAction::Start { .. } => unreachable!(),
+            RunnerAction::Doctor { .. } => unreachable!(),
         },
 
         Commands::AgentProfile { action } => match action {
