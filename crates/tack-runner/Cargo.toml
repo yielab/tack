@@ -21,3 +21,9 @@ tokio.workspace = true
 toml.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+[dev-dependencies]
+# `test-util` (paused/auto-advancing virtual time) is not part of the
+# `full` feature bundle `[dependencies]` pulls in, and is only ever needed
+# by tests.
+tokio = { workspace = true, features = ["test-util"] }

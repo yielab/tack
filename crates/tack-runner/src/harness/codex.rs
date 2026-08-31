@@ -22,9 +22,12 @@
 //!
 //! 1. The installed binary is literally named `codex` and is found via a
 //!    `PATH` search (never a hardcoded path). See [`CodexLocator`].
-//! 2. Version detection invokes `codex --version` and expects a bare
-//!    `X.Y[.Z]` numeric string on stdout with exit code 0. See
-//!    [`CodexAdapter::detect_version`]/[`is_strict_version`].
+//! 2. Version detection invokes `codex --version` with exit code 0; the real
+//!    CLI (observed: `codex-cli 0.149.1`) prefixes the version with a
+//!    program-name token rather than printing it bare, so detection scans
+//!    for a strict `X.Y[.Z]` numeric token anywhere in the output rather
+//!    than requiring the whole line to be one. See
+//!    [`CodexAdapter::detect_version`]/[`find_strict_version_token`].
 //! 3. Non-interactive execution is assumed to be shaped like
 //!    `codex exec --json --model <requested model id>` with the agent
 //!    profile's instructions piped over **stdin** (never argv, for the same
@@ -175,17 +178,28 @@ fn locate_in_dirs(program_name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
     None
 }
 
-/// Strict `X.Y[.Z]` numeric-only check. Deliberately whole-string, not
-/// substring: the shared fixture's `unknown_version` mode
-/// (`"harness-cli version 999.999.999-nightly-exotic-format"`) genuinely
-/// *contains* a dot-separated numeric run, but is not itself a clean version
-/// line, and must not be reported as one.
+/// Strict `X.Y[.Z]` numeric-only check against one whitespace-delimited
+/// token. Deliberately whole-token, not substring: the shared fixture's
+/// `unknown_version` mode (`"harness-cli version
+/// 999.999.999-nightly-exotic-format"`) genuinely *contains* a dot-separated
+/// numeric run, but neither that token nor any other in the line is a clean
+/// version, and none must be reported as one.
 fn is_strict_version(candidate: &str) -> bool {
     let parts: Vec<&str> = candidate.split('.').collect();
     (2..=3).contains(&parts.len())
         && parts
             .iter()
             .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// Finds the first whitespace-delimited token in `text` that is itself a
+/// strict `X.Y[.Z]` version ([`is_strict_version`]). The real binary prints
+/// `codex-cli 0.149.1` — a program-name token ahead of the version, not a
+/// bare version string on its own — so the check must scan tokens rather
+/// than require the whole trimmed line to be one.
+fn find_strict_version_token(text: &str) -> Option<&str> {
+    text.split_whitespace()
+        .find(|token| is_strict_version(token))
 }
 
 fn bounded_preview(text: &str, max_chars: usize) -> String {
@@ -482,8 +496,8 @@ where
                         Some("codex --version produced no output".to_owned()),
                         BTreeMap::new(),
                     )
-                } else if is_strict_version(trimmed) {
-                    (trimmed.to_owned(), None, BTreeMap::new())
+                } else if let Some(version) = find_strict_version_token(trimmed) {
+                    (version.to_owned(), None, BTreeMap::new())
                 } else {
                     let mut additional = BTreeMap::new();
                     additional.insert(
@@ -1444,6 +1458,24 @@ mod tests {
         assert!(passthrough.reason.is_some());
     }
 
+    /// Acceptance: the real `codex` CLI prefixes its version with a
+    /// program-name token (`codex-cli 0.149.1`) instead of printing it bare.
+    /// A whole-string check would misclassify this as unrecognized and
+    /// permanently block scheduling via `HarnessProbeError` regardless of
+    /// `model_passthrough`; the version must be extracted from among the
+    /// output's tokens instead.
+    #[tokio::test]
+    async fn probe_recognizes_a_program_name_prefixed_version_string() {
+        let adapter = adapter_with_env(env_map(&[
+            ("TACK_FAKE_HARNESS_MODE", "version"),
+            ("TACK_FAKE_HARNESS_VERSION", "codex-cli 0.149.1"),
+        ]));
+        let capability = adapter.probe().await;
+
+        assert_eq!(capability.installed_version, "0.149.1");
+        assert_eq!(capability.probe_error, None);
+    }
+
     /// Acceptance: unknown version. The fixture's `unknown_version` mode
     /// exits 0 with a string that is not a clean version line; this is an
     /// explicit `probe_error`, never a fabricated clean version (rule 7).
@@ -1693,9 +1725,15 @@ mod tests {
             "live codex probe: installed_version={:?} probe_error={:?}",
             capability.installed_version, capability.probe_error
         );
-        // Deliberately not a stronger assertion than "probing completed
-        // without hanging or panicking": there is no verified
-        // expectation for the real version string's exact shape.
+        // The observed real CLI prints a program-name-prefixed version
+        // (`codex-cli 0.149.1`); a probe error here means either the
+        // installed binary changed its output shape again or the token
+        // scan regressed — either way this is the signal to look again,
+        // not an assertion to weaken back to "ran without panicking".
+        assert_eq!(
+            capability.probe_error, None,
+            "codex version probe must recognize the installed binary's real output"
+        );
 
         let workspace = deterministic_fixture_repo("live-artifact");
         let stager = ArtifactStager::new(temp_dir("live-artifact-staging"));

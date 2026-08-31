@@ -1232,7 +1232,13 @@ where
             match cycle {
                 Ok(RunCycle::NoWork) => {
                     if let Err(error) = self.idle_heartbeat(&session).await {
+                        // Same rationale as the `Err(error)` arm below: a
+                        // failing idle heartbeat paired with a claim that
+                        // returns immediately (nothing queued) would
+                        // otherwise spin this loop as fast as the server can
+                        // reject each attempt.
                         tracing::warn!(%error, "idle heartbeat failed");
+                        tokio::time::sleep(self.protocol.retry.max_backoff).await;
                     }
                 }
                 Ok(outcome) => tracing::info!(?outcome, "run cycle finished"),
