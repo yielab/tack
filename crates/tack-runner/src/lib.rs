@@ -4,6 +4,7 @@
 //! process lifecycle boundary and exposes seams that future protocol and
 //! harness work can implement without putting credentials in the API server.
 
+pub mod bootstrap;
 pub mod client;
 pub mod clock;
 pub mod config;
