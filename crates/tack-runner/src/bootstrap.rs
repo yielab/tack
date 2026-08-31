@@ -118,6 +118,42 @@ pub async fn run(
     build_runtime(config, limits).await?.run(shutdown).await
 }
 
+/// What probing this machine's harness installations found: a
+/// [`RunnerCapabilities`] identical to what enrollment/refresh would send,
+/// plus [`ClaudeCodeAdapter::discover`]'s own error when Claude Code could
+/// not be registered at all.
+///
+/// [`build_adapter_registry`] never registers an adapter or probe for a
+/// harness whose `discover` fails, so a missing `claude` binary leaves no
+/// trace in `capabilities.harnesses` whatsoever — Codex and OpenCode, by
+/// contrast, are always registered, and their absence surfaces as a
+/// `probe_error` on their own entry in that same vec instead. A caller that
+/// wants to report Claude Code's absence honestly, rather than silently omit
+/// it, needs this second field; nothing else in this crate captures it.
+#[derive(Debug, Clone)]
+pub struct DiscoveryReport {
+    pub capabilities: RunnerCapabilities,
+    pub claude_code_discovery_error: Option<String>,
+}
+
+/// Runs the exact discovery/capability-probing step [`build_runtime`]
+/// performs, without building a full runtime or requiring a server or
+/// enrollment credential.
+///
+/// `tack runner doctor` is the only caller today: it needs to report what
+/// this machine can do without enrolling a runner. It calls this instead of
+/// re-deriving [`build_adapter_registry`]/[`report_capabilities`] itself, so
+/// there remains exactly one place that decides how a harness gets probed,
+/// never two that could quietly diverge.
+pub async fn probe(staging_root: &Path, process_limits: &ProcessLimits) -> DiscoveryReport {
+    let adapters = build_adapter_registry(process_limits, staging_root);
+    let capabilities = report_capabilities(&adapters, &SystemClock).await;
+    DiscoveryReport {
+        capabilities,
+        claude_code_discovery_error: ClaudeCodeAdapter::discover().err(),
+    }
+}
+
 /// Registers every harness whose binary this machine actually has.
 ///
 /// A harness that cannot be discovered is **not registered** rather than
