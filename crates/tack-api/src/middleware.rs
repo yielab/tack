@@ -91,7 +91,10 @@ fn decode_base64url(value: &str) -> Option<Vec<u8>> {
 /// Middleware: if `TACK_API_TOKEN` is configured, require a matching
 /// `Authorization: Bearer <token>` header on every request except `/api/health`.
 ///
-/// Uses a constant-time comparison to prevent timing-oracle attacks.
+/// Uses a constant-time comparison to prevent timing-oracle attacks. This is
+/// the only credential a request can hold — there is no per-user account to
+/// authenticate as instead — a deliberate single-operator scope recorded in
+/// `docs/adr/0059-single-operator-identity-posture.md`, not an omission.
 pub async fn require_token(
     State(state): State<AppState>,
     req: Request,
@@ -111,7 +114,10 @@ pub async fn require_token(
     }
 
     let Some(ref expected) = state.config.api_token else {
-        // No token configured: pure-local mode, allow everything.
+        // No token configured: pure-local mode, allow everything. A
+        // non-loopback bind reaching this branch is refused earlier, at
+        // startup, by `AppConfig::validate_security` — this function never
+        // has to tell "no token, loopback" apart from "no token, exposed".
         return Ok(next.run(req).await);
     };
 
