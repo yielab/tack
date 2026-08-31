@@ -3182,8 +3182,10 @@ dependencies = [
  "serde_json",
  "tack-api",
  "tack-orch",
+ "tack-runner",
  "tokio",
  "toml",
+ "tracing",
  "wiremock",
 ]
 
