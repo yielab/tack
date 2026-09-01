@@ -1,55 +1,110 @@
 # Tack
 
-[![CI](https://github.com/yielab/tack/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/yielab/tack/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
+[![CI](https://github.com/yielab/tack/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/yielab/tack/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
+[![Beta](https://img.shields.io/badge/status-beta-yellow.svg)](CHANGELOG.md)
 
-**Tack assigns board items to AI coding agents — Codex, Claude Code, or OpenCode — and
-keeps the run as part of the project's history, in one self-hosted binary.**
+**A self-hosted project manager that can run the work it tracks.** Assign a board item
+to Claude Code, Codex, or OpenCode and it executes as a durable, auditable attempt —
+right inside the same project history, in one binary.
 
-Tack is a project manager — workflows, vocabulary, board/timeline/dashboard views —
-that can also execute the work it tracks: a board item becomes a real coding-agent run.
+![Board, Timeline, and vocabulary editor](docs/screenshots/hero.gif)
 
-**Proven today:** `claude-code` and `opencode` complete real, live end-to-end agent
-runs; `codex` runs the pipeline but hasn't completed one yet (this build's connected
-account lacks access to the requested model — an account gap, not a code defect).
-
-**Not yet:** the one-line installer 404s (its branch isn't published); Tack supports
-one active SQLite writer, no per-user accounts, and no tagged release of the runner
-fleet described above. Full detail on all of this is below.
-
-Mature open-source project managers — Plane, Huly, Focalboard, Leantime, Vikunja —
-track work but execute nothing. The open-source agent orchestrators that used to
-compete here have shut down or been deprecated; what's left above Tack in that
-category today is either closed-source or isn't a project board at all. Tack is both
-at once: a real project manager and a real multi-harness agent orchestrator.
-
-Built with Rust (Axum + sqlx), SolidJS, and SQLite.
+**Jump to:** [Features](#features) · [Screenshots](#screenshots) ·
+[Requirements](#requirements) · [Run it](#run-it) · [Status](#status) ·
+[Architecture](#architecture) · [Documentation](#documentation) ·
+[Contributing](#contributing)
 
 ---
 
+## Why Tack
+
+Most open-source project managers — Plane, Huly, Focalboard, Leantime, Vikunja —
+track work but execute none of it. The open-source agent orchestrators that used to
+sit alongside them have mostly shut down or gone closed-source. Tack does both at
+once: a real project manager (boards, timelines, dashboards, per-project vocabulary)
+and a real, multi-harness agent execution fleet, in one self-hosted binary with no
+external services.
+
+## Features
+
+### Project management
+
+- Configurable workflows — Scrum, Kanban, or phase-based — with per-project vocabulary
+  so the UI, CLI, and API all speak the language of your domain
+- Board, list, table, calendar, timeline, and dashboard views
+- Hierarchical items, dependency DAGs with cycle detection, custom fields, comments,
+  attachments, full-text search, templates, and bulk operations
+- Realtime updates over WebSocket with optimistic UI
+- JSON/YAML/CSV export, GitHub Issues and Linear import, hot and S3-compatible backup
+
+### Agent execution
+
+- Assign a board item to `claude-code`, `codex`, or `opencode` and it runs as a
+  tracked, durable attempt — not a fire-and-forget shell command
+- Pull-based runner protocol: a lightweight `tack-runner` claims eligible work and
+  executes near its own repo and credentials; Tack never calls into your machine
+- Fenced leases (one active attempt per request), decisions for human-in-the-loop
+  approval, and structured artifacts on every run
+- Measured usage only — cost and token counts are shown as measured or explicitly
+  **not measured**, never estimated or silently shown as zero
+
+### Automation surfaces
+
+- A REST API described by a checked-in [OpenAPI spec](docs/openapi.json), plus a CLI
+  with JSON output and shell completions
+- `tack mcp` — lets Claude Code, Codex, and other MCP clients read and update the
+  board through normal workflow validation
+- Outbound signed webhooks and optional GitHub push sync
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/board.png" width="49%" alt="Board — Kanban with WIP limits and drag-and-drop" />
+  <img src="docs/screenshots/timeline.png" width="49%" alt="Timeline — Gantt view with draggable bars" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" width="49%" alt="Dashboard — status distribution and sprint throughput" />
+  <img src="docs/screenshots/list.png" width="49%" alt="List — sortable rows with inline editing" />
+</p>
+
+<details>
+<summary>Vocabulary editor — rename any term to match your domain</summary>
+<br>
+
+![Vocabulary editor](docs/screenshots/settings-vocabulary.png)
+
+</details>
+
+## Requirements
+
+Running a release binary needs nothing else: SQLite and the web UI are embedded in
+the single `tack` binary — no Docker, no database server, no separate frontend build.
+
+| | |
+| --- | --- |
+| **Platform** | Linux, macOS (Intel + Apple Silicon), Windows |
+| **Browser** | Any current Chrome, Firefox, Safari, or Edge |
+| **Footprint** | 10.3 MiB binary (UI embedded), ~11.7 MiB idle memory — measured in [Benchmarks](docs/BENCHMARKS.md) |
+
+Building from source instead needs [Rust 1.85+](https://rustup.rs/) and
+[Node.js 20+](https://nodejs.org/).
+
 ## Run it
 
-**With Cargo** (works today — installs from the `develop` branch, the single binary
-with the UI embedded):
-
-```bash
-cargo install --git https://github.com/yielab/tack tack-cli --features embed-spa
-tack serve --with-runner   # server + web UI + an embedded agent runner, one process
-```
-
-`--with-runner` is what makes the run-it-yourself claim above real: it self-provisions
-a runner inside this same process — no second binary, no token to copy anywhere — so an
-item assigned to `claude-code`, `opencode`, or `codex` (whichever of those you have
-installed and logged in) actually executes. It's off by default and loopback-only; see
-[Agent Runners](docs/book/src/user-guide/agent-runners.md#standalone-mode-tack-serve---with-runner)
-and [`docs/CONFIG.md`](docs/CONFIG.md#embedded-runner-tack-serve---with-runner). Plain
-`tack` (no flag) still starts just the server and board UI, with no runner.
-
-**One line (Linux / macOS)** — the intended path once a tagged release ships; right
-now it 404s because the `main` branch it fetches from hasn't been published (see
-[Current limitations](#current-limitations)):
+**One line** (Linux / macOS):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh | sh
+tack serve --with-runner
+```
+
+**With Cargo** — installs from the `develop` branch, the single binary with the UI
+embedded:
+
+```bash
+cargo install --git https://github.com/yielab/tack tack-cli --features embed-spa
 tack serve --with-runner
 ```
 
@@ -57,9 +112,7 @@ tack serve --with-runner
 [releases page](https://github.com/yielab/tack/releases):
 
 ```bash
-# Linux / macOS
-tar xzf tack-*.tar.gz
-cd tack-*/
+tar xzf tack-*.tar.gz && cd tack-*/
 ./tack serve --with-runner
 ```
 
@@ -68,59 +121,56 @@ cd tack-*/
 Open **`http://localhost:3210`**. Project data lives in `tack.db`; attachments live in
 `storage/`. Back up both.
 
+`--with-runner` self-provisions an agent runner inside the same process — no second
+binary, no token to copy anywhere — so a board item assigned to `claude-code`,
+`opencode`, or `codex` (whichever of those you have installed and logged in) actually
+executes. It's off by default and loopback-only; see
+[Agent Runners](docs/book/src/user-guide/agent-runners.md#standalone-mode-tack-serve---with-runner)
+and [`docs/CONFIG.md`](docs/CONFIG.md#embedded-runner-tack-serve---with-runner). Plain
+`tack` (no flag) starts just the server and board UI, with no runner.
+
 > The binary is not code-signed yet. On macOS, right-click **Open** the first time
 > (or run `xattr -d com.apple.quarantine tack`). On Windows, use
 > **More info → Run anyway** if SmartScreen appears.
 
-## Harness status
+## Status
 
-Every claim in this table is proven against the actual installed binaries on a real
-machine, not against fakes — see `docs/agent-handoffs/part-v/V-A2.md` for the full
-evidence, including reverted-fix proofs and live run logs.
+Tack is in public beta. The core project-management product — workflows, views,
+DAGs, search, backup — is complete. The native, harness-agnostic agent-execution
+fleet described above is implemented and gated behind `--with-runner`, but has not
+shipped in a tagged release yet; install it today from the `develop` branch with the
+Cargo command above.
+
+**Harness proof** — every row below is checked against the actual installed binaries
+on a real machine, not mocked out; see `docs/agent-handoffs/part-v/V-A2.md` for the
+full evidence, including reverted-fix proofs and live run logs.
 
 | Harness | Status |
 | --- | --- |
 | `claude-code` | Completes real, live end-to-end attempts today. |
 | `opencode` | Completes real, live end-to-end attempts today. |
-| `codex` | Runs the complete pipeline — claim, checkout, spawn, real network call, structured result — for the first time ever, but has not completed a live attempt: this machine's connected account doesn't have access to the requested model. That's an account-tier limitation, not a code defect. |
+| `codex` | Runs the complete pipeline — claim, checkout, spawn, real network call, structured result — but has not completed a live attempt: this machine's connected account doesn't have access to the requested model. That's an account-tier limitation, not a code defect. |
 
-Two of three harnesses are live-proven; `codex` runs the real pipeline but has not yet
-completed a live attempt.
+**Known limitations:**
 
-## Current limitations
+- One optional shared Bearer token; no per-user identities or permissions
+- One active SQLite writer; S3 backup is snapshot replication, not live multi-writer sync
+- The browser UI requires its Tack server to be running — no offline mode
+- The existing Docket integration is a legacy, disabled-by-default bridge, not proof
+  of harness-agnostic execution
+- Imported usage/cost values may be estimates; native telemetry always labels its
+  measurement source
+- Responsive web UI only — no native mobile application
+- Release binaries are not code-signed yet
 
-| Area | Current state |
-| --- | --- |
-| Installer | The one-line installer's target branch (`main`) isn't published yet, so it 404s. Use `cargo install --git` (above) or a source build until it's published. |
-| Authentication | One optional shared Bearer token; no per-user identities or permissions. |
-| Multi-device data | One active SQLite writer. S3 backup is snapshot replication, not live multi-writer sync. |
-| Offline UI | The browser UI requires its Tack server to be running. |
-| Native runner fleet | Real, tested, and running on `develop` (see Harness status above); not shipped in any tagged release yet. Some execution-domain behavior (for example, decision resolution) requires its own separate configuration. |
-| Existing orchestration | Docket-specific and disabled by default. It is a legacy bridge, not proof of harness-agnostic execution. |
-| Usage and cost | Existing imported values may be estimates or absent. Native telemetry must label measurement source; absent usage is not zero. |
-| Mobile | Responsive web UI only; no native mobile application. |
-| Binary signing | Release binaries are not code-signed yet. |
+Full phase-by-phase history lives in the [roadmap](docs/book/src/roadmap.md); the
+active board is [`TODO.md`](TODO.md).
 
-![Board, Timeline, command palette, and vocabulary editor](docs/screenshots/hero.gif)
+## Architecture
 
-<details>
-<summary>More screenshots</summary>
-
-![Board — Kanban with WIP limits and drag-and-drop](docs/screenshots/board.png)
-![Timeline — Gantt view with draggable bars](docs/screenshots/timeline.png)
-![Dashboard — status distribution and sprint throughput](docs/screenshots/dashboard.png)
-![List — sortable rows with inline editing and bulk operations](docs/screenshots/list.png)
-![Vocabulary editor — rename any term to match your domain](docs/screenshots/settings-vocabulary.png)
-
-</details>
-
----
-
-## Product direction
-
-Tack remains the plan of record and owns scheduling, policy, leases, and execution
-history. A lightweight `tack-runner` runs near the source repository and credentials,
-claims eligible work, and invokes a local harness through an adapter.
+Tack owns scheduling, policy, leases, and execution history. A lightweight
+`tack-runner` runs near the source repository and credentials, claims eligible work,
+and invokes a local harness through an adapter:
 
 ```text
 PM item
@@ -148,172 +198,39 @@ This separates concepts that must not be conflated:
 | **Fleet** | Schedulable pool of runners with declared capabilities. |
 | **Runner** | Worker process that leases work and executes it near its repo and credentials. |
 | **Harness** | Agent runtime such as Codex CLI, Claude Code, or OpenCode. |
-| **Provider / model** | Model endpoint and model selected only when the harness supports that choice. |
 | **Attempt** | Immutable execution history for one lease and run. |
 | **Decision** | Structured request for human input or authorization. |
 
-The core rules are deliberately conservative:
+Rules that hold everywhere: runners pull work, Tack never calls back into developer
+machines; compatibility is capability-driven, not assumed; a request has at most one
+valid active lease, enforced by a fencing token; ambiguous outcomes stop for operator
+review instead of being retried blindly.
 
-- Runners pull work; Tack does not send arbitrary callbacks into developer machines.
-- Compatibility is capability-driven. Tack does not pretend every harness supports
-  every provider, model, resume mode, usage metric, or approval mechanism.
-- A request has at most one valid active lease in v1, enforced by a fencing token.
-- Delivery is not advertised as exactly-once. Ambiguous outcomes stop for operator
-  review instead of being retried blindly.
-- Missing usage is shown as **not measured**, never as zero and never as observed cost.
-- Docket can survive as an optional adapter, but native execution does not depend on it.
-- Multi-agent fan-out inside one request is deferred until single-runner recovery and
-  audit semantics are proven.
-
-The complete design and acceptance gates are in the
-[roadmap](docs/book/src/roadmap.md#next--harness-agnostic-runner-fleet-phases-5057).
-Implementation cards intended for independent Terra agents are in
-[TODO Part III](TODO.md#part-iii--harness-agnostic-runner-fleet-phases-5057).
-
-## Delivery status
-
-Tack is in beta. Completed work is preserved in the roadmap; superseded phases remain
-there as design history instead of being rewritten as completed work.
-
-| Phases | Status | What that means |
-| --- | --- | --- |
-| **0–32** | **Complete** | Core PM product, integrations, hardening, and audit-driven work are documented as done. |
-| **33–38** | **Complete** | The optional Docket-based factory control-center cycle is done. It is now a legacy integration path. |
-| **39–40** | **Implemented, unreleased** | Regression oracle plus capability/adapter foundations exist in the current working tree. |
-| **41** | **Acceptance closed, unreleased** | Atomic-write and browser-ETag acceptance, previously reopened, are now closed: item `PATCH` runs as one transaction proven with failure-injection tests, and the browser sends `If-Match` and handles `412` with a refresh-and-retry flow. |
-| **42** | **Acceptance closed, unreleased** | Provider-scoped identity acceptance, previously reopened, is now closed: migrations 037/038 rebuild `orch_runs`/`orch_approvals` as a transactional copy/verify/swap with checksum and pre-upgrade snapshot safety, replacing a boot-loop risk with recovery. |
-| **43–49** | **Superseded or frozen** | Do not implement this old control-plane sequence; its useful outcomes were re-scoped into Phases 50–57. |
-| **50–57** | **Phases 50–56 delivered, unreleased; 57 in progress** | Native harness-agnostic runner fleet — execution domain, runner protocol, real harness adapters, fleet scheduling, decisions/artifacts, and model profiles. Not shipped in any tagged release. The three-harness live smoke: `claude-code`/`opencode` complete live runs; `codex` runs the pipeline but hasn't completed one yet (this environment's connected account lacks access to the requested model — see Harness status above). |
-
-The active cycle is:
-
-| Phase | Outcome | Status |
-| --- | --- | --- |
-| **50** | Boundary, safety, migration, and contract freeze. | Delivered, unreleased |
-| **51** | Durable execution domain and schema. | Delivered, unreleased |
-| **52** | Pull-based runner protocol and `tack-runner` skeleton. | Delivered, unreleased |
-| **53** | Real Codex, Claude Code, and OpenCode harness proofs. | Delivered, unreleased |
-| **54** | Fleet scheduler and item-assignment UX. | Delivered, unreleased |
-| **55** | Decisions, artifacts, and realtime execution activity. | Delivered, unreleased |
-| **56** | Model profiles, policy enforcement, and honest measured usage. | Delivered, unreleased |
-| **57** | Optional Docket bridge, recovery testing, and release hardening. | In progress — runner HTTP transport, per-attempt checkouts, event/decision/artifact submission, and fleet-membership write routes delivered and gated; the live three-harness smoke has two of three harnesses passing live (see Harness status above) |
-
-## Project management
-
-- Configurable workflows, columns, transition rules, and WIP limits.
-- Per-project vocabulary so the UI, CLI, and API use the terms of the domain.
-- Board, list, table, calendar, timeline, dashboard, and sprint-planning views.
-- Hierarchical items, dependency DAGs with cycle detection, custom fields, comments,
-  attachments, full-text search, templates, and bulk operations.
-- Realtime WebSocket updates and optimistic UI behavior.
-- JSON, YAML, and CSV export; GitHub Issues and Linear import; hot and S3-compatible
-  backup/restore.
-
-## Automation surfaces
-
-- A REST API described by the checked-in [OpenAPI specification](docs/openapi.json).
-- A CLI with JSON output and shell completions.
-- `tack mcp`, which lets Claude Code, Codex, and other MCP clients read and update the
-  project board through normal workflow validation.
-- Outbound signed webhooks and optional GitHub push sync.
-- An optional, feature-gated Docket integration from the completed Phases 33–38.
-
-`tack mcp` and the runner fleet solve different problems: MCP gives an interactive
-agent tools for managing the board; the runner fleet — implemented on the
-development branch through Phase 57's release-hardening work, not yet released —
-lets Tack durably schedule, lease, observe, and recover agent execution.
-
-## Build from source
-
-**Prerequisites:** [Rust 1.85+](https://rustup.rs/) (2024 edition) and
-[Node.js 20+](https://nodejs.org/).
-
-```bash
-git clone https://github.com/yielab/tack.git
-cd tack
-make build   # builds the frontend and embeds it into the release binary
-make run     # starts Tack at http://127.0.0.1:3210
-```
-
-For development with hot reload:
-
-```bash
-make dev     # API + Vite dev server at http://localhost:5173
-```
-
-Useful verification commands:
-
-```bash
-make test
-make e2e
-make audit
-make lint
-make fmt
-make help
-```
-
-## Configuration
-
-Configuration is loaded from `tack.toml` in the working directory or from environment
-variables.
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `TACK_HOST` | `127.0.0.1` | Bind address. |
-| `TACK_PORT` | `3210` | HTTP port. |
-| `TACK_DATABASE_URL` | `sqlite:tack.db?mode=rwc` | SQLite connection URL. |
-| `TACK_LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, or `error`. |
-| `TACK_STORAGE_DIR` | `./storage` | Attachment storage directory. |
-| `TACK_API_TOKEN` | _(none)_ | Bearer token required for `/api/*` when configured. |
-| `TACK_WEBHOOK_URL` | _(none)_ | Outbound webhook destination. |
-| `TACK_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 webhook signing key. |
-| `TACK_BACKUP_BUCKET` | _(none)_ | S3 bucket used for cloud backup. |
-| `TACK_ORCH_ENABLE` | `false` | Enables the current legacy Docket orchestration routes and reconciler. |
-| `TACK_ORCH_APPROVAL_TOKEN` | _(none)_ | Separate secret for current Docket approval actions. |
-
-See the [configuration guide](docs/book/src/user-guide/configuration.md) and
-[administration guide](docs/book/src/user-guide/administration.md) for the full
-reference. `tack-runner` configuration (API URL, enrollment token, state directory)
-shipped with Phases 51–52 on the development branch; a full operator reference is
-part of Phase 57's remaining release-hardening work.
-
-## Architecture
-
-The current application is a modular monolith:
+The application itself is a modular monolith, with the runner fleet as a separate
+binary rather than a new layer inside it:
 
 ```text
 tack-core   Domain models, workflow rules, vocabulary, and dependency graph (no I/O)
     ↑
 tack-db     SQLite persistence through sqlx, FTS5, and repositories
     ↑
-tack-orch   Current optional Docket client and reconciliation boundary
+tack-orch   Optional Docket client and reconciliation boundary
     ↑
 tack-api    Axum HTTP/WebSocket server, configuration, and integrations
     ↑
-tack-cli    Server binary, CLI client, embedded SolidJS application, and MCP server
+tack-cli    Server binary, CLI client, embedded SolidJS app, and MCP server
+
+tack-runner Separate binary — pull-based protocol, credentials, harness adapters
 ```
 
-Phases 50–56 added a pull runner protocol and harness adapters, running as a separate
-`tack-runner` binary rather than moving PM domain logic into this stack; Phase 57
-(release hardening, optional Docket bridge) is in progress — see Harness status above
-for exactly where the three-harness live smoke stands today. See the
-[developer architecture overview](docs/book/src/developer/README.md) for the current
-code and the [roadmap](docs/book/src/roadmap.md) for the target boundary.
+See the [developer architecture overview](docs/book/src/developer/README.md) for the
+current code and the [roadmap](docs/book/src/roadmap.md) for where it's headed.
 
 ## Documentation
 
 Full documentation is in [`docs/book/`](docs/book/), built with
-[mdBook](https://rust-lang.github.io/mdBook/):
-
-```bash
-cargo install mdbook
-mdbook serve docs/book
-```
-
-The same book is built and deployed to GitHub Pages by
-`.github/workflows/pages.yml` on every push to `develop`; it publishes to
-`https://yielab.github.io/tack/` once Pages is enabled for this repository
-(Settings → Pages → Source: GitHub Actions — not done yet).
+[mdBook](https://rust-lang.github.io/mdBook/) and published to
+[yielab.github.io/tack](https://yielab.github.io/tack/) on every push to `develop`.
 
 | Guide | Description |
 | --- | --- |
@@ -321,23 +238,24 @@ The same book is built and deployed to GitHub Pages by
 | [API Reference](docs/book/src/developer/api-reference.md) | Auth and API examples; OpenAPI is the machine-readable source of truth. |
 | [CLI Reference](docs/book/src/user-guide/cli.md) | `tack` subcommands. |
 | [MCP Server](docs/MCP.md) | Connect Tack to an interactive MCP-capable agent. |
-| [Current Docket integration](docs/book/src/user-guide/orchestration.md) | Existing optional orchestration behavior and limitations. |
 | [Configuration](docs/book/src/user-guide/configuration.md) | Environment and `tack.toml` reference. |
 | [Architecture](docs/book/src/developer/README.md) | Current crate boundaries and design decisions. |
 | [Benchmarks](docs/BENCHMARKS.md) | Reproducible footprint and latency measurements. |
 | [Testing](docs/TESTING.md) | Unit, integration, E2E, load, and security tests. |
-| [Roadmap](docs/book/src/roadmap.md) | Historical phase status and active Phases 50–57. |
-| [Execution TODO](TODO.md#part-iii--harness-agnostic-runner-fleet-phases-5057) | Parallel-agent implementation cards for the active cycle. |
+| [Roadmap](docs/book/src/roadmap.md) | Phase-by-phase status, past and active. |
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to report bugs, propose features, and
-submit pull requests.
-
-Before pushing, activate the pre-push hook that runs formatting and Clippy:
+submit pull requests. Quick start for local development:
 
 ```bash
-git config core.hooksPath .githooks
+git clone https://github.com/yielab/tack.git
+cd tack
+git config core.hooksPath .githooks   # runs fmt + clippy before every push, like CI
+make build                            # frontend + release binary
+make dev                              # API + Vite hot reload
+make test && make e2e && make audit   # unit/integration, browser, dependency checks
 ```
 
 ## License
