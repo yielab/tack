@@ -11,11 +11,22 @@ on:
   push:
     tags: ["v*"]
 
+# One run per tag — re-pushing a tag after a failed release (a real thing
+# that has happened) cancels the run it superseded instead of racing it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
+# Read-only by default. Only `release` (creates the GitHub Release, signs
+# provenance) and `container` (pushes to ghcr.io) need to write anything, and
+# each already declares its own scoped `permissions:` block below — a job's
+# own block replaces this default rather than adding to it, so this stays the
+# floor for check-version/test/sbom/build, which only read.
 permissions:
-  contents: write
+  contents: read
 
 # Non-Windows steps run under bash with `set -euo pipefail` as the first line
 # of every multi-line `run:` block (the pwsh packaging step below is the one
@@ -28,8 +39,9 @@ jobs:
   check-version:
     name: Tag matches Cargo.toml version
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Verify versions match
         run: |
           set -euo pipefail
@@ -44,27 +56,29 @@ jobs:
   test:
     name: Test suite
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
       - name: Test
         run: cargo test --workspace
 
   sbom:
     name: Software Bill of Materials (CycloneDX)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
       - name: Install cargo-cyclonedx
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
         with:
           tool: cargo-cyclonedx
       - name: Generate Rust SBOM (workspace dependencies)
         run: cargo cyclonedx --format json --all
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "20"
           cache: "npm"
@@ -82,7 +96,7 @@ jobs:
           # cargo-cyclonedx writes <crate>.cdx.json next to each crate manifest.
           find . -name '*.cdx.json' -not -path './sbom/*' -exec cp {} sbom/ \;
           ls -la sbom/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sbom
           path: sbom/
@@ -92,6 +106,7 @@ jobs:
     name: Build (${{ matrix.platform }})
     needs: check-version
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -113,9 +128,9 @@ jobs:
             target: x86_64-pc-windows-msvc
             archive: zip
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "20"
           cache: "npm"
@@ -130,7 +145,7 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           key: ${{ matrix.target }}
 
@@ -141,7 +156,7 @@ jobs:
       # cargo-auditable embeds the dependency list into the binary so it can be
       # audited after the fact (`cargo audit bin tack`).
       - name: Install cargo-auditable
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
         with:
           tool: cargo-auditable
 
@@ -262,7 +277,7 @@ jobs:
           Compress-Archive -Path $runnerStage -DestinationPath "$runnerStage.zip"
           "RUNNER_ASSET=$runnerStage.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ matrix.platform }}
           path: |
@@ -274,13 +289,14 @@ jobs:
     name: Create GitHub Release
     needs: [test, sbom, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write       # create the release
       id-token: write        # OIDC token for provenance signing
       attestations: write    # write build-provenance attestations
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: dist
           merge-multiple: true
@@ -298,14 +314,14 @@ jobs:
           cat SHA256SUMS
 
       - name: Attest build provenance for release binaries
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
         with:
           subject-path: |
             dist/*.tar.gz
             dist/*.zip
 
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: dist/*
           generate_release_notes: true
@@ -317,15 +333,16 @@ jobs:
     name: Publish container image (ghcr.io)
     needs: [check-version, test]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -355,7 +372,7 @@ jobs:
       # manifest would need the Dockerfile to select the Rust target from
       # $TARGETARCH first.
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           push: true
