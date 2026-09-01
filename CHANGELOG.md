@@ -33,13 +33,9 @@ model the smoke test requests (`"The 'gpt-5-codex' model is not supported when u
 with a ChatGPT account."`), an account-tier limitation, not a defect in this codebase. Two
 real defects that were obscuring this picture until now are fixed below.
 
-**Known issue, not fixed by this release:** the install command in `README.md`
-(`curl -fsSL … | sh`) still returns HTTP 404 — it names a `main` branch that does not yet
-exist on the remote. The script and every URL that documents it are already correct; a new
-CI job (`verify-install-urls.yml`) now checks them continuously, so this cannot silently
-recur once `main` is published without being caught. Until `main` exists, install by
-downloading the archive matching your platform below and verifying it against
-`SHA256SUMS`, or via `cargo install --git … tack-cli --features embed-spa`.
+The install command in `README.md` (`curl -fsSL … | sh`) is live: `main` is published,
+`verify-install-urls.yml` checks every documented install URL on every push so a broken
+path can't silently recur, and it's now also the repository's default branch.
 
 ### Fixed
 
@@ -59,6 +55,12 @@ downloading the archive matching your platform below and verifying it against
   stuck-task bug above (thousands of heartbeat attempts a second against a lease that could
   never become valid again); `tack-runner` now backs off before retrying a failed heartbeat,
   matching its other retry paths.
+- **CI was red on every push.** A harness-registration test assumed a real `codex` CLI is
+  on `PATH` — true in local dev, false on GitHub's runners — and failed there
+  deterministically; the Windows release build failed outright on an import of a
+  unix-only function; the frontend SBOM job failed on an internally inconsistent
+  `lightningcss` lockfile resolution. All three fixed and verified (the first two by
+  reproducing the CI-only conditions locally, not just inferring the fix).
 
 ### Added
 
@@ -74,6 +76,9 @@ downloading the archive matching your platform below and verifying it against
   scheduling, decisions, artifacts, and model profiles. See the
   [roadmap](docs/book/src/roadmap.md#next--harness-agnostic-runner-fleet-phases-5057) for
   the definition-of-done table and `docs/agent-handoffs/part-iii/` for per-card evidence.
+- **`README.md` rewritten** as a standard open-source landing page (features, screenshots,
+  requirements, install, status, architecture), with screenshots and the hero GIF
+  regenerated against the current UI.
 
 ### Security
 
