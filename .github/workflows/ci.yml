@@ -133,7 +133,7 @@ jobs:
       # feature fails CI. Bump policy: the MSRV may be raised in a minor release
       # when a dependency or language feature requires it; update this pin, the
       # README/CONTRIBUTING badges, and `rust-version` in Cargo.toml together.
-      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           key: msrv
