@@ -1024,16 +1024,19 @@ exit 0
     #[tokio::test]
     async fn registering_all_three_real_adapters_is_order_independent() {
         let staging_root = cross_adapter_temp_dir("order-artifacts");
+        // codex has no fallible `discover()` to `unwrap_or_else` around like
+        // claude-code below, so it needs an explicit fixture: a real `codex`
+        // binary is a local-dev-only assumption (CI runners don't install
+        // it), and `for_fixture` resolves unconditionally, which is exactly
+        // what the assertions below need — see the doc comment further down.
+        let (codex_program, codex_args) = cross_adapter_fixture_command();
 
         let mut forward = AdapterRegistry::new();
         forward.register_adapter(
             DomainHarnessKind::new("codex"),
-            Box::new(crate::harness::codex::CodexAdapter::discover(
-                crate::harness::process::ProcessLimits::new(
-                    1_000_000,
-                    1_000_000,
-                    std::time::Duration::from_secs(10),
-                ),
+            Box::new(crate::harness::codex::CodexAdapter::for_fixture(
+                codex_program.clone(),
+                codex_args.clone(),
                 staging_root.clone(),
             )),
         );
@@ -1085,12 +1088,9 @@ exit 0
         );
         backward.register_adapter(
             DomainHarnessKind::new("codex"),
-            Box::new(crate::harness::codex::CodexAdapter::discover(
-                crate::harness::process::ProcessLimits::new(
-                    1_000_000,
-                    1_000_000,
-                    std::time::Duration::from_secs(10),
-                ),
+            Box::new(crate::harness::codex::CodexAdapter::for_fixture(
+                codex_program.clone(),
+                codex_args.clone(),
                 staging_root.clone(),
             )),
         );
@@ -1108,9 +1108,9 @@ exit 0
         // so both reject it pre-spawn regardless of registry order. codex
         // is a pass-through harness: it cannot independently
         // verify a model's identity, so it accepts any *explicit*
-        // provider/id pre-spawn and defers the real check to the harness
-        // at run time — with a real `codex` binary now installed, that is
-        // an accepted dispatch, not a rejection.
+        // provider/id pre-spawn and defers the real check to the harness at
+        // run time — an accepted dispatch, not a rejection, for any locator
+        // that resolves, which the fixture above always does.
         for kind in ["codex", "claude-code", "opencode"] {
             let spec = spec_requesting(kind);
             let forward_result = forward.validate(&spec).await;
@@ -1145,12 +1145,9 @@ exit 0
             ))
             .expect("opencode probe registers cleanly");
         probe_registry
-            .register_probe(Box::new(crate::harness::codex::CodexAdapter::discover(
-                crate::harness::process::ProcessLimits::new(
-                    1_000_000,
-                    1_000_000,
-                    std::time::Duration::from_secs(10),
-                ),
+            .register_probe(Box::new(crate::harness::codex::CodexAdapter::for_fixture(
+                codex_program.clone(),
+                codex_args.clone(),
                 staging_root.clone(),
             )))
             .expect("codex probe registers cleanly");
