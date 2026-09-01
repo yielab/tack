@@ -295,11 +295,18 @@ jobs:
       id-token: write        # OIDC token for provenance signing
       attestations: write    # write build-provenance attestations
     steps:
-      - name: Download all artifacts
+      # Explicit pattern, not "download everything": docker/build-push-action
+      # (the `container` job) auto-uploads its own internal build-record
+      # artifact (named `<owner>~<repo>~<random>.dockerbuild`, for its own
+      # provenance/cache use) as a side effect — it isn't a release asset,
+      # and downloading it here failed outright once (unrelated to anything
+      # actually being released).
+      - name: Download release artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: dist
           merge-multiple: true
+          pattern: "{linux-x86_64,macos-aarch64,macos-x86_64,windows-x86_64,sbom}"
 
       - name: Generate SHA256SUMS
         working-directory: dist
