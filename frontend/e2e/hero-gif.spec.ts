@@ -14,6 +14,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = path.join(__dirname, '../../docs/screenshots');
 const FRAMES_DIR = path.join(OUT_DIR, '_frames');
 
+// Offset from today rather than a fixed date, so the timeline bars stay inside
+// the default viewport window no matter when this capture is re-run.
+function daysFromNow(days: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + days);
+  d.setUTCHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
 test.use({
   viewport: { width: 1280, height: 720 },
   colorScheme: 'light',
@@ -75,9 +84,9 @@ test('hero GIF', async ({ page }, testInfo) => {
     { title: 'Onboarding flow wireframes', priority: 'high', targetStatus: 'Backlog' },
     { title: 'Landing page copywriting', priority: 'medium', targetStatus: 'To Do' },
     { title: 'Pricing page design', priority: 'medium', targetStatus: 'To Do' },
-    { title: 'Auth system — OAuth2 + session', priority: 'high', targetStatus: 'In Progress', due_date: '2026-07-10T00:00:00Z' },
-    { title: 'Dashboard charts & burndown', priority: 'high', targetStatus: 'In Progress', due_date: '2026-07-15T00:00:00Z' },
-    { title: 'REST API documentation', priority: 'medium', targetStatus: 'In Progress', due_date: '2026-07-20T00:00:00Z' },
+    { title: 'Auth system — OAuth2 + session', priority: 'high', targetStatus: 'In Progress', due_date: daysFromNow(10) },
+    { title: 'Dashboard charts & burndown', priority: 'high', targetStatus: 'In Progress', due_date: daysFromNow(15) },
+    { title: 'REST API documentation', priority: 'medium', targetStatus: 'In Progress', due_date: daysFromNow(20) },
     { title: 'Board drag-and-drop polish', priority: 'high', targetStatus: 'In Review' },
     { title: 'Dark mode contrast fixes', priority: 'medium', targetStatus: 'In Review' },
     { title: 'Repo & CI setup', priority: 'high', targetStatus: 'Done' },

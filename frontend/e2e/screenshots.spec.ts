@@ -19,6 +19,15 @@ test.use({
 
 test.setTimeout(90_000);
 
+// Offset from today rather than a fixed date, so the timeline bars stay inside
+// the default viewport window no matter when this capture is re-run.
+function daysFromNow(days: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + days);
+  d.setUTCHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
 // Serial: all tests share the project seeded in beforeAll.
 test.describe.serial('README screenshots', () => {
   let projectId: string;
@@ -54,9 +63,9 @@ test.describe.serial('README screenshots', () => {
       { title: 'Landing page copywriting', priority: 'medium', targetStatus: 'To Do' },
       { title: 'Pricing page design', priority: 'medium', targetStatus: 'To Do' },
       // In Progress — with due dates so timeline bars show up
-      { title: 'Auth system — OAuth2 + session', priority: 'high', targetStatus: 'In Progress', due_date: '2026-07-10T00:00:00Z' },
-      { title: 'Dashboard charts & burndown', priority: 'high', targetStatus: 'In Progress', due_date: '2026-07-15T00:00:00Z' },
-      { title: 'REST API documentation', priority: 'medium', targetStatus: 'In Progress', due_date: '2026-07-20T00:00:00Z' },
+      { title: 'Auth system — OAuth2 + session', priority: 'high', targetStatus: 'In Progress', due_date: daysFromNow(10) },
+      { title: 'Dashboard charts & burndown', priority: 'high', targetStatus: 'In Progress', due_date: daysFromNow(15) },
+      { title: 'REST API documentation', priority: 'medium', targetStatus: 'In Progress', due_date: daysFromNow(20) },
       // In Review
       { title: 'Board drag-and-drop polish', priority: 'high', targetStatus: 'In Review' },
       { title: 'Dark mode contrast fixes', priority: 'medium', targetStatus: 'In Review' },
