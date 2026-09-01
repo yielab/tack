@@ -89,11 +89,15 @@ use super::{
     AttemptJournal, CancelObservation, CancellationEvidence, ExecutionSpec, HarnessAdapter,
     HarnessError, HarnessOutcome, HarnessProbe, LocalRunHandle, ModelObservationSource,
     RecoveryObservation,
-    process::{
-        CancelOutcome, ProcessExit, ProcessLimits, ProcessResult, ProcessSpec, process_alive,
-    },
+    process::{CancelOutcome, ProcessExit, ProcessLimits, ProcessResult, ProcessSpec},
     redact::SecretMaterial,
 };
+// `process_alive` only exists under `#[cfg(unix)]` in `process.rs` (it shells
+// out to `kill(pid, 0)`); every call site below is itself already gated the
+// same way, so the import must match or a non-unix build (e.g. the Windows
+// release target) fails to resolve the name at all, not just at the call.
+#[cfg(unix)]
+use super::process::process_alive;
 use crate::{Clock, SystemClock, client::AttemptState, client::Timestamp};
 
 /// The wire value for this harness, matching
