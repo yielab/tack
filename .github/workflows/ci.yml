@@ -5,6 +5,16 @@ on:
     branches: ["main", "develop", "claude/**"]
   pull_request:
 
+# Read-only by default; no job here needs to write anything.
+permissions:
+  contents: read
+
+# One run per branch/PR at a time — a fixup push cancels the run it superseded
+# instead of both running to completion.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -22,22 +32,32 @@ jobs:
   rust:
     name: Rust (fmt + clippy + test)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
       - name: Check formatting
         run: cargo fmt --all --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace
+      # Every gate below runs with `if: success() || failure()` (not the
+      # default "stop at the first red step"): each is logically independent
+      # of the others, so a maintainer pushing once should see every gate's
+      # real status rather than have seven of them report "never ran" behind
+      # whichever one failed first. The job's own conclusion still turns red
+      # if any step here fails — this only removes the early exit, not the
+      # gate.
+      #
       # Regenerate the committed OpenAPI contract from the code and fail if it
       # drifted. A handler/DTO change without a spec regen (UPDATE_OPENAPI=1
       # cargo test -p tack-api --test openapi_contract) is caught here.
       - name: OpenAPI contract drift gate
+        if: success() || failure()
         run: |
           set -euo pipefail
           UPDATE_OPENAPI=1 cargo test -p tack-api --test openapi_contract openapi_spec_matches_committed_file
@@ -50,6 +70,7 @@ jobs:
       # reconciler rewrite that changes what leaves the process, or what gets persisted,
       # without a golden regen is caught here.
       - name: tack-orch golden drift gate
+        if: success() || failure()
         run: |
           set -euo pipefail
           UPDATE_GOLDEN=1 cargo test -p tack-orch --test docket_tick_contract_test
@@ -62,26 +83,31 @@ jobs:
       # locally (see III-G4 handoff) rather than in this workflow, so CI never carries a
       # step designed to fail.
       - name: Runner-v1 fixture drift gate (byte-pinned contract)
+        if: success() || failure()
         run: cargo test -p tack-orch --test runner_contract
       # Wave-2 gate: full runner lifecycle proven through the real production router,
       # not card-local scaffolding.
       - name: Runner lifecycle gate (real router)
+        if: success() || failure()
         run: cargo test -p tack-api --test wave2_gate
       # Fake-binary harness adapters (crates/tack-runner/src/harness/fixtures) and the
       # runner crash matrix — spawn/ack/completion/cancellation loss and ambiguous
       # recovery, each proven to never blind-retry. Never uses a live harness binary.
       - name: Runner fake-adapter and crash-matrix tests
+        if: success() || failure()
         run: cargo test -p tack-runner
       # Deterministic recovery from a migration failure mid-run — the runner executes
       # each ALTER individually with no wrapping transaction (CLAUDE.md), so a partial
       # apply must leave the DB in a state the next startup can repair, not brick it.
       - name: Migration crash-recovery test
+        if: success() || failure()
         run: cargo test -p tack-db --test orch_migrations_test
       # Security/chaos subset: auth-surface separation (operator vs runner-protocol
       # tokens cannot substitute for each other), CORS allow-list enforcement, and
       # concurrent-write race safety (WIP limit, board drag, Alexa dispatch) proven
       # against a real, contended DB rather than a sequential retry loop.
       - name: Security/chaos subset
+        if: success() || failure()
         run: |
           set -euo pipefail
           cargo test -p tack-api --test trust_boundary_test
@@ -93,20 +119,22 @@ jobs:
       # Contention-sensitive: forced to a single test thread, matching
       # docs/agent-handoffs/part-iii/III-F6.md's isolated-run instruction.
       - name: Scheduler E2E gate (isolated)
+        if: success() || failure()
         run: cargo test -p tack-cli --test e6_scheduler_e2e_test -- --test-threads=1
 
   msrv:
     name: MSRV (Rust 1.85 — edition 2024 floor)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # The workspace uses edition 2024, which requires Rust >= 1.85. This job
       # enforces that documented MSRV so an accidental use of a newer-only
       # feature fails CI. Bump policy: the MSRV may be raised in a minor release
       # when a dependency or language feature requires it; update this pin, the
       # README/CONTRIBUTING badges, and `rust-version` in Cargo.toml together.
       - uses: dtolnay/rust-toolchain@1.85.0
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           key: msrv
       - name: Build on MSRV
@@ -115,16 +143,17 @@ jobs:
   coverage:
     name: Coverage (llvm-cov + Vitest thresholds)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           key: coverage
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
         with:
           tool: cargo-llvm-cov
       # Per-crate line-coverage floors mirror the targets documented in
@@ -148,7 +177,7 @@ jobs:
       # live call. 85% mirrors tack-core's floor with headroom below the measured value.
       - name: Rust coverage — tack-runner (>= 85%)
         run: cargo llvm-cov -p tack-runner --fail-under-lines 85
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "20"
           cache: "npm"
@@ -173,66 +202,36 @@ jobs:
   deny:
     name: cargo-deny (licenses + duplicate deps)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           key: deny
       - name: Install cargo-deny
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
         with:
           tool: cargo-deny
-      # Generated at CI time (not committed) so the policy lives with the
-      # workflow. Advisories are covered by the `security` job's cargo-audit,
-      # so this run checks licenses + bans only.
+      # Generated at run time (not committed) by scripts/gen-deny-toml.sh —
+      # the same script `make deny` calls, so the local and CI policy can
+      # never drift apart. Advisories are covered by the `security` job's
+      # cargo-audit, so this run checks licenses + bans only.
       - name: Generate deny policy
-        run: |
-          set -euo pipefail
-          cat > deny.toml <<'EOF'
-          [graph]
-          all-features = true
-
-          [bans]
-          # Duplicate (multiple-version) dependencies are reported as an
-          # advisory (warning), not a hard failure.
-          multiple-versions = "warn"
-          wildcards = "allow"
-
-          [licenses]
-          version = 2
-          confidence-threshold = 0.8
-          allow = [
-            "MIT",
-            "Apache-2.0",
-            "Apache-2.0 WITH LLVM-exception",
-            "BSD-2-Clause",
-            "BSD-3-Clause",
-            "ISC",
-            "Zlib",
-            "MPL-2.0",
-            "Unicode-3.0",
-            "Unicode-DFS-2016",
-            "CC0-1.0",
-            "Unlicense",
-            "0BSD",
-            "BSL-1.0",
-            "OpenSSL",
-            "CDLA-Permissive-2.0",
-          ]
-          EOF
+        run: ./scripts/gen-deny-toml.sh
       - name: cargo deny check
         run: cargo deny check licenses bans
 
   frontend:
     name: Frontend (typecheck + build)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "20"
           cache: "npm"
@@ -269,7 +268,7 @@ jobs:
             exit 1
           fi
       - name: Upload dist artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: frontend-dist
           path: frontend/dist/
@@ -278,10 +277,11 @@ jobs:
   docs:
     name: Docs (mdBook build)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
       - name: Install mdBook
         run: cargo install mdbook --locked --version 0.4.40
       - name: Build docs
@@ -294,15 +294,16 @@ jobs:
   embed-spa:
     name: Embed SPA (single-binary packaging)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: frontend
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
       - name: Download frontend dist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: frontend-dist
           path: frontend/dist/
@@ -345,16 +346,17 @@ jobs:
   security:
     name: Security (dependency audit)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-audit (prebuilt)
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
         with:
           tool: cargo-audit
       - name: Rust dependency audit (honors .cargo/audit.toml)
         run: cargo audit
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "20"
           cache: "npm"
@@ -369,13 +371,14 @@ jobs:
   e2e:
     name: E2E (Playwright, cross-browser)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
       - name: Pre-build server (warms the cache the Playwright webServer reuses)
         run: cargo build -p tack-cli
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "20"
           cache: "npm"
@@ -391,7 +394,7 @@ jobs:
         run: npm run test:e2e
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: playwright-report
           path: frontend/playwright-report/

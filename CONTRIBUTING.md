@@ -23,7 +23,7 @@ cargo build
 cargo test --workspace
 ```
 
-The hook in `.githooks/pre-push` runs `cargo fmt --all --check` and `cargo clippy --workspace -- -D warnings` automatically before every `git push`. This mirrors CI exactly, so formatting and lint failures are caught locally before they ever reach GitHub.
+The hook in `.githooks/pre-push` runs `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings` automatically before every `git push`. This mirrors CI exactly, so formatting and lint failures are caught locally before they ever reach GitHub.
 
 ---
 
@@ -173,10 +173,12 @@ cargo run -p tack-cli -- serve              # Start the API server
 cargo run --bin tack-cli -- --help    # CLI help
 
 # ─── Code Quality ────────────────────────────────
-cargo fmt --all                         # Format all code
-cargo fmt --all --check                 # Check formatting (same as CI)
-cargo clippy --workspace -- -D warnings # Lint (same as CI)
-cargo check                             # Type-check without building
+cargo fmt --all                                       # Format all code
+cargo fmt --all --check                               # Check formatting (same as CI)
+cargo clippy --workspace --all-targets -- -D warnings # Lint (same as CI — --all-targets covers tests too)
+cargo check                                           # Type-check without building
+make coverage                           # Rust + frontend coverage against CI's thresholds
+make deny                               # License + duplicate-dependency check (same policy as CI)
 
 # ─── Debugging ───────────────────────────────────
 RUST_LOG=debug cargo run -p tack-cli -- serve           # Debug logging
@@ -406,17 +408,33 @@ that may not fit the roadmap.
    change per PR — smaller PRs are reviewed and merged faster.
 3. **Write tests** for any new business logic or bug fix (a regression test that
    fails before your change and passes after). See "Writing Tests" above.
-4. **Run the full local gate before pushing** — this mirrors CI exactly:
+4. **Run the full local gate before pushing:**
 
    ```bash
    cargo fmt --all --check
-   cargo clippy --workspace -- -D warnings
+   cargo clippy --workspace --all-targets -- -D warnings
    cargo test --workspace
-   cd frontend && npm run type-check && npm test   # if you touched the frontend
    ```
+
+   `cargo test --workspace` already runs every named Rust gate CI lists
+   separately (OpenAPI/golden/runner-v1 drift, migration recovery, security
+   subset, scheduler E2E) — those are subsets of the same `cargo test`, not
+   extra commands.
 
    Activating the pre-push hook (`git config core.hooksPath .githooks`) runs the
    fmt + clippy portion automatically.
+
+   If you touched the frontend, CI's `frontend` job also runs three checks
+   this doesn't:
+
+   ```bash
+   cd frontend
+   npm run type-check && npm test
+   npm run gen:api && git diff --exit-code src/shared/api/schema.gen.ts  # OpenAPI types drift
+   npm run lint:tokens                                                   # no raw color literals
+   npm run build                                                         # entry bundle stays < 30 KB gzipped
+   ```
+
 5. **Update docs and the changelog.** If you changed behavior, config, or the API,
    update the relevant docs in the same PR and add an entry to the `[Unreleased]`
    section of [CHANGELOG.md](CHANGELOG.md). If you changed an API response shape,
@@ -458,7 +476,7 @@ Tack uses a simple two-long-lived-branch model:
 ## Code Style
 
 - Run `cargo fmt --all` before committing (the pre-push hook will catch it anyway)
-- Fix all `cargo clippy --workspace -- -D warnings` before pushing
+- Fix all `cargo clippy --workspace --all-targets -- -D warnings` before pushing
 - Keep `tack-core` free of I/O dependencies
 - Use `#[instrument]` on public async functions for tracing
 - Prefer returning `Result` over panicking
