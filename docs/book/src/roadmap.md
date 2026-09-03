@@ -3209,3 +3209,218 @@ a completed agent attempt, and watch a sixty-second recording of durable recover
 competitor can produce. Every capability claim on the first screen traces to a proof. The
 identity posture is written down rather than inferred. Nothing is published without explicit
 human approval.
+
+---
+
+# Next — Agent Onboarding & Provider UX (Phase 60)
+
+**Status:** active, not started. Opened by the **agent-UX audit of 2026-09-03**, whose
+findings are consolidated below. Execution is tracked card-by-card on the **Part VI board**
+in `TODO.md` (§VI.0–§VI.6), which is the authority for wave status, card ownership and
+accepted integration SHAs. This section records the audit and the intent; the board records
+what actually shipped. The dispatch plan — per-card read lists sized for a 200k-context
+agent, gates, stop conditions, and the per-wave integrator checklist — is
+`docs/agent-handoffs/part-vi/README.md`.
+
+**Runs alongside Phase 59's last wave.** It needs Phase 58 (done — the embedded runner is
+what makes a UI-only path possible at all) and ADR 0060 (docket stays and is not touched).
+It shares `README.md` and `docs/screenshots/` with Phase 59's V-C2/V-C3; the rule is in
+`TODO.md` §VI.3. VI-A3 restructures the README that V-A4 wrote; V-A4's four questions and
+its claim → evidence rule carry over unchanged.
+
+## Why this phase exists
+
+Phase 58 made one command reach a completed attempt. Phase 59 makes the project findable and
+its claims honest. Neither answers the question a user asks in the first minute — *which
+model, from which provider, and where do I put the key?* — and today the product answers it
+with a negation: `docs/CONFIG.md` says there is *no* `TACK_*` variable for a model provider,
+by design. That is true of credentials, and every reader takes it to mean they cannot choose
+a model, while the request body, the CLI and the modal all route exactly that choice.
+
+The deeper defect is structural. The steps between an installed binary and a completed
+attempt are spread across **three surfaces** — a harness's own vendor login in a terminal,
+the `tack` CLI, and the web UI — and no screen or page shows the whole path. The web UI can
+run an item but asks for a runner id, a git remote, a commit and a timeout by hand on every
+run. The CLI has the full command tree and the CLI reference documents none of it. The
+model-selection precedence that the scheduler implements exists only as a Rust doc comment.
+Someone who did not build this cannot use it, and a stranger who installs beta.7 — the
+release Phase 59 cut precisely so a stranger *could* — will find that out in the first ten
+minutes.
+
+The product's posture — Tack never proxies a model and never holds a vendor login — is
+right and stays. This phase keeps it and moves the **guidance** into the product: one
+screen that owns the path from an installed binary to a completed attempt, a project-level
+answer to "which model", and one provider — Vercel AI Gateway — through which a user who
+only wants the UI can authenticate with a single pasted key and choose among every model
+the gateway serves, from a list the runner actually measured.
+
+## What the audit found
+
+### Three surfaces and no path
+
+`docs/API-REFERENCE.md` delegates the execution surface to the agent-runners guide; the
+guide has 433 lines on enrolling runners, credentials, capability matrices and recovery, and
+**zero** examples of creating an execution. The only enumeration of the request's thirteen
+required fields is a table row in `docs/MCP.md`. The Quick Start and *Working with Items*
+pages do not contain the word "agent". The CLI reference omits `tack execution`, `tack
+runner` (including `doctor`, which `docs/CONFIG.md` tells the reader to run), `tack fleet`,
+`tack agent-profile` and `tack model-profile`. Two pages each claim to be the configuration
+reference and list different variables. Cards **VI-A1** (now, against the product as it is)
+and **VI-D1** (after the product changes).
+
+### The provider answer is a negation
+
+ADR 0050 says the Tack API "never becomes a model proxy"; ADR 0058 says "vendor credentials
+remain outside Tack". Both are statements about the API server and both are correct. Both
+are cited — in `docs/CONFIG.md`, in `tack runner doctor`'s own output — as if they meant
+"Tack cannot help you configure a provider". The runner side of the boundary was never
+decided: the runner already owns its own credential, owns the harness subprocess and its
+environment, and accepts `secret_reference` environment entries that every adapter warns
+about and skips because "no secret-store client exists in tack-runner yet". Card **VI-A2**
+writes ADR 0061 and decides that side; cards **VI-B1** through **VI-B3** implement it.
+
+### The docs contradict the code in four places
+
+The harness id the guide prints (`claude_code`) is not the wire id (`claude-code`); a request
+built from the page fails. The guide says model profiles have "no runtime effect"; the modal
+copies the chosen profile into the request's highest-precedence tier. The guide says fleet
+membership has no write route; the route exists and the Fleet panel says nothing calls it.
+Two of the three "known gaps" listed are no longer gaps, which costs the third — the real one,
+no list route for artifacts or decisions — its credibility. **VI-A1** fixes the first three;
+**VI-C4** closes the fourth.
+
+### The modal asks for what the product should already know
+
+Five hand-typed fields per run, no memory between runs, a free-text runner id when
+`GET /api/runners` exists, a fleet selector with no way to add a member from the UI, and no
+project-level storage for a repository at all — the only repository link in the schema is
+per-item `github_links`. **VI-C3** gives the project the three facts an attempt needs;
+**VI-C2** makes the modal read them.
+
+### The tiers exist; the storage and the UI do not
+
+`resolve_model_policy` walks four tiers — request override, agent-profile default, project
+default, fleet default — with an exhaustive test over every presence combination. The
+project tier has no storage and always resolves to nothing; the agent-profile and fleet
+tiers are JSON conventions inside `limits` and `default_policy` with no field in any panel.
+The mechanism is finished and nobody can reach it. **VI-C3**.
+
+### The README shows a project manager
+
+The hero asset's own alt text is *"Board, Timeline, and vocabulary editor"*. The *Features*
+section lists project management first and agent execution second. All five screenshots —
+board, timeline, dashboard, list, vocabulary editor — are project-management views, and
+**none** shows an agent doing anything. The two-component architecture is explained at line
+169, after *Status*. The book's introduction lists four core concepts — item, workflow,
+project type, vocabulary — with neither *runner* nor *run* among them. V-A4's first sentence
+was right about the *what*; the shape of the page still says the opposite, and a reader who
+arrives from the category Tack is trying to leave sees exactly that category. Card **VI-A3**
+restructures the README, the introduction and the developer overview around one statement
+and one diagram; card **VI-D2** makes the assets that show the execution plane, once there
+is an honest screen to record.
+
+## The surface map
+
+The design authority for the phase, reproduced from the board. Every step from an installed
+binary to a completed attempt, where it happens today, where it happens after this phase,
+and — when the answer is not "the UI" — the structural reason, so the question is settled
+once.
+
+| Step | Today | Target | Why not fully UI |
+|---|---|---|---|
+| Turn on agent execution | console flag | **UI** — one switch on a loopback bind; the command only where the switch cannot exist | — starting Tack itself is the one command left |
+| Install a harness binary | outside Tack | console, rendered in the UI per harness | external binaries |
+| Authenticate a harness with its vendor login | outside Tack | console, rendered in the UI with a re-check | OAuth device flows need a TTY; Tack never holds them |
+| Authenticate through Vercel AI Gateway | impossible | **UI** with the embedded runner; console for a remote runner, rendered in the UI | none in the embedded case |
+| Enroll a runner | zero-touch / token → console | unchanged | — |
+| Create a fleet, add a member | UI / API only | UI | — |
+| Create an agent profile | UI | UI, default created on first use | — |
+| Choose a default model | impossible | UI, from a measured catalog | — |
+| Run an item | UI, five typed fields | UI, zero typed identifiers | — |
+| See what an attempt produced, answer a decision | UI with a typed id | UI lists | — |
+
+The last column is closed. A step that cannot move to the UI for a reason not in this table
+is an amendment to ADR 0061, not a card's judgement.
+
+## Vercel AI Gateway, and why it is the one provider this phase adds
+
+The harnesses' own logins are the first case and already work. The gateway is the second
+case, and the only one worth building now, because it is simultaneously: a **single API
+key** rather than a vendor OAuth flow; documented by its vendor with a **dedicated endpoint
+for each of the three harnesses** in this tree (`/claude-code`, `/codex/v1`, and OpenCode's
+native `vercel` provider — fetched 2026-09-03, to be re-fetched before any card relies on
+it); and a **catalog endpoint**, so the model picker shows what a runner measured rather
+than a list someone typed. That combination is the only route to "a UI-only user
+authenticates without a console".
+
+It is added as a **provider configuration at the runner** — the key lives in the runner's
+owner-only state directory next to its own credential, the runner's probe fetches the
+catalog into the capability snapshot the scheduler already intersects against, and the
+adapters inject the vendor-documented environment only for attempts whose resolved model
+names the gateway. The Tack API still makes zero model-provider calls. The single exception
+— a loopback-only, embedded-runner-only, write-once route that hands a pasted key to the
+co-located runner without persisting it — is what ADR 0061 exists to bound. OpenRouter,
+direct vendor keys and local endpoints stay in each harness's own configuration until the
+gateway path is proven live and a second gateway measurably differs from it.
+
+## The two-component story
+
+Every page that introduces agents — the README, the book's introduction, the agent-runners
+guide, the developer overview — opens with this statement or links to it. It is written once,
+on the Part VI board (§VI.0), and applied verbatim by VI-A3:
+
+> **Tack is two components, built to be one product.**
+>
+> **The board** is the project manager: workflows, timelines, dependencies, per-project
+> vocabulary — one binary, one SQLite file, no accounts, no cloud. It is the plan, the
+> policy and the record. It decides *what* runs, *when*, under *which* limits, and it keeps
+> the durable history of every run: events, decisions, artifacts, and what it measurably
+> cost. **It never executes code and never holds a model credential.**
+>
+> **The runner** is a small worker that lives where the code and the credentials already
+> are — a laptop, a CI box, a machine with a GPU. It pulls work from the board, checks out
+> an isolated workspace, launches the coding agent you already use — Claude Code, Codex or
+> OpenCode — and reports back. **It holds the keys; the board never sees them.**
+>
+> They are separate because they scale and fail differently. **One board, many runners:**
+> a board on a small VPS dispatches to runners on ten developers' machines, each with its
+> own agent, model and capacity. A runner that dies mid-run cannot corrupt the board — its
+> lease expires and its fencing token stops writing. A board that restarts cannot lose a
+> run — the runner's journal knows what it started. **One developer runs both in one
+> process with one command**, on the same contract, with the same recovery.
+
+Two consequences follow. **The runner is named in the story, never on a default screen** —
+the README and the docs explain two components because that is the product, while the UI's
+default screens say *agent*, *model*, *provider*, *run* and keep "runner", "fleet",
+"enroll", "heartbeat", "lease" and "harness" under *Advanced*. And **the recovery demo
+is the visual proof of the third paragraph**: V-C2's recording — kill the runner mid-run,
+see `needs_operator` and no duplicate, requeue, succeed — is not a competing hero asset; it
+is the picture of "they fail differently", and the README gives it a named slot beside
+that paragraph. The everyday picture — an item on the board, one click, a run streaming on
+the item, done — is the hero, and VI-D2 records it from a release build with a real agent.
+
+## What this phase deliberately does not do
+
+- **Add a second provider**, or let Tack call a model API for any reason, including key
+  validation — the runner's probe does that.
+- **Broker a vendor OAuth login.** Those stay in the terminal and are rendered, step by
+  step, in the UI.
+- **Touch docket** (ADR 0060), **build identity** (ADR 0059), or pick up the features Phase
+  59 deferred — notifications, i18n, time tracking, in-UI diff review. Listing an attempt's
+  artifacts (VI-C4) is not reviewing a diff; that stays a later card.
+- **Exercise the `decisions` path with a real harness.** No harness in this tree asks a
+  mid-run question; VI-C4 lists decisions, it does not manufacture one.
+
+## Exit
+
+A person who has never seen Tack starts it with `tack serve`, opens the board, and follows
+one screen: they turn agent execution on with a switch, paste a gateway key, or copy the one console command it shows
+them for the harness they already use; they choose a model from a list the runner actually
+measured; they press *Run with agent* on an item without typing an identifier; and they
+watch the attempt complete with the model they asked for recorded as the model they got.
+Every step they could not do in the UI was shown to them in the UI, with a check that it
+worked. The key they pasted exists in one owner-only file and nowhere else — and the
+documentation says so in the same paragraph that says Tack never proxies a model. And a
+stranger who reads the README's first screen reports two components — a board that plans
+and records, runners that execute where the code lives — before they see a single Kanban
+column.

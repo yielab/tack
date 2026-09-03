@@ -5,15 +5,16 @@ reading one you did, and it crowds out the file you will need later in the same 
 page exists because this repository has several files that are cheap to open and expensive
 to have opened.
 
-**Measured 2026-08-30.** Re-measure with `wc -c <file>` rather than trusting these numbers a
+**Measured 2026-08-30; `TODO.md` rows re-measured 2026-09-03 after Part VI was added.** Re-measure with `wc -c <file>` rather than trusting these numbers a
 year from now; the ratios are the point, not the digits.
 
 | Source | Lines | ~Tokens | Read it? |
 |---|---|---|---|
-| `TODO.md` **whole** | 11,251 | **~184k** | **Never.** This is most of a context window for one file that is ~90% closed-cycle history. |
-| `TODO.md` active boards (lines 1–~1042) | 1,042 | ~15k | Yes, when you need a board. Parts V and IV live at the top precisely so `sed -n '1,1042p'` is enough. |
+| `TODO.md` **whole** | 12,198 | **~199k** | **Never.** This is most of a context window for one file that is ~90% closed-cycle history. |
+| `TODO.md` active boards (lines 1–~2000) | 1,997 | ~33k | Yes, when you need **a** board — one Part, not all three. Parts VI, V and IV live at the top in that order; `grep -n "^# Part" TODO.md` gives the three start lines, then `sed -n` the one you need (Part VI alone is ~940 lines, ~15k). |
 | `docs/agent-handoffs/**` **all** | 12,161 | **~221k** | **Never all.** 48 files. Read the one or two your card's `Context` names. |
 | `docs/agent-handoffs/part-iii/III-C2.md` (largest single) | — | ~15k | Only if named. One handoff can cost as much as every active board combined. |
+| `docs/agent-handoffs/part-vi/README.md` (dispatch plan) | 544 | ~8k | **Header + your card's block only** (~2k). It tells you what else to read, with sizes; reading it whole defeats its purpose. `TEMPLATE.md` beside it is ~0.6k and replaces digging the template out of the archive. |
 | `docs/openapi.json` | 11,829 | **~88k** | **Almost never.** It is generated. To check one path, `python3 -c` or `jq` it. |
 | `docs/book/src/roadmap.md` | 3,211 | ~48k | Rarely whole. It records intent, not state. The two `## Next` sections at the end are the live part. |
 | `crates/tack-db/src/migrations.rs` | 1,614 | ~19k | Grep it for the table you care about; adding a migration needs the tail, not the file. |
@@ -29,7 +30,7 @@ year from now; the ratios are the point, not the digits.
 `TODO.md` — the file that costs the most and is opened the most carelessly:
 
 ```bash
-head -55 TODO.md                      # the header names which Part is ACTIVE. Trust it over section order.
+head -58 TODO.md                      # the header names which Parts are ACTIVE. Trust it over section order.
 grep -n "^# \|^## " TODO.md           # the map. Cheap. Do this before any sed.
 n=$(grep -n "### V-A2 " TODO.md | cut -d: -f1); sed -n "${n},$((n+60))p" TODO.md   # one card
 ```

@@ -10,17 +10,21 @@
 
 | Part | Cycle | Phases | Status | Where |
 |---|---|---|---|---|
-| **V** | **Adoption & First Public Release** | 59 | **ACTIVE** — not started | [§V](#part-v--adoption--first-public-release-phase-59), top of this file |
-| **IV** | **Standalone Single-Binary Operation** | 58 | **ACTIVE** — not started | [§IV](#part-iv--standalone-single-binary-operation-phase-58) |
+| **VI** | **Agent Onboarding & Provider UX** | 60 | **ACTIVE** — not started | [§VI](#part-vi--agent-onboarding--provider-ux-phase-60), top of this file |
+| **V** | **Adoption & First Public Release** | 59 | **ACTIVE** — Waves 11–12 done, Wave 13 in flight (V-C2 unblocked, V-C3 waiting on it) | [§V](#part-v--adoption--first-public-release-phase-59) |
+| **IV** | **Standalone Single-Binary Operation** | 58 | Done — Wave 10 integrated at `83fefab` | [§IV](#part-iv--standalone-single-binary-operation-phase-58) |
 | III | Harness-Agnostic Runner Fleet | 50–57 | Feature-complete, **tag refused** | [§III](#part-iii--harness-agnostic-runner-fleet-phases-5057), archive |
 | II | Agnostic Control Plane | 39–49 | Superseded after Wave B by Part III | [§II](#part-ii--agnostic-control-plane-phases-3949), archive |
 | I | Agent-Factory Control Center | 33–38 | Complete 2026-08-05 | [§I](#part-i--agent-factory-control-center-phases-3338), archive |
 
-**Parts IV and V are both active and independent.** Part IV is packaging and first-run
-(`tack serve --with-runner`). Part V is everything between "it works here" and "a stranger
-can use it". They share two files — `scripts/smoke.sh` and `README.md` — and the conflict
-rule is written in [§V.3](#v3-dependency-graph-cross-part-conflicts-and-merge-policy). Read
-it before branching a card in either Part.
+**Parts VI and V are both active.** Part V is distribution and launch — everything between
+"it works here" and "a stranger can use it". Part VI is the agent onboarding and provider
+flow — everything between "a stranger installed it" and "a stranger ran an item with the
+model they chose, without opening this file". Part IV is done. They share `README.md` and
+`docs/screenshots/**`; the conflict rule is in
+[§VI.3](#vi3-dependency-graph-cross-part-conflicts-and-merge-policy), which defers to
+[§V.3](#v3-dependency-graph-cross-part-conflicts-and-merge-policy) for the files Part V
+still owns. Read both before branching a card in either Part.
 
 ## Why the archive stays in this file
 
@@ -49,6 +53,957 @@ therefore **reordered below the active boards, not extracted**. Its numbering na
 - No card edits a status board. The wave integrator does that, after independent
   verification by someone who did not author the code.
 - Never `git commit` without the user asking; never add AI attribution to a commit message.
+
+---
+
+# Part VI — Agent Onboarding & Provider UX (Phase 60)
+
+Executable board for the cycle described in
+[docs/book/src/roadmap.md](docs/book/src/roadmap.md) → *Next — Agent Onboarding & Provider
+UX*, opened by the **agent-UX audit of 2026-09-03**. This Part has its own numbering
+namespace (`§VI.0` … `§VI.6`) so the archive's load-bearing numbers stay put.
+
+Like Parts III–V, this board is written to be picked up cold by parallel agents in isolated
+worktrees. Every card is bounded, names every shared-file owner, and has an acceptance gate
+verifiable without trusting its author's handoff.
+
+**Dispatch plan:** [`docs/agent-handoffs/part-vi/README.md`](docs/agent-handoffs/part-vi/README.md)
+— per card, the exact read list with measured sizes, what not to read, the gate, the stop
+conditions, and the dispatch prompt; per wave, the integrator's adversarial checklist. A
+card agent reads that file's header and its own block, then this board by anchor (§VI.0–§VI.3
+and its card, ~7k tokens), and nothing else without recording why. Handoffs are written
+from [`TEMPLATE.md`](docs/agent-handoffs/part-vi/TEMPLATE.md) there.
+
+**This Part adds product features.** Part V §V.5 deferred every product feature to "a
+post-adoption cycle"; this is that cycle, **for the agent surface only**. Notifications,
+i18n, time tracking and in-UI diff review stay deferred — see §VI.5.
+
+## Status board — Part VI
+
+| Wave | Cards | Phase | Status |
+|---|---|---|---|
+| 14 — Truth first | VI-A1 · VI-A2 · VI-A3 | 60 | Not started. All three independent of everything; A2 is a decision the user approves before Wave 15 branches; A3 restructures the README around the two-component statement and goes before Part V's V-C3 on that file |
+| 15 — Provider at the runner boundary | VI-B1 · VI-B2 · VI-B3 | 60 | Not started — needs VI-A2 accepted. B1 → B2 sequential; B3 needs B1, merges after B2 |
+| 16 — UI-first flow | VI-C1 · VI-C2 · VI-C3 · VI-C4 | 60 | Not started — C3 and C4 need only VI-A2 and may run alongside Wave 15; C1 needs B2 + B3; C2 needs C3 |
+| 17 — Proof | VI-D1 · VI-D2 | 60 | Not started — last wave. D2 (assets) needs C1, C2 and Part V's V-C2, which owns `docs/screenshots/`; D1 goes last and needs everything |
+
+**Integration line:** `develop`, the repository's default branch — same as Parts III–V.
+Branch every card from `develop`. Do not create a `plan/*` line.
+
+---
+
+## §VI.0 Cold-start context capsule
+
+**What this Part is for, in one sentence.** The agent-execution pipeline works end to end and
+is unusable by anyone who did not build it, because the steps to reach a completed attempt
+are split across three surfaces — a harness's own vendor login, the `tack` CLI, and the web
+UI — with no screen or page that shows the whole path, and because the one question every
+user asks first, *"which model, from which provider, and where do I put the key?"*, is
+answered today by a negation.
+
+**Read the posture correctly.** ADR 0050 ("the Tack API never starts a coding harness and
+never becomes a model proxy") and ADR 0058 ("vendor credentials remain outside Tack") are
+**right and stay**. They are statements about the API server. They have been read — by the
+docs that cite them and by users — as "Tack cannot help you configure a provider", which is
+a different claim and a false one. The runner already owns credentials (its own), already
+owns the harness subprocess and its environment, and already accepts `secret_reference`
+environment entries it cannot resolve. This Part moves the *guidance* and the *provider
+configuration* to where the posture already puts them — the runner — and puts one screen
+in front of both.
+
+### Evidence base, measured 2026-09-03
+
+Do not re-derive these; act on them. Each row names how it was checked so any card can
+re-check one cheaply.
+
+| Fact | Value | How it was checked |
+|---|---|---|
+| Worked example of creating an execution anywhere in `docs/` | **none** — one table row, `docs/MCP.md:99` | `grep -rn "execution create\|agent_profile_snapshot" docs/ --include='*.md' \| grep -v agent-handoffs` |
+| `docs/API-REFERENCE.md` on the execution surface | delegates to `agent-runners.md` (§"Runner, Fleet & Execution", ~l.1273); that page has no example either | read both |
+| Required fields on `POST /api/executions` | **13** (`agent_profile_snapshot`, `repository_snapshot`, `permission_policy`, `budgets`, `environment`, `metadata`, `timeout_seconds`, …) | `python3 -c` over `docs/openapi.json` → `CreateExecution.required` |
+| Quick Start / Working with Items mention agents | **0 lines** | `grep -in "agent\|runner\|harness\|model" docs/book/src/user-guide/{quick-start,items}.md` |
+| CLI reference documents `tack execution` / `runner` / `fleet` / `agent-profile` / `model-profile` | **no** — all exist, `crates/tack-cli/src/main.rs:252-278` | `grep -n "^## " docs/book/src/user-guide/cli.md` |
+| `tack runner doctor` in the book | **no** — only `docs/CONFIG.md:91` (which says "run it yourself") and the roadmap | `grep -rn "runner doctor" docs/` |
+| Book configuration page, runner/model rows | **only `TACK_ORCH_ENABLE`** (`configuration.md:22`); `docs/CONFIG.md` is the real reference and is not in the book | grep |
+| Harness id in `agent-runners.md:32` | `claude_code` — **wrong**; wire id is `claude-code` | `crates/tack-runner/src/harness/claude_code.rs:105`, `frontend/src/shared/runWithAgent/shared.ts:52` |
+| `agent-runners.md:378-381` "`model_profiles` … no runtime effect" | **false as written** — the modal copies the chosen profile into `requested_model_provider`/`requested_model_id`, the highest-precedence tier | `frontend/src/shared/runWithAgent/RunWithAgentModal.tsx:178-183` |
+| `agent-runners.md` Known gaps: "`agent_fleet_members` has no write route" | **false** — `POST /api/runner-fleets/{fleet_id}/members` and `…/members/{runner_id}` exist; the UI still says nothing calls it | `docs/openapi.json` paths; `frontend/src/features/fleet/runnerFleet/FleetsPanel.tsx:117` |
+| Model precedence documented for users | **nowhere** — only a Rust module doc | `crates/tack-orch/src/model_policy/mod.rs:1-3`, `wiring.rs:1-25`; `roadmap.md:2868` records it as intent |
+| Project default-model tier | **no storage; always `None`** | `crates/tack-orch/src/model_policy/wiring.rs:17-23` |
+| Agent-profile default model | a JSON convention `{"default_model": …}` inside `agent_profiles.limits`; **no UI field** | `wiring.rs:9-14`; `AgentProfilesPanel.tsx` |
+| Hand-typed fields per run in the modal | **five** — runner id (free text), remote, base revision, subdirectory, timeout; **no memory** between runs | `RunWithAgentModal.tsx:298,386,393,399,412`; `rg localStorage frontend/src/shared/runWithAgent` → 0 |
+| Project-level repository storage | **none** — only per-item `github_links` (migration 018) | `crates/tack-db/src/migrations.rs` |
+| `secret_reference` environment entries | accepted by the contract, **never resolved** — "no secret-store client exists in tack-runner yet" | `claude_code.rs:62-64`, `codex.rs:772-775`, `opencode.rs:1156-1158` |
+| Decision / artifact list routes | **none**; the UI takes a typed id | `agent-runners.md` Known gaps; `DecisionInbox.tsx`, `ArtifactDownloadPanel.tsx` |
+| Harness auth state observable by Tack | **no** — `doctor` prints where a credential *lives*, not whether one exists | `crates/tack-cli/src/doctor.rs:223-244` |
+| The model choice reaches the harness | yes — `--model` on all three adapters | `codex.rs:753`, `claude_code.rs:968`, `opencode.rs:1135` |
+| Last migration | `061_execution_attempt_start_facts` → this Part's is **062** | `grep -n '"0[0-9][0-9]_' crates/tack-db/src/migrations.rs \| tail -1` |
+| Vercel AI Gateway, per-harness endpoints | documented by the vendor for all three harnesses in this tree (table in VI-B2) | `vercel.com/docs/ai-gateway/coding-agents`, fetched 2026-09-03 — **re-fetch before relying on it** |
+| README hero asset | alt text *"Board, Timeline, and vocabulary editor"* — a PM view | `README.md:12` |
+| README screenshots that show an agent doing anything | **zero of five** (board, timeline, dashboard, list, vocabulary editor) | `ls docs/screenshots/`; `README.md:61-76` |
+| README section order | *Features* lists project management first (`:32`) and agent execution second (`:42`); *Architecture* — where the two components are explained — is at `:169`, after *Status* | `grep -n "^#" README.md` |
+| Book introduction's core concepts | item, workflow, project type, vocabulary — neither *runner* nor *run* | `docs/book/src/introduction.md` |
+
+**The single most expensive line in that table is the provider one.** `docs/CONFIG.md:102-104`
+says *"there is no `TACK_*` variable for a model provider or endpoint, by design"*. True for
+credentials, and read by every user as "I cannot choose a model" — while the request body,
+the CLI (`--model-provider`/`--model-id`) and the modal all route the choice. The two facts
+never appear on the same page. Fixing that sentence is VI-A2; fixing the page is VI-A1.
+
+### The surface map — the design authority for Waves 15 and 16
+
+Every step between "installed the binary" and "an item completed as an attempt", where it
+happens today, where it must happen after this Part, and — when the answer is not "the UI"
+— the structural reason, so nobody re-litigates it per card.
+
+| Step | Today | Target | Why not fully UI |
+|---|---|---|---|
+| Turn on agent execution | console: `tack serve --with-runner` | **UI** — one switch, on a loopback bind (ADR 0061 decision 6); the command is rendered only where the switch cannot exist (a non-loopback bind) | — starting Tack itself is the one console step left |
+| Install a harness binary | outside Tack, undocumented | console, rendered in the UI: installed / absent per harness, with the vendor's install command | external binaries |
+| Authenticate a harness with its own vendor login | console, outside Tack | console, rendered in the UI with the exact command and a re-check | OAuth device flows need a TTY; Tack never holds vendor logins (ADR 0050/0058) |
+| Authenticate through **Vercel AI Gateway** | impossible | **UI** with the embedded runner — one key, pasted once, write-only, runner-local; console (`tack runner secret set`) for a remote runner, rendered in the UI | none in the embedded case |
+| Enroll a runner | zero-touch (embedded) / UI token → console (remote) | unchanged | — |
+| Create a fleet / add a member | fleet: UI; member: API only | UI | — |
+| Create an agent profile | UI | UI, with a default created on first use | — |
+| Choose a default model | impossible (no storage) | UI: a project setting, chosen from a **measured** catalog | — |
+| Run an item | UI modal, five hand-typed fields | UI, defaults from project settings, **zero hand-typed identifiers** | — |
+| See what an attempt produced / answer a decision | UI, but only with a manually-entered id | UI lists | — |
+
+The last column is closed. A card that finds a step it cannot move to the UI for a reason
+not in this table escalates in its handoff; it does not add a row.
+
+### Why one provider, and why this one
+
+Rule 3 of `.claude/scope-discipline.md` — build for the second case, not the fifth. The
+harnesses' own logins are the first case and already work. Vercel AI Gateway is the second
+because it is the only provider that is (a) a single API key rather than a vendor OAuth
+flow, (b) documented by its vendor with a dedicated endpoint for **each** of the three
+harnesses in this tree, and (c) a catalog endpoint, so the model picker can show what a
+runner *measured* rather than a list someone typed. That combination is the only path to
+"a UI-only user authenticates without a console". OpenRouter, direct Anthropic/OpenAI keys
+and local endpoints stay where they are — the harness's own configuration — until the
+gateway path has been proven live and a second gateway actually differs from it.
+
+### The two-component story — the statement every page reuses
+
+Written once here; VI-A3 applies it verbatim, and every page that introduces agents
+(README, `introduction.md`, `agent-runners.md`, `CLAUDE.md`'s overview) opens with it or
+links to it. Three pages currently say three different things; this is the one thing.
+
+> **Tack is two components, built to be one product.**
+>
+> **The board** is the project manager: workflows, timelines, dependencies, per-project
+> vocabulary — one binary, one SQLite file, no accounts, no cloud. It is the plan, the
+> policy and the record. It decides *what* runs, *when*, under *which* limits, and it keeps
+> the durable history of every run: events, decisions, artifacts, and what it measurably
+> cost. **It never executes code and never holds a model credential.**
+>
+> **The runner** is a small worker that lives where the code and the credentials already
+> are — a laptop, a CI box, a machine with a GPU. It pulls work from the board, checks out
+> an isolated workspace, launches the coding agent you already use — Claude Code, Codex or
+> OpenCode — and reports back. **It holds the keys; the board never sees them.**
+>
+> They are separate because they scale and fail differently. **One board, many runners:**
+> a board on a small VPS dispatches to runners on ten developers' machines, each with its
+> own agent, model and capacity. A runner that dies mid-run cannot corrupt the board — its
+> lease expires and its fencing token stops writing. A board that restarts cannot lose a
+> run — the runner's journal knows what it started. **One developer runs both in one
+> process with one command**, on the same contract, with the same recovery.
+
+Two consequences, so no card re-derives them:
+
+- **The runner is named in the story, never on a default screen.** The README and the docs
+  explain two components because that *is* the product. The UI's default screens say
+  *agent*, *model*, *provider*, *run* — "runner", "fleet", "enroll", "heartbeat",
+  "capacity", "lease", "fencing", "harness" appear only under *Advanced* and in the
+  developer book (§VI.1 rule 8).
+- **The recovery demo is the visual proof of the third paragraph.** V-C2's recording
+  (kill the runner mid-run → `needs_operator` → no duplicate → requeue → success) is not a
+  competing hero asset; it is the picture of "they fail differently", and the README gives
+  it a named slot next to that paragraph (VI-A3).
+
+### Working-tree state at the time this board was written (2026-09-03)
+
+`develop` is at `e5206c7` and the tree is clean. Part IV is done (Wave 10 at `83fefab`).
+Part V Wave 13 is in flight: **V-C2** (the demo; owns `docs/screenshots/**`) is unblocked and
+**V-C3** (launch preparation) waits on it. Both may touch `README.md`. See §VI.3.
+
+---
+
+## §VI.1 Rules for simultaneous agents
+
+**All fourteen rules of §III.2 and all five of §V.1 apply unchanged** — in particular §V.1
+rule 1 (no claim ships that a clean machine cannot demonstrate) and rule 4 (measure, never
+estimate). Seven rules are specific to this Part:
+
+1. **Every console step stays inside the flow.** If a step cannot be done from the UI, the
+   UI renders it as a numbered, copyable command, says in one line *why* it is a console
+   step, and verifies it afterwards with a real observation. A link to a documentation page
+   is not a step. The strings the UI shows are the strings the docs show.
+2. **Green means observed.** "Installed" means the probe ran the binary. "Authenticated"
+   means a real attempt, or a real catalog call, succeeded with that credential. A session
+   file that exists is "present, unverified" — the honest state — never a check mark. No
+   status on any screen is derived from file existence.
+3. **Provider secrets never enter `tack.db`, a log line, or the operator API** — with
+   exactly one exception, which ADR 0061 (VI-A2) authorizes and bounds: a loopback-only,
+   embedded-runner-only, write-once route that hands a key to the co-located runner's
+   owner-only store without persisting it. Every card touching a secret asserts the
+   *absence* directly (row counts, captured log output) with a positive control proving the
+   assertion can fail.
+4. **The gateway is a provider, not a proxy.** Tack still never calls a model API to execute
+   an attempt. The runner's probe may call the gateway's catalog with the runner's own key —
+   that is runner-side network, already the runner's domain. No `TACK_*` variable on the API
+   server names a model endpoint; that sentence in `docs/CONFIG.md` becomes precise rather
+   than absolute.
+5. **Catalogs are measured, never typed in.** No static list of gateway or vendor models
+   anywhere in the tree. What a picker shows is what a probe returned, with its timestamp,
+   or a typed reason why nothing was returned.
+6. **Requested and actual stay distinct.** When the gateway serves a model, `actual` records
+   what the harness reported, with its `model_observation_source`; the requested pair is
+   never copied into the actual columns. Reaching the same underlying model directly and
+   through the gateway are two different `(provider, model_id)` pairs.
+7. **Docket is out of scope.** Nothing here touches `orch_*`, `/approvals`, `/provision` or
+   the ProvisioningWizard (ADR 0060 keeps them; it does not invite edits). "Agents" in this
+   Part means runner-v1.
+8. **Architecture vocabulary stays out of default screens.** The story names two components
+   because that is the product (§VI.0, the statement). The UI's default screens say *agent*,
+   *model*, *provider*, *run*. "Runner", "fleet", "enroll", "heartbeat", "capacity",
+   "lease", "fencing" and "harness" appear only under *Advanced* and in the developer book.
+   A test greps the rendered default screens for them; VI-C1 owns it.
+
+---
+
+## §VI.2 Shared-file ownership
+
+| Chokepoint | Owner |
+|---|---|
+| `docs/book/src/user-guide/{agent-runners,cli,configuration,quick-start}.md`, `docs/API-REFERENCE.md` §"Runner, Fleet & Execution", the model-resolution rows of `docs/CONFIG.md` | VI-A1 — **VI-D1 amends after Waves 15–16 ship** |
+| `docs/adr/0061-*.md`, the one provider-credentials bullet in `docs/CONFIG.md` | VI-A2 only |
+| `crates/tack-runner/src/secrets.rs` (new), the store path in `crates/tack-runner/src/config.rs`, the `secret_reference` branch of each adapter, `tack runner secret …` in `crates/tack-cli/src/main.rs` (one subcommand arm + one module) | VI-B1 |
+| The `[provider.*]` section of `RunnerConfig`, each adapter's spawn environment/args, `bootstrap::probe`, `crates/tack-cli/src/doctor.rs`, the gateway rows of `docs/CONFIG.md` | VI-B2 — **after B1 merges** |
+| `crates/tack-api/src/handlers/local_runner.rs` (new), its mounts in `router.rs` (those only), the control handle in `crates/tack-cli/src/local_runner.rs`, the persisted on/off flag, `frontend/src/features/agents/{ExecutionToggle,ProviderKeyPanel}.tsx` + their client and tests | VI-B3 |
+| `frontend/src/features/agents/**` except B3's two panels, `frontend/src/app/routes.tsx`, the nav entry, the *Advanced* section re-mounting `RunnerFleetSection`, the one mounting line in `features/fleet/FleetPage.tsx`, the first-run banner on the Board | VI-C1 |
+| `frontend/src/shared/runWithAgent/**`, the attempt-state chip on Board cards | VI-C2 |
+| `migrations.rs` (**062 only**), `crates/tack-core` project model, `crates/tack-db/src/repo/` project reads/writes, the project handlers, `crates/tack-orch/src/model_policy/wiring.rs` project tier, `frontend/src/features/settings/**` Agents tab, `frontend/src/features/fleet/runnerFleet/{AgentProfilesPanel,FleetsPanel}.tsx` | VI-C3 |
+| The two attempt list handlers, their mounts in `router.rs` (those two only), `DecisionInbox.tsx`, `ArtifactDownloadPanel.tsx`, `frontend/src/features/item-detail/tabs/AgentActivityTab.tsx` | VI-C4 |
+| `docs/openapi.json`, `frontend/src/shared/api/schema.gen.ts` | **generated** — regenerated by whichever of B3 / C3 / C4 lands; the integrator re-runs `UPDATE_OPENAPI=1 … openapi_contract` and `npm run gen:api` after each merge. Never hand-edited |
+| `docs/contracts/runner-v1/**`, `crates/tack-orch/tests/runner_contract.rs` | **nobody by default.** VI-B2 escalates with evidence if a capability field is genuinely needed. Smuggling one through `additional` to dodge the pin is forbidden — that is a contract change without a review |
+| `scripts/smoke.sh`, the amendments to every page VI-A1 wrote, the final pass on `docs/CONFIG.md`, the one "Run it" sentence in `README.md` that names the Agents page (and the final README merge), `CHANGELOG.md` `[Unreleased]` | VI-D1 |
+| `README.md` (whole-file restructure), `docs/book/src/introduction.md`, the opening paragraph of `docs/book/src/developer/README.md`, `docs/diagrams/**` (new), the first sentence of `CLAUDE.md`'s overview | VI-A3 — **`README.md` collides with Part V's V-C3; see §VI.3** |
+| `docs/screenshots/hero.gif`, `agents.png`, `attempt.png`, `two-machines.png`, and the README image markup for them | VI-D2 — **`docs/screenshots/**` is V-C2's until it lands; see §VI.3** |
+| `TODO.md`, `docs/book/src/roadmap.md` statuses | wave integrator only |
+
+---
+
+## §VI.3 Dependency graph, cross-Part conflicts and merge policy
+
+```text
+VI-A1 (docs: the path, the truth) ─────────────────────────────────────────────┐
+VI-A3 (README + introduction + diagram) ───────────────────────────────────────┤
+                                                                               │
+VI-A2 (ADR 0061) ──┬── VI-B1 (secret store) ── VI-B2 (Vercel AI Gateway) ──┐   │
+                   │                        └── VI-B3 (embedded: on/off, key) ──┼── VI-C1 (Agents page) ──┐
+                   │                                                             │                          │
+                   ├── VI-C3 (project agent settings) ── VI-C2 (modal) ──────────┴──────────────────────────┼── VI-D1 (proof + docs)
+                   │                                                                                        │
+                   └── VI-C4 (artifact / decision lists) ───────────────────────────────────────────────────┘
+
+VI-C1 + VI-C2 ─────────────────┐
+Part V · V-C2 (recovery demo) ─┴── VI-D2 (hero + screenshots) ── feeds VI-D1's final README merge
+```
+
+**Wave 14 is a gate, not a sprint.** VI-A1 and VI-A3 are pure documentation and can land
+any time — A3 first if Part V's V-C3 is about to start, since A3 restructures the file V-C3
+proposes text for. VI-A2 is a decision record the **user approves**; no Wave 15 card
+branches until it is accepted, because B1–B3 implement its choices and would otherwise
+encode a guess.
+
+**Wave 15 is sequential.** B1 first (the store). B2 needs the store to read the key. B3 needs
+the store to write it and is opaque to what the key is for, but merges after B2 so its
+"catalog appears after save" observation has something to observe.
+
+**Wave 16 has two independent starts.** C3 and C4 need only the ADR's vocabulary and can run
+alongside Wave 15 — they are the widest diffs on the board and should start early. C1 waits
+for B2 + B3; C2 waits for C3.
+
+**Wave 17 is two cards, in order.** D2 (assets) needs C1, C2 and Part V's V-C2; D1 (proof and
+docs) goes last and takes the final README merge.
+
+### Cross-Part conflicts — read before branching
+
+Part V Wave 13 is in flight. Two files are shared:
+
+1. **`docs/screenshots/**` — V-C2 owns it until it lands, and its recording keeps its
+   slot.** VI-D2 does not start before V-C2 has landed; it replaces the PM hero and adds
+   three files, and never touches V-C2's recording, which VI-A3 gives a named slot
+   (*Durable by design*). V-C2 hands its markdown to VI-A3, not to V-A4 (closed).
+2. **`README.md` — three writers, one order.** VI-A3 restructures the whole file **first**,
+   now, while V-C3 waits on V-C2. V-C3 proposes launch text against A3's structure. VI-D2
+   swaps the image markup; VI-D1 adds one sentence and takes the final merge. A Part V card
+   that finds A3 in flight escalates rather than racing — §V.3's own rule, applied back.
+
+`docs/CONFIG.md` is touched by three cards here — A1 (model-resolution rows), A2 (one
+bullet), B2 (gateway rows) — in disjoint sections. Each names the rows it touched in its
+handoff so the integrator verifies disjointness rather than assuming it.
+
+`router.rs` is touched by B3 (one gated mount) and C4 (two operator routes). Sequential
+merge; the integrator regenerates `openapi.json` after each.
+
+A card that discovers another collision states it in the handoff and stops.
+
+---
+
+## §VI.4 Cards
+
+### VI-A1 — Write the path from a board item to a completed attempt, and delete what is false
+
+**Pure documentation. Can start immediately.** Written against the product **as it is
+today** — five hand-typed fields and all — because a stranger installing beta.7 gets that
+product. VI-D1 amends this card's pages after Wave 16 ships.
+
+**Owns:** `docs/book/src/user-guide/agent-runners.md` (one new section, the Known-gaps
+rewrite, the harness-id fix), `cli.md` (five new sections), `configuration.md` (the
+runner rows or a first-line pointer — see Tasks), `quick-start.md` (one section),
+`docs/API-REFERENCE.md` §"Runner, Fleet & Execution" (one complete worked example), the
+model-resolution rows of `docs/CONFIG.md`, and the VI-A1 handoff. **Does not own** any
+runtime code, `README.md`, or the provider-credentials bullet in `docs/CONFIG.md` (VI-A2's).
+
+**Context.** See the §VI.0 evidence table — every row about `docs/` is this card's. The
+shape of the failure: three documents point at each other (API-REFERENCE → agent-runners →
+CONFIG) and none of them keeps the question "how do I make this item run with Sonnet?".
+Four statements are false today (`claude_code`; "model profiles have no effect"; "fleet
+members have no write route"; two pages each claiming to be the configuration reference).
+
+**Tasks:**
+- The page opens with the §VI.0 statement — or its first paragraph and a link — so
+  `agent-runners.md`, the README and the introduction say one thing, not three.
+- `agent-runners.md`, new section **"Running an item with an agent"** placed *before*
+  "Enrolling a runner": the four entry points (the modal, `tack execution create`,
+  `POST /api/executions`, MCP `create_execution`), then **one complete, copy-pasteable
+  `tack execution create` invocation** with all thirteen fields filled with real values
+  against `tack serve --with-runner`, and its real output. The same body as raw JSON goes in
+  `API-REFERENCE.md`. Run it; paste the transcript; do not construct it from the schema.
+- `agent-runners.md`, new section **"Choosing a model and a provider"**: the four-tier
+  precedence (request override → agent profile `limits.default_model` → project *(no
+  storage today; say so)* → fleet `default_policy.default_model` → auto-select) with the
+  exact JSON each tier accepts, how `model_combinations` / `model_passthrough` gate it at
+  claim time, and — **in the same paragraph** — the rule "Tack never holds a provider
+  credential" next to the rule "Tack does route the model choice". These two sentences
+  have never appeared together, and that is the whole reported confusion.
+- Fix `claude_code` → `claude-code` at l.32. Rewrite the Known-gaps list: the
+  `model_profiles` bullet becomes what is true (a saved pair the modal copies into the
+  request override; not read by the scheduler as a *default* tier); the fleet-members
+  bullet is deleted and replaced by "the route exists; the Fleet panel does not call it
+  yet"; the decision/artifact-list bullet stays and is re-cited.
+- `cli.md`: sections for `tack execution`, `tack runner` (including `doctor` and `start`),
+  `tack fleet`, `tack agent-profile`, `tack model-profile`, each generated from real
+  `--help` output with one executed example.
+- `configuration.md`: either add the `TACK_LOCAL_RUNNER_ENABLE` / `TACK_RUNNER_*` rows, or
+  replace the page body with a first-line pointer naming `docs/CONFIG.md` as the single
+  authority. Choose, and defend the choice in the handoff; two pages disagreeing is the
+  defect, not the missing rows.
+- `quick-start.md`: one section "Run an item with an agent" reaching a completed attempt in
+  the fewest steps the product supports today, every console step shown.
+
+**Acceptance:** a reader with a fresh `tack serve --with-runner` and one authenticated
+harness reaches a completed attempt following **only** the new agent-runners section —
+proven by a transcript in the handoff of doing exactly that, commands copied from the page.
+`grep -rn claude_code docs/book/` returns nothing. Every remaining Known-gaps bullet cites a
+`file:line` that still holds. Every new CLI section's example was executed and its output
+pasted. `configuration.md` and `docs/CONFIG.md` no longer both claim to be the reference.
+
+---
+
+### VI-A2 — ADR 0061: provider credentials and model catalogs at the runner boundary
+
+**A decision card. Prepares and stops; the user accepts the ADR.** No Wave 15 card branches
+before that.
+
+**Owns:** `docs/adr/0061-provider-credentials-at-the-runner-boundary.md`, the one
+provider-credentials bullet in `docs/CONFIG.md` (l.89-108 today), and the VI-A2 handoff.
+**Owns no code.**
+
+**Context.** ADR 0050 l.29-30 and ADR 0058 l.80-83 are quoted in §VI.0. Both are correct
+about the API server. Both are being cited to mean "Tack cannot help you configure a
+provider", which produced the reported confusion (recorded in IV-A5's own Context, which
+called the situation "correct but invisible" and fixed only the visibility). The runner
+side of the boundary was never decided: the runner owns its enrollment credential, owns the
+harness subprocess and its environment, and accepts `secret_reference` entries with no
+resolver. This ADR decides what the runner may hold and how a key reaches it, so that Wave
+15 encodes a decision rather than a guess.
+
+**Decisions the ADR must make**, each with the options rejected and their cost:
+
+1. **Where a provider key lives.** Recommended: a runner-local, owner-only store in
+   `TACK_RUNNER_STATE_DIR`, alongside `session.json`, with the same `0600` posture.
+   Rejected for the record: `app_meta` like the backup secret (crosses the line ADR 0050
+   drew; the backup key is the *server's own* secret, a provider key is not); a Tack-side
+   vault (a proxy by another name).
+2. **The one exception.** An embedded-runner, loopback-only, write-once operator route that
+   hands a key to the co-located runner's store. Its exact preconditions (`--with-runner`
+   on, loopback bind — already enforced before the server opens a socket), what it returns
+   (never the key, never a fingerprint), and that it **does not exist** otherwise — a 404,
+   the same shape as the `TACK_ORCH_ENABLE` routes, not a route that refuses. Decide which
+   auth applies: the recommendation is the ordinary operator token, matching Settings →
+   Cloud Backup's secret-key write, and the ADR says why a higher-privilege token is or is
+   not warranted.
+3. **Catalog fetching.** The runner's probe may call the gateway's model list with the
+   runner's key; confirm this sits inside the runner's existing network domain and that the
+   API server still makes zero model-provider calls. Decide what a catalog entry records
+   (provider, model id, probed-at) and what it does not (any price the catalog reports is
+   `catalog_reported`, never `measured` — it is not a measurement of a run).
+4. **Vocabulary.** The provider id string for the gateway in `model_combinations`
+   (recommendation: `vercel-ai-gateway`), that a gateway model id is the gateway's own
+   `creator/model` form verbatim, and that the same underlying model reached directly and
+   through the gateway are **different** `(provider, model_id)` pairs (§VI.1 rule 6).
+5. **The surface map as product rule.** Adopt §VI.0's table: the "never UI" column is
+   closed and named; a future step that cannot be UI needs an ADR amendment, not a card's
+   judgement.
+6. **Turning the embedded runner on from the UI — an amendment to ADR 0058.** Today the
+   gate is a startup flag. Recommended: on a loopback bind, one switch in the UI starts or
+   stops the in-process runner and persists the choice (recommendation: `app_meta`, read by
+   the server after the database opens); **off by default is unchanged** — a fresh install
+   runs nothing until a person on the same machine chooses — and **loopback-only is
+   unchanged** — the switch's route does not exist on any other bind. `--with-runner` stays
+   as the flag-only equivalent for scripts and the smoke. Rejected for the record: keeping
+   the flag as the only path (it is the single console step a UI-only user cannot avoid,
+   and it costs the whole "self-explanatory binary" claim); making bare `tack` mean
+   `serve --with-runner` on loopback (changes a security default to save one click the UI
+   can offer instead — recorded as an open question in §VI.5, not decided here). This
+   decision rewrites the first row of the surface map.
+
+**Tasks:** write the ADR in the house format (see 0059/0060: Status, Date, Supersedes,
+Contract, Context, Measurement, Decision, Consequences). Replace the `docs/CONFIG.md`
+sentence *"there is no `TACK_*` variable for a model provider or endpoint, by design"* with
+the precise rule the ADR states. List in the handoff every sentence in `docs/` and
+`README.md` the ADR makes imprecise (`grep -rn "never becomes a model proxy\|no TACK_\*
+variable for a model provider\|never reads, stores, or forwards"`) for VI-A1 / VI-D1.
+
+**Acceptance:** the ADR names each decision, each rejected option and its cost, and cites
+0050 and 0058 by line for what it reaffirms and what it bounds. The user has accepted it
+(recorded in the handoff with the date). The CONFIG.md sentence is replaced. The handoff's
+sentence list is complete — the grep in Tasks returns only the ADRs.
+
+---
+
+### VI-A3 — Two components, one product: the README, the introduction and the diagram
+
+**Pure documentation and one diagram. Can start immediately.** Supersedes V-A4's README
+structure, keeps V-A4's four questions and its claim → evidence rule, and reuses the §VI.0
+statement verbatim.
+
+**Owns:** `README.md` (whole-file restructure), `docs/book/src/introduction.md`,
+the opening paragraph of `docs/book/src/developer/README.md`, `docs/diagrams/**` (new),
+the first sentence of `CLAUDE.md`'s Project Overview, and the VI-A3 handoff. **Prepares,
+does not apply,** the GitHub repository description (outward-facing — §V.1 rule 5).
+**Does not own** `docs/screenshots/**` (V-C2 now, VI-D2 later), `agent-runners.md`
+(VI-A1), or any crate.
+
+**Context — the README shows a project manager.** Measured 2026-09-03: the hero asset's
+own alt text is *"Board, Timeline, and vocabulary editor"* (`README.md:12`); the Features
+section lists *Project management* first and *Agent execution* second (`:32`, `:42`); all
+five screenshots — board, timeline, dashboard, list, vocabulary editor — are PM views and
+**zero** show an agent doing anything (`docs/screenshots/`); the two-component architecture
+is explained at line 169, after *Status*; and the book's introduction lists four core
+concepts — item, workflow, project type, vocabulary — with neither *runner* nor *run*
+among them. A reader who arrives from the category Tack is trying to leave sees exactly
+that category, and the differentiator reads as one bullet among many. V-A4's sentence was
+right about the *what*; the page's shape still says the opposite.
+
+**Tasks:**
+- **First screen, in this order, before any PM screenshot:** the H1 and a first line that
+  names both components (proposal, for the card to finalise: *"A self-hosted project board
+  that dispatches its items to coding agents — Claude Code, Codex, OpenCode — through
+  runners that live where your code lives. One binary. The board plans and records; the
+  runner executes."*), then the **two-component diagram**, then the §VI.0 statement, then
+  a three-step *How it works* strip (plan it on the board → a runner picks it up where the
+  code is → the run is recorded on the item). Until VI-D2 lands, the diagram occupies the
+  hero slot and the current GIF moves down to *Screenshots* under its honest alt text.
+- **The diagram**, `docs/diagrams/two-components.svg` with its source alongside: two
+  planes side by side — *the board (one)* / *runners (many)* — with the pull arrow pointing
+  the only direction it ever goes, the harnesses beneath each runner, and two callouts:
+  *credentials stay here* on the runner side, *leases · fencing · history* on the board
+  side. It must render on GitHub, in the published book, and in dark mode — an SVG pair
+  behind a `<picture>` does all three; a mermaid block does GitHub only unless the book
+  gains a preprocessor. Measure, then choose.
+- **A *Two components* table** — rows: what it does · what it holds · how many · what
+  happens when it dies · how you run it; columns: board, runner. This is the scalability
+  story the user asked for, in one glance.
+- **A named slot, *Durable by design*,** directly under the statement's third paragraph,
+  for V-C2's recovery recording. If V-C2 has not landed, the slot carries the sentence and
+  a link to the smoke step that proves it, and no placeholder image.
+- Reorder *Features*: agent execution, then project management, then automation surfaces.
+  Keep every claim → evidence row V-A4 established; add none that VI-D1 cannot prove.
+- `introduction.md`: open with the statement; the core-concepts table gains **Runner** and
+  **Run**; the agent-runners link moves to the top of *Quick links*.
+- `developer/README.md`: open with the statement's third paragraph, then the crate map.
+- `CLAUDE.md`, Project Overview, first sentence only: name both components and that
+  `--with-runner` embeds one in the other — so every agent that writes a doc here carries
+  the same frame.
+- Draft the new GitHub description in the handoff for the user to apply.
+
+**Acceptance:** an agent with no context on this repository reads only the README's first
+screen (through the *Two components* table) and reports back that the product has **two
+parts**, what each holds, and that one board serves many runners — the same test V-A4
+used, with the answer it must now produce. `README.md` contains no PM screenshot above the
+diagram. The statement appears byte-identical in the four places (`diff` in the handoff).
+The diagram renders in GitHub light, GitHub dark and the built book — three screenshots in
+the handoff. Nothing outward-facing was applied.
+
+---
+
+### VI-B1 — A runner-local secret store, and `secret_reference` finally resolves
+
+**Needs VI-A2 accepted.** First card of Wave 15.
+
+**Owns:** `crates/tack-runner/src/secrets.rs` (new), the store path in
+`crates/tack-runner/src/config.rs`, the `secret_reference` branch in each of the three
+adapters, `tack runner secret set|list|remove` (one subcommand arm in
+`crates/tack-cli/src/main.rs` plus one small module), and the VI-B1 handoff.
+
+**Context.** `EnvironmentValue { value | secret_reference }` is in the contract and in the
+claim fixture; every adapter warns and skips a `secret_reference` entry because "no
+secret-store client exists in tack-runner yet" (`claude_code.rs:62-64`, `codex.rs:772-775`,
+`opencode.rs:1156-1158`). That is a documented gap with a contract-level caller already
+waiting. The store is the smallest thing that closes it and is what VI-B2 and VI-B3 both
+need — one mechanism, three callers, all in this wave.
+
+**Design, fixed here so B2/B3 do not re-decide it:** a single owner-only file
+(`secrets.json`, mode `0600`, in `TACK_RUNNER_STATE_DIR`) mapping name → value. Names are
+identifiers — safe in logs, errors and `Debug` output; values are never in any of them, and
+the value type's `Debug`/`Display` are hardcoded to `[REDACTED]` exactly like
+`RunnerCredential`. `tack runner secret set <name>` reads the value from stdin or from
+`TACK_RUNNER_SECRET_VALUE`, **never from argv**. Resolution happens in the adapter's
+`validate` step — before any journal record or worktree exists: an entry `{"secret_reference":
+"<name>"}` resolves from the store; a missing name is a typed pre-spawn failure
+(`secret_reference_unresolved`, naming the reference only). **Today's warn-and-skip becomes
+an error**, because once a resolver exists a silently missing variable is a fake success.
+
+**Acceptance:** a live attempt with an environment entry `{"secret_reference": "demo"}`
+reaches the fake-harness shim with the variable set — the shim prints the value's *length*,
+never the value. Captured `tracing` output for that run contains the name `demo` and never
+the value (positive control: the name is asserted present). A missing reference fails at
+`validate` with the typed reason, and the state directory and workspace root are asserted
+untouched. `stat -c '%a'` on the store file is `600`, measured on a real run. The
+three adapters' behaviour is proven by reverting the resolver once and watching the
+"variable is set" assertion fail. `runner_contract` byte-identical: no fixture changes.
+
+---
+
+### VI-B2 — Vercel AI Gateway as a runner provider
+
+**Needs VI-B1 merged.** The runtime heart of this Part.
+
+**Owns:** a `[provider.vercel_ai_gateway]` section of `RunnerConfig` (`enabled`; `secret`,
+the B1 store name, default `vercel-ai-gateway`), each adapter's spawn environment and
+arguments, the catalog step in `bootstrap::probe`, the provider block in
+`crates/tack-cli/src/doctor.rs`, the gateway rows of `docs/CONFIG.md`, and the VI-B2
+handoff. **Escalates, does not edit,** `docs/contracts/runner-v1/**`.
+
+**Context — vendor facts, fetched 2026-09-03.** Re-fetch `vercel.com/docs/ai-gateway/
+coding-agents` before relying on any cell; this table is a starting point, not a source.
+
+| Harness | Endpoint | Mechanism the vendor documents |
+|---|---|---|
+| `claude-code` | `https://ai-gateway.vercel.sh/claude-code` — **no `/v1` suffix**; the SDK appends `/v1/messages` and a double suffix 404s | env: `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN=<key>`, **`ANTHROPIC_API_KEY=""`** (must be set *empty* — a non-empty value wins over the auth token); optional `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`. Model ids like `anthropic/claude-sonnet-5` |
+| `codex` | `https://ai-gateway.vercel.sh/codex/v1` | `~/.codex/config.toml`: `model_provider = "vercel"` and `[model_providers.vercel] base_url = …, env_key = "AI_GATEWAY_API_KEY", wire_api = "responses"` (required — Codex no longer speaks Chat Completions). The codex adapter forwards **no** ambient environment, so the key is injected per spawn. **First thing this card measures:** whether the provider can be selected per invocation (`-c model_provider=…` overrides) rather than by writing the user's own config file — the runner must never edit a user's `~/.codex/config.toml` |
+| `opencode` | native provider `vercel`, via `/connect` in the TUI | credential lands in `~/.local/share/opencode/auth.json`. Whether an environment variable or an `opencode.json` entry can carry it **non-interactively** is measured, not assumed. If it cannot, opencode's gateway path is a console step rendered by VI-C1, and this card says so in its handoff and in `docs/CONFIG.md` |
+
+Catalog: the gateway's model list (`GET /v1/models`, Bearer key) becomes
+`model_combinations` for each harness that can reach the gateway — provider
+`vercel-ai-gateway` (or what ADR 0061 chose), model id verbatim, probed-at recorded. Only
+when the provider is enabled **and** the secret resolves; otherwise zero entries and a typed
+reason (`provider_not_configured` / `catalog_unreachable` with status), never a stale list.
+
+**Tasks:** the config section; the probe step; spawn injection per harness **only when the
+request's resolved model provider is the gateway** — a request for a direct vendor model on
+the same runner must receive none of the gateway environment, or the harness silently
+routes through the gateway and `actual` lies; the actual-model observation for a
+gateway-served run (what does each harness report, and with which
+`model_observation_source`?); `doctor` prints `provider: vercel-ai-gateway — configured /
+not configured / catalog error <status>` plus the catalog count and timestamp, key never
+printed; usage on a gateway-served attempt is still `measured` only from harness output,
+never from the gateway's dashboard.
+
+**Acceptance:** at least `claude-code` and one other harness complete **live** end-to-end
+attempts through the gateway, with `actual.model_provider` and `actual.model_id` recorded
+as the harness reported them — transcripts in the handoff, on the real binaries, not the
+shim. A request for a direct model on the same runner spawns with no gateway variable in
+its environment, proven by the shim dumping variable *names*, and proven load-bearing by
+reverting the guard once. With the provider disabled the capability snapshot has zero
+gateway combinations, and a request naming one is refused at claim by the existing
+scheduler intersection — untouched. Captured logs of a full gateway run never contain the
+key; `sqlite3 tack.db .dump | grep -c <key>` is `0` after the run, with the shim proving the
+harness did receive it. `tack runner doctor --json` byte-matches the live capability
+snapshot including the catalog, as IV-A5 established. `runner_contract` byte-identical, or
+an escalation with the exact field the contract lacks.
+
+---
+
+### VI-B3 — The embedded runner, controlled from the UI: turn it on, hand it a key — persisting neither in the database
+
+**Needs VI-B1 (the store) and VI-A2 (decisions 2 and 6).** Opaque to VI-B2 — the key is
+bytes to this route — but merges after B2 so "catalog appears after save" has a catalog.
+
+**Owns:** `crates/tack-api/src/handlers/local_runner.rs` (new), its mounts in `router.rs`
+(those only), the server→embedded-runner seam in `crates/tack-cli/src/local_runner.rs` —
+a control handle (`start`, `stop`, `set_secret`, `reprobe`) the server calls, **not** a
+path string; the server must not learn where the store lives — the persisted on/off flag,
+`frontend/src/features/agents/ExecutionToggle.tsx` and `ProviderKeyPanel.tsx` with their
+client and tests, and the VI-B3 handoff.
+
+**Context.** Today the embedded runner is spawned once, at startup, from the `--with-runner`
+flag or `TACK_LOCAL_RUNNER_ENABLE`, and `AppState` knows nothing about it. ADR 0061
+decision 6 makes it startable from the UI on a loopback bind. Two things must stay
+exactly as they are: **off by default** (a fresh install runs nothing until a person on
+the same machine turns it on) and **loopback-only** (the toggle is refused — route absent,
+404 — when the server is bound anywhere else; that check already runs before any socket
+opens). Where the on/off state persists across restarts is decision 6's call; the
+recommendation is `app_meta`, read by the server after the database opens, so a later
+`tack serve` on loopback resumes what the person chose, and `--with-runner` remains the
+flag-only equivalent for scripts and the smoke.
+
+**Routes** (final shapes follow the ADR): `PUT /api/local-runner` `{"enabled": bool}` →
+`204`, starts or stops the in-process runner and persists the choice; `GET /api/local-runner`
+→ `{enabled, state, since}`; `PUT /api/local-runner/secrets/{name}` `{"value": …}` → `204`,
+never echoes the value or a hash; `DELETE …/{name}`; `GET /api/local-runner/secrets` →
+names and `set_at` only. After a successful secret `PUT` the server signals the runner to
+re-probe so the catalog appears without a restart — if the runtime has no re-probe entry
+point, this card adds one, and this route is its caller. All of it exists **only** on a
+loopback bind — plain `tack serve` on `0.0.0.0` → 404, the same shape as the
+`TACK_ORCH_ENABLE` routes. Prove the routes are *absent* there, not present-and-refusing.
+
+**Panels:** `ExecutionToggle` — one switch, *Agent execution on this machine*, with the
+observed state beneath it; when the route is 404 it renders the console command and the
+one-line reason (non-loopback bind). `ProviderKeyPanel` — one write-only field, *Vercel
+AI Gateway key*; after save, a "Set <date> · Replace · Remove" line and the observation
+"Catalog: N models as of <ts>" or the typed error, verbatim; a link to where a key is
+created. When the route is 404 the panel renders the console steps instead —
+`tack runner secret set vercel-ai-gateway` on the runner host, then *Re-check* — because
+that is a remote-runner deployment, and §VI.1 rule 1 applies.
+
+**Acceptance:** on a loopback `tack serve` with no flag: `GET /api/runners` is empty; after
+`PUT {"enabled": true}` an active runner appears and a shim attempt completes; after
+`PUT {"enabled": false}` no new claim happens (assert on a queued request that stays
+queued); restart without the flag → the runner comes back because the choice persisted.
+On a non-loopback bind all routes are 404. After a secret `PUT`, in one test with a
+positive control: `app_meta` row count unchanged by the secret (the on/off flag is the only
+new row), `sqlite3 tack.db .dump | grep -c <value>` = 0, and the runner store holds the
+value at mode `600`. Request bodies never reach a log line (capture, with the name
+asserted present). Playwright: toggle on → paste → save → catalog count rendered → the key
+never appears in the DOM. The re-probe is proven by the catalog count changing in the same
+test, with no restart.
+
+---
+
+### VI-C1 — The Agents page: one screen, in the user's words, that owns the whole path
+
+**Needs VI-B2 and VI-B3 merged.** This is the "the binary is self-explanatory" card. Route
+`/agents`, in the nav where *Fleet* is today.
+
+**Owns:** `frontend/src/features/agents/**` except `ExecutionToggle.tsx` and
+`ProviderKeyPanel.tsx` (B3's, composed here), `frontend/src/app/routes.tsx`, the nav entry,
+the *Advanced* section that re-mounts `RunnerFleetSection` and its panels, the one line in
+`features/fleet/FleetPage.tsx` that mounts `RunnerFleetSection` today (nothing else in that
+file — the rest is docket, §VI.1 rule 7), a first-run banner on the Board, and the VI-C1
+handoff. Reuses `RunnerHealthCard`, `EnrollmentPanel`, `ExecutionTimeline`; does not edit
+them.
+
+**Context — what the UI can observe.** `GET /api/local-runner` (on/off, or its 404, which
+is itself an observation: "this is a remote deployment"); `GET /api/runners` — each
+runner's state, heartbeat, capacity and `capability_snapshot` (per harness
+`installed_version` or a probe error, `model_combinations`, `model_passthrough`);
+`GET /api/local-runner/secrets`. What it **cannot** observe, and must say so: whether a
+vendor login exists (§VI.1 rule 2 — "present, unverified"), and anything about a machine
+that has no runner.
+
+**Vocabulary is the card.** §VI.1 rule 8: the default screen says *agent* (Claude Code,
+Codex, OpenCode), *model*, *provider*, *run*. "Runner", "fleet", "enroll", "heartbeat",
+"capacity", "lease", "harness" do not appear outside *Advanced*. A unit test greps the
+rendered default screen for that list and fails on a hit.
+
+**The page is a state machine rendered as numbered steps**, each with an observed status
+and, when a step is a console step, the exact command in a copy block with one line saying
+why:
+
+1. **Agent execution.** Three states: **Off** — B3's toggle, one click; **On, this
+   machine** — since when, and a *Turn off*; **On, other machines** — a count and a link to
+   *Advanced*. When the toggle route is 404: the command `tack serve --with-runner`, the
+   reason (the server is not bound to this machine only), and a poll that flips the step
+   without a reload.
+2. **Agents on this machine.** Per agent, from the snapshot: *installed vX* · *not found*,
+   with the vendor's install command · *could not check*, the probe error verbatim.
+   *Re-check* triggers the re-probe B3 added.
+3. **Provider.** Two paths, side by side, labelled as what they are — **"Use the agent's
+   own login"** (per installed agent: the exact command, `claude` / `codex login` /
+   `opencode auth login`, the sentence that Tack cannot see the result, and "confirm with a
+   test run below") and **"Use Vercel AI Gateway"** (B3's panel — one key, every model, no
+   terminal). Neither is labelled *recommended* unless ADR 0061 said so.
+4. **Default model.** A picker over the union of every active runner's
+   `model_combinations`, plus *Auto*, plus *Type a model id* only where an agent attests
+   `model_passthrough`; saves to the project default (C3). If C3 has not landed, this step
+   is **hidden**, not stubbed.
+5. **Test run.** Creates an item titled *Agent test* on the current project, runs the
+   default profile with the instruction "print which model you are and exit" against the
+   project's default repository (C3), and renders the run timeline inline. **This is the
+   only way step 3 is ever shown green** for an agent's own login.
+
+**Advanced — run agents on other machines.** Collapsed by default. Today's
+`RunnerFleetSection` (enrollment, runner health, fleets and members, agent profiles, model
+profiles) moves here unchanged. The docket Fleet page is not edited; whether its nav entry
+should stay visible when `TACK_ORCH_ENABLE` is off is a one-line question for the
+integrator, recorded in the handoff, not decided here.
+
+**First-run banner** on the Board when execution is off and the project has items: "This
+board can run its items with an agent — *Turn on*" → `/agents`. Dismissable per browser
+(`localStorage` is fine; it is a convenience, not state).
+
+**Acceptance:** Playwright, from a loopback `tack serve` with no flag: step 1 shows *Off*
+and a switch, nothing is green; click → step 1 flips to *On, this machine* without a
+reload; step 2 lists the fake-harness shim as installed with its version and the others as
+*not found* with commands; after B3's panel is used, step 3 shows the catalog count; step 5
+completes a run with the shim and shows the actual model. From a non-loopback bind: step 1
+shows the command and the reason. Every status string is asserted against the API
+response, never hard-coded. An agent with a session file and no completed run renders
+*present, unverified* — the shim can stage that. The vocabulary grep test passes, and is
+proven load-bearing by putting the word "runner" on the default screen once. Every command
+string the page renders lives in one exported constant; VI-D1 cites it from the docs.
+
+---
+
+### VI-C2 — Run with agent: zero hand-typed identifiers
+
+**Needs VI-C3 merged** (the storage its defaults come from).
+
+**Owns:** `frontend/src/shared/runWithAgent/**`, the attempt-state chip on Board cards, and
+the VI-C2 handoff.
+
+**Context.** Today the modal asks, on every run, for a runner id typed by hand, a fleet from
+a list with no membership UI, a remote, a base revision, a subdirectory and a timeout
+(`RunWithAgentModal.tsx:298,386,393,399,412`), remembers none of them, and its only model
+control is a saved pair. The product knows, or after C3 can know, every one of these.
+
+**Tasks:**
+- **Where it runs:** hidden when exactly one machine is active — the common case;
+  otherwise a dropdown of active machines and groups from `GET /api/runners` and the fleets
+  route, labelled by name, never by id. No free-text id anywhere.
+- **Agent profile:** dropdown, preselecting the project's default (C3); when none exists,
+  "Create default profile" inline via the existing `POST /api/agent-profiles`.
+- **Harness:** only kinds the selected target reports installed, through the existing
+  `gateHarnessModelSelection` helper — **unchanged**.
+- **Model:** three modes with provenance visible — *Project default — `<provider/model>`*
+  (C3), *Choose…* (the selected runner's `model_combinations` for that harness; free text
+  only where `model_passthrough` is attested), *Auto*.
+- **Repository:** a read-only summary from the project's agent repository (C3) with "Change
+  for this run" expanding the three fields. Whether `base_revision` may be a ref rather
+  than a SHA is measured against the runner's checkout, not assumed.
+- **Timeout:** from the agent profile's `timeout_seconds`.
+- After submit the modal closes and the Board card shows a small attempt-state chip next
+  to the existing ▶ trigger, fed by the existing execution store; opening it lands on the
+  item's Agent Activity tab.
+- With execution off the modal body is "Agent execution is off — Turn it on" linking to
+  `/agents`, not a form.
+
+**Acceptance:** E2E: with C3 defaults set and one embedded runner, open the modal on an
+item, change nothing, submit → the `POST /api/executions` body equals the project defaults
+field for field (asserted on the intercepted request). No free-text field is visible by
+default. Existing modal and helper tests are updated, not deleted; `shared.ts`'s gate
+helper is byte-identical. The state chip is asserted to change from *Queued* to a terminal
+label during a shim run.
+
+---
+
+### VI-C3 — Project-level agent settings: the tier with no storage, and the UI the tiers never had
+
+**Needs VI-A2 accepted** (vocabulary only). Independent of Wave 15; **start early** — it is
+the widest diff on the board, by construction, and that is one feature, not two cards: a
+column, its repository read/write, its handler, the generated files, one settings tab. Do
+not split it into a mechanism card and a caller card.
+
+**Owns:** migration **062** — `ALTER TABLE projects ADD COLUMN agent_settings TEXT` (JSON,
+nullable; **one `ALTER`, one migration name**), the typed `ProjectAgentSettings` in
+`crates/tack-core`, the project repository reads/writes in `crates/tack-db/src/repo/`, the
+project handlers and `UpdateProject`, the project tier in
+`crates/tack-orch/src/model_policy/wiring.rs` (replace the always-`None`), a new **Agents**
+tab in `frontend/src/features/settings/`, a real "Default model" field in
+`AgentProfilesPanel.tsx` (writing the existing `limits.default_model` convention), add /
+remove member in `FleetsPanel.tsx` calling the existing member routes, the regenerated
+`openapi.json` / `schema.gen.ts`, and the VI-C3 handoff.
+
+**Context.** `wiring.rs:17-23` says the project tier "needs either a real
+`projects.default_model_policy` column or an explicitly documented reuse of an existing
+column, decided by whoever owns the next migration batch". This card is that batch. One
+JSON column holds the three project-level facts an attempt needs and nothing else stores:
+`{ "default_model": <selector or "auto">, "default_agent_profile_id": <id>, "repository":
+{ "kind", "remote", "base_revision", "subdirectory" } }` — validated server-side against
+the typed struct; a malformed blob is rejected at write, never tolerated at read. The
+agent-profile default and fleet default already exist as conventions with no UI; this card
+gives them a field, not a new mechanism.
+
+**Acceptance:** `crates/tack-orch/tests/model_policy_test.rs` gains the live project-tier
+case — no request override, a profile with no default, a project default set → the resolved
+pair with provenance `project`, through the real repository. The Settings → Agents tab
+round-trips all three fields in Playwright. Adding a member through the Fleet panel is
+proven by the scheduler leasing a fleet-targeted request **only after** the member was
+added via the route (today's `scheduler_wiring_test.rs` does this against the database;
+this one goes through the API). Migration 062 passes `run_all` on a fresh database and on
+an upgraded copy of a beta.7 `tack.db`. `openapi_contract` regenerated, never hand-edited.
+`runner_contract` byte-identical.
+
+---
+
+### VI-C4 — List what an attempt produced: artifacts and decisions without a typed id
+
+**Independent. Needs nothing.** Can run alongside Wave 15.
+
+**Owns:** `GET /api/executions/{request_id}/attempts/{n}/artifacts` and
+`GET /api/executions/{request_id}/attempts/{n}/decisions` — handlers, their two mounts in
+`router.rs`, the repository read methods (reuse the runner-side ones where they exist),
+`DecisionInbox.tsx`, `ArtifactDownloadPanel.tsx`, `AgentActivityTab.tsx`, the regenerated
+`openapi.json` / `schema.gen.ts`, and the VI-C4 handoff.
+
+**Context.** `agent-runners.md` Known gaps: no list route exists for either; the panels
+accept a manually-entered id. `docs/agent-handoffs/part-iii/III-F4.md` names the concrete
+route shape requested to close this — follow it rather than inventing a second one. A
+UI-only user cannot answer a decision or download an artifact today without an id copied
+from an event payload; that is the last step of the surface map.
+
+**Acceptance:** the panels never ask for an id. `execution-attempt-detail.spec.ts` (III-F4)
+is extended to discover the artifact through the list rather than the known id, keeping
+its byte-equality download proof. The decision list shows pending / resolved / expired;
+resolving stays behind `TACK_EXECUTION_DECISION_TOKEN`, fail-closed, untouched. Runner
+protocol routes untouched; `runner_contract` byte-identical.
+
+---
+
+### VI-D1 — Prove the stranger's path, and make the docs match what shipped
+
+**Last card. Needs everything, VI-D2 included.**
+
+**Owns:** `scripts/smoke.sh` (new steps), amendments to every page VI-A1 wrote, a final
+pass on `docs/CONFIG.md`, the one "Run it" sentence in `README.md` that names the Agents
+page (and the final README merge — §VI.3), `CHANGELOG.md` `[Unreleased]`, and the VI-D1
+handoff. **Does not own** the README's structure (VI-A3) or its assets (VI-D2).
+
+**Tasks:**
+- **Smoke step 13 — the gateway path with a local fake gateway:** an HTTP shim serving
+  `/v1/models` and the per-harness endpoint, in the same pattern as the fake-harness shim,
+  proving key → catalog → spawn environment → actual model. It must be able to `FAIL`;
+  prove it by injecting a wrong key once.
+- **Smoke step 14:** plain `tack serve` → `GET /api/local-runner/secrets` is 404.
+- **The stranger test — the deliverable of this Part.** On a clean container with the
+  release binary and the fake harness, a person — or a Playwright script that only clicks
+  and copies commands **the UI shows it** — reaches a completed attempt with the UI as the
+  sole guide — starting Tack is the only command typed; turning execution on is a click. The transcript, with every copied command and every observed status, goes in
+  the handoff.
+- Docs: the quick-start agent section now describes the Agents page; the CLI path stays
+  documented as the second path; the README's "Run it" gains the one sentence that names
+  the Agents page; every §VI.0 evidence-table row is re-measured, the README rows included.
+
+**Acceptance:** `./scripts/smoke.sh` green with steps 13–14 proven load-bearing by injected
+failure. The stranger transcript. `grep -rn "no TACK_\* variable for a model provider\|never
+becomes a model proxy" docs/ README.md` returns only the ADRs and VI-A2's amendment. The
+§VI.0 surface map's Target column is marked, row by row, *reached* or *not reached with
+reason*, in the handoff — that table is what the integrator verifies.
+
+---
+
+### VI-D2 — Assets that show the execution plane: the hero and three screenshots
+
+**Needs VI-C1 and VI-C2 merged** (there is nothing honest to record before them) **and
+V-C2 landed** (it owns the directory; see §VI.3).
+
+**Owns:** `docs/screenshots/hero.gif` (replacement), `docs/screenshots/agents.png`,
+`attempt.png`, `two-machines.png`, the README image markup those four need, and the
+VI-D2 handoff. **Does not touch** V-C2's recording or its slot.
+
+**Context.** VI-A3 restructured the README around two components with a diagram in the
+hero slot because no asset existed that showed an agent doing anything. This card makes
+that asset. §V.1 rule 1 applies without exception: **every frame is real** — a real
+harness (claude-code, proven live), a real item, a release build, no staged data.
+
+**Tasks:**
+- **`hero.gif`, twenty to thirty seconds, no narration:** Board → ▶ *Run with agent* on an
+  item → the modal, defaults already filled, one click → the card's state chip goes
+  *Queued* → *Running* → the item's Agent Activity tab with events streaming and the actual
+  model named → *Done* → the artifact in the list. That is a day in the product; the
+  recovery demo (V-C2) is the day something goes wrong, and the README shows both.
+- **`agents.png`:** the Agents page, execution on, one agent detected, the provider
+  configured, a default model chosen, the smoke run completed — every status green *by
+  observation*, which the screenshot must have earned.
+- **`attempt.png`:** the Agent Activity tab: events, requested vs actual model, usage
+  marked `measured`, the artifact list.
+- **`two-machines.png`:** the *Advanced* section with two runners on two hosts, different
+  agents and models — the picture of "one board, many runners". Two real hosts (a container
+  is a host). If only one host is available, two runner processes on it with different
+  agents is still real and the alt text says so.
+- Replace the README markup: hero in the hero slot (the diagram moves directly beneath
+  it), the three screenshots **first** in *Screenshots*, PM views after. Alt text
+  describes what is shown, not what is claimed.
+
+**Acceptance:** each asset is produced from a release build on a machine named in the
+handoff, with the commands used; no frame is edited beyond cropping; the GIF's terminal
+state is a real completed run whose request id is recorded. `README.md` shows an agent
+executing an item **before** it shows a Kanban board. V-C2's recording is untouched and
+still in its slot. The hero is under 3 MiB (the current one is 2.4 MiB — measure, do not
+exceed it by much without saying why).
+
+---
+
+## §VI.5 Definition of done, and deliberate exclusions
+
+| Claim | Proof |
+|---|---|
+| A UI-only user who started `tack serve` on their machine and has a Vercel AI Gateway key reaches a completed attempt without touching a terminal again | VI-D1 stranger transcript |
+| Turning agent execution on is one click on a loopback bind, and impossible on any other | VI-B3 |
+| The README's first screen shows two components — a diagram before any PM screenshot — and a stranger reading it reports two parts, what each holds, and one board / many runners | VI-A3 acceptance test, re-run by VI-D1 |
+| The hero asset shows an agent executing an item, and the recovery recording sits beside the paragraph it proves | VI-D2, with V-C2's slot untouched |
+| A UI-only user with a harness's own login sees every console step inside the flow and never a documentation link | VI-C1 E2E |
+| A provider key exists in exactly one place — the runner's owner-only store — and in no table, log or response | VI-B2 / VI-B3 absence tests with positive controls |
+| A project default model is honoured with `project` provenance and shown as such in the modal | VI-C3 `model_policy_test.rs` + VI-C2 E2E |
+| Nothing is green without an observation | VI-C1 |
+| One page answers "item → attempt" and "model → provider → key", and it is the same page | VI-A1, amended by VI-D1 |
+| Docket untouched; `runner_contract` byte-identical unless VI-B2 escalated and the integrator accepted a revision | every card's gate |
+
+**Deliberately not in this Part**, recorded so no card adopts them by drift:
+
+- **Any provider beyond Vercel AI Gateway.** OpenRouter, direct Anthropic / OpenAI keys and
+  local endpoints stay in the harness's own configuration. B1's store plus
+  `secret_reference` already lets a request carry any key into a harness's environment;
+  a second gateway earns its own config section only when it measurably differs from this
+  one (scope-discipline rule 3).
+- **Tack calling any model API itself**, including "just to validate a key" — the runner's
+  probe does that.
+- **A harness-login broker.** Vendor OAuth flows stay in the terminal, rendered in the UI.
+- **Multi-user accounts** (ADR 0059) and **anything docket** (ADR 0060).
+- **Notifications, i18n, time tracking, in-UI diff review** — still deferred from Part V.
+  C4 lists artifacts; reading a diff in the UI is a separate, later card.
+- **Exercising the `decisions` path with a real harness** — still no harness in this tree
+  asks a mid-run question; C4 lists decisions, it does not manufacture one.
+- **Recorded, not decided:** whether bare `tack` (no subcommand) should mean
+  `serve --with-runner` on a loopback bind. The recommendation is no — the UI switch (ADR
+  0061 decision 6) removes the click's cost without changing a security default. Reopen only
+  with evidence that the switch is not enough.
+
+---
+
+## §VI.6 Handoff additions for this Part
+
+Use `docs/agent-handoffs/part-vi/TEMPLATE.md` — it carries the §III.2 template, Part V's
+three sections (claim → evidence table, measured numbers, what a stranger still cannot do),
+the three below, and a **Context spent** section (cold-start tokens against the dispatch
+block's estimate, context at handoff, files opened and not used). Never open the archive
+for the template. The three sections specific to this Part:
+
+1. **Surface-map delta.** Which rows of the §VI.0 table your card moved from console to UI,
+   or proved cannot move — with the reason, and whether that reason is already in the
+   table's last column. If it is not, that is an escalation for ADR 0061, not a new row.
+2. **Secret-path proof** (B1, B2, B3, D1 only). The exact commands showing the key in the
+   runner's store and nowhere else: the `sqlite3 … | grep -c`, the log capture, the `stat`.
+   A handoff for one of these cards without this section is incomplete.
+3. **Vocabulary check** (A3, C1, C2, D1, D2). The grep for §VI.1 rule 8's words over what
+   your card rendered or wrote, with every hit and why it is under *Advanced* or in the
+   developer book. The README is allowed the word "runner" — it is telling the story.
 
 ---
 

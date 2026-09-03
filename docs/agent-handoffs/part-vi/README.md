@@ -1,0 +1,544 @@
+# Part VI handoffs — Agent Onboarding & Provider UX (Phase 60)
+
+**Read this file's header and your card's block. Nothing else in it.** The whole file is
+~8k tokens (measured: `wc -c` ÷ 4); the header is ~1k and a card's block ~1k. It exists so that a card agent — a Sonnet with a 200k
+window — spends its context on the card, not on discovering what to read.
+
+One handoff per card, named `VI-<card>.md` (`VI-A1.md`, `VI-A2.md`, …), written from
+[`TEMPLATE.md`](TEMPLATE.md). Each card writes **exactly one**; corrections are appended as
+dated amendments and never rewritten. No card edits another card's handoff, and no card
+edits the Part VI board in `TODO.md` — the wave integrator updates the board after
+independent verification.
+
+The board is `TODO.md` → **Part VI**, §VI.0–§VI.6. The decision of record is
+`docs/adr/0061-provider-credentials-at-the-runner-boundary.md`, written by VI-A2 and
+accepted by the user before Wave 15 opens. The story every doc reuses is §VI.0's statement.
+
+## Waves, order, and the base to branch from
+
+| Wave | Cards | Parallel? | Needs | Base SHA |
+|---|---|---|---|---|
+| 14 | VI-A1 · VI-A2 · VI-A3 | all three | nothing | _filled by the dispatcher when the wave opens; must equal `develop`'s tip_ |
+| 15 | VI-B1 → VI-B2 → VI-B3 | **no** — sequential | ADR 0061 accepted | Wave 14 integration SHA |
+| 16 | VI-C3 · VI-C4 first; then VI-C1; then VI-C2 | C3 ∥ C4 (may start during Wave 15); C1 after B2+B3; C2 after C3 | see each block | Wave 15 integration SHA (C3/C4 may branch from Wave 14's) |
+| 17 | VI-D2 → VI-D1 | no | D2: C1, C2 and Part V's V-C2 landed; D1: everything | Wave 16 integration SHA |
+
+**Integration line: `develop`.** Every card branches from it as `agent/vi-<card>-<slug>`
+(`agent/vi-a1-docs-path`, `agent/vi-b2-vercel-gateway`, …) and never merges itself.
+
+## Before dispatching a wave — the dispatcher's checklist
+
+1. `git status --porcelain` on `develop` is empty and the planning edits (board, roadmap,
+   skills, this directory) are committed. Cards branch from a clean line, never from a
+   working tree with someone else's edits in it.
+2. Record the base SHA in the table above and in the Part VI status-board row.
+3. For Wave 15 only: the user has accepted ADR 0061 (the acceptance is dated in
+   `VI-A2.md`). Without it, B1–B3 encode a guess.
+4. Reap finished worktree targets — parallel builds fill `/home`
+   (`du -sh /var/tmp/tack-agent-targets/*`).
+
+## How to dispatch a card to a Sonnet agent
+
+One `Agent` call per card, `model: "sonnet"`, `isolation: "worktree"`,
+`run_in_background: true` for every card in a parallel set. The prompt is the generic one
+below with the id substituted; the block-specific line is added where the card's block says
+so. The dispatcher — Opus, acting as integrator — does **not** read the cards' handoffs
+whole afterwards; it runs the escalation grep in `/integrate` §3 and this file's per-wave
+checklist.
+
+```text
+You are working card VI-<ID> of Tack's Part VI board. Run /card VI-<ID>.
+Before reading anything else, read the header and the VI-<ID> block of
+docs/agent-handoffs/part-vi/README.md and follow its read list exactly — it is
+sized for your context. Read nothing it does not name without recording why in
+your handoff. Do not read TODO.md whole, any harness adapter file whole,
+docs/openapi.json, or any handoff the block does not name. Do not spawn
+subagents. Deliver the card's Acceptance list, run the gate the block names,
+write docs/agent-handoffs/part-vi/VI-<ID>.md from TEMPLATE.md, and finish with
+the report shape in .claude/reporting-contract.md. Do not commit. If your
+context passes ~150k tokens, stop, write the handoff with what you have, and say
+so in "Context spent".
+```
+
+**Context rules for every card** (they are in the prompt because Sonnet will not infer them):
+
+- **Cold start ≤ 25k tokens** before the first edit, **≤ 120k** at handoff. The numbers in
+  each block are measured (`wc -l` × ~16 tokens/line for `TODO.md`, ~12 for code and docs);
+  re-measure only if you are about to exceed them.
+- `TODO.md` is read by anchor, never by line number and never whole:
+
+  ```bash
+  head -58 TODO.md                                             # header, ~1k
+  a=$(grep -n "^## §VI.0" TODO.md|cut -d: -f1); b=$(grep -n "^## §VI.4" TODO.md|cut -d: -f1)
+  sed -n "${a},$((b-1))p" TODO.md                              # capsule + rules + ownership + graph, ~5k
+  n=$(grep -n "### VI-<ID> " TODO.md|cut -d: -f1); sed -n "${n},$((n+75))p" TODO.md   # your card, ~1k
+  ```
+
+  That is the whole board any card needs: ~7k tokens. `CLAUDE.md` is already in your
+  context; `.claude/scope-discipline.md` is ~2.5k and is worth it once.
+- **The four traps in this Part, by size:** `crates/tack-runner/src/harness/{codex,claude_code,opencode}.rs`
+  are 1,761 / 2,300 / 2,521 lines (~80k tokens together) — read the ranges the block
+  names, never a whole file. `docs/openapi.json` is ~88k — query it with `python3 -c`.
+  `TODO.md` whole is ~199k. All handoffs together are ~240k — a block names at most two.
+- **A file you opened and did not use is a finding.** List it under "Context spent" in
+  the handoff; the integrator uses that to fix this file for the next agent.
+- **No subagents from a card.** A subagent costs a full context; every block below is
+  sized so one agent can do the card alone.
+- Every gate command sets `CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/VI-<ID>` — the
+  shared target has filled `/home` before.
+
+---
+
+## Wave 14 — Truth first
+
+### VI-A1 — Write the path from a board item to a completed attempt, and delete what is false
+
+**Branch:** `agent/vi-a1-docs-path`. **Owns:** see the card. Pure docs; no crate.
+
+**Read (≈ 22k):**
+- The board prelude above (~7k).
+- `docs/book/src/user-guide/agent-runners.md` whole (433 l, ~6k) — you are restructuring it.
+- `docs/book/src/user-guide/cli.md` whole (238 l, ~3k); `configuration.md` whole (96 l);
+  `quick-start.md` whole (122 l).
+- `docs/CONFIG.md` whole (151 l, ~2k); `docs/API-REFERENCE.md` `sed -n '1265,1295p'`;
+  `docs/MCP.md` `sed -n '95,102p'`.
+- The precedence, from its source: `sed -n '1,45p' crates/tack-orch/src/model_policy/wiring.rs`
+  and `sed -n '1,30p' crates/tack-orch/src/model_policy/mod.rs` (~1k).
+- The CLI's own help, **run, not read**: `cargo run -q -p tack-cli -- execution create --help`
+  and the same for `runner`, `fleet`, `agent-profile`, `model-profile`. Never open
+  `crates/tack-cli/src/main.rs`.
+- The request's required fields: `python3 -c "import json;d=json.load(open('docs/openapi.json'));print(d['components']['schemas']['CreateExecution']['required'])"`.
+
+**Do not read:** any handoff; any adapter; `docs/openapi.json` whole; the roadmap.
+
+**Gate:** `/gate docs` — `mdbook build docs/book` clean, `grep -rn claude_code docs/book/`
+empty, and every example in your pages **executed** against a live
+`tack serve --with-runner` with its output pasted (the fake-harness shim in
+`scripts/smoke.sh` is fine for the attempt itself).
+
+**Handoff extras:** claim → evidence (every example → its transcript); surface-map delta
+(none expected — say so); vocabulary check is not required for this card.
+
+**Stop if:** an example cannot be made to run against the current product. Record the
+exact failure — that is a finding for VI-D1 or a runtime card, not something to paper over
+with a constructed transcript.
+
+### VI-A2 — ADR 0061: provider credentials and model catalogs at the runner boundary
+
+**Branch:** `agent/vi-a2-adr-0061`. **Owns:** the ADR, one bullet of `docs/CONFIG.md`.
+No code. **Prepares and stops** — the user accepts the ADR.
+
+**Read (≈ 12k):**
+- The board prelude (~7k) — the surface map and the statement are this card's inputs.
+- `docs/adr/0050-runner-control-plane.md` whole (99 l); `docs/adr/0058-standalone-single-binary-runner.md`
+  whole (103 l); `head -40 docs/adr/0060-docket-control-plane-disposition.md` for the house
+  format (~3k together).
+- `docs/CONFIG.md` `sed -n '85,110p'` — the bullet you replace.
+- What exists on the runner side, by range: `sed -n '1,45p' crates/tack-orch/src/model_policy/wiring.rs`;
+  `sed -n '55,70p;925,945p' crates/tack-runner/src/harness/claude_code.rs`;
+  `sed -n '765,780p' crates/tack-runner/src/harness/codex.rs`;
+  `rg -n "state_dir|RunnerCredential|REDACTED" crates/tack-runner/src/config.rs`;
+  `rg -n "with_runner_enabled|loopback|fn " crates/tack-cli/src/local_runner.rs | head -30`;
+  `rg -n "app_meta|secret" crates/tack-api/src/handlers/settings.rs | head -15` (the one
+  precedent for a UI-written secret, which the ADR must distinguish itself from).
+- `grep -n -i "credential\|proxy\|invisible" docs/agent-handoffs/part-iv/IV-A5.md | head`
+  — the earlier card that saw the confusion and fixed only the visibility.
+
+**Do not read:** any adapter beyond the ranges above; the frontend; other handoffs.
+
+**Gate:** none to run. The deliverable is reviewed, not tested: every decision names its
+rejected options and their cost; 0050 and 0058 are cited by line for what is reaffirmed
+and what is bounded; the `docs/CONFIG.md` sentence is replaced; the handoff lists every
+sentence in `docs/` and `README.md` the ADR makes imprecise
+(`grep -rn "never becomes a model proxy\|no TACK_\* variable for a model provider\|never reads, stores, or forwards" docs/ README.md`).
+
+**Handoff extras:** the six decisions as a table (decision · chosen · rejected · cost);
+the user's acceptance line is added by the dispatcher as an amendment with the date.
+
+**Stop if:** a decision needs a fact you cannot measure from the ranges above (for
+example whether `local_runner.rs` can start the runner after `serve` is up). State the
+question with the smallest experiment that answers it; do not run the experiment.
+
+### VI-A3 — Two components, one product: the README, the introduction and the diagram
+
+**Branch:** `agent/vi-a3-two-components`. **Owns:** `README.md`, `introduction.md`, the
+developer overview's opening, `docs/diagrams/**`, one sentence of `CLAUDE.md`. Prepares the
+GitHub description; applies nothing outward-facing.
+
+**Read (≈ 11k):**
+- The board prelude (~7k) — the statement is applied verbatim; copy it from §VI.0, do
+  not retype it.
+- `README.md` whole (263 l, ~3.5k); `docs/book/src/introduction.md` whole (60 l);
+  `head -40 docs/book/src/developer/README.md`.
+- `grep -n -i "claim\|evidence" docs/agent-handoffs/part-v/V-A4.md | head -20`, then only
+  the claim → evidence table's range — every claim you keep must keep its proof.
+- The recovery-demo slot's source: `n=$(grep -n "### V-C2 " TODO.md|cut -d: -f1); sed -n "${n},$((n+26))p" TODO.md`.
+- `ls docs/screenshots/`; `cat docs/book/book.toml` (whether the book has a mermaid
+  preprocessor — decides SVG vs mermaid).
+
+**Do not read:** `CLAUDE.md` again (it is in your context; you change one sentence);
+the rest of `developer/README.md`; any crate; other handoffs.
+
+**Gate:** `/gate docs` — `mdbook build docs/book` clean. Render proof: three PNGs of the
+diagram (GitHub light, GitHub dark, the built book) — use `npx playwright screenshot` or
+the `frontend/e2e/screenshots.spec.ts` pattern; attach paths in the handoff. The
+stranger-read test: the dispatcher runs it (below); you state which line range constitutes
+"the first screen".
+
+**Handoff extras:** `diff` proving the statement is byte-identical across the four places;
+vocabulary check (the README may say "runner" — it is telling the story); the drafted
+GitHub description; claim → evidence for every first-screen claim.
+
+**Dispatcher's adversarial check:** a fresh Sonnet agent, given **only** the README's first
+screen (the line range the handoff names), is asked what the product is. It must answer:
+two parts, what each holds, one board / many runners. If it answers "a project manager",
+the card is not done.
+
+**Stop if:** a claim on the first screen has no proof in V-A2/V-A3/V-A4's handoffs or the
+smoke. Delete the claim; do not soften it.
+
+---
+
+## Wave 15 — Provider at the runner boundary (sequential: B1 → B2 → B3)
+
+### VI-B1 — A runner-local secret store, and `secret_reference` finally resolves
+
+**Branch:** `agent/vi-b1-secret-store` from the Wave 14 integration SHA.
+
+**Read (≈ 18k):**
+- The board prelude (~7k) and `docs/adr/0061-*.md` (~2k, decisions 1 and 4).
+- The contract's shape: `grep -n -B2 -A6 secret_reference docs/contracts/runner-v1/claim.response.json`;
+  `rg -n "struct EnvironmentValue" -A 12 crates/tack-orch/src/execution/types.rs`.
+- Each adapter's environment builder, **by range only**:
+  `sed -n '920,975p' crates/tack-runner/src/harness/claude_code.rs`;
+  `sed -n '740,790p' crates/tack-runner/src/harness/codex.rs`;
+  `sed -n '1125,1170p' crates/tack-runner/src/harness/opencode.rs` (~2k together).
+- Where validation happens before spawn: `rg -n "fn validate|trait HarnessAdapter|trait HarnessProbe" -A 8 crates/tack-runner/src/harness/mod.rs | head -60`.
+- `crates/tack-runner/src/config.rs` whole (208 l, ~2.5k) — the state-dir handling and the
+  `RunnerCredential` redaction you copy exactly.
+- The CLI arm you extend: `n=$(grep -n "Commands::Runner" crates/tack-cli/src/main.rs|cut -d: -f1); sed -n "${n},$((n+40))p" crates/tack-cli/src/main.rs`;
+  `head -60 crates/tack-cli/src/doctor.rs` as the small-module precedent.
+- The fake-harness shim you prove with: `rg -n "shim|fake" scripts/smoke.sh | head -12` and
+  `sed -n '850,885p' crates/tack-runner/src/harness/mod.rs`.
+
+**Do not read:** any adapter whole (the ranges above are the only parts that change);
+`bootstrap.rs`; the frontend; `docs/openapi.json`.
+
+**Gate:** `CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/VI-B1 cargo test -p tack-runner`
+and `-p tack-orch --test runner_contract` (must be byte-identical — you changed no
+fixture), then `/gate runner`. The reverted-fix proof: remove the resolver once, watch the
+"variable is set" assertion fail, restore, record both runs.
+
+**Handoff extras:** secret-path proof (the `stat -c '%a'`, the log capture with the name
+present and the value absent, the commands); surface-map delta (none — say so).
+
+**Stop if:** resolution cannot happen at `validate` without touching the journal
+ordering. State the ordering constraint you found; do not move the journal write.
+
+### VI-B2 — Vercel AI Gateway as a runner provider
+
+**Branch:** `agent/vi-b2-vercel-gateway` from B1's merge. **The heaviest card here.**
+
+**Read (≈ 30k):**
+- The board prelude (~7k); `VI-B1.md` (how the store is read, ~3k); the ADR (~2k).
+- **Vendor facts, re-fetched, not trusted from the card:** `WebFetch` the three pages
+  with a narrow prompt each (Claude Code, Codex, OpenCode under
+  `vercel.com/docs/ai-gateway/coding-agents/`), ~2k each. Never `curl` a whole page into
+  context.
+- Each adapter, three ranges each and nothing more — module doc, probe, spawn/args:
+  `sed -n '1,90p;680,800p' crates/tack-runner/src/harness/codex.rs`;
+  `sed -n '1,90p;800,1000p' crates/tack-runner/src/harness/claude_code.rs`;
+  `sed -n '1,90p;1000,1180p' crates/tack-runner/src/harness/opencode.rs` (~9k together).
+- `rg -n "pub async fn probe|DiscoveryReport|fn build_adapter_registry" -A 15 crates/tack-runner/src/bootstrap.rs | head -80`.
+- `sed -n '40,110p' crates/tack-orch/src/execution/capabilities.rs` (`model_combinations`,
+  `model_passthrough`, `additional`).
+- `rg -n "model_combinations|model_passthrough|ModelSelector" crates/tack-orch/src/scheduler/select.rs | head -20`,
+  then the one function that intersects — you do not change it; you must know what it
+  reads.
+- `crates/tack-cli/src/doctor.rs` whole (463 l, ~5k) — it gains a provider block.
+- `docs/CONFIG.md` `sed -n '85,110p'` — the rows you add sit here.
+
+**Do not read:** any adapter outside the ranges; `select.rs` whole (705 l); `mod.rs` of
+harness (1,171 l) beyond a grep; the frontend; other handoffs.
+
+**Gate:** `cargo test -p tack-runner`, `-p tack-orch` (`runner_contract` byte-identical or
+an escalation naming the missing field), `-p tack-api --test wave2_gate`; then
+`/gate runner`. **Live proof is billed** — run the real `claude-code` attempt once,
+deliberately, and record the request id; the second harness likewise.
+
+**Handoff extras:** secret-path proof (the `sqlite3 tack.db .dump | grep -c` with its
+positive control); the measured vendor table (what each harness actually accepted — this
+replaces the card's table for VI-C1 and VI-D1); the actual-model observation per harness
+with its `model_observation_source`; surface-map delta (the provider row — reached for
+which harnesses).
+
+**Stop if:** a harness cannot receive the key non-interactively (OpenCode is the likely
+one). Record it as a measured fact with the command that proved it, mark that harness's
+gateway path as a console step, and continue with the others — do not write to a user's
+`~/.codex/config.toml` or `auth.json` to get past it.
+
+### VI-B3 — The embedded runner, controlled from the UI: turn it on, hand it a key
+
+**Branch:** `agent/vi-b3-embedded-control` from B2's merge.
+
+**Read (≈ 20k):**
+- The board prelude (~7k); `VI-B1.md` (~3k); the ADR — decisions 2 and 6 (~2k).
+- `crates/tack-cli/src/local_runner.rs` whole (451 l, ~5.5k) — the file you restructure.
+- `rg -n "pub async fn serve" -A 20 crates/tack-api/src/lib.rs`; `rg -n "pub struct AppState" -A 30 crates/tack-api/src/*.rs | head -50`.
+- The gated-mount pattern you copy: `sed -n '60,140p' crates/tack-api/src/router.rs` and
+  `rg -n "require_orch_enabled|orch_routes" crates/tack-api/src/router.rs`.
+- The write-only-secret and `app_meta` precedents: `rg -n "app_meta|secret_key|pub async fn" crates/tack-api/src/handlers/settings.rs | head -30`.
+- Frontend precedents: `frontend/src/features/fleet/runnerFleet/ModelProfilesPanel.tsx`
+  whole (167 l, ~2k) for a panel; `head -60 frontend/src/shared/execution/api.ts` for the
+  client shape; `rg -ln "backup" frontend/src/features/settings | head -3` then the
+  secret-field component only.
+- How E2E starts a server: `head -60 frontend/e2e/helpers.ts`; `head -40 frontend/e2e/smoke.spec.ts`.
+
+**Do not read:** `router.rs` whole (528 l) beyond the ranges; any adapter; `bootstrap.rs`
+beyond a grep for the re-probe entry point.
+
+**Gate:** `cargo test -p tack-api` (includes `openapi_contract` — **regenerate**, do not
+hand-edit: `UPDATE_OPENAPI=1 cargo test -p tack-api --test openapi_contract` then
+`cd frontend && npm run gen:api`), `cargo test -p tack-cli`, `/gate api`, `/gate frontend`,
+and the two Playwright specs you add (`make e2e` scoped with `-g`).
+
+**Handoff extras:** secret-path proof (`app_meta` row count before/after; the dump grep;
+the `stat`); the non-loopback 404 proof (the test name); the persisted-flag round trip
+(restart without the flag → runner returns).
+
+**Stop if:** the runner cannot be started after `serve` is up without a second code path
+into the runtime. Escalate with the exact seam; do not call runner handlers directly (the
+Part IV mistake this directory's sibling README warns about applies here unchanged).
+
+---
+
+## Wave 16 — UI-first flow
+
+### VI-C3 — Project-level agent settings (start early; may branch from the Wave 14 SHA)
+
+**Branch:** `agent/vi-c3-project-agent-settings`.
+
+**Read (≈ 28k):**
+- The board prelude (~7k); the ADR's vocabulary decision (~1k).
+- The migration list and the last migration's shape: `sed -n '95,135p' crates/tack-db/src/migrations.rs`;
+  `n=$(grep -n "MIGRATION_061" crates/tack-db/src/migrations.rs|head -1|cut -d: -f1); sed -n "${n},$((n+25))p" crates/tack-db/src/migrations.rs`.
+  **One `ALTER`, one migration name, number 062.**
+- `rg -n "pub struct Project\b" -A 30 crates/tack-core/src/models.rs`;
+  `rg -n "pub async fn|vocabulary|workflow" crates/tack-db/src/repo/projects.rs | head -30`;
+  `rg -n "UpdateProject|pub async fn update" -A 25 crates/tack-api/src/handlers/projects.rs | head -80`;
+  `rg -n "UpdateProject" crates/ --type rust -l` — every constructor must gain the field.
+- `crates/tack-orch/src/model_policy/wiring.rs` whole (207 l, ~2.5k) — you replace the
+  always-`None` tier; `rg -n "^async fn|^fn|#\[tokio::test\]" -A1 crates/tack-orch/tests/model_policy_test.rs | head -40`
+  then one test body as the pattern.
+- `frontend/src/features/settings/ProjectSettings.tsx` whole (165 l) and one existing tab
+  (`rg -ln "general" frontend/src/features/settings | head -2`);
+  `AgentProfilesPanel.tsx` whole (170 l); `FleetsPanel.tsx` whole (173 l);
+  `rg -n "fleet|member" frontend/src/shared/execution/api.ts | head -20`.
+
+**Do not read:** `migrations.rs` whole (1,614 l); `select.rs`; any adapter; `RunWithAgentModal.tsx`
+(C2's).
+
+**Gate:** `cargo test -p tack-db` (fresh DB **and** an upgraded copy of a beta.7 `tack.db` —
+say where you got it), `-p tack-orch` (the new project-tier test), `-p tack-api`
+(regenerate `openapi.json`/`schema.gen.ts`), `/gate frontend`, the settings E2E. The
+fleet-member proof goes through the route, not the database.
+
+**Handoff extras:** surface-map delta (the "choose a default model" and "add a member"
+rows); the migration's `run_all` transcripts; the list of `UpdateProject` constructors
+touched.
+
+**Stop if:** the JSON blob cannot be validated against a typed struct at write time
+without a second validation path at read time. State it; do not tolerate a malformed
+blob at read.
+
+### VI-C4 — List what an attempt produced (independent; may branch from the Wave 14 SHA)
+
+**Branch:** `agent/vi-c4-attempt-lists`.
+
+**Read (≈ 18k):**
+- The board prelude (~7k).
+- The concrete request from the card that found the gap: `sed -n '335,375p' docs/agent-handoffs/part-iii/III-F4.md`
+  (~0.7k). Do not read the rest of that 472-line file.
+- `rg -ln "execution_artifacts|execution_decisions" crates/tack-api/src/handlers crates/tack-db/src/repo`,
+  then `rg -n "pub async fn" <those files> | head -40`; `rg -n "/executions" crates/tack-api/src/router.rs`.
+- `frontend/src/shared/runWithAgent/DecisionInbox.tsx` whole (337 l, ~4k);
+  `ArtifactDownloadPanel.tsx` whole (124 l); `frontend/src/features/item-detail/tabs/AgentActivityTab.tsx`
+  whole (225 l, ~2.7k); `rg -n "artifact|decision" frontend/src/shared/execution/api.ts`.
+- `frontend/e2e/execution-attempt-detail.spec.ts` whole — you extend it.
+
+**Do not read:** runner-protocol handlers (`handlers/runner_protocol*.rs` — you add
+operator routes only); any adapter; the modal.
+
+**Gate:** `cargo test -p tack-api` (regenerate the spec), `--test runner_contract`
+byte-identical, `/gate frontend`, the extended E2E with its byte-equality download proof
+intact.
+
+**Handoff extras:** surface-map delta (the last row); the route shapes as shipped versus
+III-F4's request, with any difference justified.
+
+### VI-C1 — The Agents page (after B2 and B3)
+
+**Branch:** `agent/vi-c1-agents-page`.
+
+**Read (≈ 18k):**
+- The board prelude (~7k); `VI-B3.md` (the routes and panels you compose, ~3k);
+  from `VI-B2.md` only its measured vendor table (`grep -n -A 12 -i "measured vendor" docs/agent-handoffs/part-vi/VI-B2.md`).
+- `sed -n '1,130p;225,260p' frontend/src/shared/runWithAgent/shared.ts` (capability
+  helpers and the gate — reuse, do not fork);
+  `rg -n "RunnerCapabilities|HarnessCapability|interface RunnerSummary" -A 15 frontend/src/shared/execution/types.ts | head -70`.
+- `frontend/src/features/fleet/runnerFleet/RunnerFleetSection.tsx` whole (51 l);
+  `rg -n "RunnerFleetSection" frontend/src/features/fleet/FleetPage.tsx` — the one line you
+  move; `head -40` of `EnrollmentPanel.tsx` and `RunnerHealthCard.tsx` (props only).
+- `frontend/src/app/routes.tsx` whole (55 l); `rg -n -i "fleet" -B2 -A6 frontend/src/shared/ui/Sidebar.tsx`.
+- `rg -n "RunWithAgentButton|capabilities" frontend/src/features/board/Board.tsx | head`
+  — where the first-run banner mounts.
+- `head -60 frontend/e2e/run-with-agent.spec.ts`; `head -60 frontend/e2e/helpers.ts`.
+- The command strings the page must match: `sed -n '85,110p' docs/CONFIG.md`.
+
+**Do not read:** `FleetPage.tsx` beyond the grep (the rest is docket); `RunWithAgentModal.tsx`
+(C2's); any crate.
+
+**Gate:** `/gate frontend` + the Playwright journeys the card names (`make e2e` scoped).
+The vocabulary test is proven load-bearing by putting "runner" on the default screen once.
+
+**Handoff extras:** vocabulary check (the grep, its hits, and why each is under
+*Advanced*); surface-map delta (every row the page renders, reached or not); the exported
+constant's path for VI-D1.
+
+**Stop if:** a status cannot be derived from an API observation. Render "unknown" with the
+reason — never a check mark from a file's existence, never a hard-coded string.
+
+### VI-C2 — Run with agent: zero hand-typed identifiers (after C3)
+
+**Branch:** `agent/vi-c2-modal-defaults`.
+
+**Read (≈ 20k):**
+- The board prelude (~7k); `VI-C3.md` (the settings shape and its client, ~3k).
+- `frontend/src/shared/runWithAgent/RunWithAgentModal.tsx` whole (470 l, ~5.5k) and
+  `shared.ts` whole (334 l, ~4k) — you rework the first and must not change the gate
+  helper in the second; `head -80 RunWithAgentModal.test.tsx`.
+- `rg -n "export const|fleets|runners|agentProfiles" frontend/src/shared/execution/api.ts | head -30`;
+  `rg -n "export" frontend/src/shared/execution/store.ts | head` (the chip's source).
+- `rg -n "RunWithAgentButton" -B5 -A10 frontend/src/features/board/Board.tsx` — the chip's
+  placement.
+- `head -120 frontend/e2e/run-with-agent.spec.ts`.
+
+**Do not read:** any crate; the Agents page (C1's); other handoffs.
+
+**Gate:** `/gate frontend`, then the E2E that intercepts `POST /api/executions` and asserts
+the body equals the project defaults field for field. `shared.ts`'s gate helper must be
+byte-identical (`git diff` it in the handoff).
+
+**Handoff extras:** vocabulary check; surface-map delta (the "run an item" row); whether
+`base_revision` accepts a ref — measured against the runner's checkout, with the command.
+
+---
+
+## Wave 17 — Proof
+
+### VI-D2 — Assets that show the execution plane (after C1, C2 and Part V's V-C2)
+
+**Branch:** `agent/vi-d2-assets`.
+
+**Read (≈ 8k):**
+- The board prelude's statement and surface map only (`§VI.0`, ~2.5k) plus your card.
+- `docs/agent-handoffs/part-v/V-C2.md` — the recording tooling section only (grep for
+  "record" and read that range); `frontend/e2e/hero-gif.spec.ts` and `screenshots.spec.ts`
+  whole (the existing recording harness).
+- `grep -n "screenshots/\|diagrams/" README.md` — the markup you replace.
+- The *Next step* lines of `VI-C1.md` and `VI-C2.md`.
+
+**Do not read:** anything else. This card records; it does not investigate.
+
+**Gate:** none in code. Every asset from a release build (`cargo build --release` once, in
+your own target dir — it is slow), a real agent, a machine named in the handoff; frame
+count and file size measured; the request id of the completed run recorded.
+
+**Handoff extras:** vocabulary check on alt texts; the measured sizes; V-C2's slot
+untouched (`git diff` shows no change to its lines).
+
+### VI-D1 — Prove the stranger's path, and make the docs match what shipped (last)
+
+**Branch:** `agent/vi-d1-stranger-proof`.
+
+**Read (≈ 22k):**
+- The board prelude (~7k) — §VI.5's table is your checklist.
+- From every `VI-*.md` in this directory, **only three sections**, extracted, not read:
+
+  ```bash
+  for f in docs/agent-handoffs/part-vi/VI-*.md; do echo "== $f"; \
+    awk '/^## (What a stranger|Surface-map delta|Next step)/{p=1;print;next} /^## /{p=0} p' "$f"; done
+  ```
+- `scripts/smoke.sh` whole (538 l, ~7k) — you add steps 13–14 in its own idiom.
+- `docs/book/src/user-guide/quick-start.md` whole; the two sections VI-A1 added to
+  `agent-runners.md` (grep their headings, read those ranges); the README's "Run it"
+  section (`grep -n "^## Run it" README.md`, then that range).
+- `docs/CONFIG.md` whole (~2k).
+
+**Do not read:** any handoff whole; any crate; the frontend beyond the exported constant
+VI-C1 named.
+
+**Gate:** `./scripts/smoke.sh` green with steps 13–14 proven by injected failure;
+`/gate docs`; `/gate full` once, as the integrator will run it. The stranger transcript is
+produced on a clean container with the release binary.
+
+**Handoff extras:** the surface map with every Target marked reached / not reached and
+why; the re-measured §VI.0 evidence table; the stranger transcript; vocabulary check on
+the docs you amended.
+
+---
+
+## Integrator checklist, per wave
+
+The integrator is the dispatcher (Opus). It reads escalations, not handoffs — `/integrate`
+§3's grep — plus the checks below, which are the adversarial verification §III.2 rule 14
+requires. Merge order is the dependency order in the table at the top.
+
+**Wave 14.** Run VI-A1's `tack execution create` example yourself against a fresh
+`tack serve --with-runner`; `grep -rn claude_code docs/book/` is empty; `mdbook build` is
+clean. VI-A2: record the user's acceptance as a dated amendment in `VI-A2.md`; confirm the
+`docs/CONFIG.md` sentence is gone. VI-A3: run the stranger-read test with a fresh Sonnet
+given only the named line range; `diff` the statement across the four files; open the
+three render PNGs. Update the status row with the integration SHA. Nothing to regenerate.
+
+**Wave 15.** Merge B1, build `tack-runner`; merge B2, build; merge B3, regenerate
+`openapi.json` and `schema.gen.ts`, commit them with the merge. Gate:
+`cargo test -p tack-runner -p tack-orch -p tack-api -p tack-cli`, `runner_contract`
+byte-identical (or the accepted revision, with its pin-table update), `wave2_gate`, then
+`./scripts/smoke.sh` (existing steps must stay green). Adversarial: revert B1's resolver →
+its test fails; after a gateway run, `sqlite3 tack.db .dump | grep -c <key>` = 0 and the
+store file is `600`; start on `0.0.0.0` → every `local-runner` route is 404; restart
+without the flag → the runner comes back. Record the live request ids B2 produced.
+
+**Wave 16.** Merge C3, regenerate; merge C4, regenerate; merge C1; merge C2. Gate: the
+Rust crates C3/C4 touched, `runner_contract` byte-identical, `/gate frontend`, `make e2e`.
+Adversarial: put "runner" on the Agents default screen → C1's test fails; submit the modal
+untouched → the intercepted body equals the project defaults; migration 062 on an
+upgraded beta.7 database copy; `shared.ts`'s gate helper unchanged (`git diff`).
+
+**Wave 17.** D2 after V-C2 has landed — check `git log -- docs/screenshots/`. D1 last.
+Reproduce the stranger transcript yourself on a clean container; run smoke with the
+injected failure for steps 13–14; walk §VI.5's table row by row and mark each; if a row
+does not hold, name the single card that would close it rather than closing the Part.
+Then the `/integrate` §7 close-out.
+
+## The mistakes this Part is most likely to make
+
+1. **Putting a provider key anywhere but the runner's store** — `app_meta` because backup
+   secrets live there, a request's `environment` value because it is convenient, a log line
+   because the name and the value were formatted together. Every card that touches a
+   secret proves the *absence* with a positive control.
+2. **A green status derived from a file existing.** A session file is "present,
+   unverified". Only a completed run or a successful catalog call earns a check mark.
+3. **Architecture words on a default screen.** "Runner" in a modal label, "fleet" in a
+   dropdown, "harness" in a heading. C1's grep test exists because reviewers miss these.
+4. **Splitting a feature into a mechanism card and a caller card.** C3 is wide on purpose.
+   A column with no reader, a route with no panel, a store with no resolver — the
+   scope-discipline failure this tree keeps repeating.
+5. **Reading an adapter whole.** Three files, ~80k tokens, and the card needed sixty lines
+   of one of them. The read lists above name the ranges; trust them, and record it if one
+   is wrong.
+6. **A README claim without a proof.** V-A4's claim → evidence rule did not end with Part V.
+   A3 and D1 keep the table; a row without evidence is a claim to delete.
+7. **A smoke step that cannot fail.** Steps 13–14 must be proven by breaking the feature
+   once and watching `FAIL` — this repository has shipped a false green before.

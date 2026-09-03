@@ -7,18 +7,20 @@ description: Answer "where is this project right now and what is next" — recon
 
 > **Report using `.claude/reporting-contract.md`.** Lead with the capability in plain language — what someone can or cannot do now — and keep file and function names in the technical-detail section at the end. Explain every blocker as: what is missing, what it was for, what it blocks.
 >
-> **Budget your reading with `.claude/context-budget.md`** — `TODO.md` whole is ~184k tokens,
-> the active boards ~15k, all handoffs together ~221k. Grep before you read; read a range
+> **Budget your reading with `.claude/context-budget.md`** — `TODO.md` whole is ~199k tokens,
+> the three active boards ~33k (one Part ~15k; one card's cold start ~7k), all handoffs together ~240k. Grep before you read; read a range
 > before a file. CLAUDE.md is already in your context — don't re-derive or re-read it.
 
 
 State is NOT stored in one place and no file is kept "up to date" for you. It is derived
 from four sources of record. Run these, then report.
 
-**Two cycles are active in parallel** as of 2026-08-30: **Part V** (Phase 59 — adoption and
-the first real public release) and **Part IV** (Phase 58 — `tack serve --with-runner`). Both
-are unstarted, both branch from `develop`, and they share three files under a conflict rule
-in §V.3. A status report that names only one of them is wrong.
+**Two cycles are active in parallel** as of 2026-09-03: **Part VI** (Phase 60 — agent
+onboarding, the Agents page, Vercel AI Gateway at the runner boundary; its dispatch plan is
+`docs/agent-handoffs/part-vi/README.md`) and **Part V** (Phase 59 — adoption; Wave 13 in
+flight). Part IV (Phase 58) is done. Both active Parts branch from `develop` and share
+`README.md` and `docs/screenshots/**` under §VI.3 / §V.3. A status report that names only
+one of them is wrong.
 
 ```bash
 # 1. What actually landed, and is the tree clean?
@@ -27,14 +29,16 @@ git status --porcelain          # empty = safe to branch cards from HEAD
 git branch --show-current
 
 # 2. The board: which waves are active, their base SHA, what is open.
-# TODO.md whole is ~184k tokens — never cat it. See .claude/context-budget.md.
-head -55 TODO.md                          # header: the active-Parts table + archive rule
+# TODO.md whole is ~199k tokens — never cat it. See .claude/context-budget.md.
+head -58 TODO.md                          # header: the active-Parts table + archive rule
 grep -n "^| [0-9]* — \|^| Wave " TODO.md  # the status-board rows across all Parts
 # then read only the rows for the active waves (sed -n '<line>p' TODO.md)
 
 # 3. The most recent decisions/corrections
 ls -t docs/agent-handoffs/*/ | head -5
 # read only the newest one or two if the board row is unclear
+# Part VI: which cards have handed off, and the wave table with base SHAs
+ls docs/agent-handoffs/part-vi/; sed -n '/^## Waves, order/,/^## Before dispatching/p' docs/agent-handoffs/part-vi/README.md
 
 # 4. DELIVERED-BUT-UNMERGED WORK — the check that ancestry misses.
 # `git branch --merged` lies here: rebased/restructured branches report unmerged
@@ -62,7 +66,7 @@ For every branch that reports UNLANDED, classify it before reporting — never g
 |---|---|
 | `agent/<card-id>-<slug>` | one board card's work (e.g. `agent/v-a2-smoke-truth`); merged by the wave integrator |
 | `worktree-agent-<hash>` | throwaway checkout created by agent isolation; not authored work |
-| `plan/<cycle-name>` | an older cycle's integration line; Parts IV and V do NOT use one |
+| `plan/<cycle-name>` | an older cycle's integration line; Parts IV, V and VI do NOT use one |
 | `develop`, `origin/*` | long-lived; `develop` is the repository's **default** branch |
 
 **`main` does not exist — not locally and not on the remote.** This is not a quirk to work

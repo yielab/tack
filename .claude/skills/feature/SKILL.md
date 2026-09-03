@@ -7,8 +7,8 @@ description: Add or finish a Tack feature (new entity, endpoint, UI view, config
 
 > **Report using `.claude/reporting-contract.md`.** Lead with the capability in plain language — what someone can or cannot do now — and keep file and function names in the technical-detail section at the end. Explain every blocker as: what is missing, what it was for, what it blocks.
 >
-> **Budget your reading with `.claude/context-budget.md`** — `TODO.md` whole is ~184k tokens,
-> the active boards ~15k, all handoffs together ~221k. Grep before you read; read a range
+> **Budget your reading with `.claude/context-budget.md`** — `TODO.md` whole is ~199k tokens,
+> the three active boards ~33k (one Part ~15k; one card's cold start ~7k), all handoffs together ~240k. Grep before you read; read a range
 > before a file. CLAUDE.md is already in your context — don't re-derive or re-read it.
 > **Bound your scope with `.claude/scope-discipline.md`** — this tree's recurring defect is
 > well-built mechanisms with no caller.
@@ -38,7 +38,7 @@ Three questions to answer before writing anything, in the handoff or the reply:
 
 1. **Who calls it?** Name the caller. If it does not exist yet, this feature is that caller's
    work, not its own.
-2. **Is it already carded?** Parts IV and V own specific files; §V.5 lists what is
+2. **Is it already carded?** Parts VI and V own specific files; §VI.5 and §V.5 list what is
    *deliberately* out of scope (notifications, i18n, time tracking, accounts). Building one of
    those off-board conflicts with a decision that was already made.
 3. **Is one implementor enough?** One backend needs no trait. Build for the second real case,
