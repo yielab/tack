@@ -106,6 +106,16 @@ enroll` call, no token to copy anywhere.
   Tack API never starts a coding harness and never becomes a model proxy") and
   [`docs/adr/0058-standalone-single-binary-runner.md`](adr/0058-standalone-single-binary-runner.md)
   ("Vendor credentials remain outside Tack") for the decisions behind this.
+- **Model selection is a separate question from credentials, and it is answered.**
+  Which `(provider, model_id)` reaches the harness for a given execution request is
+  resolved server-side through a four-tier precedence (request override →
+  agent-profile default → project default *(no storage today)* → fleet default →
+  auto-select), live-verified end to end and fully documented in [Choosing a model and
+  a provider](book/src/user-guide/agent-runners.md#choosing-a-model-and-a-provider) —
+  including why an auto-select request accepts today but never schedules. No `TACK_*`
+  variable is involved on either side of this: routing the choice and holding the
+  credential are different operations, and this file's table above has no row for a
+  model provider or endpoint by design.
 - **Log visibility.** The embedded runner's own log lines (self-provisioning,
   enrollment, claim, completion — anything logged by `tack_runner::*` or by the `tack`
   binary's own `local_runner`/`local_enrollment` modules) do **not** appear under

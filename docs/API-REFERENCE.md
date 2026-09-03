@@ -1280,12 +1280,70 @@ the schemas are fully typed in `docs/openapi.json` already. Two narrative guides
 it instead:
 
 - **[Agent Runners & Fleet Execution](book/src/user-guide/agent-runners.md)** —
-  concepts, enrolling/revoking a runner, credentials, workspace/artifact storage, the
-  capability matrix, version compatibility, Docket's relationship to this surface, and
-  — read before relying on any of this — exactly what runs end-to-end today versus
-  what stops at enrollment in this build.
+  concepts, **running an item with an agent**, **choosing a model and a provider**,
+  enrolling/revoking a runner, credentials, workspace/artifact storage, the capability
+  matrix, version compatibility, Docket's relationship to this surface, and — read
+  before relying on any of this — exactly what runs end-to-end today versus what stops
+  at enrollment in this build.
 - **[Recovery Runbook](book/src/user-guide/recovery-runbook.md)** — `needs_operator`,
   lease fencing, and how an operator resolves a stuck attempt.
+
+### Worked example: `POST /api/executions`
+
+All thirteen required fields, run against a real `tack serve --with-runner` with a
+stand-in `claude` binary standing in for a real, authenticated install — request and
+response are both copied verbatim from that run, not constructed from the schema. The
+narrative walkthrough (creating the referenced item/agent-profile/runner first, then
+polling to completion) is in [Running an item with an
+agent](book/src/user-guide/agent-runners.md#running-an-item-with-an-agent).
+
+```http
+POST /api/executions
+Content-Type: application/json
+
+{
+  "item_id": "1bb00bc7-82d0-43fc-8a48-f50e1bf75b7c",
+  "idempotency_key": "vi-a1-demo-003",
+  "selector_kind": "exact_runner",
+  "selector_id": "runr_8fa0dfb9-638f-492d-b278-ee06a789ad04",
+  "agent_profile_id": "ap_91b4ea76-9f1a-4725-8a58-21a57d92572c",
+  "requested_harness_kind": "claude-code",
+  "requested_model_provider": "anthropic",
+  "requested_model_id": "claude-sonnet-4-5",
+  "agent_profile_snapshot": {
+    "name": "demo-profile",
+    "instructions": "Print the single word DONE and exit. Do not modify any files.",
+    "tool_policy": {},
+    "timeout_seconds": 120,
+    "budgets": {}
+  },
+  "repository_snapshot": {
+    "kind": "git",
+    "remote": "/path/to/local/repo",
+    "base_revision": "ce38796ef4f70db35eeb8d6d8b8e86477e1a883c",
+    "subdirectory": null
+  },
+  "permission_policy": { "tools": [], "network": false },
+  "budgets": {},
+  "environment": {},
+  "metadata": {},
+  "timeout_seconds": 120
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "protocol_version": 1,
+  "request_id": "exec_1ecec9359d33039dedfd637df7fa4af87dca282c23437509516332e0adf243aa",
+  "state": "queued",
+  "replayed": false
+}
+```
+
+Polling `GET /api/executions/{request_id}/attempts` after this, on a live embedded
+runner, reached `"state": "succeeded"` in the same real run — see the agent-runners
+walkthrough linked above for the full attempt body.
 
 `resolve_decision` (`POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve`)
 requires the separate `TACK_EXECUTION_DECISION_TOKEN` secret, fail-closed when unset —
