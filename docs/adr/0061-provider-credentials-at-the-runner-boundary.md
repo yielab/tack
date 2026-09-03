@@ -1,314 +1,250 @@
-# ADR 0061: Provider credentials and model catalogs at the runner boundary
+# ADR 0061: Where a model provider's API key lives, and who's allowed to touch it
 
-- Status: proposed — pending the user's explicit acceptance (recorded with its date as an
-  amendment to `docs/agent-handoffs/part-vi/VI-A2.md`). No Wave 15 card
-  (VI-B1/VI-B2/VI-B3) may branch before that acceptance is recorded.
-- Date: 2026-09-03
-- Supersedes: nothing. Sits alongside ADR 0050 (`0050-runner-control-plane.md`) without
-  changing it — decision 3 below reaffirms its l.29-30 statement and decision 4 reaffirms
-  its "model ids are opaque and never tiered or parsed" consequence. **Amends** ADR 0058
-  (`0058-standalone-single-binary-runner.md`) in one place: decision 6 below adds a second,
-  UI-driven path to the on/off gate its Safety posture section describes at l.69-75,
-  without changing either the off-by-default or the loopback-only rule stated there.
-- Contract: `docs/contracts/runner-v1/` — unaffected by this decision. Nothing here adds,
-  removes or changes a wire field. `ModelCombination` (`crates/tack-orch/src/execution/capabilities.rs:55-60`)
-  already carries a flattened `additional` map for forward-compatible fields; whether a
-  gateway catalog needs a new named field is a question for whichever card implements
-  decision 3, and per `TODO.md` §VI.2's ownership table that escalation has no default
-  owner — it is raised with evidence against the fixtures, never smuggled through
-  `additional` to dodge review.
+**Decide:** approve six rules about the coding-agent "runner" component — the small
+worker that lives on your own machine and actually launches Claude Code / Codex /
+OpenCode. In short: a provider's API key (like a Vercel AI Gateway key) is allowed to
+live inside the runner's own private folder, never inside Tack's shared database or
+logs; and a new UI switch is allowed to turn that runner on/off, but only when it's
+running on your own machine with no network exposure.
 
-## Context
+**Why now:** two earlier decisions (ADR 0050, ADR 0058) correctly said "Tack's server
+will never hold or forward a model API key." People — including this project's own
+`tack runner doctor` output — have been reading that as "Tack can't help you configure
+a model provider at all," which was never true and is the exact confusion users have
+reported. Nobody had actually written down what the *runner* (a separate piece, not the
+server) is allowed to hold, or how a key reaches it. This ADR writes that down.
 
-ADR 0050 decided who owns what across the Tack API and `tack-runner`: Tack schedules,
-`tack-runner` executes, and "the Tack API never starts a coding harness and never becomes
-a model proxy" (l.29-30). ADR 0058 extended that split into a single binary and restated
-the vendor-credential half of it explicitly: "Vendor credentials remain outside Tack. …
-Tack does not read, store, forward or proxy them" (l.80-83). Both statements are about the
-API server's own conduct, and both remain true today, unmodified by anything below.
+**If you do nothing:** the next three pieces of work — a place to store a key, wiring
+up Vercel AI Gateway as a model source, and a UI switch to turn the runner on — stay
+blocked. Each would otherwise have to guess at an answer this ADR gives them.
 
-Both have also been read as a broader claim they never made: that Tack, as a product,
-offers no help choosing or configuring a model provider. `docs/CONFIG.md:102-104` states
-outright "there is no `TACK_*` variable for a model provider or endpoint, by design" —
-true of the API server's environment, and the only sentence on the subject most readers
-will find. `tack runner doctor`'s own rendered output closes with a line paraphrasing the
-same two ADRs (`docs/agent-handoffs/part-iv/IV-A5.md`, "Tack does not proxy model
-providers"). IV-A5's own card diagnosed this precisely as a visibility problem and fixed
-only the visibility — it made doctor's per-harness credential notes accurate and did not,
-because it was not its job to, decide what the runner itself may hold. That decision has
-never been written down. This ADR writes it.
+## The six decisions, in short
 
-The runner side of the boundary already has real, load-bearing facts that predate this
-ADR and are not up for revision here:
+| # | Decision | Why |
+|---|---|---|
+| 1 | A provider key lives only in the runner's own private, owner-only folder on its own machine — never in Tack's database, never in a log line. | Keeps the promise that Tack's server never becomes a place that holds or could leak a vendor credential. |
+| 2 | One narrow route lets the web UI hand a key to the runner sharing its machine — and it only exists when both are on that same machine, with no outside network access. | Lets a UI-only user paste a key without opening a terminal, without weakening the server's normal security for everyone else. |
+| 3 | The runner itself asks the model gateway "what models do you offer," using its own key. Tack's server never talks to any model vendor. | Keeps the server's hands clean; the runner already talks to the network for its own job (checking out code, reporting progress). |
+| 4 | The gateway gets its own name (`vercel-ai-gateway`) and keeps its own model-name spelling, kept separate from the same model reached directly (not through the gateway). | So a report never confuses "reached the vendor directly" with "reached them through the gateway" — cost and behavior can differ. |
+| 5 | The board's existing table of "what has to stay a terminal command vs. what can move to the UI" becomes the standing rule for this project — not something each task re-decides for itself. | Keeps the console/UI split consistent and lets anyone check it later instead of re-deriving ten different agents' private judgment calls. |
+| 6 | Add a one-click switch in the web UI to start/stop the built-in runner. It only works when Tack is running on your own machine (not exposed to a network), and it stays off until someone flips it. | Removes the one remaining step — typing a startup flag — that a UI-only user can't avoid today, without loosening any existing safety rule. |
 
-- `tack-runner` already owns a credential of its own — the enrollment credential in
-  `crates/tack-runner/src/config.rs` (`EnrollmentCredential`, redacted in `Debug`/`Display`
-  at l.11-34), stored under `TACK_RUNNER_STATE_DIR` (`state_dir`, l.43/60/111) alongside
-  `session.json`, owner-only (`docs/CONFIG.md:85-87`, confirmed with `stat -c '%a'` against
-  a real run, not assumed).
-- Every adapter already accepts a `secret_reference` environment entry on the execution
-  request and already refuses to resolve it, on record, in its own source: `claude_code.rs`
-  warns "no secret-store client exists in this crate yet" (l.925-945) and skips the entry
-  rather than fabricating a value; `codex.rs` documents the same gap inline at l.765-775
-  ("`secret_reference` entries are deliberately never resolved here: no secret-store client
-  exists in tack-runner yet").
-- The embedded runner's on/off gate is already a runtime, environment-driven decision —
-  `local_runner::with_runner_enabled` (l.67-70) — checked once, before the server binds a
-  socket, by `ensure_loopback` (l.121-131), which refuses to start a non-loopback embedded
-  runner outright rather than downgrading it silently.
-- There is one existing precedent for a UI-written secret anywhere in this codebase:
-  Settings → Cloud Backup's `secret_key` (`crates/tack-api/src/handlers/settings.rs`). It
-  is stored server-side in `app_meta` (l.65), never round-tripped back to the client — the
-  read view replaces it with a boolean, `"secret_key_set": cfg.backup_secret_key.is_some()`
-  (l.107-116) — and a blank value on write means "keep what is already stored" (l.138-139).
-  Decision 1 below explains why a provider key does not reuse this pattern even though the
-  pattern itself (write-only, boolean-masked, blank-keeps-existing) is sound and is reused
-  in decision 2.
-- No storage exists yet for a project's default model choice (`crates/tack-orch/src/model_policy/wiring.rs:17-23`,
-  `resolve_request_model_policy` always returns `None` for that tier) — a fact this ADR
-  does not change; VI-C3 owns that column.
+If you accept this table, you have accepted the ADR — record the date below. Everything
+past this point is supporting detail for whoever implements or later audits one of these
+six calls; nothing above depends on anything below it.
 
-Six questions follow from these facts, none of them answered anywhere in the tree today.
-This ADR answers all six so that Wave 15 (VI-B1 secret store, VI-B2 Vercel AI Gateway,
-VI-B3 the UI on/off switch and key-entry route) implements a decision rather than guessing
-one, and so that Wave 16/17's UI work has a named boundary to build against.
+---
 
-## Measurement
+- **Status:** proposed — pending the user's explicit, dated acceptance, recorded as an
+  amendment at the bottom of `docs/agent-handoffs/part-vi/VI-A2.md`.
+- **Date:** 2026-09-03
+- **Relationship to earlier ADRs:** doesn't change ADR 0050 (`0050-runner-control-plane.md`)
+  or the safety rules in ADR 0058 (`0058-standalone-single-binary-runner.md`) — decision 6
+  adds a *second way* to reach the same on/off gate ADR 0058 already defined, without
+  changing what that gate does.
+- **Wire contract:** unaffected. `docs/contracts/runner-v1/` gains no new field from this
+  ADR by itself.
 
-Every number below is quoted from the board's own evidence table (`TODO.md` §VI.0,
-measured 2026-09-03) or read directly from the cited source; none is estimated for this
-ADR.
+## Full reasoning
 
-- `secret_reference` environment entries: accepted by the runner-v1 contract, resolved by
-  **zero** of the three adapters — confirmed independently in `claude_code.rs:925-945`,
-  `codex.rs:765-775`, and (per the board's table) `opencode.rs:1156-1158`.
-- The model choice already reaches the harness once resolved: `--model` is passed by all
-  three adapters (`codex.rs:753`, `claude_code.rs:968`, `opencode.rs:1135`, per the board's
-  table) — the gap this ADR closes is *which provider supplies the key*, not whether a
-  chosen model reaches the process.
-- Exactly one UI-written secret exists in the whole tree today (Cloud Backup's
-  `secret_key`, above); zero UI-written provider credentials exist.
-- The embedded-runner gate is checked exactly once, at `local_runner::serve_with_embedded_runner`
-  call time (before `ensure_loopback`), not re-checked or re-readable at any later point in
-  the process's life — there is no existing code path that starts the runner role inside an
-  already-running plain `tack serve`. Decision 6 depends on this fact directly.
-- Vercel AI Gateway publishes a dedicated coding-agent endpoint for all three harnesses in
-  this tree (`vercel.com/docs/ai-gateway/coding-agents`, fetched 2026-09-03 by the board —
-  **re-fetch before relying on it**, per the board's own caveat). This ADR treats that as
-  the reason a gateway is the second provider worth building (`TODO.md` §VI.0, "Why one
-  provider, and why this one"), not as a fact this ADR re-verifies.
+*(For implementers and reviewers. If you only needed to approve the six decisions above,
+you're done reading.)*
 
-## Decision
+### Background
+
+ADR 0050 decided that Tack's server schedules work and `tack-runner` executes it, and
+that "the Tack API never starts a coding harness and never becomes a model proxy." ADR
+0058 restated the credential half of that explicitly: "Vendor credentials remain outside
+Tack." Both statements are about the **server's** own conduct, and both stay true,
+unchanged by anything here.
+
+Both have also been read more broadly than they were written — as "Tack, as a whole
+product, offers no help with a model provider." `docs/CONFIG.md` said so outright
+("there is no `TACK_*` variable for a model provider or endpoint, by design"), and
+`tack runner doctor`'s own printed output repeats the same framing. That reading is
+false: the **runner** side of this boundary was simply never decided. This ADR decides
+it.
+
+Three facts about the runner already exist and aren't up for debate here:
+
+- The runner already keeps one credential of its own — its enrollment credential
+  (`crates/tack-runner/src/config.rs`), stored in `TACK_RUNNER_STATE_DIR`, owner-only on
+  disk, redacted from every log and debug print.
+- Every adapter (Claude Code, Codex, OpenCode) already accepts a "here's a secret,
+  fetch it yourself" field on a work request (`secret_reference`) and already refuses to
+  resolve it — each one logs "no secret-store client exists yet" and skips it rather
+  than inventing a value.
+- The embedded runner's on/off switch is checked exactly once, at startup, before the
+  server opens a network socket — there's no existing way to turn it on or off while
+  the server is already running.
+
+One existing precedent already proves the pattern decision 2 reuses: Settings → Cloud
+Backup already lets an operator paste a secret (the S3 key) into the UI, stores it
+write-only, and never echoes it back — only a "is one set?" boolean.
 
 ### 1. Where a provider key lives
 
-**A runner-local, owner-only store, alongside `session.json`, in `TACK_RUNNER_STATE_DIR`,
-with the same `0600` file / `0700` directory posture already proven for that directory.**
-The store's shape (one file, a small encrypted-or-plain keyed map, its own module) is
-VI-B1's to design against `crates/tack-runner/src/config.rs`'s existing patterns
-(`RunnerConfig`, `EnrollmentCredential`'s redacted `Debug`/`Display`); this ADR fixes only
-where it lives and what it must never do: never appear in a log line, an error message, or
-any `runner-v1` protocol frame, and never leave the runner's own filesystem except as an
-opaque `secret_reference` the runner itself resolves locally before spawning a harness.
+**Chosen:** a runner-local, owner-only file store, next to the runner's existing
+credential file, with the same locked-down file permissions already proven for that
+folder. Exactly what shape that file takes is an implementation detail for whoever
+builds it; what's fixed here is that it never appears in a log line, an error message,
+or any message the runner sends back to the server — it only ever leaves the runner's
+own disk as something the runner itself decides to send to a model vendor.
 
-**Rejected: `app_meta`, the Cloud Backup pattern.** The pattern (write-only, masked on
-read, blank-keeps-existing) is sound and decision 2 reuses it for the *route's* auth
-model — but the storage location is wrong for this secret specifically, and the difference
-is not cosmetic. The backup `secret_key` is **the server's own** secret: `tack-api` is the
-sole consumer, uses it itself to reach the operator's configured backup target, and
-already lives inside the trust boundary ADR 0050/0058 draw around the API server. A
-provider key is not the server's secret — it exists so a *different* process
-(`tack-runner`, possibly on a different machine) can reach a model vendor. Storing it in
-`app_meta` would make the Tack API the holder of a vendor credential, which is the
-"becomes a model proxy" line ADR 0050 forbids at l.29-30, regardless of whether the server
-ever uses the key to make a call itself — holding it is the crossing, not using it. It also
-costs a specific, checkable obligation this repo already enforces: `CLAUDE.md`'s posture
-rule requires "every new secret column is added to `remote_backup.rs::scrub_snapshot_secrets`
-in the same commit" precisely because `tack.db` (and therefore `app_meta`) is included in
-remote backup snapshots. A provider key stored there becomes a permanent line item in that
-scrub list, and any future gap in it leaks a vendor key into a cloud backup artifact — a
-strictly worse blast radius than a plain-file leak on the one machine that already holds
-the runner's own enrollment credential in the same posture.
+**Rejected — storing it in Tack's own database** (the same table Cloud Backup's secret
+uses). That pattern is sound, but the *location* is wrong for this secret specifically:
+Cloud Backup's key is the server's own secret, used by the server itself, already inside
+its trust boundary. A model-provider key is not the server's secret — it exists so a
+*different* machine can reach a model vendor. Storing it in Tack's database would make
+the server a holder of vendor credentials, which is precisely the "becomes a model
+proxy" line ADR 0050 forbids — holding the key is the violation, whether or not the
+server ever uses it. It would also become a permanent addition to the backup-scrubbing
+list this project already maintains (`remote_backup.rs::scrub_snapshot_secrets`), and
+any future gap there would leak a vendor key into a cloud backup file — a worse outcome
+than a plain-file leak on the one machine that already holds the runner's own
+credential the same way.
 
-**Rejected: a Tack-side vault** (a dedicated encrypted secret table, fetched by reference
-over the operator API). This is a proxy by another name: any component that mediates a
-provider key between where an operator types it and where a runner uses it, over the
-**operator** API, puts model-provider secrets in `/api`'s own request/response schema
-(visible in `docs/openapi.json`) — the exact "model proxy" shape ADR 0050 excludes, and in
-the wrong direction for a card whose purpose is fixing a *misreading* of that exclusion.
-It also costs real, unbounded scope this Part explicitly does not need: encryption-at-rest
-key management, a rotation UX, and an audit of every export/backup path that currently
-assumes `tack.db` holds no vendor secret — building for a fifth case
-(`.claude/scope-discipline.md` rule 3) when the second case (one runner-local key) is what
-Wave 15 needs to prove.
+**Rejected — a dedicated "vault" service inside Tack**, fetched by reference over the
+API. This is the same problem by another name: anything that moves a provider key
+through the server's own request/response traffic is visible in the API's own
+documented shape, which is exactly the "model proxy" pattern ADR 0050 rules out. It also
+buys real, unneeded complexity (encryption-at-rest key management, key rotation, an
+audit of every backup/export path) to solve a problem — one runner, one key — that
+doesn't need it yet.
 
 ### 2. The one loopback-only, write-once exception
 
-**One operator route exists to hand a key to the co-located runner's own store, and it
-does not exist under any other condition.** Its preconditions: the embedded runner is
-enabled (decision 6's switch, or `--with-runner`/`TACK_LOCAL_RUNNER_ENABLE`) **and** the
-server is bound to loopback — the same `AppConfig::binds_loopback()` check
-`local_runner::ensure_loopback` (l.121-131) already performs before opening a socket, run
-again here per-request rather than assumed from startup. When either precondition is
-false, the route **does not exist** — a `404`, the same shape ADR 0060's own measurement
-already establishes for `TACK_ORCH_ENABLE`-gated routes ("unset, the reconciler never
-spawns and every `orch_*`/`/api/fleet` route 404s"), never a `403` that confirms the route
-is real. It returns an acknowledgement only — never the key, never a fingerprint of it,
-matching (not exceeding) the Cloud Backup precedent's own boolean-only read view. A blank
-write is rejected outright rather than reused as "keep existing," because unlike the
-backup secret this route is write-once by design: decision 1's store has no update-in-place
-UX to defend, and a silent no-op on blank input is a worse trap for a route whose whole
-job is "the key went in."
+**Chosen:** exactly one server route exists to hand a key to the runner sharing its
+machine, and it exists **only** when both of these are true: the built-in runner is
+turned on, and the server is reachable only from the same machine (no outside network
+access). If either isn't true, the route doesn't exist at all — visitors get a plain
+"not found," never an error that reveals the route is there but refused. The route
+accepts a new key and confirms it was saved; it never reads one back, matching Cloud
+Backup's own read view. Unlike Cloud Backup, a blank value is rejected outright rather
+than treated as "keep what's there" — this route has no update-in-place behavior to
+protect, and silently doing nothing on a blank input is a worse trap for a route whose
+whole job is "the key went in."
 
-**Auth: the ordinary operator token (`require_token`/`TACK_API_TOKEN`), matching Cloud
-Backup's own secret-key write** — not a new, dedicated token in the shape of
-`TACK_ORCH_APPROVAL_TOKEN` or `TACK_EXECUTION_DECISION_TOKEN`. Those tokens exist for
-routes that approve remote code execution or mutate fleet-wide state on a
-possibly-shared, non-loopback deployment; this route only exists at all on a loopback
-bind with the embedded runner already on — exactly ADR 0059's "operator and only user of
-the machine are the same person" case, where `require_token` may already be unset by
-design in pure-local mode, and where an attacker with local operator-token access already
-has a strictly easier path to the same secret (reading `TACK_RUNNER_STATE_DIR` directly).
-**Rejected: a distinct, higher-privilege token.** It would buy no additional containment
-on the one deployment shape this route exists for, and it costs exactly what this ADR
-exists to remove — a second secret a UI-only user must generate, store and document before
-they can do the one thing this card is meant to make possible without a console.
-**Rejected: no auth check because loopback already implies trust.** Loopback is not
-single-user; CLAUDE.md's posture rule treats every route that moves privileged material as
-requiring a token regardless of bind, and this route moves a vendor credential into a
-process that will use it to reach the network on the operator's behalf. The route follows
-the same `require_token` rule as everything else — no special case, in either direction.
+**Auth:** the same everyday login token every other Tack API call already needs — not a
+new, separate one. The higher-privilege tokens this project uses elsewhere exist for
+actions that can affect a shared, possibly remote deployment; this route only exists at
+all on a single machine that already has the runner turned on, which is squarely the
+"one person, one machine" case this project already treats differently. A new,
+separate token here would buy no real extra safety and would cost exactly what this ADR
+is trying to remove: one more secret a UI-only user has to generate and keep track of.
+
+**Rejected — no login check at all, since it's local-only anyway.** "Only reachable
+from this machine" isn't the same as "only one person can use it" — this project's own
+security rules already say any route moving a secret needs the login check regardless
+of where it's reachable from, and this route hands a real vendor credential to a
+process that will use it to reach the internet. No exception here.
 
 ### 3. Catalog fetching
 
-**The runner's probe calls the gateway's model-list endpoint with the runner's own key.**
-This is runner-side network activity — already the runner's domain since it already opens
-outbound connections to enroll, heartbeat and report — not a new capability. It keeps ADR
-0050 l.29-30 literally true at the transport layer: the API server issues zero requests to
-any model-provider or gateway endpoint, catalog or otherwise, consistent with l.99's "v1
-deliberately excludes … a Tack model gateway." A catalog entry records exactly three
-things: `provider`, `model_id` (decision 4's vocabulary), and `probed_at` — when the
-runner's own probe last saw the vendor list it. It does **not** record a price as a cost:
-whatever number a gateway's catalog reports for a model is a vendor quote, not an
-observation of any run this system executed, so it is tagged `catalog_reported` and must
-never be written into a `cost`/`usage` field whose other legal values are `measured`,
-`estimated` or `not_measured` (ADR 0050's own Consequences) — conflating a vendor's list
-price with something this system measured would be exactly the kind of unearned precision
-`CLAUDE.md`'s "unmeasured is nullable" rule exists to prevent.
+**Chosen:** the runner itself asks the gateway which models it offers, using the
+runner's own key — this is no different from the network calls the runner already makes
+to check in with the server. The server issues zero requests to any model vendor,
+catalog included. A catalog entry records only the provider name, the model's name, and
+when the runner last checked — never a price. Whatever a gateway's catalog *says* a model
+costs is a vendor's quoted number, not something this system actually measured running a
+task — it gets a distinct label (`catalog_reported`) and must never be written into a
+cost field that otherwise only ever means "measured," "estimated," or "not measured."
+Blurring a vendor's list price with an actual measurement is exactly the kind of false
+precision this project's "unmeasured stays explicitly unmeasured" rule exists to stop.
 
-**Rejected: a hardcoded, static model list anywhere in the tree.** §VI.1 rule 5 ("catalogs
-are measured, never typed in") already forecloses this, and the evidence table already
-shows the cost of the alternative: four places today where docs assert something the code
-does not do (`agent-runners.md`'s harness id, its "no runtime effect" claim, its "no write
-route" claim, per `TODO.md` §VI.0's evidence table) — every one of them a hand-typed claim
-that rotted the moment the code moved. A static model list is the same failure mode aimed
-at a target that changes faster (vendor catalogs) than this repo's own code does.
-**Rejected: run the probe from the API server using a server-held key.** This is decision
-1's rejected vault, restated for one endpoint instead of every call: it requires the API
-server to hold a provider key (forbidden by decision 1) and requires that server —
-frequently the shared, small-VPS board in §VI.0's own "one board, many runners" story — to
-reach an outbound vendor endpoint on behalf of every runner, when the entire point of the
-runner boundary is that outbound vendor traffic happens where the credential and the
-workload already are.
+**Rejected — a hardcoded list of models somewhere in the codebase.** This project has
+already been burned by exactly this pattern: several places in the docs asserted
+something about the code that stopped being true the moment the code changed. A
+hardcoded model list rots faster than any of those did, because vendor catalogs change
+on their own schedule.
+
+**Rejected — have the server fetch the catalog itself, using a server-held key.** Same
+objection as decision 1's rejected vault: it requires the server to hold a provider key,
+and it requires the server — often a small shared machine serving many runners — to make
+outbound calls that belong, structurally, wherever the credential and the work already
+are.
 
 ### 4. Vocabulary
 
-**The gateway's provider id is `vercel-ai-gateway`**, used verbatim in
-`model_combinations`, `requested_model_provider`/`requested_model_id`, and any `actual`
-column a harness report resolves to. **A gateway model id is the gateway's own
-`creator/model` string, unmodified** — opaque, per ADR 0050's Consequences ("Model ids are
-opaque and never tiered or parsed"); Tack does not split, canonicalize or re-key it.
-**Reaching the same underlying model directly versus through the gateway are two different
-`(provider, model_id)` pairs**, per §VI.1 rule 6 ("requested and actual stay distinct" /
-"two different pairs") — `(anthropic, claude-…)` and `(vercel-ai-gateway,
-anthropic/claude-…)` are never merged, deduplicated, or treated as aliases of one another
-anywhere a report, a cost rollup, or a picker groups by provider/model.
+**Chosen:** the gateway is named `vercel-ai-gateway` everywhere this system records a
+provider, and a model's name reached through the gateway is kept exactly as the gateway
+spells it — Tack never rewrites or shortens it. Reaching the same underlying model
+directly versus through the gateway are treated as two different, never-merged
+combinations (e.g., "Anthropic directly" and "Anthropic through the gateway" are not the
+same row anywhere a report or a picker groups by provider).
 
-**Rejected: reuse the underlying vendor's provider id with a `via_gateway` boolean.**
-This directly breaks the invariant §VI.1 rule 6 already decided before this ADR existed,
-and it reintroduces the requested/actual conflation that rule was written to prevent: a
-boolean bolted onto an existing provider id is exactly the kind of "parse it out later"
-shortcut that breaks the moment a second gateway is added or a runner's report disagrees
-with what was requested. **Rejected: no distinct provider id at all**, treating the
-gateway as an invisible transport under whichever vendor id the request already carries —
-costs the same thing more completely: `model_combinations` keyed only by vendor id could
-never express "this runner reaches Anthropic directly" and "this runner reaches Anthropic
-through the gateway" as two different capabilities, which is precisely the distinction a
-capacity-aware scheduler and an honest cost report both need.
+**Rejected — reuse the underlying vendor's name with a "via gateway" flag bolted on.**
+This breaks a rule the project already has (never conflate what was requested with what
+actually happened) and is the kind of shortcut that falls apart the moment a second
+gateway shows up or a runner's real report disagrees with the request.
 
-### 5. The surface map is the product rule, not a per-card judgment call
+**Rejected — no separate name at all, treat the gateway as invisible.** This would make
+it impossible to ever say "this runner can reach Anthropic directly" and "this runner can
+only reach Anthropic through the gateway" as two different capabilities — a distinction
+both a scheduler and an honest cost report need.
 
-**`TODO.md` §VI.0's surface-map table is adopted as written and its "why not fully UI"
-column is closed.** A future step that cannot be moved to the UI needs an amendment to
-this ADR (or a new one) naming the structural reason, exactly as the table's existing rows
-do (OAuth device flows need a TTY; external binaries install outside Tack) — it is not a
-judgment an implementing card makes for itself and records only in its own handoff.
+### 5. The surface map is the standing rule, not a per-task judgment call
 
-**Rejected: leave it to each card**, the status quo before this ADR. This is the
-mechanism that produced the very problem this Part exists to fix: starting the runner,
-running `tack runner doctor`, and checking a harness's own login state are all
-console-only today, and none of the three was ever written down as an intentional
-boundary — each reads, to a stranger, as an oversight rather than a decision, because
-no two of them share a recorded rationale. Per-card discretion also cannot be audited
-later: a reviewer checking whether the current console/UI split is still correct would
-need to re-derive each card's private reasoning rather than checking one table. Routing
-every future exception through an ADR amendment costs one extra step per exception and
-buys exactly the audit trail this Part's own evidence table shows was missing.
+**Chosen:** the board's own table of what has to stay a console command versus what can
+become a UI feature (`TODO.md` §VI.0) is adopted as-is, and its list of reasons is
+considered closed. If a future task finds something else that "just can't be done in the
+UI," that's a new entry requiring an amendment to this ADR (with the same kind of
+concrete, structural reason the existing rows give — e.g. "needs an interactive
+terminal login") — not a private call one task makes and writes down only in its own
+notes.
 
-### 6. Turning the embedded runner on from the UI — an amendment to ADR 0058
+**Rejected — leave it to whoever's doing the task at the time.** This is the exact
+pattern that created the problem this whole effort exists to fix: starting the runner,
+running the diagnostic tool, and checking whether a login worked were all left as
+unplanned console-only steps, and none of them was ever written down as an intentional
+choice — each just looks, to a newcomer, like something nobody got around to. Letting
+each task decide for itself also means nobody can audit the current console/UI split
+later without re-reading every task's private reasoning.
 
-**On a loopback bind, one switch in the UI may start or stop the in-process runner; the
-choice persists in `app_meta`, read by the server after the database opens** — reusing the
-same storage mechanism Cloud Backup's config already proves out (`settings.rs`), applied
-here to a boolean rather than a secret. **Both of ADR 0058's Safety-posture rules (l.69-75)
-are unchanged by this amendment**: off by default — a fresh install runs no harness process
-until a person on that machine flips the switch — and loopback-only — the switch's own
-route does not exist on any other bind, in the same 404-not-403 shape as decision 2.
-`--with-runner`/`TACK_LOCAL_RUNNER_ENABLE` remain, unchanged, as the flag-only equivalent
-`scripts/smoke.sh` and any script keep using.
+### 6. Turning the runner on from the UI — extending ADR 0058
 
-This amendment decides *that* a UI toggle exists; it does not itself close the gap between
-that decision and the code as measured above. Today `with_runner_enabled`/`ensure_loopback`
-are evaluated exactly once, before `tack serve` binds a socket — there is no existing path
-that starts the runner role inside an already-running plain server. A UI switch flipped
-after startup therefore needs the runner started as a supervised task against the bind the
-running server already holds (`AppConfig::binds_loopback()` is knowable at that point,
-not only at startup), reusing `supervise`/`ensure_runner_credential`'s existing shutdown-
-coupling rather than a second implementation of it. That wiring is VI-B3's to build; if it
-finds the boundary cannot be crossed the way this decision assumes, that is an amendment to
-this ADR, not a silent redesign inside a card.
+**Chosen:** when Tack is reachable only from its own machine, one switch in the web UI
+can start or stop the built-in runner; the choice is remembered so it survives a
+restart. Both of ADR 0058's existing safety rules are unchanged: it's still off by
+default (a fresh install runs nothing until someone flips the switch), and it's still
+restricted to a machine-only connection (the switch's own route simply doesn't exist
+otherwise). The existing startup flag keeps working exactly as it does today, for
+scripts and automated tests.
 
-**Rejected: keep the flag as the only path.** Named directly by the evidence this Part is
-built on: it is the one console step a UI-only user cannot avoid, and leaving it in place
-costs ADR 0058's own stated goal — "one binary, one command, no second binary and no
-copied token" — for exactly the audience that goal was written for. **Rejected: make bare
-`tack` mean `serve --with-runner` on loopback.** This changes a security default — today
-running bare `tack` executes no agent code; this would make the default invocation launch
-an arbitrary code-execution subprocess service — to save the one click a UI switch can
-already offer. `TODO.md` §VI.5 already records this as an open question; this ADR declines
-to fold it in as a side effect of deciding the switch exists.
+This decision says a switch is allowed to exist — it doesn't by itself finish the
+plumbing. Today, the runner's on/off check only happens once, at the moment the server
+starts up; there's no existing way to start the runner role while the server is already
+running. Building that — starting the runner as a supervised piece of the
+already-running server, reusing the shutdown behavior that already exists rather than
+writing a second version of it — is the next piece of work's job. If that turns out to
+be harder than expected, that's a note back to this ADR, not a silent workaround.
+
+**Rejected — leave the startup flag as the only way.** This is the one remaining step a
+UI-only user can't avoid today, and leaving it in place undercuts the entire point of
+having a single, self-contained binary in the first place.
+
+**Rejected — make starting Tack with no arguments automatically turn the runner on.**
+This would change a real safety default — today, just starting Tack runs no
+agent-executing code at all — purely to save one click that a UI switch can already
+offer instead. Left as an open question for later, not decided here.
 
 ## Consequences
 
-- `docs/CONFIG.md`'s provider bullet (l.85-108) changes from an absolute negation to the
-  precise rule decisions 1-4 state: no `TACK_*` variable on the **API server** names a
-  model provider or endpoint, and the API server still never holds, forwards or proxies a
-  provider credential — but the runner may hold one, in its own state directory, reached
-  only through decision 2's loopback exception or the harness's own configuration.
-- VI-B1, VI-B2 and VI-B3 each implement one slice of decisions 1, 2/6, and 3/4
-  respectively and are unblocked by this ADR's acceptance, not before.
-- The catalog concept (decision 3) adds no schema and no contract field by itself. If
-  VI-B2 finds it genuinely needs one, `TODO.md` §VI.2 already names that escalation path
-  (no default owner for `docs/contracts/runner-v1/**`) and this ADR does not shortcut it.
-- Decision 6 does not change `AppConfig::binds_loopback()`, `ensure_loopback`, or the
-  existing `--with-runner`/`TACK_LOCAL_RUNNER_ENABLE` flag — VI-B3 adds a second caller of
-  the same rule, it does not relax the rule.
-- `docs/`, `README.md` and `tack runner doctor`'s own rendered text still contain the
-  negation framing this ADR narrows. Every sentence found by
-  `grep -rn "never becomes a model proxy\|no TACK_\* variable for a model provider\|never
-  reads, stores, or forwards" docs/ README.md` other than this ADR and ADR 0050/0058
-  themselves is listed in this card's handoff for VI-A1/VI-D1 to correct; this ADR corrects
-  only the one bullet it owns in `docs/CONFIG.md`.
-- Nothing in `docs/contracts/runner-v1/`, `crates/tack-orch/tests/runner_contract.rs`, or
-  any adapter's spawn path changes as a result of this ADR. `git diff` against `develop`
-  for this card is exactly one new file (this ADR) plus the one `docs/CONFIG.md` sentence.
+- The one `docs/CONFIG.md` sentence that read as an absolute "Tack can't help with a
+  provider" becomes the precise version: the **server** still never touches a provider
+  key, but the **runner** is allowed to hold one, reached only through decision 2's
+  route or the harness's own normal login.
+- The next three pieces of work (the secret store, the Vercel AI Gateway integration,
+  and the UI on/off switch) each implement one part of this ADR and can start once it's
+  accepted, not before.
+- The model catalog idea (decision 3) needs no database or wire-contract change by
+  itself. If it turns out to need one later, that goes through this project's normal
+  review process for changing a frozen contract — never smuggled in as an
+  unreviewed side effect.
+- Decision 6 doesn't change any of the runner's existing safety checks — it adds a
+  second way to trigger the same rule, not a looser version of it.
+- Other places in the docs and README still use the older, broader "Tack can't help with
+  a provider" phrasing this ADR narrows. Those are tracked separately for the
+  documentation cards to fix — this ADR only corrects the one sentence it owns.
+- Nothing in the wire contract, its test fixtures, or any existing adapter code changes
+  as a result of this ADR by itself.
