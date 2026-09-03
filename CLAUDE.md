@@ -5,8 +5,10 @@ deep reference lives in the docs listed at the bottom and is read on demand.
 
 ## Project Overview
 
-**Tack** — a lightweight project-management tool: Rust backend (Axum + SQLite),
-SolidJS frontend, single `tack` binary with the SPA embedded. Multiple workflows
+**Tack** is two components built to be one product — **the board** (project manager: Rust
+backend via Axum + SQLite, SolidJS frontend) and **the runner** (a small worker that executes
+near your code and credentials) — shipped as a single `tack` binary where `tack serve
+--with-runner` embeds a runner in the board's own process. Multiple workflows
 (Scrum/Kanban/phase) with per-project vocabulary; 10 project-type presets; MCP server
 (`tack mcp`); Alexa integration. Core is complete (backend, frontend, CLI).
 
