@@ -6,6 +6,7 @@ description: Pick up and deliver one card/task from this repo's active planning 
 # Work a board card
 
 > **Report using `.claude/reporting-contract.md`.** Lead with the capability in plain language — what someone can or cannot do now — and keep file and function names in the technical-detail section at the end. Explain every blocker as: what is missing, what it was for, what it blocks.
+> **If your card writes an ADR or anything asking the user to approve a decision, use `.claude/decision-contract.md`.** Lead with the ask in plain language — what you're deciding, why, and what stays blocked if nobody answers — before any citation, rejected-alternative, or file:line reference. Those go in a separate section below, for whoever implements or double-checks it. A decision doc that opens with a Status/Date block and dense cited prose, with the actual ask buried past line 20, fails this rule regardless of how accurate it is.
 >
 > **Budget your reading with `.claude/context-budget.md`** — `TODO.md` whole is ~199k tokens; one Part's board is ~15k and one card's cold start is ~7k. **If the cycle has a dispatch plan (`docs/agent-handoffs/<part>/README.md`), your card's block there is the read list — follow it instead of §1's generic recipe.**
 > **Bound your scope with `.claude/scope-discipline.md`** — this tree's recurring defect is well-built mechanisms with no caller.
