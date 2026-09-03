@@ -1,5 +1,12 @@
 # Architecture Overview
 
+> They are separate because they scale and fail differently. **One board, many runners:**
+> a board on a small VPS dispatches to runners on ten developers' machines, each with its
+> own agent, model and capacity. A runner that dies mid-run cannot corrupt the board — its
+> lease expires and its fencing token stops writing. A board that restarts cannot lose a
+> run — the runner's journal knows what it started. **One developer runs both in one
+> process with one command**, on the same contract, with the same recovery.
+
 You have read the quick-start and can run the server. This document explains *why* the code is structured the way it is — the reasoning behind each layer, how a request actually travels through the system, and where the interesting domain logic lives.
 
 ---
