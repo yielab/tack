@@ -154,3 +154,20 @@ the UI.
 ## Amendments
 
 *(Appended by later readers, dated. The original text above is never rewritten.)*
+
+**2026-09-03 — integrator (Sonnet).** The user read the ADR and found it too long and
+too dense to tell what was actually being asked, or why — the original draft opened
+with a Status/Date/Supersedes/Contract block and evidence-heavy prose, and the six
+actual decisions didn't appear in plain language until well past the first screen. That
+is a real defect in a document whose only job is getting a human to say yes or no.
+
+Rewrote `docs/adr/0061-provider-credentials-at-the-runner-boundary.md` following a new
+`.claude/decision-contract.md` (added at the same time, modeled on the existing
+`reporting-contract.md`): a three-line "Decide / Why now / If you do nothing" block and
+a one-row-per-decision table now open the file, in plain language with no citations; all
+of the original reasoning, rejected alternatives, and file:line evidence survive
+underneath in a "Full reasoning" section, reorganized but not cut for content. The six
+decisions themselves are unchanged — this was a rewrite for clarity, not a re-decision.
+`.claude/skills/card/SKILL.md` now points future decision-writing cards at the same
+contract so this doesn't recur. Status remains `proposed`, still awaiting the user's
+dated acceptance below this line.
