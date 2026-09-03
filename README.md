@@ -5,11 +5,63 @@
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
 [![Beta](https://img.shields.io/badge/status-beta-yellow.svg)](CHANGELOG.md)
 
-**A self-hosted project manager that can run the work it tracks.** Assign a board item
-to Claude Code, Codex, or OpenCode and it executes as a durable, auditable attempt —
-right inside the same project history, in one binary.
+**A self-hosted project board that dispatches its items to coding agents — Claude Code,
+Codex, or OpenCode — through runners that live where your code and credentials already
+are. One binary. The board plans and records; the runner executes.**
 
-![Board, Timeline, and vocabulary editor](docs/screenshots/hero.gif)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/two-components-dark.svg">
+    <img src="docs/diagrams/two-components-light.svg" width="720" alt="Two components: the board (one) on the left holds workflows, timelines, leases, fencing, and history; runners (many) on the right each launch a harness — Claude Code, Codex, or OpenCode — near your code and credentials. One arrow, from runner to board, labeled &quot;pulls work&quot;: the board never calls out.">
+  </picture>
+</p>
+
+> **Tack is two components, built to be one product.**
+>
+> **The board** is the project manager: workflows, timelines, dependencies, per-project
+> vocabulary — one binary, one SQLite file, no accounts, no cloud. It is the plan, the
+> policy and the record. It decides *what* runs, *when*, under *which* limits, and it keeps
+> the durable history of every run: events, decisions, artifacts, and what it measurably
+> cost. **It never executes code and never holds a model credential.**
+>
+> **The runner** is a small worker that lives where the code and the credentials already
+> are — a laptop, a CI box, a machine with a GPU. It pulls work from the board, checks out
+> an isolated workspace, launches the coding agent you already use — Claude Code, Codex or
+> OpenCode — and reports back. **It holds the keys; the board never sees them.**
+>
+> They are separate because they scale and fail differently. **One board, many runners:**
+> a board on a small VPS dispatches to runners on ten developers' machines, each with its
+> own agent, model and capacity. A runner that dies mid-run cannot corrupt the board — its
+> lease expires and its fencing token stops writing. A board that restarts cannot lose a
+> run — the runner's journal knows what it started. **One developer runs both in one
+> process with one command**, on the same contract, with the same recovery.
+
+## Durable by design
+
+The paragraph above isn't a claim without a witness. [`scripts/smoke.sh` step
+9](scripts/smoke.sh#L322-L409) kills the runner mid-attempt against a real server and a
+real lease, proves the attempt turns `needs_operator` with no blind duplicate execution,
+then recovers it with an explicit operator requeue to a succeeded attempt. A recorded run
+of this exact sequence lands in this slot next; until then, the script is the proof.
+
+## How it works
+
+1. **Plan it on the board** — create an item, assign it to an agent profile, set its
+   budget and policy.
+2. **A runner picks it up where the code is** — it pulls the request, checks out an
+   isolated workspace, and launches the harness with its own credentials.
+3. **The run is recorded on the item** — events, decisions, and artifacts land back on
+   the board as they happen, and the finished attempt stays in the item's history.
+
+## Two components
+
+| | The board | The runner |
+| --- | --- | --- |
+| What it does | Plans, schedules, and records | Checks out, launches the harness, reports back |
+| What it holds | Workflow, policy, budgets, durable history | Credentials, workspace, the harness subprocess |
+| How many | One | Many — one per machine with code and credentials |
+| What happens when it dies | Restarts and loses nothing — the runner's journal knows what it started | Its lease expires, its fencing token stops writing; no duplicate, no silent loss |
+| How you run it | `tack serve` | `tack serve --with-runner` (embedded) or `tack-runner` (separate binary, remote) |
 
 **Jump to:** [Features](#features) · [Screenshots](#screenshots) ·
 [Requirements](#requirements) · [Run it](#run-it) · [Status](#status) ·
@@ -29,16 +81,6 @@ external services.
 
 ## Features
 
-### Project management
-
-- Configurable workflows — Scrum, Kanban, or phase-based — with per-project vocabulary
-  so the UI, CLI, and API all speak the language of your domain
-- Board, list, table, calendar, timeline, and dashboard views
-- Hierarchical items, dependency DAGs with cycle detection, custom fields, comments,
-  attachments, full-text search, templates, and bulk operations
-- Realtime updates over WebSocket with optimistic UI
-- JSON/YAML/CSV export, GitHub Issues and Linear import, hot and S3-compatible backup
-
 ### Agent execution
 
 - Assign a board item to `claude-code`, `codex`, or `opencode` and it runs as a
@@ -50,6 +92,16 @@ external services.
 - Measured usage only — cost and token counts are shown as measured or explicitly
   **not measured**, never estimated or silently shown as zero
 
+### Project management
+
+- Configurable workflows — Scrum, Kanban, or phase-based — with per-project vocabulary
+  so the UI, CLI, and API all speak the language of your domain
+- Board, list, table, calendar, timeline, and dashboard views
+- Hierarchical items, dependency DAGs with cycle detection, custom fields, comments,
+  attachments, full-text search, templates, and bulk operations
+- Realtime updates over WebSocket with optimistic UI
+- JSON/YAML/CSV export, GitHub Issues and Linear import, hot and S3-compatible backup
+
 ### Automation surfaces
 
 - A REST API described by a checked-in [OpenAPI spec](docs/openapi.json), plus a CLI
@@ -60,6 +112,9 @@ external services.
 
 ## Screenshots
 
+<p align="center">
+  <img src="docs/screenshots/hero.gif" width="98%" alt="Board, Timeline, and vocabulary editor — project-management views only; no agent run is shown in this recording" />
+</p>
 <p align="center">
   <img src="docs/screenshots/board.png" width="49%" alt="Board — Kanban with WIP limits and drag-and-drop" />
   <img src="docs/screenshots/timeline.png" width="49%" alt="Timeline — Gantt view with draggable bars" />

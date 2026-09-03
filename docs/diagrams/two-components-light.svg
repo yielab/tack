@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 460" role="img" aria-labelledby="title desc">
+  <title id="title">Tack's two components</title>
+  <desc id="desc">The board, one instance, holding leases, fencing and history, on the left. Runners, many instances, each launching a harness near your code and credentials, on the right. A single arrow runs from the runners to the board, labeled "pulls work" — the board never calls out.</desc>
+  <defs>
+    <marker id="arrowhead-light" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
+    </marker>
+  </defs>
+
+  <!-- Board plane -->
+  <rect x="30" y="40" width="380" height="380" rx="16" fill="#eef2ff" stroke="#4f46e5" stroke-width="2"/>
+  <text x="220" y="82" text-anchor="middle" font-family="system-ui, sans-serif" font-size="24" font-weight="700" fill="#312e81">THE BOARD</text>
+  <text x="220" y="106" text-anchor="middle" font-family="system-ui, sans-serif" font-size="15" fill="#4338ca">(one)</text>
+
+  <text x="220" y="150" text-anchor="middle" font-family="system-ui, sans-serif" font-size="15" fill="#1e1b4b">workflows &#183; timelines &#183; dependencies</text>
+  <text x="220" y="174" text-anchor="middle" font-family="system-ui, sans-serif" font-size="15" fill="#1e1b4b">per-project vocabulary</text>
+  <text x="220" y="198" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" fill="#4338ca" font-style="italic">plans and records — never executes code</text>
+
+  <rect x="60" y="322" width="320" height="66" rx="10" fill="#c7d2fe" stroke="#4f46e5" stroke-width="1.5"/>
+  <text x="220" y="349" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" font-weight="600" fill="#312e81">leases &#183; fencing &#183; history</text>
+  <text x="220" y="369" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="#3730a3">what ran, when, and what it cost</text>
+
+  <!-- Runner plane -->
+  <rect x="550" y="40" width="380" height="380" rx="16" fill="#f0fdfa" stroke="#0d9488" stroke-width="2"/>
+  <text x="740" y="82" text-anchor="middle" font-family="system-ui, sans-serif" font-size="24" font-weight="700" fill="#134e4a">RUNNERS</text>
+  <text x="740" y="106" text-anchor="middle" font-family="system-ui, sans-serif" font-size="15" fill="#0f766e">(many)</text>
+
+  <!-- three runner mini-cards, each with a harness label beneath -->
+  <g font-family="system-ui, sans-serif">
+    <rect x="575" y="140" width="100" height="56" rx="8" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.5"/>
+    <text x="625" y="173" text-anchor="middle" font-size="13" font-weight="600" fill="#134e4a">runner</text>
+    <text x="625" y="216" text-anchor="middle" font-size="12" fill="#115e59">Claude Code</text>
+
+    <rect x="690" y="140" width="100" height="56" rx="8" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.5"/>
+    <text x="740" y="173" text-anchor="middle" font-size="13" font-weight="600" fill="#134e4a">runner</text>
+    <text x="740" y="216" text-anchor="middle" font-size="12" fill="#115e59">Codex</text>
+
+    <rect x="805" y="140" width="100" height="56" rx="8" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.5"/>
+    <text x="855" y="173" text-anchor="middle" font-size="13" font-weight="600" fill="#134e4a">runner</text>
+    <text x="855" y="216" text-anchor="middle" font-size="12" fill="#115e59">OpenCode</text>
+  </g>
+  <text x="740" y="248" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" fill="#0f766e" font-style="italic">lives where your code already is</text>
+
+  <rect x="580" y="322" width="320" height="66" rx="10" fill="#99f6e4" stroke="#0d9488" stroke-width="1.5"/>
+  <text x="740" y="349" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" font-weight="600" fill="#134e4a">credentials stay here</text>
+  <text x="740" y="369" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="#115e59">the board never sees a key</text>
+
+  <!-- the pull arrow: one direction only, runner to board -->
+  <line x1="550" y1="270" x2="415" y2="270" stroke="#334155" stroke-width="2.5" marker-end="url(#arrowhead-light)"/>
+  <text x="482" y="252" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" font-weight="600" fill="#1e293b">pulls work</text>
+  <text x="482" y="292" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="#475569">runner-initiated — the board never calls out</text>
+</svg>
