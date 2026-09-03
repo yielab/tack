@@ -198,6 +198,230 @@ tack restore /safe/place/tack.db
 
 ---
 
+## Execution
+
+Create, inspect, cancel and recover agent-fleet execution requests — the CLI form of
+`POST /api/executions` and friends. See [Running an item with an
+agent](agent-runners.md#running-an-item-with-an-agent) for a full worked example
+reaching a completed attempt, and [Choosing a model and a
+provider](agent-runners.md#choosing-a-model-and-a-provider) for what belongs in
+`--model-provider`/`--model-id` (they may be omitted; see that section for what fills
+them in when you do).
+
+```text
+$ tack execution --help
+Create/list/cancel/reconcile agent-fleet execution requests
+
+Commands:
+  create     Create (or idempotently replay) an execution request
+  list       List execution requests (newest first)
+  get        Get one execution request's current lifecycle state
+  cancel     Request cancellation of an execution (recorded as a request only — the runner observes and reports the actual outcome)
+  reconcile  Requeue a needs_operator execution after an audited recovery decision
+```
+
+```sh
+tack execution list
+```
+
+```text
+ID        ITEM                              STATE         CREATED         
+────────  ────────────  ────────────  ────────────
+exec_9b3  691e721e                          queued        2026-09-03      
+exec_1ec  1bb00bc7                          succeeded (…  2026-09-03      
+exec_0fe  e1d5e03d                          succeeded (…  2026-09-03      
+exec_14a  e4e3e686                          succeeded (…  2026-09-03      
+```
+
+```sh
+tack execution get exec_0fe7252989f5f3d40a056c1da45b035039e4a8247ad89e5222cf9280134ec5d1
+```
+
+```text
+Execution request exec_0fe7252989f5f3d40a056c1da45b035039e4a8247ad89e5222cf9280134ec5d1
+  item:    e1d5e03d-4610-45c2-b5f1-835e69f148a7
+  state:   succeeded (done)
+  created: 2026-09-03T19:00:16.697646760+00:00
+```
+
+`tack execution cancel <ID>` only records the request — the runner observes it and
+reports the actual outcome (cancellation is `advisory`, never `supported`; see the
+[capability matrix](agent-runners.md#capability-matrix)). `tack execution reconcile <ID>
+--recovery-key <KEY> --reason "..."` requeues a `needs_operator` request after an
+audited decision; see the [Recovery Runbook](recovery-runbook.md).
+
+---
+
+## Runner
+
+Enroll, revoke, and — for the runner side of the fence — actually run the runner role
+or check what this machine can do. `tack runner enroll` / `revoke` / `revoke-token` are
+the operator surface, covered in full in [Enrolling a
+runner](agent-runners.md#enrolling-a-runner); this section covers the other two
+subcommands, which act on the local machine rather than the operator's server.
+
+`tack runner doctor` needs no server and enrolls nothing — it runs the same
+discovery/capability probe as `runner start`, read-only, so you can check what a
+machine can do before enrolling it:
+
+```sh
+tack runner doctor
+```
+
+```text
+Tack runner doctor — harness discovery for this machine
+
+codex
+  status:      present
+  version:     0.149.1
+  credentials: Codex authenticates itself (its own CLI login flow or an API key it reads from its own environment/config — see `codex --help`). Tack never reads, stores, or forwards it. This adapter forwards no ambient host environment into an actual run: only entries explicitly set on the execution request's own `environment` field ever reach the codex process.
+  model_combinations: (none reported)
+  model_passthrough: supported — the adapter forwards requested_model_id verbatim via --model and rejects specs without an explicit model pre-spawn; model validity is established by the Codex CLI at run time, so operator-specified opaque models are accepted without the probe claiming any model list
+
+claude-code
+  status:      present
+  version:     2.1.252
+  credentials: Claude Code authenticates itself: typically an OAuth session under $HOME/.claude established by its own login flow, or an API key it reads from its own environment. Tack never reads, stores, or forwards it. This adapter forwards only HOME and PATH from the runner process's own environment, so the installed CLI can find its existing session; anything else must come through the execution request's own `environment` field.
+  model_combinations: (none reported)
+  model_passthrough: supported — the adapter forwards requested_model_id verbatim via --model; the CLI validates it at run time (an invalid model returns is_error:true), so operator-specified opaque models are accepted without the probe claiming any model list
+
+opencode
+  status:      present
+  version:     1.18.0
+  credentials: OpenCode authenticates itself against its own credential store (default ~/.local/share/opencode), populated by `opencode auth login` or provider-specific configuration. Tack never reads, stores, or forwards it. This adapter forwards PATH, HOME and the XDG_* variables from the runner process's own environment, so the installed CLI can find its existing config; anything else must come through the execution request's own `environment` field.
+  model_combinations:
+    llamacpp (reported): qwen3.6-35b-uncensored
+    opencode (reported): big-pickle, ling-3.0-flash-fin-free, mimo-v2.5-free, muse-spark-1.2-contributor-free, nemotron-3-ultra-free, nemotron-3.5-lightning-free
+  model_passthrough: unsupported — the adapter validates the requested model against opencode's enumerated combinations and refuses undeclared ones pre-spawn, so operator-specified models outside model_combinations are not accepted
+
+Runner-wide capabilities (apply identically to every harness above):
+  cancel     advisory    — process-group signal cannot reach a detached descendant
+  resume     unsupported — no resumable session contract
+  decisions  unsupported — no harness adapter in this tree ever opens a decision
+  artifacts  advisory    — uploaded when an adapter stages one; best-effort, not replayed on restart
+  usage      advisory    — usage is reported only when a harness emits it
+
+Tack does not proxy model providers. Each harness above authenticates itself using its own login/credential mechanism; Tack never reads, stores, or forwards what it finds. See docs/adr/0050-runner-control-plane.md and docs/adr/0058-standalone-single-binary-runner.md.
+```
+
+`tack runner start` runs the runner role in the current process, speaking runner-v1
+over HTTP against a Tack server — the same composition root the standalone
+`tack-runner` binary and `tack serve --with-runner` both use:
+
+```text
+$ tack runner start --help
+Usage: tack runner start [OPTIONS]
+
+Options:
+      --config <CONFIG>                    Optional TOML configuration file
+      --api-url <API_URL>                  Runner protocol endpoint. Overrides file and environment configuration
+      --runner-id <RUNNER_ID>               Stable identifier sent to the control plane
+      --state-dir <STATE_DIR>               Local directory for runner state. Overrides file and environment configuration
+      --enrollment-token <ENROLLMENT_TOKEN>  Enrollment credential. Prefer TACK_RUNNER_ENROLLMENT_TOKEN so it is not visible in shell history
+```
+
+---
+
+## Fleet
+
+Manage runner fleets — a named group of runners sharing an optional concurrency limit
+and a default model policy (see [Choosing a model and a
+provider](agent-runners.md#choosing-a-model-and-a-provider)). Adding a runner *to* a
+fleet has no CLI subcommand yet; see [Known
+gaps](agent-runners.md#known-gaps) for the API route that does it today.
+
+```sh
+tack fleet create "opus-fleet" \
+  --policy '{"default_model":{"provider":"anthropic","model_id":"claude-opus-4-1"}}'
+```
+
+```text
+Created fleet: opus-fleet (fleet_64)
+  id: fleet_64ab2a19-9e38-4820-a8c7-1fa78e435767
+```
+
+```sh
+tack fleet list --json
+```
+
+```json
+[
+  {
+    "concurrency_limit": null,
+    "default_policy": { "default_model": { "model_id": "claude-opus-4-1", "provider": "anthropic" } },
+    "fleet_id": "fleet_64ab2a19-9e38-4820-a8c7-1fa78e435767",
+    "name": "opus-fleet"
+  }
+]
+```
+
+---
+
+## Agent Profiles
+
+Reusable instructions, tool policy and limits, snapshotted into an execution request at
+creation time — later edits to the profile never change history already recorded. A
+`{"default_model": {...}}` object inside `--limits` is the second tier of the model
+precedence; see [Choosing a model and a
+provider](agent-runners.md#choosing-a-model-and-a-provider).
+
+```sh
+tack agent-profile create "sonnet-profile" \
+  --instructions "Print the single word DONE and exit. Do not modify any files." \
+  --limits '{"default_model":{"provider":"anthropic","model_id":"claude-sonnet-4-5"}}'
+```
+
+```text
+Created agent profile: sonnet-profile (ap_6e564)
+  id: ap_6e5649b8-1844-473b-ba36-2a8da37a8256
+```
+
+```sh
+tack agent-profile list
+```
+
+```text
+ID        NAME                            
+────────  ────────────────────────────────
+ap_91b4e  demo-profile                    
+ap_6e564  sonnet-profile                  
+```
+
+---
+
+## Model Profiles
+
+Named, saved `(provider, model_id)` pairs for operator convenience — a pick-list the
+web UI's model picker reads. **Not itself a tier of the model precedence:** creating one
+here has no scheduling effect until an operator or the UI picks it and its pair is
+copied into an execution request's own `--model-provider`/`--model-id` (the
+highest-precedence tier); see [Choosing a model and a
+provider](agent-runners.md#choosing-a-model-and-a-provider) and [Known
+gaps](agent-runners.md#known-gaps).
+
+```sh
+tack model-profile create "sonnet-4.5" --provider anthropic --model-id claude-sonnet-4-5
+```
+
+```text
+Created model profile: sonnet-4.5 (mp_ecf57)
+  provider: anthropic
+  model:    claude-sonnet-4-5
+  id:       mp_ecf5721b-ed25-48cc-bf20-3ed8ee1ba024
+```
+
+```sh
+tack model-profile list
+```
+
+```text
+ID        NAME                              PROVIDER      MODEL           
+────────  ────────────────────────────────  ────────────  ────────────
+mp_ecf57  sonnet-4.5                        anthropic     claude-sonnet-4…
+```
+
+---
+
 ## MCP Server (AI agents)
 
 `tack mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server
