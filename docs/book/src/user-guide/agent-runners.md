@@ -8,6 +8,13 @@ running the `tack-runner` binary, enrolling and revoking runners, where credenti
 workspaces live, what a runner can honestly promise (the capability matrix), and how
 version compatibility and network exposure work.
 
+The question every new user asks first — *which model, from which provider, and where
+do I put the key* — has a direct answer below, not a negation: see
+[Choosing a model and a provider](#choosing-a-model-and-a-provider). The four ways to
+turn a board item into a completed attempt are in
+[Running an item with an agent](#running-an-item-with-an-agent), before the operational
+detail (enrollment, credentials, recovery) that follows it.
+
 This is a separate system from [Orchestration & the Fleet View](orchestration.md),
 which covers Docket. Docket is optional and legacy here — see
 [Docket compatibility](#docket-compatibility) below for exactly how the two relate.
@@ -29,12 +36,239 @@ proves it.
 | **Runner** | A `tack-runner` process, identified by a durable `runner_id`, enrolled once and then polling for work. |
 | **Runner fleet** | A named group of runners sharing an optional concurrency limit and default policy. An execution request targets either one exact runner or a fleet. |
 | **Agent profile** | Reusable instructions + tool policy + limits, snapshotted into the request at creation time so later edits to the profile never change history. |
-| **Harness** | The coding-agent CLI a runner can launch: `codex`, `claude_code`, or `opencode`. |
+| **Harness** | The coding-agent CLI a runner can launch: `codex`, `claude-code`, or `opencode`. |
 | **Model profile** | A named `(model_provider, model_id)` pair, stored for operator convenience. Not yet consulted by scheduling or model resolution — see [Known gaps](#known-gaps). |
 
 `Harness` ≠ `ModelProvider` ≠ `ModelId`, and `Item` ≠ `ExecutionRequest` ≠
 `ExecutionAttempt` — these stay distinct on the wire and in the database on purpose;
 see `docs/contracts/runner-v1/protocol.json`.
+
+---
+
+## Running an item with an agent
+
+There are four ways to turn a board item into an execution request. All four produce
+the identical `POST /api/executions` record underneath — none is more "real" than
+another.
+
+| Entry point | Where | Notes |
+|---|---|---|
+| The **"Run with agent"** modal | Item detail drawer, web UI (`RunWithAgentModal.tsx`) | Five hand-typed fields today (runner/fleet, harness, model or Auto, timeout) and no memory between runs — see [Known gaps](#known-gaps). |
+| `tack execution create` | CLI | Scriptable; every field the API accepts is a flag. Used for the worked example below. |
+| `POST /api/executions` | Raw HTTP | Same JSON body the CLI sends. See [API Reference](../../../API-REFERENCE.md#runner-fleet--execution) for a worked request/response pair. |
+| MCP `create_execution` | `tack mcp`, for an agent driving Tack itself | Same required fields as the REST call. See the [MCP guide](../../../MCP.md). |
+
+The rest of this section is one complete run through the CLI path, executed against a
+real `tack serve --with-runner` with a stand-in `claude` binary standing in for a real,
+authenticated install (so it costs nothing and never leaves the machine) — every id and
+every line of output below is copied from that run, not constructed from the schema.
+Swap the stand-in for a real, logged-in harness and the same commands reach the same
+place against real work.
+
+**Before this:** a project and an item exist (`tack init`, `tack add`), and either a
+real enrolled runner is polling (see [Enrolling a runner](#enrolling-a-runner) below) or
+an embedded one is running (`tack serve --with-runner` — see
+[Standalone mode](#standalone-mode-tack-serve---with-runner) below). `POST
+/api/executions` requires all thirteen fields shown below; the CLI fills in an
+`idempotency_key` (a fresh UUID) and empty objects for `budgets`/`environment`/`metadata`
+if you omit them, so five of the thirteen are effectively optional in practice.
+
+Create an agent profile — its instructions and limits are snapshotted into every
+request created against it:
+
+```sh
+tack agent-profile create "demo-profile" \
+  --instructions "Print the single word DONE and exit. Do not modify any files."
+```
+
+```text
+Created agent profile: demo-profile (ap_91b4e)
+  id: ap_91b4ea76-9f1a-4725-8a58-21a57d92572c
+```
+
+Find the runner to target. An embedded runner self-provisions under a name starting
+`local-`; there is no `tack runner list` CLI subcommand today (see
+[Enrolling a runner](#enrolling-a-runner)), so read it back over the API:
+
+```sh
+curl -s http://127.0.0.1:3210/api/runners | jq -r '.data[].runner_id'
+```
+
+```text
+runr_8fa0dfb9-638f-492d-b278-ee06a789ad04
+```
+
+Now the full request, all thirteen required fields:
+
+```sh
+tack execution create <ITEM_ID> \
+  --idempotency-key "release-notes-001" \
+  --runner runr_8fa0dfb9-638f-492d-b278-ee06a789ad04 \
+  --agent-profile ap_91b4ea76-9f1a-4725-8a58-21a57d92572c \
+  --harness claude-code \
+  --model-provider anthropic \
+  --model-id claude-sonnet-4-5 \
+  --agent-profile-snapshot '{"name":"demo-profile","instructions":"Print the single word DONE and exit. Do not modify any files.","tool_policy":{},"timeout_seconds":120,"budgets":{}}' \
+  --repository '{"kind":"git","remote":"/path/to/local/repo","base_revision":"ce38796ef4f70db35eeb8d6d8b8e86477e1a883c","subdirectory":null}' \
+  --permission-policy '{"tools":[],"network":false}' \
+  --timeout-seconds 120
+```
+
+```text
+Created execution request: exec_0fe
+  state: queued
+  id:    exec_0fe7252989f5f3d40a056c1da45b035039e4a8247ad89e5222cf9280134ec5d1
+```
+
+Poll for the terminal state — a fresh embedded runner claims and completes an attempt
+against a stand-in harness in well under a second:
+
+```sh
+tack execution get exec_0fe7252989f5f3d40a056c1da45b035039e4a8247ad89e5222cf9280134ec5d1
+```
+
+```text
+Execution request exec_0fe7252989f5f3d40a056c1da45b035039e4a8247ad89e5222cf9280134ec5d1
+  item:    e1d5e03d-4610-45c2-b5f1-835e69f148a7
+  state:   succeeded (done)
+  created: 2026-09-03T19:00:16.697646760+00:00
+```
+
+That is a completed attempt, reached with the commands above and no browser. For the
+attempt-level detail `tack execution get` does not surface — fencing token, workspace
+id, the staged artifact, the harness's own capability report at claim time — use
+`GET /api/executions/{request_id}/attempts`:
+
+```sh
+curl -s http://127.0.0.1:3210/api/executions/exec_0fe7252989.../attempts | jq '.data[0]'
+```
+
+```json
+{
+  "attempt_id": "att_fea7528f-853b-4c3c-a2d6-d1cf1b904e48",
+  "state": "succeeded",
+  "fencing_token": 1,
+  "workspace_id": "ws_6174745f66656137353238662d383533622d346333632d613264362d643163663162393034653438",
+  "actual_execution": {
+    "harness_kind": "claude-code",
+    "model_provider": "anthropic",
+    "model_id": "unknown",
+    "model_observation_source": "not_observed"
+  },
+  "terminal_reason": {
+    "exit": "Exited(0)",
+    "reason": "no structured result envelope was produced; inferred success from exit code 0",
+    "artifact": { "kind": "log", "name": "claude-code-run.log", "size_bytes": 52 }
+  }
+}
+```
+
+Two things in that real output are worth reading closely rather than past: `model_id`
+came back `"unknown"` with source `not_observed` — the stand-in binary used for this
+page never echoes a model id the way a real harness does, and Tack reports that
+honestly rather than assuming the requested id was actually the one that ran (the same
+"not measured, never a fabricated value" rule as
+[usage economics](#usage-economics-and-not-measured), applied to model identity instead
+of cost). And `terminal_reason.reason` came from an *inferred* exit code, not a
+structured result — a real harness's own structured output, when it produces one, is
+read instead; see [What actually runs today](#what-actually-runs-today).
+
+## Choosing a model and a provider
+
+Two rules sit next to each other, on purpose, because keeping them apart is what caused
+the confusion this section replaces: **Tack never holds a provider credential** — no
+`TACK_*` variable configures an API key, an endpoint, or a gateway, ever
+(`crates/tack-orch/src/scheduler/select.rs`; see [Non-loopback and security
+posture](#non-loopback-and-security-posture) and, for the embedded runner specifically,
+`docs/CONFIG.md`'s "Embedded runner" section) — and **Tack does route the model
+choice**: which `(provider, model_id)` pair reaches the harness for a given request is
+resolved server-side, deterministically, before the request is ever offered to a
+runner. Neither rule contradicts the other: routing a choice and holding a secret are
+different things, and Tack does the first without ever needing to do the second.
+
+### The four-tier precedence
+
+`crates/tack-orch/src/model_policy` resolves a request's model in this order, most
+specific first, stopping at the first tier that has a value:
+
+1. **Request override** — `requested_model_provider`/`requested_model_id` on the
+   request itself (`--model-provider`/`--model-id` on the CLI, the `POST
+   /api/executions` body fields of the same name). Set by an explicit CLI flag, a raw
+   API caller, or the modal's model picker when it isn't left on "Auto".
+2. **Agent-profile default** — a `{"default_model": {"provider": "...", "model_id":
+   "..."}}` object inside the agent profile's own `limits` field (`POST
+   /api/agent-profiles --limits '...'` or `tack agent-profile create --limits '...'`).
+   Live-verified: creating a profile with this default and a request that omits
+   `--model-provider`/`--model-id` entirely still resolves and completes:
+   ```sh
+   tack agent-profile create "sonnet-profile" \
+     --instructions "..." \
+     --limits '{"default_model":{"provider":"anthropic","model_id":"claude-sonnet-4-5"}}'
+   # then tack execution create <item> --agent-profile ap_6e5649b8... --harness claude-code ... (no --model-provider/--model-id)
+   ```
+   the resulting attempt's `actual_execution.model_provider` came back `"anthropic"` —
+   resolved server-side from the profile, never supplied on the request.
+3. **Project default** — *no storage exists for this today.* `projects` has
+   `vocabulary`/`workflow` JSON columns and no general-purpose settings column;
+   `resolve_request_model_policy` always passes `None` for this tier
+   (`crates/tack-orch/src/model_policy/wiring.rs`). A project-level default is not a
+   partially-wired feature — it is a column that has not been added yet.
+4. **Fleet default** — the same `{"default_model": {...}}` convention, inside
+   `agent_fleets.default_policy` (`tack fleet create --policy '...'`). Applies only to a
+   request that targets the fleet itself (`selector_kind: "fleet"`) — an
+   `exact_runner`-targeted request never consults any fleet's policy, since it never
+   names one. Live-verified the same way as tier 2: a fleet created with
+   `--policy '{"default_model":{"provider":"anthropic","model_id":"claude-opus-4-1"}}'`,
+   a request targeting `--fleet <that fleet>` with an agent profile that has no default
+   of its own, resolved to `actual_execution.model_provider: "anthropic"`.
+5. **Auto-select** — what happens when every tier above is empty. This is not a
+   fallback that quietly picks something: see the next section.
+
+All four tiers are resolved once, server-side, at request-creation time
+(`crates/tack-api/src/handlers/executions.rs`, immediately before the request is
+stored) — only when the caller supplied neither `requested_model_provider` nor
+`requested_model_id`; an explicit pair (even a deliberately wrong one) is never
+second-guessed by a lower tier.
+
+### Auto-select does not schedule today
+
+Leaving every tier empty is a real, acceptable-looking state to reach — the modal's
+model picker defaults to "Auto (let the runner decide)", and a request created that way
+is accepted and stored as `queued` with no error. But no runner-v1 capability field
+attests that a harness safely accepts an unspecified model, so the scheduler rejects
+every candidate for an auto-select request with `AutoSelectNotVerified`
+(`crates/tack-orch/src/scheduler/select.rs`) rather than guess. **Live-verified:** a
+request created with `requested_model_provider`/`requested_model_id` both `null` and no
+tier above resolving to a value stayed `queued`, with zero attempts, indefinitely — no
+`needs_operator`, no error surfaced anywhere an operator would see it. The only fix
+today is to supply an explicit model somewhere in the four tiers above; there is
+currently no operator-visible signal that distinguishes a genuinely queued request from
+one that can never be scheduled.
+
+### What a runner will actually accept
+
+An explicit `(provider, model_id)` pair is eligible to schedule when either the target
+harness's capability snapshot **declares** that exact pairing in `model_combinations`,
+or the harness attests `model_passthrough: supported` (the adapter forwards the
+operator's opaque model id verbatim and the harness validates it at its own run time).
+`model_passthrough: advisory` is treated as unverified and rejected exactly like
+`unsupported` — a capability claim below `supported` is not load-bearing
+(`crates/tack-orch/src/scheduler/select.rs`). Run `tack runner doctor` on the actual
+runner host to see this for real rather than trusting a stale copy of this page — the
+full command and its unabridged output are in the [CLI reference](cli.md#runner).
+Condensed from a real run on a machine with all three harnesses installed:
+
+| Harness | `model_combinations` | `model_passthrough` |
+|---|---|---|
+| `codex` | (none reported) | supported |
+| `claude-code` | (none reported) | supported |
+| `opencode` | `llamacpp`: `qwen3.6-35b-uncensored`; `opencode`: `big-pickle`, `ling-3.0-flash-fin-free`, … | unsupported |
+
+Codex and Claude Code both have no `list-models` command to probe, so both declare zero
+combinations and rely entirely on passthrough — any operator-specified model is accepted
+pre-spawn and only the harness itself validates it at run time. OpenCode's CLI does
+enumerate real installed/configured models, so it declares them and refuses passthrough
+— an undeclared OpenCode model is rejected before any process spawns, not after.
 
 ---
 
@@ -365,7 +599,11 @@ Token usage, when the harness reports it, is `measured`. When it doesn't, it is
 ## Known gaps
 
 These are documented rather than papered over, per this project's
-"unsupported is typed, unknown is explicit" rule:
+"unsupported is typed, unknown is explicit" rule. Two of the bullets that used to sit
+here (`model_profiles` and `agent_fleet_members`, below) were re-checked against the
+running code while writing this page and turned out to already be false — corrected
+rather than silently dropped, since a reader who remembered the old claim deserves to
+see it was wrong and why:
 
 - **No decision- or artifact-discovery/list endpoint exists.** `resolve_decision` and
   the artifact-content download route both require an already-known id; there is no
@@ -375,16 +613,32 @@ These are documented rather than papered over, per this project's
   frontend are built and tested against this reality — they accept a manually-entered
   id today. See `docs/agent-handoffs/part-iii/III-F4.md` for the concrete route shape
   requested to close this.
-- **`model_profiles` (migration 043) is not yet consulted.** `POST/GET
-  /api/model-profiles` store and list rows, but nothing in the scheduler, the
-  execution-create path, or model resolution reads them — a model profile is
-  currently just a saved label with no runtime effect.
+- **`model_profiles` (migration 043) is a saved label, not a scheduling input.**
+  `POST`/`GET /api/model-profiles` store and list named `(provider, model_id)` pairs
+  for operator convenience; `resolve_request_model_policy` never reads that table — it
+  is not one of the four tiers in [Choosing a model and a
+  provider](#choosing-a-model-and-a-provider) (`crates/tack-orch/src/model_policy/wiring.rs`).
+  The "Run with agent" modal reads the list to populate its model picker, then copies
+  the chosen pair into the request's own `requested_model_provider`/`requested_model_id`
+  — the *highest*-precedence tier — before the request is created
+  (`frontend/src/shared/runWithAgent/RunWithAgentModal.tsx`). A model profile has real
+  effect through that copy, never by being consulted as a default itself.
 - **`projects` has no default-model-policy storage.** `ModelPolicySources.
   project_default` is modeled in the response shape but is always `None`.
-- **`agent_fleet_members` has no write route on any API surface.** Fleet-membership
-  eligibility is exercised directly against the database in
-  `crates/tack-orch/tests/scheduler_wiring_test.rs`, not through an operator route —
-  there is no way to add a runner to a fleet via the API or CLI today.
+- **`agent_fleet_members` has a write route; nothing in the UI calls it yet.**
+  `POST /api/runner-fleets/{fleet_id}/members` and `DELETE
+  .../members/{runner_id}` exist and work (`crates/tack-api/src/handlers/runner_admin.rs`)
+  — live-verified for this page:
+  ```sh
+  curl -X POST http://127.0.0.1:3210/api/runner-fleets/<fleet_id>/members \
+    -d '{"runner_id":"<runner_id>"}'
+  ```
+
+  ```text
+  {"protocol_version":1,"fleet_id":"fleet_64ab2a19-...","runner_id":"runr_8fa0dfb9-...","state":"added"}
+  ```
+  but the Fleet panel in the web UI has no control that calls either route — adding a
+  runner to a fleet today means calling the API directly.
 - **`execution_requests` has no real `priority` column.** A `metadata`-convention
   stopgap exists, documented as non-binding.
 - **Webkit could not be evaluated** in this build environment (missing
