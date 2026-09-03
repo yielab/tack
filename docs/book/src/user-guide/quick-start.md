@@ -56,6 +56,77 @@ Ready to put it on a network or add a token? See [Administration & Security](adm
 
 ---
 
+## Run an item with an agent
+
+The fewest steps from the binary you already have to a coding agent completing an item
+on your board, no second process and no operator-issued token — every step below is a
+real command against a real server, copied from an actual run.
+
+Start the server with the embedded runner instead of plain `tack` (it self-provisions
+on first start — see [Standalone mode](agent-runners.md#standalone-mode-tack-serve---with-runner)):
+
+```sh
+tack serve --with-runner
+```
+
+In another terminal, create an agent profile — its instructions travel with every
+request created against it:
+
+```sh
+tack agent-profile create "release-notes" \
+  --instructions "Summarize the diff and write docs/CHANGELOG entries."
+```
+
+```text
+Created agent profile: release-notes (ap_91b4e)
+  id: ap_91b4ea76-9f1a-4725-8a58-21a57d92572c
+```
+
+Find the runner id — the embedded runner enrolled itself under it:
+
+```sh
+curl -s http://127.0.0.1:3210/api/runners | jq -r '.data[].runner_id'
+```
+
+Using the item id from [First use](#first-use) above, create the execution request
+(swap in your own harness — `codex`, `claude-code`, or `opencode` — and whichever model
+it accepts; see [Choosing a model and a
+provider](agent-runners.md#choosing-a-model-and-a-provider) if unsure):
+
+```sh
+tack execution create <ITEM_ID> \
+  --runner <RUNNER_ID> \
+  --agent-profile ap_91b4ea76-9f1a-4725-8a58-21a57d92572c \
+  --harness claude-code --model-provider anthropic --model-id claude-sonnet-4-5 \
+  --agent-profile-snapshot '{"name":"release-notes","instructions":"Summarize the diff and write docs/CHANGELOG entries.","tool_policy":{},"timeout_seconds":600,"budgets":{}}' \
+  --repository '{"kind":"git","remote":"/path/to/your/repo","base_revision":"<COMMIT_SHA>","subdirectory":null}' \
+  --permission-policy '{"tools":[],"network":false}' \
+  --timeout-seconds 600
+```
+
+```text
+Created execution request: exec_0fe
+  state: queued
+  id:    exec_0fe7252989f5f3d40a056c1da45b035039e4a8247ad89e5222cf9280134ec5d1
+```
+
+```sh
+tack execution get exec_0fe7252989f5f3d40a056c1da45b035039e4a8247ad89e5222cf9280134ec5d1
+```
+
+```text
+Execution request exec_0fe7252989f5f3d40a056c1da45b035039e4a8247ad89e5222cf9280134ec5d1
+  state:   succeeded (done)
+```
+
+That is a completed attempt. The same request can be created from the item's "Run with
+agent" button in the web UI instead of the CLI — see [Running an item with an
+agent](agent-runners.md#running-an-item-with-an-agent) for all four ways to do this, the
+full field-by-field reference, and what today's known gaps are (no memory of prior runs
+in the modal, no runner picker — copy the id from the command above).
+
+---
+
 ## Development mode (run from source)
 
 For contributing to Tack or running with hot reload. The API server and Vite dev server run as separate processes.
