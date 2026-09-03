@@ -100,12 +100,18 @@ enroll` call, no token to copy anywhere.
   | `opencode` | Its own credential store (default `~/.local/share/opencode`), populated by `opencode auth login` or provider-specific configuration. This adapter forwards `PATH`, `HOME` and the `XDG_*` variables. |
 
   OpenRouter access and local-model endpoints (llama.cpp and similar) are configured the
-  same way: through the harness's own configuration or environment, never through a Tack
-  setting — there is no `TACK_*` variable for a model provider or endpoint, by design.
-  See [`docs/adr/0050-runner-control-plane.md`](adr/0050-runner-control-plane.md) ("the
-  Tack API never starts a coding harness and never becomes a model proxy") and
+  same way: through the harness's own configuration or environment. No `TACK_*` variable
+  on the **API server** names a model provider or endpoint, and the API server itself
+  never holds, forwards, or proxies a provider credential. The **runner** is not under
+  that restriction: it may hold a provider key in its own owner-only state directory, and
+  a loopback-only, embedded-runner-only route hands one to that store without the key
+  ever touching `tack.db`, a log line, or the operator API otherwise — see
+  [`docs/adr/0061-provider-credentials-at-the-runner-boundary.md`](adr/0061-provider-credentials-at-the-runner-boundary.md)
+  for what a runner may hold, how a key reaches it, and how a gateway's model catalog is
+  fetched. See [`docs/adr/0050-runner-control-plane.md`](adr/0050-runner-control-plane.md)
+  ("the Tack API never starts a coding harness and never becomes a model proxy") and
   [`docs/adr/0058-standalone-single-binary-runner.md`](adr/0058-standalone-single-binary-runner.md)
-  ("Vendor credentials remain outside Tack") for the decisions behind this.
+  ("Vendor credentials remain outside Tack") for the decisions this one bounds.
 - **Log visibility.** The embedded runner's own log lines (self-provisioning,
   enrollment, claim, completion — anything logged by `tack_runner::*` or by the `tack`
   binary's own `local_runner`/`local_enrollment` modules) do **not** appear under
