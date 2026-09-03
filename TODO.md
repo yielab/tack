@@ -82,7 +82,7 @@ i18n, time tracking and in-UI diff review stay deferred — see §VI.5.
 
 | Wave | Cards | Phase | Status |
 |---|---|---|---|
-| 14 — Truth first | VI-A1 · VI-A2 · VI-A3 | 60 | Not started. All three independent of everything; A2 is a decision the user approves before Wave 15 branches; A3 restructures the README around the two-component statement and goes before Part V's V-C3 on that file |
+| 14 — Truth first | VI-A1 · VI-A2 · VI-A3 | 60 | **Dispatched** at `c6407dc` — three Sonnet agents running in parallel, isolated worktrees. All three independent of everything; A2 is a decision the user approves before Wave 15 branches; A3 restructures the README around the two-component statement and goes before Part V's V-C3 on that file |
 | 15 — Provider at the runner boundary | VI-B1 · VI-B2 · VI-B3 | 60 | Not started — needs VI-A2 accepted. B1 → B2 sequential; B3 needs B1, merges after B2 |
 | 16 — UI-first flow | VI-C1 · VI-C2 · VI-C3 · VI-C4 | 60 | Not started — C3 and C4 need only VI-A2 and may run alongside Wave 15; C1 needs B2 + B3; C2 needs C3 |
 | 17 — Proof | VI-D1 · VI-D2 | 60 | Not started — last wave. D2 (assets) needs C1, C2 and Part V's V-C2, which owns `docs/screenshots/`; D1 goes last and needs everything |
