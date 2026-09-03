@@ -7,7 +7,7 @@ description: Pick up and deliver one card/task from this repo's active planning 
 
 > **Report using `.claude/reporting-contract.md`.** Lead with the capability in plain language — what someone can or cannot do now — and keep file and function names in the technical-detail section at the end. Explain every blocker as: what is missing, what it was for, what it blocks.
 >
-> **Budget your reading with `.claude/context-budget.md`** — `TODO.md` whole is ~184k tokens; the active boards are ~15k.
+> **Budget your reading with `.claude/context-budget.md`** — `TODO.md` whole is ~199k tokens; one Part's board is ~15k and one card's cold start is ~7k. **If the cycle has a dispatch plan (`docs/agent-handoffs/<part>/README.md`), your card's block there is the read list — follow it instead of §1's generic recipe.**
 > **Bound your scope with `.claude/scope-discipline.md`** — this tree's recurring defect is well-built mechanisms with no caller.
 
 You are delivering ONE unit of planned work from `TODO.md`. Works for any cycle (Parts IV
@@ -15,32 +15,44 @@ and V today, whatever succeeds them tomorrow). The argument is the card/task id 
 
 ## 1. Discover the active cycle — never read TODO.md whole
 
-`TODO.md` is ~11k lines. **Reading it whole costs ~184k tokens** — most of a context window,
+`TODO.md` is ~12k lines. **Reading it whole costs ~199k tokens** — most of a context window,
 for a file that is ~90% closed-cycle history. It is laid out so you never have to:
 
 ```bash
-head -55 TODO.md            # header: which Parts are ACTIVE, and the archive rule. ~1k tokens.
+head -58 TODO.md            # header: which Parts are ACTIVE, and the archive rule. ~1k tokens.
 grep -n "^# \|^## " TODO.md # the map. Do this before any sed.
 
 # Your card's section (headings follow "### <ID> — <title>"):
-n=$(grep -n "### <ID> " TODO.md | cut -d: -f1); sed -n "${n},$((n+60))p" TODO.md
+n=$(grep -n "### <ID> " TODO.md | cut -d: -f1); sed -n "${n},$((n+75))p" TODO.md   # the longest card is 75 lines
 ```
 
-**Current layout (since the 2026-08-30 depuration):** active boards first — **Part V**
-(adoption, §V) then **Part IV** (single-binary, §IV) — in roughly the first 1040 lines. Below
-them, an `# Archive` divider, then Parts I, II and III unchanged. The archive stays in this
-file because 234 Rust doc comments cite its section numbers; do not propose moving it.
+**Current layout (since 2026-09-03):** active boards first — **Part VI** (agent onboarding
++ provider UX, §VI, ~940 lines), then **Part V** (adoption, §V), then **Part IV** (single-binary,
+§IV, done) — in roughly the first 2000 lines. Below them, an `# Archive` divider, then Parts
+I, II and III unchanged. The archive stays in this file because 234 Rust doc comments cite
+its section numbers; do not propose moving it. **Extract one Part, never all three.**
 
-**Two Parts are active at once and they share `scripts/smoke.sh`, `README.md` and
-`docs/CONFIG.md`.** Read §V.3 before branching a card in either. It names which card goes
-first and which takes the merge.
+**Two Parts are active at once and they share `README.md` and `docs/screenshots/**`.** Read
+§VI.3 (which defers to §V.3 for the files Part V still owns) before branching a card in
+either. They name which card goes first and which takes the merge.
+
+### 1a. If the cycle has a dispatch plan, it replaces the recipe above
+
+`docs/agent-handoffs/<part>/README.md` (Part VI has one) carries, per card: the exact read
+list with measured sizes, what not to read, the gate command, the handoff extras, and the
+stop conditions. **Read its header and your card's block, nothing else in it** (~2k
+tokens), then read only what the block names. Its hard ceilings apply: cold start ≤ 25k
+tokens, ≤ 120k at handoff, stop and hand off at ~150k. A file you opened and did not use
+goes in the handoff's "Context spent" section — that is how the plan gets corrected for
+the next agent. Never spawn a subagent from a card: it costs a full context, and every
+block is sized for one agent.
 
 From your Part's section, read (line-ranged, not whole-file): the **status board** row for
 your wave, the **rules** section, the **shared-file ownership** table, and your card's
 **Owns / Context / Tasks / Acceptance**.
 
-Then read only the handoffs your card's `Context` names. All 48 handoffs together are ~221k
-tokens; a single large one is ~15k. CLAUDE.md is **already in your context** — don't re-derive
+Then read only the handoffs your card's `Context` (or its dispatch block) names. All
+handoffs together are ~240k tokens; a single large one is ~15k. CLAUDE.md is **already in your context** — don't re-derive
 architecture from source, and don't re-read it.
 
 **Facts a card states as measured are not yours to re-derive.** The boards carry measured
@@ -113,8 +125,9 @@ unknown.
 
 ## 4. Handoff (mandatory)
 
-Write `docs/agent-handoffs/<cycle-dir>/<ID>.md` following the template in the cycle's
-rules section. Record what you believed, what you verified, what you escalated, and any
+Write `docs/agent-handoffs/<cycle-dir>/<ID>.md` from the cycle's `TEMPLATE.md` when one
+exists (Part VI: `docs/agent-handoffs/part-vi/TEMPLATE.md`) — never open the Part III
+archive to find the template; older cycles inline it in their rules section. Record what you believed, what you verified, what you escalated, and any
 shared-file requests. Corrections are appended as amendments — the original claim stays;
 the history of what was believed and later falsified is the point. Update the status
 board row only if you are the integrator; otherwise propose the row text in the handoff.
