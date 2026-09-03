@@ -10,14 +10,17 @@ SolidJS frontend, single `tack` binary with the SPA embedded. Multiple workflows
 (Scrum/Kanban/phase) with per-project vocabulary; 10 project-type presets; MCP server
 (`tack mcp`); Alexa integration. Core is complete (backend, frontend, CLI).
 
-**Active cycles — two, in parallel:** **Part V** (Phase 59, adoption + first real public
-release) and **Part IV** (Phase 58, `tack serve --with-runner`). Both unstarted, both branch
-from `develop`, and they share `scripts/smoke.sh`, `README.md` and `docs/CONFIG.md` under the
-conflict rule in `TODO.md` §V.3 — read it before branching a card in either. The boards are
-the authority for what shipped; `docs/book/src/roadmap.md` records only intent.
+**Active cycles — two, in parallel:** **Part VI** (Phase 60, agent onboarding + provider UX:
+one screen that owns the path from an installed binary to a completed attempt, project-level
+model choice, Vercel AI Gateway as a runner-side provider — unstarted) and **Part V** (Phase
+59, adoption + first public release — Wave 13 in flight). Part IV (Phase 58, `tack serve
+--with-runner`) is done. Both active Parts branch from `develop` and share `README.md` and
+`docs/screenshots/**` under the conflict rules in `TODO.md` §VI.3 and §V.3 — read them before
+branching a card in either. The boards are the authority for what shipped;
+`docs/book/src/roadmap.md` records only intent.
 
-**Never read `TODO.md` whole — it costs ~184k tokens.** Active boards sit in its first ~1040
-lines; the archive (Parts I–III) is below and stays in-file because 234 doc comments cite its
+**Never read `TODO.md` whole — it costs ~199k tokens.** Active boards sit in its first ~2000
+lines (Part VI, then V, then IV — extract one, not all three); the archive (Parts I–III) is below and stays in-file because 234 doc comments cite its
 section numbers. Costs and extraction recipes for every big file:
 **`.claude/context-budget.md`**. Before designing anything, read
 **`.claude/scope-discipline.md`** — this tree's recurring defect is well-built mechanisms

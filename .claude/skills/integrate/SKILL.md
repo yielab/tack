@@ -7,8 +7,8 @@ description: Merge finished card branches into the integration line and review t
 
 > **Report using `.claude/reporting-contract.md`.** Lead with the capability in plain language — what someone can or cannot do now — and keep file and function names in the technical-detail section at the end. Explain every blocker as: what is missing, what it was for, what it blocks.
 >
-> **Budget your reading with `.claude/context-budget.md`** — `TODO.md` whole is ~184k tokens,
-> the active boards ~15k, all handoffs together ~221k. Grep before you read; read a range
+> **Budget your reading with `.claude/context-budget.md`** — `TODO.md` whole is ~199k tokens,
+> the three active boards ~33k (one Part ~15k; one card's cold start ~7k), all handoffs together ~240k. Grep before you read; read a range
 > before a file. CLAUDE.md is already in your context — don't re-derive or re-read it.
 > **Bound your scope with `.claude/scope-discipline.md`** — this tree's recurring defect is
 > well-built mechanisms with no caller.
@@ -83,6 +83,17 @@ becomes an unknown one.
 Merge the branch that others depend on first (docs and CI usually last, since they
 describe what the others did). After each merge, only check that the tree still builds —
 save the full gate set for the end.
+
+## 4a. Run the cycle's integrator checklist, if it has one
+
+`docs/agent-handoffs/<part>/README.md` may carry a per-wave **Integrator checklist** (Part
+VI does: `sed -n '/^## Integrator checklist/,/^## The mistakes/p' docs/agent-handoffs/part-vi/README.md`).
+It names the adversarial checks the wave must survive — revert-the-fix proofs, absence
+assertions with positive controls, the 404-on-non-loopback check, the stranger-read test.
+Those are §III.2 rule 14's "verification by someone who did not author the code"; the
+cards' own green tests do not substitute for them. Regenerate `docs/openapi.json` and
+`frontend/src/shared/api/schema.gen.ts` after **each** merge that touched a handler, and
+commit them with that merge — never hand-edit, never batch three merges' drift into one.
 
 ## 5. Gate once, on the integrated tree
 

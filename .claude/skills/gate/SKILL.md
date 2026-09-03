@@ -7,12 +7,12 @@ description: Run this repo's verification, cheapest-first and scoped to what cha
 
 > **Report using `.claude/reporting-contract.md`.** Lead with the capability in plain language — what someone can or cannot do now — and keep file and function names in the technical-detail section at the end. Explain every blocker as: what is missing, what it was for, what it blocks.
 >
-> **Budget your reading with `.claude/context-budget.md`** — `TODO.md` whole is ~184k tokens,
-> the active boards ~15k, all handoffs together ~221k. Grep before you read; read a range
+> **Budget your reading with `.claude/context-budget.md`** — `TODO.md` whole is ~199k tokens,
+> the three active boards ~33k (one Part ~15k; one card's cold start ~7k), all handoffs together ~240k. Grep before you read; read a range
 > before a file. CLAUDE.md is already in your context — don't re-derive or re-read it.
 
 
-Argument = scope: `core|db|orch|api|runner|frontend|contract|full`. If no scope given,
+Argument = scope: `core|db|orch|api|runner|frontend|contract|docs|full`. If no scope given,
 derive it from `git diff --name-only <base>` — test the crates/dirs actually touched.
 Never start with `--release` or the full workspace when a scoped check answers the
 question.
@@ -35,7 +35,8 @@ Crate map is in CLAUDE.md. Two standing caveats:
 ## Contract / spec (run when touching wire shapes, DTOs, handlers, or the API surface)
 
 Named gate tests live under `crates/*/tests/` — list them (`ls crates/*/tests/`) rather
-than trusting a remembered set; cycles add gates. As of Part III the load-bearing ones
+than trusting a remembered set; cycles add gates, and a cycle's dispatch README
+(`docs/agent-handoffs/<part>/README.md`) names the ones each card must run. As of Part III the load-bearing ones
 are `runner_contract` (byte-pins the contract fixtures), `wave2_gate` (full lifecycle on
 the real router), and `openapi_contract` (spec drift).
 
@@ -55,6 +56,15 @@ E2E (`make e2e`) only when routes/journeys/response shapes changed. A response-s
 change must also update the matching mocks in unit/E2E tests. Record engines that cannot
 run on this machine as *unverified* rather than chasing or hiding them (webkit has a
 known missing-system-lib issue — check the latest handoff before burning time on it).
+
+## `docs` (documentation-only cards — Part VI A1, A3, D1)
+
+```bash
+mdbook build docs/book                       # mdbook is at ~/.cargo/bin; CI runs this with a link check
+grep -rn "claude_code" docs/book/ && echo "WRONG wire id — the harness is claude-code"
+```
+Plus whatever the card's dispatch block names (an executed example's transcript, a render
+proof, a statement `diff`). A doc example that was not run is not verified — say so.
 
 ## `full`
 
