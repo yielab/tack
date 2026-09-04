@@ -53,6 +53,8 @@ in that order):
 | `TACK_RUNNER_ID` | Runner identity once enrolled |
 | `TACK_RUNNER_STATE_DIR` | Owner-only directory for the journal and credential |
 | `TACK_RUNNER_SECRET_VALUE` | Value `tack runner secret set` stores; when unset it reads the value from stdin instead. Never a command-line argument, which would be visible in `ps` and shell history. Read once, not persisted by the variable — the store keeps it (OS keychain, or an owner-only file where none answers) |
+| `TACK_RUNNER_PROVIDER_VERCEL_AI_GATEWAY_ENABLED` | Turns on the `vercel_ai_gateway` provider endpoint (`[provider.vercel_ai_gateway]` in the TOML config). `1` or `true` (case-insensitive) enable it; default `false`. Off by default — this points a harness at a network endpoint and needs a credential, so it is a deliberate opt-in, never a fallback the runner takes on its own |
+| `TACK_RUNNER_PROVIDER_VERCEL_AI_GATEWAY_SECRET` | Secret-store entry name the provider's credential is resolved from. Default `vercel-ai-gateway/default` — `SecretStore::resolve` does not append `/default` on its own, so a bare `vercel-ai-gateway` here resolves nothing |
 
 Runner credentials are redacted in every log, `Debug` impl and error — the redaction is
 structural (`RunnerCredential`'s `Debug`/`Display` are hardcoded to `[REDACTED]`), not
@@ -93,11 +95,11 @@ enroll` call, no token to copy anywhere.
   copy in this file. The three current harnesses, mirrored from a real `tack runner
   doctor` run on a machine with all three installed:
 
-  | Harness | How it authenticates |
-  |---|---|
-  | `codex` | Its own CLI login flow or an API key it reads from its own environment/config (`codex --help`). This adapter forwards **no ambient host environment** into a run — only entries explicitly set on the execution request's own `environment` field ever reach the process. |
-  | `claude-code` | Typically an OAuth session under `$HOME/.claude` from its own login flow, or an API key from its own environment. This adapter forwards `HOME` and `PATH` from the runner process's own environment so the installed CLI can find its existing session. |
-  | `opencode` | Its own credential store (default `~/.local/share/opencode`), populated by `opencode auth login` or provider-specific configuration. This adapter forwards `PATH`, `HOME` and the `XDG_*` variables. |
+  | Harness | How it authenticates | Gateway-routed variant (`[provider.vercel_ai_gateway]`) |
+  |---|---|---|
+  | `codex` | Its own CLI login flow or an API key it reads from its own environment/config (`codex --help`). This adapter forwards **no ambient host environment** into a run — only entries explicitly set on the execution request's own `environment` field ever reach the process. | When a request's provider names the configured endpoint: per-invocation `-c model_provider=…`/`model_providers.<key>.*` flags plus `AI_GATEWAY_API_KEY` in the spawned environment — never a write to `~/.codex/config.toml`. A request for a direct model receives none of it. |
+  | `claude-code` | Typically an OAuth session under `$HOME/.claude` from its own login flow, or an API key from its own environment. This adapter forwards `HOME` and `PATH` from the runner process's own environment so the installed CLI can find its existing session. | `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` (plus a defensive empty `ANTHROPIC_API_KEY`) in the spawned environment, only when the request's provider names the configured endpoint. A request for a direct model receives none of it. |
+  | `opencode` | Its own credential store (default `~/.local/share/opencode`), populated by `opencode auth login` or provider-specific configuration. This adapter forwards `PATH`, `HOME` and the `XDG_*` variables. | Not yet: reaching a configured endpoint here needs a project-local `opencode.json` written into the workspace plus an npm-loaded provider package — measured as possible, but a materially different mechanism this build does not implement. |
 
   OpenRouter access and local-model endpoints (llama.cpp and similar) are configured the
   same way: through the harness's own configuration or environment. No `TACK_*` variable

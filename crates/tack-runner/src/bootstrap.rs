@@ -70,8 +70,15 @@ pub async fn build_runtime(
     // and cannot reach a server at all.
     let staging_root = config.state_dir.join("staging");
     let secrets = SecretStore::open(&config.secret_store_path());
-    let adapters = build_adapter_registry(&limits.harness_process, &staging_root, &secrets);
-    let capabilities = report_capabilities(&adapters, &SystemClock).await;
+    let adapters = build_adapter_registry(
+        &limits.harness_process,
+        &staging_root,
+        &secrets,
+        &config.providers,
+    );
+    let mut capabilities = report_capabilities(&adapters, &SystemClock).await;
+    crate::provider::attach_catalog(&mut capabilities, &config.providers, &secrets, &SystemClock)
+        .await;
     let protocol = Arc::new(HttpPullProtocol::new(
         &config.api_base_url,
         limits.protocol_request_timeout,
@@ -138,6 +145,12 @@ pub struct DiscoveryReport {
     /// Which backend `secrets` answered from — `tack runner doctor` prints
     /// this so a file is never mistaken for a keychain.
     pub secret_backend: crate::secrets::SecretBackendKind,
+    /// What asking the configured provider for its model catalog produced.
+    /// The catalog itself, when one was fetched, already lives inside
+    /// `capabilities` (merged into each eligible harness's
+    /// `model_combinations`) — this field is the typed reason for every
+    /// other outcome, for `tack runner doctor`'s own rendering.
+    pub provider_catalog: crate::provider::CatalogStatus,
 }
 
 /// Runs the exact discovery/capability-probing step [`build_runtime`]
@@ -155,13 +168,17 @@ pub async fn probe(
     staging_root: &Path,
     process_limits: &ProcessLimits,
     secrets: &SecretStore,
+    providers: &BTreeMap<String, crate::config::ProviderConfig>,
 ) -> DiscoveryReport {
-    let adapters = build_adapter_registry(process_limits, staging_root, secrets);
-    let capabilities = report_capabilities(&adapters, &SystemClock).await;
+    let adapters = build_adapter_registry(process_limits, staging_root, secrets, providers);
+    let mut capabilities = report_capabilities(&adapters, &SystemClock).await;
+    let provider_catalog =
+        crate::provider::attach_catalog(&mut capabilities, providers, secrets, &SystemClock).await;
     DiscoveryReport {
         capabilities,
         claude_code_discovery_error: ClaudeCodeAdapter::discover(secrets.clone()).err(),
         secret_backend: secrets.backend(),
+        provider_catalog,
     }
 }
 
@@ -179,6 +196,7 @@ fn build_adapter_registry(
     process_limits: &ProcessLimits,
     staging_root: &Path,
     secrets: &SecretStore,
+    providers: &BTreeMap<String, crate::config::ProviderConfig>,
 ) -> AdapterRegistry {
     let mut registry = AdapterRegistry::new();
 
@@ -186,15 +204,19 @@ fn build_adapter_registry(
         process_limits.clone(),
         staging_root.to_path_buf(),
         secrets.clone(),
-    );
+    )
+    .with_providers(providers.clone());
     let kind = HarnessProbe::harness_kind(&codex);
     registry.register_adapter(kind, Box::new(codex));
     if registry
-        .register_probe(Box::new(CodexAdapter::discover(
-            process_limits.clone(),
-            staging_root.to_path_buf(),
-            secrets.clone(),
-        )))
+        .register_probe(Box::new(
+            CodexAdapter::discover(
+                process_limits.clone(),
+                staging_root.to_path_buf(),
+                secrets.clone(),
+            )
+            .with_providers(providers.clone()),
+        ))
         .is_err()
     {
         tracing::warn!(harness = "codex", "probe rejected at registration");
@@ -202,10 +224,12 @@ fn build_adapter_registry(
 
     match ClaudeCodeAdapter::discover(secrets.clone()) {
         Ok(adapter) => {
+            let adapter = adapter.with_providers(providers.clone());
             let kind = HarnessProbe::harness_kind(&adapter);
             registry.register_adapter(kind, Box::new(adapter));
             match ClaudeCodeAdapter::discover(secrets.clone()) {
                 Ok(probe) => {
+                    let probe = probe.with_providers(providers.clone());
                     if registry.register_probe(Box::new(probe)).is_err() {
                         tracing::warn!(harness = "claude_code", "probe rejected at registration");
                     }

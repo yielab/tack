@@ -63,7 +63,7 @@ async fn probe() -> bootstrap::DiscoveryReport {
     })
     .unwrap_or_else(|_| RunnerConfig::defaults());
     let secrets = SecretStore::open(&config.secret_store_path());
-    bootstrap::probe(&staging_root, &PROCESS_LIMITS, &secrets).await
+    bootstrap::probe(&staging_root, &PROCESS_LIMITS, &secrets, &config.providers).await
 }
 
 /// What this machine's probe found for one harness kind.
@@ -176,12 +176,47 @@ fn render(report: &bootstrap::DiscoveryReport) {
     println!("  backend: {}", report.secret_backend);
     println!();
 
+    render_provider(&report.provider_catalog);
+    println!();
+
     println!(
-        "Tack does not proxy model providers. Each harness above authenticates itself using \
-         its own login/credential mechanism; Tack never reads, stores, or forwards what it \
-         finds. See docs/adr/0050-runner-control-plane.md and \
-         docs/adr/0058-standalone-single-binary-runner.md."
+        "Every harness above can also authenticate itself directly, using its own \
+         login/credential mechanism — the server never touches that credential either way. \
+         The runner is allowed to hold a provider key of its own (above) and point a harness \
+         at a configured endpoint instead; see docs/adr/0050-runner-control-plane.md, \
+         docs/adr/0058-standalone-single-binary-runner.md and \
+         docs/adr/0061-provider-credentials-at-the-runner-boundary.md."
     );
+}
+
+/// Renders the one provider endpoint this build knows how to configure —
+/// which harnesses it reaches and, when it is on, the catalog state.
+fn render_provider(catalog: &tack_runner::provider::CatalogStatus) {
+    println!("Provider endpoint (vercel_ai_gateway):");
+    println!(
+        "  reaches: claude-code, codex (opencode: not yet — its non-interactive path needs a \
+         config file written into the workspace, a different mechanism this build does not \
+         implement)"
+    );
+    match catalog {
+        tack_runner::provider::CatalogStatus::NotConfigured => {
+            println!("  status:  not configured");
+        }
+        tack_runner::provider::CatalogStatus::SecretUnresolved => {
+            println!("  status:  configured, but its secret does not resolve");
+        }
+        tack_runner::provider::CatalogStatus::Unreachable { status } => match status {
+            Some(status) => println!("  status:  catalog error (HTTP {status})"),
+            None => println!("  status:  catalog error (request failed)"),
+        },
+        tack_runner::provider::CatalogStatus::Configured {
+            model_count,
+            checked_at,
+        } => {
+            println!("  status:  configured");
+            println!("  catalog: {model_count} models, checked at {checked_at}");
+        }
+    }
 }
 
 fn render_feature(name: &str, value: &CapabilityValue) {
@@ -473,8 +508,28 @@ mod tests {
                 "no executable named `claude` was found on PATH".to_owned(),
             ),
             secret_backend: tack_runner::secrets::SecretBackendKind::File,
+            provider_catalog: tack_runner::provider::CatalogStatus::Configured {
+                model_count: 373,
+                checked_at: fixed_timestamp(),
+            },
         };
 
         render(&report);
+    }
+
+    /// `render_provider` is exercised for its side effects (stdout), not a
+    /// return value; this only proves every `CatalogStatus` variant renders
+    /// to completion, so a future variant addition fails loudly here
+    /// instead of only in a manual `--json` read.
+    #[test]
+    fn render_provider_does_not_panic_for_any_catalog_status() {
+        render_provider(&tack_runner::provider::CatalogStatus::NotConfigured);
+        render_provider(&tack_runner::provider::CatalogStatus::SecretUnresolved);
+        render_provider(&tack_runner::provider::CatalogStatus::Unreachable { status: Some(401) });
+        render_provider(&tack_runner::provider::CatalogStatus::Unreachable { status: None });
+        render_provider(&tack_runner::provider::CatalogStatus::Configured {
+            model_count: 373,
+            checked_at: fixed_timestamp(),
+        });
     }
 }

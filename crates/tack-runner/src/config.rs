@@ -1,4 +1,4 @@
-use std::{fmt, path::PathBuf};
+use std::{collections::BTreeMap, fmt, path::PathBuf};
 
 use serde::Deserialize;
 
@@ -7,6 +7,23 @@ use crate::{ConfigError, RunnerError};
 pub const DEFAULT_API_BASE_URL: &str = "http://127.0.0.1:3210/api/runner/v1";
 pub const DEFAULT_RUNNER_ID: &str = "local-runner";
 pub const DEFAULT_STATE_DIR: &str = ".tack-runner";
+
+/// The provider name recorded everywhere this system records or requests a
+/// model's route (`ModelProvider`, `requested_model_provider`, a catalog
+/// entry's `discovery`) — ADR 0061 decision 4.
+pub const VERCEL_AI_GATEWAY_PROVIDER: &str = "vercel-ai-gateway";
+
+/// The `[provider.<name>]` table name and `RunnerConfig::providers` map key
+/// for the provider above. Kept distinct from [`VERCEL_AI_GATEWAY_PROVIDER`]
+/// because a config section header and a wire-level provider name follow
+/// different spelling conventions in this project (underscore vs. hyphen).
+pub const VERCEL_AI_GATEWAY_CONFIG_KEY: &str = "vercel_ai_gateway";
+
+/// Default `secret` entry name for the provider above — the runner-local
+/// secret store name a fresh install resolves with no configuration.
+/// `SecretStore::resolve` does not append `/default` on its own, so this
+/// must spell the full entry name.
+pub const DEFAULT_VERCEL_AI_GATEWAY_SECRET: &str = "vercel-ai-gateway/default";
 
 /// A credential whose normal formatting is always redacted.
 #[derive(Clone, PartialEq, Eq)]
@@ -42,6 +59,29 @@ pub struct ConfigOverrides {
     pub runner_id: Option<String>,
     pub state_dir: Option<PathBuf>,
     pub enrollment_credential: Option<EnrollmentCredential>,
+    /// Keyed the same as [`RunnerConfig::providers`]. Only a field actually
+    /// present here is merged — an override never clears a provider's other
+    /// field, matching [`ConfigOverrides`]'s own `Option`-means-untouched
+    /// rule for every other member.
+    pub providers: BTreeMap<String, ProviderOverride>,
+}
+
+/// A partial [`ProviderConfig`] update: `None` leaves the field untouched,
+/// mirroring every other member of [`ConfigOverrides`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ProviderOverride {
+    pub enabled: Option<bool>,
+    pub secret: Option<String>,
+}
+
+/// Whether a provider is on, and where its credential lives — the only two
+/// user-configurable facts about it. Endpoint URLs and credential env-var
+/// names are not configuration; they are fixed per-provider data in
+/// `crate::provider::known_endpoint`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProviderConfig {
+    pub enabled: bool,
+    pub secret: String,
 }
 
 #[derive(Default)]
@@ -59,6 +99,12 @@ pub struct RunnerConfig {
     pub runner_id: String,
     pub state_dir: PathBuf,
     pub enrollment_credential: Option<EnrollmentCredential>,
+    /// Configured provider endpoints, keyed by `[provider.<name>]` table
+    /// name. One entry is seeded by [`RunnerConfig::defaults`]
+    /// ([`VERCEL_AI_GATEWAY_CONFIG_KEY`], disabled); a name absent from
+    /// this map has no configured endpoint at all, not merely a disabled
+    /// one — the harness's own subscription/login mode applies.
+    pub providers: BTreeMap<String, ProviderConfig>,
 }
 
 #[derive(Default, Deserialize)]
@@ -68,15 +114,37 @@ struct FileConfig {
     runner_id: Option<String>,
     state_dir: Option<PathBuf>,
     enrollment_credential: Option<String>,
+    /// `[provider.<name>]` tables. Free-form key: a name this build does
+    /// not recognize simply sits unused rather than failing to parse — the
+    /// dedicated `enabled`/`secret` fields inside each table still reject
+    /// an unknown field via `deny_unknown_fields` on
+    /// [`ProviderFileConfig`].
+    provider: Option<BTreeMap<String, ProviderFileConfig>>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProviderFileConfig {
+    enabled: Option<bool>,
+    secret: Option<String>,
 }
 
 impl RunnerConfig {
     pub fn defaults() -> Self {
+        let mut providers = BTreeMap::new();
+        providers.insert(
+            VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
+            ProviderConfig {
+                enabled: false,
+                secret: DEFAULT_VERCEL_AI_GATEWAY_SECRET.to_owned(),
+            },
+        );
         Self {
             api_base_url: DEFAULT_API_BASE_URL.to_owned(),
             runner_id: DEFAULT_RUNNER_ID.to_owned(),
             state_dir: PathBuf::from(DEFAULT_STATE_DIR),
             enrollment_credential: None,
+            providers,
         }
     }
 
@@ -88,11 +156,26 @@ impl RunnerConfig {
 
         if let Some(contents) = sources.file_toml {
             let file: FileConfig = toml::from_str(contents).map_err(|_| ConfigError::Invalid)?;
+            let providers = file
+                .provider
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(name, entry)| {
+                    (
+                        name,
+                        ProviderOverride {
+                            enabled: entry.enabled,
+                            secret: entry.secret,
+                        },
+                    )
+                })
+                .collect();
             config.apply(ConfigOverrides {
                 api_base_url: file.api_base_url,
                 runner_id: file.runner_id,
                 state_dir: file.state_dir,
                 enrollment_credential: file.enrollment_credential.map(EnrollmentCredential::new),
+                providers,
             });
         }
         config.apply(sources.environment);
@@ -105,6 +188,17 @@ impl RunnerConfig {
     }
 
     pub fn environment_overrides() -> ConfigOverrides {
+        let mut providers = BTreeMap::new();
+        let enabled = std::env::var("TACK_RUNNER_PROVIDER_VERCEL_AI_GATEWAY_ENABLED")
+            .ok()
+            .map(|value| value == "1" || value.eq_ignore_ascii_case("true"));
+        let secret = std::env::var("TACK_RUNNER_PROVIDER_VERCEL_AI_GATEWAY_SECRET").ok();
+        if enabled.is_some() || secret.is_some() {
+            providers.insert(
+                VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
+                ProviderOverride { enabled, secret },
+            );
+        }
         ConfigOverrides {
             api_base_url: std::env::var("TACK_RUNNER_API_URL").ok(),
             runner_id: std::env::var("TACK_RUNNER_ID").ok(),
@@ -112,6 +206,7 @@ impl RunnerConfig {
             enrollment_credential: std::env::var("TACK_RUNNER_ENROLLMENT_TOKEN")
                 .ok()
                 .map(EnrollmentCredential::new),
+            providers,
         }
     }
 
@@ -142,6 +237,21 @@ impl RunnerConfig {
         if let Some(value) = overrides.enrollment_credential {
             self.enrollment_credential = Some(value);
         }
+        for (name, provider_override) in overrides.providers {
+            let entry = self
+                .providers
+                .entry(name)
+                .or_insert_with(|| ProviderConfig {
+                    enabled: false,
+                    secret: String::new(),
+                });
+            if let Some(enabled) = provider_override.enabled {
+                entry.enabled = enabled;
+            }
+            if let Some(secret) = provider_override.secret {
+                entry.secret = secret;
+            }
+        }
     }
 }
 
@@ -165,12 +275,14 @@ mod tests {
                 runner_id: Some("environment".into()),
                 state_dir: Some(PathBuf::from("environment-state")),
                 enrollment_credential: Some(EnrollmentCredential::new("environment-secret")),
+                providers: BTreeMap::new(),
             },
             command_line: ConfigOverrides {
                 api_base_url: Some("https://cli.invalid".into()),
                 runner_id: Some("cli".into()),
                 state_dir: Some(PathBuf::from("cli-state")),
                 enrollment_credential: Some(EnrollmentCredential::new("cli-secret")),
+                providers: BTreeMap::new(),
             },
         })
         .expect("configuration should load");
@@ -212,5 +324,105 @@ mod tests {
 
         assert_eq!(error, ConfigError::Invalid);
         assert!(!error.to_string().contains(secret));
+    }
+
+    #[test]
+    fn provider_defaults_to_disabled_with_the_expected_secret_name() {
+        let config = RunnerConfig::defaults();
+        let provider = config
+            .providers
+            .get(VERCEL_AI_GATEWAY_CONFIG_KEY)
+            .expect("default provider entry present");
+        assert!(!provider.enabled);
+        assert_eq!(provider.secret, DEFAULT_VERCEL_AI_GATEWAY_SECRET);
+    }
+
+    /// Mirrors `configuration_precedence_is_defaults_file_environment_then_cli`,
+    /// but for a provider entry specifically: proves the field-level merge
+    /// (environment overrides only `secret`, `enabled` still comes from the
+    /// file) rather than one override replacing the whole entry.
+    #[test]
+    fn provider_config_precedence_is_defaults_file_environment_then_cli() {
+        let config = RunnerConfig::from_sources(RunnerConfigSources {
+            file_toml: Some(
+                r#"
+                    [provider.vercel_ai_gateway]
+                    enabled = true
+                    secret = "file-secret"
+                "#,
+            ),
+            environment: ConfigOverrides {
+                providers: BTreeMap::from([(
+                    VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
+                    ProviderOverride {
+                        enabled: None,
+                        secret: Some("environment-secret".to_owned()),
+                    },
+                )]),
+                ..ConfigOverrides::default()
+            },
+            command_line: ConfigOverrides::default(),
+        })
+        .expect("configuration should load");
+
+        let provider = config
+            .providers
+            .get(VERCEL_AI_GATEWAY_CONFIG_KEY)
+            .expect("provider entry present");
+        assert!(
+            provider.enabled,
+            "the file enabled it and nothing later touched that field"
+        );
+        assert_eq!(
+            provider.secret, "environment-secret",
+            "environment overrides the file's secret"
+        );
+    }
+
+    #[test]
+    fn unknown_field_inside_a_provider_table_is_rejected() {
+        let error = RunnerConfig::from_sources(RunnerConfigSources {
+            file_toml: Some(
+                r#"
+                    [provider.vercel_ai_gateway]
+                    enabled = true
+                    bogus = "nope"
+                "#,
+            ),
+            ..RunnerConfigSources::default()
+        })
+        .expect_err("an unknown field inside a provider table must be rejected");
+        assert_eq!(error, ConfigError::Invalid);
+    }
+
+    /// A provider name this build does not recognize must not fail
+    /// configuration loading — it simply sits unused, and the real
+    /// `vercel_ai_gateway` entry stays at its (disabled) default.
+    #[test]
+    fn an_unrecognized_provider_name_does_not_fail_loading_or_affect_the_known_one() {
+        let config = RunnerConfig::from_sources(RunnerConfigSources {
+            file_toml: Some(
+                r#"
+                    [provider.some_future_gateway]
+                    enabled = true
+                    secret = "irrelevant"
+                "#,
+            ),
+            ..RunnerConfigSources::default()
+        })
+        .expect("an unrecognized provider name must not fail configuration loading");
+
+        assert!(
+            config
+                .providers
+                .get("some_future_gateway")
+                .expect("the entry is still recorded")
+                .enabled
+        );
+        let vercel = config
+            .providers
+            .get(VERCEL_AI_GATEWAY_CONFIG_KEY)
+            .expect("the known provider's default entry is untouched");
+        assert!(!vercel.enabled);
     }
 }
