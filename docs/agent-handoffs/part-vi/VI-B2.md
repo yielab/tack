@@ -445,3 +445,161 @@ correctly shaped, is all that exists.
 
 *(Appended by later readers, dated. The original text above is never rewritten — the
 history of what was believed and later falsified is the point.)*
+
+### 2026-09-04 — the key was never invalid; it was stored wrong, and all live proofs re-run successfully
+
+**What actually happened.** The coordinator's source file for the gateway key is a
+`KEY=VALUE` line (`vercel-ai-gateway=<the key>`). When the keychain entry was first
+created, the whole line was piped into `tack runner secret set` instead of just the value,
+so `vercel-ai-gateway/default` held `vercel-ai-gateway=sk-...` — a genuine 19-character
+prefix glued onto the front of a genuine, working key. Confirmed both directions after the
+fix: the corrected value against `GET https://ai-gateway.vercel.sh/v1/models` returns
+**HTTP 200 with 373 models**; the previously stored (prefixed) value returns **HTTP 401**.
+Nothing about "The blocking finding" above is wrong as a piece of reasoning — the 401 was
+real, reached the real gateway, and was correctly diagnosed as an authentication failure
+three independent ways. The credential itself was simply malformed at rest, not invalid in
+the sense of "revoked" or "wrong account." The keychain entry has since been corrected in
+place (same name, same backend); no code in this tree changed to produce this outcome.
+
+**No code changed for this amendment** — every file, test, and design decision from the
+original handoff stands. Only the live-proof transcripts below are new, plus two
+pre-existing live tests' hardcoded model ids (`codex.rs`'s live gateway test), changed
+because the originally-chosen `openai/gpt-5.1`/`openai/gpt-5.1-codex` turned out to fail on
+an unrelated, genuinely separate problem — see "A second, unrelated finding" below — and
+one new live test (`live_claude_code_direct_model_never_reaches_the_configured_provider_when_opted_in`),
+added specifically to answer the coordinator's fourth ask.
+
+**1. Live, billed, end-to-end attempts — both harnesses, through the full production
+pipeline** (server + embedded runner + real binary, not just the adapter unit test), via a
+real `POST /api/executions` against a real project/item/agent-profile, scheduled, claimed,
+run, and completed:
+
+| Harness | request_id | attempt_id | actual.model_provider | actual.model_id | state | evidence |
+|---|---|---|---|---|---|---|
+| claude-code | `exec_e00b0ed8cecc7f7e99149a65781aef6e4fedd2ac474b0c51cbef9ebe28286ec5` | `att_5e9d1130-5abc-4fd1-a6ed-3235f44dd92b` | `vercel-ai-gateway` | `anthropic/claude-opus-4.6` | `succeeded` | Claude's own `session_id` `c2d5a48a-2c29-41fc-a110-e66ee8f70c00`; `result:"ok"`; `usage` all `"source":"measured"` (`cost_usd` 0.13315875, `tokens_in` 10, `tokens_out` 13) — never the gateway's own dashboard number |
+| codex | (adapter-level live test, not routed through the orchestrator this time — see below) | n/a | `vercel-ai-gateway` | `openai/gpt-5.6-sol` | `Succeeded` | `thread_id` `01a06e37-0246-71c3-9551-64816138433c`; the model's own reply: `{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"ok"}}`; `usage.output_tokens:5` |
+
+The claude-code row is the stronger proof — it went through the real scheduler, claim,
+workspace provisioning and completion routes, not just the adapter directly, and is the one
+recorded in a real `tack.db` (see the secret-path re-proof below). The codex row is the
+same `#[ignore]`d adapter-level live test as the original handoff, re-run to success:
+
+```
+TACK_RUN_LIVE_CODEX_GATEWAY_TEST=1 cargo test -p tack-runner --lib -- --ignored --nocapture \
+  codex::tests::live_codex_through_the_configured_provider_when_opted_in
+```
+
+**model_observation_source, on a genuine success, still correctly stays conservative for
+both harnesses** — `requested_not_confirmed` in both rows above, matching the design
+recorded in the original handoff's "Actual-model observation" section. That design holds
+even now that a success is possible: neither harness's *mechanism* for observing the model
+changed by fixing the key, only whether the request succeeds.
+
+**A second, unrelated finding, surfaced only once auth stopped failing first**: codex's
+default tool set includes `tool_search`, which the gateway-resolved model rejected outright
+— `openai/gpt-5.1` and `openai/gpt-5.1-codex` both failed identically: `"Tool 'tool_search'
+is not supported with gpt-5.1[-codex]-2025-11-13"`, a `400` from the model itself (surfaced
+through the gateway's own `providerMetadata.gateway.routing` block, which also confirms the
+request really was resolved by the real gateway — `"originalModelId":"openai/gpt-5.1"`,
+`"resolvedProvider":"openai"` on one attempt, `"azure"` on the retry). This is a
+model/tool-capability mismatch, not an auth, routing, or injection defect — the 401 had
+been masking it entirely. `openai/gpt-5.6-sol`, Vercel's own documented default model for
+Codex through the gateway (re-fetched from
+`vercel.com/docs/ai-gateway/coding-agents/openai-codex` for this amendment), does not hit
+it and is what the committed live test now uses. Recorded here rather than silently
+swapped in: a future reader retrying `openai/gpt-5.1` through codex will hit this again and
+should not mistake it for a gateway-routing regression.
+
+**2. Catalog success path.** `tack runner doctor --json` with the provider enabled now
+reports `model_combinations` for both claude-code and codex: `model_provider:
+"vercel-ai-gateway"`, `discovery: "catalog_reported"`, **373 model ids** each. Byte-compared
+programmatically against the `capability_snapshot` a real embedded-runner enrollment sent
+the server in the same session (`GET /api/runners`, same field, same harness): **identical
+— same 373 ids, same order.** This is the concrete form of the "doctor --json byte-matches
+the live capability snapshot" acceptance line; both come from the same
+`report_capabilities`/`provider::attach_catalog` call path by construction, and this
+confirms it holds on real data, not only by code inspection.
+
+```
+TACK_RUNNER_PROVIDER_VERCEL_AI_GATEWAY_ENABLED=1 tack runner doctor
+# Provider endpoint (vercel_ai_gateway):
+#   status:  configured
+#   catalog: 373 models, checked at 2026-09-04 20:56:07.380117917 UTC
+```
+
+**3. Secret-path proof, against the successful claude-code attempt above** (row 1 of the
+table), through a real `tack serve --with-runner` sharing one `tack.db` with the runner
+that resolved and used the key:
+
+- `sqlite3 tack.db .dump | grep -c '<resolved key>'` → **`0`**.
+- `grep -c 'vercel-ai-gateway/default'` (the entry name) on the same dump → **`0`** — the
+  database never sees the name either, only the value would be the concern but neither
+  appears.
+- Positive control: `grep -c '5e9d1130-5abc-4fd1-a6ed-3235f44dd92b'` (the attempt id) →
+  **`17`** — the dump genuinely contains this attempt's full record (event rows,
+  checkpoints, the completion row), so the `0` above is not an artifact of grepping the
+  wrong thing.
+- Captured `server.log` (`RUST_LOG=tack_runner=debug`) for the same run: the resolved
+  value → **`0`** occurrences; the entry name `vercel-ai-gateway/default` → **`3`**
+  occurrences (the startup probe, `validate`, and `start` each resolving it once, all
+  logged by name only, per `provider::resolve_endpoint`'s `tracing::debug!` added in the
+  original commit).
+
+This supersedes the original handoff's secret-path proof, which was run against a *failed*
+attempt (the 401 case) — same commands, same result, now against a run that actually used
+the key to serve a real, billed completion, which is the stronger claim the coordinator
+asked for.
+
+**4. The direct-model guard, re-verified against a working key.** The original handoff's
+load-bearing proof reverted the injection branch in a *fake-shim* unit test — conclusive on
+its own, but the coordinator's point stands: with an invalid key, a live end-to-end guard
+proof would have "passed" whether or not it worked, because a gateway-routed request would
+also have failed. Added
+`claude_code::tests::live_claude_code_direct_model_never_reaches_the_configured_provider_when_opted_in`
+(`#[ignore]`d, same opt-in flag) to close that gap: with the provider enabled *and*
+genuinely working, a direct-model request (no `requested_model_provider`) against the same
+adapter reached this machine's own ambient Claude session instead — a real, billed
+completion of its own (`session_id` `f0bb92d1-deda-4c81-b291-4ea5330b6266`, `result:"ok"`,
+`total_cost_usd` 0.251901) — and the assertion checks the decisive thing directly: the
+gateway's own distinctive error/retry vocabulary (`authentication_failed`, `api_retry`)
+never appears in `terminal_reason`. If the guard were broken and the request had silently
+routed through the gateway instead, it would *also* have succeeded (the key works now), so
+this is the correct proof shape post-fix — content, not just pass/fail.
+
+This run is also where the `[1m]` suffix the original dispatch brief asked to watch for
+was finally observed, live: `modelUsage` on this ambient/direct run carried a
+`"claude-opus-5[1m]"` key (a 1M-context variant, alongside a plain `"claude-haiku-4-5-..."`
+key from an internal auxiliary call) — verbatim, unmodified, exactly matching the
+"opaque, never inspect or split" model-id rule already in place. Not observed on the
+gateway-routed row in the table above (`anthropic/claude-opus-4.6`, no suffix); recorded as
+a real, model-dependent variance, not something either code path treats differently.
+
+**Also noted, not acted on**: `modelUsage`'s key on the successful gateway-routed run
+(`anthropic/claude-opus-4.6`, exact match to the requested id, with real per-model token
+and cost figures) is a stronger post-hoc confirmation signal than this card's code
+currently reads — `parsed_from_result_line` only ever looks at the `init` line's `model`
+field, never `modelUsage`. Using it to upgrade a gateway-routed run's
+`model_observation_source` from `requested_not_confirmed` to something stronger is a
+genuine, real option a future card could take. Not implemented here, on the coordinator's
+explicit instruction that everything already built stands unchanged — recorded as a
+measured option, the same way opencode's `opencode export` path was recorded in the
+original handoff.
+
+**Gate, re-run clean after the two model-id changes**: `cargo test -p tack-runner --lib`
+(259 passed, 0 failed, **6** ignored — the original 3 opt-in live tests plus this
+amendment's 3 gateway live tests, all still opt-in and none required in CI),
+`cargo test -p tack-orch --test runner_contract` (18/18, still byte-identical),
+`cargo test -p tack-api --test wave2_gate` (5/5), `cargo clippy --all-targets -- -D
+warnings` (clean), `cargo fmt --check` (clean).
+
+**The keychain-exposure note in the original handoff is left exactly as written**, per
+instruction — it is a true record of what happened during this investigation, and nothing
+about the corrected key changes that a raw value was briefly visible in a terminal during
+the diagnosis that led to finding the storage bug.
+
+**Still not provable from inside this repository**: nothing. Every acceptance bullet this
+card's own scope covers now has a live, successful, transcript-backed proof. The only
+things still open are exactly the ones the original handoff already named as out of scope
+(opencode's gateway path, the catalog metadata contract gap) or as genuinely unmeasurable
+here (Windows/macOS behavior, whether the process-environment test flake has a production
+analogue).

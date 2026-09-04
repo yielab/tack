@@ -2936,4 +2936,89 @@ mod tests {
 
         std::fs::remove_dir_all(&workspace).expect("cleanup disposable fixture repo");
     }
+
+    /// The live counterpart to the fake-shim guard tests above: with the
+    /// configured provider enabled *and* genuinely working (a real, billed
+    /// gateway completion is proven by the test above), a direct-model
+    /// request against the same adapter must still never reach the
+    /// gateway. Never bills anything itself — a direct request with no
+    /// ambient login on this machine fails in milliseconds
+    /// ("Not logged in"), which is the point: if it had instead reached
+    /// the gateway, it would have succeeded, exactly like the test above.
+    #[tokio::test]
+    #[ignore = "opt-in: requires a real `claude` binary on PATH *and*                 TACK_RUN_LIVE_CLAUDE_CODE_TEST=1; run with                 TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo test -p tack-runner --lib -- --ignored                 claude_code::tests::live_"]
+    async fn live_claude_code_direct_model_never_reaches_the_configured_provider_when_opted_in() {
+        if std::env::var("TACK_RUN_LIVE_CLAUDE_CODE_TEST").as_deref() != Ok("1") {
+            eprintln!(
+                "skipping live claude-code direct-guard test: set TACK_RUN_LIVE_CLAUDE_CODE_TEST=1                  to opt in"
+            );
+            return;
+        }
+        let state_dir = std::env::var_os("TACK_RUNNER_STATE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(std::env::var("HOME").expect("HOME is set")).join(".tack-runner")
+            });
+        let secrets = crate::secrets::SecretStore::open(&state_dir.join("secrets.json"));
+        let providers = std::collections::BTreeMap::from([(
+            crate::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
+            crate::config::ProviderConfig {
+                enabled: true,
+                secret: crate::config::DEFAULT_VERCEL_AI_GATEWAY_SECRET.to_owned(),
+            },
+        )]);
+
+        let Ok(adapter) = ClaudeCodeAdapter::discover(secrets) else {
+            eprintln!(
+                "skipping live claude-code direct-guard test: no `claude` binary discoverable"
+            );
+            return;
+        };
+        let adapter = adapter.with_providers(providers);
+
+        let workspace = temp_workspace("live-direct-guard");
+        std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&workspace)
+            .status()
+            .expect("git init");
+        // No requested_model_provider at all: the direct/subscription path.
+        let spec = spec_with(
+            "claude-code",
+            None,
+            &[],
+            true,
+            BTreeMap::new(),
+            workspace.clone(),
+        );
+
+        adapter
+            .validate(&spec)
+            .await
+            .expect("a direct request validates even with the provider configured");
+        let handle = adapter
+            .start(&spec)
+            .await
+            .expect("start a direct-model process");
+        let outcome = adapter
+            .wait(&handle)
+            .await
+            .expect("wait for a direct-model process");
+
+        eprintln!(
+            "live claude-code (direct, provider configured but unused) outcome:              terminal_state={:?} terminal_reason={}",
+            outcome.terminal_state, outcome.terminal_reason
+        );
+
+        // The decisive check: the gateway's own distinctive error shape
+        // ("authentication_failed"/"api_retry") must never appear on a
+        // direct request, proving it never reached ai-gateway.vercel.sh.
+        let serialized = outcome.terminal_reason.to_string();
+        assert!(
+            !serialized.contains("authentication_failed") && !serialized.contains("api_retry"),
+            "a direct request must never show the gateway's own error shape: {serialized}"
+        );
+
+        std::fs::remove_dir_all(&workspace).expect("cleanup");
+    }
 }

@@ -2134,9 +2134,20 @@ mod tests {
             .current_dir(&workspace)
             .status()
             .expect("git commit");
+        // `openai/gpt-5.1` and `openai/gpt-5.1-codex` were both measured
+        // live to fail here on a codex-side tool the resolved model
+        // doesn't support ("Tool 'tool_search' is not supported with
+        // ...") — a model-compatibility rejection, not an auth or routing
+        // failure (the gateway's own routing metadata confirmed both
+        // requests reached and were resolved by the real gateway).
+        // `openai/gpt-5.6-sol` is Vercel's own documented default model
+        // for Codex through the gateway.
         let mut spec = spec_with(
             workspace.clone(),
-            Some((crate::config::VERCEL_AI_GATEWAY_PROVIDER, "openai/gpt-5.1")),
+            Some((
+                crate::config::VERCEL_AI_GATEWAY_PROVIDER,
+                "openai/gpt-5.6-sol",
+            )),
             &[],
         );
         spec.work.request.timeout_seconds = 60;
@@ -2176,7 +2187,10 @@ mod tests {
             outcome.actual_execution.model_provider.as_str(),
             crate::config::VERCEL_AI_GATEWAY_PROVIDER
         );
-        assert_eq!(outcome.actual_execution.model_id.as_str(), "openai/gpt-5.1");
+        assert_eq!(
+            outcome.actual_execution.model_id.as_str(),
+            "openai/gpt-5.6-sol"
+        );
         assert_eq!(
             outcome.actual_execution.model_observation_source,
             MODEL_OBSERVATION_SOURCE
