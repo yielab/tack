@@ -511,6 +511,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/executions/{request_id}/attempts/{attempt_number}/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/executions/{request_id}/attempts/{attempt_number}/artifacts` —
+         *     every artifact manifested for this attempt, oldest first. Returns `404`
+         *     naming which resource is missing (`execution_request` vs
+         *     `execution_attempt`), mirroring `list_execution_attempt_events`'s own
+         *     not-found split.
+         */
+        get: operations["list_execution_attempt_artifacts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/executions/{request_id}/attempts/{attempt_number}/artifacts/{artifact_id}/content": {
         parameters: {
             query?: never;
@@ -580,6 +603,28 @@ export interface paths {
                 };
             };
         };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/executions/{request_id}/attempts/{attempt_number}/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/executions/{request_id}/attempts/{attempt_number}/decisions` —
+         *     every decision raised against this attempt, oldest first, including
+         *     `pending`/`resolved`/`expired` states alike. Listing carries no
+         *     `TACK_EXECUTION_DECISION_TOKEN` gate — see this module's header comment.
+         */
+        get: operations["list_execution_attempt_decisions"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2996,6 +3041,29 @@ export interface components {
          * @enum {string}
          */
         ApprovalDecisionAction: "grant" | "deny";
+        ArtifactListResponse: {
+            data: components["schemas"]["ArtifactSummary"][];
+            /** Format: int32 */
+            protocol_version: number;
+        };
+        /**
+         * @description One `execution_artifacts` manifest row as an operator sees it. Never the
+         *     raw `content_reference` storage path, which is an internal server-side
+         *     detail — `content_verified` is the presence/absence of that reference,
+         *     the same manifest-vs-content-verified distinction
+         *     `GET .../artifacts/{artifact_id}/content` itself enforces with its own
+         *     `404`-vs-`409` split.
+         */
+        ArtifactSummary: {
+            artifact_id: string;
+            content_verified: boolean;
+            created_at: string;
+            kind: string;
+            media_type?: string | null;
+            name: string;
+            /** Format: int64 */
+            size_bytes: number;
+        };
         Attachment: {
             filename: string;
             /** Format: uuid */
@@ -3464,6 +3532,15 @@ export interface components {
             option_id: string;
             text?: string | null;
         };
+        DecisionListResponse: {
+            data: components["schemas"]["DecisionSummary"][];
+            /** Format: int32 */
+            protocol_version: number;
+        };
+        DecisionOptionSummary: {
+            label: string;
+            option_id: string;
+        };
         /**
          * @description Schema-only mirror of `resolved_by`'s two observed shapes:
          *     `{"kind": "operator", "subject_id": <x-tack-principal>}` for a live
@@ -3478,6 +3555,29 @@ export interface components {
             /** @example operator */
             kind: string;
             subject_id: string;
+        };
+        /**
+         * @description One `execution_decisions` row as an operator sees it — every column the
+         *     table carries, options/metadata/answer/resolved_by parsed out of their
+         *     raw JSON-string storage. `answer`/`resolved_by` stay untyped `Value`:
+         *     the wire shape they carry is documented by `handlers::decisions`'
+         *     `ResolveDecisionRequest`/`ResolveDecisionResponseSchema`, which this
+         *     module does not duplicate.
+         */
+        DecisionSummary: {
+            answer?: unknown;
+            attempt_id: string;
+            created_at: string;
+            decision_id: string;
+            expires_at?: string | null;
+            kind: string;
+            metadata: unknown;
+            options: components["schemas"]["DecisionOptionSummary"][];
+            prompt: string;
+            resolved_at?: string | null;
+            resolved_by?: unknown;
+            state: string;
+            updated_at: string;
         };
         /**
          * @description Wire mirror of `tack_orch::DecisionSupport`.
@@ -6108,6 +6208,74 @@ export interface operations {
                 };
             };
             /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_execution_attempt_artifacts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Execution request ID (opaque) */
+                request_id: string;
+                /** @description 1-based attempt number */
+                attempt_number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every artifact manifested for this attempt, oldest first (may be empty) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactListResponse"];
+                };
+            };
+            /** @description not_found (execution_request or execution_attempt) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_execution_attempt_decisions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Execution request ID (opaque) */
+                request_id: string;
+                /** @description 1-based attempt number */
+                attempt_number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every decision raised against this attempt, oldest first (may be empty) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionListResponse"];
+                };
+            };
+            /** @description not_found (execution_request or execution_attempt) */
             404: {
                 headers: {
                     [name: string]: unknown;
