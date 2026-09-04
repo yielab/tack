@@ -1,4 +1,4 @@
-.PHONY: build run dev debug cli test test-verbose test-core test-db e2e e2e-install e2e-ui screenshots gif audit load check lint fmt fmt-check reset-db inspect-db api-health api-stats api-projects clean clean-all help
+.PHONY: build run dev debug cli test test-verbose test-core test-db e2e e2e-install e2e-ui screenshots gif audit load check lint fmt fmt-check reset-db inspect-db api-health api-stats api-projects clean clean-all desktop-sidecar help
 
 # ─── Default ──────────────────────────────────────
 help: ## Show this help
@@ -14,6 +14,13 @@ build: ## Compile — frontend + single `tack` binary with embedded UI (~30s fir
 
 run: ## Start the pre-built binary
 	./target/release/tack
+
+desktop-sidecar: ## Build `tack` and stage it as tack-desktop's Tauri sidecar
+	npm --prefix frontend ci
+	npm --prefix frontend run build
+	cargo build -p tack-cli --release --features embed-spa
+	mkdir -p crates/tack-desktop/binaries
+	cp target/release/tack crates/tack-desktop/binaries/tack-$$(rustc --print host-tuple)
 
 dev: frontend/node_modules ## Development mode: server + Vite hot-reload (Ctrl-C stops both)
 	@trap 'kill 0' SIGINT; \
