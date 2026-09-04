@@ -10,13 +10,14 @@ year from now; the ratios are the point, not the digits.
 
 | Source | Lines | ~Tokens | Read it? |
 |---|---|---|---|
-| `TODO.md` **whole** | 12,198 | **~199k** | **Never.** This is most of a context window for one file that is ~90% closed-cycle history. |
-| `TODO.md` active boards (lines 1–~2000) | 1,997 | ~33k | Yes, when you need **a** board — one Part, not all three. Parts VI, V and IV live at the top in that order; `grep -n "^# Part" TODO.md` gives the three start lines, then `sed -n` the one you need (Part VI alone is ~940 lines, ~15k). |
+| `TODO.md` **whole** | 12,599 | **~205k** | **Never.** This is most of a context window for one file that is ~90% closed-cycle history. |
+| `TODO.md` active boards (lines 1–~2400) | ~2,370 | ~39k | Yes, when you need **a** board — one Part, never all. Parts VII, VI, V and IV live at the top in that order; `grep -n "^# Part" TODO.md` gives the start lines, then `sed -n` the one you need (Part VII is lines 60–430, ~370 lines, ~6k; Part VI is lines 431–1400, ~970 lines, ~16k). |
 | `docs/agent-handoffs/**` **all** | 12,161 | **~221k** | **Never all.** 48 files. Read the one or two your card's `Context` names. |
 | `docs/agent-handoffs/part-iii/III-C2.md` (largest single) | — | ~15k | Only if named. One handoff can cost as much as every active board combined. |
-| `docs/agent-handoffs/part-vi/README.md` (dispatch plan) | 544 | ~8k | **Header + your card's block only** (~2k). It tells you what else to read, with sizes; reading it whole defeats its purpose. `TEMPLATE.md` beside it is ~0.6k and replaces digging the template out of the archive. |
+| `docs/agent-handoffs/part-vi/README.md` (dispatch plan) | 559 | ~8k | **Header + your card's block only** (~2k). It tells you what else to read, with sizes; reading it whole defeats its purpose. `TEMPLATE.md` beside it is ~0.6k and replaces digging the template out of the archive. |
+| `docs/agent-handoffs/part-vii/README.md` (dispatch plan) | 337 | ~5k | **Header + your card's block only** (~2k). Same shape as Part VI's; `TEMPLATE.md` beside it is a pointer plus three sections. |
 | `docs/openapi.json` | 11,829 | **~88k** | **Almost never.** It is generated. To check one path, `python3 -c` or `jq` it. |
-| `docs/book/src/roadmap.md` | 3,211 | ~48k | Rarely whole. It records intent, not state. The two `## Next` sections at the end are the live part. |
+| `docs/book/src/roadmap.md` | 3,592 | ~54k | Rarely whole. It records intent, not state. The `# Next` sections at the end (Phases 60 and 61) are the live part. |
 | `crates/tack-db/src/migrations.rs` | 1,614 | ~19k | Grep it for the table you care about; adding a migration needs the tail, not the file. |
 | `CHANGELOG.md` | 991 | ~10k | Only the `[Unreleased]` block. |
 | `docs/API-REFERENCE.md` | 1,433 | ~7k | Grep for the endpoint. |

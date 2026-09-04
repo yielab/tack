@@ -171,3 +171,30 @@ decisions themselves are unchanged — this was a rewrite for clarity, not a re-
 `.claude/skills/card/SKILL.md` now points future decision-writing cards at the same
 contract so this doesn't recur. Status remains `proposed`, still awaiting the user's
 dated acceptance below this line.
+
+**2026-09-03 — integrator (Fable), before acceptance.** The user asked for a more robust,
+standard way to hold harness and provider credentials, and for a multi-tenant or
+authentication design alongside it. The answer, recorded in the roadmap's new
+"Credentials: who runs what, where, and how a key is kept" section under Phase 60:
+
+- Decision 1 of ADR 0061 is refined from "an owner-only file" to "the platform keychain
+  first, an owner-only file only where no platform store answers, and the runner reports
+  which backend holds a key" — the `gh` / `docker` pattern. Table row 1, the opening
+  "Decide" paragraph and Full reasoning §1 changed (one rejected option added); decisions
+  2–6 are untouched. `TODO.md`'s VI-B1 card and the dispatch README's VI-B1 block were
+  rescoped to match (two backends, `store:`/`env:` reference schemes, live keychain proof
+  and fallback proof in the acceptance).
+- Multi-tenant / identity is answered as a deferred direction with a trigger — a second
+  person sharing one board — not as a Part. The user's own framing is that the normal
+  case is one person, several projects, their own keys, their own machine, where the
+  runner already is the per-person credential boundary. ADR 0059 stands; the shape a
+  future identity Part takes is written down so it is not re-derived.
+
+Status remains `proposed`. The acceptance line above is still the user's to fill.
+
+**2026-09-03 — ACCEPTANCE, recorded by the integrator on the user's behalf.** The user
+accepted ADR 0061 in chat with the word "listo" in reply to the integrator's explicit
+request to accept ADRs 0061 and 0062 ("Pendiente de ti: aceptar ADR 0062 (y la 0061, con la
+decisión 1 ya refinada)"). The acceptance covers the six decisions as they stand in the
+file at this date, including the refined decision 1. If the user disagrees with this
+reading, they strike this paragraph and Wave 15 stops. **User acceptance date: 2026-09-03.**
