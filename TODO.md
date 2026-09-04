@@ -10,8 +10,8 @@
 
 | Part | Cycle | Phases | Status | Where |
 |---|---|---|---|---|
-| **VII** | **Desktop app & background service** | 61 | **ACTIVE** — ADR 0062 accepted 2026-09-03; **Wave 18 integrated 2026-09-04** (VII-A2, VII-B1). VII-B2 and VII-B3 next | [§VII](#part-vii--desktop-app--background-service-phase-61), top of this file |
-| **VI** | **Agent Onboarding & Provider UX** | 60 | **ACTIVE** — Wave 14 integrated at `927f850`; ADR 0061 accepted 2026-09-03 (decision 1 refined the same day: keychain first, file fallback); **VI-B1, VI-C3 and VI-C4 integrated 2026-09-04**. VI-B2 and VI-C2 next | [§VI](#part-vi--agent-onboarding--provider-ux-phase-60), top of this file |
+| **VII** | **Desktop app & background service** | 61 | **ACTIVE** — ADR 0062 accepted 2026-09-03; **Waves 18 and 19 integrated 2026-09-04** (VII-A2, VII-B1, VII-B2, VII-B3). Wave 20 (VII-C1) next | [§VII](#part-vii--desktop-app--background-service-phase-61), top of this file |
+| **VI** | **Agent Onboarding & Provider UX** | 60 | **ACTIVE** — Wave 14 integrated at `927f850`; ADR 0061 accepted 2026-09-03 (decision 1 refined the same day: keychain first, file fallback); **VI-B1, VI-C2, VI-C3 and VI-C4 integrated 2026-09-04**. VI-B2 next | [§VI](#part-vi--agent-onboarding--provider-ux-phase-60), top of this file |
 | **V** | **Adoption & First Public Release** | 59 | **ACTIVE** — Waves 11–12 done, Wave 13 in flight (V-C2 unblocked, V-C3 waiting on it) | [§V](#part-v--adoption--first-public-release-phase-59) |
 | **IV** | **Standalone Single-Binary Operation** | 58 | Done — Wave 10 integrated at `83fefab` | [§IV](#part-iv--standalone-single-binary-operation-phase-58) |
 | III | Harness-Agnostic Runner Fleet | 50–57 | Feature-complete, **tag refused** | [§III](#part-iii--harness-agnostic-runner-fleet-phases-5057), archive |
@@ -72,7 +72,7 @@ card's block only. It names what to read, how much it costs, the gate, and when 
 | Wave | Cards | Phase | Status |
 |---|---|---|---|
 | 18 — The daemon, two ways | VII-A2 · VII-B1 | 61 | **Integrated 2026-09-04** — both cards on `develop`; handoffs `docs/agent-handoffs/part-vii/VII-A2.md`, `VII-B1.md`. Integration found the workspace membership itself was wrong: Tauri pulls GTK/WebKit/glib into whatever workspace holds it, so `cargo build --workspace` first demanded a staged sidecar and committed icons, then failed three CI jobs on `glib-2.0 not found` — the server would have needed desktop system libraries to compile. **`crates/tack-desktop` is now excluded from the root workspace and is its own**, with its own lockfile, CI job and Dependabot entry; `externalBin` moved to a bundle-only overlay and the icon set is committed, which also settles the `.gitignore` question `7cc6221` had routed to VII-C1. VII-B2 and VII-B3 work inside that workspace and must not touch the root lockfile. VII-B2 and VII-B3 are dispatchable in parallel from the integration tip |
-| 19 — Lifecycle and data | VII-B2 · VII-B3 | 61 | Not started — parallel, after B1 |
+| 19 — Lifecycle and data | VII-B2 · VII-B3 | 61 | **Integrated 2026-09-04** — both cards on `develop`; handoffs `docs/agent-handoffs/part-vii/VII-B2.md`, `VII-B3.md`. The two shared `main.rs`, and the damaging half of that merged without a conflict: B2 passed the tray's first-run marker a `root` local that B3 had deleted when it replaced the temporary data root, and git saw no overlap because the two edits sat far enough apart. Caught by compiling, not by reading the diff — resolved to B3's real `paths.root`. `capabilities/default.json` took the union of both permission sets; a missing entry there fails at runtime, not at build. **Left for VII-C1:** the tree now carries two independent first-run signals in the same directory, B2's `.autostart-initialized` marker and B3's `settings.json`. Both work and neither reads the other. |
 | 20 — Ship | VII-C1 → VII-C2 | 61 | Not started — C1 after B2 + B3; C2 after C1 **and Part VI's VI-C1** |
 | 21 — Proof | VII-D1 | 61 | Not started — last |
 
@@ -302,7 +302,7 @@ the window, from a second shell observe `/api/health` and the attempt advancing 
 window is closed, reopen from the tray → the same state rendered. Quit with an in-flight
 attempt shows the dialog (screenshot in the handoff); Quit with none stops within a
 bounded time and leaves no process. Launch-at-login on → the platform entry exists
-(`~/.config/autostart/tack.desktop` on Linux — assert the file); off → it is gone. Single
+(`~/.config/autostart/Tack.desktop` on Linux, capital T — the name comes from `productName` in `tauri.conf.json`; assert the file); off → it is gone. Single
 instance still holds after B2's changes.
 
 ---
@@ -468,7 +468,7 @@ i18n, time tracking and in-UI diff review stay deferred — see §VI.5.
 |---|---|---|---|
 | 14 — Truth first | VI-A1 · VI-A2 · VI-A3 | 60 | **Integrated** at `927f850` on `develop` (handoffs: `docs/agent-handoffs/part-vi/VI-A1.md`, `VI-A2.md`, `VI-A3.md`). All three adversarially verified against the real tree, not just their own reports — A1's live worked example re-checked, A3's stranger-read test and render proofs opened, A2's ADR cited by line against 0050/0058. `mdbook build` clean; the only `docs/CONFIG.md` conflict (A1's new bullet vs. A2's rewritten paragraph, both anticipated it) resolved keeping both contributions. **ADR 0061 is `Status: proposed` — Wave 15 (VI-B1/B2/B3) does not branch until the user records acceptance with a date in `VI-A2.md`.** One non-blocking finding routed to VI-D1: `docs/book/src/roadmap.md:3273` wants a forward reference to ADR 0061 once accepted (not fixed here — outside every Wave-14 card's ownership). |
 | 15 — Provider at the runner boundary | VI-B1 · VI-B2 · VI-B3 | 60 | **VI-B1 integrated 2026-09-04** (handoff `docs/agent-handoffs/part-vi/VI-B1.md`); B2 is dispatchable now, B3 after it. ADR 0061 accepted by the user on 2026-09-03 (recorded in `docs/agent-handoffs/part-vi/VI-A2.md`, amendments). Sequential B1 → B2 → B3; base `2958e9e`. Decision 1 of ADR 0061 was refined on 2026-09-03 before acceptance (platform keychain first, owner-only file where none answers, backend reported); VI-B1's card and dispatch block already match. |
-| 16 — UI-first flow | VI-C1 · VI-C2 · VI-C3 · VI-C4 | 60 | **VI-C3 and VI-C4 integrated 2026-09-04** (handoffs `docs/agent-handoffs/part-vi/VI-C3.md`, `VI-C4.md`). C2 is unblocked and dispatchable; C1 still needs B2 + B3. VI-C4's two routes ship with no handler test in `tack-api` — the next Wave 16 card touching that crate owns adding them (see its amendment). |
+| 16 — UI-first flow | VI-C1 · VI-C2 · VI-C3 · VI-C4 | 60 | **VI-C2, VI-C3 and VI-C4 integrated 2026-09-04** (handoffs `docs/agent-handoffs/part-vi/VI-C2.md`, `VI-C3.md`, `VI-C4.md`). C2 merged with no conflict — it is frontend-only and shared no file with the desktop cards it integrated alongside. C1 still needs B2 + B3. VI-C4's two routes ship with no handler test in `tack-api` — the next Wave 16 card touching that crate owns adding them (see its amendment). |
 | 17 — Proof | VI-D1 · VI-D2 | 60 | Not started — last wave. D2 (assets) needs C1, C2 and Part V's V-C2, which owns `docs/screenshots/`; D1 goes last and needs everything |
 
 **Integration line:** `develop`, the repository's default branch — same as Parts III–V.
