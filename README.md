@@ -5,14 +5,14 @@
 [![Rust](https://img.shields.io/badge/rust-1.89%2B-orange.svg)](https://www.rust-lang.org/)
 [![Beta](https://img.shields.io/badge/status-beta-yellow.svg)](CHANGELOG.md)
 
-**A self-hosted project board that dispatches its items to coding agents — Claude Code,
-Codex, or OpenCode — through runners that live where your code and credentials already
+**A self-hosted project board that dispatches its items to coding agents — Claude Code
+or Codex — through runners that live where your code and credentials already
 are. One binary. The board plans and records; the runner executes.**
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/two-components-dark.svg">
-    <img src="docs/diagrams/two-components-light.svg" width="720" alt="Two components: the board (one) on the left holds workflows, timelines, leases, fencing, and history; runners (many) on the right each launch a harness — Claude Code, Codex, or OpenCode — near your code and credentials. One arrow, from runner to board, labeled &quot;pulls work&quot;: the board never calls out.">
+    <img src="docs/diagrams/two-components-light.svg" width="720" alt="Two components: the board (one) on the left holds workflows, timelines, leases, fencing, and history; runners (many) on the right each launch a harness — Claude Code or Codex — near your code and credentials. One arrow, from runner to board, labeled &quot;pulls work&quot;: the board never calls out.">
   </picture>
 </p>
 
@@ -26,8 +26,8 @@ are. One binary. The board plans and records; the runner executes.**
 >
 > **The runner** is a small worker that lives where the code and the credentials already
 > are — a laptop, a CI box, a machine with a GPU. It pulls work from the board, checks out
-> an isolated workspace, launches the coding agent you already use — Claude Code, Codex or
-> OpenCode — and reports back. **It holds the keys; the board never sees them.**
+> an isolated workspace, launches the coding agent you already use — Claude Code or Codex
+> — and reports back. **It holds the keys; the board never sees them.**
 >
 > They are separate because they scale and fail differently. **One board, many runners:**
 > a board on a small VPS dispatches to runners on ten developers' machines, each with its
@@ -83,7 +83,7 @@ external services.
 
 ### Agent execution
 
-- Assign a board item to `claude-code`, `codex`, or `opencode` and it runs as a
+- Assign a board item to `claude-code` or `codex` and it runs as a
   tracked, durable attempt — not a fire-and-forget shell command
 - Pull-based runner protocol: a lightweight `tack-runner` claims eligible work and
   executes near its own repo and credentials; Tack never calls into your machine
@@ -177,8 +177,8 @@ Open **`http://localhost:3210`**. Project data lives in `tack.db`; attachments l
 `storage/`. Back up both.
 
 `--with-runner` self-provisions an agent runner inside the same process — no second
-binary, no token to copy anywhere — so a board item assigned to `claude-code`,
-`opencode`, or `codex` (whichever of those you have installed and logged in) actually
+binary, no token to copy anywhere — so a board item assigned to `claude-code` or
+`codex` (whichever of those you have installed and logged in) actually
 executes. It's off by default and loopback-only; see
 [Agent Runners](docs/book/src/user-guide/agent-runners.md#standalone-mode-tack-serve---with-runner)
 and [`docs/CONFIG.md`](docs/CONFIG.md#embedded-runner-tack-serve---with-runner). Plain
@@ -202,9 +202,8 @@ full evidence, including reverted-fix proofs and live run logs.
 
 | Harness | Status |
 | --- | --- |
-| `claude-code` | Completes real, live end-to-end attempts today. |
-| `opencode` | Completes real, live end-to-end attempts today. |
-| `codex` | Runs the complete pipeline — claim, checkout, spawn, real network call, structured result — but has not completed a live attempt: this machine's connected account doesn't have access to the requested model. That's an account-tier limitation, not a code defect. |
+| `claude-code` | Completes real, live end-to-end attempts today, on a subscription or through a configured provider endpoint. |
+| `codex` | Completes real, live end-to-end attempts through a configured provider endpoint. On a plain subscription it runs the whole pipeline — claim, checkout, spawn, real network call, structured result — but the account tier decides which models it may request. |
 
 **Known limitations:**
 
@@ -240,8 +239,8 @@ durable attempt ◄── events / decisions / artifacts ─ tack-runner
                                    HarnessAdapter ──────┼──────┐
                                                         │      │
                                                    Codex CLI  Claude Code
-                                                        │      │
-                                                    OpenCode  future harnesses
+                                                        │
+                                                 future harnesses
 ```
 
 This separates concepts that must not be conflated:
@@ -252,7 +251,7 @@ This separates concepts that must not be conflated:
 | **Execution request** | Durable request to perform an item, with policy and eligibility constraints. |
 | **Fleet** | Schedulable pool of runners with declared capabilities. |
 | **Runner** | Worker process that leases work and executes it near its repo and credentials. |
-| **Harness** | Agent runtime such as Codex CLI, Claude Code, or OpenCode. |
+| **Harness** | Agent runtime such as Codex CLI or Claude Code. |
 | **Attempt** | Immutable execution history for one lease and run. |
 | **Decision** | Structured request for human input or authorization. |
 
