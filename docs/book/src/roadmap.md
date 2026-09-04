@@ -3532,7 +3532,8 @@ through `tack service install`.
 The decision record is [ADR 0062](https://github.com/yielab/tack/blob/develop/docs/adr/0062-desktop-app-and-background-service.md)
 — eight decisions in one table, **accepted 2026-09-03**. The board is Part VII in
 `TODO.md` (top of the file) and the dispatch plan is
-`docs/agent-handoffs/part-vii/README.md`; both were created from this section.
+`docs/agent-handoffs/part-vii/README.md`; both were created from this section. **Wave 18
+(VII-A2, VII-B1) was dispatched 2026-09-03.**
 
 ## Why this phase exists
 
