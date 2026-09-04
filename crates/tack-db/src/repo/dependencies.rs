@@ -109,8 +109,8 @@ impl Repository {
     }
 
     /// Every dependency row that touches **any** of `item_ids`, as either
-    /// endpoint — deliberately not scoped to one project. Card C3 (sprint DAG
-    /// dispatch) uses this to discover a sprint item's blockers even when the
+    /// endpoint — deliberately not scoped to one project. Sprint DAG
+    /// dispatch uses this to discover a sprint item's blockers even when the
     /// blocker lives outside the sprint (an ordinary case — a sprint is a
     /// subset of a project's items — or, since nothing in this schema
     /// actually forecloses it, a different project entirely). Returns `[]`

@@ -74,7 +74,7 @@ async fn record_health_round_trips_through_the_real_repo() {
 
     // A failed poll (`last_seen_at: None`) must leave the stored timestamp
     // untouched — this is the exact "None means don't touch, not clear"
-    // contract A2's reconciler.rs handoff called out as matching A3's repo.
+    // contract reconciler.rs relies on and the repo layer must honor.
     store
         .record_health(
             plane.id,
@@ -167,8 +167,8 @@ async fn list_registered_skips_an_unknown_kind_without_failing() {
     );
 }
 
-// ─── Card G1: a plane list_registered could not build an adapter for is ───
-// marked "unconfigured", not left at the pre-poll "unknown" default forever.
+// ─── A plane `list_registered` could not build an adapter for is marked ───
+// "unconfigured", not left at the pre-poll "unknown" default forever.
 
 #[tokio::test]
 async fn unconfigured_plane_reports_unconfigured_not_unknown() {
@@ -265,7 +265,7 @@ async fn spawn_reconcilers_polls_a_real_docket_and_persists_health_via_the_real_
 #[tokio::test]
 async fn disabled_orch_enable_spawns_no_tasks_even_with_a_registered_plane() {
     // AppConfig::default() ⇒ orch_enable: false, matching TACK_ORCH_ENABLE
-    // unset — the exact §0 rule 8 condition this test asserts against,
+    // unset — the exact off-by-default condition this test asserts against,
     // wired through the real store rather than reconciler.rs's own fake
     // (that module already covers the generic case; this covers that the
     // real RepoControlPlaneStore's data doesn't leak through the gate).

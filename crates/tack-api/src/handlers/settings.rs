@@ -325,10 +325,9 @@ pub async fn get_orch_settings(State(state): State<AppState>) -> Json<Value> {
 }
 
 /// Incoming update — just the one field the contract defines. No tri-state
-/// "unset back to env default" path exists yet (nothing in this cycle needs
-/// it); once stored, `source` stays `"database"` until a future card adds
-/// one, mirroring how Cloud Backup's string fields already behave for their
-/// own overrides.
+/// "unset back to env default" path exists yet; once stored, `source` stays
+/// `"database"` permanently, mirroring how Cloud Backup's string fields
+/// already behave for their own overrides.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateOrchSettings {
     pub enabled: bool,

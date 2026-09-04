@@ -279,8 +279,8 @@ fn call<T>(result: anyhow::Result<T>) -> Result<T, String> {
 /// tools that mutate an existing item (`update_item`, `move_item`) can never
 /// clobber a change made by a human in the UI or another agent between the
 /// read and the write — the exact agent-versus-human race that
-/// `version`/`ETag`/`If-Match` catches, on exactly the write path that
-/// previously had no way to send the header at all. When the server sends
+/// `version`/`ETag`/`If-Match` exists to catch, on exactly the write path
+/// that would otherwise have no way to send the header at all. When the server sends
 /// no `ETag` (no concurrency support on this route yet, or an older server),
 /// `if_match` is `None` and `patch_if_match` sends no header — identical to
 /// today's unconditional write, never a new failure mode.

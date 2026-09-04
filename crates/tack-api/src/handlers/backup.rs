@@ -189,9 +189,9 @@ fn remote_not_configured() -> ApiError {
 fn backup_err(e: remote_backup::BackupError) -> ApiError {
     use remote_backup::BackupError as B;
     match &e {
-        // Business-rule conflicts (409). The generation conflict previously
-        // surfaced the remote head manifest inline; that structured payload is
-        // dropped when unifying on the error envelope (no client consumes it).
+        // Business-rule conflicts (409). The generation conflict does not
+        // surface the remote head manifest inline; that structured payload is
+        // dropped when unifying on the error envelope, since no client consumes it.
         B::NotConfigured
         | B::SchemaTooNew { .. }
         | B::UnsupportedFormat(_)

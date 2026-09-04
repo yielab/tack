@@ -89,12 +89,13 @@ type HandlerResult = runner_auth::ProtocolResult<Json<Value>>;
 /// Default artifact-content storage root, relative to the process's working
 /// directory — mirrors `config.rs#default_storage_dir`'s own `"./storage"`
 /// default, one level deeper so artifact blobs never collide with attachment
-/// files that already live directly under `TACK_STORAGE_DIR`. This is only
-/// ever used until the integrator wires the real, operator-configured
-/// `TACK_STORAGE_DIR` through. `RunnerProtocolState::new`'s two-argument
-/// signature stays unchanged (production's one call site is
-/// `router.rs#runner_protocol_routes`) so this
-/// default is additive, never a breaking change.
+/// files that already live directly under `TACK_STORAGE_DIR`. Production
+/// (`router.rs#runner_protocol_routes`) always overrides this via
+/// [`RunnerProtocolState::with_artifact_storage_root`] with the
+/// operator-configured `TACK_STORAGE_DIR`; this default is only actually
+/// reachable from a caller that constructs `RunnerProtocolState::new`
+/// directly and skips that call (e.g. a test that doesn't care where
+/// artifacts land).
 const DEFAULT_ARTIFACT_STORAGE_ROOT: &str = "./storage/execution-artifacts";
 
 /// State for this module's local router, constructed from the shared API
@@ -115,14 +116,15 @@ impl RunnerProtocolState {
         }
     }
 
-    /// Additive builder so the integrator can point artifact content storage
-    /// at the operator-configured `TACK_STORAGE_DIR` (see the F2 handoff's
-    /// wiring request) without changing `new`'s call signature. Used by this
-    /// card's own `f2_artifact_events_test.rs`; `#[allow(dead_code)]` because
-    /// the pre-existing, unrelated `c2_handlers_test.rs` also loads this file
-    /// via `#[path]` (for its own auth non-substitution test) without
-    /// calling this — see `artifact_download.rs`'s module-level allow for
-    /// the fuller precedent.
+    /// Builder that points artifact content storage at a caller-chosen
+    /// root without changing `new`'s call signature. Production
+    /// (`router.rs#runner_protocol_routes`) calls this to swap in the
+    /// operator-configured `TACK_STORAGE_DIR`. Also used directly by
+    /// `f2_artifact_events_test.rs`; `#[allow(dead_code)]` because the
+    /// unrelated `c2_handlers_test.rs` also loads this file via `#[path]`
+    /// (for its own auth non-substitution test) without calling this — see
+    /// `artifact_download.rs`'s module-level allow for the fuller
+    /// precedent.
     #[allow(dead_code)]
     pub fn with_artifact_storage_root(mut self, root: impl Into<std::path::PathBuf>) -> Self {
         self.artifact_storage = Arc::new(ArtifactStorage::new(root.into()));
@@ -783,8 +785,8 @@ pub async fn refresh(
                 // precise `runner_revoked` error for the case it can
                 // actually prove (its own row-affected check), and
                 // collapsing a merely-lost race into "you were revoked"
-                // would repeat the exact anti-pattern Task 1's
-                // IdempotencyConflict/Conflict split eliminated elsewhere in
+                // would repeat the exact anti-pattern the
+                // IdempotencyConflict/Conflict split eliminates elsewhere in
                 // this file. The message below is a near-literal match for
                 // docs/contracts/runner-v1/errors/conflict.json — "The
                 // resource changed before this operation committed",
@@ -891,9 +893,9 @@ pub async fn claim(
     // `heartbeat_batch` repository call cross-checks a runner's reported
     // capacity against its actual active reservations atomically (and can
     // return `Conflict`), `claim_execution_idempotent_with_snapshot` does
-    // not accept a capacity argument at all. Previously this line
-    // type-checked the field and discarded the result — validating a value
-    // that is never used implies an enforcement that does not exist. A real
+    // not accept a capacity argument at all. A vestigial type-check here
+    // would validate a value that is never used, implying an enforcement
+    // that does not exist. A real
     // cross-check would have to run either inside that same atomic claim
     // transaction, or as a
     // separate, non-atomic read of `agent_runners.available_capacity`
@@ -949,8 +951,8 @@ pub async fn claim(
             // `base_revision` is a required, immutable field on the frozen
             // request snapshot. `unwrap_or_default()`
             // would silently turn "missing/unreadable" into `""` — a
-            // structural zero standing in for unknown, which rule 7
-            // forbids. Surface it as `internal_error` instead: B2's own
+            // structural zero standing in for unknown.
+            // Surface it as `internal_error` instead:
             // `claim_execution_idempotent_with_snapshot` already validates
             // the full snapshot shape before a request can be enqueued
             // (quarantining anything incomplete as `needs_operator` rather
@@ -1099,8 +1101,8 @@ pub async fn heartbeat(
 
 // ---------------------------------------------------------------------
 // Accept (preparing) / start (running). Not backed by a named
-// request/response fixture pair — see the handoff's contract-ambiguity
-// note. Backed directly by B2's `transition_attempt_with_facts`, which
+// request/response fixture pair. Backed directly by
+// `transition_attempt_with_facts`, which
 // implements exactly the frozen `leased -> preparing -> running`
 // (`lease_owner`) rule from `lifecycle-transitions.json`.
 // ---------------------------------------------------------------------
@@ -1542,8 +1544,9 @@ pub async fn poll_decisions(
 }
 
 // ---------------------------------------------------------------------
-// Artifact manifest. Manifest-only: content upload/download is out of this
-// card's scope (see the handoff).
+// Artifact manifest. Manifest-only: content upload is
+// [`put_artifact_content`] below, content download is
+// `artifact_download.rs`.
 // ---------------------------------------------------------------------
 
 struct PreparedArtifact {
@@ -2008,10 +2011,10 @@ pub async fn submit_completion(
             "terminal_reason must be an object",
         ));
     }
-    // Reused directly from B1's frozen domain (`tack_orch::execution`) —
+    // Reused directly from the frozen domain (`tack_orch::execution`) —
     // both shapes match `completion.request.json`'s `actual_execution` and
     // `usage` exactly, so parsing into these typed values (rather than a
-    // parallel DTO) is both the card brief's instruction and the strongest
+    // parallel DTO) is the strongest
     // available guarantee that this handler matches the frozen fixture.
     let actual_execution: ActualExecution =
         serde_json::from_value(field(&value, "actual_execution")?.clone()).map_err(|_| {
@@ -2070,13 +2073,13 @@ pub async fn submit_completion(
             "replayed": true,
             "committed_at": resp.committed_at,
         }))),
-        // Same split as `submit_events` above, from the same B2 amendment:
-        // the same `(attempt_id, completion_id)` idempotency-scoped key
+        // Same split as `submit_events` above: the same
+        // `(attempt_id, completion_id)` idempotency-scoped key
         // reused with different content can never succeed by retrying
         // (`idempotency_conflict`), while a distinct completion_id racing a
         // concurrent terminal write, or a pre-M055 terminal attempt with no
         // authoritative historical response, is a benign, retryable
-        // `conflict` — unchanged from before this amendment.
+        // `conflict`.
         CompletionResult::IdempotencyConflict => Err(protocol_error(
             StatusCode::CONFLICT,
             StableErrorCode::IdempotencyConflict,
@@ -2181,9 +2184,9 @@ pub async fn observe_cancellation_report(
 
 // ---------------------------------------------------------------------
 // Recovery observation (additive v1 operation; exact path from
-// `protocol.json`, relative to `base_path`). Uses B1's typed
+// `protocol.json`, relative to `base_path`). Uses the typed
 // `RecoveryObservationRequest`/`RecoveryObservationResponse` directly, so
-// this handler's wire shape is exactly what B1 already fixture-tested.
+// this handler's wire shape is exactly what is already fixture-tested.
 // ---------------------------------------------------------------------
 
 pub async fn observe_recovery(
@@ -2358,8 +2361,8 @@ mod tests {
     fn validate_capability_payload_rejects_available_over_total_and_oversized_labels() {
         // Every case below is otherwise a complete `EmbeddedCapabilitySnapshot`
         // shape (`reported_at`/`limits`/`concurrency`/`labels`/`harnesses`/
-        // `features` all present) — since Task 4's adoption of B1's typed
-        // parse, an incomplete shape is rejected before these business rules
+        // `features` all present) — the typed parse this handler validates
+        // through rejects an incomplete shape before these business rules
         // ever run (see `validate_capability_payload_rejects_incomplete_shape`
         // below).
         let snapshot = |total: i64, available: i64, labels: Value| {
@@ -2387,11 +2390,11 @@ mod tests {
         assert_eq!(body.0["error"]["details"]["limit"], "labels_max");
     }
 
-    /// Task 4's typed-parse adoption means a payload missing a required
-    /// `EmbeddedCapabilitySnapshot` field (here, `limits`) is now rejected as
-    /// `invalid_request` before any business rule runs — this is strictly
-    /// more validation than the pre-amendment hand-rolled check, which
-    /// ignored `limits`/`reported_at`/`harnesses` entirely.
+    /// The typed parse means a payload missing a required
+    /// `EmbeddedCapabilitySnapshot` field (here, `limits`) is rejected as
+    /// `invalid_request` before any business rule runs — stricter than a
+    /// hand-rolled check that ignored `limits`/`reported_at`/`harnesses`
+    /// entirely would be.
     #[test]
     fn validate_capability_payload_rejects_incomplete_shape() {
         let missing_limits = json!({

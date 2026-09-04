@@ -98,7 +98,7 @@
 //! `orch_links` write automatically, or inventing a way to "adopt" a 409
 //! (an already-existing remote project name) as this attempt's own pod.
 //! Both would require Tack to track cross-request provisioning state it
-//! has nowhere reliable to put in this cycle; a 409 is treated as a hard
+//! has nowhere reliable to put; a 409 is treated as a hard
 //! failure (project rolled back, operator told to pick a different remote
 //! project name or use the existing manual-link flow if they know the
 //! existing pod is theirs).

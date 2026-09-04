@@ -68,7 +68,8 @@ pub enum WorkspaceError {
 pub mod git;
 
 /// The only boundary allowed to create a Git worktree. Tests inject a fake;
-/// C3 does not pretend that an empty directory is a checked-out repository.
+/// the real implementation does not pretend that an empty directory is a
+/// checked-out repository.
 #[async_trait]
 pub trait WorktreeProvisioner: Send + Sync {
     async fn provision(

@@ -230,7 +230,7 @@ mod tests {
         assert!(!event_matches_project(&event, project_b));
     }
 
-    /// The client-side acceptance bar: an unknown event
+    /// The client-side requirement: an unknown event
     /// variant on the wire must be ignored, not thrown. On the Rust side the
     /// analogous guarantee is that decoding never panics on a *future* tag —
     /// `#[serde(tag = "type", rename_all = "snake_case")]` on a closed enum

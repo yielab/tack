@@ -1,11 +1,12 @@
 //! Rust-side accessors for the shared fake harness fixture
 //! (`fake_harness.sh`, documented in full at the top of that file).
 //!
-//! D1/D2 drive this exact fixture from their own crash/fake tests: spawn
-//! it through [`super::process::ProcessSpec`] with `TACK_FAKE_HARNESS_MODE`
-//! (and mode-specific variables) set in `ProcessSpec::env`, exactly as this
-//! module's own tests and `process.rs`'s tests already do. Nothing here is
-//! specific to D4 — this is the intentionally-reusable half of the card.
+//! Other crash/fake-harness tests elsewhere in this crate drive this exact
+//! fixture the same way: spawn it through [`super::process::ProcessSpec`]
+//! with `TACK_FAKE_HARNESS_MODE` (and mode-specific variables) set in
+//! `ProcessSpec::env`, exactly as this module's own tests and `process.rs`'s
+//! tests already do. Nothing here is specific to any one harness kind — this
+//! is the reusable half of the fixture machinery, kept generic on purpose.
 
 use std::path::PathBuf;
 

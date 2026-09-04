@@ -84,7 +84,7 @@ async fn create_template_with_null_orchestration_still_works() {
     assert_eq!(res.status(), StatusCode::OK);
 }
 
-/// The headline acceptance bar: an unknown status name in
+/// The main requirement: an unknown status name in
 /// `orchestration.status_map` is rejected with a 400 naming the bad key —
 /// not silently stored, not caught only later when a dispatch misbehaves.
 #[tokio::test]

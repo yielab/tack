@@ -40,7 +40,7 @@ use crate::execution::{ExecutionRequestId, RunnerId};
 /// runner do not both get told "yes, this runner." This adjustment is
 /// entirely local to one `schedule` call; the real, authoritative capacity
 /// ledger is `agent_runners.available_capacity`, decremented only by the
-/// repository's fenced claim (III.1.5) — the caller must re-derive
+/// repository's fenced claim — the caller must re-derive
 /// `candidates` from fresh state before a later `schedule` call, not reuse
 /// this function's internal bookkeeping.
 pub fn schedule(

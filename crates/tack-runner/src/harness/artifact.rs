@@ -4,11 +4,11 @@
 //! a generated file) that the `docs/contracts/runner-v1/artifact.request.json`
 //! shape (`artifact_id`, `kind`, `name`, `media_type`, `size_bytes`,
 //! `sha256`, ...) expects to eventually upload. `PullProtocol` has no
-//! artifact-upload method yet (the same known C3 gap as event batching), so
+//! artifact-upload method yet (the same gap as event batching), so
 //! this module is the local half only: copy the named file out of the
 //! attempt's own workspace into a dedicated, owner-only, attempt-scoped
 //! staging directory, with a real checksum computed along the way, ready for
-//! whichever future card wires the upload transport.
+//! whenever the upload transport is wired.
 //!
 //! Confinement mirrors `workspace.rs`'s cleanup guard for the same reason:
 //! canonicalize before comparing, so a symlink or a `..` component cannot

@@ -436,7 +436,8 @@ async fn a_workflow_engine_rejection_records_status_map_rejected_not_a_human_ove
     assert_eq!(events.len(), 1);
     assert_eq!(
         events[0].event_type, "status_map_rejected",
-        "an engine rejection is C1's existing event type, not this card's human-override one"
+        "an engine rejection must use the existing status_map_rejected event type, not the \
+         human-override one"
     );
 }
 

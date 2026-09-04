@@ -229,7 +229,7 @@ struct HealthTransition {
     state: HealthState,
     consecutive_failures: i64,
     /// `Some(now)` on a successful poll; `None` on a failed one — mirrors
-    /// `update_control_plane_health`'s contract exactly (A3): `None` means
+    /// `update_control_plane_health`'s contract exactly: `None` means
     /// "leave the stored `last_seen_at` untouched", not "clear it".
     last_seen_at: Option<DateTime<Utc>>,
     log: Option<LogSeverity>,
@@ -361,7 +361,7 @@ fn jittered_secs(plane_id: &Uuid, tick: u64, base_secs: u64) -> u64 {
 
 // ---------------------------------------------------------------------------
 // Fetch phase — HTTP calls only, no database access anywhere in this
-// section (§0 rule 5; see the module doc's "three-phase shape").
+// section (see the module doc's "three-phase shape").
 // ---------------------------------------------------------------------------
 
 async fn poll_health(control_plane: &Arc<dyn ControlPlane>) -> Result<Health, OrchError> {
@@ -566,7 +566,7 @@ pub struct RegisteredPlane {
 /// What to persist after one poll tick. Field shapes mirror
 /// `tack_db::Repository::update_control_plane_health`'s parameters exactly
 /// (`i64` failure count, `Option<DateTime<Utc>>` with `None` = "don't
-/// touch") so a `ControlPlaneStore` impl backed by A3's repo is a direct
+/// touch") so a `ControlPlaneStore` impl backed by the repo is a direct
 /// pass-through.
 #[derive(Debug, Clone)]
 pub struct HealthRecord {
@@ -1558,10 +1558,10 @@ fn spawn_one(
 // deleted directly in the database, which no handler-notification scheme
 // can observe by construction — at the cost of a bounded polling delay
 // ([`DEFAULT_SUPERVISOR_SCAN_SECS`], deliberately small: a few seconds, not
-// the per-plane `poll_secs`). Given the acceptance bar is "self-healing
-// regardless of how the table changed" and the delay is small enough not to
-// hurt the wizard's "register -> see it come alive" moment, (a) is what's
-// implemented. Nothing here rules out adding an event-driven nudge later
+// the per-plane `poll_secs`). The goal is self-healing regardless of how the
+// table changed, and the delay is small enough not to hurt the wizard's
+// "register -> see it come alive" moment, so (a) is what's implemented.
+// Nothing here rules out adding an event-driven nudge later
 // (e.g. the create-control-plane handler could shrink the *next* scan's
 // wait by writing to a `Notify`) if the scan interval ever needs to be
 // larger than a few seconds; it isn't needed today and would be a second
@@ -1569,11 +1569,11 @@ fn spawn_one(
 //
 // **What's reused, what's new.** Every per-plane poller is still exactly
 // [`spawn_one`], with exactly the same fetch -> decide -> persist -> sleep
-// shape and the same `watch`-channel stop signal E1 built — the supervisor
-// just gives each plane its *own* channel and sender instead of one shared
-// broadcast for the whole fleet, so it can stop a single plane's poller
-// (deleted) without touching the others. This is the same primitive
-// multiplied per-plane, not a second cancellation mechanism.
+// shape and the same `watch`-channel stop signal each poller already uses —
+// the supervisor just gives each plane its *own* channel and sender instead
+// of one shared broadcast for the whole fleet, so it can stop a single
+// plane's poller (deleted) without touching the others. This is the same
+// primitive multiplied per-plane, not a second cancellation mechanism.
 
 /// One currently-running per-plane poller, as tracked by the supervisor:
 /// its `spawn_one` handle, plus the sender half of *that plane's own* stop
@@ -2028,8 +2028,8 @@ mod tests {
     type ScriptedTracesResponse = (Vec<RemoteEvent>, Option<String>);
 
     /// A `ControlPlane` whose `health`/`status`/`list_runs`/`list_approvals`
-    /// responses are scripted; every other method (unused this wave)
-    /// returns `Disabled`. Used to drive `reconcile_once`/`spawn_reconcilers`
+    /// responses are scripted; every other method (not needed by these
+    /// tests) returns `Disabled`. Drives `reconcile_once`/`spawn_reconcilers`
     /// without a real adapter.
     struct FakeControlPlane {
         health_calls: AtomicUsize,
@@ -2840,7 +2840,7 @@ mod tests {
 
         // The loop polls immediately on start (no artificial initial
         // delay — deliberately different from the due-soon/backup
-        // schedulers, see the A2 handoff note), so a short real-time wait
+        // schedulers), so a short real-time wait
         // is enough to observe the first persisted record.
         tokio::time::sleep(Duration::from_millis(300)).await;
         for h in handles {
@@ -2963,7 +2963,7 @@ mod tests {
 
     /// Runs `spawn_one`'s loop (via `spawn_reconcilers`) for one tick against
     /// a `FakeStore` (whose plane list is set via [`FakeStore::new`]), then
-    /// aborts the task and returns the store for assertions. Every B1 test
+    /// aborts the task and returns the store for assertions. Every test
     /// below follows this same "one tick, then inspect what got upserted"
     /// shape.
     async fn run_one_tick(store: Arc<FakeStore>) -> Arc<FakeStore> {
@@ -3548,7 +3548,7 @@ mod tests {
         let id = Uuid::new_v4();
         // Well outside even a 1-day retention window — simulates a rewound
         // cursor re-delivering an event that was already rolled up and
-        // purged by B3's retention sweep (see the module doc's "Trace
+        // purged by the retention sweep (see the module doc's "Trace
         // cursor" / retention-composition section).
         let stale_event = sample_event("agent:demo:task-1", "2020-01-01T00:00:00Z", "tool_call");
         let plane = RegisteredPlane {

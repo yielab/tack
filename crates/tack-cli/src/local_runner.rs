@@ -200,9 +200,9 @@ pub async fn serve_with_embedded_runner() -> anyhow::Result<()> {
 ///    credential is still set, to a placeholder
 ///    (`local_enrollment::stored_session_placeholder`) rather than left
 ///    empty — `tack_runner::bootstrap::build_runtime` requires *some*
-///    credential before it ever looks at `state_dir`, a precondition that
-///    predates this card (see that placeholder's own doc comment for the
-///    full explanation and why it is not transmitted on a normal restart);
+///    credential before it ever looks at `state_dir` — see that
+///    placeholder's own doc comment for the full explanation and why it is
+///    not transmitted on a normal restart;
 /// 3. otherwise, a one-time token self-provisioned in-process against the
 ///    server's own database (legitimate here specifically because the
 ///    operator and the runner are the same person on the same machine — see

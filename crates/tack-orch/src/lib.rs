@@ -1193,6 +1193,6 @@ mod tests {
         );
         assert!(caps.runtimes, "docket's /status.json agents[] is a roster");
         assert!(caps.plane_metrics, "docket exposes GET /metrics");
-        assert!(caps.provisioning, "docket exposes POST /pods (card D4)");
+        assert!(caps.provisioning, "docket exposes POST /pods");
     }
 }
