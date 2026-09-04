@@ -17,6 +17,31 @@ derive it from `git diff --name-only <base>` — test the crates/dirs actually t
 Never start with `--release` or the full workspace when a scoped check answers the
 question.
 
+## Decide what to run before you run anything
+
+Start from the diff, not from habit. `git diff --name-only <base>` first, then the
+cheapest row that covers it. **The top rows are not shortcuts — running more than the
+diff justifies is a defect**, because it burns minutes and tokens and teaches you nothing
+the cheap check did not already say.
+
+| What the diff touches | Run | Do **not** run |
+|---|---|---|
+| Only `.md` outside `docs/book/` — README, boards, handoffs, ADRs | nothing | any cargo command |
+| `docs/book/**` | `mdbook build docs/book` | any cargo command |
+| Only comments, doc comments or log/error strings in `.rs` | `scripts/check-comments.sh` and `cargo check -p <crate>` | the test suite — a comment cannot move a test, and if one moves you changed behaviour by accident |
+| One crate's code | `cargo test -p <crate>` + `cargo clippy -p <crate> --all-targets -- -D warnings` | `--workspace` |
+| Wire shapes, DTOs, handlers, the API surface | the crate's tests **plus** the contract gates below | `--workspace` |
+| `frontend/**` | `npm run type-check && npx vitest run` | cargo anything |
+| Several branches merged, or a release | `full` | — |
+
+Two rules that follow from the table:
+
+- **A change that cannot affect a test does not get a test run.** If you find yourself
+  running `cargo test --workspace` after editing prose, stop: you are buying nothing.
+- **A green cheap check is a real answer.** Do not "confirm" it with an expensive one.
+  Escalate scope only when the cheap check fails, or when the diff genuinely reaches
+  further than you first thought.
+
 Disk note: parallel-agent builds fill `/home` — export `CARGO_TARGET_DIR` to the `/`
 partition (see workspace memory).
 
