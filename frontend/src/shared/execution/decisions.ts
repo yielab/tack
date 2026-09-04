@@ -6,28 +6,18 @@
 // `validate_answer`'s accepted request-body shape (`{"answer": {"option_id",
 // "text"?}}`).
 //
-// **There is no decision *discovery* endpoint anywhere in this codebase.**
-// `execution_decisions` is created and polled exclusively by the runner
-// protocol (`POST /attempts/{id}/decisions`, `POST
-// /attempts/{id}/decisions/poll` — both in `runner_protocol.rs`, gated
-// behind a runner bearer credential, structurally unreachable from the
-// operator surface this file talks to) and resolved exclusively by the
-// operator route this file wraps. No `GET` route anywhere returns a
-// decision's `prompt`/`options`/`state` to an operator. F1's own handoff
-// names this explicitly: "GET/list endpoints for decisions ... do not exist
-// ... likely III-F4's frontend-integration concern once it needs one." This
-// file's `DecisionRecord` type is therefore forward-declared to the real DB
-// row shape (`execution_decisions`' columns, via `runner_protocol.rs`'s own
-// `create_decision`/`poll_decisions` SELECT lists) so `DecisionInbox.tsx`'s
-// presentational rendering is correct and tested today, ready to receive
-// real data the moment a list endpoint lands — but nothing in this file
-// fetches a list, because no such call exists to make. See this card's
-// handoff for the concrete backend request.
+// `decisionsApi.list` calls the discovery route this card adds — `GET
+// /executions/{request_id}/attempts/{attempt_number}/decisions`
+// (`crates/tack-api/src/handlers/attempt_lists.rs`), returning every
+// `execution_decisions` row for that attempt, `pending`/`resolved`/`expired`
+// alike, oldest first. It carries the ordinary operator gate only — never
+// `TACK_EXECUTION_DECISION_TOKEN`, which stays scoped to resolution. This
+// file's `DecisionRecord` type matches that response's `data` rows
+// field-for-field.
 //
-// What IS real and callable today is `decisionsApi.resolve` below — the
-// actual, mounted, tested resolve mutation — which is why
-// `DecisionResolvePanel.tsx` can offer a genuine "resolve a decision you
-// already know the id of" action even with no list to browse.
+// `decisionsApi.resolve` is the actual, mounted, tested resolve mutation —
+// which is why a caller can still resolve a decision by id even without
+// having listed it first.
 
 import { apiOrigin, ApiError, request } from '../api/client';
 
@@ -56,9 +46,7 @@ export interface DecisionResolvedBy {
   subject_id: string;
 }
 
-/** One `execution_decisions` row, as an operator would see it once a list
- *  endpoint exists. Not fetched anywhere today — see this file's header
- *  comment. */
+/** One `execution_decisions` row, as returned by `decisionsApi.list`. */
 export interface DecisionRecord {
   decision_id: string;
   attempt_id: string;
@@ -174,7 +162,24 @@ export function isDecisionInvalidOption(err: unknown): boolean {
   return err instanceof ApiError && err.status === 400;
 }
 
+interface DecisionListResponse {
+  protocol_version: number;
+  data: DecisionRecord[];
+}
+
 export const decisionsApi = {
+  /** `GET /executions/{request_id}/attempts/{attempt_number}/decisions` —
+   *  every decision raised against this attempt, oldest first (may be
+   *  empty). Throws `ApiError` with status 404 if the request or attempt
+   *  does not exist. */
+  list: async (requestId: string, attemptNumber: number): Promise<DecisionRecord[]> => {
+    const res = await request<DecisionListResponse>(
+      `/executions/${encodeURIComponent(requestId)}/attempts/${encodeURIComponent(
+        String(attemptNumber),
+      )}/decisions`,
+    );
+    return res.data;
+  },
   resolve: (attemptId: string, decisionId: string, answer: DecisionAnswer) => {
     const headers = new Headers();
     const token = decisionTokenStore.get();

@@ -1,6 +1,6 @@
-import { type Component, Show, createSignal } from 'solid-js';
-import { Button, Field } from '../ui';
-import { artifactsApi, isArtifactContentNotVerified, isArtifactNotFound } from '../execution';
+import { type Component, For, Show, createResource, createSignal } from 'solid-js';
+import { Badge, Button, EmptyState } from '../ui';
+import { artifactsApi, isArtifactContentNotVerified, isArtifactNotFound, type ArtifactRecord } from '../execution';
 
 export interface ArtifactDownloadPanelProps {
   requestId: string;
@@ -9,42 +9,46 @@ export interface ArtifactDownloadPanelProps {
 
 type DownloadStatusKind = 'idle' | 'downloading' | 'done' | 'not_found' | 'not_verified' | 'error';
 
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 /**
- * Verified artifact download for one attempt (TODO.md III-F4: "verified
- * artifact download", "one generated-artifact integration"). Calls the
- * real, mounted `GET .../artifacts/{artifact_id}/content` (III-F2, wired by
- * III-F6/F6a) via `fetch` + `Blob` rather than a plain `<a href download>`
- * (the pattern `FilesTab.tsx` uses for ordinary attachments) — an anchor
- * tag cannot attach the `Authorization` bearer header this operator route
- * requires, and more importantly cannot report *why* a download failed, and
- * this card's acceptance bar is explicit: "artifact failure visible".
+ * One manifested artifact, with its own real download action (TODO.md
+ * III-F4: "one generated-artifact integration"; VI-C4: discovered, never
+ * typed). Calls the real, mounted `GET .../artifacts/{artifact_id}/content`
+ * (III-F2, wired by III-F6/F6a) via `fetch` + `Blob` rather than a plain
+ * `<a href download>` (the pattern `FilesTab.tsx` uses for ordinary
+ * attachments) — an anchor tag cannot attach the `Authorization` bearer
+ * header this operator route requires, and more importantly cannot report
+ * *why* a download failed, and this card's acceptance bar is explicit:
+ * "artifact failure visible".
  *
  * Two failure states are kept visually AND semantically distinct, matching
  * `artifact_download.rs`'s own documented distinction: a 404 (no manifest
  * exists under this id) is a different fact from a 409 (the manifest
  * exists, but its content has not been verified/streamed in yet — worth
- * retrying, not gone). See `shared/execution/artifacts.ts`'s header comment
- * for why `artifactId` is a manually-entered value: no artifact-discovery
- * endpoint exists anywhere in this codebase yet.
+ * retrying, not gone). `content_verified` on the manifest row itself
+ * already answers this before a download is even attempted, but the button
+ * stays enabled either way — the field can be stale by the time the click
+ * lands, so the real 409 is still the authority, never overridden by a
+ * pre-emptive guess.
  */
-const ArtifactDownloadPanel: Component<ArtifactDownloadPanelProps> = (props) => {
-  const [artifactId, setArtifactId] = createSignal('');
+const ArtifactRow: Component<{ requestId: string; attemptNumber: number; artifact: ArtifactRecord }> = (props) => {
   const [status, setStatus] = createSignal<DownloadStatusKind>('idle');
   const [errorMessage, setErrorMessage] = createSignal<string | undefined>(undefined);
 
-  const canSubmit = () => artifactId().trim().length > 0 && status() !== 'downloading';
-
-  const download = async (e: Event) => {
-    e.preventDefault();
-    if (!canSubmit()) return;
+  const download = async () => {
     setStatus('downloading');
     setErrorMessage(undefined);
     try {
-      const blob = await artifactsApi.download(props.requestId, props.attemptNumber, artifactId().trim());
+      const blob = await artifactsApi.download(props.requestId, props.attemptNumber, props.artifact.artifact_id);
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = artifactId().trim();
+      link.download = props.artifact.name || props.artifact.artifact_id;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -63,35 +67,27 @@ const ArtifactDownloadPanel: Component<ArtifactDownloadPanelProps> = (props) => 
   };
 
   return (
-    <form
-      class="space-y-2 rounded-lg border border-dashed p-3"
-      style={{ 'border-color': 'var(--color-border-light)' }}
-      onSubmit={download}
+    <li
+      class="space-y-2 rounded-lg border p-3"
+      style={{ 'background-color': 'var(--color-bg-base)', 'border-color': 'var(--color-border-light)' }}
     >
-      <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-        Download a verified artifact by id — no artifact-discovery endpoint exists on this
-        deployment yet (see docs/agent-handoffs/part-iii/III-F4.md), so enter an id you already
-        know.
-      </p>
-      <Field
-        label="Artifact id"
-        value={artifactId()}
-        onInput={(e) => {
-          setArtifactId(e.currentTarget.value);
-          setStatus('idle');
-          setErrorMessage(undefined);
-        }}
-        required
-      />
-      <div class="flex items-center gap-2">
-        <Button type="submit" size="sm" variant="secondary" disabled={!canSubmit()} loading={status() === 'downloading'}>
-          Download artifact
-        </Button>
-        <Show when={!artifactId().trim()}>
-          <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-            Enter an artifact id to enable download.
-          </span>
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+          {props.artifact.name}
+        </span>
+        <Badge tone="neutral">{props.artifact.kind}</Badge>
+        <Show when={!props.artifact.content_verified}>
+          <Badge tone="warning">Not verified yet</Badge>
         </Show>
+        <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+          {formatSize(props.artifact.size_bytes)}
+        </span>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <Button size="sm" variant="secondary" onClick={download} disabled={status() === 'downloading'} loading={status() === 'downloading'}>
+          Download
+        </Button>
       </div>
 
       {/* Every outcome — success and each distinct failure — is a visible,
@@ -117,7 +113,46 @@ const ArtifactDownloadPanel: Component<ArtifactDownloadPanelProps> = (props) => 
           {errorMessage() ?? 'Download failed.'}
         </p>
       </Show>
-    </form>
+    </li>
+  );
+};
+
+/**
+ * Every artifact manifested for one attempt (TODO.md III-F4), reading real
+ * data from `GET /executions/{request_id}/attempts/{attempt_number}/artifacts`
+ * — no artifact id is ever typed by an operator.
+ */
+const ArtifactDownloadPanel: Component<ArtifactDownloadPanelProps> = (props) => {
+  const [artifacts] = createResource(
+    () => `${props.requestId}:${props.attemptNumber}`,
+    () => artifactsApi.list(props.requestId, props.attemptNumber),
+  );
+
+  return (
+    <div>
+      <Show when={artifacts.loading}>
+        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+          Loading artifacts…
+        </p>
+      </Show>
+      <Show when={artifacts.error}>
+        <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
+          Couldn't load artifacts: {artifacts.error instanceof Error ? artifacts.error.message : 'unknown error'}
+        </p>
+      </Show>
+      <Show when={!artifacts.loading && !artifacts.error && (artifacts() ?? []).length === 0}>
+        <EmptyState title="No artifacts yet" />
+      </Show>
+      <Show when={!artifacts.loading && !artifacts.error && (artifacts() ?? []).length > 0}>
+        <ul class="space-y-2">
+          <For each={artifacts()}>
+            {(artifact) => (
+              <ArtifactRow requestId={props.requestId} attemptNumber={props.attemptNumber} artifact={artifact} />
+            )}
+          </For>
+        </ul>
+      </Show>
+    </div>
   );
 };
 

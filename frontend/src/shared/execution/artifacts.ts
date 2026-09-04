@@ -5,30 +5,42 @@
 // artifact_download.rs`, proven through the real router by
 // `crates/tack-api/tests/f6a_artifact_wiring_test.rs`.
 //
-// **There is no artifact *discovery* endpoint anywhere in this codebase.**
-// `execution_artifacts` has exactly one read path
-// (`get_execution_artifact_by_attempt_number`, a single-row lookup by a
-// caller-supplied `artifact_id`) — no `GET .../artifacts` list route exists
-// (confirmed: neither `crates/tack-api/src/handlers/executions.rs` nor
-// `runner_protocol.rs` defines one, and III-F2's own handoff never claims
-// one). An `artifact_id` is runner-generated and opaque; today it can only
-// reach an operator out-of-band (e.g. read off a runner's own logs, or a
-// future normalized-timeline event that happens to carry one — see
-// `ArtifactDownloadPanel.tsx`'s own doc comment for the best-effort
-// convention this UI applies for that case). See this card's handoff,
-// "Schema/API/contract change requested from another owner", for the
-// concrete list-endpoint request this gap produces — the same shape of gap
-// III-F1's decisions surface has (see `decisions.ts`'s header comment).
+// `artifactsApi.list` calls the discovery route this card adds — `GET
+// /executions/{request_id}/attempts/{attempt_number}/artifacts`
+// (`crates/tack-api/src/handlers/attempt_lists.rs`), returning every
+// manifest recorded for that attempt, oldest first — `artifact_id` is no
+// longer something an operator has to already know.
 //
-// Two HTTP outcomes distinguish two genuinely different server states, per
-// this card's acceptance bar ("artifact failure visible") and III.2 rule 7
-// ("unmeasured is nullable" applied to presence, not just numbers):
+// Two HTTP outcomes from `download` distinguish two genuinely different
+// server states, per this card's acceptance bar ("artifact failure
+// visible") and III.2 rule 7 ("unmeasured is nullable" applied to presence,
+// not just numbers):
 //   - `404 not_found` — no artifact manifest exists under this id at all.
 //   - `409 conflict` — the manifest exists, but its content has not been
 //     verified (streamed + checksummed) yet; genuinely different from
-//     "gone", per `artifact_download.rs`'s own doc comment.
+//     "gone", per `artifact_download.rs`'s own doc comment. `list`'s own
+//     `content_verified` field reports this same fact ahead of a download
+//     attempt, from the same manifest row.
 
-import { ApiError, apiUrl, requestBlob } from '../api/client';
+import { ApiError, apiUrl, request, requestBlob } from '../api/client';
+
+/** One `execution_artifacts` manifest row, as returned by
+ *  `artifactsApi.list`. Never carries the raw storage reference — only
+ *  whether one has been committed yet (`content_verified`). */
+export interface ArtifactRecord {
+  artifact_id: string;
+  kind: string;
+  name: string;
+  media_type: string | null;
+  size_bytes: number;
+  content_verified: boolean;
+  created_at: string;
+}
+
+interface ArtifactListResponse {
+  protocol_version: number;
+  data: ArtifactRecord[];
+}
 
 /** Path segment builder shared by every artifact-content operation below —
  *  kept in one place so the URL shape can never drift between the fetch
@@ -40,6 +52,18 @@ function artifactContentPath(requestId: string, attemptNumber: number, artifactI
 }
 
 export const artifactsApi = {
+  /** `GET /executions/{request_id}/attempts/{attempt_number}/artifacts` —
+   *  every artifact manifested for this attempt, oldest first (may be
+   *  empty). Throws `ApiError` with status 404 if the request or attempt
+   *  does not exist. */
+  list: async (requestId: string, attemptNumber: number): Promise<ArtifactRecord[]> => {
+    const res = await request<ArtifactListResponse>(
+      `/executions/${encodeURIComponent(requestId)}/attempts/${encodeURIComponent(
+        String(attemptNumber),
+      )}/artifacts`,
+    );
+    return res.data;
+  },
   /** Fetches the verified artifact content as a `Blob`, carrying the
    *  operator's bearer token (unlike a plain `<a href download>`, which
    *  cannot attach an `Authorization` header — see this card's handoff for

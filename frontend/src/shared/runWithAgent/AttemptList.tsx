@@ -77,7 +77,11 @@ const AttemptRow: Component<{ requestId: string; attempt: AttemptSummary }> = (p
             <h4 class="mb-1 text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>
               Decisions
             </h4>
-            <DecisionInbox attemptId={props.attempt.attempt_id} />
+            <DecisionInbox
+              requestId={props.requestId}
+              attemptNumber={props.attempt.attempt_number}
+              attemptId={props.attempt.attempt_id}
+            />
           </section>
 
           <section>
