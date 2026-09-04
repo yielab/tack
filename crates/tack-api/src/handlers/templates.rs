@@ -296,6 +296,7 @@ pub(crate) async fn build_project_from_template(
         description: None,
         vocabulary: Some(template.vocabulary.clone()),
         workflow: Some(template.workflow.clone()),
+        default_model: None,
         archived: None,
     };
 

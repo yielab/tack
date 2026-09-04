@@ -10026,6 +10026,16 @@
             "type": "string",
             "format": "date-time"
           },
+          "default_model": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProjectModelDefault"
+              }
+            ]
+          },
           "description": {
             "type": [
               "string",
@@ -10057,6 +10067,47 @@
             "format": "uuid"
           }
         }
+      },
+      "ProjectModelDefault": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "auto"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "provider",
+              "model_id",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "explicit"
+                ]
+              },
+              "model_id": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "A project's own opinion on which model its executions should use — the\n`Project` tier in `tack-orch::model_policy`'s precedence walk, between the\nagent-profile and fleet defaults. Absent (`None` on `Project`) means \"no\nopinion\" and falls through to the fleet tier; `Auto` is a distinct, real\nchoice that stops the walk at this tier instead of falling through.\nBecause the API deserializes a request body directly into this enum, a\nmalformed shape is rejected before any handler or database write runs —\nthere is no second, tolerant parse of an opaque blob at read time."
       },
       "ProjectTemplate": {
         "type": "object",
@@ -11520,6 +11571,16 @@
             "type": [
               "boolean",
               "null"
+            ]
+          },
+          "default_model": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProjectModelDefault"
+              }
             ]
           },
           "description": {

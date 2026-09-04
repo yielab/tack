@@ -15,13 +15,16 @@
 //! - **Fleet default**: the same convention, read out of
 //!   `agent_fleets.default_policy` (migration 039) — likewise already
 //!   operator-settable via `POST /api/runner-fleets`.
-//! - **Project default**: **no storage exists**. `projects` (migration 002)
-//!   has `vocabulary`/`workflow` JSON columns, both semantically owned by
-//!   the workflow engine, and no third general-purpose settings column.
-//!   [`resolve_request_model_policy`] always passes `None` for this tier.
-//!   Filling it in needs either a real `projects.default_model_policy`
-//!   column or an explicitly documented reuse of an existing column,
-//!   decided by whoever owns the next migration batch.
+//! - **Project default**: `projects.default_model` (migration 062) — the
+//!   exact JSON serialization of a `tack_core::models::ProjectModelDefault`,
+//!   set via `PATCH /api/projects/{id}`. Unlike the two tiers above, this
+//!   column is never an untyped, unenforced convention: the API's JSON
+//!   extractor deserializes a request body directly into that typed enum,
+//!   so [`parse_project_default_model`] never needs to treat a malformed
+//!   shape as "no opinion" the way [`parse_model_default_convention`] does
+//!   for an opaque `limits`/`default_policy` blob — a decode failure here
+//!   means the column holds something no write path produced, and is
+//!   reported as a real error instead.
 //!
 //! This mirrors `crate::scheduler::wiring`'s own established shape
 //! (`priority_from_metadata` reading a documented, non-binding convention
@@ -42,6 +45,7 @@
 //! already-existing repository methods, in
 //! `crates/tack-orch/tests/model_policy_test.rs`.
 
+use tack_core::models::ProjectModelDefault;
 use tack_db::Repository;
 
 use super::{ModelPolicySources, ResolvedModelPolicy, resolve_model_policy};
@@ -72,17 +76,35 @@ pub fn parse_model_default_convention(raw_json: &str) -> Option<ModelSelector> {
     })
 }
 
-/// Fetches each tier's configured default (agent profile, fleet — project
-/// has no storage today, see this module's doc comment) and resolves the
-/// final [`ResolvedModelPolicy`] via [`resolve_model_policy`].
+/// Decodes `projects.default_model`'s JSON into the [`ModelSelector`] this
+/// module resolves against. `None` when the column itself is `None` (the
+/// project expressed no opinion) — a genuine decode failure is returned as
+/// an error, not folded into that same `None`, per this module's doc
+/// comment.
+fn parse_project_default_model(raw_json: &str) -> Result<ModelSelector, sqlx::Error> {
+    let parsed: ProjectModelDefault =
+        serde_json::from_str(raw_json).map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+    Ok(match parsed {
+        ProjectModelDefault::Auto => ModelSelector::AutoSelect,
+        ProjectModelDefault::Explicit { provider, model_id } => ModelSelector::Explicit {
+            provider: RequestedModelProvider::new(provider),
+            model_id: RequestedModelId::new(model_id),
+        },
+    })
+}
+
+/// Fetches each tier's configured default (agent profile, project, fleet)
+/// and resolves the final [`ResolvedModelPolicy`] via [`resolve_model_policy`].
 ///
-/// `agent_profile_id`/`fleet_id` are `None` whenever the request has no
-/// agent profile, or its selector is `exact_runner` rather than `fleet`
-/// (there is no fleet to read a default from in that case — the tier is
-/// simply absent, exactly as if no default had been configured).
+/// `agent_profile_id`/`project_id`/`fleet_id` are each `None` whenever the
+/// request has nothing to read that tier from — no agent profile, no
+/// project on the underlying item, or a selector that isn't `fleet` (there
+/// is no fleet to read a default from in that case). An absent tier is
+/// simply skipped, exactly as if no default had been configured.
 pub async fn resolve_request_model_policy(
     repo: &Repository,
     agent_profile_id: Option<&str>,
+    project_id: Option<&str>,
     fleet_id: Option<&str>,
     request_override: Option<ModelSelector>,
 ) -> Result<ResolvedModelPolicy, sqlx::Error> {
@@ -92,6 +114,15 @@ pub async fn resolve_request_model_policy(
             .await?
             .as_deref()
             .and_then(parse_model_default_convention),
+        None => None,
+    };
+    let project_default = match project_id {
+        Some(id) => repo
+            .fetch_project_default_model(id)
+            .await?
+            .as_deref()
+            .map(parse_project_default_model)
+            .transpose()?,
         None => None,
     };
     let fleet_default = match fleet_id {
@@ -105,7 +136,7 @@ pub async fn resolve_request_model_policy(
     let sources = ModelPolicySources {
         request_override,
         agent_profile_default,
-        project_default: None,
+        project_default,
         fleet_default,
     };
     Ok(resolve_model_policy(&sources))
