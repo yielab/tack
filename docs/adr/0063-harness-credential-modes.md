@@ -141,3 +141,17 @@ model different from the requested one, which is what would justify promoting th
 observation source above "requested, not confirmed", is likewise unmeasured. And no
 endpoint other than one gateway has been probed, so the claim that decision 4's shape fits
 LiteLLM and OpenRouter is reasoned, not measured.
+
+## Amendments
+
+*(Appended by later readers, dated. The original text above is never rewritten.)*
+
+**2026-09-04 — DECISION 8 AUTHORISED; decisions 1–7 remain proposed.** The user directed
+the removal of opencode in chat ("borra opencode"), which is decision 8, and the work was
+carried out the same day. Nothing in that instruction addressed the other seven decisions,
+so this ADR's status stays `proposed`: decisions 1–4 and 6–7 describe what VI-B2 already
+built and are therefore already true of the tree, but they have not been accepted as
+binding, and **decision 5 — per-model prices and limits, which requires a reviewed wire
+field — has neither been accepted nor implemented.** A later card must not treat this
+amendment as acceptance of the table as a whole. If the user disagrees with this reading,
+they strike this paragraph.
