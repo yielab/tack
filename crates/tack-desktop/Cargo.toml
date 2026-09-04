@@ -34,6 +34,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
 anyhow = "1"
 thiserror = "2"
+dirs = "6"
+semver = "1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
