@@ -271,17 +271,14 @@ fn json_operation(
     op
 }
 
-// The operator execution/fleet/runner/
-// profile routes used to be documented here as a hand-built `OperatorApiDoc`
-// fragment with every body typed as free-form JSON (`json_operation`'s
-// `json_content()`), which is why this
-// domain's `docs/openapi.json` schemas used to be empty (`{}`).
-// `handlers::executions`/`handlers::runner_admin`'s handlers now
-// each carry their own `#[utoipa::path(...)]` annotation referencing real,
+// `handlers::executions`/`handlers::runner_admin`'s handlers each carry
+// their own `#[utoipa::path(...)]` annotation referencing real,
 // `ToSchema`-derived request/response DTOs, exactly like every other
 // domain in this file (`handlers::orch`, `handlers::items`, …) — listed
 // directly in `ApiDoc`'s `paths(...)`/`components(schemas(...))` below
-// instead of through a separate nested fragment.
+// instead of through a separate nested fragment with every body typed as
+// free-form JSON (`json_operation`'s `json_content()`), which would leave
+// this domain's schemas empty (`{}`) in `docs/openapi.json`.
 
 const RUNNER_TAG: &str = "runner-protocol-v1";
 const RUNNER_PROTOCOL_NOTE: &str = "Authenticated by a hashed `Authorization: Bearer` runner \
@@ -292,10 +289,8 @@ const RUNNER_PROTOCOL_NOTE: &str = "Authenticated by a hashed `Authorization: Be
     deliberately does not re-specify them as a second, driftable shape.";
 
 /// `PUT .../attempts/{attempt_id}/artifacts/{artifact_id}/content` —
-/// the artifact content-upload route (previously mounted in
-/// `router.rs` and served in production, but missing from this document
-/// entirely; `CLAUDE.md`'s own "13 `/api/runner/v1` runner-protocol paths"
-/// count already included it). Not part of the `op(...)` closure above:
+/// the artifact content-upload route: mounted in `router.rs` and served in
+/// production. Not part of the `op(...)` closure above:
 /// its request is raw bytes, not JSON, and it carries a header parameter no
 /// other exchange in this fragment needs. See
 /// `handlers::runner_protocol::put_artifact_content` for the real
@@ -312,9 +307,9 @@ fn artifact_content_upload_operation() -> OperationBuilder {
             "x-tack-fencing-token",
             "The attempt's current fencing token. The request body is raw bytes, so — unlike \
              every other runner-protocol write — the fencing token cannot travel inside a JSON \
-             body. This header, like this route's URL, is this card's own addition: \
-             docs/contracts/runner-v1/ fixes the manifest exchange's payload shape, not this \
-             upload URL (see this fragment's own doc comment).",
+             body, so it travels as a header instead. docs/contracts/runner-v1/ fixes the \
+             manifest exchange's payload shape, not this upload URL (see this fragment's own \
+             doc comment).",
             true,
         ),
     ];
@@ -541,9 +536,9 @@ impl OpenApi for RunnerProtocolApiDoc {
 // `handlers::runner_protocol::artifact_download`) mounted onto the real
 // `/api` operator surface by
 // `router.rs#operator_execution_routes` (see that function's own doc
-// comment, "F1's decision-resolve route carries a second, independent
-// gate..." / "F2's artifact-download route points at the same operator-
-// configured TACK_STORAGE_DIR..."), so — exactly like `RunnerProtocolApiDoc`
+// comment on the decision-resolve route's second, independent gate, and
+// the artifact-download route's shared storage root), so — exactly like
+// `RunnerProtocolApiDoc`
 // above for its un-annotated `Json<Value>` handlers — this is a
 // hand-built `OpenApi` fragment, not a `#[utoipa::path(...)]` annotation on
 // the real handler function. Every request/response shape below is a
@@ -791,7 +786,7 @@ fn download_artifact_content_operation() -> OperationBuilder {
             error_response(
                 "conflict (details.artifact_id) — the artifact manifest exists but its content \
                  has not been verified yet; distinct from not_found, never silently treated as \
-                 \"gone\" or zero bytes (III.2 rule 7)",
+                 \"gone\" or zero bytes",
             ),
         )
 }

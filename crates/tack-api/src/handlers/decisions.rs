@@ -28,7 +28,7 @@
 //! code path here can authenticate, or even inspect, a runner bearer
 //! credential. That is the entire enforcement mechanism for "a runner may
 //! raise and read its own attempt's decision (`POST .../decisions`, `POST
-//! .../decisions/poll`, both in `handlers/runner_protocol.rs`, C2's card) but
+//! .../decisions/poll`, both in `handlers/runner_protocol.rs`) but
 //! never resolve it": resolution lives on a structurally separate route
 //! family (mounted on `/api` behind `require_token`, a sibling of
 //! `/api/runner/v1` exactly as `CLAUDE.md`'s "Two authentication surfaces,
@@ -59,9 +59,9 @@
 //! decide anything. Nothing defines what a policy id resolves to: which
 //! decision kinds/answers map to which item statuses, or even what shape a
 //! "policy" is. Inventing that mapping now would mean fabricating an
-//! unrequested, uncontracted format — exactly what rule 13 says to stop on.
-//! This module therefore implements the card's "optional status mapping only
-//! after commit through the workflow engine" instruction as a **structural
+//! unrequested, uncontracted format.
+//! This module therefore treats "status mapping only
+//! after commit through the workflow engine" as a **structural
 //! guarantee with nothing to hang a policy off of yet**: no function in this
 //! file ever writes `items.status`, directly or indirectly, full stop —
 //! proven by `expiry_never_touches_item_status` and
@@ -129,13 +129,12 @@ impl DecisionOperatorState {
     }
 }
 
-/// The integrator replaces this non-secret sentinel with the request
-/// correlation id once it mounts this router, mirroring the identical
-/// convention already established by `executions::OPERATOR_REQUEST_ID` and
-/// `runner_admin::OPERATOR_REQUEST_ID`.
+/// Static request-correlation id placeholder, matching
+/// `executions::OPERATOR_REQUEST_ID`'s own convention — no per-request
+/// correlation id is wired into these error envelopes yet.
 const OPERATOR_REQUEST_ID: &str = "req_operator_decisions";
 
-/// Builds the stable v1 error envelope via B1's `ProtocolErrorEnvelope::new`,
+/// Builds the stable v1 error envelope via `ProtocolErrorEnvelope::new`,
 /// which derives `retryable` from `code` so it can never drift from
 /// `docs/contracts/runner-v1/errors/*.json`. `details` follows the per-code
 /// shape documented in `docs/contracts/runner-v1/README.md`.

@@ -260,8 +260,8 @@ pub struct RunnerSchedulingSnapshot {
     /// `validate_capability_payload`. A runner that has never enrolled
     /// carries the column default `'{}'`, which does *not* parse as that
     /// type; the caller treats a parse failure as "no declared harnesses"
-    /// rather than an error (III.2 rule 7: unknown is explicit, not a
-    /// crash).
+    /// rather than an error: unknown is explicit, not a
+    /// crash.
     pub capability_snapshot: String,
     /// Every `agent_fleets.id` this runner currently belongs to, via
     /// `agent_fleet_members`.
@@ -277,8 +277,8 @@ pub struct QueuedRequestForScheduling {
     pub selector_kind: String,
     pub selector_id: String,
     /// Always `Some` for any request that passed `enqueue_execution`'s
-    /// snapshot validation (III.1.2's `requested_harness_kind` is a
-    /// required snapshot field) — `Option` only because the raw column
+    /// snapshot validation (the request snapshot's `requested_harness_kind`
+    /// is a required field) — `Option` only because the raw column
     /// itself has no `NOT NULL` constraint (migration 044).
     pub requested_harness_kind: Option<String>,
     pub requested_model_provider: Option<String>,
@@ -370,7 +370,7 @@ pub struct EventListingRow {
 /// Every column `execution_artifacts` carries for one manifest row.
 /// `content_reference` is `None` until [`Repository::set_execution_artifact_content_reference`]
 /// commits a verified upload — its presence, not a separate status column
-/// (none exists; see the card's own "do not add a column" instruction), is
+/// (none exists: that would just duplicate this field), is
 /// the manifest-vs-content-verified distinction this crate exposes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionArtifactRow {
@@ -446,8 +446,8 @@ pub struct PurgeStats {
 /// fresh on every call from live tables (nothing cached). Every count is a
 /// fixed-cardinality aggregate — keyed only by the small, closed
 /// vocabularies of `agent_runners.state` (3 values, migration 040) and
-/// `execution_requests.state` (the 10-value `ExecutionState` vocabulary,
-/// III.1.1) — never by attempt/request/runner id, so nothing here can grow
+/// `execution_requests.state` (the 10-value `ExecutionState` vocabulary)
+/// — never by attempt/request/runner id, so nothing here can grow
 /// an unbounded metric label set. See `crates/tack-orch/src/execution_observability.rs`
 /// for the background task that logs alerts from this snapshot and the pure
 /// `evaluate_alerts` function that decides what counts as "stuck"/"ambiguous."
@@ -468,7 +468,7 @@ pub struct ExecutionFleetSnapshotRow {
     /// standing in for "none found."
     pub oldest_stale_lease_age_secs: Option<i64>,
     /// `execution_requests` currently in `needs_operator` — an ambiguous
-    /// state that is never automatically retried (III.1.1).
+    /// state that is never automatically retried.
     pub needs_operator_count: i64,
     /// Age in seconds since the oldest `needs_operator` request's `updated_at`
     /// (i.e. since it became ambiguous) — `None` iff `needs_operator_count == 0`.
@@ -3216,7 +3216,7 @@ impl Repository {
     /// **Purge, not roll-up.** Every row in these six tables exists solely
     /// to answer "have I already processed this exact retried write?" for a
     /// fencing/lease/heartbeat replay window measured in seconds to low
-    /// minutes (III.1.5). Once `cutoff` (typically 90 days out) has passed,
+    /// minutes. Once `cutoff` (typically 90 days out) has passed,
     /// there is no future question these rows could ever answer — unlike
     /// `execution_events` (see [`Self::purge_stale_terminal_execution_events`]),
     /// there is no meaningful aggregate to preserve first, so plain deletion
@@ -3300,7 +3300,7 @@ impl Repository {
     /// (`succeeded`/`failed`/`cancelled` — the same three states
     /// `tack_orch::execution::ExecutionState::is_terminal()` names).
     /// Deliberately excludes `lost`/`needs_operator`: both remain
-    /// actionable/ambiguous per III.1.1 and are this very card's own
+    /// actionable/ambiguous and are themselves
     /// observability targets ([`Self::execution_fleet_snapshot`]) — an
     /// attempt an operator might still requeue or investigate must never
     /// have its event history silently swept out from under it.
@@ -3314,7 +3314,7 @@ impl Repository {
     /// day/kind/count aggregate survives; that information is only
     /// recoverable by adding the rollup table before this method ever runs
     /// against a given row. This is an explicit, documented trade, not a
-    /// silent one (III.2 rule 7 — no structural zero, no fake success):
+    /// silent one — no structural zero, no fake success:
     /// this repo's `Repository` API has exactly one method for this table
     /// and its own doc comment says exactly what it does.
     ///

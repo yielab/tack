@@ -196,13 +196,11 @@ mod tests {
         assert_eq!(filesystem_calls.load(Ordering::SeqCst), 1);
     }
 
-    /// This test no longer pins a release blocker: `UnavailableProtocolClient`
-    /// used to be the *only* production `RunnerProtocolClient` in the tree,
-    /// so the packaged binary could not reach a server at all.
-    /// `main.rs` now wires `transport::HttpRunnerClient` instead, closing
-    /// that gap.
+    /// This test does not pin a release blocker: `main.rs` wires
+    /// `transport::HttpRunnerClient` as the production `RunnerProtocolClient`,
+    /// so the packaged binary can reach a real server.
     ///
-    /// The test stays rather than being retired: `UnavailableProtocolClient`
+    /// The test stays valuable anyway: `UnavailableProtocolClient`
     /// still exists and is still reachable — any future composition that
     /// omits a transport gets it — and its whole value is that such a
     /// composition fails as a typed `ProtocolUnavailable` rather than

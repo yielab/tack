@@ -373,7 +373,7 @@ async fn dispatch_blocked_surfaces_the_policy_and_creates_no_orch_task() {
     assert_eq!(v["outcome"], "blocked");
     assert_eq!(
         v["policy_id"], "prompt-injection",
-        "policy id must be a typed field (OrchError::PolicyBlocked, card R1), \
+        "policy id must be a typed field (OrchError::PolicyBlocked), \
          not something the caller parses out of message: {v}"
     );
     assert!(

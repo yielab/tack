@@ -1,10 +1,10 @@
 //! Runtime start/stop control for the orchestration reconciler.
 //!
-//! The reconciler used to be spawned once at boot
-//! (`server.rs`), gated on `TACK_ORCH_ENABLE`, and that was the only way to
-//! turn it on or off. This module makes the enable flag a runtime setting
-//! (mirroring the Cloud Backup precedent in `handlers/settings.rs`: stored
-//! in `app_meta`, with the env var reduced to a deployment default) and
+//! This module makes the reconciler's enable flag a runtime setting, rather
+//! than a boot-time-only decision (`server.rs` spawning it once, gated on
+//! `TACK_ORCH_ENABLE`, with no other way to turn it on or off) — mirroring
+//! the Cloud Backup precedent in `handlers/settings.rs`: stored
+//! in `app_meta`, with the env var reduced to a deployment default. It
 //! gives `PUT /api/settings/orchestration` something to call so flipping
 //! the flag takes effect immediately, with no restart.
 //!
@@ -46,16 +46,16 @@
 //! cycle) and, at the HTTP layer, in
 //! `tack-api`'s `tests/orch_settings_test.rs`.
 //!
-//! # The list of planes isn't read once anymore
+//! # The list of planes isn't read once
 //!
-//! `start()` used to call `reconciler::spawn_reconcilers_cancellable`,
-//! which read `store.list_registered()` exactly once and spawned one
-//! `spawn_one` task per plane found at that instant — the list was never
-//! re-read. A control plane registered *after* `start()` (the natural
+//! `start()` calls `reconciler::spawn_reconcilers_supervised`. The old
+//! `reconciler::spawn_reconcilers_cancellable` read `store.list_registered()`
+//! exactly once and spawned one `spawn_one` task per plane found at that
+//! instant — the list was never re-read. A control plane registered *after*
+//! `start()` (the natural
 //! "enable orchestration -> register a control plane -> link a project"
-//! setup order) was therefore never polled: no task, no health updates, no
-//! error anywhere. `start()` now calls
-//! `reconciler::spawn_reconcilers_supervised`, which does the same initial
+//! setup order) would therefore never be polled: no task, no health updates, no
+//! error anywhere. `spawn_reconcilers_supervised` does the same initial
 //! snapshot synchronously (so a caller checking [`OrchRuntime::
 //! live_task_count`] right after `start()` still sees every
 //! already-registered plane immediately) but then keeps a background
@@ -467,13 +467,13 @@ mod tests {
         }
     }
 
-    /// **The bug this test guards against.** `OrchRuntime::start` used to
-    /// call `spawn_reconcilers_cancellable`, which read
-    /// `store.list_registered()` exactly once and spawned one task per
-    /// plane found at that instant — the list was never re-read. A control
-    /// plane registered after `start()` (enable -> register -> link, the
-    /// natural setup order a guided wizard walks users through) was
-    /// therefore never polled: no task, no health updates, no error
+    /// **The bug this test guards against.** `OrchRuntime::start` must
+    /// never regress to something like `spawn_reconcilers_cancellable`,
+    /// which reads `store.list_registered()` exactly once and spawns one
+    /// task per plane found at that instant, never re-reading the list. A
+    /// control plane registered after `start()` (enable -> register -> link,
+    /// the natural setup order a guided wizard walks users through) would
+    /// then never be polled: no task, no health updates, no error
     /// anywhere. This test enables orchestration with zero planes
     /// registered, registers one *after* `start()` has already returned,
     /// and asserts it gets picked up and polled without a restart or a

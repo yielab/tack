@@ -161,8 +161,8 @@ pub enum ItemSource {
     CsvImport,
     /// The backfilled value for every item that existed before migration
     /// 029 added this column — including items imported from GitHub or
-    /// Linear before this trust boundary existed (GitHub import predates
-    /// this cycle; migration 018 shipped it). We cannot recover which,
+    /// Linear before this trust boundary existed (migration 018 shipped
+    /// GitHub import, well before migration 029). We cannot recover which,
     /// so — per the "unsafe state is never the accidental default" rule —
     /// every pre-migration item resolves to untrusted rather than assuming
     /// the safe-looking but unverifiable `Manual`. No code path should ever

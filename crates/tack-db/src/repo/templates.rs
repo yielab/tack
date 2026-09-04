@@ -575,7 +575,7 @@ mod tests {
         );
     }
 
-    // ─── Card D3 — orchestration block ─────────────────────
+    // ─── Orchestration block ─────────────────────
 
     #[tokio::test]
     async fn builtin_templates_have_no_orchestration_block() {

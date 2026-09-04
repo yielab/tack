@@ -361,7 +361,7 @@ async fn auto_dispatch_sends_trusted_true_for_a_manually_created_item() {
     );
 }
 
-// ─── Off by default (§0 rule 8) ────────────────────────────────────────────
+// ─── Off by default ─────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn auto_dispatch_does_not_fire_when_orch_disabled() {

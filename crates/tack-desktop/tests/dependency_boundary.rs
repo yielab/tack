@@ -1,7 +1,8 @@
-//! Proves the two dependency rules this card exists to establish (§VII.1
-//! rules 1–2). Both invoke real `cargo` subcommands against the workspace
-//! this crate lives in, so a regression here is a regression a human would
-//! see running the same commands by hand.
+//! Proves the two dependency-boundary rules this crate exists to enforce:
+//! `tack-desktop` never depends on the server crates, and `tack-cli` never
+//! pulls in a webview or GTK dependency. Both invoke real `cargo`
+//! subcommands against the workspace this crate lives in, so a regression
+//! here is a regression a human would see running the same commands by hand.
 
 use std::process::Command;
 

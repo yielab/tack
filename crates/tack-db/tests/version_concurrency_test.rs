@@ -5,7 +5,7 @@
 //! version some other write silently left behind — so every place
 //! `crates/tack-db/src/repo/items.rs` runs `UPDATE items` must bump it.
 //! `Repository::update_item`, `update_item_status_checked`, and
-//! `check_and_update_parent_status` are the three the card names by name;
+//! `check_and_update_parent_status` are the three write paths that touch it;
 //! this file drives all three directly and asserts the counter actually
 //! moved, plus the atomic compare-and-swap `claim_item_version` gives the
 //! HTTP layer its concurrency guard.

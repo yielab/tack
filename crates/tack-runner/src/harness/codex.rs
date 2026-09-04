@@ -51,30 +51,31 @@
 //!    `model_provider`/`model_id` echo the **requested** selection with
 //!    `model_observation_source = "requested_not_confirmed"` — a new value,
 //!    not previously present in any frozen fixture (which only exemplifies
-//!    `"harness_reported"`). Flagged for D5 in the handoff.
+//!    `"harness_reported"`).
 //! 6. Session resume, a decision/approval protocol, and parseable usage
 //!    (token/cost) output are all unverified for Codex. Each is reported
 //!    honestly (`unsupported`/`advisory` with a reason) rather than assumed
 //!    — see [`CodexAdapter::feature_capabilities`].
 //! 7. Codex's real model-discovery mechanism (if any) is unverified, so
 //!    [`HarnessCapability::model_combinations`] is always empty — this
-//!    adapter never hardcodes a model list ("report capabilities without
-//!    assuming models," per the card).
+//!    adapter never hardcodes a model list: it reports capabilities
+//!    without assuming models.
 //!
 //! ## Why `ActualExecution.model_provider`/`model_id` are non-nullable but
 //! this adapter cannot always fill them honestly
 //!
 //! `ExecutionRequestSnapshot.requested_model_provider`/`requested_model_id`
-//! are `Option<...>` — nullable "when auto-selection is allowed" (III.1.2).
-//! `ActualExecution.model_provider`/`model_id` are **not** `Option` (III.1.3
-//! lists them without a nullability note). Because this adapter has no
-//! verified way to observe which model an auto-selected Codex run actually
-//! used, it cannot honestly fill a non-nullable field for that case without
-//! fabricating a value — which rule 7 forbids. Rather than guess, `validate`
+//! are `Option<...>` — nullable when auto-selection is allowed.
+//! `ActualExecution.model_provider`/`model_id` are **not** `Option`. Because
+//! this adapter has no verified way to observe which model an auto-selected
+//! Codex run actually used, it cannot honestly fill a non-nullable field for
+//! that case without fabricating a value, which would be exactly the kind
+//! of hidden fake success this codebase forbids. Rather than guess, `validate`
 //! rejects a spec with no explicit `requested_model_provider`/`requested_model_id`
-//! **pre-spawn** (see [`CodexAdapter::check_selection`]). This is reported to
-//! D5 as a real, falsifying observation about the frozen contract, not
-//! something not resolved unilaterally here.
+//! **pre-spawn** (see [`CodexAdapter::check_selection`]). This is a real,
+//! falsifying observation about the frozen contract — non-nullable fields
+//! this adapter cannot always honestly fill — not something this adapter
+//! resolves unilaterally.
 
 use std::{
     collections::BTreeMap,
@@ -106,7 +107,7 @@ const CODEX_HARNESS_KIND: &str = "codex";
 const CODEX_PROGRAM_NAME: &str = "codex";
 const DEFAULT_PROBE_TIMEOUT: Duration = Duration::from_secs(15);
 /// Not part of any frozen vocabulary today — see the module docs' assumption
-/// (5) and the handoff for why this is a new, adapter-chosen value rather
+/// (5) for why this is a new, adapter-chosen value rather
 /// than the fixture-exemplified `"harness_reported"`.
 const MODEL_OBSERVATION_SOURCE: &str =
     crate::harness::ModelObservationSource::RequestedNotConfirmed.as_str();
@@ -666,7 +667,7 @@ where
     }
 
     /// Stages the (already-scrubbed) combined stdout/stderr as a `log`
-    /// artifact inside the attempt's own workspace, via D4's
+    /// artifact inside the attempt's own workspace, via
     /// [`ArtifactStager`]. Best-effort: staging failure never fails the
     /// attempt itself, matching the "auto-status propagation" best-effort
     /// pattern already established elsewhere in this codebase — it only
@@ -1145,7 +1146,7 @@ mod tests {
     /// files with fixed content, created fresh per test rather than checked
     /// into the tree — giving every test a real, workspace-confined,
     /// reproducible directory to run the fake harness against (mirroring
-    /// D4's own
+    /// the
     /// `each_workspace_confined_process_only_ever_sees_its_own_canary_file`
     /// pattern).
     fn deterministic_fixture_repo(label: &str) -> PathBuf {
@@ -1466,7 +1467,8 @@ mod tests {
     }
 
     /// Acceptance: cancel kills descendants, proved through the adapter's
-    /// own `start`/`cancel`, not raw `ProcessSpec` (that is D4's own test).
+    /// own `start`/`cancel`, not raw `ProcessSpec` (that is `process.rs`'s
+    /// own test).
     #[tokio::test]
     async fn cancel_kills_the_whole_descendant_tree_via_the_adapter() {
         let adapter = adapter();

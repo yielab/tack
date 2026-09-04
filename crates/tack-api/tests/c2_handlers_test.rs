@@ -6,14 +6,13 @@
 //! (`handlers/runner_protocol/runner_auth.rs`), which is what keeps the
 //! auth module unregistered in `handlers.rs` while still compiling here.
 //!
-//! `executions.rs` (C1's card) is loaded read-only, the same technique C1's
-//! own test already uses on itself, so the operator/runner auth
+//! `executions.rs` is loaded read-only, the same technique its own test
+//! already uses on itself, so the operator/runner auth
 //! non-substitution test can exercise the real operator router rather than a
 //! stub. The file is not modified. (`runner_admin.rs` is deliberately not
-//! loaded here: it is a separate, independently-evolving C1-owned file this
-//! card does not need, and pulling it into this binary would make C2's own
-//! verification hostage to C1's concurrent in-progress edits on a file this
-//! card has no ownership of.)
+//! loaded here: it is a separate, independently-evolving file this
+//! test does not need, and pulling it into this binary would make this
+//! file's compilation depend on runner_admin.rs's own edits.)
 
 #[path = "../src/handlers/runner_protocol.rs"]
 mod runner_protocol;
@@ -175,8 +174,8 @@ async fn setup() -> (Router, Repository, FakeClock, String) {
     (app, repo, clock, item.id.to_string())
 }
 
-/// Enqueues an execution request selecting `runner_id`, matching B2's frozen
-/// snapshot shape exactly (mirrors what C1's `create_execution` normalizes).
+/// Enqueues an execution request selecting `runner_id`, matching the frozen
+/// snapshot shape exactly (mirrors what `create_execution` normalizes).
 #[allow(clippy::too_many_arguments)]
 async fn enqueue_request(
     repo: &Repository,
@@ -668,14 +667,15 @@ fn request_created_before(clock: &FakeClock) -> String {
 
 // ---------------------------------------------------------------------
 // Two default-configured runners self-report the identical
-// `runner_name` (both default it from `TACK_RUNNER_ID`), which used to
-// silently overwrite the operator-assigned, uniquely-named pending-runner
-// row and crash the second enrollment on `agent_runners`'s `UNIQUE` `name`
-// constraint (two curl enrollments differing
-// only in token, first 200, second 500). Load-bearing: reverting the
-// `_runner_name`/removed `name=?` change in
-// `crates/tack-db/src/repo/execution.rs::redeem_enrollment_token` makes
-// this test fail with a 500 on the second enrollment.
+// `runner_name` (both default it from `TACK_RUNNER_ID`). Without the
+// `_runner_name`/removed `name=?` special-casing in
+// `crates/tack-db/src/repo/execution.rs::redeem_enrollment_token`, this
+// would silently overwrite the operator-assigned, uniquely-named
+// pending-runner row and crash the second enrollment on
+// `agent_runners`'s `UNIQUE` `name` constraint (two curl enrollments
+// differing only in token, first 200, second 500). Load-bearing:
+// reverting that change makes this test fail with a 500 on the second
+// enrollment.
 // ---------------------------------------------------------------------
 
 #[tokio::test]
@@ -833,7 +833,7 @@ async fn operator_auth_cannot_substitute_for_runner_auth_and_vice_versa() {
         "a runner credential must not create a PM execution request"
     );
 
-    // `requeue_needs_operator` is C1's other principal-scoped mutation (audited
+    // `requeue_needs_operator` is another principal-scoped mutation (audited
     // recovery of a `needs_operator` request); same proof, different route.
     let (status, _) = send(
         &operator_app,
@@ -849,10 +849,10 @@ async fn operator_auth_cannot_substitute_for_runner_auth_and_vice_versa() {
         "a runner credential must not perform an audited operator requeue either"
     );
 
-    // C1's simpler runner-admin mutations (e.g. `revoke_runner`) do not
-    // themselves check `x-tack-principal` — that card-local router leaves
-    // top-level bearer-token gating to the global `require_token` middleware
-    // C5/A1 own, so it is not a meaningful non-substitution proof point in
+    // runner-admin's simpler mutations (e.g. `revoke_runner`) do not
+    // themselves check `x-tack-principal` — that router leaves
+    // top-level bearer-token gating to the global `require_token` middleware,
+    // so it is not a meaningful non-substitution proof point in
     // isolation the way the two principal-scoped routes above are.
 }
 
@@ -1102,8 +1102,8 @@ async fn oversized_event_batch_writes_nothing() {
 
 // ---------------------------------------------------------------------
 // 6. Reusing a decision_id/artifact_id with different content is an
-//    idempotency conflict (a compensating check for B2's
-//    `ON CONFLICT DO NOTHING` inserts — see the handoff).
+//    idempotency conflict (a compensating check for the
+//    `ON CONFLICT DO NOTHING` inserts).
 // ---------------------------------------------------------------------
 
 #[tokio::test]
@@ -1486,8 +1486,8 @@ async fn logs_never_contain_raw_credentials_only_ids() {
 //    checkpoint)` key reused with genuinely different content — and asserts
 //    the opposite, non-retryable `idempotency_conflict`, making the
 //    contrast between the two explicit rather than leaving it untested (the
-//    gap that let B2's original collapse survive undetected at the HTTP
-//    layer).
+//    gap that let the original collapse of the two causes survive
+//    undetected at the HTTP layer).
 // ---------------------------------------------------------------------
 
 #[tokio::test]
@@ -1562,14 +1562,13 @@ async fn event_checkpoint_conflict_response_carries_contract_correct_retryable_t
 }
 
 // ---------------------------------------------------------------------
-// 10. The other half of B2's split: reusing the same idempotency-scoped
+// 10. The other half of the split: reusing the same idempotency-scoped
 //     `(attempt_id, checkpoint)` key with genuinely different event content
 //     is `idempotency_conflict` (`retryable: false`), never `conflict`. This
-//     exact HTTP-layer path was untested before this amendment — B2's own
-//     handoff names that gap as "exactly how the bug survived" (the
-//     collapsed `ReplayConflict` was mapped unconditionally to the
-//     retryable `conflict` code, so a runner reusing a checkpoint with
-//     changed content was told to retry forever).
+//     exact HTTP-layer path had no test before this — exactly how a bug
+//     could survive undetected: the collapsed `ReplayConflict` was mapped
+//     unconditionally to the retryable `conflict` code, so a runner reusing
+//     a checkpoint with changed content was told to retry forever.
 // ---------------------------------------------------------------------
 
 #[tokio::test]
@@ -1735,12 +1734,11 @@ async fn completion_replay_changed_content_is_idempotency_conflict_and_writes_no
 }
 
 // ---------------------------------------------------------------------
-// 12. Task 2: credential rotation now uses B2's compare-and-set
+// 12. Credential rotation uses a compare-and-set
 //     `Repository::rotate_runner_credential`. A rotation whose
 //     `expected_credential_hash` no longer matches the runner's current
 //     credential (because a prior rotation already won) is rejected as a
-//     retryable `conflict`, not silently applied last-writer-wins — credential
-//     rotation now has a compare-and-set.
+//     retryable `conflict`, not silently applied last-writer-wins.
 // ---------------------------------------------------------------------
 
 #[tokio::test]
@@ -1962,7 +1960,7 @@ async fn refresh_rotation_with_already_superseded_credential_returns_conflict_no
 }
 
 // ---------------------------------------------------------------------
-// 13. Task 3: state-gate alignment. `submit_artifacts` must reject `lost`
+// 13. State-gate alignment. `submit_artifacts` must reject `lost`
 //     and `needs_operator` attempts exactly like `create_decision` already
 //     does — not just the three purely-terminal states. Both states exist
 //     precisely to mean "stop trusting this runner's reports"; in both

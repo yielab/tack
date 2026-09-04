@@ -1129,7 +1129,7 @@ async fn test_a_stale_orch_runs_staging_table_is_recovered_without_a_boot_loop()
         .await
         .expect("apply migrations up to 036");
 
-    // A staging table from the previously unreleased implementation must not
+    // A staging table left behind by a half-applied rebuild must not
     // brick the first repaired boot. The original remains authoritative.
     sqlx::query("CREATE TABLE orch_runs_new (external_run_id TEXT)")
         .execute(&pool)

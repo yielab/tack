@@ -1012,8 +1012,7 @@ pub struct OrchApproval {
     /// docket's approval token — a correlation id, not a credential.
     pub token: String,
     pub control_plane_id: Uuid,
-    /// `None` = uncorrelated; must still surface in the fleet-wide approvals inbox
-    /// (34.2 / D1).
+    /// `None` = uncorrelated; must still surface in the fleet-wide approvals inbox.
     pub item_id: Option<Uuid>,
     pub remote_task_id: Option<String>,
     pub agent: Option<String>,
@@ -1186,8 +1185,8 @@ impl Repository {
     /// against `items`/`projects` so an uncorrelated approval
     /// (`item_id IS NULL`) still comes back with every `item_*`/`project_*`
     /// field `None` rather than being silently dropped — the whole reason
-    /// this query exists is that an uncorrelated approval is "the most
-    /// likely one to be silently blocking a fleet" (D1's card) and must
+    /// this query exists is that an uncorrelated approval is the most
+    /// likely one to be silently blocking a fleet, and must
     /// still surface. `control_planes` is an inner join: `orch_approvals.
     /// control_plane_id` is `NOT NULL` and cascades on delete, so a
     /// dangling reference here would mean the schema's own invariant broke,
@@ -1260,9 +1259,9 @@ pub struct PendingOrchApproval {
     pub token: String,
     pub control_plane_id: Uuid,
     pub control_plane_name: String,
-    /// `None` = uncorrelated (B1 could not attribute this approval to a
-    /// Tack item) — see the query's own doc comment for why this must never
-    /// be filtered out.
+    /// `None` = uncorrelated (the reconciler could not attribute this
+    /// approval to a Tack item) — see the query's own doc comment for why
+    /// this must never be filtered out.
     pub item_id: Option<Uuid>,
     pub item_title: Option<String>,
     pub item_status: Option<String>,
@@ -1497,7 +1496,7 @@ impl Repository {
     ///
     /// **Why the aggregate write and the delete are in the *same* transaction, not
     /// two separately-committed steps ordered "aggregate first, delete second":**
-    /// the card's hazard is "a crash between them loses nothing." Two independently
+    /// the requirement is that a crash between them loses nothing. Two independently
     /// committed steps cannot fully satisfy that: a crash after the aggregate
     /// commits but before the delete commits leaves the raw rows still present,
     /// and a naive retry would re-aggregate and double-count them. Putting both in

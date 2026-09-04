@@ -1,16 +1,15 @@
-//! Tests for card B3:
-//! migrations 025 (`orch_metrics`), 026 (`orch_events_daily`), 027 (`orch_metrics_daily`),
-//! and the repository functions built on them
+//! Tests for migrations 025 (`orch_metrics`), 026 (`orch_events_daily`), 027
+//! (`orch_metrics_daily`), and the repository functions built on them
 //! (`upsert_orch_metrics`, `list_latest_orch_metrics`, `rollup_and_purge_orch_events`,
 //! `rollup_and_purge_orch_metrics`, `list_orch_events_daily`, `list_orch_metrics_daily`).
 //!
-//! Covers the card's acceptance bar:
+//! Covers:
 //!   - a fresh database migrates cleanly through 027;
 //!   - an existing database stopped at "024_orch_approvals" upgrades in place;
 //!   - FK enforcement holds for every new table;
 //!   - `orch_metrics` batch insert is append-only (never collides / overwrites);
 //!   - a 91-day-old event/metric is purged but its day's aggregate survives with the
-//!     same totals (the roadmap's literal acceptance wording for 34.6);
+//!     same totals;
 //!   - re-running the rollup after everything old has already been purged is a
 //!     documented no-op (nothing left to double-count) — the externally observable
 //!     half of the atomicity guarantee described in `rollup_and_purge_orch_events`'s
@@ -116,14 +115,12 @@ async fn test_fresh_db_migrates_all_metrics_tables() {
         .map(|row| row.get::<String, _>("name"))
         .collect();
 
-    // This card's own three migrations must all be present and applied in
-    // their declared order. Deliberately *not* asserting anything about
-    // what comes after 027 — this test covers "did this card's migrations
-    // apply", not "is 027 the newest migration in the project", which is a
-    // fact about the whole repo, not about metrics. A prior version of this
-    // assertion checked the latter and broke the moment card B2 added
-    // migration 028; asserting only presence-and-order here means a future
-    // migration 029+ never breaks this test again.
+    // Migrations 025, 026 and 027 must all be present and applied in their
+    // declared order. Deliberately *not* asserting anything about what comes
+    // after 027 — that is a fact about the whole project's migration
+    // history, not about metrics, and would break as soon as a later
+    // migration lands. Presence-and-order here means a future migration
+    // never breaks this test.
     let this_cards_migrations = [
         "025_orch_metrics",
         "026_orch_events_daily",
@@ -149,7 +146,7 @@ async fn test_upgrade_from_024_applies_metrics_migrations_in_place() {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
 
     // Simulate an installed tack.db that only ever saw migrations 001-024
-    // (i.e. a Wave-1 install, before this card's metrics/retention schema).
+    // (i.e. an install predating the metrics/retention schema).
     migrations::run_up_to(&pool, "024_orch_approvals")
         .await
         .expect("apply migrations up to 024");
@@ -174,12 +171,12 @@ async fn test_upgrade_from_024_applies_metrics_migrations_in_place() {
         );
     }
 
-    // This card's three migrations must be recorded as applied on top of
-    // the pre-existing 001-024 set — not a specific total count, which is a
-    // fact about the whole project's migration history rather than about
-    // this card's upgrade path, and breaks every time a later card (e.g.
-    // B2's 028) adds one more. See the equivalent note on
-    // `test_fresh_db_migrates_all_metrics_tables` above.
+    // Migrations 025, 026 and 027 must be recorded as applied on top of the
+    // pre-existing 001-024 set — not a specific total count, which is a fact
+    // about the whole project's migration history rather than about this
+    // upgrade path, and breaks every time a later migration adds one more.
+    // See the equivalent note on `test_fresh_db_migrates_all_metrics_tables`
+    // above.
     let applied: Vec<String> = sqlx::query("SELECT name FROM _migrations")
         .fetch_all(&pool)
         .await

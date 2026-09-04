@@ -20,8 +20,7 @@ use tack_runner::EnrollmentCredential;
 /// inside a runner's `state_dir`. That module's own constant (`SESSION_FILE`)
 /// is private, so this is a light, documented coupling to a stable-looking
 /// name rather than a shared constant — chosen over adding a new public
-/// method to a file this card does not otherwise need to touch for one
-/// boolean check.
+/// method to `transport.rs` for the sake of one boolean check.
 const SESSION_FILE_NAME: &str = "session.json";
 
 /// Whether `state_dir` already holds a durable runner session from a
