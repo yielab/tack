@@ -29,7 +29,11 @@ decision of record is `docs/adr/0062-desktop-app-and-background-service.md`, acc
 ## Before dispatching a wave — the dispatcher's checklist
 
 1. `git status --porcelain` on `develop` is empty and the planning edits are committed.
-2. Record the base SHA in the table above and in the Part VII status table.
+2. Record the base SHA in the table above and in the Part VII status table. **Pin the actual
+   tip — `git rev-parse --short develop` — not the SHA of the planning commit.** On
+   2026-09-03 the prompts named `02aa4e3` while `develop` was already at `85f2bfa`; every
+   agent branched from `02aa4e3` and ended up two docs-only commits behind. Harmless that
+   time, a conflict the next time the gap contains code.
 3. **Before VII-B1, on the dispatch machine (needs sudo — the user does this, not an agent):**
 
    ```bash
