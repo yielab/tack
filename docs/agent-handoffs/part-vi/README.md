@@ -31,7 +31,11 @@ accepted by the user before Wave 15 opens. The story every doc reuses is §VI.0'
 1. `git status --porcelain` on `develop` is empty and the planning edits (board, roadmap,
    skills, this directory) are committed. Cards branch from a clean line, never from a
    working tree with someone else's edits in it.
-2. Record the base SHA in the table above and in the Part VI status-board row.
+2. Record the base SHA in the table above and in the Part VI status table. **Pin the actual
+   tip — `git rev-parse --short develop` — not the SHA of the planning commit.** On
+   2026-09-03 the prompts named `02aa4e3` while `develop` was already at `85f2bfa`; every
+   agent branched from `02aa4e3` and ended up two docs-only commits behind. Harmless that
+   time, a conflict the next time the gap contains code.
 3. For Wave 15 only: the user has accepted ADR 0061 (the acceptance is dated in
    `VI-A2.md`). Without it, B1–B3 encode a guess. **Done 2026-09-03.**
 5. Part VII (`docs/agent-handoffs/part-vii/README.md`) runs alongside this Part. VI-B1 and
