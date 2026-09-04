@@ -114,7 +114,13 @@ const HARNESS_KIND: &str = "claude-code";
 /// `CLAUDE_CODE_USE_FOUNDRY` all present) — static inspection of the shipped
 /// artifact, not a live provider switch (never attempted: it would need real
 /// cloud credentials that would not be fabricated for this).
-const KNOWN_PROVIDERS: &[&str] = &["anthropic", "bedrock", "vertex", "foundry"];
+const KNOWN_PROVIDERS: &[&str] = &[
+    "anthropic",
+    "bedrock",
+    "vertex",
+    "foundry",
+    crate::config::VERCEL_AI_GATEWAY_PROVIDER,
+];
 
 /// Tool names that touch the network, matched case-insensitively against a
 /// requested `permission_policy.tools` entry. Used only to reject a
@@ -229,6 +235,11 @@ pub struct ClaudeCodeAdapter<C = SystemClock> {
     /// other adapter the runner constructed at startup — see
     /// `crate::secrets::SecretStore`.
     secrets: crate::secrets::SecretStore,
+    /// Configured provider endpoints (`RunnerConfig::providers`), consulted
+    /// only when a request's `requested_model_provider` names one — see
+    /// `crate::provider::resolve_endpoint`. Empty by default, meaning every
+    /// request spawns against the CLI's own ambient login.
+    providers: std::collections::BTreeMap<String, crate::config::ProviderConfig>,
 }
 
 impl ClaudeCodeAdapter<SystemClock> {
@@ -282,6 +293,7 @@ impl<C: Clock> ClaudeCodeAdapter<C> {
             processes: tokio::sync::Mutex::new(BTreeMap::new()),
             cancelled: tokio::sync::Mutex::new(std::collections::BTreeSet::new()),
             secrets,
+            providers: std::collections::BTreeMap::new(),
         }
     }
 
@@ -290,6 +302,19 @@ impl<C: Clock> ClaudeCodeAdapter<C> {
     /// multi-second real sleep to pass.
     pub fn with_cancel_grace(mut self, grace: Duration) -> Self {
         self.cancel_grace = grace;
+        self
+    }
+
+    /// Configures the provider endpoints this adapter may point a spawn at
+    /// — see `crate::provider::resolve_endpoint`. Not part of `with_binary`
+    /// itself so every existing call site (fixtures, tests) keeps
+    /// constructing an adapter with no configured endpoint at all, exactly
+    /// today's behavior, without editing each one.
+    pub fn with_providers(
+        mut self,
+        providers: std::collections::BTreeMap<String, crate::config::ProviderConfig>,
+    ) -> Self {
+        self.providers = providers;
         self
     }
 
@@ -594,7 +619,21 @@ fn parsed_from_result_line(
         .and_then(Value::as_bool)
         .unwrap_or(true);
 
+    let model_provider = requested_provider
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_else(|| "anthropic".to_string());
     let (model_id, model_observation_source) = match init_model {
+        // A gateway-routed request cannot be confirmed from this line
+        // alone: it is emitted before any network call reaches the
+        // gateway, so it states what the CLI was configured to request,
+        // not what the gateway actually served. Recorded as
+        // `requested_not_confirmed` rather than `harness_reported`.
+        Some(model) if model_provider == crate::config::VERCEL_AI_GATEWAY_PROVIDER => (
+            model,
+            ModelObservationSource::RequestedNotConfirmed
+                .as_str()
+                .to_string(),
+        ),
         Some(model) => (
             model,
             ModelObservationSource::HarnessReported.as_str().to_string(),
@@ -604,9 +643,6 @@ fn parsed_from_result_line(
             ModelObservationSource::NotObserved.as_str().to_string(),
         ),
     };
-    let model_provider = requested_provider
-        .map(str::to_ascii_lowercase)
-        .unwrap_or_else(|| "anthropic".to_string());
 
     ParsedRun {
         is_error,
@@ -940,6 +976,29 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
         // leave state behind to clean up.
         super::resolve_environment(&self.secrets, request, &mut SecretMaterial::new())?;
 
+        // Same discard-and-recheck discipline as above, for a configured
+        // provider endpoint: a disabled or misconfigured provider must
+        // reject here, before any workspace or journal entry exists, not
+        // partway through `start`.
+        if let Err(error) = crate::provider::resolve_endpoint(
+            &self.providers,
+            &self.secrets,
+            request
+                .requested_model_provider
+                .as_ref()
+                .map(|provider| provider.as_str())
+                .unwrap_or(""),
+            crate::provider::Wire::AnthropicMessages,
+        ) {
+            let reason = error.to_string();
+            tracing::warn!(
+                reason,
+                "claude-code adapter rejected a request whose provider endpoint could not be \
+                 resolved"
+            );
+            return Err(HarnessError::Rejected { reason });
+        }
+
         Ok(())
     }
 
@@ -956,6 +1015,43 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
             super::resolve_environment(&self.secrets, request, &mut secrets)?;
         let mut env = self.base_environment();
         env.extend(resolved_environment);
+
+        // A configured provider endpoint applies only when this request's
+        // provider names one (e.g. a gateway) — a direct-vendor request
+        // (the harness's own subscription/login mode) resolves to `None`
+        // and this adapter injects nothing, so the two paths can never be
+        // confused by a shared environment variable.
+        match crate::provider::resolve_endpoint(
+            &self.providers,
+            &self.secrets,
+            request
+                .requested_model_provider
+                .as_ref()
+                .map(|provider| provider.as_str())
+                .unwrap_or(""),
+            crate::provider::Wire::AnthropicMessages,
+        ) {
+            Ok(Some(endpoint)) => {
+                env.insert("ANTHROPIC_BASE_URL".to_string(), endpoint.base_url);
+                env.insert(
+                    endpoint.credential_env_var,
+                    endpoint.credential.expose().to_string(),
+                );
+                // Measured against the installed CLI (2.1.260): empty,
+                // unset and non-empty all produced byte-identical outgoing
+                // requests, with ANTHROPIC_AUTH_TOKEN winning regardless —
+                // this contradicts the vendor's own documented claim that a
+                // non-empty value wins. Set empty anyway, at zero cost,
+                // rather than trusted to already be absent.
+                env.insert("ANTHROPIC_API_KEY".to_string(), String::new());
+            }
+            Ok(None) => {}
+            Err(error) => {
+                return Err(HarnessError::Rejected {
+                    reason: error.to_string(),
+                });
+            }
+        }
 
         let tools_value = request.permission_policy.tools.join(",");
 
@@ -2223,6 +2319,46 @@ mod tests {
         assert_eq!(parsed.usage.cost_usd.value, Some(0.013149));
     }
 
+    /// The gateway-specific half of `parsed_from_result_line`: even a
+    /// terminal `result` line — the case that lets a direct-provider run
+    /// claim `harness_reported` — must not upgrade a gateway-routed run to
+    /// that claim, because the init line it came from fired before any
+    /// network call reached the gateway.
+    #[test]
+    fn a_gateway_routed_result_is_recorded_as_requested_not_confirmed_even_on_a_fast_result_line() {
+        let stdout = concat!(
+            r#"{"type":"system","subtype":"init","model":"anthropic/claude-opus-4.6","claude_code_version":"2.1.261"}"#,
+            "\n",
+            r#"{"is_error":true,"subtype":"success","api_error_status":404,"#,
+            r#""result":"model not found","type":"result"}"#,
+            "\n",
+        )
+        .to_string();
+        let result = ProcessResult {
+            exit: ProcessExit::Exited(1),
+            stdout: super::super::process::CapturedOutput {
+                text: stdout,
+                truncated: false,
+                bytes_dropped: 0,
+                total_bytes_seen: 0,
+            },
+            stderr: Default::default(),
+        };
+
+        let direct = parse_run_output(&result, Some("anthropic"));
+        assert_eq!(
+            direct.model_observation_source,
+            ModelObservationSource::HarnessReported.as_str()
+        );
+
+        let gateway = parse_run_output(&result, Some(crate::config::VERCEL_AI_GATEWAY_PROVIDER));
+        assert_eq!(
+            gateway.model_observation_source,
+            ModelObservationSource::RequestedNotConfirmed.as_str()
+        );
+        assert_eq!(gateway.model_id, "anthropic/claude-opus-4.6");
+    }
+
     #[test]
     fn a_missing_is_error_field_fails_closed_as_an_error_not_a_silent_success() {
         let value = serde_json::json!({"type": "result", "result": "no is_error field here"});
@@ -2357,6 +2493,183 @@ mod tests {
             last_event_checkpoint: None,
             pending_terminal_report: None,
         }
+    }
+
+    // -----------------------------------------------------------------
+    // Provider endpoint injection: a configured gateway entry reaches a
+    // spawned process only when the request actually names it; a direct
+    // request must receive none of it.
+    // -----------------------------------------------------------------
+
+    fn enabled_gateway_providers(
+        secret_name: &str,
+    ) -> std::collections::BTreeMap<String, crate::config::ProviderConfig> {
+        std::collections::BTreeMap::from([(
+            crate::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
+            crate::config::ProviderConfig {
+                enabled: true,
+                secret: secret_name.to_owned(),
+            },
+        )])
+    }
+
+    /// A shim that records the *names* only of the environment variables it
+    /// was spawned with — never a value — so a test can prove a variable's
+    /// presence or absence without ever needing to see, let alone assert
+    /// on, a credential.
+    fn env_name_dump_binary(workspace: &Path, marker: &Path) -> HarnessBinary {
+        // A single external process (`env`), no pipe to a second one: the
+        // name/value split happens in `recorded_env_names` instead, purely
+        // to keep this shim's own process footprint minimal under a
+        // heavily parallel test run.
+        let script = format!("#!/bin/sh\nenv > {}\nexit 0\n", marker.display());
+        let script_path = workspace.join("dump-env-names.sh");
+        std::fs::write(&script_path, script).expect("write shim script");
+        HarnessBinary {
+            program: PathBuf::from("/bin/sh"),
+            prefix_args: vec![script_path.display().to_string()],
+        }
+    }
+
+    /// The *names* only of the `KEY=VALUE` lines `env`'s output wrote to
+    /// `marker` — this helper is what actually discards every value, so no
+    /// caller ever inspects one, even a dummy one seeded for a test.
+    fn recorded_env_names(marker: &Path) -> Vec<String> {
+        std::fs::read_to_string(marker)
+            .expect("shim wrote the env-names marker")
+            .lines()
+            .filter_map(|line| line.split('=').next())
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// Acceptance: a request naming a direct model provider (or none at
+    /// all) must spawn with neither `ANTHROPIC_BASE_URL` nor
+    /// `ANTHROPIC_AUTH_TOKEN` present — even though a gateway entry is
+    /// configured and enabled on this same adapter. Proves the two paths
+    /// can never be confused by a shared environment variable.
+    #[tokio::test]
+    async fn a_direct_model_request_spawns_with_no_provider_endpoint_variable_present() {
+        let workspace = temp_workspace("provider-guard-direct");
+        let marker = workspace.join("env-names.marker");
+        let binary = env_name_dump_binary(&workspace, &marker);
+
+        let secrets = test_secret_store();
+        secrets
+            .set("demo-secret", "unused-by-a-direct-request")
+            .expect("seed store");
+        let adapter = ClaudeCodeAdapter::with_binary(binary, clock(), secrets)
+            .with_providers(enabled_gateway_providers("demo-secret"));
+
+        let spec = spec_with(
+            "claude-code",
+            None,
+            &[],
+            true,
+            BTreeMap::new(),
+            workspace.clone(),
+        );
+        adapter
+            .validate(&spec)
+            .await
+            .expect("validate a direct request");
+        let handle = adapter.start(&spec).await.expect("start a direct request");
+        let _ = adapter.wait(&handle).await.expect("wait");
+
+        let names = recorded_env_names(&marker);
+        assert!(
+            !names.iter().any(|name| name == "ANTHROPIC_BASE_URL"),
+            "a direct request must never receive the provider endpoint's base URL: {names:?}"
+        );
+        assert!(
+            !names.iter().any(|name| name == "ANTHROPIC_AUTH_TOKEN"),
+            "a direct request must never receive the provider endpoint's credential: {names:?}"
+        );
+
+        std::fs::remove_dir_all(workspace).expect("cleanup");
+    }
+
+    /// The positive half of the same proof: a request naming the
+    /// configured provider does receive its base URL and credential
+    /// variable names.
+    #[tokio::test]
+    async fn a_configured_provider_request_spawns_with_its_endpoint_variables_present() {
+        let workspace = temp_workspace("provider-guard-configured");
+        let marker = workspace.join("env-names.marker");
+        let binary = env_name_dump_binary(&workspace, &marker);
+
+        let secrets = test_secret_store();
+        secrets
+            .set("demo-secret", "a-resolvable-value")
+            .expect("seed store");
+        let adapter = ClaudeCodeAdapter::with_binary(binary, clock(), secrets)
+            .with_providers(enabled_gateway_providers("demo-secret"));
+
+        let spec = spec_with(
+            "claude-code",
+            Some(crate::config::VERCEL_AI_GATEWAY_PROVIDER),
+            &[],
+            true,
+            BTreeMap::new(),
+            workspace.clone(),
+        );
+        adapter
+            .validate(&spec)
+            .await
+            .expect("validate a configured-provider request");
+        let handle = adapter
+            .start(&spec)
+            .await
+            .expect("start a configured-provider request");
+        let _ = adapter.wait(&handle).await.expect("wait");
+
+        let names = recorded_env_names(&marker);
+        assert!(
+            names.iter().any(|name| name == "ANTHROPIC_BASE_URL"),
+            "a gateway-routed request must receive the provider endpoint's base URL: {names:?}"
+        );
+        assert!(
+            names.iter().any(|name| name == "ANTHROPIC_AUTH_TOKEN"),
+            "a gateway-routed request must receive the provider endpoint's credential: {names:?}"
+        );
+
+        std::fs::remove_dir_all(workspace).expect("cleanup");
+    }
+
+    /// A configured-but-disabled provider must reject the request pre-spawn
+    /// with a typed reason, not silently fall back to a direct request.
+    #[tokio::test]
+    async fn a_disabled_provider_rejects_the_request_before_any_process_spawns() {
+        let workspace = temp_workspace("provider-guard-disabled");
+        let secrets = test_secret_store();
+        secrets
+            .set("demo-secret", "irrelevant")
+            .expect("seed store");
+        let providers = std::collections::BTreeMap::from([(
+            crate::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
+            crate::config::ProviderConfig {
+                enabled: false,
+                secret: "demo-secret".to_owned(),
+            },
+        )]);
+        let adapter = ClaudeCodeAdapter::with_binary(fake_binary(), clock(), secrets)
+            .with_providers(providers);
+
+        let spec = spec_with(
+            "claude-code",
+            Some(crate::config::VERCEL_AI_GATEWAY_PROVIDER),
+            &[],
+            true,
+            BTreeMap::new(),
+            workspace.clone(),
+        );
+        let error = adapter
+            .validate(&spec)
+            .await
+            .expect_err("a disabled provider must reject at validate, before any spawn");
+        assert!(matches!(error, HarnessError::Rejected { .. }));
+
+        std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 
     // ---- discovery -----------------------------------------------------
@@ -2511,5 +2824,201 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&workspace).expect("cleanup disposable fixture repo");
+    }
+
+    /// Live proof of the provider endpoint path, not the direct one above:
+    /// resolves the real runner-local secret store (the platform keychain,
+    /// or its owner-only file fallback — whichever this machine actually
+    /// has) for a `vercel_ai_gateway` entry, points a real `claude` binary
+    /// at it, and records what the CLI reported. Gated identically to
+    /// [`live_claude_code_records_version_and_a_real_artifact_when_opted_in`]
+    /// (a real invocation is billed), plus a clean skip when no store entry
+    /// exists at all — this test never fabricates one.
+    #[tokio::test]
+    #[ignore = "opt-in: requires a real `claude` binary on PATH, a `vercel_ai_gateway` entry in \
+                this machine's secret store, *and* TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 (a real \
+                invocation is billed); run with TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo test -p \
+                tack-runner --lib -- --ignored claude_code::tests::live_"]
+    async fn live_claude_code_through_the_configured_provider_when_opted_in() {
+        if std::env::var("TACK_RUN_LIVE_CLAUDE_CODE_TEST").as_deref() != Ok("1") {
+            eprintln!(
+                "skipping live claude-code gateway test: set TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 to \
+                 opt in (a real invocation is billed)"
+            );
+            return;
+        }
+        let state_dir = std::env::var_os("TACK_RUNNER_STATE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(std::env::var("HOME").expect("HOME is set")).join(".tack-runner")
+            });
+        let secrets = crate::secrets::SecretStore::open(&state_dir.join("secrets.json"));
+        let providers = std::collections::BTreeMap::from([(
+            crate::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
+            crate::config::ProviderConfig {
+                enabled: true,
+                secret: crate::config::DEFAULT_VERCEL_AI_GATEWAY_SECRET.to_owned(),
+            },
+        )]);
+
+        let Ok(adapter) = ClaudeCodeAdapter::discover(secrets) else {
+            eprintln!("skipping live claude-code gateway test: no `claude` binary discoverable");
+            return;
+        };
+        let adapter = adapter.with_providers(providers);
+
+        let workspace = temp_workspace("live-gateway");
+        std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&workspace)
+            .status()
+            .expect("git init");
+        let mut spec = spec_with(
+            "claude-code",
+            Some(crate::config::VERCEL_AI_GATEWAY_PROVIDER),
+            &[],
+            true,
+            BTreeMap::new(),
+            workspace.clone(),
+        );
+        spec.work.request.requested_model_id = Some(tack_orch::execution::RequestedModelId::new(
+            "anthropic/claude-opus-4.6",
+        ));
+        spec.work.request.resolved_agent_profile.instructions = "Say exactly: ok".to_string();
+
+        if let Err(error) = adapter.validate(&spec).await {
+            eprintln!(
+                "skipping live claude-code gateway test: no configured provider entry to \
+                 validate against ({error})"
+            );
+            std::fs::remove_dir_all(&workspace).expect("cleanup");
+            return;
+        }
+        let handle = adapter
+            .start(&spec)
+            .await
+            .expect("start a live gateway-routed process");
+        let outcome = adapter
+            .wait(&handle)
+            .await
+            .expect("wait for a live gateway-routed process");
+
+        eprintln!(
+            "live claude-code (gateway) outcome: terminal_state={:?} model_provider={} \
+             model_id={} model_observation_source={} terminal_reason={}",
+            outcome.terminal_state,
+            outcome.actual_execution.model_provider.as_str(),
+            outcome.actual_execution.model_id.as_str(),
+            outcome.actual_execution.model_observation_source,
+            outcome.terminal_reason
+        );
+
+        // Holds regardless of whether the configured credential is itself
+        // valid, and regardless of which of two honest outcomes this
+        // specific run hits: a `result` line arriving before the request
+        // timeout (`requested_not_confirmed`, from `parsed_from_result_line`)
+        // or the process being killed mid-retry-storm with no such line
+        // ever seen (`not_observed`, from `malformed_outcome`/
+        // `fallback_from_exit_code`) — a real invalid-key run measured
+        // exponential retry delays that make the latter the far likelier
+        // case within any test-sized timeout. The one claim that must never
+        // hold for a gateway-routed run is `harness_reported`: this line is
+        // emitted before any network call reaches the gateway, so it can
+        // never be treated as confirmation the gateway actually served it.
+        // A successful completion additionally needs a working credential,
+        // which this test does not assert on: see the handoff for the
+        // separately recorded, deliberately run, billed proof.
+        assert_ne!(
+            outcome.actual_execution.model_observation_source,
+            ModelObservationSource::HarnessReported.as_str(),
+            "a gateway-routed run must never claim harness_reported"
+        );
+
+        std::fs::remove_dir_all(&workspace).expect("cleanup disposable fixture repo");
+    }
+
+    /// The live counterpart to the fake-shim guard tests above: with the
+    /// configured provider enabled *and* genuinely working (a real, billed
+    /// gateway completion is proven by the test above), a direct-model
+    /// request against the same adapter must still never reach the
+    /// gateway. Never bills anything itself — a direct request with no
+    /// ambient login on this machine fails in milliseconds
+    /// ("Not logged in"), which is the point: if it had instead reached
+    /// the gateway, it would have succeeded, exactly like the test above.
+    #[tokio::test]
+    #[ignore = "opt-in: requires a real `claude` binary on PATH *and*                 TACK_RUN_LIVE_CLAUDE_CODE_TEST=1; run with                 TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo test -p tack-runner --lib -- --ignored                 claude_code::tests::live_"]
+    async fn live_claude_code_direct_model_never_reaches_the_configured_provider_when_opted_in() {
+        if std::env::var("TACK_RUN_LIVE_CLAUDE_CODE_TEST").as_deref() != Ok("1") {
+            eprintln!(
+                "skipping live claude-code direct-guard test: set TACK_RUN_LIVE_CLAUDE_CODE_TEST=1                  to opt in"
+            );
+            return;
+        }
+        let state_dir = std::env::var_os("TACK_RUNNER_STATE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(std::env::var("HOME").expect("HOME is set")).join(".tack-runner")
+            });
+        let secrets = crate::secrets::SecretStore::open(&state_dir.join("secrets.json"));
+        let providers = std::collections::BTreeMap::from([(
+            crate::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
+            crate::config::ProviderConfig {
+                enabled: true,
+                secret: crate::config::DEFAULT_VERCEL_AI_GATEWAY_SECRET.to_owned(),
+            },
+        )]);
+
+        let Ok(adapter) = ClaudeCodeAdapter::discover(secrets) else {
+            eprintln!(
+                "skipping live claude-code direct-guard test: no `claude` binary discoverable"
+            );
+            return;
+        };
+        let adapter = adapter.with_providers(providers);
+
+        let workspace = temp_workspace("live-direct-guard");
+        std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&workspace)
+            .status()
+            .expect("git init");
+        // No requested_model_provider at all: the direct/subscription path.
+        let spec = spec_with(
+            "claude-code",
+            None,
+            &[],
+            true,
+            BTreeMap::new(),
+            workspace.clone(),
+        );
+
+        adapter
+            .validate(&spec)
+            .await
+            .expect("a direct request validates even with the provider configured");
+        let handle = adapter
+            .start(&spec)
+            .await
+            .expect("start a direct-model process");
+        let outcome = adapter
+            .wait(&handle)
+            .await
+            .expect("wait for a direct-model process");
+
+        eprintln!(
+            "live claude-code (direct, provider configured but unused) outcome:              terminal_state={:?} terminal_reason={}",
+            outcome.terminal_state, outcome.terminal_reason
+        );
+
+        // The decisive check: the gateway's own distinctive error shape
+        // ("authentication_failed"/"api_retry") must never appear on a
+        // direct request, proving it never reached ai-gateway.vercel.sh.
+        let serialized = outcome.terminal_reason.to_string();
+        assert!(
+            !serialized.contains("authentication_failed") && !serialized.contains("api_retry"),
+            "a direct request must never show the gateway's own error shape: {serialized}"
+        );
+
+        std::fs::remove_dir_all(&workspace).expect("cleanup");
     }
 }
