@@ -139,6 +139,11 @@ notes (workflow validation, auto-status propagation, WebSocket events, attachmen
 - **A status-code assertion alone proves little.** For "writes nothing / rejects before
   X" claims, assert the absence directly (row counts, untouched checkpoint) and prove
   the test load-bearing by reverting the fix once.
+- **A load-bearing number carries the command that produces it, and gets re-measured before
+  it is quoted.** A claim like "234 doc comments cite this" decides things — it justified
+  freezing 9k lines in place, and it was 13× wrong within two weeks of being written while
+  four documents kept repeating it. If you are about to rely on a count someone else wrote,
+  run its command first; if it has no command, that is the finding.
 - **Each board card writes one handoff** in `docs/agent-handoffs/`; corrections are
   appended as amendments, never rewritten.
 - Changing an API response shape updates the matching frontend unit/E2E mocks in the
@@ -157,6 +162,11 @@ wave, phase or `TODO.md §` references, narratives of how the code got here, ins
 aimed at a finished cycle, dates, attributions, or commented-out code — `git log` and the
 handoffs already hold all of that, and a reader with the code but not the board can't use
 it. Full rule, with the examples it was derived from: `.claude/scope-discipline.md`.
+**`scripts/check-comments.sh` enforces this** (~0.2s, runs in `pre-push` and CI). It exists
+because this rule decayed silently once already: card citations returned to doc comments and
+reached operator log lines and API error responses before anyone noticed. When it fires,
+rewriting is almost always right and deleting is almost always wrong — the comment usually
+wraps something real in board scaffolding. Keep the knowledge, drop the pointer.
 
 ## Where everything else lives
 
