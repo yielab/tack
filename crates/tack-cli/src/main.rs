@@ -12,6 +12,7 @@ mod doctor;
 mod local_enrollment;
 mod local_runner;
 mod secret;
+mod service;
 
 // ─── CLI structure ────────────────────────────────────────────────────────────
 
@@ -265,6 +266,13 @@ enum Commands {
     Runner {
         #[command(subcommand)]
         action: RunnerAction,
+    },
+
+    /// Manage tack as a background service that outlives the terminal
+    /// (a systemd user unit on Linux, a launchd agent on macOS)
+    Service {
+        #[command(subcommand)]
+        action: ServiceAction,
     },
 
     /// Manage agent profiles (instructions, tool policy, limits)
@@ -773,6 +781,16 @@ enum SecretAction {
 }
 
 #[derive(Subcommand)]
+enum ServiceAction {
+    /// Write the service unit and start it, enabled to start at login
+    Install,
+    /// Stop the service and remove its unit. The data root is left untouched.
+    Uninstall,
+    /// Show whether the service is active and where to check its health
+    Status,
+}
+
+#[derive(Subcommand)]
 enum AgentProfileAction {
     /// Create an agent profile
     Create {
@@ -837,11 +855,12 @@ fn main() -> anyhow::Result<()> {
         return run_server(local_runner::with_runner_enabled(false));
     };
 
-    // Serve, Runner Start, Runner Doctor, Config and Completions don't need a
-    // live API client: Serve and Runner Start each build their own async
-    // runtime and speak the runner-v1/HTTP protocol directly, never through
-    // `TackClient`; Runner Doctor only probes this machine's own harness
-    // installations and talks to no server at all.
+    // Serve, Runner Start, Runner Doctor, Service, Config and Completions
+    // don't need a live API client: Serve and Runner Start each build their
+    // own async runtime and speak the runner-v1/HTTP protocol directly,
+    // never through `TackClient`; Runner Doctor only probes this machine's
+    // own harness installations; Service only writes/reads a unit file and
+    // shells out to the OS's own service manager.
     let command = match command {
         Commands::Serve { with_runner } => {
             return run_server(local_runner::with_runner_enabled(with_runner));
@@ -873,6 +892,13 @@ fn main() -> anyhow::Result<()> {
             action: RunnerAction::Secret { action },
         } => {
             return secret::run(action);
+        }
+        Commands::Service { action } => {
+            return match action {
+                ServiceAction::Install => service::install(),
+                ServiceAction::Uninstall => service::uninstall(),
+                ServiceAction::Status => service::status(),
+            };
         }
         Commands::Config { url, token, show } => {
             return cmd_config(
@@ -1124,6 +1150,9 @@ fn main() -> anyhow::Result<()> {
             RunnerAction::Doctor { .. } => unreachable!(),
             RunnerAction::Secret { .. } => unreachable!(),
         },
+
+        // Already handled above; unreachable but required for exhaustiveness.
+        Commands::Service { .. } => unreachable!(),
 
         Commands::AgentProfile { action } => match action {
             AgentProfileAction::Create {

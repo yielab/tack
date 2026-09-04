@@ -322,6 +322,56 @@ Options:
 
 ---
 
+## Service
+
+Run `tack` as a background service that outlives the terminal — a systemd user unit on
+Linux, a launchd agent on macOS. This is the terminal-user equivalent of the desktop
+app's window: install it once and `tack serve --with-runner` keeps running after you
+close the shell, log back in, and reboot. Not supported on Windows; use the desktop app
+there instead.
+
+The service always uses this OS's own per-user application-data folder (for example
+`~/.local/share/tack` on Linux) for the database, storage, runner state, and log file —
+never the current directory, and never a `tack.toml` from wherever you happened to run
+the command.
+
+```sh
+tack service install
+```
+
+```text
+Created symlink /home/ox/.config/systemd/user/default.target.wants/tack.service → /home/ox/.config/systemd/user/tack.service.
+Installed and started the tack user service.
+  Unit file: /home/ox/.config/systemd/user/tack.service
+  Data root: /home/ox/.local/share/tack
+  Health:    http://127.0.0.1:3210/api/health
+```
+
+```sh
+tack service status
+```
+
+```text
+State:  active
+Health: http://127.0.0.1:3210/api/health
+```
+
+```sh
+tack service uninstall
+```
+
+```text
+Removed "/home/ox/.config/systemd/user/default.target.wants/tack.service".
+Removed the tack user service. The data root was left untouched.
+```
+
+`uninstall` stops the service and removes its unit file; it never touches the data root,
+so a later `tack service install` picks the same database back up. For a shared,
+root-owned deployment instead of a per-user one, see the systemd unit in
+[the deployment guide](../../../DEPLOYMENT-GUIDE.md).
+
+---
+
 ## Fleet
 
 Manage runner fleets — a named group of runners sharing an optional concurrency limit
