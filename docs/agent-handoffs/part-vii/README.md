@@ -18,7 +18,7 @@ decision of record is `docs/adr/0062-desktop-app-and-background-service.md`, acc
 
 | Wave | Cards | Parallel? | Needs | Base SHA |
 |---|---|---|---|---|
-| 18 | VII-A2 · VII-B1 | yes | ADR 0062 accepted (done). **B1 additionally needs the Tauri prerequisites installed on the dispatch machine** — see the checklist | pinned at dispatch (the `develop` tip after the planning commit) |
+| 18 | VII-A2 · VII-B1 | yes | ADR 0062 accepted (done). **B1 additionally needs the Tauri prerequisites installed on the dispatch machine** — see the checklist | `02aa4e3` — the 2026-09-03 planning commit; branch from the `develop` tip |
 | 19 | VII-B2 · VII-B3 | yes | B1 integrated | Wave 18 integration SHA |
 | 20 | VII-C1 → VII-C2 | no | C1: B2 + B3; C2: C1 **and Part VI's VI-C1** | Wave 19 integration SHA |
 | 21 | VII-D1 | — | everything | Wave 20 integration SHA |
