@@ -118,7 +118,11 @@ notes (workflow validation, auto-status propagation, WebSocket events, attachmen
   the pin table in `crates/tack-orch/tests/runner_contract.rs` in the same change.
 - **`docs/openapi.json` and `frontend/src/shared/api/schema.gen.ts` are generated** —
   never hand-edit; regenerate via `UPDATE_OPENAPI=1 cargo test -p tack-api --test
-  openapi_contract` then `cd frontend && npm run gen:api`.
+  openapi_contract` then `cd frontend && npm run gen:api`, or `./scripts/regen-generated.sh`
+  for those plus the lockfiles. Never hand-**merge** them either: `.gitattributes` routes
+  them through the `tack-generated` driver (`./scripts/setup-git.sh` registers it) and
+  `post-merge` regenerates. After merging several branches, regenerate once at the end
+  rather than trusting any branch's copy.
 - **Unsupported is typed, unknown is explicit, unmeasured is nullable** — no
   `unimplemented!()`, no zero standing in for "unknown" (never render `$0.00` for
   unmeasured money; the literal is `Not measured`). Capability claims are load-bearing.

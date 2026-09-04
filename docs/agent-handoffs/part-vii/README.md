@@ -53,6 +53,24 @@ decision of record is `docs/adr/0062-desktop-app-and-background-service.md`, acc
 5. Part VI's Wave 15 may run at the same time. VI-B1 and VII-A2 both add an arm to
    `crates/tack-cli/src/main.rs` — merge them one after the other and build once with both.
 
+### Conflicts, after the 2026-09-04 integration
+
+Two different problems, and only one of them is solvable by tooling.
+
+**Generated files can no longer conflict.** `Cargo.lock`, `frontend/package-lock.json`,
+`docs/openapi.json` and `frontend/src/shared/api/schema.gen.ts` are marked
+`merge=tack-generated` in `.gitattributes`. The driver resolves them to our side without a
+conflict and `.githooks/post-merge` regenerates them from the merged sources; `pre-push`
+refuses a stale lockfile or schema. Run `./scripts/setup-git.sh` once per clone — the
+driver is per-clone git config and cannot be committed. Never hand-merge one of these
+files, and never trust one branch's copy: regenerate after all merges land.
+
+**Hand-written files still conflict, and dispatch is what prevents it.** VI-B1 and VII-A2
+each added a `mod` line and a match arm to `crates/tack-cli/src/main.rs`, in the same two
+regions. The merge cost thirty seconds, but the rule is cheaper than the merge: **do not
+put two cards that edit the same hand-written file in the same wave.** If the board's
+ownership table already gives that file to one card, dispatch the other one a wave later.
+
 ## When a card agent dies mid-work
 
 Measured 2026-09-03: five Sonnet cards dispatched at once exhausted the session rate limit

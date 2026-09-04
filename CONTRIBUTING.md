@@ -15,15 +15,21 @@ contributing you agree to uphold it. Project decisions follow the
 git clone https://github.com/yielab/tack.git
 cd tack
 
-# Activate the pre-push hook — runs fmt + clippy before every push
-git config core.hooksPath .githooks
+# Hooks and the merge driver for generated files (per-clone git config,
+# so it cannot be committed — this is the one-time setup)
+./scripts/setup-git.sh
 
 # Verify the build and tests pass
 cargo build
 cargo test --workspace
 ```
 
-The hook in `.githooks/pre-push` runs `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings` automatically before every `git push`. This mirrors CI exactly, so formatting and lint failures are caught locally before they ever reach GitHub.
+`scripts/setup-git.sh` wires up two things:
+
+- **`.githooks/pre-push`** runs `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and a check that `Cargo.lock` and `schema.gen.ts` are not stale. This mirrors CI, so failures are caught locally before they reach GitHub.
+- **The `tack-generated` merge driver** for `Cargo.lock`, `frontend/package-lock.json`, `docs/openapi.json` and `frontend/src/shared/api/schema.gen.ts`. Each is a pure function of sources tracked elsewhere, so hand-merging one is always either busywork or a mistake. The driver resolves them without a conflict and `.githooks/post-merge` regenerates them from the merged sources — staged, never committed for you. `scripts/regen-generated.sh` is the same regeneration, runnable by hand.
+
+Skipping the setup leaves you with git's ordinary text merge on those files. That is how the repository behaved before, so a clone without it is degraded, not broken.
 
 ---
 
@@ -49,7 +55,8 @@ Tack/
 ├── Cargo.lock                  # Pinned dependency versions
 ├── Makefile                    # Common dev commands
 ├── .githooks/
-│   └── pre-push                # fmt + clippy gate (activate with git config core.hooksPath .githooks)
+│   ├── pre-push                # fmt + clippy + generated-file staleness gate
+│   └── post-merge              # regenerates what the tack-generated merge driver resolved
 ├── crates/
 │   ├── tack-core/            # Pure domain logic (no I/O, no DB)
 │   │   └── src/

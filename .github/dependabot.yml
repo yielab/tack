@@ -1,10 +1,27 @@
 version: 2
 
-# Noise policy (solo maintainer): every ecosystem is grouped, so a run opens at most
-# ONE minor/patch PR and ONE major PR per ecosystem instead of one per dependency.
-# Majors are grouped separately on purpose — a breaking major must never block the
-# routine patch roll-up behind it. Security advisories ignore `schedule` and still
-# arrive immediately, so a slower cadence does not delay security fixes.
+# Noise policy (solo maintainer, three board cycles in parallel).
+#
+# Two things are true at once here, and the config has to keep them apart:
+#
+#   * Version updates are chores. They earn their keep in bulk, and a weekly
+#     cadence produced PRs faster than anyone decided on them — three majors sat
+#     open for up to two weeks. They are grouped, monthly, and given a cooldown
+#     so a freshly published version is not this repository's problem to
+#     discover.
+#   * Security updates are not chores. They are triggered by advisory
+#     disclosures, ignore `schedule` and `cooldown` entirely, and get their own
+#     group per ecosystem via `applies-to: security-updates` — otherwise they
+#     would inherit the batching built to slow chores down.
+#
+# Turning `dependabot_security_updates` on at the repository level is what makes
+# the second half exist at all; without it, advisories were only ever fixed as a
+# side effect of a routine version-update roll-up.
+#
+# Majors are grouped separately from minor/patch on purpose: a breaking major
+# must never block the routine patch roll-up behind it. Only minor/patch is
+# auto-merged (see .github/workflows/dependabot-auto-merge.yml); majors wait for
+# a human.
 updates:
   # Rust crates
   - package-ecosystem: cargo
@@ -15,35 +32,50 @@ updates:
     # incident below for what happens when it doesn't).
     target-branch: develop
     schedule:
-      interval: weekly
+      interval: monthly
     open-pull-requests-limit: 5
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
     groups:
       cargo-minor-patch:
         update-types: ["minor", "patch"]
       cargo-major:
         update-types: ["major"]
+      cargo-security:
+        applies-to: security-updates
+        patterns: ["*"]
 
   # Frontend npm packages
   - package-ecosystem: npm
     directory: "/frontend"
     target-branch: develop
     schedule:
-      interval: weekly
+      interval: monthly
     open-pull-requests-limit: 5
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
     groups:
       npm-minor-patch:
         update-types: ["minor", "patch"]
       npm-major:
         update-types: ["major"]
+      npm-security:
+        applies-to: security-updates
+        patterns: ["*"]
 
   # GitHub Actions — these move slowly and are almost always safe to take in bulk.
-  # Previously ungrouped, which is why five of eight open PRs were single action bumps.
   - package-ecosystem: github-actions
     directory: "/"
     target-branch: develop
     schedule:
       interval: monthly
     open-pull-requests-limit: 3
+    cooldown:
+      default-days: 7
     groups:
       actions-minor-patch:
         patterns: ["*"]
@@ -54,7 +86,7 @@ updates:
     ignore:
       # dtolnay/rust-toolchain's "version" isn't an action release — it's the
       # Rust channel/version each job's `uses:` line selects (@stable,
-      # @1.85.0 for the MSRV floor). Dependabot bumped the MSRV job's pin to
+      # @1.89.0 for the MSRV floor). Dependabot bumped the MSRV job's pin to
       # @1.100.0 as a routine "minor" action bump and auto-merged it,
       # silently defeating that job's entire purpose (testing the documented
       # floor in Cargo.toml/README/CONTRIBUTING, not the latest). This pin

@@ -1,0 +1,19 @@
+# Generated files. Every one of these is a pure function of sources tracked
+# elsewhere in the tree, so a hand-merge of one is always either busywork or a
+# mistake. `merge=tack-generated` resolves them to our side without a conflict;
+# `.githooks/post-merge` then regenerates them from the merged sources, and
+# `.githooks/pre-push` refuses to send a stale one.
+#
+# The driver has to be registered locally to take effect — `scripts/setup-git.sh`
+# does that. Without it git falls back to its normal text merge, which is the
+# behaviour these files had before, so a clone that skipped setup is degraded,
+# never broken.
+Cargo.lock                            merge=tack-generated linguist-generated=true
+frontend/package-lock.json            merge=tack-generated linguist-generated=true
+docs/openapi.json                     merge=tack-generated linguist-generated=true
+frontend/src/shared/api/schema.gen.ts merge=tack-generated linguist-generated=true
+
+# Committed because `generate_context!` reads them while tack-desktop compiles.
+crates/tack-desktop/icons/*.png  binary
+crates/tack-desktop/icons/*.ico  binary
+crates/tack-desktop/icons/*.icns binary
