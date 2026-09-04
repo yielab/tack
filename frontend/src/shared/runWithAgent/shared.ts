@@ -22,8 +22,10 @@
 import type {
   CreateExecutionInput,
   RunnerCapabilities,
+  HarnessCapability,
 } from '../execution';
 import { harnessProbeStatus, isCombinationSupported } from '../execution';
+import type { ProjectModelDefault } from '../types';
 
 // ─── Harness kinds ──────────────────────────────────────────────────────────
 
@@ -331,4 +333,83 @@ export function relativeTimeFromIso(iso: string | null | undefined): string {
   const day = Math.round(hr / 24);
   if (day < 30) return `${day}d ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+// ─── Target selection ("Where it runs") ─────────────────────────────────────
+
+/** `agent_runners.state` values that mean the runner is live and could
+ *  actually claim work — `runner_admin.rs::list_runners` reports
+ *  `'pending_enrollment' | 'active' | 'revoked'` (plus any future value,
+ *  which this treats as inactive rather than guessing). */
+export function isActiveRunnerState(state: string): boolean {
+  return state === 'active';
+}
+
+/** Whether the target picker should stay hidden and the one active runner
+ *  used directly, with no free-text id anywhere — this card's "hidden when
+ *  exactly one machine is active — the common case" task. More than one
+ *  active runner, or a fleet also existing as an alternative, means a real
+ *  choice exists and the picker must render. */
+export function shouldHideTargetPicker(activeRunnerCount: number, fleetCount: number): boolean {
+  return activeRunnerCount === 1 && fleetCount === 0;
+}
+
+/**
+ * Whether the product should show its "agent execution is off" state
+ * instead of the run form.
+ *
+ * Measured against this branch's base (2026-09-04): no persisted execution
+ * on/off flag exists yet (`grep -n "local-runner"
+ * crates/tack-api/src/router.rs` is empty — that's VI-B3, not landed here),
+ * and `/api/executions` and its sibling routes are mounted unconditionally
+ * (`frontend/e2e/run-with-agent.spec.ts`'s own header note: "an always-on
+ * operator surface, NOT gated behind TACK_ORCH_ENABLE"). The only
+ * currently-observable signal is therefore indirect: the §VI.0 surface map's
+ * "Turn on agent execution" row is still a console step
+ * (`tack serve --with-runner`) today, and without it no runner ever enrolls
+ * — so zero active runners is read as "execution is off" until VI-B3 lands a
+ * real flag this function can switch to reading instead.
+ */
+export function isExecutionOff(activeRunnerCount: number): boolean {
+  return activeRunnerCount === 0;
+}
+
+// ─── Project-default model (VI-C3's `Project` model-policy tier) ───────────
+
+/** Human label for a project's configured model default — the "Project
+ *  default — …" mode text the Model fieldset shows verbatim. `null` means
+ *  the project has no opinion (VI-C3: `default_model` absent), which is
+ *  distinct from an explicit `Auto` choice. */
+export function describeProjectModelDefault(defaultModel: ProjectModelDefault | null | undefined): string | null {
+  if (!defaultModel) return null;
+  if (defaultModel.kind === 'auto') return 'Auto';
+  return `${defaultModel.provider} / ${defaultModel.model_id}`;
+}
+
+/** The requested provider/model pair the "Project default" mode submits.
+ *  A project default of `Auto`, and no project default at all, both
+ *  resolve to the same nullable pair the modal's own Auto mode uses
+ *  (III.1.2: `null`/`null` means "auto — let the runner decide"); only an
+ *  `Explicit` default copies a concrete pair through. */
+export function projectDefaultModelPair(
+  defaultModel: ProjectModelDefault | null | undefined,
+): { provider: string | null; id: string | null } {
+  if (!defaultModel || defaultModel.kind === 'auto') return { provider: null, id: null };
+  return { provider: defaultModel.provider, id: defaultModel.model_id };
+}
+
+// ─── Model passthrough (free-text model id) ─────────────────────────────────
+
+/**
+ * Whether a harness attests it forwards an operator-specified model id
+ * verbatim, rather than requiring one of its reported `model_combinations`
+ * — the only case the Model "Choose…" mode may accept free text. Mirrors
+ * `crates/tack-orch/src/scheduler/select.rs`'s own treatment: only
+ * `support === 'supported'` counts; `'advisory'` and an absent
+ * `model_passthrough` (an older runner, or the shared fake probe) both mean
+ * "not attested" and are rejected identically to `'unsupported'` there, so
+ * neither unlocks free text here either.
+ */
+export function isModelPassthroughAttested(harness: HarnessCapability | undefined): boolean {
+  return harness?.model_passthrough?.support === 'supported';
 }

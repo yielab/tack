@@ -92,7 +92,13 @@ const ItemCard: Component<{
             "dispatch" feature), per III.0's vocabulary rule: distinct icon,
             distinct label, distinct backend domain (`ExecutionRequest` via
             `tack-runner`, never `orch_tasks`). */}
-        <RunWithAgentButton itemId={props.item.id} itemTitle={props.item.title} compact />
+        <RunWithAgentButton
+          itemId={props.item.id}
+          itemTitle={props.item.title}
+          projectId={props.item.project_id}
+          showStateChip
+          compact
+        />
         <DispatchCardMenu
           itemId={props.item.id}
           itemTitle={props.item.title}

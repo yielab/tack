@@ -145,6 +145,19 @@ export interface HarnessCapability {
   probe_error: string | null;
   probed_at: string;
   model_combinations: ModelCombination[];
+  /**
+   * Whether this harness forwards an operator-specified model id verbatim
+   * rather than validating it against `model_combinations` — mirrors the
+   * Rust `HarnessCapability::model_passthrough` field
+   * (`crates/tack-orch/src/execution/capabilities.rs`), which is
+   * `#[serde(default, skip_serializing_if = "Option::is_none")]`: absent
+   * from the JSON entirely on an older runner or the shared fake probe, so
+   * this key is optional here too, never a fabricated `null`. Only
+   * `support === 'supported'` unlocks a free-text model id — `'advisory'`
+   * and absent both mean "not attested" and behave identically (the
+   * scheduler's own `select.rs` treats them the same).
+   */
+  model_passthrough?: CapabilityValue;
 }
 
 export interface CapabilityLimits {
