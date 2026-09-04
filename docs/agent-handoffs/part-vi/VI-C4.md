@@ -260,3 +260,16 @@ architecture vocabulary onto any screen.
 
 *(Appended by later readers, dated. The original text above is never rewritten — the
 history of what was believed and later falsified is the point.)*
+
+### 2026-09-04 — Wave 16 integrator: the two routes ship without Rust-level tests
+
+The card disclosed this plainly rather than hiding it, and the frontend tests that
+replaced the typed-id inputs are thorough. Recording it here so the gap is tracked
+where a later reader will find it: `GET /api/executions/{id}/attempts/{n}/artifacts`
+and `.../decisions` are covered by the OpenAPI contract test, the frontend unit tests
+and the E2E spec, but by no handler test in `crates/tack-api`. Nothing asserts, at the
+Rust level, that an unauthenticated caller is rejected or that the ordering is
+oldest-first.
+
+Both are cheap to add next to the existing handler tests, and belong to whichever
+Wave 16 card touches `crates/tack-api` next.

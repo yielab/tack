@@ -55,11 +55,10 @@ cloudflared.yml
 /deny.toml
 
 # tack-desktop: the Tauri sidecar binary (built per-platform, never portable
-# across machines), the icon set `cargo tauri icon` renders from the one
-# committed source SVG, and Tauri's own generated schema/target directories
+# across machines) and Tauri's own generated schema/target directories. The
+# icon set `cargo tauri icon` renders IS committed — `generate_context!` reads
+# it at compile time, so a clone without it cannot build the crate.
 /crates/tack-desktop/binaries/*
 !/crates/tack-desktop/binaries/.gitkeep
-/crates/tack-desktop/icons/*
-!/crates/tack-desktop/icons/*.svg
 /crates/tack-desktop/gen/
 /crates/tack-desktop/target/
