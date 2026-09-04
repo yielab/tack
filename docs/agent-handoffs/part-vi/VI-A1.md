@@ -1,7 +1,7 @@
 # VI-A1 handoff
 
-- Base SHA / branch / final SHA: base `develop@4740ee0` (Wave 14's dispatch table in this
-  README records `c6407dc`, the commit two before it; `4740ee0` is a planning-only commit
+- Base SHA / branch / final SHA: base `develop@767d385` (Wave 14's dispatch table in this
+  README records `8152df7`, the commit two before it; `767d385` is a planning-only commit
   on top that recorded that same base SHA into the board, so branching from the later tip
   is equivalent — noted here rather than silently picking one) / branch
   `agent/vi-a1-agent-runner-docs` / final SHA: not committed — the card instructions

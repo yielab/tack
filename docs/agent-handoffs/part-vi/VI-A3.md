@@ -1,6 +1,6 @@
 # VI-A3 handoff
 
-- Base SHA / branch / final SHA: base `4740ee0` (`develop` tip at dispatch) / branch
+- Base SHA / branch / final SHA: base `767d385` (`develop` tip at dispatch) / branch
   `agent/vi-a3-two-components` / final SHA — not committed (per instructions, this card's
   work stays uncommitted in the working tree for the caller to review).
 - Files changed (must equal ownership list): `README.md` (whole-file restructure),

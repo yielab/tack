@@ -1,8 +1,8 @@
 # VII-B3 handoff
 
-- Base SHA / branch / final SHA: branched `agent/vii-b3-data-folders` from `d08a238`, the
+- Base SHA / branch / final SHA: branched `agent/vii-b3-data-folders` from `8b71756`, the
   SHA the Wave 19 dispatch facts name as the Wave 18 integration tip (`git log` on
-  `develop` confirms `d08a238` is HEAD there). Not committed: the branch holds an
+  `develop` confirms `8b71756` is HEAD there). Not committed: the branch holds an
   uncommitted working tree; there is no final SHA yet.
 - Files changed (must equal ownership list, plus necessary companions flagged below):
   - `crates/tack-desktop/src/paths.rs` (new) — the ownership list's named file.

@@ -1,7 +1,7 @@
 # VII-B2 handoff
 
 - Base SHA / branch / final SHA: branched `agent/vii-b2-tray-lifecycle` from `develop` at
-  `d08a238` (the Wave 18 integration tip the dispatch facts named — confirmed against
+  `8b71756` (the Wave 18 integration tip the dispatch facts named — confirmed against
   `origin/develop` before branching). Not committed: the branch holds an uncommitted
   working tree; there is no final SHA yet.
 - Files changed (must equal ownership list):

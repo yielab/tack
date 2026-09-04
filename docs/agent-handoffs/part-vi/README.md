@@ -18,9 +18,9 @@ accepted by the user before Wave 15 opens. The story every doc reuses is §VI.0'
 
 | Wave | Cards | Parallel? | Needs | Base SHA |
 |---|---|---|---|---|
-| 14 | VI-A1 · VI-A2 · VI-A3 | all three | nothing | `c6407dc` — dispatched 2026-09-03 |
-| 15 | VI-B1 → VI-B2 → VI-B3 | **no** — sequential | ADR 0061 accepted (2026-09-03, `VI-A2.md` amendments) | `02aa4e3` — **B1 dispatched 2026-09-03**; — the 2026-09-03 planning commit; branch from the `develop` tip. Decision 1 refined 2026-09-03 (keychain first, file fallback) — B1's block below already matches |
-| 16 | VI-C3 · VI-C4 first; then VI-C1; then VI-C2 | C3 ∥ C4 (may start during Wave 15); C1 after B2+B3; C2 after C3 | see each block | **C3 and C4 dispatched 2026-09-03 from `02aa4e3`**; C1 and C2 branch from the Wave 15 integration SHA |
+| 14 | VI-A1 · VI-A2 · VI-A3 | all three | nothing | `8152df7` — dispatched 2026-09-03 |
+| 15 | VI-B1 → VI-B2 → VI-B3 | **no** — sequential | ADR 0061 accepted (2026-09-03, `VI-A2.md` amendments) | `2958e9e` — **B1 dispatched 2026-09-03**; — the 2026-09-03 planning commit; branch from the `develop` tip. Decision 1 refined 2026-09-03 (keychain first, file fallback) — B1's block below already matches |
+| 16 | VI-C3 · VI-C4 first; then VI-C1; then VI-C2 | C3 ∥ C4 (may start during Wave 15); C1 after B2+B3; C2 after C3 | see each block | **C3 and C4 dispatched 2026-09-03 from `2958e9e`**; C1 and C2 branch from the Wave 15 integration SHA |
 | 17 | VI-D2 → VI-D1 | no | D2: C1, C2 and Part V's V-C2 landed; D1: everything | Wave 16 integration SHA |
 
 **Integration line: `develop`.** Every card branches from it as `agent/vi-<card>-<slug>`
@@ -33,8 +33,8 @@ accepted by the user before Wave 15 opens. The story every doc reuses is §VI.0'
    working tree with someone else's edits in it.
 2. Record the base SHA in the table above and in the Part VI status table. **Pin the actual
    tip — `git rev-parse --short develop` — not the SHA of the planning commit.** On
-   2026-09-03 the prompts named `02aa4e3` while `develop` was already at `85f2bfa`; every
-   agent branched from `02aa4e3` and ended up two docs-only commits behind. Harmless that
+   2026-09-03 the prompts named `2958e9e` while `develop` was already at `92a42cd`; every
+   agent branched from `2958e9e` and ended up two docs-only commits behind. Harmless that
    time, a conflict the next time the gap contains code.
 3. For Wave 15 only: the user has accepted ADR 0061 (the acceptance is dated in
    `VI-A2.md`). Without it, B1–B3 encode a guess. **Done 2026-09-03.**

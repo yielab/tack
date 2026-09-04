@@ -1,8 +1,8 @@
 # VI-C3 handoff
 
-- Base SHA / branch / final SHA: base `02aa4e3` (the wave's designated base — `develop`'s
-  actual tip at start of work was `85f2bfa`, one commit ahead, and that commit's diff is
-  `TODO.md` + two handoff `README.md`s only, no code, so branching from the named `02aa4e3`
+- Base SHA / branch / final SHA: base `2958e9e` (the wave's designated base — `develop`'s
+  actual tip at start of work was `92a42cd`, one commit ahead, and that commit's diff is
+  `TODO.md` + two handoff `README.md`s only, no code, so branching from the named `2958e9e`
   changes nothing behavioral). Branch `agent/vi-c3-project-agent-settings`. Not committed —
   final SHA is n/a; the worktree holds the changes.
 - Files changed (must equal ownership list): `crates/tack-core/src/models.rs`,
