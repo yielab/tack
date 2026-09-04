@@ -304,3 +304,26 @@ There is no lower-MSRV alternative in the same architecture generation — an ol
 
 *(Appended by later readers, dated. The original text above is never rewritten — the
 history of what was believed and later falsified is the point.)*
+
+### 2026-09-04 — Wave 15 integrator: the secret store costs 4.4 MB of runner binary
+
+CI's binary-size gate failed on the first push after this card landed:
+
+```
+tack-runner binary: 6200200 bytes (5.9 MB), budget 5242880 (5 MB)
+```
+
+The runner measured 1.81 MB at III-G4. Resolving a `secret_reference` from the OS
+keychain pulls secret-service, zbus and a crypto stack — 12 crates that were not in this
+binary before — and more than tripled it. The card did not measure this, and the gate is
+the only thing that would have caught it.
+
+Nothing here is wrong: the keychain is ADR 0061 decision 1, accepted, and 5.9 MB is still
+a small binary. The budget is re-baselined to 8 MB, keeping the same ~35% headroom rule
+the gate's own comment states, and the cause is recorded there rather than left as an
+unexplained number.
+
+Worth knowing for VI-B2 and anyone sizing the runner for a constrained host: the lever
+is making the keychain backend a default cargo feature that such a build turns off. The
+file fallback already exists and needs none of those crates. That is a decision for a
+card with a caller, not a mechanism to build on spec.
