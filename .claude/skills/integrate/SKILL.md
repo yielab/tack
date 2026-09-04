@@ -87,7 +87,7 @@ save the full gate set for the end.
 ## 4a. Run the cycle's integrator checklist, if it has one
 
 `docs/agent-handoffs/<part>/README.md` may carry a per-wave **Integrator checklist** (Part
-VI does: `sed -n '/^## Integrator checklist/,/^## The mistakes/p' docs/agent-handoffs/part-vi/README.md`).
+VI and Part VII do: `sed -n '/^## Integrator checklist/,/^## The mistakes/p' docs/agent-handoffs/part-vi/README.md`, same for `part-vii`).
 It names the adversarial checks the wave must survive — revert-the-fix proofs, absence
 assertions with positive controls, the 404-on-non-loopback check, the stranger-read test.
 Those are §III.2 rule 14's "verification by someone who did not author the code"; the

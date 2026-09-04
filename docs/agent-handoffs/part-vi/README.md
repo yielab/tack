@@ -19,7 +19,7 @@ accepted by the user before Wave 15 opens. The story every doc reuses is §VI.0'
 | Wave | Cards | Parallel? | Needs | Base SHA |
 |---|---|---|---|---|
 | 14 | VI-A1 · VI-A2 · VI-A3 | all three | nothing | `c6407dc` — dispatched 2026-09-03 |
-| 15 | VI-B1 → VI-B2 → VI-B3 | **no** — sequential | ADR 0061 accepted | `da075ec` — Wave 14 integrated 2026-09-03; **blocked on the user's dated acceptance in `VI-A2.md`** |
+| 15 | VI-B1 → VI-B2 → VI-B3 | **no** — sequential | ADR 0061 accepted (2026-09-03, `VI-A2.md` amendments) | pinned at dispatch — the `develop` tip after the 2026-09-03 planning commit. Decision 1 refined 2026-09-03 (keychain first, file fallback) — B1's block below already matches |
 | 16 | VI-C3 · VI-C4 first; then VI-C1; then VI-C2 | C3 ∥ C4 (may start during Wave 15); C1 after B2+B3; C2 after C3 | see each block | Wave 15 integration SHA (C3/C4 may branch from Wave 14's) |
 | 17 | VI-D2 → VI-D1 | no | D2: C1, C2 and Part V's V-C2 landed; D1: everything | Wave 16 integration SHA |
 
@@ -33,7 +33,11 @@ accepted by the user before Wave 15 opens. The story every doc reuses is §VI.0'
    working tree with someone else's edits in it.
 2. Record the base SHA in the table above and in the Part VI status-board row.
 3. For Wave 15 only: the user has accepted ADR 0061 (the acceptance is dated in
-   `VI-A2.md`). Without it, B1–B3 encode a guess.
+   `VI-A2.md`). Without it, B1–B3 encode a guess. **Done 2026-09-03.**
+5. Part VII (`docs/agent-handoffs/part-vii/README.md`) runs alongside this Part. VI-B1 and
+   VII-A2 both add an arm to `crates/tack-cli/src/main.rs`: merge sequentially, build once
+   with both. VII-B2 reads VI-B3's `GET /api/local-runner` when it exists; VII-C2 waits for
+   VI-C1 and for VI-D2 on `README.md`.
 4. Reap finished worktree targets — parallel builds fill `/home`
    (`du -sh /var/tmp/tack-agent-targets/*`).
 
@@ -205,8 +209,14 @@ smoke. Delete the claim; do not soften it.
 
 **Branch:** `agent/vi-b1-secret-store` from the Wave 14 integration SHA.
 
-**Read (≈ 18k):**
-- The board prelude (~7k) and `docs/adr/0061-*.md` (~2k, decisions 1 and 4).
+**Read (≈ 19k):**
+- The board prelude (~7k) and `docs/adr/0061-*.md` (~2k, decisions 1 and 4 — decision 1
+  is keychain-first; the card's Design paragraph is the authority on the two backends).
+- The `keyring` crate, 4.x: the platform stores are separate crates
+  (`apple-native-keyring-store`, `windows-native-keyring-store`,
+  `dbus-secret-service-keyring-store` or `zbus-secret-service-keyring-store`,
+  `linux-keyutils-keyring-store`). Confirm names and feature flags with `cargo info keyring`
+  and `cargo doc -p keyring` after adding it — do not assume from memory, do not fetch the web.
 - The contract's shape: `grep -n -B2 -A6 secret_reference docs/contracts/runner-v1/claim.response.json`;
   `rg -n "struct EnvironmentValue" -A 12 crates/tack-orch/src/execution/types.rs`.
 - Each adapter's environment builder, **by range only**:
@@ -227,13 +237,22 @@ smoke. Delete the claim; do not soften it.
 **Gate:** `CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/VI-B1 cargo test -p tack-runner`
 and `-p tack-orch --test runner_contract` (must be byte-identical — you changed no
 fixture), then `/gate runner`. The reverted-fix proof: remove the resolver once, watch the
-"variable is set" assertion fail, restore, record both runs.
+"variable is set" assertion fail, restore, record both runs. The keychain proof is live
+and manual: `secret-tool lookup service tack-runner account <name>` (Linux) or
+`security find-generic-password -s tack-runner -a <name>` (macOS) — record the command and
+exit status, never the output. The fallback proof: run with the platform store unreachable
+(`DBUS_SESSION_BUS_ADDRESS=/dev/null` on Linux) and assert `tack runner doctor` reports
+`backend: file`. Unit tests use the file backend (and `keyring`'s in-crate mock if 4.x has
+one — check, don't assume) so CI needs no Secret Service.
 
 **Handoff extras:** secret-path proof (the `stat -c '%a'`, the log capture with the name
-present and the value absent, the commands); surface-map delta (none — say so).
+present and the value absent, the keychain and fallback commands with exit statuses);
+which backend the dev machine ended up on; surface-map delta (none — say so).
 
 **Stop if:** resolution cannot happen at `validate` without touching the journal
-ordering. State the ordering constraint you found; do not move the journal write.
+ordering. State the ordering constraint you found; do not move the journal write. Also
+stop if no platform store can be reached on this machine at all: prove the file backend
+fully, record the failure, and leave the keychain proof to the integrator — never fake it.
 
 ### VI-B2 — Vercel AI Gateway as a runner provider
 

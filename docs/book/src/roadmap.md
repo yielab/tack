@@ -2348,7 +2348,9 @@ unchanged throughout.
 #### Multi-User / Auth
 The current design is explicitly local-only and single-user (one shared token, no per-user accounts or identities). The API token (`TACK_API_TOKEN`)
 covers the "shared on a LAN" use case. Full multi-user would require a proper auth layer (session
-or JWT), per-user access control, and an audit log.
+or JWT), per-user access control, and an audit log. The Phase 60 section "Identity and a
+second person — later, with a trigger" records when this becomes necessary and the shape
+it takes; it supersedes this paragraph in detail.
 
 #### Notifications / Reminders
 - Due-date notifications (OS native, email, or webhook)
@@ -3363,6 +3365,98 @@ co-located runner without persisting it — is what ADR 0061 exists to bound. Op
 direct vendor keys and local endpoints stay in each harness's own configuration until the
 gateway path is proven live and a second gateway measurably differs from it.
 
+## Credentials: who runs what, where, and how a key is kept
+
+The credential design follows from where each component runs, so that is settled first.
+Tack is one binary with three roles chosen by subcommand — server (`tack serve`), client
+(every other subcommand, `tack mcp` included) and runner (`tack serve --with-runner`, or
+the separate `tack-runner` binary when the runner is on another machine). The roles
+combine into three deployment shapes, and only the first is the target of this phase:
+
+| Shape | Who | Board runs | Runner runs | Status |
+|---|---|---|---|---|
+| **One person, one machine** | a developer with several projects, their own harness logins and their own API keys | on the laptop, `tack serve --with-runner` | inside the same process, loopback only | **the normal case — what every card in this Part is built for** |
+| One person, an always-on board | the same developer, wanting the board reachable when the laptop is closed | on a home server, NAS or small VPS, `tack serve` | on the laptop, `tack-runner`, pulling work over HTTPS | possible today (deployment guide), **not a target**: it needs a reachable host, TLS and a tunnel or overlay network that the normal case never has |
+| Several people, one board | a team; each person's runner holds that person's keys | on a shared host | one per person, on their own machines | **deferred** — needs identity; see below |
+
+The split is not a bet that the board will live elsewhere. What the normal case needs
+from it is narrower and more important: **the work must outlive the window.** Closing
+the browser tab, or the whole UI, must not stop a running attempt or lose a queued one,
+and reopening it must show the current state. That is exactly the line the split draws:
+the server process (board state plus the embedded runner) keeps running, and the UI is a
+view that attaches to it over loopback and fetches the current state when it comes
+back. The runner is also the component that holds credentials and touches code, so it
+must be able to live wherever those are; in the normal case that is the same machine,
+the same process. The split costs the normal case one flag (or the UI switch decision 6
+of ADR 0061 adds) and is what makes the other two shapes possible without a redesign.
+
+### Three kinds of secret, three different owners
+
+| Secret | Example | Held by | Standard |
+|---|---|---|---|
+| A harness's own login | Claude Code's OAuth session, `codex login`, `opencode auth login` | **the harness CLI** — Tack never reads or copies it | OAuth 2.0 device flow (RFC 8628); each CLI keeps its own session (the OS keychain on macOS, an owner-only file on Linux). Every orchestrator worth copying delegates here. |
+| A provider API key injected into the harness's environment | a Vercel AI Gateway key | **the runner**, on the machine that launches the harness | OS keychain first, owner-only file second — what `gh` and `docker` do. Never the shared board database. |
+| Tack's own secrets | operator token, runner enrollment credential, S3 backup key | already settled | hashed on the server; owner-only and `[REDACTED]` on the runner |
+
+Only the second row was undecided. ADR 0061 decides where it lives; this section fixes
+*how*.
+
+### How the runner keeps a provider key
+
+The store the runner gets (VI-B1) has two backends, chosen at runtime, in this order:
+
+1. **The operating system's credential store** — macOS Keychain, Windows Credential
+   Manager, Linux Secret Service (what GNOME Keyring and recent KWallet expose) —
+   through the `keyring` crate. Encrypted at rest by the OS, bound to the logged-in
+   user, invisible to other accounts on the machine, absent from every backup and sync
+   folder. This is the desktop standard, and the one a developer on their own machine
+   gets without configuring anything.
+2. **An owner-only file** in the runner's state directory, mode `0600`, when no
+   platform store answers — a headless Linux box, a container. This is the level the
+   harnesses themselves use on Linux and what `gh` falls back to. The runner says which
+   backend it is using — in `tack runner doctor` and in the UI's response to a pasted
+   key — so nobody believes a key is in a keychain when it is in a file.
+
+Entries are named, never positional: `<provider>/<label>`, with `default` the only label
+this phase writes. A second key for the same provider (a client's gateway key next to
+your own) fits the naming without a migration; letting a project pin a label is a later
+card, once a second key exists.
+
+A work request's `secret_reference` — already in the wire contract, never resolved until
+now — gains one optional scheme: `store:<name>` (the default when no scheme is given, so
+the frozen fixture stays valid) and `env:<VARIABLE>`, which reads the value from the
+runner's own environment at spawn time. The second is the twelve-factor path for a
+runner started by systemd with `Environment=` or `LoadCredential=`, and needs no store
+at all. A store encrypted with a key-encryption key taken from the environment (the
+n8n / Gitea pattern) is the *server* standard, and is deliberately not built until a
+headless deployment that wants the UI paste route actually exists.
+
+Rejected outright, because they look convenient and are not standard: a provider key in
+`tack.db` or `app_meta`, encrypted or not (it turns the S3 backup into a container of
+vendor credentials and the server into the holder ADR 0050 forbids); reading or copying
+the harnesses' own auth files (no contract, formats change, and it breaks the user's
+login); any home-grown encryption.
+
+### Identity and a second person — later, with a trigger
+
+The user model this Part serves is one person with several projects, their own harness
+logins and their own keys, on their own machine. Under that model the runner already *is*
+the per-person credential boundary: whoever runs the runner owns the keys it holds, and
+the board never sees one. Accounts, sessions, roles and per-user tokens would add nothing
+that model can use.
+
+They become necessary the day a second person shares a board — to say who created a
+request, which runners they may dispatch to, and to give the audit trail a real actor
+instead of a hash of the one shared token. That is the demand ADR 0059 asked to see
+before being reopened. When it appears, the shape is the ordinary one for a self-hosted
+service, recorded here so it is not re-derived: a users table (Argon2id), opaque
+sessions in an `httpOnly` cookie, per-user hashed API tokens, two roles (owner, member),
+`runners.owner_user_id` and `execution_requests.created_by`, then OIDC. A runner holding
+several people's keys (a shared CI box) is a further step — per-user envelope encryption
+at the runner — and is not designed until such a runner exists. That work is a Part of
+its own, with a new ADR that supersedes 0059; nothing in Part VI depends on it, and
+nothing in Part VI is built in a way it would have to undo.
+
 ## The two-component story
 
 Every page that introduces agents — the README, the book's introduction, the agent-runners
@@ -3405,7 +3499,8 @@ the item, done — is the hero, and VI-D2 records it from a release build with a
   validation — the runner's probe does that.
 - **Broker a vendor OAuth login.** Those stay in the terminal and are rendered, step by
   step, in the UI.
-- **Touch docket** (ADR 0060), **build identity** (ADR 0059), or pick up the features Phase
+- **Touch docket** (ADR 0060), **build identity** (ADR 0059; the trigger and the shape it will take are
+  recorded above, under "Identity and a second person"), or pick up the features Phase
   59 deferred — notifications, i18n, time tracking, in-UI diff review. Listing an attempt's
   artifacts (VI-C4) is not reviewing a diff; that stays a later card.
 - **Exercise the `decisions` path with a real harness.** No harness in this tree asks a
@@ -3419,8 +3514,79 @@ them for the harness they already use; they choose a model from a list the runne
 measured; they press *Run with agent* on an item without typing an identifier; and they
 watch the attempt complete with the model they asked for recorded as the model they got.
 Every step they could not do in the UI was shown to them in the UI, with a check that it
-worked. The key they pasted exists in one owner-only file and nowhere else — and the
+worked. The key they pasted sits in the operating system's keychain — or, where there
+is none, in one owner-only file the runner names as such — and nowhere else, and the
 documentation says so in the same paragraph that says Tack never proxies a model. And a
 stranger who reads the README's first screen reports two components — a board that plans
 and records, runners that execute where the code lives — before they see a single Kanban
 column.
+
+# Next — Desktop app and background service (Phase 61)
+
+**Tack runs as a background service, and the window is a view of it.** Closing the window
+never stops the work; only Quit does. The normal install is a desktop application with its
+own window and icon, like Docker Desktop, that starts and supervises the Tack server. The
+`tack` binary stays what it is for servers and the terminal, and gets the same daemon
+through `tack service install`.
+
+The decision record is [ADR 0062](https://github.com/yielab/tack/blob/develop/docs/adr/0062-desktop-app-and-background-service.md)
+— eight decisions in one table, **accepted 2026-09-03**. The board is Part VII in
+`TODO.md` (top of the file) and the dispatch plan is
+`docs/agent-handoffs/part-vii/README.md`; both were created from this section.
+
+## Why this phase exists
+
+Today a person starts Tack in a terminal and opens a browser tab. The board and runner
+already survive a closed tab — the UI reconnects and re-fetches — but nothing survives
+the terminal: closing it kills a running agent attempt. Part VI removes every console
+step but one, and that one is "start Tack". This phase removes it, and makes the daemon
+promise visible instead of implied.
+
+## The shape
+
+| Piece | What it is | Why |
+|---|---|---|
+| `tack-desktop` | A separate Tauri 2 program: window + tray + supervisor | The server binary must never carry a webview or GTK |
+| The sidecar | The platform's `tack` binary, bundled, run as `tack serve --with-runner` | One server, tested once; the app attaches to one that is already running |
+| The window | The same web UI, loaded from the local server | No second frontend, no app-only API |
+| The tray | Open · runner status · launch at login · Quit (warns on in-flight attempts) | The daemon promise, stated where the user can see it |
+| Data | OS per-user app folders, passed as the existing `TACK_*` variables | Apps do not write next to where they were launched |
+| `tack service install` | systemd (user) / launchd unit for the terminal path | "Outlives the terminal" without the app |
+
+## Cards — created as the Part VII board on acceptance
+
+| Card | Scope | Needs |
+|---|---|---|
+| VII-A1 | ADR 0062 accepted (decision card; the user accepts) | — |
+| VII-A2 | `tack service install \| uninstall \| status`: systemd user unit, launchd plist, typed unsupported on Windows; uses the OS data folders; docs | A1 |
+| VII-B1 | `crates/tack-desktop` skeleton: Tauri 2, sidecar `tack`, supervisor start / attach / stop with version check, window loads the local URL, single instance; `.deb` and `.AppImage` built on the dev machine | A1 |
+| VII-B2 | Tray and lifecycle: close hides, tray menu, Quit warns on in-flight attempts, launch-at-login toggle on by default | B1 |
+| VII-B3 | Data folders and first run: the four `TACK_*` variables under the OS data dir; first-run screen shows the location and accepts an existing `tack.db`; runner switch state shown, never flipped by the app | B1 |
+| VII-C1 | Release pipeline: bundles for Linux, macOS, Windows in the release workflow; CI prerequisites; icon set; unsigned, with the one-time warnings documented in the release notes | B2 · B3 |
+| VII-C2 | README "Run it" leads with the app; install page; book; screenshots of the window and tray under Part V's asset rules | C1 · VI-C1 (the first-run screen must be the real Agents page) |
+| VII-D1 | Stranger proof: install from the release artifact on a clean user account, open, run an agent on an item, close the window, reopen, see the attempt finished, Quit warns. Linux measured on this machine; macOS and Windows `not_measured` until a machine exists, stated as such | C2 |
+
+Waves continue Part VI's numbering: **18** A1 → A2 ∥ B1 · **19** B2 ∥ B3 · **20** C1 → C2 ·
+**21** D1. Cross-Part: B2 reads the runner switch VI-B3 persists; C2 waits for VI-C1;
+README and `docs/screenshots/**` follow the conflict rules in `TODO.md` §V.3 and §VI.3.
+
+## What this phase deliberately does not do
+
+- **Mobile or remote access.** A phone on the LAN or a board on a VPS needs infrastructure
+  the normal case does not have; both stay out.
+- **Decide code signing.** Certificates cost money; the app ships unsigned with the
+  warnings documented until that decision is made separately.
+- **A second frontend, or an app-only API.** The window shows the served UI, full stop.
+- **Turn the runner on by itself.** Installing the app is not consent to run agents; the
+  UI switch from ADR 0061 stays the only way.
+- **A Windows service.** `tack service` returns a typed unsupported there; the app is the
+  Windows path.
+
+## Exit
+
+A person downloads the app from the release page, opens it, sees the board in its own
+window with Tack's icon in the dock or taskbar and in the tray, turns agent execution on
+from the Agents page, runs an agent on an item, closes the window, comes back later and
+finds the attempt finished with its artifacts listed. Quit warns them if something is still
+running. `tack service install` gives a terminal user the same guarantee without the app.
+Every platform's result is either measured or marked `not_measured`; none is assumed.

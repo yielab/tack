@@ -10,19 +10,21 @@ backend via Axum + SQLite, SolidJS frontend) and **the runner** (a small worker 
 near your code and credentials) — shipped as a single `tack` binary where `tack serve
 --with-runner` embeds a runner in the board's own process. Multiple workflows
 (Scrum/Kanban/phase) with per-project vocabulary; 10 project-type presets; MCP server
-(`tack mcp`); Alexa integration. Core is complete (backend, frontend, CLI).
+(`tack mcp`). Core is complete (backend, frontend, CLI).
 
-**Active cycles — two, in parallel:** **Part VI** (Phase 60, agent onboarding + provider UX:
+**Active cycles — three, in parallel:** **Part VI** (Phase 60, agent onboarding + provider UX:
 one screen that owns the path from an installed binary to a completed attempt, project-level
 model choice, Vercel AI Gateway as a runner-side provider — unstarted) and **Part V** (Phase
 59, adoption + first public release — Wave 13 in flight). Part IV (Phase 58, `tack serve
---with-runner`) is done. Both active Parts branch from `develop` and share `README.md` and
+--with-runner`) is done. **Part VII** (Phase 61, desktop app + background service — ADR 0062 accepted 2026-09-03;
+Wave 18 ready; board at the top of `TODO.md`, dispatch plan in
+`docs/agent-handoffs/part-vii/README.md`) is the third. Both active Parts branch from `develop` and share `README.md` and
 `docs/screenshots/**` under the conflict rules in `TODO.md` §VI.3 and §V.3 — read them before
 branching a card in either. The boards are the authority for what shipped;
 `docs/book/src/roadmap.md` records only intent.
 
-**Never read `TODO.md` whole — it costs ~199k tokens.** Active boards sit in its first ~2000
-lines (Part VI, then V, then IV — extract one, not all three); the archive (Parts I–III) is below and stays in-file because 234 doc comments cite its
+**Never read `TODO.md` whole — it costs ~199k tokens.** Active boards sit in its first ~2400
+lines (Part VII, then VI, then V, then IV — extract one, never all); the archive (Parts I–III) is below and stays in-file because 234 doc comments cite its
 section numbers. Costs and extraction recipes for every big file:
 **`.claude/context-budget.md`**. Before designing anything, read
 **`.claude/scope-discipline.md`** — this tree's recurring defect is well-built mechanisms
@@ -155,5 +157,5 @@ it. Full rule, with the examples it was derived from: `.claude/scope-discipline.
 | Active board, wave rules, card ownership | `TODO.md` (extract, don't read whole) |
 | Per-card decision history | `docs/agent-handoffs/` |
 | Wire contract of record | `docs/contracts/runner-v1/` |
-| MCP, Alexa, GitHub sync, deployment | `docs/MCP.md`, `docs/ALEXA.md`, `docs/GITHUB-SYNC.md`, `docs/DEPLOYMENT-GUIDE.md` |
+| MCP, GitHub sync, deployment | `docs/MCP.md`, `docs/GITHUB-SYNC.md`, `docs/DEPLOYMENT-GUIDE.md` |
 | User/developer book (mdBook) | `docs/book/src/` |

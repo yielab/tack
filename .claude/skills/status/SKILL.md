@@ -15,11 +15,12 @@ description: Answer "where is this project right now and what is next" — recon
 State is NOT stored in one place and no file is kept "up to date" for you. It is derived
 from four sources of record. Run these, then report.
 
-**Two cycles are active in parallel** as of 2026-09-03: **Part VI** (Phase 60 — agent
-onboarding, the Agents page, Vercel AI Gateway at the runner boundary; its dispatch plan is
-`docs/agent-handoffs/part-vi/README.md`) and **Part V** (Phase 59 — adoption; Wave 13 in
-flight). Part IV (Phase 58) is done. Both active Parts branch from `develop` and share
-`README.md` and `docs/screenshots/**` under §VI.3 / §V.3. A status report that names only
+**Three cycles are active in parallel** as of 2026-09-03: **Part VII** (Phase 61 — desktop
+app + background service; ADR 0062; dispatch plan `docs/agent-handoffs/part-vii/README.md`),
+**Part VI** (Phase 60 — agent onboarding, the Agents page, Vercel AI Gateway at the runner
+boundary; `docs/agent-handoffs/part-vi/README.md`) and **Part V** (Phase 59 — adoption;
+Wave 13 in flight). Part IV (Phase 58) is done. All active Parts branch from `develop` and
+share `README.md` and `docs/screenshots/**` under §VII.3 / §VI.3 / §V.3. A status report that names only
 one of them is wrong.
 
 ```bash
@@ -38,7 +39,7 @@ grep -n "^| [0-9]* — \|^| Wave " TODO.md  # the status-board rows across all P
 ls -t docs/agent-handoffs/*/ | head -5
 # read only the newest one or two if the board row is unclear
 # Part VI: which cards have handed off, and the wave table with base SHAs
-ls docs/agent-handoffs/part-vi/; sed -n '/^## Waves, order/,/^## Before dispatching/p' docs/agent-handoffs/part-vi/README.md
+for p in part-vii part-vi; do ls docs/agent-handoffs/$p/; sed -n '/^## Waves, order/,/^## Before dispatching/p' docs/agent-handoffs/$p/README.md; done
 
 # 4. DELIVERED-BUT-UNMERGED WORK — the check that ancestry misses.
 # `git branch --merged` lies here: rebased/restructured branches report unmerged
