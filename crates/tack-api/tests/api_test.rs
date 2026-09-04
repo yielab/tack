@@ -1402,7 +1402,7 @@ async fn export_yaml_round_trips_through_import() {
     assert_eq!(parsed["items"].as_array().unwrap().len(), 1);
     assert_eq!(
         parsed["items"][0]["source"], "manual",
-        "an ordinarily-created item's provenance marker (card C2) must round-trip through export"
+        "an ordinarily-created item's provenance marker must round-trip through export"
     );
 
     // Import the same YAML back: a new project is created with the item.

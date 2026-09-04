@@ -212,8 +212,8 @@ async fn upgrade_in_place_backfills_pre_migration_items_to_untrusted() {
     assert!(
         !item.source.is_trusted(),
         "an item whose provenance predates this column must resolve to untrusted, \
-         never to trusted-by-default — the 'unsafe state must not be the accidental \
-         default' rule the C2 card names explicitly"
+         never to trusted-by-default — unsafe state must not be the accidental \
+         default"
     );
 }
 

@@ -16,7 +16,7 @@ pub enum StatusUpdateOutcome {
     /// The transition was applied; carries the freshly reloaded item.
     /// Boxed: `Item` otherwise dominates this enum's size even for the
     /// common `Rejected` case (`clippy::large_enum_variant`) — the same fix
-    /// card C3 applied to `sprint_dispatch::ItemResult::Outcome` for the
+    /// applied to `sprint_dispatch::ItemResult::Outcome` for the
     /// same reason.
     Applied(Box<Item>),
     /// The target column's WIP limit is at (or over) capacity — nothing was
@@ -173,13 +173,12 @@ impl Repository {
         Ok(row.map(|r| r.into_item()))
     }
 
-    /// The optimistic-concurrency counter an `ETag` is derived from (card G3,
-    /// migration 034; see docs/plans/agnostic-control-plane.md D4). A
+    /// The optimistic-concurrency counter an `ETag` is derived from
+    /// (migration 034; see docs/plans/agnostic-control-plane.md D4). A
     /// dedicated read rather than folding `version` into [`get_item`](Self::get_item)'s
-    /// `Item`-shaped query: `tack_core::models::Item` has no `version` field
-    /// — Wave B's file-ownership map keeps `tack-core` off this card, so a
-    /// caller that needs the counter asks for it separately rather than
-    /// widening the domain model mid-cycle for one internal reader.
+    /// `Item`-shaped query: `tack_core::models::Item` has no `version` field,
+    /// so a caller that needs the counter asks for it separately rather than
+    /// widening the domain model for one internal reader.
     #[instrument(skip(self))]
     pub async fn get_item_version(&self, id: Uuid) -> Result<Option<i64>, sqlx::Error> {
         sqlx::query_scalar("SELECT version FROM items WHERE id = ?")
@@ -290,7 +289,7 @@ impl Repository {
     }
 
     /// All items assigned to `sprint_id`, unpaginated, ordered by board
-    /// position (`sort_order`). Card C3 (sprint DAG dispatch) needs the
+    /// position (`sort_order`). Sprint DAG dispatch needs the
     /// *complete* sprint, not one `ItemFilter::MAX_PER_PAGE`-sized page of
     /// it — a sprint dispatch that silently dropped items past page 1 would
     /// be exactly the kind of "looks like it worked" bug the dry-run mode

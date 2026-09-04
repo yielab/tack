@@ -1,13 +1,12 @@
-//! Tests for card B4: does
-//! `RepoControlPlaneStore::upsert_runs`/`upsert_approvals`
+//! Tests whether `RepoControlPlaneStore::upsert_runs`/`upsert_approvals`
 //! (`crates/tack-api/src/orch_store.rs`) emit `BoardEvent::AgentRunUpdated`/
 //! `ApprovalPending` when — and only when — a poll actually changes
 //! something.
 //!
-//! The card's explicit acceptance bar: **a second identical poll broadcasts
+//! The requirement: **a second identical poll broadcasts
 //! nothing**. Every test here subscribes to the same broadcast channel the
 //! store was constructed with and asserts on what does or doesn't arrive,
-//! rather than on the DB state (that half is already covered by A3's/B1's
+//! rather than on the DB state (that half is already covered by
 //! `orch_repo_test.rs`/`ingestion_test.rs`).
 
 use chrono::Utc;
@@ -151,7 +150,7 @@ async fn upsert_runs_broadcasts_for_a_new_correlated_run() {
     );
 }
 
-/// The card's explicit acceptance bar: re-polling the same run with
+/// The requirement: re-polling the same run with
 /// byte-identical data must not broadcast anything the second time — the
 /// reconciler polls every `TACK_ORCH_POLL_SECS` forever, and a naive
 /// broadcast-on-every-upsert would flood every connected client.
@@ -300,7 +299,7 @@ async fn upsert_approvals_broadcasts_for_a_new_pending_correlated_approval() {
     assert!(rx.try_recv().is_err());
 }
 
-/// Same acceptance bar as runs, for approvals.
+/// Same requirement as for runs, for approvals.
 #[tokio::test]
 async fn a_second_identical_pending_poll_broadcasts_nothing() {
     let (repo, _project_id, item) = test_repo_with_item().await;
@@ -347,7 +346,7 @@ async fn upsert_approvals_does_not_broadcast_for_a_non_pending_state() {
     );
 }
 
-/// Mirrors the run case: an uncorrelated approval is persisted (D1's
+/// Mirrors the run case: an uncorrelated approval is persisted (the
 /// fleet-wide inbox still surfaces it) but not broadcast until a later poll
 /// learns which item it belongs to.
 #[tokio::test]

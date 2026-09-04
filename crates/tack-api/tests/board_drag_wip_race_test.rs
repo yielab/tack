@@ -1,5 +1,5 @@
 //! Tests `handlers::items::update_item` — the ordinary board-drag / API
-//! PATCH path — used to read a WIP-limited column's item count and then
+//! PATCH path — must not read a WIP-limited column's item count and then
 //! write the new status as two separate, unlocked steps
 //! (`Repository::count_items_by_status` followed by a plain
 //! `Repository::update_item`), the same race

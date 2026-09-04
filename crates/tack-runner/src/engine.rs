@@ -733,7 +733,7 @@ where
     }
 
     /// Best-effort upload of a locally staged artifact. `artifact` is the
-    /// exact JSON object D1/D2's adapters already produce at
+    /// exact JSON object the harness adapters already produce at
     /// `terminal_reason.artifact` (`kind`, `name`, `media_type`, `sha256`,
     /// `staged_path`, ...) via `harness::artifact::ArtifactStager` — this
     /// method is the first thing in the tree that ever reads it back out.

@@ -166,11 +166,10 @@ impl TackClient {
     }
 
     /// Build a request with the auth header (if configured) plus any extra
-    /// headers the caller supplies. Before this card there was no way to
-    /// attach a header at all here, so every MCP write went out with no
-    /// `If-Match` and was unconditionally last-write-wins — precisely the
-    /// agent-versus-human race card G3 added `If-Match` to catch, on
-    /// exactly the path that couldn't send it.
+    /// headers the caller supplies. Without `extra_headers`, every MCP write
+    /// would go out with no `If-Match` and be unconditionally
+    /// last-write-wins — exactly the agent-versus-human race `If-Match`
+    /// exists to catch, on exactly the path that couldn't send it.
     fn request(
         &self,
         method: reqwest::Method,
@@ -357,7 +356,7 @@ mod tests {
     }
 
     /// `None` must round-trip to plain `patch` — an absent precondition
-    /// preserves today's unconditional-write behavior exactly (D4). The
+    /// preserves today's unconditional-write behavior exactly. The
     /// mock rejects any request that *does* carry `If-Match`, so this fails
     /// loudly (500, no matching mock) rather than passing vacuously if a
     /// future edit starts sending an empty-string header instead of

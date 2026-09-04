@@ -135,11 +135,11 @@ pub async fn require_token(
     }
 }
 
-/// Header card C1's operator execution/fleet handlers
+/// Header the operator execution/fleet handlers
 /// (`crate::handlers::executions`, `crate::handlers::runner_admin`) read to
-/// scope idempotency and audit `actor` fields. C1's own handoff calls out
-/// injecting this header as a hard prerequisite: those handlers trust it
-/// completely, so it must never be attacker-controlled.
+/// scope idempotency and audit `actor` fields. Those handlers trust it
+/// completely, so it must never be attacker-controlled — see the strip-and-
+/// replace below, which is what makes that true.
 pub const OPERATOR_PRINCIPAL_HEADER: &str = "x-tack-principal";
 
 /// Derives the operator principal from the request's already-authenticated

@@ -1,23 +1,23 @@
-//! Test for card R2: `dispatcher::
-//! apply_mapped_status` used to read a WIP-limited column's item count and
-//! then write the new status as two separate, unlocked steps. C3's sprint
-//! dispatch made concurrent writes into the same column an ordinary
-//! occurrence (`max_in_flight` items dispatched at once) rather than a rare
-//! accident, so two concurrent status changes could both observe "under the
-//! limit" and both commit, pushing the column over its configured WIP limit.
+//! `dispatcher::apply_mapped_status` must not read a WIP-limited column's
+//! item count and then write the new status as two separate, unlocked
+//! steps. Sprint dispatch makes concurrent writes into the same column an
+//! ordinary occurrence (`max_in_flight` items dispatched at once) rather
+//! than a rare accident, so two concurrent status changes could both
+//! observe "under the limit" and both commit, pushing the column over its
+//! configured WIP limit.
 //!
 //! This drives `max_in_flight`-many *genuinely concurrent* dispatches of
 //! *different* items into the same WIP-limited column (through the real
-//! `POST /api/items/{id}/dispatch` HTTP path, mirroring C1's own concurrency
-//! test technique: a `wiremock` `set_delay` on the docket round trip bunches
-//! every request's arrival at `apply_mapped_status`'s count-then-write step,
-//! widening the race window the same way real concurrent load would) and
-//! asserts the column's final count never exceeds its configured limit.
+//! `POST /api/items/{id}/dispatch` HTTP path: a `wiremock` `set_delay` on
+//! the docket round trip bunches every request's arrival at
+//! `apply_mapped_status`'s count-then-write step, widening the race window
+//! the same way real concurrent load would) and asserts the column's final
+//! count never exceeds its configured limit.
 //!
-//! Card C1's per-item `DispatchLocks` (`dispatcher.rs`) does not protect
-//! against this: it only serializes two requests for the *same* item, and
-//! this race is specifically between *different* items sharing a target
-//! column, so every item dispatched here is distinct.
+//! Per-item `DispatchLocks` (`dispatcher.rs`) does not protect against
+//! this: it only serializes two requests for the *same* item, and this race
+//! is specifically between *different* items sharing a target column, so
+//! every item dispatched here is distinct.
 
 use std::time::Duration;
 

@@ -65,16 +65,14 @@ async fn preflight_allow_headers(app: &Router, uri: &str, method: &str) -> Strin
         .to_ascii_lowercase()
 }
 
-/// Card G4, gap (a) + (b) + (c) in one shot: a browser preflight for a
-/// cross-origin `PATCH /api/items/{id}` — the shape both the ETag/If-Match
-/// write path and the approval-decide call
+/// A browser preflight for a cross-origin `PATCH /api/items/{id}` — the
+/// shape both the ETag/If-Match write path and the approval-decide call
 /// (`frontend/src/features/approvals/api.ts`) actually send — must list
 /// `if-match` and `x-tack-approval-token` in the allowed request headers,
 /// and a real (non-preflight) response must expose `ETag` so the browser's
-/// `fetch()` can read it back off a `GET`. Before this card: `allow_headers`
-/// carried only content-type/authorization/accept, and there was no
-/// `expose_headers` call at all — a browser could read zero non-safelisted
-/// response headers from this API, full stop.
+/// `fetch()` can read it back off a `GET`. Without `expose_headers` naming
+/// `ETag`, a browser can read zero non-safelisted response headers from
+/// this API, full stop.
 #[tokio::test]
 async fn preflight_allows_if_match_and_approval_token_and_exposes_etag() {
     let (app, _workspace_id) = test_app().await;
@@ -132,7 +130,8 @@ async fn preflight_allows_if_match_and_approval_token_and_exposes_etag() {
 /// Negative control: proves `allow_headers` is a fixed, named list (not
 /// `AllowHeaders::any()`) — a wildcard would also make the positive
 /// assertions above pass, but would silently allow every header on every
-/// route rather than the three this card actually names.
+/// route rather than only the specific headers this configuration actually
+/// allows.
 #[tokio::test]
 async fn preflight_does_not_allow_an_arbitrary_header() {
     let (app, _workspace_id) = test_app().await;

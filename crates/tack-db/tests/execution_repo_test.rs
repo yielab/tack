@@ -2889,9 +2889,9 @@ async fn concurrent_claimers_receive_exactly_one_valid_lease() {
     // BEGIN IMMEDIATE now serializes claimants at the write lock instead of
     // letting two deferred readers race to upgrade. There is no legitimate
     // reason for either branch to fail at the sqlx level any more, so a raw
-    // Err here (previously SQLITE_LOCKED "database is deadlocked", observed
-    // on ~100% of unfixed runs) is a hard test failure -- no retry fallback,
-    // no swallowing.
+    // Err here (SQLITE_LOCKED "database is deadlocked" without BEGIN
+    // IMMEDIATE, observed on ~100% of unfixed runs) is a hard test failure
+    // -- no retry fallback, no swallowing.
     let first = first.expect("first claimant must succeed at the sqlx level");
     let second = second.expect("second claimant must succeed at the sqlx level");
 
@@ -3116,12 +3116,12 @@ async fn artifact_and_decision_reject_lease_expiry_equality_without_writes() {
 }
 
 // Defect 2 regression: `record_execution_artifact` and
-// `create_execution_decision` used to run their eligibility SELECT and their
-// INSERT as two separate un-transacted statements, leaving a window where a
-// concurrent completion/cancellation/recovery transition could commit
-// between them and let the write land against an attempt that had already
-// gone terminal. This test proves the fix deterministically rather than
-// probabilistically.
+// `create_execution_decision` must not run their eligibility SELECT and
+// their INSERT as two separate un-transacted statements — that would leave
+// a window where a concurrent completion/cancellation/recovery transition
+// could commit between them and let the write land against an attempt that
+// had already gone terminal. This test proves the fix deterministically
+// rather than probabilistically.
 //
 // It deliberately does not use this suite's shared in-memory `ready_repo()`
 // harness. That harness pools several connections against one `:memory:`

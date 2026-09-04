@@ -9,13 +9,13 @@
 //! deliberately scoped out of `tack-orch` itself: `ControlPlaneStore` is a
 //! narrow trait rather than `tack_db::Repository` directly because turning a
 //! `control_planes` row into a live `Arc<dyn ControlPlane>` needs both the
-//! adapter (A1) and the repo (A3) at once, and `tack-orch` has no reason to
+//! adapter and the repo at once, and `tack-orch` has no reason to
 //! depend on `tack-db`'s concrete `Repository` type beyond what it already
 //! imports for the trait's own signatures. `tack-api` is the only crate that
-//! already depends on both, so both A2's and A4's handoff notes point here.
+//! already depends on both, so the wiring lives here.
 //!
-//! Kept out of `server.rs`/`router.rs`/`config.rs`/`handlers/orch.rs` per
-//! A2's explicit recommendation — this module has exactly one
+//! Kept out of `server.rs`/`router.rs`/`config.rs`/`handlers/orch.rs` on
+//! purpose — this module has exactly one
 //! reason to change (a new control-plane `kind` needs a new adapter, or the
 //! persistence mapping shifts), not entangled with request routing or config
 //! parsing.
@@ -482,7 +482,7 @@ impl ControlPlaneStore for RepoControlPlaneStore {
             }
 
             // Same "no project, no broadcast" rule as upsert_runs above — an
-            // uncorrelated approval is a normal state (D1's fleet-wide inbox
+            // uncorrelated approval is a normal state (the fleet-wide inbox
             // still surfaces it independent of any board), it just has
             // nowhere to be delivered as a per-project `BoardEvent`.
             let Some(item_id) = effective_item_id else {
@@ -714,7 +714,7 @@ impl RepoControlPlaneStore {
     }
 
     /// Best-effort: record a `status_map_skipped_human_override` `orch_events`
-    /// row — same free-form `event_type` convention as C1's
+    /// row — same free-form `event_type` convention as
     /// `status_map_rejected` (migration 023's doc comment). Never fails the
     /// caller.
     async fn record_status_map_skipped(

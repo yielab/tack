@@ -161,25 +161,24 @@ fn orch_routes(state: AppState) -> Router<AppState> {
 /// (`middleware.rs`) is layered directly on this sub-router so it runs for
 /// every request these handlers see, strips any client-supplied
 /// `x-tack-principal`, and replaces it with a value derived from the
-/// request's own authenticated context — C1's handlers (and, as of this
-/// integration, F1's/F2's) trust that header completely for idempotency/
+/// request's own authenticated context — the operator execution/fleet
+/// handlers, and the decision-resolve and artifact-download handlers
+/// alongside them, trust that header completely for idempotency/
 /// audit scoping, so an external caller must never be able to set it.
 ///
-/// **F1's decision-resolve route carries a second, independent gate on top**
+/// **The decision-resolve route carries a second, independent gate on top**
 /// (`TACK_EXECUTION_DECISION_TOKEN`, checked inside
 /// `decisions::require_decision_token` — see that function's doc comment):
-/// an integrator security decision that resolves the gap F1's own
-/// handoff flagged and declined to decide unilaterally
-/// (`docs/contracts/runner-v1/protocol.json` names decision resolution a
-/// `"separately_scoped_operator_credential"`, distinct from the plain
-/// operator gate every other route here uses). Mirrors
+/// a deliberate security boundary, since decision resolution is
+/// contractually a `"separately_scoped_operator_credential"`
+/// (`docs/contracts/runner-v1/protocol.json`), distinct from the plain
+/// operator gate every other route here uses. Mirrors
 /// `handlers::orch::require_approval_token`/`TACK_ORCH_APPROVAL_TOKEN`
 /// exactly, including its fail-closed-when-unset default.
 ///
-/// F2's artifact-download route points at the same operator-configured
+/// The artifact-download route points at the same operator-configured
 /// `TACK_STORAGE_DIR`-derived storage root as `runner_protocol_routes`'s own
-/// artifact storage below, per F2's own recorded wiring request ("same
-/// storage root as request 1, for consistency").
+/// artifact storage below, for consistency.
 fn operator_execution_routes(state: &AppState) -> Router<AppState> {
     let clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
     let operator_state = executions::OperatorExecutionState::with_clock(state.repo.clone(), clock);

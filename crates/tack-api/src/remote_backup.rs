@@ -1228,8 +1228,8 @@ mod tests {
         std::fs::remove_file(&path).ok();
     }
 
-    // ── A9: control_planes.token must be scrubbed too (repeat of July audit
-    // finding #7, the S3 secret key leak, but for migration 019's new table).
+    // ── control_planes.token must be scrubbed too — the same class of leak
+    // as the S3 secret key, but for migration 019's new table.
     // Goes through the *real* backup path — create_bundle end-to-end (snapshot,
     // scrub, tar, zstd) — then extracts database.db back out exactly as a
     // restore would, and checks the raw extracted bytes. Mirrors
@@ -1302,7 +1302,7 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    // ── Card G2: control_planes.secrets (migration 033) must be scrubbed too —
+    // ── control_planes.secrets (migration 033) must be scrubbed too —
     // the write-only provider-credentials blob a GitHub Actions plane packs its
     // API credential and webhook signing secret into. Same shape as the token
     // test above, and the same reason it matters: a test that only checked
@@ -1391,7 +1391,7 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    // ── Card G2: scrubbing must not fail against a snapshot whose control_planes
+    // ── Scrubbing must not fail against a snapshot whose control_planes
     // table predates migration 033 (has the table, not yet the `secrets`
     // column). Without the pragma_table_info guard, the UPDATE below would be a
     // hard sqlx error ("no such column: secrets") that aborts the whole
