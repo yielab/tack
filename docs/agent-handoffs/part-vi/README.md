@@ -19,8 +19,8 @@ accepted by the user before Wave 15 opens. The story every doc reuses is §VI.0'
 | Wave | Cards | Parallel? | Needs | Base SHA |
 |---|---|---|---|---|
 | 14 | VI-A1 · VI-A2 · VI-A3 | all three | nothing | `c6407dc` — dispatched 2026-09-03 |
-| 15 | VI-B1 → VI-B2 → VI-B3 | **no** — sequential | ADR 0061 accepted (2026-09-03, `VI-A2.md` amendments) | `02aa4e3` — the 2026-09-03 planning commit; branch from the `develop` tip. Decision 1 refined 2026-09-03 (keychain first, file fallback) — B1's block below already matches |
-| 16 | VI-C3 · VI-C4 first; then VI-C1; then VI-C2 | C3 ∥ C4 (may start during Wave 15); C1 after B2+B3; C2 after C3 | see each block | Wave 15 integration SHA (C3/C4 may branch from Wave 14's) |
+| 15 | VI-B1 → VI-B2 → VI-B3 | **no** — sequential | ADR 0061 accepted (2026-09-03, `VI-A2.md` amendments) | `02aa4e3` — **B1 dispatched 2026-09-03**; — the 2026-09-03 planning commit; branch from the `develop` tip. Decision 1 refined 2026-09-03 (keychain first, file fallback) — B1's block below already matches |
+| 16 | VI-C3 · VI-C4 first; then VI-C1; then VI-C2 | C3 ∥ C4 (may start during Wave 15); C1 after B2+B3; C2 after C3 | see each block | **C3 and C4 dispatched 2026-09-03 from `02aa4e3`**; C1 and C2 branch from the Wave 15 integration SHA |
 | 17 | VI-D2 → VI-D1 | no | D2: C1, C2 and Part V's V-C2 landed; D1: everything | Wave 16 integration SHA |
 
 **Integration line: `develop`.** Every card branches from it as `agent/vi-<card>-<slug>`
