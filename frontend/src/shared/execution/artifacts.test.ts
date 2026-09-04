@@ -14,6 +14,48 @@ function errorResponse(status: number, code: string, message: string): Response 
   });
 }
 
+describe('artifactsApi.list', () => {
+  it('GETs the discovery route and returns the manifest rows', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          protocol_version: 1,
+          data: [
+            {
+              artifact_id: 'art_1',
+              kind: 'diff',
+              name: 'patch.diff',
+              media_type: 'text/plain',
+              size_bytes: 42,
+              content_verified: true,
+              created_at: '2026-08-06T12:00:00Z',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    const rows = await artifactsApi.list('exec_1', 2);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/executions/exec_1/attempts/2/artifacts');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].artifact_id).toBe('art_1');
+    expect(rows[0].content_verified).toBe(true);
+  });
+
+  it('URL-encodes every segment', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 }),
+    );
+    await artifactsApi.list('a/b', 1);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/executions/a%2Fb/attempts/1/artifacts');
+  });
+
+  it('throws ApiError(404) when the request or attempt does not exist', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorResponse(404, 'not_found', 'Attempt does not exist'));
+    await expect(artifactsApi.list('exec_1', 99)).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
 describe('artifactsApi.contentUrl', () => {
   it('builds the exact route the operator artifact-download handler mounts', () => {
     expect(artifactsApi.contentUrl('exec_1', 2, 'art_1')).toBe(
