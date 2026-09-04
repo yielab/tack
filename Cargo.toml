@@ -7,6 +7,7 @@ members = [
     "crates/tack-cli",
     "crates/tack-orch",
     "crates/tack-runner",
+    "crates/tack-desktop",
 ]
 
 [workspace.package]

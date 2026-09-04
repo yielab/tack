@@ -1,0 +1,32 @@
+{
+  "$schema": "../../../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capabilities for the main window: core defaults plus the one sidecar this app ever spawns.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/tack",
+          "sidecar": true,
+          "args": ["serve", "--with-runner"]
+        }
+      ]
+    },
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/tack",
+          "sidecar": true,
+          "args": ["serve", "--with-runner"]
+        }
+      ]
+    },
+    "shell:allow-kill",
+    "shell:allow-stdin-write",
+    "dialog:allow-message"
+  ]
+}
