@@ -7,16 +7,17 @@
 //!
 //! ## Unverified against a real binary
 //!
-//! **No real `codex` binary backs any claim in this file.**
 //! Every fake-binary test below drives `crate::harness::fixtures::fake_harness_command`,
-//! never a real `codex` process. The one opt-in live
-//! test (bottom of the test module) resolves a real `codex` binary from
-//! `PATH` at run time and cleanly skips (prints and returns, no panic) when
-//! absent; it is additionally `#[ignore]`d so a plain `cargo test` never
-//! attempts it. Given that constraint, this adapter's shape for anything
-//! actually specific to Codex's real CLI is a documented **guess**, not a
-//! verified fact. Every such guess is called out here, in code comments at
-//! its point of use.
+//! never a real `codex` process. Three opt-in live tests (bottom of the
+//! test module) resolve a real `codex` binary from `PATH` at run time and
+//! cleanly skip (print and return, no panic) when it or a further
+//! precondition (an opt-in env var, a configured provider secret) is
+//! absent; each is additionally `#[ignore]`d so a plain `cargo test` never
+//! attempts it. Two of the three (the provider-endpoint tests) have been
+//! run against the real binary and their finding is recorded at point (3)
+//! below; everything else in this file specific to Codex's real CLI
+//! remains a documented **guess**, not a verified fact, called out here and
+//! in code comments at its point of use.
 //!
 //! **Unverified assumptions about Codex's real CLI contract:**
 //!
@@ -28,11 +29,15 @@
 //!    for a strict `X.Y[.Z]` numeric token anywhere in the output rather
 //!    than requiring the whole line to be one. See
 //!    [`CodexAdapter::detect_version`]/[`find_strict_version_token`].
-//! 3. Non-interactive execution is assumed to be shaped like
+//! 3. **Measured, not a guess:** non-interactive execution is
 //!    `codex exec --json --model <requested model id>` with the agent
 //!    profile's instructions piped over **stdin** (never argv, for the same
-//!    `ps`/`/proc` exposure reason `process.rs` documents). The subcommand
-//!    name, both flags, and the stdin-delivery choice are all guesses — see
+//!    `ps`/`/proc` exposure reason `process.rs` documents) — confirmed
+//!    against the real installed binary (0.149.1), including with a
+//!    provider pointed at a different endpoint via per-invocation `-c`
+//!    overrides (`model_provider=...`, `model_providers.<key>.*`): the
+//!    request genuinely reached that endpoint rather than Codex's built-in
+//!    OpenAI provider, and no `~/.codex/config.toml` was written. See
 //!    [`CodexAdapter::start`].
 //! 4. Because (3) is unverified, **this adapter never attempts to parse
 //!    Codex's real stdout/stderr shape.** `terminal_state` is derived solely
@@ -105,6 +110,19 @@ const DEFAULT_PROBE_TIMEOUT: Duration = Duration::from_secs(15);
 /// than the fixture-exemplified `"harness_reported"`.
 const MODEL_OBSERVATION_SOURCE: &str =
     crate::harness::ModelObservationSource::RequestedNotConfirmed.as_str();
+/// Local key this adapter names an injected provider endpoint under, for
+/// Codex's own `-c model_providers.<key>.*` overrides — an adapter-chosen
+/// label, not a vendor name. Codex only ever sees it for the lifetime of
+/// one invocation; nothing persists it.
+const CODEX_PROVIDER_KEY: &str = "tack_provider";
+
+/// Quotes `value` the way `-c key="value"` expects: a double-quoted TOML
+/// string. Safe for the plain ASCII values this adapter ever passes (a URL,
+/// an environment variable name, a display label) — never used on
+/// operator- or attempt-supplied text.
+fn toml_quoted(value: &str) -> String {
+    format!("{value:?}")
+}
 
 /// Where to find the `codex` executable.
 #[derive(Clone)]
@@ -336,6 +354,11 @@ pub struct CodexAdapter<C = crate::SystemClock> {
     /// other adapter the runner constructed at startup — see
     /// `crate::secrets::SecretStore`.
     secrets: crate::secrets::SecretStore,
+    /// Configured provider endpoints (`RunnerConfig::providers`), consulted
+    /// only when a request's `requested_model_provider` names one — see
+    /// `crate::provider::resolve_endpoint`. Empty by default, meaning every
+    /// request spawns against Codex's own built-in provider.
+    providers: BTreeMap<String, crate::config::ProviderConfig>,
 }
 
 impl CodexAdapter<crate::SystemClock> {
@@ -415,7 +438,21 @@ where
             running: tokio::sync::Mutex::new(BTreeMap::new()),
             last_probe: tokio::sync::Mutex::new(None),
             secrets,
+            providers: BTreeMap::new(),
         }
+    }
+
+    /// Configures the provider endpoints this adapter may point a spawn at
+    /// — see `crate::provider::resolve_endpoint`. Not part of `with_clock`
+    /// itself so every existing call site (fixtures, tests) keeps
+    /// constructing an adapter with no configured endpoint at all, exactly
+    /// today's behavior, without editing each one.
+    pub fn with_providers(
+        mut self,
+        providers: BTreeMap<String, crate::config::ProviderConfig>,
+    ) -> Self {
+        self.providers = providers;
+        self
     }
 
     /// `harness_kind` self-check plus the "no auto-selected model" rejection
@@ -740,6 +777,30 @@ where
             &spec.work.request,
             &mut SecretMaterial::new(),
         )?;
+
+        // Same discard-and-recheck discipline, for a configured provider
+        // endpoint. `check_selection` above already guarantees a provider
+        // is present.
+        let provider = spec
+            .work
+            .request
+            .requested_model_provider
+            .as_ref()
+            .expect("check_selection rejects a missing model provider before this point")
+            .as_str();
+        if let Err(error) = crate::provider::resolve_endpoint(
+            &self.providers,
+            &self.secrets,
+            provider,
+            crate::provider::Wire::OpenAiResponses,
+        ) {
+            let reason = error.to_string();
+            tracing::warn!(
+                reason,
+                "codex: rejecting a request whose provider endpoint could not be resolved"
+            );
+            return Err(HarnessError::Rejected { reason });
+        }
         Ok(())
     }
 
@@ -767,8 +828,60 @@ where
             .as_str()
             .to_owned();
 
-        // UNVERIFIED ASSUMPTION (module docs, assumption (3)): subcommand,
-        // flags and stdin-delivery are all guesses.
+        // A configured provider endpoint applies only when this request's
+        // provider names one (e.g. a gateway) — a direct-vendor request
+        // (Codex's own built-in provider) resolves to `None` and this
+        // adapter injects nothing, so the two paths can never be confused
+        // by a shared environment variable. `-c` overrides are per-
+        // invocation only: this adapter never writes `~/.codex/config.toml`.
+        // They are global flags, so they must precede the `exec` subcommand
+        // pushed below.
+        let endpoint = match crate::provider::resolve_endpoint(
+            &self.providers,
+            &self.secrets,
+            &model_provider,
+            crate::provider::Wire::OpenAiResponses,
+        ) {
+            Ok(endpoint) => endpoint,
+            Err(error) => {
+                return Err(HarnessError::Rejected {
+                    reason: error.to_string(),
+                });
+            }
+        };
+        if let Some(endpoint) = &endpoint {
+            args.push("-c".to_owned());
+            args.push(format!("model_provider={CODEX_PROVIDER_KEY}"));
+            args.push("-c".to_owned());
+            args.push(format!(
+                "model_providers.{CODEX_PROVIDER_KEY}.name={}",
+                toml_quoted(&endpoint.display_name)
+            ));
+            args.push("-c".to_owned());
+            args.push(format!(
+                "model_providers.{CODEX_PROVIDER_KEY}.base_url={}",
+                toml_quoted(&endpoint.base_url)
+            ));
+            args.push("-c".to_owned());
+            args.push(format!(
+                "model_providers.{CODEX_PROVIDER_KEY}.env_key={}",
+                toml_quoted(&endpoint.credential_env_var)
+            ));
+            // Measured non-load-bearing in the installed binary (0.149.1)
+            // — "responses" already applies as the effective default — but
+            // set explicitly anyway, defensively, matching the vendor's own
+            // documented shape.
+            args.push("-c".to_owned());
+            args.push(format!(
+                "model_providers.{CODEX_PROVIDER_KEY}.wire_api={}",
+                toml_quoted("responses")
+            ));
+        }
+
+        // Measured against the real binary: `exec --json --model <id>` with
+        // the prompt on stdin is the actual non-interactive invocation
+        // shape, not a guess — see the module docs' corrected assumption
+        // (3).
         args.push("exec".to_owned());
         args.push("--json".to_owned());
         args.push("--model".to_owned());
@@ -784,7 +897,13 @@ where
         let mut secrets = SecretMaterial::new();
         secrets.register(prompt.clone());
 
-        let env = super::resolve_environment(&self.secrets, &spec.work.request, &mut secrets)?;
+        let mut env = super::resolve_environment(&self.secrets, &spec.work.request, &mut secrets)?;
+        if let Some(endpoint) = endpoint {
+            env.insert(
+                endpoint.credential_env_var,
+                endpoint.credential.expose().to_string(),
+            );
+        }
 
         let timeout = if spec.work.request.timeout_seconds > 0 {
             Duration::from_secs(spec.work.request.timeout_seconds)
@@ -1711,6 +1830,164 @@ mod tests {
         !crate::harness::process::process_alive(pid)
     }
 
+    // -----------------------------------------------------------------
+    // Provider endpoint injection: a configured entry reaches a spawned
+    // process only when the request actually names it; a direct request
+    // must receive none of it.
+    // -----------------------------------------------------------------
+
+    fn enabled_gateway_providers(
+        secret_name: &str,
+    ) -> BTreeMap<String, crate::config::ProviderConfig> {
+        BTreeMap::from([(
+            crate::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
+            crate::config::ProviderConfig {
+                enabled: true,
+                secret: secret_name.to_owned(),
+            },
+        )])
+    }
+
+    /// A shim that records the *names* only of the environment variables it
+    /// was spawned with — never a value.
+    fn env_name_dump_locator(
+        workspace: &std::path::Path,
+        marker: &std::path::Path,
+    ) -> CodexLocator {
+        // A single external process (`env`), no pipe to a second one: the
+        // name/value split happens in `recorded_env_names` instead, purely
+        // to keep this shim's own process footprint minimal under a
+        // heavily parallel test run.
+        let script = format!("#!/bin/sh\nenv > {}\nexit 0\n", marker.display());
+        let script_path = workspace.join("dump-env-names.sh");
+        std::fs::write(&script_path, script).expect("write shim script");
+        CodexLocator::Fixed {
+            program: PathBuf::from("/bin/sh"),
+            prefix_args: vec![script_path.display().to_string()],
+        }
+    }
+
+    /// The *names* only of the `KEY=VALUE` lines `env`'s output wrote to
+    /// `marker` — this helper is what actually discards every value, so no
+    /// caller ever inspects one, even a dummy one seeded for a test.
+    fn recorded_env_names(marker: &std::path::Path) -> Vec<String> {
+        std::fs::read_to_string(marker)
+            .expect("shim wrote the env-names marker")
+            .lines()
+            .filter_map(|line| line.split('=').next())
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// Acceptance: a request naming a direct model provider must spawn
+    /// with neither the provider endpoint's `-c model_provider` flag nor
+    /// its credential variable present — even though a gateway entry is
+    /// configured and enabled on this same adapter.
+    #[tokio::test]
+    async fn a_direct_model_request_spawns_with_no_provider_endpoint_variable_present() {
+        let workspace = deterministic_fixture_repo("provider-guard-direct");
+        let marker = workspace.join("env-names.marker");
+        let secrets = test_secret_store();
+        secrets
+            .set("demo-secret", "unused-by-a-direct-request")
+            .expect("seed store");
+        let adapter = CodexAdapter::with_clock(
+            env_name_dump_locator(&workspace, &marker),
+            generous_limits(),
+            Duration::from_secs(5),
+            BTreeMap::new(),
+            temp_dir("artifacts"),
+            clock_at("2026-08-09T12:00:00Z"),
+            secrets,
+        )
+        .with_providers(enabled_gateway_providers("demo-secret"));
+
+        let spec = spec_with(workspace.clone(), Some(("openai", "gpt-5")), &[]);
+        adapter.validate(&spec).await.expect("validate");
+        let handle = adapter.start(&spec).await.expect("start");
+        let _ = adapter.wait(&handle).await.expect("wait");
+
+        let names = recorded_env_names(&marker);
+        assert!(
+            !names.iter().any(|name| name == "AI_GATEWAY_API_KEY"),
+            "a direct request must never receive the provider endpoint's credential: {names:?}"
+        );
+    }
+
+    /// The positive half of the same proof: a request naming the
+    /// configured provider does receive its credential variable name.
+    #[tokio::test]
+    async fn a_configured_provider_request_spawns_with_its_endpoint_variable_present() {
+        let workspace = deterministic_fixture_repo("provider-guard-configured");
+        let marker = workspace.join("env-names.marker");
+        let secrets = test_secret_store();
+        secrets
+            .set("demo-secret", "a-resolvable-value")
+            .expect("seed store");
+        let adapter = CodexAdapter::with_clock(
+            env_name_dump_locator(&workspace, &marker),
+            generous_limits(),
+            Duration::from_secs(5),
+            BTreeMap::new(),
+            temp_dir("artifacts"),
+            clock_at("2026-08-09T12:00:00Z"),
+            secrets,
+        )
+        .with_providers(enabled_gateway_providers("demo-secret"));
+
+        let spec = spec_with(
+            workspace.clone(),
+            Some((crate::config::VERCEL_AI_GATEWAY_PROVIDER, "openai/gpt-5.1")),
+            &[],
+        );
+        adapter
+            .validate(&spec)
+            .await
+            .expect("validate a configured-provider request");
+        let handle = adapter
+            .start(&spec)
+            .await
+            .expect("start a configured-provider request");
+        let _ = adapter.wait(&handle).await.expect("wait");
+
+        let names = recorded_env_names(&marker);
+        assert!(
+            names.iter().any(|name| name == "AI_GATEWAY_API_KEY"),
+            "a gateway-routed request must receive the provider endpoint's credential: {names:?}"
+        );
+    }
+
+    /// A configured-but-disabled provider must reject the request
+    /// pre-spawn with a typed reason, not silently fall back to Codex's
+    /// own built-in provider.
+    #[tokio::test]
+    async fn a_disabled_provider_rejects_the_request_before_any_process_spawns() {
+        let secrets = test_secret_store();
+        secrets
+            .set("demo-secret", "irrelevant")
+            .expect("seed store");
+        let providers = BTreeMap::from([(
+            crate::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
+            crate::config::ProviderConfig {
+                enabled: false,
+                secret: "demo-secret".to_owned(),
+            },
+        )]);
+        let adapter = adapter_with_env(BTreeMap::new()).with_providers(providers);
+        let workspace = deterministic_fixture_repo("provider-guard-disabled");
+        let spec = spec_with(
+            workspace,
+            Some((crate::config::VERCEL_AI_GATEWAY_PROVIDER, "openai/gpt-5.1")),
+            &[],
+        );
+
+        let error = adapter
+            .validate(&spec)
+            .await
+            .expect_err("a disabled provider must reject at validate, before any spawn");
+        assert!(matches!(error, HarnessError::Rejected { .. }));
+    }
+
     // ---- opt-in live test ------------------------------------------------
 
     /// Acceptance: "an opt-in live test records version and artifact."
@@ -1781,6 +2058,128 @@ mod tests {
         eprintln!(
             "live codex artifact staged at {}",
             staged.staged_path.display()
+        );
+
+        std::fs::remove_dir_all(workspace).expect("cleanup");
+    }
+
+    /// Live proof of the provider endpoint path: resolves the real
+    /// runner-local secret store for a `vercel_ai_gateway` entry, points a
+    /// real `codex` binary at it via the per-invocation `-c` overrides
+    /// (never `~/.codex/config.toml`), and records what the CLI reported.
+    /// Requires an explicit opt-in even under `--ignored`, matching
+    /// `claude_code.rs`'s identical gateway test and unlike the credential-
+    /// free live test above: this one does attempt a real, billed `exec`.
+    #[tokio::test]
+    #[ignore = "opt-in: requires a real `codex` binary on PATH, a `vercel_ai_gateway` entry in \
+                this machine's secret store, *and* TACK_RUN_LIVE_CODEX_GATEWAY_TEST=1 (a real \
+                invocation is billed); run with TACK_RUN_LIVE_CODEX_GATEWAY_TEST=1 cargo test -p \
+                tack-runner --lib -- --ignored codex::tests::live_"]
+    async fn live_codex_through_the_configured_provider_when_opted_in() {
+        if std::env::var("TACK_RUN_LIVE_CODEX_GATEWAY_TEST").as_deref() != Ok("1") {
+            eprintln!(
+                "skipping live codex gateway test: set TACK_RUN_LIVE_CODEX_GATEWAY_TEST=1 to opt \
+                 in (a real invocation is billed)"
+            );
+            return;
+        }
+        if locate_in_dirs(CODEX_PROGRAM_NAME, &system_path_dirs()).is_none() {
+            eprintln!("skipping live codex gateway test: `codex` not found on PATH");
+            return;
+        }
+        let state_dir = std::env::var_os("TACK_RUNNER_STATE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(std::env::var("HOME").expect("HOME is set")).join(".tack-runner")
+            });
+        let secrets = crate::secrets::SecretStore::open(&state_dir.join("secrets.json"));
+        let providers = BTreeMap::from([(
+            crate::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
+            crate::config::ProviderConfig {
+                enabled: true,
+                secret: crate::config::DEFAULT_VERCEL_AI_GATEWAY_SECRET.to_owned(),
+            },
+        )]);
+
+        let adapter = CodexAdapter::discover(
+            ProcessLimits::new(1_048_576, 1_048_576, Duration::from_secs(60)),
+            temp_dir("live-gateway-artifacts"),
+            secrets,
+        )
+        .with_providers(providers);
+
+        let workspace = deterministic_fixture_repo("live-gateway");
+        // Codex refuses to run outside a git repository; a real workspace
+        // is always a git checkout (`WorkspaceManager`), so this makes the
+        // fixture structurally match production rather than special-casing
+        // the check away.
+        for args in [
+            vec!["init", "-q"],
+            vec!["config", "user.email", "tack-live-test@example.invalid"],
+            vec!["config", "user.name", "tack-live-test"],
+        ] {
+            std::process::Command::new("git")
+                .args(&args)
+                .current_dir(&workspace)
+                .status()
+                .expect("git init the fixture repo");
+        }
+        std::process::Command::new("git")
+            .args(["add", "-A"])
+            .current_dir(&workspace)
+            .status()
+            .expect("git add");
+        std::process::Command::new("git")
+            .args(["commit", "-q", "-m", "fixture"])
+            .current_dir(&workspace)
+            .status()
+            .expect("git commit");
+        let mut spec = spec_with(
+            workspace.clone(),
+            Some((crate::config::VERCEL_AI_GATEWAY_PROVIDER, "openai/gpt-5.1")),
+            &[],
+        );
+        spec.work.request.timeout_seconds = 60;
+        spec.work.request.resolved_agent_profile.instructions = "Say exactly: ok".to_string();
+
+        if let Err(error) = adapter.validate(&spec).await {
+            eprintln!(
+                "skipping live codex gateway test: no configured provider entry to validate \
+                 against ({error})"
+            );
+            std::fs::remove_dir_all(workspace).expect("cleanup");
+            return;
+        }
+        let handle = adapter
+            .start(&spec)
+            .await
+            .expect("start a live gateway-routed process");
+        let outcome = adapter
+            .wait(&handle)
+            .await
+            .expect("wait for a live gateway-routed process");
+
+        eprintln!(
+            "live codex (gateway) outcome: terminal_state={:?} model_provider={} model_id={} \
+             model_observation_source={} terminal_reason={}",
+            outcome.terminal_state,
+            outcome.actual_execution.model_provider.as_str(),
+            outcome.actual_execution.model_id.as_str(),
+            outcome.actual_execution.model_observation_source,
+            outcome.terminal_reason
+        );
+
+        // Codex always echoes the requested provider/model rather than
+        // attempting to observe one (module docs, assumption 5) — this
+        // holds regardless of whether the configured credential is valid.
+        assert_eq!(
+            outcome.actual_execution.model_provider.as_str(),
+            crate::config::VERCEL_AI_GATEWAY_PROVIDER
+        );
+        assert_eq!(outcome.actual_execution.model_id.as_str(), "openai/gpt-5.1");
+        assert_eq!(
+            outcome.actual_execution.model_observation_source,
+            MODEL_OBSERVATION_SOURCE
         );
 
         std::fs::remove_dir_all(workspace).expect("cleanup");

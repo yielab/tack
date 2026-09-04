@@ -87,6 +87,7 @@ pub fn run_standalone(
             runner_id,
             state_dir,
             enrollment_credential: enrollment_token.map(EnrollmentCredential::new),
+            ..ConfigOverrides::default()
         },
         config_path.as_deref(),
     )?;
