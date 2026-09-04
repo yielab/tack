@@ -18,7 +18,7 @@ decision of record is `docs/adr/0062-desktop-app-and-background-service.md`, acc
 
 | Wave | Cards | Parallel? | Needs | Base SHA |
 |---|---|---|---|---|
-| 18 | VII-A2 · VII-B1 | yes | ADR 0062 accepted (done). **B1 additionally needs the Tauri prerequisites installed on the dispatch machine** — see the checklist | `02aa4e3` — the 2026-09-03 planning commit; branch from the `develop` tip |
+| 18 | VII-A2 · VII-B1 | yes | ADR 0062 accepted (done); Tauri prerequisites verified installed 2026-09-03 (tauri-cli 2.11.4, webkit2gtk-4.1) | `02aa4e3` — **both dispatched 2026-09-03**; — the 2026-09-03 planning commit; branch from the `develop` tip |
 | 19 | VII-B2 · VII-B3 | yes | B1 integrated | Wave 18 integration SHA |
 | 20 | VII-C1 → VII-C2 | no | C1: B2 + B3; C2: C1 **and Part VI's VI-C1** | Wave 19 integration SHA |
 | 21 | VII-D1 | — | everything | Wave 20 integration SHA |
@@ -39,9 +39,11 @@ decision of record is `docs/adr/0062-desktop-app-and-background-service.md`, acc
    cargo tauri --version && pkg-config --exists webkit2gtk-4.1 && echo READY
    ```
 
-   Measured 2026-09-03: the first three packages and `cargo tauri` were absent. Do not
-   dispatch B1 until the last line prints `READY`; B1's block tells the agent to stop
-   otherwise, and that stop is a wasted dispatch.
+   Measured 2026-09-03: the first three packages and `cargo tauri` were absent, then
+   installed by the user the same day — `cargo tauri --version` prints `tauri-cli 2.11.4`
+   and `pkg-config --exists webkit2gtk-4.1` succeeds. Re-run the check before any future
+   dispatch on a different machine; B1's block tells the agent to stop otherwise, and that
+   stop is a wasted dispatch.
 4. Reap finished worktree targets (`du -sh /var/tmp/tack-agent-targets/*`). A Tauri
    build target is large; budget for it on `/var/tmp`.
 5. Part VI's Wave 15 may run at the same time. VI-B1 and VII-A2 both add an arm to
