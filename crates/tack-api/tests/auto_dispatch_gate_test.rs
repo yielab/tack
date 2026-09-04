@@ -1,20 +1,19 @@
-//! `handlers::items::maybe_auto_dispatch`
-//! used to gate on `state.config.orch_enable` — `TACK_ORCH_ENABLE`'s raw,
-//! startup-only env value — while every HTTP orchestration route (and the
-//! Settings UI) reads
-//! `crate::handlers::settings::effective_orch_enabled`, which prefers
-//! whatever was most recently stored in `app_meta` via
-//! `PUT /api/settings/orchestration`. The result: an operator who started
-//! the server with `TACK_ORCH_ENABLE=1` and then switched orchestration off
-//! in Settings still got auto-dispatch on every eligible status change —
-//! the raw env flag never noticed the UI toggle.
+//! `handlers::items::maybe_auto_dispatch` must gate on
+//! `crate::handlers::settings::effective_orch_enabled`, never on the raw
+//! `state.config.orch_enable` (`TACK_ORCH_ENABLE`'s startup-only env value):
+//! every HTTP orchestration route (and the Settings UI) reads
+//! `effective_orch_enabled`, which prefers whatever was most recently stored
+//! in `app_meta` via `PUT /api/settings/orchestration`. Gating on the raw
+//! env value instead would mean an operator who started the server with
+//! `TACK_ORCH_ENABLE=1` and then switched orchestration off in Settings
+//! still gets auto-dispatch on every eligible status change — the raw env
+//! flag never notices the UI toggle.
 //!
-//! This is the regression test named in the card's acceptance bar: with
-//! `TACK_ORCH_ENABLE=1` in config but orchestration toggled *off* in
-//! `app_meta`, moving an item into a `dispatch_from` status must not
-//! dispatch. It fails against the pre-fix `!state.config.orch_enable` gate
-//! (which never consulted `app_meta` at all) and passes once the gate reads
-//! `effective_orch_enabled`.
+//! This is the regression test: with `TACK_ORCH_ENABLE=1` in config but
+//! orchestration toggled *off* in `app_meta`, moving an item into a
+//! `dispatch_from` status must not dispatch. It fails against a gate that
+//! reads `!state.config.orch_enable` directly (which never consults
+//! `app_meta`) and passes once the gate reads `effective_orch_enabled`.
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -206,7 +205,7 @@ async fn auto_dispatch_does_not_fire_when_orch_enable_env_is_set_but_the_ui_togg
     .await;
 
     // ...then the operator switches orchestration off from Settings. This
-    // is the exact sequence §8.4 describes: env on, UI off.
+    // is the exact sequence: env on, UI off.
     turn_orchestration_off_via_the_ui_toggle(&app).await;
 
     let project_id = create_project(&app).await;

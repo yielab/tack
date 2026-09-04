@@ -3,16 +3,15 @@
 //! [`super::artifact`] needs a real SHA-256 digest — the runner-v1 artifact
 //! contract (`docs/contracts/runner-v1/artifact.request.json`) has a field
 //! literally named `sha256`, and putting a different, faster, non-cryptographic
-//! checksum in a field with that name would be exactly the "hidden fake
-//! success" rule 7 forbids. `sha2` is already present in the workspace's
-//! `[workspace.dependencies]` (used by `tack-api` for webhook HMAC), but
-//! adding it as a `tack-runner` dependency means editing
-//! `crates/tack-runner/Cargo.toml`, which is B3-owned. Rather than stopping
-//! this card on a manifest request for an algorithm this small and this
-//! standard, it is implemented directly against known test vectors below.
-//! If a future card would rather depend on `sha2` directly, swapping
-//! [`sha256_hex`]'s body for the crate call is a one-function change; nothing
-//! outside this file needs to know which implementation produced the digest.
+//! checksum in a field with that name would be a hidden fake success. `sha2`
+//! is already present in the workspace's `[workspace.dependencies]` (used by
+//! `tack-api` for webhook HMAC), but adding it as a `tack-runner` dependency
+//! means editing `crates/tack-runner/Cargo.toml`. Rather than doing that for
+//! an algorithm this small and this standard, it is implemented directly
+//! against known test vectors below. Depending on `sha2` directly instead is
+//! a one-function change — swap [`sha256_hex`]'s body for the crate call;
+//! nothing outside this file needs to know which implementation produced the
+//! digest.
 
 /// Returns the lowercase hex-encoded SHA-256 digest of `data`.
 pub fn sha256_hex(data: &[u8]) -> String {

@@ -570,8 +570,8 @@ mod tests {
         String::from_utf8_lossy(&output.stdout).trim().to_owned()
     }
 
-    /// A real git repository with two commits — never a fake. The card's
-    /// acceptance is explicit that this must be proven against real git.
+    /// A real git repository with two commits — never a fake: these
+    /// operations must be proven against real git.
     struct SourceRepository {
         path: PathBuf,
         first_commit: String,

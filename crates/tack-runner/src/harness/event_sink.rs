@@ -5,7 +5,7 @@
 //! (one JSON object per line, a parsed tool-call, a progress update — the
 //! `docs/contracts/runner-v1/event-batch.request.json` `events[]` shape).
 //! Wiring that shape onto the wire (`PullProtocol` has no event-batch method
-//! yet — a known C3 limitation, see its handoff) is future work; this module
+//! yet) is future work; this module
 //! is the local, always-available half: what an adapter's `wait()`
 //! implementation accumulates before it is ever turned into a wire payload
 //! or a log line.

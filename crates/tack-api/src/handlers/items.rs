@@ -16,7 +16,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::handlers::websocket::{self, BoardEvent};
 use crate::router::AppState;
 
-/// A version-derived `ETag`, not a content hash (card G3; see
+/// A version-derived `ETag`, not a content hash (see
 /// docs/plans/agnostic-control-plane.md D4). Quoted per RFC 7232 so a
 /// client only ever needs to echo the string back verbatim via `If-Match`
 /// — no quote-stripping or parsing on either side, which is also why the
@@ -27,11 +27,10 @@ fn item_etag(id: Uuid, version: i64) -> String {
     format!("\"{id}-{version}\"")
 }
 
-/// A stale `If-Match` never becomes an [`ApiError`] — `error.rs` is off
-/// this card's file list, so this
+/// A stale `If-Match` never becomes an [`ApiError`] — this
 /// hand-builds the exact `{"error": {"status", "message"}}` envelope
 /// `ApiError`'s `IntoResponse` impl produces, rather than adding a new
-/// variant to a file another card owns. A client that already parses that
+/// variant to `error.rs`. A client that already parses that
 /// shape for every other 4xx from this API needs no special case for 412.
 fn precondition_failed(message: String) -> Response {
     let body = serde_json::json!({
@@ -291,11 +290,9 @@ pub async fn update_item(
     // Push the open/closed state back to a linked GitHub issue.
     maybe_sync_github(&state, &item, &old_status).await;
 
-    // Auto-dispatch to the linked control plane, if configured (card C2 /
-    // task 35.5). Off unless orchestration is *effectively* enabled — see
-    // `maybe_auto_dispatch`'s own doc comment (card G3 fixed this call site
-    // to stop ignoring the UI toggle) — and the project's orch_link has
-    // auto_dispatch on (§0 rules 5 and 8).
+    // Auto-dispatch to the linked control plane, if configured. Off unless
+    // orchestration is *effectively* enabled — see `maybe_auto_dispatch`'s
+    // own doc comment — and the project's orch_link has auto_dispatch on.
     maybe_auto_dispatch(&state, &item, &old_status).await;
 
     let mut response = Json(serde_json::to_value(item).unwrap()).into_response();
@@ -391,7 +388,7 @@ pub(crate) async fn propagate_parent_completion(state: &AppState, item: &Item, o
 /// `orch_events` row (`auto_dispatch_failed` / `auto_dispatch_blocked`) on
 /// the item, the same table `dispatcher::apply_mapped_status` already uses
 /// for `status_map_rejected` — so a failed auto-dispatch shows up wherever
-/// that event history is surfaced (the item's Agent Activity tab, card B5),
+/// that event history is surfaced (the item's Agent Activity tab),
 /// not just in server logs nobody is watching. Every other outcome
 /// (`NoDispatchPolicy`, `NotEligible`, `AlreadyInFlight`, `Success`) is
 /// expected, uninteresting background behavior and is not separately
@@ -467,12 +464,12 @@ pub(crate) async fn maybe_auto_dispatch(state: &AppState, item: &Item, old_statu
 
 /// Best-effort: record an `auto_dispatch_failed`/`auto_dispatch_blocked`
 /// `orch_events` row so a failed auto-dispatch is visible somewhere a human
-/// (or card B5's Agent Activity UI) can find it, not just in server logs.
+/// (or the Agent Activity UI) can find it, not just in server logs.
 /// Never panics or propagates — an audit-trail write failing must not turn
 /// an already-logged background failure into a crashed background task.
 ///
 /// `policy_id` is `Some` only for `auto_dispatch_blocked` (a typed
-/// `OrchError::PolicyBlocked`, card R1) — `auto_dispatch_failed` covers
+/// `OrchError::PolicyBlocked`) — `auto_dispatch_failed` covers
 /// every other, non-policy failure and has no policy id to carry.
 async fn record_auto_dispatch_event(
     state: &AppState,

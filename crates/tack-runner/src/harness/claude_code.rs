@@ -2022,8 +2022,8 @@ mod tests {
     /// its own binary exists). The engine-level ordering constraint this
     /// interacts with (workspace provisioning and the journal write both
     /// already precede `HarnessAdapter::validate` in
-    /// `RunnerEngine::run_claimed`) is recorded in the handoff, not
-    /// re-litigated here.
+    /// `RunnerEngine::run_claimed`) is out of scope here — this test only
+    /// proves the adapter-boundary behavior.
     #[tokio::test]
     async fn validate_rejects_a_missing_secret_reference_typed_and_touches_nothing() {
         let workspace = temp_workspace("secret-reference-missing");
@@ -2925,8 +2925,8 @@ mod tests {
         // emitted before any network call reaches the gateway, so it can
         // never be treated as confirmation the gateway actually served it.
         // A successful completion additionally needs a working credential,
-        // which this test does not assert on: see the handoff for the
-        // separately recorded, deliberately run, billed proof.
+        // which this test does not assert on: that requires a separately
+        // run, deliberately billed proof against a real credential.
         assert_ne!(
             outcome.actual_execution.model_observation_source,
             ModelObservationSource::HarnessReported.as_str(),

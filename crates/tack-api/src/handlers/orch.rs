@@ -2694,12 +2694,10 @@ fn require_approval_token(state: &AppState, headers: &HeaderMap) -> ApiResult<()
 }
 
 /// Resolve `control_plane_id` into a live control-plane client. Built on
-/// `adapters::registry::build`, which is what
+/// `adapters::registry::build`, which
 /// `dispatcher::build_control_plane` and `handlers::provisioning::
-/// resolve_control_plane` are now built on too — the three-near-identical-
-/// copies state this function's doc comment used to disclose ("if a third
-/// caller ever needs this, that's the point to actually share it") is
-/// gone: there were already three, so this is that point. Each caller keeps
+/// resolve_control_plane` are built on too — three near-identical
+/// callers sharing one implementation. Each caller keeps
 /// its own request-scoped error mapping (this one, unlike the reconciler's
 /// batch-loop use in `orch_store.rs`, must error rather than skip — see
 /// `dispatcher::build_control_plane`'s doc comment for that distinction).

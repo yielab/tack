@@ -6,10 +6,9 @@
 //! `unreachable` and never recovers leaves any row that was "active" at that moment
 //! active forever — which, via `dispatcher::is_active_task_status`, also permanently
 //! blocks legacy redispatch for that item. `Repository::reconcile_stale_orch_tasks`/
-//! `reconcile_stale_orch_approvals` (added by this card in `repo/orch.rs`) are the
+//! `reconcile_stale_orch_approvals` (in `repo/orch.rs`) are the
 //! fix: a local-only sweep (no HTTP call, so it cannot perturb
-//! `docket_tick_contract_test.rs`'s pinned per-tick request sequence — confirmed
-//! unmodified by this card's own gate run).
+//! `docket_tick_contract_test.rs`'s pinned per-tick request sequence).
 
 mod common;
 

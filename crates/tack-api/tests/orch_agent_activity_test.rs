@@ -1,5 +1,5 @@
-//! Tests for the item/project agent-activity endpoints (card B6, tasks
-//! 34.8/34.9's backend half): `GET /api/items/{id}/agent-activity` and
+//! Tests for the item/project agent-activity endpoints:
+//! `GET /api/items/{id}/agent-activity` and
 //! `GET /api/projects/{id}/agent-activity`.
 //!
 //! Covers: both routes 404 with `TACK_ORCH_ENABLE` unset;

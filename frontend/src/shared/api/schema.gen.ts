@@ -592,7 +592,7 @@ export interface paths {
                         "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
                     };
                 };
-                /** @description conflict (details.artifact_id) — the artifact manifest exists but its content has not been verified yet; distinct from not_found, never silently treated as "gone" or zero bytes (III.2 rule 7) */
+                /** @description conflict (details.artifact_id) — the artifact manifest exists but its content has not been verified yet; distinct from not_found, never silently treated as "gone" or zero bytes */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -1613,7 +1613,7 @@ export interface paths {
             parameters: {
                 query?: never;
                 header: {
-                    /** @description The attempt's current fencing token. The request body is raw bytes, so — unlike every other runner-protocol write — the fencing token cannot travel inside a JSON body. This header, like this route's URL, is this card's own addition: docs/contracts/runner-v1/ fixes the manifest exchange's payload shape, not this upload URL (see this fragment's own doc comment). */
+                    /** @description The attempt's current fencing token. The request body is raw bytes, so — unlike every other runner-protocol write — the fencing token cannot travel inside a JSON body, so it travels as a header instead. docs/contracts/runner-v1/ fixes the manifest exchange's payload shape, not this upload URL (see this fragment's own doc comment). */
                     "x-tack-fencing-token": string;
                 };
                 path: {
@@ -5146,10 +5146,9 @@ export interface components {
         };
         /**
          * @description Incoming update — just the one field the contract defines. No tri-state
-         *     "unset back to env default" path exists yet (nothing in this cycle needs
-         *     it); once stored, `source` stays `"database"` until a future card adds
-         *     one, mirroring how Cloud Backup's string fields already behave for their
-         *     own overrides.
+         *     "unset back to env default" path exists yet; once stored, `source` stays
+         *     `"database"` permanently, mirroring how Cloud Backup's string fields
+         *     already behave for their own overrides.
          */
         UpdateOrchSettings: {
             enabled: boolean;

@@ -270,9 +270,9 @@ async fn list_runners_fleet_filter_only_returns_members() {
     assert_eq!(status, StatusCode::OK, "{fleet}");
     let fleet_id = fleet["fleet_id"].as_str().unwrap().to_owned();
 
-    // No membership route exists yet (E3's own flagged gap) — insert
-    // directly, matching how this repo's other fixtures set up rows a
-    // route doesn't yet write.
+    // Inserts directly (rather than through
+    // `POST /runner-fleets/{fleet_id}/members`) to keep this fixture
+    // focused on filtering, not fleet-membership plumbing.
     sqlx::query(
         "INSERT INTO agent_fleet_members (fleet_id, runner_id, created_at) VALUES (?, ?, ?)",
     )
