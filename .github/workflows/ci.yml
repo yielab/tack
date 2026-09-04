@@ -28,6 +28,14 @@ defaults:
   run:
     shell: bash
 
+# `dtolnay/rust-toolchain@stable` below does NOT decide which compiler runs.
+# rustup ranks `rust-toolchain.toml` above the default a setup action sets, so
+# every job here builds on the exact version that file pins — the same one a
+# contributor's `cargo` picks, which is what makes a local check predictive.
+# rustup installs it with the components the file declares. The only job that
+# escapes the file is `msrv`, which sets RUSTUP_TOOLCHAIN because an env var
+# outranks it, on purpose: that job's whole point is a different compiler.
+
 jobs:
   rust:
     name: Rust (fmt + clippy + test)
@@ -265,6 +273,11 @@ jobs:
         run: ./scripts/gen-deny-toml.sh
       - name: cargo deny check
         run: cargo deny check licenses bans
+      # tack-desktop is a separate workspace, so the run above never sees Tauri's
+      # dependency tree — the largest one in the repository and the one most
+      # likely to introduce an unapproved license.
+      - name: cargo deny check (tack-desktop workspace)
+        run: cargo deny --manifest-path crates/tack-desktop/Cargo.toml check licenses bans
 
   frontend:
     name: Frontend (typecheck + build)

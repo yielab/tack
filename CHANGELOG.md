@@ -40,6 +40,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Rust toolchain is pinned to an exact version, so a green local check predicts CI.**
+  `rust-toolchain.toml` said `stable`, which resolves to whatever stable is on the day —
+  and the local one had fallen three minor versions behind CI's. Clippy lints that shipped
+  in between failed CI while passing locally, twice. The pin is now `1.98.1`, rustup ranks
+  the file above whatever a setup action selects, and Dependabot maintains the pin via the
+  `rust-toolchain` ecosystem. Three `chunks_exact` sites the newer clippy rejects are
+  rewritten as `as_chunks`; the SHA-256 implementation still matches its published test
+  vectors.
 - **`tack-desktop` is its own Cargo workspace, so the server still builds without a
   desktop.** As a workspace member it pulled GTK, WebKit and glib into every
   `cargo build --workspace` — CI's Rust, MSRV and embed-spa jobs all failed with

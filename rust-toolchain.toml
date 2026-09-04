@@ -1,3 +1,19 @@
+# The toolchain every local build and every CI job actually uses.
+#
+# Pinned to an exact version on purpose. rustup ranks this file above the
+# default a setup action sets, so `dtolnay/rust-toolchain@stable` in CI does not
+# decide anything here — this line does. That is what makes a green pre-push a
+# real prediction of CI: with `channel = "stable"` the two drifted apart
+# silently, and clippy lints that had shipped in a newer stable failed CI while
+# passing locally. rustup installs this version with the components below the
+# first time cargo needs it.
+#
+# The MSRV job overrides this with RUSTUP_TOOLCHAIN, which outranks the file, so
+# it still measures the documented floor rather than this pin.
+#
+# Bumping is one line, and Dependabot proposes it (`rust-toolchain` ecosystem in
+# .github/dependabot.yml). A bump can surface new clippy lints — that is the
+# point of doing it deliberately instead of on whatever day upstream ships.
 [toolchain]
-channel = "stable"
+channel = "1.98.1"
 components = ["rustfmt", "clippy"]
