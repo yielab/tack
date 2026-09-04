@@ -13,6 +13,7 @@
 
 # Config (keep the example)
 tack.toml
+.env
 
 # Storage
 /storage/
