@@ -535,7 +535,12 @@ function ItemCard(props: {
                 Docket dispatch feature): this one launches a single item's
                 own execution request, not a bulk sprint dispatch. */}
             <span onClick={(e) => e.stopPropagation()}>
-              <RunWithAgentButton itemId={props.item.id} itemTitle={props.item.title} compact />
+              <RunWithAgentButton
+                itemId={props.item.id}
+                itemTitle={props.item.title}
+                projectId={props.item.project_id}
+                compact
+              />
             </span>
           </div>
           <div class="flex items-center gap-2 mt-0.5">

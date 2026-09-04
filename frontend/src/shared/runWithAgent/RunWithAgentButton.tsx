@@ -1,17 +1,30 @@
-import { type Component, createSignal } from 'solid-js';
-import { Button } from '../ui';
+import { type Component, createSignal, createMemo, Show } from 'solid-js';
+import { useSearchParams } from '@solidjs/router';
+import { Button, Badge } from '../ui';
 import RunWithAgentModal from './RunWithAgentModal';
+import { useExecutionStore } from '../state/executionContext';
+import { describeExecutionState } from './shared';
 import type { RunnerCapabilities } from '../execution';
 
 export interface RunWithAgentButtonProps {
   itemId: string;
   itemTitle: string;
+  /** The item's project (`Item.project_id`) — threaded through to the modal
+   *  so it can read that project's model default. */
+  projectId: string;
   /** Icon-only trigger for tight spaces (Board card header, Sprint lane
    *  row) — visually and structurally distinct from `shared/dispatch/
    *  DispatchCardMenu.tsx`'s "⋮" kebab menu, per III.0's vocabulary rule:
    *  this is a single, explicit "run" action, not a menu that happens to
    *  contain one. `false` renders a labeled button (item-detail). */
   compact?: boolean;
+  /** Shows a small badge, next to the trigger, for the item's most recent
+   *  execution request state — fed by the shared execution store, never a
+   *  second fetch. Off by default; only the Board card mounts it, since
+   *  that is the one host this card's brief names. Clicking it opens the
+   *  item to its Execution tab (`?item=<id>&tab=execution`), the same tab
+   *  a successful create switches item-detail to via `onCreated`. */
+  showStateChip?: boolean;
   onCreated?: (requestId: string) => void;
   capabilities?: () => RunnerCapabilities[];
 }
@@ -26,9 +39,40 @@ export interface RunWithAgentButtonProps {
  */
 const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
   const [open, setOpen] = createSignal(false);
+  const [, setSearchParams] = useSearchParams();
+  const store = useExecutionStore();
+
+  // The item's most recent execution request, read from the shared store —
+  // never a second fetch (`App.tsx` already loads the list once). `null`
+  // whenever there is none yet, or the one record fetched for it errored
+  // (an errored record is a real, distinct state, never mistaken for "no
+  // activity" — `ExecutionRequestRecord`'s own doc comment).
+  const latestState = createMemo(() => {
+    const record = store.requestsForItem(props.itemId)[0];
+    if (!record || record.status !== 'ready' || !record.summary) return null;
+    return describeExecutionState(record.summary.state);
+  });
+
+  const openExecutionTab = (e: MouseEvent) => {
+    e.stopPropagation();
+    setSearchParams({ item: props.itemId, tab: 'execution' });
+  };
 
   return (
     <>
+      <Show when={props.showStateChip && latestState()}>
+        {(state) => (
+          <button
+            type="button"
+            aria-label={`Open the Execution tab for ${props.itemTitle}`}
+            title="Open the Execution tab"
+            onClick={openExecutionTab}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
+          >
+            <Badge tone={state().tone}>{state().label}</Badge>
+          </button>
+        )}
+      </Show>
       {props.compact ? (
         <button
           type="button"
@@ -71,6 +115,7 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
         onClose={() => setOpen(false)}
         itemId={props.itemId}
         itemTitle={props.itemTitle}
+        projectId={props.projectId}
         onCreated={props.onCreated}
         capabilities={props.capabilities}
       />

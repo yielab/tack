@@ -8,9 +8,16 @@ import {
   describeExecutionState,
   isTerminalStateString,
   relativeTimeFromIso,
+  isActiveRunnerState,
+  shouldHideTargetPicker,
+  isExecutionOff,
+  describeProjectModelDefault,
+  projectDefaultModelPair,
+  isModelPassthroughAttested,
   type RunWithAgentFormValues,
 } from './shared';
-import type { RunnerCapabilities } from '../execution';
+import type { RunnerCapabilities, HarnessCapability } from '../execution';
+import type { ProjectModelDefault } from '../types';
 
 function values(overrides: Partial<RunWithAgentFormValues> = {}): RunWithAgentFormValues {
   return {
@@ -265,5 +272,85 @@ describe('relativeTimeFromIso', () => {
 
   it('reports "just now" for a very recent timestamp', () => {
     expect(relativeTimeFromIso(new Date().toISOString())).toBe('just now');
+  });
+});
+
+describe('isActiveRunnerState', () => {
+  it('only "active" counts — pending enrollment and revoked do not', () => {
+    expect(isActiveRunnerState('active')).toBe(true);
+    expect(isActiveRunnerState('pending_enrollment')).toBe(false);
+    expect(isActiveRunnerState('revoked')).toBe(false);
+    expect(isActiveRunnerState('some_future_state')).toBe(false);
+  });
+});
+
+describe('shouldHideTargetPicker', () => {
+  it('hides only for exactly one active runner and zero fleets', () => {
+    expect(shouldHideTargetPicker(1, 0)).toBe(true);
+  });
+  it('shows when a fleet exists too, even with one active runner', () => {
+    expect(shouldHideTargetPicker(1, 1)).toBe(false);
+  });
+  it('shows for zero or more than one active runner', () => {
+    expect(shouldHideTargetPicker(0, 0)).toBe(false);
+    expect(shouldHideTargetPicker(2, 0)).toBe(false);
+  });
+});
+
+describe('isExecutionOff', () => {
+  it('is off only at zero active runners', () => {
+    expect(isExecutionOff(0)).toBe(true);
+    expect(isExecutionOff(1)).toBe(false);
+    expect(isExecutionOff(2)).toBe(false);
+  });
+});
+
+describe('describeProjectModelDefault', () => {
+  it('is null when the project has no opinion', () => {
+    expect(describeProjectModelDefault(null)).toBeNull();
+    expect(describeProjectModelDefault(undefined)).toBeNull();
+  });
+  it('labels an explicit project default as "provider / model_id"', () => {
+    const d: ProjectModelDefault = { kind: 'explicit', provider: 'openai', model_id: 'opaque/model-alpha' };
+    expect(describeProjectModelDefault(d)).toBe('openai / opaque/model-alpha');
+  });
+  it('labels an auto project default as "Auto" — a real choice, distinct from no opinion', () => {
+    const d: ProjectModelDefault = { kind: 'auto' };
+    expect(describeProjectModelDefault(d)).toBe('Auto');
+  });
+});
+
+describe('projectDefaultModelPair', () => {
+  it('no opinion and an explicit "auto" choice both resolve to the null/null "let the runner decide" pair', () => {
+    expect(projectDefaultModelPair(null)).toEqual({ provider: null, id: null });
+    expect(projectDefaultModelPair({ kind: 'auto' })).toEqual({ provider: null, id: null });
+  });
+  it('an explicit default copies its pair through verbatim', () => {
+    const d: ProjectModelDefault = { kind: 'explicit', provider: 'openai', model_id: 'opaque/model-alpha' };
+    expect(projectDefaultModelPair(d)).toEqual({ provider: 'openai', id: 'opaque/model-alpha' });
+  });
+});
+
+describe('isModelPassthroughAttested', () => {
+  const harness = (overrides: Partial<HarnessCapability> = {}): HarnessCapability => ({
+    harness_kind: 'codex',
+    installed_version: '1.0.0',
+    probe_error: null,
+    probed_at: '2026-09-04T00:00:00Z',
+    model_combinations: [],
+    ...overrides,
+  });
+
+  it('is false when the field is absent — an older runner, or the shared fake probe', () => {
+    expect(isModelPassthroughAttested(harness())).toBe(false);
+  });
+  it('is false for undefined — no target harness selected yet', () => {
+    expect(isModelPassthroughAttested(undefined)).toBe(false);
+  });
+  it('is false for "advisory" — an unverified claim behaves the same as absent', () => {
+    expect(isModelPassthroughAttested(harness({ model_passthrough: { support: 'advisory', reason: 'unverified' } }))).toBe(false);
+  });
+  it('is true only for "supported"', () => {
+    expect(isModelPassthroughAttested(harness({ model_passthrough: { support: 'supported', reason: null } }))).toBe(true);
   });
 });
