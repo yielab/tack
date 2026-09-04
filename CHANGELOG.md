@@ -40,6 +40,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Generated files can no longer produce a merge conflict.** `Cargo.lock`,
+  `frontend/package-lock.json`, `docs/openapi.json` and
+  `frontend/src/shared/api/schema.gen.ts` are marked `merge=tack-generated`; the driver
+  resolves them without a conflict, `.githooks/post-merge` regenerates them from the merged
+  sources, and `.githooks/pre-push` now refuses to push a stale lockfile or TypeScript
+  schema. `./scripts/setup-git.sh` registers the hooks and the driver in a clone (it
+  replaces the `git config core.hooksPath` line in the contributing guide);
+  `./scripts/regen-generated.sh` runs the regeneration by hand.
+- **Dependabot's two halves are configured separately.** Version updates move to a monthly
+  cadence with a cooldown (30 days for majors, 7 for minors, 3 for patches) so a
+  freshly published release is not this repository's problem to discover. Security updates
+  are enabled at the repository level for the first time and get their own group per
+  ecosystem via `applies-to: security-updates`, so an advisory is never delayed by the
+  batching that exists to slow chores down. Previously the noisy half was on and the
+  valuable half was off, and advisories were only ever fixed as a side effect of a routine
+  roll-up.
 - **CI's MSRV job now builds on the version it pins.** `rust-toolchain.toml` selects
   `stable`, and rustup ranks a toolchain file above the default that the setup action sets,
   so the job had been building on stable since it was created — a green check that verified

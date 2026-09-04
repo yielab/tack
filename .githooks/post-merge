@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Regenerates the files the `tack-generated` merge driver resolved to our side.
+# Runs after any successful merge, so a merge that touched a manifest, a route
+# or a schema leaves the derived files correct rather than plausibly stale.
+#
+# Never commits on your behalf: it stages what changed and says so, because
+# amending someone's merge commit silently is worse than a stale file.
+set -euo pipefail
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+generated=(
+  Cargo.lock
+  frontend/package-lock.json
+  docs/openapi.json
+  frontend/src/shared/api/schema.gen.ts
+)
+
+# Only pay for regeneration when the merge could actually have invalidated one.
+if git diff --quiet ORIG_HEAD HEAD -- "${generated[@]}" '**/Cargo.toml' Cargo.toml \
+     crates/tack-api frontend/package.json 2>/dev/null; then
+  exit 0
+fi
+
+echo "→ post-merge: regenerating derived files"
+if ! ./scripts/regen-generated.sh; then
+  echo "  post-merge: regeneration failed — fix it before committing" >&2
+  exit 1
+fi
+
+if git diff --quiet -- "${generated[@]}"; then
+  echo "  already current"
+  exit 0
+fi
+
+git add -- "${generated[@]}"
+echo
+echo "  These generated files changed and are STAGED, not committed:"
+git diff --cached --name-only -- "${generated[@]}" | sed 's/^/    /'
+echo "  Commit them onto the merge (git commit --amend --no-edit) or as a follow-up."

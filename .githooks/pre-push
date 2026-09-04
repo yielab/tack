@@ -7,4 +7,20 @@ cargo fmt --all --check
 echo "→ cargo clippy --workspace --all-targets -- -D warnings"
 cargo clippy --workspace --all-targets -- -D warnings
 
+# A merge can leave a derived file describing the tree as it was on one side of
+# it. CI's `openapi_contract` test catches the spec; nothing caught a stale
+# lockfile or a stale TypeScript schema, and both are cheap to check here.
+echo "→ generated files are current"
+if ! cargo metadata --locked --format-version 1 >/dev/null 2>&1; then
+  echo "  Cargo.lock is out of date with the manifests — run ./scripts/regen-generated.sh" >&2
+  exit 1
+fi
+if [ -d frontend/node_modules ]; then
+  npm --prefix frontend run gen:api >/dev/null
+  if ! git diff --quiet -- frontend/src/shared/api/schema.gen.ts; then
+    echo "  schema.gen.ts was stale — it has just been regenerated; commit the result" >&2
+    exit 1
+  fi
+fi
+
 echo "✓ pre-push checks passed"
