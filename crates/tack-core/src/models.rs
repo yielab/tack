@@ -32,9 +32,26 @@ pub struct Project {
     pub project_type: ProjectType,
     pub vocabulary: VocabularyMap,
     pub workflow: WorkflowConfig,
+    pub default_model: Option<ProjectModelDefault>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub archived: bool,
+}
+
+/// A project's own opinion on which model its executions should use — the
+/// `Project` tier in `tack-orch::model_policy`'s precedence walk, between the
+/// agent-profile and fleet defaults. Absent (`None` on `Project`) means "no
+/// opinion" and falls through to the fleet tier; `Auto` is a distinct, real
+/// choice that stops the walk at this tier instead of falling through.
+/// Because the API deserializes a request body directly into this enum, a
+/// malformed shape is rejected before any handler or database write runs —
+/// there is no second, tolerant parse of an opaque blob at read time.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum ProjectModelDefault {
+    Auto,
+    Explicit { provider: String, model_id: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -432,6 +449,7 @@ pub struct UpdateProject {
     pub description: Option<String>,
     pub vocabulary: Option<VocabularyMap>,
     pub workflow: Option<WorkflowConfig>,
+    pub default_model: Option<ProjectModelDefault>,
     pub archived: Option<bool>,
 }
 

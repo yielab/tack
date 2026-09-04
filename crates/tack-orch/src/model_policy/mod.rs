@@ -60,10 +60,8 @@ impl ModelPolicyTier {
 pub struct ModelPolicySources {
     pub request_override: Option<ModelSelector>,
     pub agent_profile_default: Option<ModelSelector>,
-    /// No `projects` table storage exists for a default model policy today.
-    /// The type carries this tier so precedence is fully expressed and
-    /// future-proof; [`wiring::resolve_request_model_policy`] always passes
-    /// `None` here until such storage exists.
+    /// Read from `projects.default_model` by
+    /// [`wiring::resolve_request_model_policy`].
     pub project_default: Option<ModelSelector>,
     pub fleet_default: Option<ModelSelector>,
 }

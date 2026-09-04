@@ -16,7 +16,9 @@
 //! ("assert the absence directly").
 
 use chrono::{Duration as ChronoDuration, Utc};
-use tack_core::models::{CreateItem, ItemType, Priority as ItemPriority, ProjectType};
+use tack_core::models::{
+    CreateItem, ItemType, Priority as ItemPriority, ProjectModelDefault, ProjectType, UpdateProject,
+};
 use tack_core::vocabulary;
 use tack_db::repo::execution::{NewAgentProfile, NewExecutionRequest, NewRunner, RequestSelection};
 use tack_db::{Repository, init_pool, migrations};
@@ -298,7 +300,7 @@ async fn a_fleet_default_model_is_read_from_the_real_default_policy_column() {
     let now = Utc::now();
     create_fleet_with_default_model(&repo, "fleet-a", "openai", "opaque/model-alpha", now).await;
 
-    let resolved = resolve_request_model_policy(&repo, None, Some("fleet-a"), None)
+    let resolved = resolve_request_model_policy(&repo, None, None, Some("fleet-a"), None)
         .await
         .expect("no db error");
     assert_eq!(
@@ -309,6 +311,47 @@ async fn a_fleet_default_model_is_read_from_the_real_default_policy_column() {
                 model_id: tack_orch::execution::RequestedModelId::new("opaque/model-alpha"),
             },
             source: Some(ModelPolicyTier::Fleet),
+        }
+    );
+}
+
+#[tokio::test]
+async fn a_project_default_model_is_read_from_the_real_default_model_column() {
+    let (repo, item_id) = setup_repo().await;
+    let item = repo
+        .get_item(Uuid::parse_str(&item_id).unwrap())
+        .await
+        .expect("no db error")
+        .expect("item exists");
+    repo.update_project(
+        item.project_id,
+        UpdateProject {
+            name: None,
+            description: None,
+            vocabulary: None,
+            workflow: None,
+            default_model: Some(ProjectModelDefault::Explicit {
+                provider: "openai".into(),
+                model_id: "opaque/model-alpha".into(),
+            }),
+            archived: None,
+        },
+    )
+    .await
+    .expect("set project default");
+
+    let resolved =
+        resolve_request_model_policy(&repo, None, Some(&item.project_id.to_string()), None, None)
+            .await
+            .expect("no db error");
+    assert_eq!(
+        resolved,
+        ResolvedModelPolicy {
+            selector: ModelSelector::Explicit {
+                provider: tack_orch::execution::RequestedModelProvider::new("openai"),
+                model_id: tack_orch::execution::RequestedModelId::new("opaque/model-alpha"),
+            },
+            source: Some(ModelPolicyTier::Project),
         }
     );
 }
@@ -328,9 +371,10 @@ async fn an_agent_profile_default_beats_a_fleet_default() {
         .expect("set profile default");
     create_fleet_with_default_model(&repo, "fleet-a", "openai", "opaque/model-alpha", now).await;
 
-    let resolved = resolve_request_model_policy(&repo, Some("profile-1"), Some("fleet-a"), None)
-        .await
-        .expect("no db error");
+    let resolved =
+        resolve_request_model_policy(&repo, Some("profile-1"), None, Some("fleet-a"), None)
+            .await
+            .expect("no db error");
     assert_eq!(resolved.source, Some(ModelPolicyTier::AgentProfile));
     assert_eq!(
         resolved.selector,
@@ -359,6 +403,7 @@ async fn a_request_override_beats_every_other_tier() {
     let resolved = resolve_request_model_policy(
         &repo,
         Some("profile-1"),
+        None,
         Some("fleet-a"),
         Some(override_selector.clone()),
     )
@@ -371,7 +416,7 @@ async fn a_request_override_beats_every_other_tier() {
 #[tokio::test]
 async fn no_tier_configured_resolves_to_auto_select() {
     let (repo, _item_id) = setup_repo().await;
-    let resolved = resolve_request_model_policy(&repo, Some("profile-1"), None, None)
+    let resolved = resolve_request_model_policy(&repo, Some("profile-1"), None, None, None)
         .await
         .expect("no db error");
     assert_eq!(resolved.source, None);
@@ -398,7 +443,7 @@ async fn a_fleet_default_model_the_runner_does_not_declare_never_leases() {
         .await;
     add_fleet_member(&repo, "fleet-a", "runner-a", now).await;
 
-    let resolved = resolve_request_model_policy(&repo, None, Some("fleet-a"), None)
+    let resolved = resolve_request_model_policy(&repo, None, None, Some("fleet-a"), None)
         .await
         .expect("resolve model policy");
     let (provider, model_id) = match &resolved.selector {
@@ -491,7 +536,7 @@ async fn a_fleet_default_model_the_runner_does_declare_leases_successfully() {
     create_fleet_with_default_model(&repo, "fleet-a", "openai", "opaque/model-alpha", now).await;
     add_fleet_member(&repo, "fleet-a", "runner-a", now).await;
 
-    let resolved = resolve_request_model_policy(&repo, None, Some("fleet-a"), None)
+    let resolved = resolve_request_model_policy(&repo, None, None, Some("fleet-a"), None)
         .await
         .expect("resolve model policy");
     let (provider, model_id) = match &resolved.selector {

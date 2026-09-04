@@ -240,6 +240,7 @@ pub async fn import_project(
                         description: None,
                         workflow: Some(src.workflow.clone()),
                         vocabulary: Some(src.vocabulary.clone()),
+                        default_model: None,
                         archived: None,
                     },
                 )

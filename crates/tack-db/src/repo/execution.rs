@@ -2357,6 +2357,26 @@ impl Repository {
             .await
     }
 
+    /// Read-only model-policy input: `project_id`'s raw `default_model` JSON
+    /// blob (migration 062). Unlike `fetch_agent_profile_limits`/
+    /// `fetch_fleet_default_policy`'s untyped `{"default_model": ...}`
+    /// convention, this column only ever holds the exact serialization of a
+    /// validated `tack_core::models::ProjectModelDefault` (written by
+    /// `Repository::update_project`), so its caller doesn't need the same
+    /// tolerant, malformed-input-is-"no opinion" parse those two use.
+    /// `None` if `project_id` does not exist or has no default configured.
+    pub async fn fetch_project_default_model(
+        &self,
+        project_id: &str,
+    ) -> Result<Option<String>, sqlx::Error> {
+        let raw: Option<Option<String>> =
+            sqlx::query_scalar("SELECT default_model FROM projects WHERE id = ?")
+                .bind(project_id)
+                .fetch_optional(self.pool())
+                .await?;
+        Ok(raw.flatten())
+    }
+
     /// Every enrolled runner, newest-created last, with its current fleet
     /// roster. Backs `GET /api/runners` — `agent_runners`
     /// itself has held this data since migration 040; nothing read it back
