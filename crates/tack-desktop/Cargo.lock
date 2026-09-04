@@ -3423,8 +3423,10 @@ version = "0.1.0-beta.7"
 dependencies = [
  "anyhow",
  "cargo_metadata",
+ "dirs",
  "libc",
  "reqwest 0.12.28",
+ "semver",
  "serde",
  "serde_json",
  "tauri",

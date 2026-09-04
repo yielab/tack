@@ -17,8 +17,8 @@ const HEALTH_TIMEOUT: Duration = Duration::from_secs(15);
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(300);
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
-/// The four `TACK_*` variables the sidecar needs. Until VII-B3 computes the
-/// pinned per-OS data root, callers point this at a temporary directory.
+/// The four `TACK_*` variables the sidecar needs, built from the pinned
+/// per-OS data root (see [`crate::paths`]).
 #[derive(Debug, Clone)]
 pub struct ServerFolders {
     pub database_url: String,
@@ -64,6 +64,40 @@ pub enum SupervisorError {
     SpawnFailed(String),
     #[error("port {0} is already in use by something that is not Tack")]
     PortOccupiedByOther(u16),
+    #[error(
+        "the server at this port is version {server_version}, older than the {bundled_version} \
+         this app bundles; update the server before attaching"
+    )]
+    OutdatedServer {
+        server_version: String,
+        bundled_version: String,
+    },
+}
+
+/// How an already-running (attached) server's version compares to the
+/// version bundled with this app. Spawn mode never needs this: a server
+/// this app started is always the bundled binary itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VersionCheck {
+    Compatible,
+    Outdated,
+    /// One or both version strings did not parse as semver. Not evidence of
+    /// being outdated -- attaching proceeds rather than refusing on a guess.
+    Unknown,
+}
+
+/// Compares `server_version` (from the attached server's `/api/health`)
+/// against `bundled_version` (this app's own compiled-in version, which
+/// tracks the workspace version a release build ships alongside).
+pub fn check_server_version(server_version: &str, bundled_version: &str) -> VersionCheck {
+    match (
+        semver::Version::parse(server_version),
+        semver::Version::parse(bundled_version),
+    ) {
+        (Ok(server), Ok(bundled)) if server < bundled => VersionCheck::Outdated,
+        (Ok(_), Ok(_)) => VersionCheck::Compatible,
+        _ => VersionCheck::Unknown,
+    }
 }
 
 /// What the supervisor decided after probing the configured port.
@@ -131,16 +165,25 @@ async fn port_has_a_listener(port: u16) -> bool {
 /// one through `launcher` and polls until it is healthy or `HEALTH_TIMEOUT`
 /// elapses. `port` is the same port `base_url` names — the caller owns
 /// building both from one source of truth; this function never binds a port
-/// itself, only probes and connects to one.
+/// itself, only probes and connects to one. `bundled_version` is this app's
+/// own version; an attach whose server reports an older one is refused
+/// (`OutdatedServer`) before anything else happens with it.
 pub async fn attach_or_start<L: SidecarLauncher>(
     client: &reqwest::Client,
     base_url: &str,
     port: u16,
     launcher: &L,
     folders: &ServerFolders,
+    bundled_version: &str,
 ) -> Result<Outcome<L::Process>, SupervisorError> {
     if let Some(health) = probe_health(client, base_url).await {
-        return Ok(Outcome::Attached { health });
+        return match check_server_version(&health.version, bundled_version) {
+            VersionCheck::Outdated => Err(SupervisorError::OutdatedServer {
+                server_version: health.version,
+                bundled_version: bundled_version.to_string(),
+            }),
+            VersionCheck::Compatible | VersionCheck::Unknown => Ok(Outcome::Attached { health }),
+        };
     }
 
     if port_has_a_listener(port).await {
@@ -266,9 +309,10 @@ mod tests {
     }
 
     /// Writes a tiny Python HTTP server that answers `/api/health` on the port
-    /// given as argv[1]. Python ships on every CI image this repo already
-    /// targets; nothing here depends on the real `tack` binary.
-    fn write_fake_sidecar(dir: &std::path::Path) -> PathBuf {
+    /// given as argv[1], reporting `version`. Python ships on every CI image
+    /// this repo already targets; nothing here depends on the real `tack`
+    /// binary.
+    fn write_fake_sidecar(dir: &std::path::Path, version: &str) -> PathBuf {
         let path = dir.join("fake-tack.py");
         let mut f = std::fs::File::create(&path).unwrap();
         write!(
@@ -278,7 +322,7 @@ mod tests {
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/health":
-            body = json.dumps({{"status": "ok", "version": "0.0.0-fake"}}).encode()
+            body = json.dumps({{"status": "ok", "version": "{version}"}}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -319,7 +363,7 @@ http.server.HTTPServer(("127.0.0.1", port), Handler).serve_forever()
     #[tokio::test]
     async fn spawns_and_becomes_healthy_when_nothing_is_listening() {
         let tmp = tempfile::tempdir().unwrap();
-        let script = write_fake_sidecar(tmp.path());
+        let script = write_fake_sidecar(tmp.path(), "0.0.0-fake");
         let port = free_port();
         let base_url = format!("http://127.0.0.1:{port}");
         let client = reqwest::Client::new();
@@ -329,9 +373,16 @@ http.server.HTTPServer(("127.0.0.1", port), Handler).serve_forever()
             fail_next: false,
         };
 
-        let outcome = attach_or_start(&client, &base_url, port, &launcher, &folders(tmp.path()))
-            .await
-            .expect("supervisor should spawn and observe health");
+        let outcome = attach_or_start(
+            &client,
+            &base_url,
+            port,
+            &launcher,
+            &folders(tmp.path()),
+            "0.0.0-fake",
+        )
+        .await
+        .expect("supervisor should spawn and observe health");
 
         let (health, process) = match outcome {
             Outcome::Started { health, process } => (health, process),
@@ -354,7 +405,7 @@ http.server.HTTPServer(("127.0.0.1", port), Handler).serve_forever()
     #[tokio::test]
     async fn attaches_without_spawning_when_something_already_answers() {
         let tmp = tempfile::tempdir().unwrap();
-        let script = write_fake_sidecar(tmp.path());
+        let script = write_fake_sidecar(tmp.path(), "0.0.0-fake");
         let port = free_port();
         let base_url = format!("http://127.0.0.1:{port}");
         let client = reqwest::Client::new();
@@ -382,9 +433,16 @@ http.server.HTTPServer(("127.0.0.1", port), Handler).serve_forever()
             port,
             fail_next: true, // spawning must never be attempted
         };
-        let outcome = attach_or_start(&client, &base_url, port, &launcher, &folders(tmp.path()))
-            .await
-            .expect("supervisor should attach");
+        let outcome = attach_or_start(
+            &client,
+            &base_url,
+            port,
+            &launcher,
+            &folders(tmp.path()),
+            "0.0.0-fake",
+        )
+        .await
+        .expect("supervisor should attach");
 
         match outcome {
             Outcome::Attached { health } => assert_eq!(health.status, "ok"),
@@ -403,7 +461,7 @@ http.server.HTTPServer(("127.0.0.1", port), Handler).serve_forever()
     #[tokio::test]
     async fn reports_spawn_failure_instead_of_hanging() {
         let tmp = tempfile::tempdir().unwrap();
-        let script = write_fake_sidecar(tmp.path());
+        let script = write_fake_sidecar(tmp.path(), "0.0.0-fake");
         let port = free_port();
         let base_url = format!("http://127.0.0.1:{port}");
         let client = reqwest::Client::new();
@@ -413,16 +471,23 @@ http.server.HTTPServer(("127.0.0.1", port), Handler).serve_forever()
             fail_next: true,
         };
 
-        let err = attach_or_start(&client, &base_url, port, &launcher, &folders(tmp.path()))
-            .await
-            .expect_err("a poisoned launcher must surface an error, not hang");
+        let err = attach_or_start(
+            &client,
+            &base_url,
+            port,
+            &launcher,
+            &folders(tmp.path()),
+            "0.0.0-fake",
+        )
+        .await
+        .expect_err("a poisoned launcher must surface an error, not hang");
         assert!(matches!(err, SupervisorError::SpawnFailed(_)));
     }
 
     #[tokio::test]
     async fn refuses_to_spawn_when_the_port_is_held_by_something_else() {
         let tmp = tempfile::tempdir().unwrap();
-        let script = write_fake_sidecar(tmp.path());
+        let script = write_fake_sidecar(tmp.path(), "0.0.0-fake");
         let port = free_port();
         let base_url = format!("http://127.0.0.1:{port}");
         let client = reqwest::Client::new();
@@ -442,9 +507,117 @@ http.server.HTTPServer(("127.0.0.1", port), Handler).serve_forever()
             port,
             fail_next: true, // spawning must never be attempted
         };
-        let err = attach_or_start(&client, &base_url, port, &launcher, &folders(tmp.path()))
-            .await
-            .expect_err("a foreign listener on the port must be refused, not spawned into");
+        let err = attach_or_start(
+            &client,
+            &base_url,
+            port,
+            &launcher,
+            &folders(tmp.path()),
+            "0.0.0-fake",
+        )
+        .await
+        .expect_err("a foreign listener on the port must be refused, not spawned into");
         assert!(matches!(err, SupervisorError::PortOccupiedByOther(p) if p == port));
+    }
+
+    #[tokio::test]
+    async fn refuses_to_attach_to_a_server_older_than_the_bundled_version() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script = write_fake_sidecar(tmp.path(), "0.1.0-beta.1");
+        let port = free_port();
+        let base_url = format!("http://127.0.0.1:{port}");
+        let client = reqwest::Client::new();
+
+        // A server started by hand, as before, but running an older release
+        // than this app bundles.
+        let mut hand_started = Command::new("python3")
+            .arg(&script)
+            .arg(port.to_string())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        for _ in 0..50 {
+            if probe_health(&client, &base_url).await.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        let launcher = ScriptLauncher {
+            script,
+            port,
+            fail_next: true, // spawning must never be attempted
+        };
+        let err = attach_or_start(
+            &client,
+            &base_url,
+            port,
+            &launcher,
+            &folders(tmp.path()),
+            "0.1.0-beta.7",
+        )
+        .await
+        .expect_err("an attached server older than the bundled version must be refused");
+        assert!(matches!(
+            err,
+            SupervisorError::OutdatedServer { ref server_version, ref bundled_version }
+                if server_version == "0.1.0-beta.1" && bundled_version == "0.1.0-beta.7"
+        ));
+
+        // Refusing to use it must not touch it — same rule as any other
+        // attach: this process never signals a server it did not start.
+        assert!(
+            hand_started.try_wait().unwrap().is_none(),
+            "refusing an outdated server must not touch it"
+        );
+        hand_started.kill().unwrap();
+        let _ = hand_started.wait();
+    }
+
+    #[test]
+    fn check_server_version_flags_a_strictly_older_semver() {
+        assert_eq!(
+            check_server_version("0.1.0-beta.1", "0.1.0-beta.7"),
+            VersionCheck::Outdated
+        );
+    }
+
+    #[test]
+    fn check_server_version_orders_prerelease_numbers_numerically() {
+        // A naive string compare would put "beta.10" before "beta.9" —
+        // semver orders numeric prerelease identifiers as numbers, not text.
+        assert_eq!(
+            check_server_version("0.1.0-beta.9", "0.1.0-beta.10"),
+            VersionCheck::Outdated
+        );
+        assert_eq!(
+            check_server_version("0.1.0-beta.10", "0.1.0-beta.9"),
+            VersionCheck::Compatible
+        );
+    }
+
+    #[test]
+    fn check_server_version_treats_equal_and_newer_as_compatible() {
+        assert_eq!(
+            check_server_version("0.1.0-beta.7", "0.1.0-beta.7"),
+            VersionCheck::Compatible
+        );
+        assert_eq!(
+            check_server_version("0.2.0", "0.1.0-beta.7"),
+            VersionCheck::Compatible
+        );
+    }
+
+    #[test]
+    fn check_server_version_is_unknown_rather_than_outdated_when_unparseable() {
+        assert_eq!(
+            check_server_version("not-a-version", "0.1.0-beta.7"),
+            VersionCheck::Unknown
+        );
+        assert_eq!(
+            check_server_version("0.1.0-beta.7", "also-not-a-version"),
+            VersionCheck::Unknown
+        );
     }
 }

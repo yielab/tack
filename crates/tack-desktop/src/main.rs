@@ -2,9 +2,10 @@
 // own — it spawns (or attaches to) the real server and loads its web UI.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod first_run;
+mod paths;
 mod supervisor;
 
-use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
@@ -12,9 +13,9 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::CommandChild;
 
+use paths::DataPaths;
 use supervisor::{
-    DEFAULT_PORT, Outcome, ServerFolders, SidecarHandle, SidecarLauncher, SupervisorError,
-    attach_or_start, shutdown,
+    Outcome, SidecarHandle, SidecarLauncher, SupervisorError, attach_or_start, shutdown,
 };
 
 /// [`SidecarHandle`] backed by the real Tauri sidecar child.
@@ -72,22 +73,6 @@ enum ServerMode {
 
 struct DesktopState(Mutex<Option<ServerMode>>);
 
-/// Where the sidecar's data lives until VII-B3 computes the pinned per-OS
-/// root from `dirs::data_dir()`. A temp directory keeps this card's proofs
-/// (attach/spawn/shutdown) independent of that later card.
-fn temporary_data_root() -> PathBuf {
-    std::env::temp_dir().join("tack-desktop-dev")
-}
-
-fn temporary_folders(root: &Path) -> ServerFolders {
-    ServerFolders {
-        database_url: format!("sqlite:{}/tack.db?mode=rwc", root.display()),
-        storage_dir: root.join("storage"),
-        runner_state_dir: root.join("runner"),
-        log_file: root.join("logs/tack.log"),
-    }
-}
-
 fn main() {
     tracing_subscriber::fmt::init();
 
@@ -97,11 +82,14 @@ fn main() {
         .manage(DesktopState(Mutex::new(None)))
         .setup(|app| {
             let handle = app.handle().clone();
-            let port = DEFAULT_PORT;
+
+            // Resolved and shown (first run only) synchronously, before the
+            // window exists — the dialog has nothing to sit in front of yet.
+            let paths = DataPaths::resolve().map_err(|e| e.to_string())?;
+            let settings = first_run::ensure_settings(&handle, &paths);
+            let port = settings.port;
             let base_url = format!("http://127.0.0.1:{port}");
-            let root = temporary_data_root();
-            std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
-            let folders = temporary_folders(&root);
+            let folders = paths.server_folders(settings.database_path.as_deref());
 
             tauri::async_runtime::spawn(async move {
                 let client = reqwest::Client::new();
@@ -110,7 +98,16 @@ fn main() {
                     port,
                 };
 
-                match attach_or_start(&client, &base_url, port, &launcher, &folders).await {
+                match attach_or_start(
+                    &client,
+                    &base_url,
+                    port,
+                    &launcher,
+                    &folders,
+                    env!("CARGO_PKG_VERSION"),
+                )
+                .await
+                {
                     Ok(outcome) => {
                         let mode = match outcome {
                             Outcome::Attached { health } => {
@@ -144,6 +141,27 @@ fn main() {
                             .message(format!(
                                 "Port {port} is already in use by something other than Tack. \
                                  Close whatever is using it and reopen Tack."
+                            ))
+                            .title("Tack")
+                            .kind(MessageDialogKind::Error)
+                            .blocking_show();
+                        handle.exit(1);
+                    }
+                    Err(SupervisorError::OutdatedServer {
+                        server_version,
+                        bundled_version,
+                    }) => {
+                        tracing::error!(
+                            server_version = %server_version,
+                            bundled_version = %bundled_version,
+                            "attached server is older than the bundled version"
+                        );
+                        handle
+                            .dialog()
+                            .message(format!(
+                                "The Tack server already running is version {server_version}, \
+                                 older than the {bundled_version} this app bundles. Update the \
+                                 server, then reopen Tack."
                             ))
                             .title("Tack")
                             .kind(MessageDialogKind::Error)
