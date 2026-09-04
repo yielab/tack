@@ -90,6 +90,53 @@ describe('decisionsApi.resolve', () => {
   });
 });
 
+describe('decisionsApi.list', () => {
+  it('GETs the discovery route and returns the decision rows', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({
+        protocol_version: 1,
+        data: [
+          {
+            decision_id: 'dec_1',
+            attempt_id: 'att_1',
+            kind: 'permission',
+            prompt: 'Allow?',
+            options: [{ option_id: 'allow', label: 'Allow' }],
+            metadata: {},
+            expires_at: null,
+            state: 'pending',
+            answer: null,
+            resolved_at: null,
+            resolved_by: null,
+            created_at: '2026-08-06T12:00:00Z',
+            updated_at: '2026-08-06T12:00:00Z',
+          },
+        ],
+      }),
+    );
+
+    const rows = await decisionsApi.list('exec_1', 2);
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/executions/exec_1/attempts/2/decisions');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].decision_id).toBe('dec_1');
+    expect(rows[0].state).toBe('pending');
+  });
+
+  it('URL-encodes every segment', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ protocol_version: 1, data: [] }));
+    await decisionsApi.list('a/b', 1);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/executions/a%2Fb/attempts/1/decisions');
+  });
+
+  it('throws ApiError(404) when the request or attempt does not exist', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({ error: { status: 404, message: 'Attempt does not exist' } }, 404),
+    );
+    await expect(decisionsApi.list('exec_1', 99)).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
 describe('decisionTokenStore', () => {
   it('round-trips through sessionStorage and clears on null', () => {
     expect(decisionTokenStore.get()).toBeNull();

@@ -1,5 +1,5 @@
-import { type Component, For, Show, createSignal } from 'solid-js';
-import { Badge, Button, Field } from '../ui';
+import { type Component, For, Show, createResource, createSignal } from 'solid-js';
+import { Badge, Button, EmptyState, Field } from '../ui';
 import { toast } from '../ui/toast';
 import {
   decisionTokenStore,
@@ -15,27 +15,21 @@ import {
 } from '../execution';
 
 export interface DecisionInboxProps {
+  requestId: string;
+  attemptNumber: number;
+  /** Internal attempt id — distinct from `attemptNumber` — the resolve
+   *  route (`POST /attempts/{attempt_id}/decisions/{decision_id}/resolve`)
+   *  is scoped by, matching every other caller of that route in this
+   *  codebase. */
   attemptId: string;
-  /**
-   * Known decisions to render as rows. Always an empty array in production
-   * today — no decision-discovery endpoint exists anywhere in this
-   * codebase (see `shared/execution/decisions.ts`'s header comment and
-   * `docs/agent-handoffs/part-iii/III-F1.md`'s own "likely III-F4's
-   * frontend-integration concern" note). This prop exists so the row
-   * rendering — in particular pending-vs-expired-vs-resolved's distinct
-   * visual treatment — is fully built and tested today, ready to receive
-   * real rows the moment a list endpoint lands, without a caller needing to
-   * change how it's mounted.
-   */
-  decisions?: DecisionRecord[];
-  /** Called after any successful resolve, from a listed row or the manual
-   *  quick action below the list. */
+  /** Called after any successful resolve. The list is refetched
+   *  immediately after, so a resolved row's badge updates without the
+   *  caller needing to do anything. */
   onResolved?: (result: ResolveDecisionResult) => void;
 }
 
-/** Shared resolve call + user-facing toast for both `DecisionRow` and
- *  `ManualDecisionResolve` — one place maps every distinct server outcome
- *  to a distinct message, so the two entry points can never drift apart. */
+/** Shared resolve call + user-facing toast — one place maps every distinct
+ *  server outcome to a distinct message. */
 async function resolveAndNotify(
   attemptId: string,
   decisionId: string,
@@ -205,74 +199,14 @@ const DecisionRow: Component<{
   );
 };
 
-const ManualDecisionResolve: Component<{
-  attemptId: string;
-  onResolved?: (result: ResolveDecisionResult) => void;
-}> = (props) => {
-  const [decisionId, setDecisionId] = createSignal('');
-  const [optionId, setOptionId] = createSignal('');
-  const [text, setText] = createSignal('');
-  const [busy, setBusy] = createSignal(false);
-
-  const canSubmit = () => decisionId().trim().length > 0 && optionId().trim().length > 0 && !busy();
-
-  const submit = async (e: Event) => {
-    e.preventDefault();
-    if (!canSubmit()) return;
-    setBusy(true);
-    try {
-      await resolveAndNotify(
-        props.attemptId,
-        decisionId().trim(),
-        { option_id: optionId().trim(), text: text().trim() || null },
-        props.onResolved,
-      );
-      setDecisionId('');
-      setOptionId('');
-      setText('');
-    } catch {
-      /* already toasted */
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <form
-      class="space-y-2 rounded-lg border border-dashed p-3"
-      style={{ 'border-color': 'var(--color-border-light)' }}
-      onSubmit={submit}
-    >
-      <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-        Resolve a decision by id — no decision-discovery endpoint exists on this deployment yet
-        (see docs/agent-handoffs/part-iii/III-F4.md), so enter an id you already know (e.g. from
-        the runner/agent's own output).
-      </p>
-      <Field label="Decision id" value={decisionId()} onInput={(e) => setDecisionId(e.currentTarget.value)} required />
-      <Field label="Answer (option id)" value={optionId()} onInput={(e) => setOptionId(e.currentTarget.value)} required />
-      <Field label="Details (optional)" value={text()} onInput={(e) => setText(e.currentTarget.value)} />
-      <div class="flex items-center gap-2">
-        <Button type="submit" size="sm" variant="secondary" disabled={!canSubmit()} loading={busy()}>
-          Resolve decision
-        </Button>
-        <Show when={!decisionId().trim() || !optionId().trim()}>
-          <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-            Enter a decision id and an answer to enable Resolve.
-          </span>
-        </Show>
-      </div>
-    </form>
-  );
-};
-
 /**
- * The decision inbox for one attempt (TODO.md III-F4: "decision inbox").
- * Renders any known decisions with pending/expired/resolved kept visually
- * and semantically distinct (this card's acceptance bar, verbatim), and
- * always offers a manual "resolve by id" action that works against the
- * real, mounted `POST /attempts/{attempt_id}/decisions/{decision_id}/resolve`
- * endpoint today — see `props.decisions`' doc comment for why the list
- * itself is empty in every real deployment right now.
+ * The decision inbox for one attempt (TODO.md III-F4: "decision inbox";
+ * VI-C4: discovered, never typed). Fetches `GET
+ * /executions/{request_id}/attempts/{attempt_number}/decisions` and renders
+ * every row with pending/expired/resolved kept visually and semantically
+ * distinct (this card's acceptance bar, verbatim). A successful resolve
+ * refetches the list so the resolved row's badge updates immediately,
+ * without the caller managing any state of its own.
  *
  * The decision token field mirrors `features/approvals/ApprovalsPage.tsx`'s
  * own `TACK_ORCH_APPROVAL_TOKEN` entry exactly, including its reasoning:
@@ -282,12 +216,20 @@ const ManualDecisionResolve: Component<{
  * for the fuller argument this mirrors).
  */
 const DecisionInbox: Component<DecisionInboxProps> = (props) => {
-  const decisions = () => props.decisions ?? [];
   const [tokenInput, setTokenInput] = createSignal(decisionTokenStore.get() ?? '');
+  const [decisions, { refetch }] = createResource(
+    () => `${props.requestId}:${props.attemptNumber}`,
+    () => decisionsApi.list(props.requestId, props.attemptNumber),
+  );
 
   const saveToken = () => {
     decisionTokenStore.set(tokenInput().trim() || null);
     toast.success('Decision token saved for this browser session.');
+  };
+
+  const handleResolved = (result: ResolveDecisionResult) => {
+    props.onResolved?.(result);
+    void refetch();
   };
 
   return (
@@ -311,25 +253,28 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
         </Button>
       </div>
 
-      <Show
-        when={decisions().length > 0}
-        fallback={
-          <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-            No decisions are listed here yet — see the quick action below if you already know a
-            decision id.
-          </p>
-        }
-      >
+      <Show when={decisions.loading}>
+        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+          Loading decisions…
+        </p>
+      </Show>
+      <Show when={decisions.error}>
+        <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
+          Couldn't load decisions: {decisions.error instanceof Error ? decisions.error.message : 'unknown error'}
+        </p>
+      </Show>
+      <Show when={!decisions.loading && !decisions.error && (decisions() ?? []).length === 0}>
+        <EmptyState title="No decisions raised yet" />
+      </Show>
+      <Show when={!decisions.loading && !decisions.error && (decisions() ?? []).length > 0}>
         <ul class="space-y-2">
           <For each={decisions()}>
             {(decision) => (
-              <DecisionRow attemptId={props.attemptId} decision={decision} onResolved={props.onResolved} />
+              <DecisionRow attemptId={props.attemptId} decision={decision} onResolved={handleResolved} />
             )}
           </For>
         </ul>
       </Show>
-
-      <ManualDecisionResolve attemptId={props.attemptId} onResolved={props.onResolved} />
     </div>
   );
 };

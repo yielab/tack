@@ -82,6 +82,7 @@ export {
   isDecisionInvalidOption,
 } from './decisions';
 
+export type { ArtifactRecord } from './artifacts';
 export { artifactsApi, isArtifactNotFound, isArtifactContentNotVerified } from './artifacts';
 
 export type { CapabilityGate, FeatureName, AggregatedModelCombination, CombinationAvailability } from './capabilities';

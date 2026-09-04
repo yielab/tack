@@ -1349,6 +1349,58 @@
         }
       }
     },
+    "/api/executions/{request_id}/attempts/{attempt_number}/artifacts": {
+      "get": {
+        "tags": [
+          "execution-operator"
+        ],
+        "summary": "`GET /api/executions/{request_id}/attempts/{attempt_number}/artifacts` —\nevery artifact manifested for this attempt, oldest first. Returns `404`\nnaming which resource is missing (`execution_request` vs\n`execution_attempt`), mirroring `list_execution_attempt_events`'s own\nnot-found split.",
+        "operationId": "list_execution_attempt_artifacts",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "Execution request ID (opaque)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attempt_number",
+            "in": "path",
+            "description": "1-based attempt number",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every artifact manifested for this attempt, oldest first (may be empty)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found (execution_request or execution_attempt)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/executions/{request_id}/attempts/{attempt_number}/artifacts/{artifact_id}/content": {
       "get": {
         "tags": [
@@ -1433,6 +1485,58 @@
           },
           "409": {
             "description": "conflict (details.artifact_id) — the artifact manifest exists but its content has not been verified yet; distinct from not_found, never silently treated as \"gone\" or zero bytes (III.2 rule 7)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/executions/{request_id}/attempts/{attempt_number}/decisions": {
+      "get": {
+        "tags": [
+          "execution-operator"
+        ],
+        "summary": "`GET /api/executions/{request_id}/attempts/{attempt_number}/decisions` —\nevery decision raised against this attempt, oldest first, including\n`pending`/`resolved`/`expired` states alike. Listing carries no\n`TACK_EXECUTION_DECISION_TOKEN` gate — see this module's header comment.",
+        "operationId": "list_execution_attempt_decisions",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "Execution request ID (opaque)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attempt_number",
+            "in": "path",
+            "description": "1-based attempt number",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every decision raised against this attempt, oldest first (may be empty)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found (execution_request or execution_attempt)",
             "content": {
               "application/json": {
                 "schema": {
@@ -6447,6 +6551,65 @@
           "deny"
         ]
       },
+      "ArtifactListResponse": {
+        "type": "object",
+        "required": [
+          "protocol_version",
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactSummary"
+            }
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ArtifactSummary": {
+        "type": "object",
+        "description": "One `execution_artifacts` manifest row as an operator sees it. Never the\nraw `content_reference` storage path, which is an internal server-side\ndetail — `content_verified` is the presence/absence of that reference,\nthe same manifest-vs-content-verified distinction\n`GET .../artifacts/{artifact_id}/content` itself enforces with its own\n`404`-vs-`409` split.",
+        "required": [
+          "artifact_id",
+          "kind",
+          "name",
+          "size_bytes",
+          "content_verified",
+          "created_at"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "content_verified": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "media_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "Attachment": {
         "type": "object",
         "required": [
@@ -7938,6 +8101,41 @@
           }
         }
       },
+      "DecisionListResponse": {
+        "type": "object",
+        "required": [
+          "protocol_version",
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionSummary"
+            }
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "DecisionOptionSummary": {
+        "type": "object",
+        "required": [
+          "option_id",
+          "label"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
       "DecisionResolvedBySchema": {
         "type": "object",
         "description": "Schema-only mirror of `resolved_by`'s two observed shapes:\n`{\"kind\": \"operator\", \"subject_id\": <x-tack-principal>}` for a live\nresolve, or `{\"kind\": \"system\", \"subject_id\": \"expiry\"}` for a\nfail-closed lazy expiry. Deliberately not a closed/tagged enum — nothing\nin `docs/contracts/runner-v1/` fixes this shape (decision resolution has\nno runner-v1 fixture at all; see `handlers::decisions`'s own module doc,\n\"No item-status mapping\"), so this stays an open two-field object rather\nthan an invented contract.",
@@ -7951,6 +8149,65 @@
             "example": "operator"
           },
           "subject_id": {
+            "type": "string"
+          }
+        }
+      },
+      "DecisionSummary": {
+        "type": "object",
+        "description": "One `execution_decisions` row as an operator sees it — every column the\ntable carries, options/metadata/answer/resolved_by parsed out of their\nraw JSON-string storage. `answer`/`resolved_by` stay untyped `Value`:\nthe wire shape they carry is documented by `handlers::decisions`'\n`ResolveDecisionRequest`/`ResolveDecisionResponseSchema`, which this\nmodule does not duplicate.",
+        "required": [
+          "decision_id",
+          "attempt_id",
+          "kind",
+          "prompt",
+          "options",
+          "metadata",
+          "state",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "answer": {},
+          "attempt_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "decision_id": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "metadata": {},
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionOptionSummary"
+            }
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "resolved_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolved_by": {},
+          "state": {
+            "type": "string"
+          },
+          "updated_at": {
             "type": "string"
           }
         }
