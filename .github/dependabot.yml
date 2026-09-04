@@ -88,6 +88,20 @@ updates:
         applies-to: security-updates
         patterns: ["*"]
 
+  # The pinned Rust toolchain (rust-toolchain.toml). Pinning exactly is what keeps
+  # local builds and CI on the same compiler; this entry is what keeps the pin
+  # from going stale. A bump can surface new clippy lints, so it is never
+  # auto-merged — `dependabot-auto-merge.yml` only takes minor and patch, and a
+  # toolchain bump lands as a human decision either way.
+  - package-ecosystem: rust-toolchain
+    directory: "/"
+    target-branch: develop
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
+
   # GitHub Actions — these move slowly and are almost always safe to take in bulk.
   - package-ecosystem: github-actions
     directory: "/"

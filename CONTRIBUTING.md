@@ -29,6 +29,8 @@ cargo test --workspace
 - **`.githooks/pre-push`** runs `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and a check that `Cargo.lock` and `schema.gen.ts` are not stale. This mirrors CI, so failures are caught locally before they reach GitHub.
 - **The `tack-generated` merge driver** for `Cargo.lock`, `frontend/package-lock.json`, `docs/openapi.json` and `frontend/src/shared/api/schema.gen.ts`. Each is a pure function of sources tracked elsewhere, so hand-merging one is always either busywork or a mistake. The driver resolves them without a conflict and `.githooks/post-merge` regenerates them from the merged sources — staged, never committed for you. `scripts/regen-generated.sh` is the same regeneration, runnable by hand.
 
+`rust-toolchain.toml` pins the exact compiler both you and CI use, and rustup installs it with `rustfmt` and `clippy` the first time you run `cargo` here — you do not need to select a toolchain yourself, and you should not override it. Bumping that pin is a deliberate one-line change that Dependabot proposes monthly; it can surface new clippy lints, which is precisely why it is not left to whatever day upstream ships a release.
+
 Skipping the setup leaves you with git's ordinary text merge on those files. That is how the repository behaved before, so a clone without it is degraded, not broken.
 
 ---

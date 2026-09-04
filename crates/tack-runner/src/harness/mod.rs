@@ -410,7 +410,7 @@ fn decode_handle(process_id: &str) -> Option<(String, String)> {
         return None;
     }
     let mut bytes = Vec::with_capacity(hex_kind.len() / 2);
-    for pair in hex_kind.as_bytes().chunks_exact(2) {
+    for pair in hex_kind.as_bytes().as_chunks::<2>().0 {
         let pair_str = std::str::from_utf8(pair).ok()?;
         bytes.push(u8::from_str_radix(pair_str, 16).ok()?);
     }
