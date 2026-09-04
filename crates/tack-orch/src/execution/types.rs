@@ -440,7 +440,7 @@ pub enum StableErrorCode {
 impl StableErrorCode {
     /// Whether a conformant client may safely retry this error, taken
     /// directly from `docs/contracts/runner-v1/errors/*.json` (the frozen
-    /// authority; see `README.md` there and `TODO.md` III.1.6). This is the
+    /// authority; see `README.md` there). This is the
     /// single source of truth for retryability — no other module, handler or
     /// hand-rolled envelope may re-derive or override it.
     ///

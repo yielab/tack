@@ -1,6 +1,6 @@
 //! Redaction primitives shared by [`super::process`] and [`super::event_sink`].
 //!
-//! Rule 12 (`TODO.md` III.2): credentials, prompt bodies, query strings and
+//! Credentials, prompt bodies, query strings and
 //! complete environment values must never reach a log line or a harness
 //! event. Two independent mechanisms enforce this:
 //!

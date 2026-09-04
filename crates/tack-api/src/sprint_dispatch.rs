@@ -2,9 +2,8 @@
 //! `GET /api/sprints/{id}/dispatch/dry-run` — dispatch a whole sprint's
 //! items to the project's linked control plane in dependency order.
 //!
-//! TODO.md called this "the highest-value and highest-risk card in the
-//! cycle" and named five decisions to make deliberately rather than let
-//! fall out of a stray `?`. Answers, in the order TODO.md asked them:
+//! Five decisions this module makes deliberately, rather than letting them
+//! fall out of a stray `?`:
 //!
 //! 1. **Partial failure: skip the one item, continue with the rest.** A
 //!    policy block, a transport error, or a worker-task panic on item 4
@@ -17,7 +16,7 @@
 //!    `waiting_on_dependencies` on its own, automatically. The "skip
 //!    descendants" behaviour *emerges* from readiness gating rather than
 //!    needing its own bookkeeping — which is exactly the kind of
-//!    location TODO.md warned an emergent, undesigned answer usually
+//!    place an emergent, undesigned answer usually
 //!    hides in.
 //! 2. **Readiness = every direct dependency ("blocker") is in a
 //!    Done-category status**, checked against the item's *current*, live
