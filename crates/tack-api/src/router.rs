@@ -20,9 +20,9 @@ use crate::debug;
 #[cfg(feature = "embed-spa")]
 use crate::handlers::spa;
 use crate::handlers::{
-    attachments, backup, boards_multi, comments, custom_fields, decisions, dependencies,
-    executions, export, import_github, import_linear, items, orch, projects, provisioning, roles,
-    runner_admin, runner_protocol, settings, sprints, templates, websocket,
+    attachments, attempt_lists, backup, boards_multi, comments, custom_fields, decisions,
+    dependencies, executions, export, import_github, import_linear, items, orch, projects,
+    provisioning, roles, runner_admin, runner_protocol, settings, sprints, templates, websocket,
 };
 use crate::middleware::{inject_operator_principal, require_token};
 use crate::orch_runtime::OrchRuntime;
@@ -194,7 +194,9 @@ fn operator_execution_routes(state: &AppState) -> Router<AppState> {
         )),
     };
     executions::routes(operator_state.clone())
-        .merge(runner_admin::routes(operator_state))
+        .merge(runner_admin::routes(operator_state.clone()))
+        .merge(attempt_lists::artifact_routes(operator_state.clone()))
+        .merge(attempt_lists::decision_routes(operator_state))
         .merge(decisions::routes(decision_state))
         .merge(runner_protocol::artifact_download::routes(
             artifact_download_state,
