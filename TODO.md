@@ -10,7 +10,8 @@
 
 | Part | Cycle | Phases | Status | Where |
 |---|---|---|---|---|
-| **VI** | **Agent Onboarding & Provider UX** | 60 | **ACTIVE** — Wave 14 integrated at `da075ec`; ADR 0061 awaits user acceptance before Wave 15 | [§VI](#part-vi--agent-onboarding--provider-ux-phase-60), top of this file |
+| **VII** | **Desktop app & background service** | 61 | **ACTIVE** — ADR 0062 accepted 2026-09-03; Wave 18 ready (VII-A2 dispatchable now; VII-B1 after the Tauri prerequisites are installed on the dispatch machine) | [§VII](#part-vii--desktop-app--background-service-phase-61), top of this file |
+| **VI** | **Agent Onboarding & Provider UX** | 60 | **ACTIVE** — Wave 14 integrated at `da075ec`; ADR 0061 accepted 2026-09-03 (decision 1 refined the same day: keychain first, file fallback); Wave 15 ready to dispatch | [§VI](#part-vi--agent-onboarding--provider-ux-phase-60), top of this file |
 | **V** | **Adoption & First Public Release** | 59 | **ACTIVE** — Waves 11–12 done, Wave 13 in flight (V-C2 unblocked, V-C3 waiting on it) | [§V](#part-v--adoption--first-public-release-phase-59) |
 | **IV** | **Standalone Single-Binary Operation** | 58 | Done — Wave 10 integrated at `83fefab` | [§IV](#part-iv--standalone-single-binary-operation-phase-58) |
 | III | Harness-Agnostic Runner Fleet | 50–57 | Feature-complete, **tag refused** | [§III](#part-iii--harness-agnostic-runner-fleet-phases-5057), archive |
@@ -56,6 +57,377 @@ therefore **reordered below the active boards, not extracted**. Its numbering na
 
 ---
 
+# Part VII — Desktop app & background service (Phase 61)
+
+**Status: ACTIVE — ADR 0062 accepted 2026-09-03. Wave 18 is ready to dispatch; VII-B1
+needs the Tauri Linux prerequisites installed on the dispatch machine first (the dispatch
+plan's checklist names the packages).** The runner and the board already survive a closed
+browser tab; nothing survives a closed terminal. This Part makes Tack a background service
+with a window on top of it — an application, like Docker Desktop — and gives the terminal
+path the same daemon.
+
+Dispatch plan: **`docs/agent-handoffs/part-vii/README.md`** — read its header and your
+card's block only. It names what to read, how much it costs, the gate, and when to stop.
+
+| Wave | Cards | Phase | Status |
+|---|---|---|---|
+| 18 — The daemon, two ways | VII-A2 · VII-B1 | 61 | Ready — parallel. A2 needs nothing on the machine; **B1 needs `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libxdo-dev` and `cargo install tauri-cli --version '^2' --locked` first** (measured absent 2026-09-03) |
+| 19 — Lifecycle and data | VII-B2 · VII-B3 | 61 | Not started — parallel, after B1 |
+| 20 — Ship | VII-C1 → VII-C2 | 61 | Not started — C1 after B2 + B3; C2 after C1 **and Part VI's VI-C1** |
+| 21 — Proof | VII-D1 | 61 | Not started — last |
+
+## §VII.0 Cold-start context capsule
+
+**What this Part is for, in one sentence.** Tack must run as a background service and
+install like an application — its own window, icon and tray — so that closing the window
+never stops an agent attempt and nobody opens a terminal to start it.
+
+**The decision of record is ADR 0062** (`docs/adr/0062-desktop-app-and-background-service.md`,
+accepted 2026-09-03): eight decisions in one table at the top of the file. Read that table,
+not a paraphrase. No card re-decides one; a card that finds a decision impossible stops and
+says so in its handoff.
+
+### Evidence base, measured 2026-09-03
+
+| Fact | Value | How it was checked |
+|---|---|---|
+| Server + embedded-runner composition root | `crates/tack-cli/src/local_runner.rs` — `with_runner_enabled` (l.67), `ensure_loopback`; started by `tack serve --with-runner` | grep |
+| The UI survives a dropped connection | `frontend/src/shared/realtime/boardSocket.ts` reconnects with capped exponential backoff and re-fetches | read |
+| Server path defaults — all relative to the current directory | `sqlite:tack.db?mode=rwc`, `./storage`, `logs/`; runner state `.tack-runner` | `crates/tack-api/src/config.rs:229-239`, `crates/tack-runner/src/config.rs:9` |
+| Config-file lookup | `tack.toml` in the current directory only; when it exists, `TACK_*` env is ignored | `config.rs:351`, the file's own header comment |
+| Release targets already built | `x86_64-unknown-linux-musl`, `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-pc-windows-msvc`; `tack` with `embed-spa`, `tack-runner` as its own archive | `.github/workflows/release.yml:112-170` |
+| Tauri 2 pieces the app uses | sidecar: `bundle.externalBin` + `tauri-plugin-shell` (`app.shell().sidecar("tack")`), binaries named with the target triple suffix; tray: `tauri` feature `tray-icon`, `TrayIconBuilder` / `Menu` / `MenuItem`; plugins `tauri-plugin-autostart`, `tauri-plugin-single-instance`, `tauri-plugin-window-state`, `tauri-plugin-opener`, `tauri-plugin-dialog` | v2.tauri.app, fetched 2026-09-03 |
+| Tauri tray on Linux | icon **click events are not emitted**; the menu works | v2.tauri.app/learn/system-tray |
+| Linux build prerequisites | `libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev` | v2.tauri.app/start/prerequisites |
+| On the dispatch machine | **absent:** `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`, `cargo tauri`; present: `librsvg2-dev`, `libssl-dev`, `build-essential`; rustc 1.96.0; node v22.17.1; host `x86_64-unknown-linux-gnu` | `dpkg-query -W`, `cargo tauri --version` |
+| OS-directory crates in the lock file | none — `dirs` and `directories` absent | `Cargo.lock` |
+| Where in-flight attempts are listed (for the Quit warning) | `GET /api/executions` — `crates/tack-api/src/handlers/executions.rs:807`; read the handler for its status filter | grep |
+| Frontend API base | `VITE_API_URL ?? '/api'` — same-origin by default, so the window loads the served UI unchanged | `frontend/src/shared/api/client.ts:9` |
+
+### The data folders (ADR 0062 decision 5), fixed here so A2 and B3 agree without sharing code
+
+| OS | Root (`dirs::data_dir()` + `tack`) | Under it |
+|---|---|---|
+| Linux | `$XDG_DATA_HOME/tack`, default `~/.local/share/tack` | `tack.db` · `storage/` · `runner/` (the runner state dir) · `logs/tack.log` · the app's own `settings.json` |
+| macOS | `~/Library/Application Support/tack` | same |
+| Windows | `%APPDATA%\tack` | same |
+
+Handed to the server as `TACK_DATABASE_URL=sqlite:<root>/tack.db?mode=rwc`,
+`TACK_STORAGE_DIR=<root>/storage`, `TACK_RUNNER_STATE_DIR=<root>/runner`,
+`TACK_LOG_FILE=<root>/logs/tack.log`. The root is created `0700` on Unix. The `tack`
+binary's own defaults do not change. The folder name is lowercase `tack` on every OS —
+pinned here; the ADR's prose used a capital on two of them and this table wins.
+
+### Vocabulary
+
+Default screens and the tray say *Tack*, *agent execution*, *launch at login*, *Quit*.
+"Sidecar", "supervisor", "webview", "attach" live in code and the developer book. §VI.1
+rule 8 applies as written.
+
+---
+
+## §VII.1 Rules for simultaneous agents
+
+**All of §III.2, §V.1 and §VI.1 apply unchanged.** Six rules are specific to this Part:
+
+1. **The server is never re-implemented or re-linked.** `tack-desktop` spawns the bundled
+   `tack` binary. No crate under `crates/tack-desktop` depends on `tack-api`, `tack-db`,
+   `tack-orch` or `tack-runner`; a test asserts the dependency list from `cargo metadata`.
+2. **No webview or GTK dependency enters an existing crate.**
+   `cargo tree -p tack-cli -e normal | grep -ci "tauri\|webkit\|gtk"` is `0` before and
+   after every card; the musl release job is untouched.
+3. **The work outlives the window — proven, never claimed.** Every lifecycle claim is a
+   measured sequence: start an attempt, close the window, observe `/api/health` and the
+   attempt's state from a *second process* while the window is closed, reopen, observe the
+   same state rendered.
+4. **Never stop a server you did not start.** Attach mode drives a foreign Tack only
+   through its API and never signals its process. Proven by starting `tack serve` by hand,
+   launching the app, quitting the app, and asserting the hand-started server still answers.
+5. **No binaries in git.** Sidecar binaries are produced by the build and gitignored;
+   icons are generated by `cargo tauri icon` from one committed SVG.
+6. **Signing secrets do not exist here.** No card adds a certificate, key or notarization
+   credential to CI or the tree. C1 ships unsigned and documents the one-time warning.
+
+---
+
+## §VII.2 Shared-file ownership
+
+| Chokepoint | Owner |
+|---|---|
+| `crates/tack-cli/src/service.rs` (new), one `Commands::Service` arm in `crates/tack-cli/src/main.rs`, the `dirs` dependency line in `crates/tack-cli/Cargo.toml`, `docs/book/src/user-guide/cli.md` §"tack service", the user-service rows of `docs/DEPLOYMENT-GUIDE.md` | VII-A2 |
+| `crates/tack-desktop/**` (new): `Cargo.toml`, `tauri.conf.json`, `build.rs`, `src/main.rs`, `src/supervisor.rs`, `icons/`, `binaries/.gitkeep`; the workspace `members` line in `Cargo.toml`; `.gitignore` lines for `crates/tack-desktop/binaries/*` and `target/`; `Makefile` target `desktop-sidecar` | VII-B1 |
+| `crates/tack-desktop/src/tray.rs`, `src/lifecycle.rs`, plugin registration for autostart and single-instance in `main.rs`, the Quit dialog | VII-B2 — **after B1** |
+| `crates/tack-desktop/src/paths.rs`, `src/first_run.rs`, `settings.json` handling, the version check in `supervisor.rs`, the `dirs` dependency line in `crates/tack-desktop/Cargo.toml` | VII-B3 — **after B1** |
+| `.github/workflows/release.yml` (one new `desktop` job), `.github/workflows/ci.yml` (one `tack-desktop` check step), `crates/tack-desktop/icons/tack.svg`, the release-notes paragraph about unsigned builds | VII-C1 |
+| `README.md` §"Run it" (that section only), the book's install page, `docs/book/src/developer/crate-tour.md` entry for `tack-desktop`, `docs/screenshots/desktop-window.png` + `desktop-tray.png`, `CHANGELOG.md` `[Unreleased]` desktop lines | VII-C2 — **`README.md` and `docs/screenshots/**` are shared with Parts V and VI; see §VII.3** |
+| `docs/agent-handoffs/part-vii/VII-D1.md` (the transcript), the per-platform `measured / not_measured` table in the book's install page | VII-D1 |
+| `TODO.md`, `docs/book/src/roadmap.md` statuses | wave integrator only |
+
+---
+
+## §VII.3 Dependency graph, cross-Part conflicts and merge policy
+
+```text
+ADR 0062 (accepted) ──┬── VII-A2 (tack service) ──────────────────────────────────────┐
+                      └── VII-B1 (tack-desktop: sidecar + supervisor + window) ─┐      │
+                                    ├── VII-B2 (tray, lifecycle, autostart) ────┤      │
+                                    └── VII-B3 (data folders, first run, attach)┴── VII-C1 (release bundles) ── VII-C2 (README, install, screenshots) ── VII-D1 (stranger proof)
+Part VI · VI-B3 (runner switch) ─── read by VII-B2's tray status; B2 does not wait for it
+Part VI · VI-C1 (Agents page) ───── required before VII-C2 (the first-run screenshots show the real page)
+```
+
+**Wave 18 is two independent cards.** A2 touches only `tack-cli`; B1 creates a new crate.
+**Wave 19 is two independent cards on B1's result** — B2 and B3 own disjoint files inside
+the new crate. **C1 waits for both; C2 waits for C1 and Part VI's C1; D1 is last.**
+
+### Cross-Part conflicts — read before branching
+
+1. **`README.md`** — Part V (V-C3), Part VI (A3 landed; D2, D1 pending) and this Part
+   (C2) write it. VII-C2 rewrites §"Run it" in place and nothing else; if VI-D2 is in
+   flight, C2 waits for it; VI-D1 still takes the final merge. A card that finds another
+   writer in flight escalates instead of racing — §V.3 and §VI.3 both say so.
+2. **`docs/screenshots/**`** — V-C2's recording and VI-D2's three files keep their slots;
+   VII-C2 adds two files and touches nothing else there.
+3. **`crates/tack-cli/src/main.rs`** — VI-B1 adds `tack runner secret …`; VII-A2 adds
+   `tack service …`. Disjoint arms; the integrator merges sequentially and builds once with
+   both.
+4. **`.github/workflows/release.yml`** — VII-C1 adds a job; no Part VI card touches it.
+5. **The runner switch** — VII-B2's tray *shows* the state VI-B3 persists
+   (`GET /api/local-runner`). Until VI-B3 lands, the tray shows *unknown* with the typed
+   reason. B2 builds no second switch.
+
+A card that discovers another collision states it in the handoff and stops.
+
+---
+
+## §VII.4 Cards
+
+### VII-A2 — `tack service install | uninstall | status`
+
+**Needs nothing on the machine.** Wave 18, parallel with B1.
+
+**Owns:** `crates/tack-cli/src/service.rs` (new), one `Commands::Service` arm, the `dirs`
+dependency in `crates/tack-cli/Cargo.toml`, `docs/book/src/user-guide/cli.md` §"tack
+service", the user-service rows of `docs/DEPLOYMENT-GUIDE.md`, and the VII-A2 handoff.
+
+**Context.** The terminal path's daemon (ADR 0062 decision 8). Linux: a systemd *user*
+unit at `~/.config/systemd/user/tack.service` — `ExecStart=<absolute path of the running
+binary> serve --with-runner`, `Environment=` the four folder variables from §VII.0,
+`WorkingDirectory=<root>`, `Restart=on-failure`, `WantedBy=default.target`; `install`
+writes it, then `systemctl --user daemon-reload && systemctl --user enable --now tack`.
+macOS: `~/Library/LaunchAgents/com.yielab.tack.plist` with `RunAtLoad`, `KeepAlive`,
+`EnvironmentVariables`, loaded with `launchctl bootstrap gui/$UID`. Windows: a typed
+`service_unsupported_on_platform` error naming the desktop app. `status` prints the
+unit's state and the health URL; `uninstall` disables, removes the unit, and leaves the
+data root untouched. `--with-runner` in the unit makes the runner *available*; the switch
+stays off (decision 6). The unit's working directory is the data root, which holds no
+`tack.toml`, so a `tack.toml` in some other directory is not consulted — the doc says so.
+
+**Acceptance:** on this machine, `tack service install` → `systemctl --user is-active tack`
+prints `active`, `/api/health` answers; the shell that ran `install` is closed → still
+active; `tack service uninstall` → unit file gone, no `tack serve` process, data root's
+file count unchanged. The unit file and the plist are byte-asserted in unit tests (no live
+systemd or launchd in CI). launchd's live proof is `not_measured` here and the handoff
+says so. The Windows error is unit-tested. `cli.md` shows the three commands with real
+output; `DEPLOYMENT-GUIDE.md`'s system-level unit is untouched and the new rows point at
+this for the per-user case.
+
+---
+
+### VII-B1 — `crates/tack-desktop`: the app that supervises `tack`
+
+**Needs the Tauri prerequisites on the machine** (§VII.0 evidence row). Stop before any
+edit if `cargo tauri --version` fails or `pkg-config --exists webkit2gtk-4.1` fails, and
+say so — nothing in this card can be proven without them.
+
+**Owns:** everything under `crates/tack-desktop/` listed in §VII.2, the workspace
+`members` line, the `.gitignore` lines, the `desktop-sidecar` Makefile target, and the
+VII-B1 handoff.
+
+**Context.** A Tauri 2 application with no frontend of its own: the main window's URL is
+the local server (decision 4). Sidecar (decision 2): `bundle.externalBin` names
+`binaries/tack`; `make desktop-sidecar` builds `tack` (`cargo build -p tack-cli --release
+--features embed-spa`) and copies it to `crates/tack-desktop/binaries/tack-<host triple>`
+(gitignored). Supervisor: on launch, `GET http://127.0.0.1:<port>/api/health`; if it
+answers, **attach** (record it, never signal that process — §VII.1 rule 4); otherwise
+spawn `tack serve --with-runner` through `app.shell().sidecar("tack")` with
+`TACK_HOST=127.0.0.1`, `TACK_PORT`, and — until B3 lands — the four folder variables
+pointed at a temporary root under the OS data dir; wait for health with a bounded, typed
+timeout; open the window at the URL. On exit in *started* mode: terminate the child
+(SIGTERM, bounded wait, then kill) and prove no orphan. Single instance via
+`tauri-plugin-single-instance` (a second launch focuses the window). Port default `3210`;
+a port held by something that is not Tack → native dialog naming the port, no retry loop.
+In this card, closing the window quits (B2 makes it hide).
+
+**Acceptance:** `cargo tauri build` on this machine produces a `.deb` and an `.AppImage`
+(sizes recorded). Launching the AppImage shows the board in its own window; `pgrep -af
+"tack serve"` shows exactly one child; `/api/health` answers from a second shell. Closing
+the window terminates the child (assert no process, bounded). Attach: start `tack serve`
+by hand, launch the app → attached, quit → the hand-started server still answers. §VII.1
+rules 1–2 asserted by tests that read `cargo metadata` / `cargo tree`. `cargo test -p
+tack-desktop` runs the supervisor against a fake sidecar (a script answering `/api/health`)
+so CI needs no webview.
+
+---
+
+### VII-B2 — Tray and lifecycle: close hides, Quit stops, launch at login
+
+**Needs VII-B1.** Wave 19, parallel with B3.
+
+**Owns:** `crates/tack-desktop/src/tray.rs`, `src/lifecycle.rs`, the autostart and
+single-instance registration in `main.rs`, the Quit dialog, and the VII-B2 handoff.
+
+**Context.** Decision 3. Tray menu: *Open Tack* · *Agent execution: on / off / unknown*
+(read from `GET /api/local-runner` once VI-B3 exists; until then *unknown — the switch
+arrives with the Agents page*, and B2 builds no second switch) · *Launch at login*
+(checkbox, `tauri-plugin-autostart`, enabled on first run) · *Quit*. Window close →
+`prevent_close` + hide; *Open Tack* → show + focus. *Quit* → list in-flight attempts
+through `GET /api/executions` (read the handler for its filter); if any, a native dialog
+"N agent attempts are running. Quit anyway?"; on confirm, stop the child as B1 does; in
+attach mode, Quit closes the app and leaves the server alone. Linux: no icon-click
+handler — the event is not emitted; every action is a menu item.
+
+**Acceptance:** the daemon proof (§VII.1 rule 3), scripted: start a shim attempt, close
+the window, from a second shell observe `/api/health` and the attempt advancing while the
+window is closed, reopen from the tray → the same state rendered. Quit with an in-flight
+attempt shows the dialog (screenshot in the handoff); Quit with none stops within a
+bounded time and leaves no process. Launch-at-login on → the platform entry exists
+(`~/.config/autostart/tack.desktop` on Linux — assert the file); off → it is gone. Single
+instance still holds after B2's changes.
+
+---
+
+### VII-B3 — Data folders, first run, and the attach version check
+
+**Needs VII-B1.** Wave 19, parallel with B2.
+
+**Owns:** `crates/tack-desktop/src/paths.rs`, `src/first_run.rs`, `settings.json`
+handling, the version check in `supervisor.rs`, the `dirs` dependency in the desktop
+crate, and the VII-B3 handoff.
+
+**Context.** Decision 5 and the §VII.0 folder table. `paths.rs` computes the root with
+`dirs::data_dir()` + `tack`, creates it `0700` on Unix, and hands the four variables to
+the sidecar (replacing B1's temporary root). The app's own `settings.json` in the root
+holds a database-path override and the port — nothing else. First run: a native dialog
+(`tauri-plugin-dialog`; no second frontend) that shows the data root and offers *Use an
+existing tack.db…* through a file picker; afterwards, silent launches. Attach mode gains a
+version check: read the server's version from the least invasive existing source (the
+card measures what `GET /api/health` and `GET /api/openapi.json` carry today and chooses;
+it adds no route) and refuse to attach to a server older than the bundled `tack
+--version`, with a message naming both.
+
+**Acceptance:** a fresh user on this machine → files appear exactly under the pinned
+Linux path; the app's working directory gains no `tack.db` (assert); an override → the
+server opens the chosen database (assert by item count through the API); version
+mismatch → the typed refusal is shown, proven with a stubbed older version string in the
+fake sidecar. macOS and Windows paths are unit-tested from the crate's own computation
+and reported `not_measured` for a live run.
+
+---
+
+### VII-C1 — Release bundles for three operating systems, unsigned and said so
+
+**Needs VII-B2 and VII-B3.** Wave 20.
+
+**Owns:** the `desktop` job in `.github/workflows/release.yml`, one `tack-desktop` check
+step in `ci.yml`, `crates/tack-desktop/icons/tack.svg` (source; generated sizes via
+`cargo tauri icon`, committed as the CLI produces them), the release-notes paragraph, and
+the VII-C1 handoff.
+
+**Context.** Decision 7. Matrix: `ubuntu-22.04` → `.deb` + `.AppImage`; `macos-latest` →
+`.dmg` for `aarch64-apple-darwin` and `x86_64-apple-darwin`; `windows-latest` → `.msi`.
+Each job installs its prerequisites, builds the sidecar for the matrix target, runs
+`cargo tauri build`, and uploads the bundles next to the existing archives. `ci.yml` runs
+`cargo check -p tack-desktop` on Ubuntu with prerequisites and no bundle step. No signing
+(§VII.1 rule 6); the release notes carry the two one-time warnings verbatim (macOS:
+right-click → Open; Windows: SmartScreen → More info → Run anyway). The auto-updater
+plugin is **not** wired: unsigned updates are worse than none.
+
+**Acceptance:** one real workflow run — `workflow_dispatch` on the branch, or the cheapest
+real trigger available, recorded — produces every artifact; the Linux artifacts are
+downloaded and B1's launch acceptance is re-run against the AppImage; macOS and Windows
+artifacts exist, are the sizes recorded, and are `not_measured` for launch. The musl
+`tack` job's output is byte-identical to the previous release's build recipe (rule 2).
+
+---
+
+### VII-C2 — "Run it" says: it's an app; closing it keeps working; Quit stops it
+
+**Needs VII-C1 and Part VI's VI-C1.** Wave 20, after C1.
+
+**Owns:** `README.md` §"Run it" (that section only), the book's install page,
+`docs/book/src/developer/crate-tour.md` entry for `tack-desktop`,
+`docs/screenshots/desktop-window.png` and `desktop-tray.png`, the `[Unreleased]` desktop
+lines in `CHANGELOG.md`, and the VII-C2 handoff.
+
+**Context.** The app first (download → open → the board in its own window), the binary
+second (servers, the terminal, `tack service install`), and the daemon promise in one
+paragraph in the user's words. Two screenshots from the release build on this machine:
+the window with the Agents page (VI-C1's, which is why this waits), and the tray menu.
+Vocabulary check (§VI.1 rule 8) over everything written. README conflicts per §VII.3.
+
+**Acceptance:** a stranger reading §"Run it" alone reports the three sentences in this
+card's title without prompting (transcript). Screenshots are real, commands recorded,
+alt text describes what is shown. `mdbook build docs/book` clean. `README.md` diff
+touches §"Run it" only.
+
+---
+
+### VII-D1 — The stranger installs from the release page and never opens a terminal
+
+**Needs everything.** Wave 21, last.
+
+**Owns:** `docs/agent-handoffs/part-vii/VII-D1.md` (the transcript), the per-platform
+`measured / not_measured` table on the install page.
+
+**Context.** A clean Linux user account on this machine: download the AppImage from the
+release page (or C1's artifact — say which), open it, first run, Agents page → turn
+execution on, run an agent on an item, close the window, wait, reopen from the tray,
+attempt finished with artifacts listed, Quit warns while something runs. Timestamps at
+each step. macOS and Windows rows say `not_measured` unless a machine exists.
+
+**Acceptance:** the transcript reproduces from the handoff alone; every claim in §VII.5
+points at a line of it; nothing was typed in a terminal by the stranger after the
+download.
+
+---
+
+## §VII.5 Definition of done, and deliberate exclusions
+
+| Claim | Proof |
+|---|---|
+| Closing the window never stops an attempt; reopening shows its state | VII-B2 daemon proof, re-run by VII-D1 |
+| Quit is the only stop, and it warns when something runs | VII-B2 |
+| The app never re-implements or re-links the server; the musl `tack` job is untouched | VII-B1 dependency tests; VII-C1's unchanged musl job |
+| A terminal user gets the same daemon without the app | VII-A2 live proof |
+| Data lives in the OS folders; the working directory stays clean; an existing database can be chosen | VII-B3 |
+| Unsigned bundles exist for Linux, macOS and Windows, and the one-time warning is documented where the download is | VII-C1 |
+| A stranger installs from the release page and reaches a finished attempt without a terminal | VII-D1 transcript |
+
+**Deliberately not in this Part**, recorded so no card adopts them by drift:
+
+- **Mobile or remote access** of any kind.
+- **Code signing and notarization** — a separate decision with money attached.
+- **A second frontend or an app-only API.** The window shows the served UI.
+- **Turning the runner on by itself.** ADR 0061 decision 6's switch is the only way.
+- **A Windows service.** `tack service` returns a typed unsupported there; the app is the
+  Windows path.
+- **Auto-update.** The plugin exists; it is not wired until signed builds exist.
+- **Fixing tray-less Linux desktops.** Where no appindicator host exists the icon does not
+  show; documented as a limitation, with the window still reachable from the launcher.
+
+---
+
+## §VII.6 Handoff additions for this Part
+
+Use `docs/agent-handoffs/part-vii/TEMPLATE.md` — it points at Part VI's template and adds
+three sections: **Platform measured** (OS, desktop environment, Wayland or X11 — tray and
+autostart behave differently), **Daemon proof** (the exact sequence and observations of
+§VII.1 rule 3), and **Process proof** (`pgrep -af tack` before and after each lifecycle
+step: no orphan, no foreign server killed — rule 4).
+
+---
+
 # Part VI — Agent Onboarding & Provider UX (Phase 60)
 
 Executable board for the cycle described in
@@ -83,7 +455,7 @@ i18n, time tracking and in-UI diff review stay deferred — see §VI.5.
 | Wave | Cards | Phase | Status |
 |---|---|---|---|
 | 14 — Truth first | VI-A1 · VI-A2 · VI-A3 | 60 | **Integrated** at `da075ec` on `develop` (handoffs: `docs/agent-handoffs/part-vi/VI-A1.md`, `VI-A2.md`, `VI-A3.md`). All three adversarially verified against the real tree, not just their own reports — A1's live worked example re-checked, A3's stranger-read test and render proofs opened, A2's ADR cited by line against 0050/0058. `mdbook build` clean; the only `docs/CONFIG.md` conflict (A1's new bullet vs. A2's rewritten paragraph, both anticipated it) resolved keeping both contributions. **ADR 0061 is `Status: proposed` — Wave 15 (VI-B1/B2/B3) does not branch until the user records acceptance with a date in `VI-A2.md`.** One non-blocking finding routed to VI-D1: `docs/book/src/roadmap.md:3273` wants a forward reference to ADR 0061 once accepted (not fixed here — outside every Wave-14 card's ownership). |
-| 15 — Provider at the runner boundary | VI-B1 · VI-B2 · VI-B3 | 60 | Not started — needs VI-A2 accepted. B1 → B2 sequential; B3 needs B1, merges after B2 |
+| 15 — Provider at the runner boundary | VI-B1 · VI-B2 · VI-B3 | 60 | **Ready** — ADR 0061 accepted by the user on 2026-09-03 (recorded in `docs/agent-handoffs/part-vi/VI-A2.md`, amendments). Sequential B1 → B2 → B3; base SHA pinned in the dispatch plan at dispatch. Decision 1 of ADR 0061 was refined on 2026-09-03 before acceptance (platform keychain first, owner-only file where none answers, backend reported); VI-B1's card and dispatch block already match. |
 | 16 — UI-first flow | VI-C1 · VI-C2 · VI-C3 · VI-C4 | 60 | Not started — C3 and C4 need only VI-A2 and may run alongside Wave 15; C1 needs B2 + B3; C2 needs C3 |
 | 17 — Proof | VI-D1 · VI-D2 | 60 | Not started — last wave. D2 (assets) needs C1, C2 and Part V's V-C2, which owns `docs/screenshots/`; D1 goes last and needs everything |
 
@@ -559,7 +931,8 @@ the handoff. Nothing outward-facing was applied.
 **Owns:** `crates/tack-runner/src/secrets.rs` (new), the store path in
 `crates/tack-runner/src/config.rs`, the `secret_reference` branch in each of the three
 adapters, `tack runner secret set|list|remove` (one subcommand arm in
-`crates/tack-cli/src/main.rs` plus one small module), and the VI-B1 handoff.
+`crates/tack-cli/src/main.rs` plus one small module), the `keyring` dependency line in
+`crates/tack-runner/Cargo.toml` (and the `Cargo.lock` it moves), and the VI-B1 handoff.
 
 **Context.** `EnvironmentValue { value | secret_reference }` is in the contract and in the
 claim fixture; every adapter warns and skips a `secret_reference` entry because "no
@@ -568,16 +941,26 @@ secret-store client exists in tack-runner yet" (`claude_code.rs:62-64`, `codex.r
 waiting. The store is the smallest thing that closes it and is what VI-B2 and VI-B3 both
 need — one mechanism, three callers, all in this wave.
 
-**Design, fixed here so B2/B3 do not re-decide it:** a single owner-only file
-(`secrets.json`, mode `0600`, in `TACK_RUNNER_STATE_DIR`) mapping name → value. Names are
-identifiers — safe in logs, errors and `Debug` output; values are never in any of them, and
-the value type's `Debug`/`Display` are hardcoded to `[REDACTED]` exactly like
-`RunnerCredential`. `tack runner secret set <name>` reads the value from stdin or from
-`TACK_RUNNER_SECRET_VALUE`, **never from argv**. Resolution happens in the adapter's
-`validate` step — before any journal record or worktree exists: an entry `{"secret_reference":
-"<name>"}` resolves from the store; a missing name is a typed pre-spawn failure
-(`secret_reference_unresolved`, naming the reference only). **Today's warn-and-skip becomes
-an error**, because once a resolver exists a silently missing variable is a fake success.
+**Design, fixed here so B2/B3 do not re-decide it:** one `SecretStore` behind two
+backends, chosen once at runner start and reported by `tack runner doctor` (`backend:
+keychain | file`): the platform credential store through the `keyring` crate (service
+`tack-runner`, account = the entry name), and — only when no platform store answers — a
+single owner-only file (`secrets.json`, mode `0600`, in `TACK_RUNNER_STATE_DIR`) mapping
+name → value. Names are `<provider>/<label>` identifiers (`vercel-ai-gateway/default`) —
+safe in logs, errors and `Debug` output; values are never in any of them, and the value
+type's `Debug`/`Display` are hardcoded to `[REDACTED]` exactly like `RunnerCredential`.
+`tack runner secret set <name>` reads the value from stdin or from
+`TACK_RUNNER_SECRET_VALUE`, **never from argv**. A `secret_reference` string takes one
+optional scheme: `store:<name>` (the default when no scheme is present, so the frozen
+fixture's bare name stays valid) resolves from the store; `env:<VARIABLE>` reads the
+runner's own environment at spawn — the path for a systemd-started runner with no
+keychain and no wish to keep a file. Resolution happens in the adapter's `validate` step
+— before any journal record or worktree exists; a missing name or unset variable is a
+typed pre-spawn failure (`secret_reference_unresolved`, naming the reference only).
+**Today's warn-and-skip becomes an error**, because once a resolver exists a silently
+missing variable is a fake success. No KEK-encrypted file, no third backend, no
+per-project label pinning: the roadmap's "How the runner keeps a provider key" names
+each with its trigger.
 
 **Acceptance:** a live attempt with an environment entry `{"secret_reference": "demo"}`
 reaches the fake-harness shim with the variable set — the shim prints the value's *length*,
@@ -586,7 +969,15 @@ the value (positive control: the name is asserted present). A missing reference 
 `validate` with the typed reason, and the state directory and workspace root are asserted
 untouched. `stat -c '%a'` on the store file is `600`, measured on a real run. The
 three adapters' behaviour is proven by reverting the resolver once and watching the
-"variable is set" assertion fail. `runner_contract` byte-identical: no fixture changes.
+"variable is set" assertion fail. The keychain backend is proven live on the dev machine
+with the platform's own tool (`secret-tool lookup service tack-runner account <name>` on
+Linux, `security find-generic-password -s tack-runner -a <name>` on macOS) — the handoff
+records the command and exit status, never the output. The file fallback is proven by
+running with the platform store unreachable (`DBUS_SESSION_BUS_ADDRESS=/dev/null` on
+Linux) and asserting `doctor` reports `backend: file`. Unit tests run against the file
+backend (and `keyring`'s in-crate mock store if 4.x ships one — check, don't assume), so
+CI needs no Secret Service. An `env:` reference reaches the shim the same way a `store:`
+one does. `runner_contract` byte-identical: no fixture changes.
 
 ---
 
@@ -1603,7 +1994,8 @@ Recorded so no card adopts them by drift, and so the roadmap keeps them visible:
   composition root are Phase 58 and stay there.
 - **The Alexa integration.** The audit flags it as surface area with no adoption value, but it
   works, it is documented, and removing working features to tidy a story is not a trade this
-  Part is authorized to make.
+  Part is authorized to make. **Superseded 2026-09-03:** the user directed its removal outright;
+  it is gone from code, config, CI and docs (CHANGELOG, Unreleased → Removed), outside any card.
 
 ---
 

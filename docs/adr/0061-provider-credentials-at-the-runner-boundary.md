@@ -3,7 +3,8 @@
 **Decide:** approve six rules about the coding-agent "runner" component — the small
 worker that lives on your own machine and actually launches Claude Code / Codex /
 OpenCode. In short: a provider's API key (like a Vercel AI Gateway key) is allowed to
-live inside the runner's own private folder, never inside Tack's shared database or
+live in the operating system's keychain on the runner's machine — or, where there is
+none, in the runner's own private folder — never inside Tack's shared database or
 logs; and a new UI switch is allowed to turn that runner on/off, but only when it's
 running on your own machine with no network exposure.
 
@@ -22,7 +23,7 @@ blocked. Each would otherwise have to guess at an answer this ADR gives them.
 
 | # | Decision | Why |
 |---|---|---|
-| 1 | A provider key lives only in the runner's own private, owner-only folder on its own machine — never in Tack's database, never in a log line. | Keeps the promise that Tack's server never becomes a place that holds or could leak a vendor credential. |
+| 1 | A provider key lives only on the runner's own machine — in the operating system's keychain when there is one, otherwise in the runner's private, owner-only folder, and the runner says which — never in Tack's database, never in a log line. | Keeps the promise that Tack's server never holds or could leak a vendor credential, and matches what `gh` and `docker` already do on a developer's machine. |
 | 2 | One narrow route lets the web UI hand a key to the runner sharing its machine — and it only exists when both are on that same machine, with no outside network access. | Lets a UI-only user paste a key without opening a terminal, without weakening the server's normal security for everyone else. |
 | 3 | The runner itself asks the model gateway "what models do you offer," using its own key. Tack's server never talks to any model vendor. | Keeps the server's hands clean; the runner already talks to the network for its own job (checking out code, reporting progress). |
 | 4 | The gateway gets its own name (`vercel-ai-gateway`) and keeps its own model-name spelling, kept separate from the same model reached directly (not through the gateway). | So a report never confuses "reached the vendor directly" with "reached them through the gateway" — cost and behavior can differ. |
@@ -35,8 +36,8 @@ six calls; nothing above depends on anything below it.
 
 ---
 
-- **Status:** proposed — pending the user's explicit, dated acceptance, recorded as an
-  amendment at the bottom of `docs/agent-handoffs/part-vi/VI-A2.md`.
+- **Status:** accepted 2026-09-03 — recorded as a dated amendment at the bottom of
+  `docs/agent-handoffs/part-vi/VI-A2.md`.
 - **Date:** 2026-09-03
 - **Relationship to earlier ADRs:** doesn't change ADR 0050 (`0050-runner-control-plane.md`)
   or the safety rules in ADR 0058 (`0058-standalone-single-binary-runner.md`) — decision 6
@@ -84,12 +85,25 @@ write-only, and never echoes it back — only a "is one set?" boolean.
 
 ### 1. Where a provider key lives
 
-**Chosen:** a runner-local, owner-only file store, next to the runner's existing
-credential file, with the same locked-down file permissions already proven for that
-folder. Exactly what shape that file takes is an implementation detail for whoever
-builds it; what's fixed here is that it never appears in a log line, an error message,
-or any message the runner sends back to the server — it only ever leaves the runner's
-own disk as something the runner itself decides to send to a model vendor.
+**Chosen:** a runner-local store with two backends, tried in this order: the operating
+system's credential store (macOS Keychain, Windows Credential Manager, Linux Secret
+Service) through the `keyring` crate; and, only where no platform store answers — a
+headless server, a container — an owner-only file next to the runner's existing
+credential file, with the same locked-down permissions already proven for that folder.
+The runner reports which backend holds a key (`tack runner doctor`, and the response to
+the UI route in decision 2), so a file is never mistaken for a keychain. Entries are
+named `<provider>/<label>`; the only label written today is `default`. What's fixed here
+is that a key never appears in a log line, an error message, or any message the runner
+sends back to the server — it only ever leaves the runner's own machine as something
+the runner itself decides to send to a model vendor.
+
+**Rejected — the owner-only file as the only backend.** It is what the harnesses
+themselves do on Linux and would have been enough for one machine, but it is below the
+level the same harnesses use on macOS, and below what `gh` and `docker` do everywhere:
+try the platform keychain first, fall back to a file, say which one you used. The
+keychain costs one dependency and no configuration in the normal case — one developer
+on their own machine — and keeps the key out of every backup, sync folder and
+`cat`-able path on it.
 
 **Rejected — storing it in Tack's own database** (the same table Cloud Backup's secret
 uses). That pattern is sound, but the *location* is wrong for this secret specifically:

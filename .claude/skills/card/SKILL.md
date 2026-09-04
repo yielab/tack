@@ -127,7 +127,8 @@ unknown.
 ## 4. Handoff (mandatory)
 
 Write `docs/agent-handoffs/<cycle-dir>/<ID>.md` from the cycle's `TEMPLATE.md` when one
-exists (Part VI: `docs/agent-handoffs/part-vi/TEMPLATE.md`) — never open the Part III
+exists (Part VI: `docs/agent-handoffs/part-vi/TEMPLATE.md`; Part VII: `part-vii/TEMPLATE.md`,
+which points at Part VI's and adds three sections) — never open the Part III
 archive to find the template; older cycles inline it in their rules section. Record what you believed, what you verified, what you escalated, and any
 shared-file requests. Corrections are appended as amendments — the original claim stays;
 the history of what was believed and later falsified is the point. Update the status
