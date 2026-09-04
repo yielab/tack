@@ -89,7 +89,7 @@ curl -s http://127.0.0.1:3210/api/runners | jq -r '.data[].runner_id'
 ```
 
 Using the item id from [First use](#first-use) above, create the execution request
-(swap in your own harness — `codex`, `claude-code`, or `opencode` — and whichever model
+(swap in your own harness — `codex` or `claude-code` — and whichever model
 it accepts; see [Choosing a model and a
 provider](agent-runners.md#choosing-a-model-and-a-provider) if unsure):
 

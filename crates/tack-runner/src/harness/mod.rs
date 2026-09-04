@@ -4,7 +4,7 @@
 //! [`crate::client::engine::HarnessAdapter`] (re-exported as
 //! [`HarnessAdapter`] at this module's root) is the frozen per-attempt
 //! lifecycle interface each concrete harness adapter (`codex.rs`,
-//! `claude_code.rs`, `opencode.rs`) implements. This module supplies the
+//! `claude_code.rs`) implements. This module supplies the
 //! genuinely separate piece: [`HarnessProbe`], for harness
 //! discovery/capability reporting, which has no home in
 //! `engine::HarnessAdapter` at all (see "Why `HarnessProbe` is not a sixth
@@ -12,7 +12,7 @@
 //! registry wiring: a struct that itself implements `engine::HarnessAdapter`
 //! by dispatching to whichever concrete adapter matches a claimed attempt's
 //! requested harness kind, so `RunnerEngine<P, A, W, C>`'s single `A:
-//! HarnessAdapter` can serve all three harnesses through one engine
+//! HarnessAdapter` can serve every registered harness through one engine
 //! instance. [`process`] and [`event_sink`] are the lower-level primitives
 //! the concrete adapters compose inside their own
 //! `validate`/`start`/`cancel`/`wait` implementations.
@@ -30,7 +30,7 @@
 //! separate trait for exactly that: "detect version, report capabilities,
 //! independent of any specific attempt."
 //!
-//! ## Two open interface gaps, proven by three real adapters
+//! ## Two open interface gaps, proven by two real adapters
 //!
 //! 1. **`LocalRunHandle` cannot name its own harness kind.** `cancel`/`wait`
 //!    take only `&LocalRunHandle { process_id: String }`, with no
@@ -48,7 +48,7 @@
 //!    directly on `tack_orch::execution::HarnessKind` (an opaque string,
 //!    matching `ExecutionRequestSnapshot::requested_harness_kind`).
 //!    `registry.rs` separately defines its own `HarnessKind` enum
-//!    (`Codex`/`ClaudeCode`/`OpenCode`/`Other(String)`). Whether these two
+//!    (`Codex`/`ClaudeCode`/`Other(String)`). Whether these two
 //!    types should be unified, and whether `AdapterRegistry` itself belongs
 //!    in `registry.rs` instead of here, remains an open registry-shape
 //!    decision.
@@ -58,7 +58,6 @@ pub mod claude_code;
 pub mod codex;
 pub mod event_sink;
 pub mod fixtures;
-pub mod opencode;
 pub mod process;
 pub mod redact;
 pub mod sha256;
@@ -84,20 +83,19 @@ pub use crate::client::{AttemptJournal, RecoveryObservation};
 /// `ActualExecution.model_observation_source`.
 ///
 /// `tack_orch::execution::ActualExecution.model_observation_source` is a
-/// bare `String` on the wire, but three independently
+/// bare `String` on the wire, but the independently
 /// implemented adapters converged on exactly these three
 /// meanings: `codex.rs` introduced
 /// `"requested_not_confirmed"` for "this adapter cannot observe which model
 /// actually ran, so it echoes the request instead of fabricating a value";
-/// `opencode.rs` reused that exact literal, unprompted, for the
-/// identical situation; `claude_code.rs` independently produced
+/// `claude_code.rs` independently produced
 /// `"harness_reported"` (the frozen fixture's own exemplar value, used when
 /// a real `stream-json` `system`/`init` event names the model) and
 /// `"not_observed"` (used only when neither an observation nor a request
 /// value exists to report — Claude Code is the one adapter that can honor
 /// true auto-selection at all, so it is the only one that can ever hit this
 /// case). This enum does not change what any adapter reports in what
-/// situation — it centralizes the three literals so a fourth adapter cannot
+/// situation — it centralizes the three literals so a future adapter cannot
 /// silently invent a fourth, incompatible string for one of these same three
 /// situations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,7 +122,7 @@ impl ModelObservationSource {
 }
 
 /// Resolves `request.environment` into concrete `NAME=value` pairs — the one
-/// mechanism `claude_code.rs`, `codex.rs` and `opencode.rs` all call from
+/// mechanism `claude_code.rs` and `codex.rs` each call from
 /// both `validate` (to fail pre-spawn, discarding the map) and `start` (to
 /// build the spawned process's real environment). A literal `value` is used
 /// as-is; a `secret_reference` resolves through `store`. Either way the
@@ -215,16 +213,14 @@ pub trait HarnessProbe: Send + Sync {
     /// exceeds [`PROCESS_GROUP_CANCEL_CEILING`] — the honest ceiling for the
     /// only cancellation primitive this runner implements
     /// (`harness::process::SupervisedProcess::cancel`, a process-group
-    /// SIGTERM/SIGKILL). Checking with `ps`, twice, showed that mechanism
-    /// cannot reliably reach a descendant a harness's own shell-tool spawns
-    /// into a new OS session — and a same-shaped adversarial check against the real
-    /// `opencode` binary found the identical disjoint-session pattern for a
-    /// bash-tool subprocess, confirming this is not a Claude-Code-specific
-    /// quirk. Neither the Codex nor the OpenCode adapter has adapter-specific
-    /// evidence its own tool execution stays inside the process group
-    /// either. So a capability that lies about cancellation is caught once,
-    /// here, before any attempt is ever started — never only discovered when
-    /// a real cancellation silently fails against a live attempt.
+    /// SIGTERM/SIGKILL). Checking with `ps` against real Claude Code showed
+    /// that mechanism cannot reliably reach a descendant a harness's own
+    /// shell-tool spawns into a new OS session. The Codex adapter has no
+    /// adapter-specific evidence its own tool execution stays inside the
+    /// process group either. So a capability that lies about cancellation is
+    /// caught once, here, before any attempt is ever started — never only
+    /// discovered when a real cancellation silently fails against a live
+    /// attempt.
     fn declared_capabilities(&self) -> FeatureCapabilities;
 }
 
@@ -258,14 +254,14 @@ pub enum HarnessRegistrationError {
 /// Dispatches the frozen [`HarnessAdapter`] lifecycle across every
 /// registered harness kind, and aggregates [`HarnessProbe`] reports. This
 /// **is** the shared registry wiring: each of the concrete adapters is
-/// registered here (`registry.rs`'s own `HarnessRegistry`
-/// stays untouched by this module — see the module docs on the open
-/// reconcile about the two).
+/// registered here — see the module docs on the open "kind-key type
+/// duplication" gap against `registry.rs`'s own `HarnessKind`.
 ///
 /// Implements [`HarnessAdapter`] itself, so `RunnerEngine::new(protocol,
 /// adapter_registry, journal, workspaces)` is a complete, multi-harness
 /// runner with no `engine.rs` changes: `AdapterRegistry` simply **is** the
-/// engine's one concrete adapter type parameter.
+/// engine's one concrete adapter type parameter — adding a harness is
+/// registering it here, never a new engine type parameter.
 #[derive(Default)]
 pub struct AdapterRegistry {
     adapters: BTreeMap<String, Box<dyn HarnessAdapter>>,
@@ -577,7 +573,7 @@ mod tests {
 
     fn registry_with_two_kinds() -> (AdapterRegistry, Arc<AtomicUsize>, Arc<AtomicUsize>) {
         let codex_calls = Arc::new(AtomicUsize::new(0));
-        let opencode_calls = Arc::new(AtomicUsize::new(0));
+        let claude_calls = Arc::new(AtomicUsize::new(0));
         let mut registry = AdapterRegistry::new();
         registry.register_adapter(
             DomainHarnessKind::new("codex"),
@@ -587,35 +583,35 @@ mod tests {
             }),
         );
         registry.register_adapter(
-            DomainHarnessKind::new("opencode"),
+            DomainHarnessKind::new("claude-code"),
             Box::new(TaggedFakeAdapter {
-                tag: "opencode",
-                calls: Arc::clone(&opencode_calls),
+                tag: "claude-code",
+                calls: Arc::clone(&claude_calls),
             }),
         );
-        (registry, codex_calls, opencode_calls)
+        (registry, codex_calls, claude_calls)
     }
 
     #[tokio::test]
     async fn validate_and_start_dispatch_to_the_requested_kind_only() {
-        let (registry, codex_calls, opencode_calls) = registry_with_two_kinds();
+        let (registry, codex_calls, claude_calls) = registry_with_two_kinds();
 
         registry
             .validate(&spec_requesting("codex"))
             .await
             .expect("codex validate");
         assert_eq!(codex_calls.load(Ordering::SeqCst), 1);
-        assert_eq!(opencode_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(claude_calls.load(Ordering::SeqCst), 0);
 
         let handle = registry
-            .start(&spec_requesting("opencode"))
+            .start(&spec_requesting("claude-code"))
             .await
-            .expect("opencode start");
+            .expect("claude-code start");
         assert_eq!(codex_calls.load(Ordering::SeqCst), 1);
-        assert_eq!(opencode_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(claude_calls.load(Ordering::SeqCst), 1);
         // The handle the engine sees is opaque; only this module's own
         // routing depends on its internal shape.
-        assert!(handle.process_id.contains("opencode-process"));
+        assert!(handle.process_id.contains("claude-code-process"));
     }
 
     /// Acceptance-adjacent: proves the encode/decode workaround actually
@@ -625,17 +621,17 @@ mod tests {
     /// otherwise risk.
     #[tokio::test]
     async fn cancel_and_wait_route_the_start_generated_handle_back_to_its_own_adapter() {
-        let (registry, codex_calls, opencode_calls) = registry_with_two_kinds();
+        let (registry, codex_calls, claude_calls) = registry_with_two_kinds();
 
         let handle = registry
-            .start(&spec_requesting("opencode"))
+            .start(&spec_requesting("claude-code"))
             .await
             .expect("start");
         codex_calls.store(0, Ordering::SeqCst);
-        opencode_calls.store(0, Ordering::SeqCst);
+        claude_calls.store(0, Ordering::SeqCst);
 
         registry.cancel(&handle).await.expect("cancel");
-        assert_eq!(opencode_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(claude_calls.load(Ordering::SeqCst), 1);
         assert_eq!(
             codex_calls.load(Ordering::SeqCst),
             0,
@@ -647,10 +643,10 @@ mod tests {
             .await
             .expect("start codex");
         codex_calls.store(0, Ordering::SeqCst);
-        opencode_calls.store(0, Ordering::SeqCst);
+        claude_calls.store(0, Ordering::SeqCst);
         registry.wait(&codex_handle).await.expect("wait");
         assert_eq!(codex_calls.load(Ordering::SeqCst), 1);
-        assert_eq!(opencode_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(claude_calls.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
@@ -658,11 +654,15 @@ mod tests {
         let (registry, _, _) = registry_with_two_kinds();
 
         assert!(matches!(
-            registry.validate(&spec_requesting("claude-code")).await,
+            registry
+                .validate(&spec_requesting("unregistered-harness"))
+                .await,
             Err(HarnessError::Rejected { .. })
         ));
         assert!(matches!(
-            registry.start(&spec_requesting("claude-code")).await,
+            registry
+                .start(&spec_requesting("unregistered-harness"))
+                .await,
             Err(HarnessError::Rejected { .. })
         ));
     }
@@ -679,7 +679,7 @@ mod tests {
 
     #[tokio::test]
     async fn reconcile_decodes_the_kind_and_routes_to_the_right_adapter() {
-        let (registry, codex_calls, opencode_calls) = registry_with_two_kinds();
+        let (registry, codex_calls, claude_calls) = registry_with_two_kinds();
         let handle = registry
             .start(&spec_requesting("codex"))
             .await
@@ -691,7 +691,7 @@ mod tests {
         let observation = registry.reconcile(&journal).await.expect("reconcile");
         assert_eq!(observation, RecoveryObservation::ProcessStopped);
         assert_eq!(codex_calls.load(Ordering::SeqCst), 1);
-        assert_eq!(opencode_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(claude_calls.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
@@ -709,7 +709,7 @@ mod tests {
     #[tokio::test]
     async fn registered_kinds_and_capabilities_are_in_deterministic_sorted_order() {
         let (registry, _, _) = registry_with_two_kinds();
-        assert_eq!(registry.registered_kinds(), vec!["codex", "opencode"]);
+        assert_eq!(registry.registered_kinds(), vec!["claude-code", "codex"]);
     }
 
     struct FakeProbe {
@@ -817,9 +817,8 @@ mod tests {
     /// cancellation primitive (`harness::process::SupervisedProcess::cancel`,
     /// a process-group SIGTERM/SIGKILL) cannot reliably reach a descendant a
     /// harness's own shell-tool spawns into a new OS session — checking
-    /// with `ps`, twice, against real Claude Code found this, and an
-    /// equivalent check against the real `opencode` binary found the identical
-    /// disjoint-session pattern. A probe that nonetheless claims
+    /// with `ps` against real Claude Code found this. A probe that
+    /// nonetheless claims
     /// `cancel: Supported` is rejected here, at registration — never
     /// silently accepted only to be discovered wrong the first time a real
     /// cancellation against a live attempt fails to reach a detached
@@ -869,18 +868,18 @@ mod tests {
         );
     }
 
-    // ---- The real, reconciled three adapters ------------------------------
+    // ---- The real, reconciled adapters -------------------------------------
     //
     // Everything above this point tests dispatch/routing with trait-level
     // fakes. These last tests are the two
-    // acceptance-gate proofs that need the three
-    // *real* adapters (`codex::CodexAdapter`, `claude_code::ClaudeCodeAdapter`,
-    // `opencode::OpenCodeAdapter`), not stand-ins: "the same fixture
-    // completes through all three fake adapters" and "registration of all
-    // three is order-independent." Each real adapter's own file already has
+    // acceptance-gate proofs that need the
+    // *real* adapters (`codex::CodexAdapter`, `claude_code::ClaudeCodeAdapter`),
+    // not stand-ins: "the same fixture
+    // completes through both fake adapters" and "registration of both
+    // is order-independent." Each real adapter's own file already has
     // its own exhaustive fixture-driven test suite;
     // these two tests are deliberately narrow, cross-cutting proofs that
-    // only make sense here, where all three are in scope together.
+    // only make sense here, where both are in scope together.
 
     static NEXT_CROSS_ADAPTER_DIR: std::sync::atomic::AtomicUsize =
         std::sync::atomic::AtomicUsize::new(0);
@@ -902,21 +901,20 @@ mod tests {
         SecretStore::file(cross_adapter_temp_dir("secrets").join("secrets.json"))
     }
 
-    /// One deterministic fixture script, driven identically by all three
+    /// One deterministic fixture script, driven identically by both
     /// real adapters. Never the shared `fake_harness_command()` — that
     /// fixture is env-var-driven and single-purpose per spawn, which cannot
-    /// honestly answer OpenCode's *own* version/model-listing/run calls (three
-    /// different purposes) in one adapter instance without also faking a
+    /// honestly answer a harness's own version/model-listing/run calls
+    /// (multiple purposes) in one adapter instance without also faking a
     /// probe-only environment override this cross-cutting test has no
-    /// business reaching into. Branches on its own argv instead, mirroring
-    /// `opencode.rs::tests::branching_fixture_command`'s identical technique:
+    /// business reaching into. Branches on its own argv instead:
     /// a literal `--version` token prints a clean version string; a literal
     /// `models` token prints one deterministic `provider/model` line; anything
-    /// else (every adapter's real `run`/`exec`/`-p` invocation) prints a
-    /// fixed, non-JSON marker and exits 0 — which every one of the three
+    /// else (each adapter's real `run`/`exec`/`-p` invocation) prints a
+    /// fixed, non-JSON marker and exits 0 — which both
     /// adapters' own `wait()` honestly classifies as `Succeeded` from the
-    /// exit code alone (Codex always does; Claude Code and OpenCode fall
-    /// back to exit-code classification when stdout does not parse as their
+    /// exit code alone (Codex always does; Claude Code falls
+    /// back to exit-code classification when stdout does not parse as its
     /// own structured output).
     fn cross_adapter_fixture_command() -> (PathBuf, Vec<String>) {
         let dir = cross_adapter_temp_dir("script");
@@ -984,15 +982,15 @@ exit 0
         }
     }
 
-    /// Acceptance: "the same fixture completes through all three fake
-    /// adapters — one deterministic fixture, three adapters, same
-    /// observable outcome." Drives the real `CodexAdapter`, `ClaudeCodeAdapter`
-    /// and `OpenCodeAdapter` — through the frozen `HarnessAdapter` trait only,
+    /// Acceptance: "the same fixture completes through both fake
+    /// adapters — one deterministic fixture, two adapters, same
+    /// observable outcome." Drives the real `CodexAdapter` and `ClaudeCodeAdapter`
+    /// — through the frozen `HarnessAdapter` trait only,
     /// exactly as `AdapterRegistry` would dispatch to them — against the one
-    /// fixture script above, and asserts every one of the three reaches
+    /// fixture script above, and asserts both reach
     /// `AttemptState::Succeeded` from the identical input.
     #[tokio::test]
-    async fn the_same_fixture_completes_through_all_three_real_adapters() {
+    async fn the_same_fixture_completes_through_both_real_adapters() {
         let (program, args) = cross_adapter_fixture_command();
         let staging_root = cross_adapter_temp_dir("artifacts");
 
@@ -1040,49 +1038,23 @@ exit 0
             crate::client::AttemptState::Succeeded
         );
 
-        let opencode_workspace = cross_adapter_temp_dir("opencode-ws");
-        let opencode = crate::harness::opencode::OpenCodeAdapter::for_fixture(
-            program.clone(),
-            args.clone(),
-            staging_root.clone(),
-            cross_adapter_secret_store(),
-        );
-        let opencode_spec =
-            real_adapter_spec("opencode", "demo", "model-a", opencode_workspace.clone());
-        opencode
-            .validate(&opencode_spec)
-            .await
-            .expect("opencode validate");
-        let opencode_handle = opencode
-            .start(&opencode_spec)
-            .await
-            .expect("opencode start");
-        let opencode_outcome = opencode
-            .wait(&opencode_handle)
-            .await
-            .expect("opencode wait");
-        assert_eq!(
-            opencode_outcome.terminal_state,
-            crate::client::AttemptState::Succeeded
-        );
-
-        for workspace in [codex_workspace, claude_workspace, opencode_workspace] {
+        for workspace in [codex_workspace, claude_workspace] {
             std::fs::remove_dir_all(workspace).expect("cleanup");
         }
     }
 
-    /// Acceptance: "register all three adapters without introducing
-    /// ordering-dependent behavior." Registers the three real adapters (and
+    /// Acceptance: "register both adapters without introducing
+    /// ordering-dependent behavior." Registers the two real adapters (and
     /// their probes) into two separate `AdapterRegistry` instances in
     /// opposite orders and proves both the registered-kind set and dispatch
     /// itself are identical either way — `BTreeMap`-keyed registration
     /// structurally cannot let "who registered first" become dispatch
     /// priority, and this proves it empirically, not just by code
     /// inspection. Also proves each real probe's declared cancellation
-    /// capability (all three now `Advisory`) passes
+    /// capability (both now `Advisory`) passes
     /// the registration-time ceiling check.
     #[tokio::test]
-    async fn registering_all_three_real_adapters_is_order_independent() {
+    async fn registering_both_real_adapters_is_order_independent() {
         let staging_root = cross_adapter_temp_dir("order-artifacts");
         // codex has no fallible `discover()` to `unwrap_or_else` around like
         // claude-code below, so it needs an explicit fixture: a real `codex`
@@ -1116,32 +1088,8 @@ exit 0
                 }),
             ),
         );
-        forward.register_adapter(
-            DomainHarnessKind::new("opencode"),
-            Box::new(crate::harness::opencode::OpenCodeAdapter::discover(
-                crate::harness::process::ProcessLimits::new(
-                    1_000_000,
-                    1_000_000,
-                    std::time::Duration::from_secs(10),
-                ),
-                staging_root.clone(),
-                cross_adapter_secret_store(),
-            )),
-        );
 
         let mut backward = AdapterRegistry::new();
-        backward.register_adapter(
-            DomainHarnessKind::new("opencode"),
-            Box::new(crate::harness::opencode::OpenCodeAdapter::discover(
-                crate::harness::process::ProcessLimits::new(
-                    1_000_000,
-                    1_000_000,
-                    std::time::Duration::from_secs(10),
-                ),
-                staging_root.clone(),
-                cross_adapter_secret_store(),
-            )),
-        );
         backward.register_adapter(
             DomainHarnessKind::new("claude-code"),
             Box::new(
@@ -1168,22 +1116,18 @@ exit 0
         );
 
         assert_eq!(forward.registered_kinds(), backward.registered_kinds());
-        assert_eq!(
-            forward.registered_kinds(),
-            vec!["claude-code", "codex", "opencode"]
-        );
+        assert_eq!(forward.registered_kinds(), vec!["claude-code", "codex"]);
 
         // Dispatch itself, not only the registered-kind set, is order
         // independent. The fixture's requested model (provider "openai",
         // id "opaque/model-alpha") is unsupported by claude-code (unknown
-        // provider family) and by opencode (not a real declared pairing),
-        // so both reject it pre-spawn regardless of registry order. codex
-        // is a pass-through harness: it cannot independently
-        // verify a model's identity, so it accepts any *explicit*
-        // provider/id pre-spawn and defers the real check to the harness at
-        // run time — an accepted dispatch, not a rejection, for any locator
-        // that resolves, which the fixture above always does.
-        for kind in ["codex", "claude-code", "opencode"] {
+        // provider family), so it rejects it pre-spawn regardless of
+        // registry order. codex is a pass-through harness: it cannot
+        // independently verify a model's identity, so it accepts any
+        // *explicit* provider/id pre-spawn and defers the real check to the
+        // harness at run time — an accepted dispatch, not a rejection, for
+        // any locator that resolves, which the fixture above always does.
+        for kind in ["codex", "claude-code"] {
             let spec = spec_requesting(kind);
             let forward_result = forward.validate(&spec).await;
             let backward_result = backward.validate(&spec).await;
@@ -1200,23 +1144,9 @@ exit 0
             );
         }
 
-        // The registration-time gate: every one of the
-        // three real, now-reconciled probes registers cleanly (none still
-        // claims `cancel: Supported`).
+        // The registration-time gate: both real, now-reconciled probes
+        // register cleanly (neither still claims `cancel: Supported`).
         let mut probe_registry = AdapterRegistry::new();
-        probe_registry
-            .register_probe(Box::new(
-                crate::harness::opencode::OpenCodeAdapter::discover(
-                    crate::harness::process::ProcessLimits::new(
-                        1_000_000,
-                        1_000_000,
-                        std::time::Duration::from_secs(10),
-                    ),
-                    staging_root.clone(),
-                    cross_adapter_secret_store(),
-                ),
-            ))
-            .expect("opencode probe registers cleanly");
         probe_registry
             .register_probe(Box::new(crate::harness::codex::CodexAdapter::for_fixture(
                 codex_program.clone(),
@@ -1241,9 +1171,9 @@ exit 0
             .expect("claude-code probe registers cleanly");
 
         let reports = probe_registry.capabilities().await;
-        assert_eq!(reports.len(), 3, "all three real probes registered");
+        assert_eq!(reports.len(), 2, "both real probes registered");
         let mut kinds: Vec<&str> = reports.iter().map(|r| r.harness_kind.as_str()).collect();
         kinds.sort_unstable();
-        assert_eq!(kinds, vec!["claude-code", "codex", "opencode"]);
+        assert_eq!(kinds, vec!["claude-code", "codex"]);
     }
 }

@@ -542,7 +542,7 @@ struct ExecutionCreateArgs {
     /// Agent profile ID
     #[arg(long)]
     agent_profile: String,
-    /// Requested harness kind (e.g. codex, claude_code, opencode)
+    /// Requested harness kind (e.g. codex, claude_code)
     #[arg(long)]
     harness: String,
     /// Requested model provider (omit to allow auto-selection)

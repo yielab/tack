@@ -1,6 +1,6 @@
 # Agent Runners & Fleet Execution
 
-Tack can hand a board item to a coding agent — Codex, Claude Code, or OpenCode — and
+Tack can hand a board item to a coding agent — Codex or Claude Code — and
 track what it did as first-class project history: requested vs. actual harness/model,
 a fenced execution attempt, an event timeline, decisions the agent needs answered, and
 verified artifacts it produced. This page is the operator's guide to that surface:
@@ -36,7 +36,7 @@ proves it.
 | **Runner** | A `tack-runner` process, identified by a durable `runner_id`, enrolled once and then polling for work. |
 | **Runner fleet** | A named group of runners sharing an optional concurrency limit and default policy. An execution request targets either one exact runner or a fleet. |
 | **Agent profile** | Reusable instructions + tool policy + limits, snapshotted into the request at creation time so later edits to the profile never change history. |
-| **Harness** | The coding-agent CLI a runner can launch: `codex`, `claude-code`, or `opencode`. |
+| **Harness** | The coding-agent CLI a runner can launch: `codex` or `claude-code`. The wire value is an opaque string, so a runner may report a kind this build has no bundled adapter for. |
 | **Model profile** | A named `(model_provider, model_id)` pair, stored for operator convenience. Not yet consulted by scheduling or model resolution — see [Known gaps](#known-gaps). |
 
 `Harness` ≠ `ModelProvider` ≠ `ModelId`, and `Item` ≠ `ExecutionRequest` ≠
@@ -256,19 +256,19 @@ operator's opaque model id verbatim and the harness validates it at its own run 
 (`crates/tack-orch/src/scheduler/select.rs`). Run `tack runner doctor` on the actual
 runner host to see this for real rather than trusting a stale copy of this page — the
 full command and its unabridged output are in the [CLI reference](cli.md#runner).
-Condensed from a real run on a machine with all three harnesses installed:
+Condensed from a real run on a machine with both harnesses installed:
 
 | Harness | `model_combinations` | `model_passthrough` |
 |---|---|---|
 | `codex` | (none reported) | supported |
 | `claude-code` | (none reported) | supported |
-| `opencode` | `llamacpp`: `qwen3.6-35b-uncensored`; `opencode`: `big-pickle`, `ling-3.0-flash-fin-free`, … | unsupported |
 
 Codex and Claude Code both have no `list-models` command to probe, so both declare zero
 combinations and rely entirely on passthrough — any operator-specified model is accepted
-pre-spawn and only the harness itself validates it at run time. OpenCode's CLI does
-enumerate real installed/configured models, so it declares them and refuses passthrough
-— an undeclared OpenCode model is rejected before any process spawns, not after.
+pre-spawn and only the harness itself validates it at run time. A harness that can
+enumerate its own installed/configured models would declare them instead and refuse
+passthrough — rejecting an undeclared model before any process spawns rather than after
+— but no adapter in this tree does that today.
 
 ---
 
@@ -458,18 +458,18 @@ read this snapshot rather than assume a feature works.
 before any attempt can reference it — `crates/tack-runner/src/harness/mod.rs`, proved
 by `harness::tests::registering_a_probe_that_overclaims_cancel_support_is_rejected_before_any_attempt_exists`.
 The reason is structural, not a policy choice: every harness's own shell tool spawns
-its subprocess in a new session outside the runner's process group, confirmed against
-real `claude`, `codex`, and `opencode` binaries with `ps` during Wave 3
+its subprocess in a new session outside the runner's process group, confirmed with
+`ps` against real harness installations during Wave 3
 (`docs/agent-handoffs/part-iii/III-D5.md`, finding 1). `cancel` is `advisory`
 everywhere in this build — a cancellation *request* is always honored as a request,
 but the runner cannot promise the process actually stops.
 
 | Feature | Ceiling in this build | Why |
 |---|---|---|
-| `cancel` | `advisory` (never `supported`) | Process-group cancellation is structurally unavailable across all three harnesses — `harness::tests::registering_all_three_real_adapters_is_order_independent` pins all three post-fix |
+| `cancel` | `advisory` (never `supported`) | Process-group cancellation is structurally unavailable across both harnesses — `harness::tests::registering_both_real_adapters_is_order_independent` pins both post-fix |
 | `resume` | adapter-reported | No harness in this build declares a resumable session contract |
 | `decisions` | adapter-reported | Runner-driven bounded decisions (`POST .../decisions`) work when the harness supports them |
-| `artifacts` | `advisory` (all three adapters) | III-D5 found none of the three could guarantee artifact discovery; downgraded from an earlier `supported` claim |
+| `artifacts` | `advisory` (both adapters) | III-D5 found none of the harnesses tested could guarantee artifact discovery; downgraded from an earlier `supported` claim |
 | `usage` | `advisory` | Token totals may be absent from harness output; see [usage economics](#usage-economics-and-not-measured) |
 
 ---

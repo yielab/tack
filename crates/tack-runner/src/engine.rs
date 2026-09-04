@@ -41,7 +41,7 @@ const LEASE_RENEWAL_INTERVAL: std::time::Duration = std::time::Duration::from_se
 /// have several genuinely
 /// distinct pre-spawn rejection reasons (wrong harness kind, an
 /// auto-selected model this adapter cannot honestly confirm, an unresolvable
-/// binary, an unsupported provider, a provider/model pairing opencode itself
+/// binary, an unsupported provider, a provider/model pairing claude-code itself
 /// does not offer, ...) that all collapsed to the same bare `Rejected` at
 /// this trait boundary. Both worked around it with a `tracing::warn!`
 /// immediately before returning the error — which means the reason reached
@@ -733,7 +733,7 @@ where
     }
 
     /// Best-effort upload of a locally staged artifact. `artifact` is the
-    /// exact JSON object D1/D2/D3's adapters already produce at
+    /// exact JSON object D1/D2's adapters already produce at
     /// `terminal_reason.artifact` (`kind`, `name`, `media_type`, `sha256`,
     /// `staged_path`, ...) via `harness::artifact::ArtifactStager` — this
     /// method is the first thing in the tree that ever reads it back out.

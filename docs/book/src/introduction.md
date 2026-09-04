@@ -12,8 +12,8 @@
 >
 > **The runner** is a small worker that lives where the code and the credentials already
 > are — a laptop, a CI box, a machine with a GPU. It pulls work from the board, checks out
-> an isolated workspace, launches the coding agent you already use — Claude Code, Codex or
-> OpenCode — and reports back. **It holds the keys; the board never sees them.**
+> an isolated workspace, launches the coding agent you already use — Claude Code or
+> Codex — and reports back. **It holds the keys; the board never sees them.**
 >
 > They are separate because they scale and fail differently. **One board, many runners:**
 > a board on a small VPS dispatches to runners on ten developers' machines, each with its
@@ -24,7 +24,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="diagrams/two-components-dark.svg">
-  <img src="diagrams/two-components-light.svg" alt="Two components: the board (one) on the left holds workflows, timelines, leases, fencing, and history; runners (many) on the right each launch a harness — Claude Code, Codex, or OpenCode — near your code and credentials. One arrow, from runner to board, labeled &quot;pulls work&quot;: the board never calls out.">
+  <img src="diagrams/two-components-light.svg" alt="Two components: the board (one) on the left holds workflows, timelines, leases, fencing, and history; runners (many) on the right each launch a harness — Claude Code or Codex — near your code and credentials. One arrow, from runner to board, labeled &quot;pulls work&quot;: the board never calls out.">
 </picture>
 
 Tack tracks work for any domain — software sprints, a kitchen renovation, thesis chapters, a
@@ -58,7 +58,7 @@ Six terms recur throughout this documentation:
 
 ## Quick links
 
-- [Agent Runners & Fleet Execution](user-guide/agent-runners.md) — handing a board item to Codex, Claude Code, or OpenCode
+- [Agent Runners & Fleet Execution](user-guide/agent-runners.md) — handing a board item to Codex or Claude Code
 - [Quick Start](user-guide/quick-start.md) — up and running in five minutes
 - [Architecture Overview](developer/README.md) — the mental model behind the codebase
 - [Frontend & Design System](developer/frontend.md) — tokens, palettes, and the UI kit

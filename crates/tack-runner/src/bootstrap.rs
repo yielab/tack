@@ -25,8 +25,7 @@ use crate::{
     },
     harness::{
         AdapterRegistry, HarnessProbe, PROCESS_GROUP_CANCEL_CEILING,
-        claude_code::ClaudeCodeAdapter, codex::CodexAdapter, opencode::OpenCodeAdapter,
-        process::ProcessLimits,
+        claude_code::ClaudeCodeAdapter, codex::CodexAdapter, process::ProcessLimits,
     },
 };
 
@@ -133,9 +132,9 @@ pub async fn run(
 ///
 /// [`build_adapter_registry`] never registers an adapter or probe for a
 /// harness whose `discover` fails, so a missing `claude` binary leaves no
-/// trace in `capabilities.harnesses` whatsoever — Codex and OpenCode, by
-/// contrast, are always registered, and their absence surfaces as a
-/// `probe_error` on their own entry in that same vec instead. A caller that
+/// trace in `capabilities.harnesses` whatsoever — Codex, by
+/// contrast, is always registered, and its absence surfaces as a
+/// `probe_error` on its own entry in that same vec instead. A caller that
 /// wants to report Claude Code's absence honestly, rather than silently omit
 /// it, needs this second field; nothing else in this crate captures it.
 #[derive(Debug, Clone)]
@@ -239,24 +238,6 @@ fn build_adapter_registry(
         }
         // The reason string can name a filesystem path; only the fact is logged.
         Err(_) => tracing::info!(harness = "claude_code", "binary not found; not registered"),
-    }
-
-    let opencode = OpenCodeAdapter::discover(
-        process_limits.clone(),
-        staging_root.to_path_buf(),
-        secrets.clone(),
-    );
-    let kind = HarnessProbe::harness_kind(&opencode);
-    registry.register_adapter(kind, Box::new(opencode));
-    if registry
-        .register_probe(Box::new(OpenCodeAdapter::discover(
-            process_limits.clone(),
-            staging_root.to_path_buf(),
-            secrets.clone(),
-        )))
-        .is_err()
-    {
-        tracing::warn!(harness = "opencode", "probe rejected at registration");
     }
 
     registry

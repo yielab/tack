@@ -29,7 +29,7 @@ const PROCESS_LIMITS: ProcessLimits =
 /// report displays them — never the registry's own `BTreeMap` iteration
 /// order, which is keyed by wire string and would silently reorder if a
 /// kind's spelling changed.
-const KNOWN_HARNESS_KINDS: [&str; 3] = ["codex", "claude-code", "opencode"];
+const KNOWN_HARNESS_KINDS: [&str; 2] = ["codex", "claude-code"];
 
 /// Runs the probe and prints the report; `as_json` switches to the raw
 /// [`tack_orch::execution::RunnerCapabilities`] snapshot instead of the
@@ -71,10 +71,9 @@ enum HarnessStatus<'a> {
     Present {
         version: &'a str,
     },
-    /// The binary was found (and, for Codex/OpenCode, actually spawned) but
+    /// The binary was found (and, for Codex, actually spawned) but
     /// a probe step failed — an unparseable version string, a nonzero exit,
-    /// a timed-out process, or (OpenCode) a version that resolved cleanly
-    /// while model enumeration itself then failed. Distinct from `Absent`:
+    /// or a timed-out process. Distinct from `Absent`:
     /// this machine can find the harness, something about probing it went
     /// wrong.
     ProbeError {
@@ -88,14 +87,14 @@ enum HarnessStatus<'a> {
 
 /// Classifies one harness kind from the raw probe output.
 ///
-/// Codex and OpenCode are always registered regardless of whether their
+/// Codex is always registered regardless of whether its
 /// binary exists (`bootstrap::build_adapter_registry`'s doc comment), so
-/// their absence surfaces as a `probe_error` on their own
+/// its absence surfaces as a `probe_error` on its own
 /// [`HarnessCapability`] entry — specifically the literal `"<name> was not
 /// found on PATH"` every `*Locator::resolve` in this tree produces (see
-/// `codex.rs`/`opencode.rs`), which is what distinguishes it here from every
-/// other probe failure (malformed output, nonzero exit, timeout, failed
-/// model listing) that same field also carries. Claude Code is different: a
+/// `codex.rs`), which is what distinguishes it here from every
+/// other probe failure (malformed output, nonzero exit, timeout) that same
+/// field also carries. Claude Code is different: a
 /// missing binary means `ClaudeCodeAdapter::discover` never runs at all, so
 /// there is no entry to inspect — `claude_code_discovery_error` is the only
 /// place that failure is recorded.
@@ -193,11 +192,7 @@ fn render(report: &bootstrap::DiscoveryReport) {
 /// which harnesses it reaches and, when it is on, the catalog state.
 fn render_provider(catalog: &tack_runner::provider::CatalogStatus) {
     println!("Provider endpoint (vercel_ai_gateway):");
-    println!(
-        "  reaches: claude-code, codex (opencode: not yet — its non-interactive path needs a \
-         config file written into the workspace, a different mechanism this build does not \
-         implement)"
-    );
+    println!("  reaches: claude-code, codex");
     match catalog {
         tack_runner::provider::CatalogStatus::NotConfigured => {
             println!("  status:  not configured");
@@ -269,7 +264,7 @@ fn support_label(support: CapabilitySupport) -> &'static str {
 
 /// Where each harness's provider credential actually lives, grounded in
 /// that adapter's own environment-forwarding code
-/// (`crates/tack-runner/src/harness/{codex,claude_code,opencode}.rs`) —
+/// (`crates/tack-runner/src/harness/{codex,claude_code}.rs`) —
 /// never a guess about which environment variable a CLI reads internally.
 fn credential_note(kind: &str) -> &'static str {
     match kind {
@@ -287,14 +282,6 @@ fn credential_note(kind: &str) -> &'static str {
              only HOME and PATH from the runner process's own environment, so the installed \
              CLI can find its existing session; anything else must come through the \
              execution request's own `environment` field."
-        }
-        "opencode" => {
-            "OpenCode authenticates itself against its own credential store (default \
-             ~/.local/share/opencode), populated by `opencode auth login` or provider-specific \
-             configuration. Tack never reads, stores, or forwards it. This adapter forwards \
-             PATH, HOME and the XDG_* variables from the runner process's own environment, so \
-             the installed CLI can find its existing config; anything else must come through \
-             the execution request's own `environment` field."
         }
         other => {
             debug_assert!(false, "unhandled harness kind {other:?}");
@@ -340,8 +327,8 @@ mod tests {
         ));
     }
 
-    /// The literal wording `CodexLocator::resolve`/`OpenCodeAdapter`'s own
-    /// locator produce for "never found on PATH" — this is what doctor must
+    /// The literal wording `CodexLocator::resolve`'s own
+    /// locator produces for "never found on PATH" — this is what doctor must
     /// recognize as absence, not a probe error.
     #[test]
     fn a_binary_never_found_on_path_is_absent_not_a_probe_error() {
@@ -376,21 +363,21 @@ mod tests {
         ));
     }
 
-    /// A second, independent proof of the same distinction: OpenCode can
-    /// confirm a real installed version and still fail a later probe step
-    /// (model enumeration) — this must render as "present" with a version,
-    /// plus a distinct probe error, never collapse into "absent".
+    /// A second, independent proof of the same distinction: a harness that
+    /// confirms a real installed version and still fails a later probe step
+    /// must render as "present" with a version, plus a distinct probe
+    /// error, never collapse into "absent".
     #[test]
     fn a_present_binary_with_a_later_probe_failure_keeps_its_confirmed_version() {
         let harnesses = vec![capability(
-            "opencode",
+            "future-harness",
             "1.18.0",
             Some(
                 "installed_version 1.18.0 confirmed; provider/model enumeration failed \
                  (see additional.model_listing_error)",
             ),
         )];
-        let status = classify("opencode", &harnesses, None);
+        let status = classify("future-harness", &harnesses, None);
         assert!(matches!(
             status,
             HarnessStatus::ProbeError {
@@ -444,11 +431,11 @@ mod tests {
     /// only in a manual `--json` read.
     #[test]
     fn render_does_not_panic_on_a_populated_report() {
-        let mut with_models = capability("opencode", "1.18.0", None);
+        let mut with_models = capability("codex", "1.18.0", None);
         with_models.model_combinations = vec![ModelCombination {
-            model_provider: ModelProvider::new("opencode"),
+            model_provider: ModelProvider::new("openai"),
             model_ids: vec![ModelId::new("grok-code")],
-            discovery: "opencode models".to_owned(),
+            discovery: "codex models".to_owned(),
             additional: Default::default(),
         }];
         with_models.model_passthrough = Some(CapabilityValue {
