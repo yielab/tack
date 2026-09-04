@@ -121,6 +121,14 @@ impl RunnerConfig {
             .ok_or(RunnerError::MissingEnrollmentCredential)
     }
 
+    /// Where the file-backend secret store keeps its owner-only file when no
+    /// platform credential store answers. Always under `state_dir`, so it
+    /// moves with `--state-dir`/`TACK_RUNNER_STATE_DIR` exactly like the
+    /// enrolled session file does.
+    pub fn secret_store_path(&self) -> PathBuf {
+        self.state_dir.join("secrets.json")
+    }
+
     fn apply(&mut self, overrides: ConfigOverrides) {
         if let Some(value) = overrides.api_base_url {
             self.api_base_url = value;

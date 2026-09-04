@@ -14,6 +14,7 @@ pub mod harness;
 pub mod process;
 pub mod registry;
 pub mod runtime;
+pub mod secrets;
 
 pub use client::{RunnerProtocolClient, UnavailableProtocolClient};
 pub use clock::{Clock, SystemClock};
@@ -23,3 +24,4 @@ pub use filesystem::{LocalFilesystem, RunnerFilesystem};
 pub use process::{ProcessSupervisor, SystemProcessSupervisor};
 pub use registry::{HarnessKind, HarnessRegistry};
 pub use runtime::{RunnerRuntime, Shutdown, ShutdownHandle};
+pub use secrets::{SecretBackendKind, SecretError, SecretStore, SecretValue};
