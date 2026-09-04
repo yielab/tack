@@ -39,11 +39,13 @@ const CATALOG_TIMEOUT: Duration = Duration::from_secs(10);
 /// 3).
 pub const CATALOG_DISCOVERY: &str = "catalog_reported";
 
-/// Harness kinds whose adapters apply a [`ProviderEndpoint`]. `opencode` is
-/// deliberately absent: reaching a configured endpoint there needs a
-/// project-local config file written into the workspace plus an npm
-/// package the harness loads at startup — a materially different mechanism
-/// this crate does not implement.
+/// Harness kinds whose adapters apply a [`ProviderEndpoint`]. A harness
+/// qualifies only if its adapter can point it at a configured endpoint
+/// through per-spawn injection alone — environment variables or invocation
+/// flags set for that one process. A harness that instead needs a written,
+/// persistent config file (or a package loaded at its own startup) is a
+/// materially different mechanism this crate does not implement, and stays
+/// off this list.
 const CATALOG_ELIGIBLE_HARNESSES: [&str; 2] = ["claude-code", "codex"];
 
 /// The wire shape a harness adapter already speaks. Selects which

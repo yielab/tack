@@ -403,7 +403,9 @@ see [What actually runs today](../user-guide/agent-runners.md#what-actually-runs
 
 The adapter layer: `process.rs` (bounded output capture, timeouts, process-group
 cancellation), `event_sink.rs` (backpressure), `redact.rs`, `artifact.rs`, and one
-module per harness (`codex.rs`, `claude_code.rs`, `opencode.rs`). Two traits:
+module per harness (`codex.rs`, `claude_code.rs`) — the harness vocabulary itself stays
+open (`HarnessKind::Other(String)`); this crate just ships adapters for these two. Two
+traits:
 `HarnessAdapter` (per-attempt lifecycle: `validate`/`start`/`cancel`/`wait`/
 `reconcile`) and `HarnessProbe` (version/capability discovery). `AdapterRegistry`
 implements `HarnessAdapter` by dispatching on harness kind and **refuses to register

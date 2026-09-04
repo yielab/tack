@@ -86,7 +86,7 @@ crates/
 │                  Depends on core+db only — must NEVER depend on tack-api
 ├── tack-api/      Axum server (library; tack_api::serve). ~90 documented paths + WebSocket
 ├── tack-runner/   Pull-based execution runner — separate binary; owns credentials,
-│                  workspace, journal, and the harness subprocess (codex/claude_code/opencode)
+│                  workspace, journal, and the harness subprocess (codex/claude_code)
 └── tack-cli/      The single `tack` binary: serve + CLI client (HTTP only, never opens the DB)
 
 frontend/          SolidJS + Tailwind v4; two-axis design tokens (mode × palette);

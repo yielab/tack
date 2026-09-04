@@ -25,19 +25,15 @@
   <text x="740" y="82" text-anchor="middle" font-family="system-ui, sans-serif" font-size="24" font-weight="700" fill="#134e4a">RUNNERS</text>
   <text x="740" y="106" text-anchor="middle" font-family="system-ui, sans-serif" font-size="15" fill="#0f766e">(many)</text>
 
-  <!-- three runner mini-cards, each with a harness label beneath -->
+  <!-- two runner mini-cards, each with a harness label beneath -->
   <g font-family="system-ui, sans-serif">
-    <rect x="575" y="140" width="100" height="56" rx="8" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.5"/>
-    <text x="625" y="173" text-anchor="middle" font-size="13" font-weight="600" fill="#134e4a">runner</text>
-    <text x="625" y="216" text-anchor="middle" font-size="12" fill="#115e59">Claude Code</text>
+    <rect x="632" y="140" width="100" height="56" rx="8" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.5"/>
+    <text x="682" y="173" text-anchor="middle" font-size="13" font-weight="600" fill="#134e4a">runner</text>
+    <text x="682" y="216" text-anchor="middle" font-size="12" fill="#115e59">Claude Code</text>
 
-    <rect x="690" y="140" width="100" height="56" rx="8" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.5"/>
-    <text x="740" y="173" text-anchor="middle" font-size="13" font-weight="600" fill="#134e4a">runner</text>
-    <text x="740" y="216" text-anchor="middle" font-size="12" fill="#115e59">Codex</text>
-
-    <rect x="805" y="140" width="100" height="56" rx="8" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.5"/>
-    <text x="855" y="173" text-anchor="middle" font-size="13" font-weight="600" fill="#134e4a">runner</text>
-    <text x="855" y="216" text-anchor="middle" font-size="12" fill="#115e59">OpenCode</text>
+    <rect x="748" y="140" width="100" height="56" rx="8" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.5"/>
+    <text x="798" y="173" text-anchor="middle" font-size="13" font-weight="600" fill="#134e4a">runner</text>
+    <text x="798" y="216" text-anchor="middle" font-size="12" fill="#115e59">Codex</text>
   </g>
   <text x="740" y="248" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" fill="#0f766e" font-style="italic">lives where your code already is</text>
 

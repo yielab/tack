@@ -1223,8 +1223,8 @@ default. Returns the same masked shape as `GET`.
 
 ## Runner, Fleet & Execution
 
-Everything for handing a board item to a coding-agent runner (Codex, Claude Code, or
-OpenCode) lives under `/api/executions`, `/api/runner-fleets`, `/api/runners`,
+Everything for handing a board item to a coding-agent runner (Codex or Claude Code)
+lives under `/api/executions`, `/api/runner-fleets`, `/api/runners`,
 `/api/agent-profiles`, `/api/model-profiles` (operator surface, ordinary
 `Authorization: Bearer` auth), and the separate `/api/runner/v1/*` protocol (13 paths,
 per-handler hashed runner-credential auth — deliberately never routed through operator
