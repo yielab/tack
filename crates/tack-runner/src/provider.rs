@@ -31,8 +31,6 @@ use crate::Clock;
 use crate::config::{ProviderConfig, VERCEL_AI_GATEWAY_CONFIG_KEY, VERCEL_AI_GATEWAY_PROVIDER};
 use crate::secrets::{SecretStore, SecretValue};
 
-/// The provider's model-list endpoint (ADR 0061 decision 3).
-const CATALOG_URL: &str = "https://ai-gateway.vercel.sh/v1/models";
 const CATALOG_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Recorded in `ModelCombination::discovery` for a catalog-sourced entry,
@@ -95,6 +93,20 @@ fn known_endpoint(provider: &str, wire: Wire) -> Option<KnownEndpoint> {
             credential_env_var: "AI_GATEWAY_API_KEY",
             display_name: "Vercel AI Gateway",
         }),
+        _ => None,
+    }
+}
+
+/// A provider's model-list endpoint (ADR 0061 decision 3) — fixed,
+/// non-configurable data like [`known_endpoint`], but keyed by provider
+/// alone: a catalog is a property of the provider, not of a wire (Vercel
+/// publishes one model list serving both wires above), so this stays a
+/// separate lookup rather than a field repeated on every [`KnownEndpoint`]
+/// row for the same provider. A second provider is a new arm here, never a
+/// new fetch path.
+fn catalog_url(provider: &str) -> Option<&'static str> {
+    match provider {
+        VERCEL_AI_GATEWAY_PROVIDER => Some("https://ai-gateway.vercel.sh/v1/models"),
         _ => None,
     }
 }
@@ -188,12 +200,18 @@ pub async fn attach_catalog<C: Clock>(
     else {
         return CatalogStatus::NotConfigured;
     };
+    // Known-absent for any provider `known_endpoint` also doesn't recognize;
+    // unreachable in practice today since `VERCEL_AI_GATEWAY_PROVIDER` is
+    // the only key `providers` is ever populated under, but never assumed.
+    let Some(url) = catalog_url(VERCEL_AI_GATEWAY_PROVIDER) else {
+        return CatalogStatus::NotConfigured;
+    };
     let secret = match secrets.resolve(&config.secret) {
         Ok(secret) => secret,
         Err(_) => return CatalogStatus::SecretUnresolved,
     };
     tracing::debug!(secret = %config.secret, "provider secret resolved for catalog fetch");
-    let model_ids = match fetch_catalog_ids(&secret).await {
+    let model_ids = match fetch_catalog_ids(url, &secret).await {
         Ok(ids) => ids,
         Err(CatalogFetchError::Status(status)) => {
             tracing::warn!(status, "provider catalog fetch rejected");
@@ -241,14 +259,17 @@ struct CatalogResponse {
     data: Vec<CatalogModel>,
 }
 
-async fn fetch_catalog_ids(secret: &SecretValue) -> Result<Vec<String>, CatalogFetchError> {
+async fn fetch_catalog_ids(
+    url: &str,
+    secret: &SecretValue,
+) -> Result<Vec<String>, CatalogFetchError> {
     let client = reqwest::Client::builder()
         .timeout(CATALOG_TIMEOUT)
         .user_agent(concat!("tack-runner/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|_| CatalogFetchError::Transport)?;
     let response = client
-        .get(CATALOG_URL)
+        .get(url)
         .bearer_auth(secret.expose())
         .send()
         .await
