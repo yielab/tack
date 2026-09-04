@@ -123,6 +123,7 @@ fn all_migrations() -> Vec<Migration> {
             &MIGRATION_060[..],
         ),
         ordinary("061_execution_attempt_start_facts", &MIGRATION_061[..]),
+        ordinary("062_project_default_model", &MIGRATION_062[..]),
     ]
 }
 
@@ -1609,3 +1610,4 @@ const MIGRATION_061: [&str; 2] = [
     "ALTER TABLE execution_attempts ADD COLUMN prepared_at TEXT",
     "ALTER TABLE execution_attempts ADD COLUMN process_id TEXT",
 ];
+const MIGRATION_062: [&str; 1] = ["ALTER TABLE projects ADD COLUMN default_model TEXT"];

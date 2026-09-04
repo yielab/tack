@@ -143,6 +143,7 @@ async fn test_update_project() {
                 description: None,
                 vocabulary: None,
                 workflow: None,
+                default_model: None,
                 archived: None,
             },
         )
