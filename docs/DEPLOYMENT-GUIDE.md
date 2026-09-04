@@ -285,7 +285,7 @@ TACK_MAX_BODY_SIZE=2097152                           # 2 MB default (upload endp
 client at the API. The bundled SPA is same-origin and needs no CORS config. There
 is **no** `TACK_CORS_ORIGIN` variable — the allow-list is `TACK_ALLOWED_ORIGINS`.
 
-Optional integrations (Alexa, outbound webhooks, GitHub sync, and S3-compatible
+Optional integrations (outbound webhooks, GitHub sync, and S3-compatible
 cloud backup) are configured with their own `TACK_*` variables — see CLAUDE.md.
 
 ### Configuration file (tack.toml)

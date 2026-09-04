@@ -18,9 +18,7 @@
 //!   `multipart/form-data`; utoipa cannot infer that from the `Multipart`
 //!   extractor, so its request body is hand-declared.
 //! - **Undocumented on purpose.** The WebSocket upgrade
-//!   `GET /api/projects/{id}/boards/live`, the Alexa webhook `POST /api/alexa`
-//!   (Amazon-defined request envelope, skill-ID auth), and the SPA fallback are
-//!   omitted.
+//!   `GET /api/projects/{id}/boards/live` and the SPA fallback are omitted.
 //! - **Untagged enum variants.** `ItemType::Custom(String)`,
 //!   `EstimateUnit::Custom(String)` and `BoardGrouping::CustomField(Uuid)` are
 //!   externally-tagged, so they render as a `oneOf` mixing bare strings with

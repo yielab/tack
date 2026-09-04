@@ -11,7 +11,7 @@ use crate::router::AppState;
 fn is_public_route(path: &str) -> bool {
     matches!(
         path,
-        "/api/health" | "/api/openapi.json" | "/api/alexa" | "/health" | "/openapi.json" | "/alexa"
+        "/api/health" | "/api/openapi.json" | "/health" | "/openapi.json"
     )
 }
 
@@ -232,7 +232,6 @@ mod tests {
     fn only_exact_public_routes_bypass_bearer_auth() {
         assert!(is_public_route("/api/health"));
         assert!(!is_public_route("/api/projects/health"));
-        assert!(!is_public_route("/api/projects/alexa"));
     }
 
     #[test]
@@ -301,7 +300,7 @@ mod tests {
             "/api/healthy",
             "/api/health/",
             "/api/openapi.json.evil",
-            "/api/alexa2",
+            "/api/health2",
         ] {
             assert!(
                 !is_public_route(lookalike),

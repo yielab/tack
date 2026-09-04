@@ -10,10 +10,9 @@ All examples assume the default base URL `http://127.0.0.1:3210`.
 
 ## Authentication
 
-By default Tack accepts every request — appropriate for a pure-local install. To require a token, set `TACK_API_TOKEN` and restart the server. Once set, **every** `/api/*` route requires an `Authorization: Bearer <token>` header. Two endpoints are exempt:
+By default Tack accepts every request — appropriate for a pure-local install. To require a token, set `TACK_API_TOKEN` and restart the server. Once set, **every** `/api/*` route requires an `Authorization: Bearer <token>` header. One endpoint is exempt:
 
 - `GET /api/health` — liveness/readiness probe, always open.
-- `POST /api/alexa` — the Alexa skill cannot attach an `Authorization` header, so it authenticates separately via skill-ID and timestamp checks (and only exists when `TACK_ALEXA_SKILL_ID` is set).
 
 Start the server with a token:
 
@@ -277,12 +276,11 @@ Security- and administration-relevant settings, as read by the server at startup
 | `TACK_HOST` | `127.0.0.1` | Bind address. Set to `0.0.0.0` to expose on a LAN (front with a TLS proxy). Requires `TACK_API_TOKEN` (or the opt-out below) once set to anything non-loopback — see [Network exposure and TLS](#network-exposure-and-tls) |
 | `TACK_PORT` | `3210` | Listen port |
 | `TACK_DATABASE_URL` | `sqlite:tack.db?mode=rwc` | SQLite database location |
-| `TACK_API_TOKEN` | _(none)_ | When set, requires `Authorization: Bearer <token>` on all `/api/*` routes except `/api/health` and `/api/alexa`. Never logged |
+| `TACK_API_TOKEN` | _(none)_ | When set, requires `Authorization: Bearer <token>` on all `/api/*` routes except `/api/health`. Never logged |
 | `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK` | `false` | Explicit opt-out for the non-loopback-without-token startup refusal (see [ADR 0059](https://github.com/yielab/tack/blob/develop/docs/adr/0059-single-operator-identity-posture.md)). Off by default — set only when a `TACK_HOST` reachable beyond the local machine is intentional and a token genuinely cannot be configured |
 | `TACK_ALLOWED_ORIGINS` | `http://localhost:8080,http://127.0.0.1:8080,https://tack.test` | Comma-separated CORS allow-list of exact origins |
 | `TACK_MAX_BODY_SIZE` | `2097152` | Max body size in bytes for non-attachment requests (2 MB). Uploads are always capped at 50 MB |
 | `TACK_STORAGE_DIR` | `./storage` | Attachment storage directory |
-| `TACK_ALEXA_SKILL_ID` | _(none)_ | Amazon Alexa skill ID; enables `POST /api/alexa` (exempt from the Bearer-token gate). Unset disables the endpoint |
 | `TACK_WEBHOOK_URL` | _(none)_ | Outbound webhook URL; enables event POSTs |
 | `TACK_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 signing secret; adds `X-Tack-Signature: sha256=<hex>`. Never logged |
 | `TACK_GITHUB_TOKEN` | _(none)_ | GitHub PAT (`repo` scope) for issue push-back. Never logged |
