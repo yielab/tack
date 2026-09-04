@@ -39,8 +39,8 @@ function values(overrides: Partial<RunWithAgentFormValues> = {}): RunWithAgentFo
 }
 
 describe('HARNESS_KINDS', () => {
-  it('carries the three verified v1 wire values — codex, claude-code (hyphen), opencode', () => {
-    expect(HARNESS_KINDS.map((h) => h.value)).toEqual(['codex', 'claude-code', 'opencode']);
+  it('carries the two verified v1 wire values — codex, claude-code (hyphen)', () => {
+    expect(HARNESS_KINDS.map((h) => h.value)).toEqual(['codex', 'claude-code']);
   });
 });
 

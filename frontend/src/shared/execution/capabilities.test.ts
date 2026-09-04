@@ -108,10 +108,10 @@ describe('listReportedHarnessKinds', () => {
 
   it('deduplicates and sorts across multiple runners', () => {
     const codex = fixtureCapabilities();
-    const opencode = fixtureCapabilities({
+    const claude = fixtureCapabilities({
       harnesses: [
         {
-          harness_kind: 'opencode',
+          harness_kind: 'claude-code',
           installed_version: '0.5.0',
           probe_error: null,
           probed_at: '2026-08-06T12:00:00Z',
@@ -119,7 +119,7 @@ describe('listReportedHarnessKinds', () => {
         },
       ],
     });
-    expect(listReportedHarnessKinds([codex, opencode, codex])).toEqual(['codex', 'opencode']);
+    expect(listReportedHarnessKinds([codex, claude, codex])).toEqual(['claude-code', 'codex']);
   });
 });
 
@@ -213,7 +213,7 @@ describe('isCombinationSupported', () => {
 
   it('distinguishes "harness never reported" from "provider unmatched" from "model id unmatched"', () => {
     const snap = fixtureCapabilities();
-    expect(isCombinationSupported([snap], 'opencode', 'openai', 'opaque/model-alpha').reason).toBe(
+    expect(isCombinationSupported([snap], 'claude-code', 'openai', 'opaque/model-alpha').reason).toBe(
       'no runner reports this harness',
     );
     expect(isCombinationSupported([snap], 'codex', 'anthropic', 'opaque/model-alpha').reason).toBe(

@@ -92,14 +92,14 @@ enroll` call, no token to copy anywhere.
   authenticates itself using its own mechanism; Tack does not read, store, forward, or
   proxy any of it, embedded or standalone. `tack runner doctor` reports exactly what
   this machine's own harnesses declare — run it yourself rather than trusting a stale
-  copy in this file. The three current harnesses, mirrored from a real `tack runner
-  doctor` run on a machine with all three installed:
+  copy in this file. The two current harnesses, mirrored from a real `tack runner
+  doctor` run on a machine with both installed — the harness vocabulary itself is open
+  (a runner may report any kind string), this build just ships adapters for these two:
 
   | Harness | How it authenticates | Gateway-routed variant (`[provider.vercel_ai_gateway]`) |
   |---|---|---|
   | `codex` | Its own CLI login flow or an API key it reads from its own environment/config (`codex --help`). This adapter forwards **no ambient host environment** into a run — only entries explicitly set on the execution request's own `environment` field ever reach the process. | When a request's provider names the configured endpoint: per-invocation `-c model_provider=…`/`model_providers.<key>.*` flags plus `AI_GATEWAY_API_KEY` in the spawned environment — never a write to `~/.codex/config.toml`. A request for a direct model receives none of it. |
   | `claude-code` | Typically an OAuth session under `$HOME/.claude` from its own login flow, or an API key from its own environment. This adapter forwards `HOME` and `PATH` from the runner process's own environment so the installed CLI can find its existing session. | `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` (plus a defensive empty `ANTHROPIC_API_KEY`) in the spawned environment, only when the request's provider names the configured endpoint. A request for a direct model receives none of it. |
-  | `opencode` | Its own credential store (default `~/.local/share/opencode`), populated by `opencode auth login` or provider-specific configuration. This adapter forwards `PATH`, `HOME` and the `XDG_*` variables. | Not yet: reaching a configured endpoint here needs a project-local `opencode.json` written into the workspace plus an npm-loaded provider package — measured as possible, but a materially different mechanism this build does not implement. |
 
   OpenRouter access and local-model endpoints (llama.cpp and similar) are configured the
   same way: through the harness's own configuration or environment. No `TACK_*` variable

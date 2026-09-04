@@ -92,7 +92,7 @@ gates are independent of each other — enabling one does not enable the others.
    (`TACK_EXECUTION_RETENTION_DAYS`, default 90) — this is the one setting on this
    page that deletes data.
 4. Enable `TACK_ORCH_ENABLE` only if you're actually running Docket. It's entirely
-   optional; runner-fleet execution (Codex/Claude Code/OpenCode via `tack-runner`)
+   optional; runner-fleet execution (Codex/Claude Code via `tack-runner`)
    does not need it and vice versa — see
    [Docket compatibility](book/src/user-guide/agent-runners.md#docket-compatibility).
 

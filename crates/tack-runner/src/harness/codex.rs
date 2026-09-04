@@ -591,12 +591,10 @@ where
             // Downgraded from `Supported`. This
             // adapter's only cancellation primitive is
             // `harness::process::SupervisedProcess::cancel` (a process-group
-            // SIGTERM/SIGKILL), the exact same mechanism proved (via `ps`,
-            // twice, against real Claude Code) cannot reliably reach a
+            // SIGTERM/SIGKILL), the exact same mechanism proved (via `ps`
+            // against real Claude Code) cannot reliably reach a
             // descendant a harness's own shell-tool spawns into a new OS
-            // session — and an equivalent check against the real `opencode`
-            // binary found the identical disjoint-session pattern, so this
-            // is not a Claude-Code-specific quirk. `codex` is not installed
+            // session. `codex` is not installed
             // on any machine this adapter has been built against, so there
             // is no adapter-specific evidence its own tool execution stays
             // inside the process group either; claiming `Supported` on that
@@ -607,7 +605,7 @@ where
                 reason: Some(
                     "the top-level codex process is always signalled reliably (it is always \
                      its own process-group leader), but a shell-tool-spawned descendant that \
-                     detaches into its own OS session (observed for Claude Code and opencode; \
+                     detaches into its own OS session (observed for Claude Code; \
                      never independently verified for codex, since codex is not installed) \
                      would only be reached if it exits gracefully within the SIGTERM grace \
                      period — a SIGKILL escalation cannot reach a different session's process \
@@ -1145,13 +1143,9 @@ mod tests {
 
     /// A minimal, deterministic "fixture repo" workspace: a couple of known
     /// files with fixed content, created fresh per test rather than checked
-    /// into the tree. This intentionally avoids adding any file path under
-    /// `crates/tack-runner/src/harness/` beyond `codex.rs` itself — D2/D3
-    /// are concurrently adding their own sibling files to that same
-    /// directory, and generating fixtures at test time sidesteps any
-    /// possible path-ownership ambiguity between the three cards while still
-    /// giving every test a real, workspace-confined, reproducible directory
-    /// to run the fake harness against (mirroring D4's own
+    /// into the tree — giving every test a real, workspace-confined,
+    /// reproducible directory to run the fake harness against (mirroring
+    /// D4's own
     /// `each_workspace_confined_process_only_ever_sees_its_own_canary_file`
     /// pattern).
     fn deterministic_fixture_repo(label: &str) -> PathBuf {
@@ -1267,7 +1261,7 @@ mod tests {
             Some(("openai", "opaque/model-alpha")),
             &[],
         );
-        spec.work.request.requested_harness_kind = DomainHarnessKind::new("opencode");
+        spec.work.request.requested_harness_kind = DomainHarnessKind::new("claude-code");
 
         assert!(matches!(
             adapter.validate(&spec).await,

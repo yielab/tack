@@ -26,6 +26,6 @@ pub use config::{
 pub use error::{ConfigError, RunnerError};
 pub use filesystem::{LocalFilesystem, RunnerFilesystem};
 pub use process::{ProcessSupervisor, SystemProcessSupervisor};
-pub use registry::{HarnessKind, HarnessRegistry};
+pub use registry::HarnessKind;
 pub use runtime::{RunnerRuntime, Shutdown, ShutdownHandle};
 pub use secrets::{SecretBackendKind, SecretError, SecretStore, SecretValue};

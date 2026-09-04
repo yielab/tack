@@ -30,13 +30,16 @@ import type { ProjectModelDefault } from '../types';
 // ─── Harness kinds ──────────────────────────────────────────────────────────
 
 /**
- * The three in-tree v1 harness adapters (TODO.md III.0 "v1 scope: three
- * in-tree harness adapters: Codex, Claude Code, OpenCode"), with their real,
+ * The in-tree v1 harness adapters, with their real,
  * verified `harness_kind` wire values — read directly from each adapter's own
  * constant, not guessed:
  *   - `codex.rs`'s `CODEX_HARNESS_KIND = "codex"`
  *   - `claude_code.rs`'s `HARNESS_KIND = "claude-code"` (a HYPHEN)
- *   - `opencode.rs`'s `OPENCODE_HARNESS_KIND = "opencode"`
+ *
+ * This list is not the whole harness vocabulary — a runner's own
+ * `harness_kind` is an opaque string (`HarnessKind::Other(String)` on the
+ * runner side), so a runner can report a kind not in this list; it is just
+ * not one this build has a bundled adapter for.
  *
  * Worth calling out explicitly: `crates/tack-cli/src/execution.rs`'s own
  * unit tests use `"claude_code"` (an UNDERSCORE) as an arbitrary example
@@ -46,13 +49,12 @@ import type { ProjectModelDefault } from '../types';
  * underscore form here would silently make Claude Code unselectable against
  * any runner that actually reports itself as `"claude-code"`, since matching
  * against a real runner's capability report is a byte-exact string compare
- * (`capabilities.ts#isCombinationSupported`). Verified by reading the three
+ * (`capabilities.ts#isCombinationSupported`). Verified by reading the
  * harness adapter source files directly, not by inference.
  */
 export const HARNESS_KINDS: ReadonlyArray<{ value: string; label: string }> = [
   { value: 'codex', label: 'Codex' },
   { value: 'claude-code', label: 'Claude Code' },
-  { value: 'opencode', label: 'OpenCode' },
 ];
 
 // ─── Payload construction ───────────────────────────────────────────────────
