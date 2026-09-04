@@ -498,27 +498,22 @@ pub async fn create_execution(
 ) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
     let authenticated_principal = principal(&headers)?;
     let idempotency_scope = format!("operator:{authenticated_principal}");
-    if state
-        .repo
-        .get_item(input.item_id)
-        .await
-        .map_err(|_| {
-            error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                StableErrorCode::InternalError,
-                "Could not verify item",
-                json!({}),
-            )
-        })?
-        .is_none()
-    {
+    let Some(item) = state.repo.get_item(input.item_id).await.map_err(|_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not verify item",
+            json!({}),
+        )
+    })?
+    else {
         return Err(error(
             StatusCode::NOT_FOUND,
             StableErrorCode::NotFound,
             "Item does not exist",
             json!({"resource": "item"}),
         ));
-    }
+    };
     let existing_snapshot: Option<String> = sqlx::query_scalar(
         "SELECT request_snapshot FROM execution_requests WHERE idempotency_scope=? AND idempotency_key=?",
     )
@@ -574,9 +569,11 @@ pub async fn create_execution(
     let (resolved_model_provider, resolved_model_id) =
         if input.requested_model_provider.is_none() && input.requested_model_id.is_none() {
             let fleet_id = (input.selector_kind == "fleet").then_some(input.selector_id.as_str());
+            let project_id = item.project_id.to_string();
             let resolved = resolve_request_model_policy(
                 &state.repo,
                 Some(input.agent_profile_id.as_str()),
+                Some(project_id.as_str()),
                 fleet_id,
                 None,
             )
