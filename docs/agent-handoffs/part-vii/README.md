@@ -53,6 +53,21 @@ decision of record is `docs/adr/0062-desktop-app-and-background-service.md`, acc
 5. Part VI's Wave 15 may run at the same time. VI-B1 and VII-A2 both add an arm to
    `crates/tack-cli/src/main.rs` — merge them one after the other and build once with both.
 
+## When a card agent dies mid-work
+
+Measured 2026-09-03: five Sonnet cards dispatched at once exhausted the session rate limit
+after roughly 25 minutes; four of the five died between implementation and handoff, having
+written no handoff at all. **Resume them, do not re-dispatch.** The worktree keeps every
+edit and a message to the agent restores its context, so a resume costs one message where a
+re-dispatch costs a whole cold start and discards finished work. Tell the resumed agent
+what it still owes — the remaining gate, the live proofs, and the handoff it never wrote —
+because the interruption usually lands before that last step.
+
+Two things to size before a wave: **the session limit** (four to five parallel Sonnet cards
+is the observed ceiling for a wave of this shape) and **disk** — the five per-card target
+directories reached 53 GB, the two frontend-heavy cards 19 GB each. Reap them after
+integration.
+
 ## How to dispatch a card to a Sonnet agent
 
 Exactly as in `docs/agent-handoffs/part-vi/README.md` §"How to dispatch": one `Agent`
