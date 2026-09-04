@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Minimum supported Rust version is now 1.89** (was 1.85). Edition 2024 still only needs
+  1.85, but the dependency graph does not: `object_store` pulls `crc-fast` (1.89),
+  `tracing-appender` pulls `time` (1.88), and the `idna`/`icu` stack needs 1.86. CI's MSRV
+  job had been failing on `develop` for this reason before any of it was noticed; `cargo
+  +1.89.0 build --workspace --locked` is clean.
+
 ### Removed
 
 - The Amazon Alexa voice integration: `POST /api/alexa`, `TACK_ALEXA_SKILL_ID`,
