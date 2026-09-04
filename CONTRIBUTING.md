@@ -89,7 +89,6 @@ Tack/
 │   │   │   ├── middleware.rs   # Bearer token auth
 │   │   │   ├── webhook.rs      # Outbound webhook delivery
 │   │   │   └── handlers/
-│   │   │       ├── alexa.rs            # POST /api/alexa voice skill
 │   │   │       ├── attachments.rs
 │   │   │       ├── backup.rs           # GET /api/backup, POST /api/restore
 │   │   │       ├── boards_multi.rs     # Multiple boards per project
@@ -108,8 +107,7 @@ Tack/
 │   │   │       └── websocket.rs
 │   │   └── tests/
 │   │       ├── common/mod.rs       # test_app(), test_app_with_config()
-│   │       ├── api_test.rs         # 38 handler integration tests
-│   │       └── alexa_test.rs       # 17 Alexa endpoint tests
+│   │       └── api_test.rs         # 38 handler integration tests
 │   └── tack-cli/             # clap CLI (talks to API over HTTP)
 │       └── src/
 │           ├── main.rs         # All commands

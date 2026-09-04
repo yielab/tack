@@ -122,8 +122,7 @@ pub struct Item {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum ItemSource {
     /// Created directly through the normal create-item API (the UI, the
-    /// CLI's `tack add`, the MCP `create_item` tool, or the Alexa voice
-    /// skill acting on the project owner's own speech) — the operator's own
+    /// CLI's `tack add`, or the MCP `create_item` tool) — the operator's own
     /// words, not third-party text.
     Manual,
     /// `POST /api/projects/{id}/import-github` — GitHub Issues, filed by

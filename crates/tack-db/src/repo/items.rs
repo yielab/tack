@@ -54,7 +54,7 @@ pub struct ItemSnapshot {
 impl Repository {
     /// Create an item via the ordinary path — always `ItemSource::Manual`
     /// (the operator's own words, typed or spoken by them: the UI, `tack
-    /// add`, the MCP tool, and the Alexa skill all go through this).
+    /// add` and the MCP tool all go through this).
     /// External-data import paths must call
     /// [`create_item_with_source`](Self::create_item_with_source) instead so
     /// the item's provenance is recorded truthfully
@@ -752,12 +752,10 @@ impl Repository {
     /// proceeding as if uncontended and one of them hitting a deferred
     /// transaction's read-to-write lock upgrade conflict later.
     ///
-    /// Card R3 (2026-08-05) closed the gap this doc comment used to flag:
-    /// `handlers::items::update_item` (the human/board-drag path) and
-    /// `handlers::alexa` (the voice "mark done" path) used to do the same
-    /// unguarded two-step `count_items_by_status` + `update_item` — the
-    /// identical race, on the two call sites hit far more often than
-    /// dispatch. Both now call this method too. See TODO.md's R3 handoff.
+    /// `handlers::items::update_item` (the board-drag path) calls this too:
+    /// an unguarded two-step `count_items_by_status` + `update_item` there
+    /// is the identical race, on the call site hit far more often than
+    /// dispatch.
     ///
     /// Only touches the fields `dispatcher::apply_mapped_status` needs
     /// (status, and the status-category-derived started_at/completed_at) —

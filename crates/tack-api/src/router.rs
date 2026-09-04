@@ -20,7 +20,7 @@ use crate::debug;
 #[cfg(feature = "embed-spa")]
 use crate::handlers::spa;
 use crate::handlers::{
-    alexa, attachments, backup, boards_multi, comments, custom_fields, decisions, dependencies,
+    attachments, backup, boards_multi, comments, custom_fields, decisions, dependencies,
     executions, export, import_github, import_linear, items, orch, projects, provisioning, roles,
     runner_admin, runner_protocol, settings, sprints, templates, websocket,
 };
@@ -459,8 +459,6 @@ pub fn build_router(state: AppState) -> Router {
         .route("/boards/{id}", patch(boards_multi::update_board))
         .route("/boards/{id}", delete(boards_multi::delete_board))
         .route("/boards/{id}/view", get(boards_multi::get_board_view))
-        // ─── Alexa voice integration (skill-ID auth, exempt from token) ──
-        .route("/alexa", post(alexa::handle_request))
         // ─── Orchestration control center (gated) ──────────────────────────
         // Every orchestration route is batched into `orch_routes` below
         // rather than restructuring this file. `require_orch_enabled` returns a 409
@@ -517,9 +515,8 @@ pub fn build_router(state: AppState) -> Router {
                 tracing::info_span!(
                     "http_request",
                     method = %request.method(),
-                    // Query strings can carry external callback credentials
-                    // (notably Alexa's compatibility token). Never put them
-                    // in a tracing field or span.
+                    // Query strings can carry credentials. Never put them in a
+                    // tracing field or span.
                     path = %request.uri().path(),
                 )
             }),

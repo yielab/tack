@@ -38,7 +38,6 @@ Integration tests use in-memory SQLite — no external services needed.
 | `tack-db` | 23 | Integration tests in `tests/integration_test.rs` |
 | `tack-db` | 1 | Performance test (`#[ignore]`, seeds 50k items) |
 | `tack-api` | 38 | Handler integration tests in `tests/api_test.rs` |
-| `tack-api` | 17 | Alexa endpoint tests in `tests/alexa_test.rs` |
 | `tack-api` | 27 | Unit tests (middleware, GitHub URL parsing, config) |
 | `tack-cli` | 29 | CLI tests (wiremock contract + unit) |
 | **Rust total** | **207** | |
@@ -141,17 +140,6 @@ test_app_with_file_db(db_url)     // file-based DB (needed for backup/restore te
 - FTS5 search (per-project and global)
 - Backup: in-memory DB returns 400, invalid magic bytes return 400, full roundtrip
 - Embedded SPA (with `--features embed-spa`): root → HTML, API takes priority
-
-### Alexa endpoint tests (`tests/alexa_test.rs`) — 17 tests
-
-- 404 when `TACK_ALEXA_SKILL_ID` not configured
-- Wrong skill ID rejected (403)
-- Timestamp tolerance enforcement
-- LaunchRequest welcome message (EN and ES)
-- AddTaskIntent: missing slot prompt, successful add
-- ListTasksIntent: empty project and populated project
-- CompleteTaskIntent: not-found, WIP-limit rejection, successful completion
-- Locale detection: `es-MX` → Spanish, `en-US` → English
 
 ### Unit tests — 27 tests
 

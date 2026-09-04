@@ -33,20 +33,6 @@ pub struct AppConfig {
     #[serde(default)]
     pub api_token: Option<String>,
 
-    /// Optional Amazon Alexa skill ID (e.g. `amzn1.ask.skill.…`). When set,
-    /// `POST /api/alexa` accepts requests from that skill (verified against the
-    /// application ID in each request). Unset disables the endpoint entirely.
-    #[serde(default)]
-    pub alexa_skill_id: Option<String>,
-
-    /// Optional shared secret for the Alexa endpoint (`TACK_ALEXA_SHARED_SECRET`).
-    /// When set, `POST /api/alexa` requires a matching `?token=<secret>` query
-    /// parameter (constant-time compared) in addition to the skill-ID check.
-    /// The skill ID is not a secret, so this is what actually authenticates the
-    /// caller. Never logged.
-    #[serde(default)]
-    pub alexa_shared_secret: Option<String>,
-
     /// Optional outbound webhook URL. When set, Tack POSTs a JSON payload to
     /// this URL on every item create/update/delete, sprint status change, and
     /// when items become due within the next hour (background check every 60 min).
@@ -204,8 +190,6 @@ impl Default for AppConfig {
             allowed_origins: default_allowed_origins(),
             max_body_size_bytes: default_max_body_size_bytes(),
             api_token: None,
-            alexa_skill_id: None,
-            alexa_shared_secret: None,
             webhook_url: None,
             webhook_secret: None,
             github_token: None,
@@ -327,16 +311,6 @@ impl AppConfig {
                 self.host
             );
         }
-        if self.alexa_skill_id.is_some()
-            && self
-                .alexa_shared_secret
-                .as_deref()
-                .is_none_or(str::is_empty)
-        {
-            anyhow::bail!(
-                "refusing to enable Alexa without TACK_ALEXA_SHARED_SECRET; skill IDs are public"
-            );
-        }
         for origin in &self.allowed_origins {
             validate_origin(origin)?;
         }
@@ -413,17 +387,6 @@ impl AppConfig {
             && !v.is_empty()
         {
             config.api_token = Some(v);
-        }
-        if let Ok(v) = std::env::var("TACK_ALEXA_SKILL_ID")
-            && !v.is_empty()
-        {
-            config.alexa_skill_id = Some(v);
-        }
-        // Never log the shared-secret value
-        if let Ok(v) = std::env::var("TACK_ALEXA_SHARED_SECRET")
-            && !v.is_empty()
-        {
-            config.alexa_shared_secret = Some(v);
         }
         if let Ok(v) = std::env::var("TACK_WEBHOOK_URL")
             && !v.is_empty()

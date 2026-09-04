@@ -148,8 +148,8 @@ chmod +x "$SHIMS/claude" "$SHIMS/codex"
 
 step 3 "Start the API server (no Docket configured — its absence must not disable runner execution)"
 # Run from $WORK, never the repo root: the developer's tack.toml would otherwise be
-# picked up (it sets alexa_skill_id, and the server correctly refuses to boot without
-# TACK_ALEXA_SHARED_SECRET). A smoke test must exercise the product, not the workstation.
+# picked up, with whatever workstation-specific options it sets. A smoke test must
+# exercise the product, not the workstation.
 # `exec` matters: it replaces the subshell with the server process, so $! is the real
 # tack PID. Without it, cleanup kills the subshell and leaves an orphan holding $PORT —
 # a later run then silently talks to the previous run's database (found by III-H1).
