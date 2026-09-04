@@ -382,7 +382,6 @@ Two independently-chosen defaults, deliberately not the same value:
 | Path | `ItemSource` |
 |---|---|
 | `POST /api/projects/{id}/items` (UI, `tack add`, MCP tool) | `Manual` |
-| Alexa voice skill | `Manual` — the project owner's own speech, not third-party text |
 | GitHub import | `Github` |
 | Linear import | `Linear` |
 | JSON/YAML project import | **Preserves** the source item's own `source` from the payload (a full snapshot restore already implies at least `create_item`-level privilege; the `#[serde(default)]` above still stops a payload that omits the field from claiming `Manual`) |
@@ -435,14 +434,13 @@ Returns `Option<StatusUpdateOutcome>` (`Applied(Box<Item>)` / `Rejected(CoreErro
 `None` only if the item vanished). Reuses the exact same `WorkflowConfig::
 check_wip_limit` the old unguarded code called — no duplicated comparison logic.
 
-**Three call sites now use it**, closing the race everywhere it could manifest, not
+**Two call sites now use it**, closing the race everywhere it could manifest, not
 just on the dispatch path where it was first found: `dispatcher::apply_mapped_status`
 (the original fix, card R2, reproduced 12/12 concurrent dispatches over-filling a
-WIP-5 column before the fix), `handlers::items::update_item` (the human board-drag
-path, card R3), and `handlers::alexa::complete_task` (the voice "mark done" path,
-card R3). All three reproduced the identical race live before being fixed — see
-their own test files (`wip_limit_race_test.rs`, `board_drag_wip_race_test.rs`,
-`alexa_wip_race_test.rs`) for the exact repro methodology (genuinely concurrent
+WIP-5 column before the fix) and `handlers::items::update_item` (the human board-drag
+path, card R3). Both reproduced the identical race live before being fixed — see
+their own test files (`wip_limit_race_test.rs`, `board_drag_wip_race_test.rs`) for
+the exact repro methodology (genuinely concurrent
 requests via `tokio::spawn` on a multi-thread runtime, asserting the pre-fix code
 over-fills the column before touching anything).
 
@@ -623,7 +621,7 @@ Enforced by the shape of the code, not just documented — each one below names 
    explicit transitions, `started_at`/`completed_at`, and parent auto-propagation all
    fire on an orchestration-driven status change exactly as they do on a user drag —
    `apply_mapped_status` calls the same `Repository::update_item_status_checked`
-   the human/Alexa paths now call (see the WIP-race fix above). `PUT /orch-link`'s
+   the human board-drag path now calls (see the WIP-race fix above). `PUT /orch-link`'s
    `status_map` validates every named status against the project's live
    `WorkflowConfig` before it's ever stored.
 3. **Everything is off by default.** `TACK_ORCH_ENABLE` unset ⇒ `spawn_reconcilers`
@@ -639,7 +637,7 @@ Enforced by the shape of the code, not just documented — each one below names 
 5. **A check-then-write status update is never split across two unlocked steps.**
    `Repository::update_item_status_checked`'s `BEGIN IMMEDIATE` transaction is the
    one place a WIP-limit check and its corresponding write happen — every caller
-   (dispatch, sprint dispatch, board drag, Alexa) goes through it. Added this cycle
+   (dispatch, sprint dispatch, board drag) goes through it. Added this cycle
    after cards R2/R3 found and fixed a real, live-reproduced race (see above); listed
    here as a standing rule for any future status-writing code path, not just a
    changelog entry.
@@ -760,7 +758,7 @@ directly rather than assumed — Tack builds no workaround for either:
   `orch_terminal_status_test.rs`, `orch_approvals_test.rs`,
   `orch_budget_policy_test.rs`, `provisioning_test.rs`, `economics_test.rs`); and
   the two WIP-race regression suites (`wip_limit_race_test.rs`,
-  `board_drag_wip_race_test.rs`, `alexa_wip_race_test.rs`) that reproduce the race
+  `board_drag_wip_race_test.rs`) that reproduce the race
   live before asserting the fix.
 
 None of these require a live docket instance for CI — the adapter tests run against

@@ -150,7 +150,6 @@ All routes follow RESTful conventions:
 - `/api/items/{id}/comments` — Comments on items (2 endpoints)
 - `/api/projects/{id}/search` — Full-text search within project (1 endpoint)
 - `/api/search` — **Global search** across all projects (1 endpoint)
-- `/api/alexa` — **Alexa skill webhook** (1 endpoint; disabled unless `TACK_ALEXA_SKILL_ID` is set; authenticates via skill-ID + timestamp checks and is exempt from the Bearer-token gate)
 - `/api/projects/{id}/import-github` — GitHub Issues import (1 endpoint; `owner/repo` or full URL, optional PAT, label filter, PR-skipping, cursor pagination). Imported items are linked in the `github_links` table so completing them pushes a close back to GitHub when `TACK_GITHUB_TOKEN` is set (Phase 21, push-only). See `docs/GITHUB-SYNC.md`
 - `/api/projects/{id}/import-linear` — Linear import (1 endpoint; Linear API key, optional team/project filter, label filter, priority mapping, cursor pagination)
 - `/api/backup`, `/api/restore` — Local DB backup download / staged restore (2 endpoints)

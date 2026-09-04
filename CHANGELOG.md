@@ -9,7 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Removed
+
+- The Amazon Alexa voice integration: `POST /api/alexa`, `TACK_ALEXA_SKILL_ID`,
+  `TACK_ALEXA_SHARED_SECRET`, the `alexa_skill_id` / `alexa_shared_secret` keys in
+  `tack.toml`, `docs/ALEXA.md`, and the Cloudflare tunnel hooks in `make run` / `make dev`
+  that existed only to give that endpoint a public HTTPS URL. The endpoint had been off by
+  default since it shipped. A `tack.toml` that still sets the keys is accepted and ignored;
+  the `tunnel` make target is gone.
 
 ---
 

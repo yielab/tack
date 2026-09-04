@@ -104,7 +104,7 @@ jobs:
         run: cargo test -p tack-db --test orch_migrations_test
       # Security/chaos subset: auth-surface separation (operator vs runner-protocol
       # tokens cannot substitute for each other), CORS allow-list enforcement, and
-      # concurrent-write race safety (WIP limit, board drag, Alexa dispatch) proven
+      # concurrent-write race safety (WIP limit, board drag) proven
       # against a real, contended DB rather than a sequential retry loop.
       - name: Security/chaos subset
         if: success() || failure()
@@ -114,7 +114,6 @@ jobs:
           cargo test -p tack-api --test cors_test
           cargo test -p tack-api --test board_drag_wip_race_test
           cargo test -p tack-api --test wip_limit_race_test
-          cargo test -p tack-api --test alexa_wip_race_test
           cargo test -p tack-api --test runner_vertical_slice
       # Contention-sensitive: forced to a single test thread, matching
       # docs/agent-handoffs/part-iii/III-F6.md's isolated-run instruction.

@@ -40,8 +40,8 @@ is exactly the failure this contract eliminates.
 To browse the spec interactively, load `docs/openapi.json` into any OpenAPI viewer
 (Redocly, Scalar, Swagger Editor, or `npx @redocly/cli preview-docs docs/openapi.json`).
 The current surface is **68 REST operations across 43 paths, plus 1 WebSocket**
-(`/api/projects/{id}/boards/live`, which — like the multipart upload and the Alexa
-webhook — is documented in prose below rather than in the spec).
+(`/api/projects/{id}/boards/live`, which — like the multipart upload — is documented
+in prose below rather than in the spec).
 
 ---
 

@@ -1,4 +1,4 @@
-.PHONY: build run dev debug cli tunnel test test-verbose test-core test-db e2e e2e-install e2e-ui screenshots gif audit load check lint fmt fmt-check reset-db inspect-db api-health api-stats api-projects clean clean-all help
+.PHONY: build run dev debug cli test test-verbose test-core test-db e2e e2e-install e2e-ui screenshots gif audit load check lint fmt fmt-check reset-db inspect-db api-health api-stats api-projects clean clean-all help
 
 # ─── Default ──────────────────────────────────────
 help: ## Show this help
@@ -12,31 +12,14 @@ build: ## Compile — frontend + single `tack` binary with embedded UI (~30s fir
 	@echo ""
 	@echo "  Ready. Start with: make run"
 
-# Starts the Cloudflare tunnel in the background when cloudflared.yml exists
-# (public HTTPS for the Alexa endpoint). No-op on machines without it.
-define START_TUNNEL
-	if command -v cloudflared >/dev/null 2>&1 && [ -f cloudflared.yml ]; then \
-		cloudflared tunnel --config cloudflared.yml run & \
-	else \
-		echo "  (no cloudflared.yml — starting without public tunnel)"; \
-	fi
-endef
+run: ## Start the pre-built binary
+	./target/release/tack
 
-run: ## Start the pre-built binary + Cloudflare tunnel (Ctrl-C stops both)
-	@trap 'kill 0' SIGINT SIGTERM; \
-	$(START_TUNNEL); \
-	./target/release/tack & \
-	wait
-
-dev: frontend/node_modules ## Development mode: server + Vite hot-reload + tunnel (Ctrl-C stops all)
+dev: frontend/node_modules ## Development mode: server + Vite hot-reload (Ctrl-C stops both)
 	@trap 'kill 0' SIGINT; \
-	$(START_TUNNEL); \
 	cargo run -p tack-cli -- serve & \
 	npm --prefix frontend run dev & \
 	wait
-
-tunnel: ## Start only the Cloudflare tunnel (your hostname → localhost:3210; see cloudflared.yml)
-	cloudflared tunnel --config cloudflared.yml run
 
 frontend/node_modules:
 	npm --prefix frontend install

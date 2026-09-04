@@ -19,8 +19,8 @@
 //!
 //! Also required: a plain `PATCH` with no `If-Match` header at all must
 //! still succeed exactly as it did before — the non-breaking guarantee that
-//! keeps the MCP tools and the Alexa skill working unchanged until they're
-//! updated to send the header.
+//! keeps the MCP tools working unchanged until they're updated to send the
+//! header.
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -179,8 +179,8 @@ async fn patch_with_no_if_match_header_succeeds_exactly_as_before_this_card() {
 
     // A second such PATCH must also succeed — an absent If-Match is not a
     // one-shot allowance, it means "no concurrency check requested" every
-    // time, for every caller that never adopts the header (MCP tools,
-    // Alexa skill, any client that predates the If-Match header).
+    // time, for every caller that never adopts the header (MCP tools, any
+    // client that predates the If-Match header).
     let res2 = req(
         &app,
         Method::PATCH,

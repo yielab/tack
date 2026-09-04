@@ -12,11 +12,11 @@ Tack's test suite is structured as a pyramid: fast pure-function tests at the ba
 |---|---|---|---|
 | `tack-core` | 73 | Unit — pure functions, zero I/O | Very fast |
 | `tack-db` | 23 + 1 ignored | Integration — in-memory SQLite | Fast |
-| `tack-api` | 82 | Handler + Alexa + unit — in-memory SQLite + Axum | Fast |
+| `tack-api` | 82 | Handler + unit — in-memory SQLite + Axum | Fast |
 | `tack-cli` | 29 | Contract — `wiremock` mock server + unit | Fast |
 | **Total** | **207** (+1 ignored perf) | | |
 
-The frontend adds **168 Vitest unit tests** (`cd frontend && npm test`) plus a cross-browser **Playwright** end-to-end suite (`make e2e`) that boots an isolated API and the SPA. The `tack-api` count includes 38 handler integration tests (`api_test.rs`), 17 Alexa endpoint tests (`alexa_test.rs`), and the crate's inline unit tests.
+The frontend adds **168 Vitest unit tests** (`cd frontend && npm test`) plus a cross-browser **Playwright** end-to-end suite (`make e2e`) that boots an isolated API and the SPA. The `tack-api` count includes 38 handler integration tests (`api_test.rs`) and the crate's inline unit tests.
 
 ---
 
