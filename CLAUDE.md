@@ -24,8 +24,9 @@ branching a card in either. The boards are the authority for what shipped;
 `docs/book/src/roadmap.md` records only intent.
 
 **Never read `TODO.md` whole — it costs ~199k tokens.** Active boards sit in its first ~2400
-lines (Part VII, then VI, then V, then IV — extract one, never all); the archive (Parts I–III) is below and stays in-file because 234 doc comments cite its
-section numbers. Costs and extraction recipes for every big file:
+lines (Part VII, then VI, then V, then IV — extract one, never all); the archive (Parts I–III) sits below them.
+It was kept in-file because hundreds of doc comments cited its section numbers; **no Rust file cites it any
+more**, so extracting it is now an open option rather than a blocked one — see `TODO.md`'s own header. Costs and extraction recipes for every big file:
 **`.claude/context-budget.md`**. Before designing anything, read
 **`.claude/scope-discipline.md`** — this tree's recurring defect is well-built mechanisms
 with no caller (`model_profiles`, the `decisions` path, the superseded docket control plane).

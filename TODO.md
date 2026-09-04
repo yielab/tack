@@ -29,14 +29,21 @@ still owns. Read both before branching a card in either Part.
 
 ## Why the archive stays in this file
 
-`Parts I–III must not be moved to another path.` **234 Rust doc comments across `crates/`
-cite section numbers in them** (`TODO.md §0 rule 6`, `§1.1`, `§1.2`, `§1.4`, `§2.1`, `§6`,
-`§II.2`, `§III.2`, `§III.3` …), plus ~240 more references from `docs/`. Verify before you
-doubt it:
+This section used to say the archive could not move, because 234 Rust doc comments cited
+its section numbers. **That is no longer true, and the number is the whole reason it was
+written.** Two commits stripped board archaeology out of the Rust comments and later work
+finished the job. Measure before you decide anything on this basis:
 
 ```bash
-grep -rn "TODO\.md" crates/ --include='*.rs' | wc -l    # 234 as of 2026-08-30
+grep -rn "TODO\.md" crates/ --include='*.rs' | wc -l   # 0
+grep -rnE "TODO\.md.{0,6}(§ ?[0-6]|§I{2,3}\.|§1\.[0-9])" docs/ --include='*.md' \
+  | grep -v agent-handoffs | wc -l                     # 1
 ```
+
+So exactly one live document cites an archive section number today. Extracting Parts I–III
+to their own file is therefore a decision about whether it is worth doing, not a migration
+blocked by hundreds of silent breakages. It has not been done, and nothing here argues for
+or against it — this paragraph exists so the next reader does not inherit a false constraint.
 
 Moving or renumbering them breaks every one of those citations silently. The archive was
 therefore **reordered below the active boards, not extracted**. Its numbering namespaces
@@ -1880,9 +1887,8 @@ contributor.
 
 **Read this before scoping anything.** `tack-orch` is ~19k lines and **is not all legacy** —
 the neutral runner-v1 execution domain lives there too and is load-bearing. Furthermore,
-**234 Rust doc comments across `crates/` cite `TODO.md` section numbers** from these cycles.
-Deletion is not an `rm`; it is a migration plan plus 234 citation updates, and it is
-explicitly **not this card's job**.
+Deletion is still not an `rm` — the crate mixes closed-cycle code with the load-bearing
+execution domain, and separating them is the work. It is explicitly **not this card's job**.
 
 **Tasks:**
 - **Measure the surface first, before proposing anything.** Tables, rows in the live schema,
@@ -2417,9 +2423,9 @@ Additionally:
 # Archive — closed and superseded cycles
 
 > **Everything below this line is history.** Parts I, II and III are closed or superseded.
-> They stay in this file, at their original section numbers, because **234 Rust doc comments
-> in `crates/` and ~240 references in `docs/` cite those numbers**; moving or renumbering
-> them breaks every citation silently. See the header for the verification command.
+> They stay in this file at their original section numbers. The reason once given — hundreds
+> of Rust doc comments citing those numbers — **no longer holds**: no Rust file cites them
+> and one live document does. See the header for the measurement.
 >
 > Read a section from here only when a card's `Context` names it, or when you need the
 > decision history behind a mechanism you are about to change. Part III's **Wave 9 amendment**
