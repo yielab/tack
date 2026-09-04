@@ -704,7 +704,7 @@ where
             Err(_error) => {
                 tracing::warn!(
                     attempt_id = record.attempt_id.as_str(),
-                    "III-H6: event submission failed"
+                    "event submission failed"
                 );
             }
         }
@@ -759,7 +759,7 @@ where
         ) else {
             tracing::warn!(
                 attempt_id = record.attempt_id.as_str(),
-                "III-H6: staged artifact JSON is missing an expected field; not uploaded"
+                "staged artifact JSON is missing an expected field; not uploaded"
             );
             return;
         };
@@ -768,7 +768,7 @@ where
             Err(_) => {
                 tracing::warn!(
                     attempt_id = record.attempt_id.as_str(),
-                    "III-H6: staged artifact could not be read for upload"
+                    "staged artifact could not be read for upload"
                 );
                 return;
             }
@@ -796,7 +796,7 @@ where
             Err(_error) => {
                 tracing::warn!(
                     attempt_id = record.attempt_id.as_str(),
-                    "III-H6: artifact manifest submission failed"
+                    "artifact manifest submission failed"
                 );
                 return;
             }
@@ -807,7 +807,7 @@ where
         else {
             tracing::warn!(
                 attempt_id = record.attempt_id.as_str(),
-                "III-H6: server granted no upload for the submitted artifact"
+                "server granted no upload for the submitted artifact"
             );
             return;
         };
@@ -824,7 +824,7 @@ where
         {
             tracing::warn!(
                 attempt_id = record.attempt_id.as_str(),
-                "III-H6: artifact content upload failed"
+                "artifact content upload failed"
             );
         }
     }

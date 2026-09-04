@@ -545,7 +545,7 @@ pub async fn create_project_with_pod(
         warnings.push(
             "the template's inline orchestration.pipeline_yaml has no delivery mechanism to \
              docket yet (POST /pods has no pipeline field) — only pipeline_file, if set, was \
-             applied to this project's link; see TODO.md §6 \"D3\"/\"D4\"."
+             applied to this project's link."
                 .to_string(),
         );
     }
