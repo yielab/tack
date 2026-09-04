@@ -23,7 +23,7 @@
 //! loop covering every registered plane) and the three request-scoped HTTP
 //! handlers (each acting on one plane a caller named explicitly) need
 //! opposite answers to that question — folding the decision in here would
-//! force one of them to be wrong. See TODO.md card G1.
+//! force one of them to be wrong.
 
 use std::sync::Arc;
 

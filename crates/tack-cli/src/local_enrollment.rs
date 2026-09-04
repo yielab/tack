@@ -40,10 +40,8 @@ pub fn has_stored_session(state_dir: &Path) -> bool {
 ///
 /// This exists to satisfy `tack_runner::bootstrap::build_runtime`, which
 /// requires *some* `enrollment_credential` before it looks at `state_dir` at
-/// all — a precondition that predates this card and does not itself check
-/// for a stored session (see this module's doc comment and the IV-A4
-/// handoff for the discovered gap and why it is not fixed here: that
-/// function belongs to a card this one does not own). The placeholder is
+/// all — `build_runtime` itself does not check
+/// for a stored session first. The placeholder is
 /// never transmitted on a normal restart: `establish_session` in
 /// `crates/tack-runner/src/transport.rs` tries the stored session's
 /// `refresh` first and only reads `enrollment_credential` if that refresh is

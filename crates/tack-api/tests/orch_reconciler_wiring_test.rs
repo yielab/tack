@@ -1,13 +1,12 @@
 //! Tests for the glue that lets the orchestration reconciler
-//! (`tack-orch::reconciler`) poll a real docket instance: card A7's
+//! (`tack-orch::reconciler`) poll a real docket instance:
 //! `RepoControlPlaneStore` (`crates/tack-api/src/orch_store.rs`) plus the
 //! `server.rs` wiring that only spawns it when `TACK_ORCH_ENABLE` is set.
 //!
-//! Covers the three acceptance points from TODO.md's integration-gap card:
-//! the store round-trips health through the real repo (A3's
-//! `repo/orch.rs`), `list_registered` skips an unknown `kind` without
+//! Covers three things: the store round-trips health through the real repo
+//! (`repo/orch.rs`), `list_registered` skips an unknown `kind` without
 //! failing the whole poll cycle, and an unset `TACK_ORCH_ENABLE` spawns no
-//! reconciler tasks at all (§0 rule 8) — even when a plane is registered
+//! reconciler tasks at all — even when a plane is registered
 //! and the store backing it is the real one, not a fake.
 
 use chrono::Utc;

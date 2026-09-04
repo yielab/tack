@@ -724,7 +724,7 @@ mod tests {
         ] {
             assert!(
                 !names.contains(&excluded),
-                "{excluded} should not be an MCP tool (see III-E5 handoff)"
+                "{excluded} should not be an MCP tool"
             );
         }
     }

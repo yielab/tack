@@ -362,16 +362,16 @@ pub(crate) async fn propagate_parent_completion(state: &AppState, item: &Item, o
 /// it automatically via `dispatcher::dispatch_item`, passing the
 /// item's own **persisted** trust value (`item.source.is_trusted()` —
 /// `tack_core::models::ItemSource`, migration 029) rather than inferring
-/// anything at dispatch time (TODO.md's C2 card is explicit that inference
-/// is the failure mode to avoid: a deleted `github_links` row or a
+/// anything at dispatch time — inference is the failure mode to avoid
+/// here: a deleted `github_links` row or a
 /// forgotten future import path would silently flip an item back to
-/// trusted).
+/// trusted.
 ///
 /// **Fires at most once per status entry, not on every edit.** Runs off the
 /// request path (`tokio::spawn`, the same shape `maybe_sync_github` already
 /// uses) so a slow or unreachable control plane can never turn a card move
-/// into a slow or failing PATCH — TODO.md's card text: "a dispatch failure
-/// logs, records an event, and never fails the user's PATCH." Two
+/// into a slow or failing PATCH: a dispatch failure
+/// logs, records an event, and never fails the user's PATCH. Two
 /// independent guards make "don't dispatch on every update" hold:
 ///
 /// 1. **`item.status == old_status` short-circuits before any DB or HTTP

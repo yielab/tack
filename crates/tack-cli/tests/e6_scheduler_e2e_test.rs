@@ -512,7 +512,7 @@ fn a_request_for_an_undeclared_model_is_never_claimed() {
     assert_eq!(
         created["state"], "queued",
         "creating the request itself must still succeed — the operator API does not \
-         pre-validate against live capability data (III-E1's own documented boundary); \
+         pre-validate against live capability data; \
          rejection happens at claim time"
     );
 

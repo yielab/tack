@@ -112,8 +112,9 @@ fn ensure_data_root(root: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The four `TACK_*` variables that hand the data root to the server,
-/// matching TODO.md §VII.0's table exactly.
+/// The four `TACK_*` variables that hand the data root to the server: the
+/// database URL, storage dir, runner state dir, and log file path, each
+/// rooted under `root`.
 fn env_vars(root: &Path) -> [(&'static str, String); 4] {
     [
         (

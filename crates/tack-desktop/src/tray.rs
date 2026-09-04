@@ -16,7 +16,7 @@ const MENU_ID_LAUNCH_AT_LOGIN: &str = "launch_at_login";
 const MENU_ID_QUIT: &str = "quit";
 
 /// The agent-execution switch reads `GET /api/local-runner`, which does not
-/// exist yet (Part VI's VI-B3 has not landed). Disabled and labeled
+/// exist yet. Disabled and labeled
 /// accordingly rather than a second switch guessing at a shape that isn't
 /// there yet.
 const AGENT_EXECUTION_LABEL: &str = "Agent execution: unknown — the switch arrives with the Agents page";
@@ -75,10 +75,10 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
 
 /// Applies the "on by default" half of decision 3 exactly once: the first
 /// time this app ever runs, launch-at-login is turned on; every later run
-/// leaves whatever the user has it set to alone. The marker lives next to
-/// B1's temporary data root — VII-B3's real first-run flow will fold it into
-/// its own marker once persistent per-OS folders land; until then this is
-/// self-contained and does not touch VII-B3's files.
+/// leaves whatever the user has it set to alone. The marker
+/// (`.autostart-initialized`, an empty flag file) lives directly under the
+/// app's real per-user data root (`DataPaths::root`), next to settings.json
+/// and the server's own storage/runner/log folders.
 pub fn ensure_launch_at_login_default_on_first_run(app: &AppHandle, data_root: &std::path::Path) {
     let marker = data_root.join(".autostart-initialized");
     if marker.exists() {

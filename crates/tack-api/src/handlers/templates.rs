@@ -75,7 +75,7 @@ fn validate_template_orchestration(
                 "orchestration.pipeline_yaml is not valid YAML: {e} \
                  (note: this only checks it parses as YAML, not that it is a \
                  valid docket pipeline — docket has no HTTP endpoint for that \
-                 check yet; see TODO.md §6 \"D3\")"
+                 check yet)"
             ))
         })?;
     }
