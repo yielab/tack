@@ -1,7 +1,8 @@
 # Tack Testing Guide
 
-**Rust tests:** 1,415 passing + 5 `#[ignore]`d (`cargo test --workspace`) — the perf test and
-the live-harness runner tests, which bill a real agent account
+**Rust tests:** 1,409 passing + 5 `#[ignore]`d (`cargo test --workspace`) — the perf test and
+the live-harness runner tests, which bill a real agent account. `tack-desktop` is a separate
+workspace: 7 more with `cd crates/tack-desktop && cargo test`
 **Frontend tests:** 734 Vitest unit tests across 85 files (`cd frontend && npm test`)
 **With embed-spa feature:** 472 tests in `tack-api` alone (`cargo test -p tack-api --features
 embed-spa`), which adds the tests that need a built SPA to serve

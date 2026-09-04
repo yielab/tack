@@ -12,7 +12,10 @@ fast=false
 [ "${1:-}" = "--fast" ] && fast=true
 
 # Cargo.lock — resolving alone brings it back in line with the merged manifests.
+# tack-desktop is its own workspace (see ../Cargo.toml's `exclude`), so it has a
+# second lockfile that the root command does not reach.
 cargo metadata --format-version 1 >/dev/null
+cargo metadata --format-version 1 --manifest-path crates/tack-desktop/Cargo.toml >/dev/null
 
 if [ "$fast" = false ]; then
   # docs/openapi.json — written by the contract test itself under UPDATE_OPENAPI.

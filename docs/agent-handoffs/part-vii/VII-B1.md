@@ -373,3 +373,37 @@ Fixed at integration, not deferred:
 Standing rule for VII-B2, VII-B3 and VII-C1: anything `tauri.conf.json` names is read
 while the crate compiles. A file that a clean clone does not have belongs in the
 bundle overlay, never in the base config.
+
+### 2026-09-04 — CI proved the workspace membership itself was wrong
+
+The compile-time fixes above cleared the local build, and CI then failed three jobs on the
+first push — Rust, MSRV and embed-spa — all with the same error:
+
+```
+error: failed to run custom build command for `glib-sys v0.18.1`
+  The system library `glib-2.0` required by crate `glib-sys` was not found.
+```
+
+Tauri drags GTK, WebKit and glib into whatever workspace contains it. As a member,
+`tack-desktop` made those system libraries a prerequisite for building **the server** —
+including the musl release path for headless hosts, and any contributor's first
+`cargo build`. That is precisely the bleed §VII.1 rule 2 exists to prevent; the rule was
+written about crates and the violation happened one level up, at the workspace.
+
+`crates/tack-desktop` is now excluded from the root workspace and is a workspace of its
+own. Consequences, all handled:
+
+- Its own `Cargo.lock`, added to the `tack-generated` merge set and to the pre-push
+  staleness gate.
+- Its own CI job (`desktop`), which installs the Linux system dependencies and runs fmt,
+  clippy and tests — without it nothing would compile this crate at all. It warms the root
+  registry cache first, because `dependency_boundary.rs` reads the root tree `--offline`.
+- Its own Dependabot entry for `/crates/tack-desktop`.
+- `tack_cli_stays_free_of_webview_and_gtk_dependencies` now passes
+  `--manifest-path ../../Cargo.toml`, since `-p tack-cli` no longer resolves from here.
+- Package metadata is duplicated rather than inherited, so a new test asserts the crate's
+  version matches the root `[workspace.package]` **and** `tauri.conf.json`. Proven
+  load-bearing: changing the version in `tauri.conf.json` alone fails it.
+
+For VII-B2 and VII-B3: work inside `crates/tack-desktop` and its own workspace. Adding a
+dependency there does not touch the root lockfile, and must not.

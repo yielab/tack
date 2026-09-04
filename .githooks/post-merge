@@ -12,6 +12,7 @@ cd "$repo_root"
 
 generated=(
   Cargo.lock
+  crates/tack-desktop/Cargo.lock
   frontend/package-lock.json
   docs/openapi.json
   frontend/src/shared/api/schema.gen.ts

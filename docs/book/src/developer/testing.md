@@ -1,6 +1,6 @@
 # Testing
 
-Tack's test suite is structured as a pyramid: fast pure-function tests at the base, integration tests in the middle, handler tests and CLI tests at the top. All 1,415 Rust tests run with a single command and require no external services.
+Tack's test suite is structured as a pyramid: fast pure-function tests at the base, integration tests in the middle, handler tests and CLI tests at the top. All 1,409 Rust tests run with a single command and require no external services. `tack-desktop` is a workspace of its own and adds 7 more.
 
 > **Scope of this page.** This chapter explains how to *write and run* the Rust tests, crate by crate. For the full cross-cutting test strategy — including the Playwright end-to-end suite, the k6 load baseline, the security audits, and the CI gate matrix — see [`docs/TESTING.md`](../../../TESTING.md), the authoritative testing reference. Counts here are kept in sync with `cargo test --workspace`.
 
@@ -285,7 +285,7 @@ Because `TackClient` uses `reqwest::blocking`, tests wrap the call in `tokio::ta
 
 GitHub Actions runs the following on every push to `develop`:
 
-1. **`cargo test --workspace`** — all 1,415 tests. Five are `#[ignore]`d: the perf test and the live-harness runner tests, which bill a real agent account.
+1. **`cargo test --workspace`** — all 1,409 tests. Five are `#[ignore]`d: the perf test and the live-harness runner tests, which bill a real agent account.
 2. **embed-spa job** — builds the frontend with `npm run build`, then runs `cargo test -p tack-api --features embed-spa` to verify the SPA embedding and the additional handler tests that require a built frontend.
 3. **frontend job** — `npm run type-check`, `npm test` (Vitest), and `npm run build`.
 4. **quality gates** — `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, the Playwright accessibility scan (axe, WCAG AA), and a bundle-size budget.

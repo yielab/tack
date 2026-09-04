@@ -11,10 +11,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 # it. CI's `openapi_contract` test catches the spec; nothing caught a stale
 # lockfile or a stale TypeScript schema, and both are cheap to check here.
 echo "→ generated files are current"
-if ! cargo metadata --locked --format-version 1 >/dev/null 2>&1; then
-  echo "  Cargo.lock is out of date with the manifests — run ./scripts/regen-generated.sh" >&2
-  exit 1
-fi
+for manifest in Cargo.toml crates/tack-desktop/Cargo.toml; do
+  if ! cargo metadata --locked --format-version 1 --manifest-path "$manifest" >/dev/null 2>&1; then
+    echo "  the lockfile for $manifest is out of date — run ./scripts/regen-generated.sh" >&2
+    exit 1
+  fi
+done
 if [ -d frontend/node_modules ]; then
   npm --prefix frontend run gen:api >/dev/null
   if ! git diff --quiet -- frontend/src/shared/api/schema.gen.ts; then

@@ -7,8 +7,13 @@ members = [
     "crates/tack-cli",
     "crates/tack-orch",
     "crates/tack-runner",
-    "crates/tack-desktop",
 ]
+# tack-desktop is a workspace of its own, on purpose. Tauri drags GTK, WebKit
+# and glib into whatever workspace contains it, so as a member it made every
+# `cargo build --workspace` — including the MSRV job and the musl release build
+# for headless hosts — require desktop system libraries. Building the desktop
+# app is `make desktop`; `cargo` at this level never sees it.
+exclude = ["crates/tack-desktop"]
 
 [workspace.package]
 version = "0.1.0-beta.7"

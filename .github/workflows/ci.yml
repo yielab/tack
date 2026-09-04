@@ -147,6 +147,43 @@ jobs:
         env:
           RUSTUP_TOOLCHAIN: 1.89.0
 
+  desktop:
+    name: Desktop app (tack-desktop workspace)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # tack-desktop is deliberately NOT a member of the root workspace: Tauri
+      # drags GTK, WebKit and glib into whatever workspace contains it, and the
+      # server has to keep building on a machine that has none of them. The
+      # cost of that separation is that no other job compiles this crate, so
+      # this one exists to.
+      - name: Install Tauri's Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libxdo-dev librsvg2-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: crates/tack-desktop
+      # `dependency_boundary.rs` reads the ROOT workspace's tree with --offline
+      # to prove tack-cli never links a webview. Offline needs the registry
+      # cache populated, which nothing else in this job would do.
+      - name: Warm the root registry cache
+        run: cargo fetch --locked
+      - name: Check formatting
+        working-directory: crates/tack-desktop
+        run: cargo fmt --all --check
+      - name: Clippy
+        working-directory: crates/tack-desktop
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        working-directory: crates/tack-desktop
+        run: cargo test
+
   coverage:
     name: Coverage (llvm-cov + Vitest thresholds)
     runs-on: ubuntu-latest

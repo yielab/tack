@@ -58,6 +58,9 @@ Tack/
 │   ├── pre-push                # fmt + clippy + generated-file staleness gate
 │   └── post-merge              # regenerates what the tack-generated merge driver resolved
 ├── crates/
+│   ├── tack-desktop/         # Tauri desktop shell — its OWN workspace, not a member of
+│   │                         # the one below (Tauri needs GTK/WebKit; the server must not).
+│   │                         # Build with `make desktop`; `cargo --workspace` never sees it.
 │   ├── tack-core/            # Pure domain logic (no I/O, no DB)
 │   │   └── src/
 │   │       ├── lib.rs
