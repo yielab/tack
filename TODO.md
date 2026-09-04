@@ -660,7 +660,7 @@ estimate). Seven rules are specific to this Part:
 | `docs/book/src/user-guide/{agent-runners,cli,configuration,quick-start}.md`, `docs/API-REFERENCE.md` §"Runner, Fleet & Execution", the model-resolution rows of `docs/CONFIG.md` | VI-A1 — **VI-D1 amends after Waves 15–16 ship** |
 | `docs/adr/0061-*.md`, the one provider-credentials bullet in `docs/CONFIG.md` | VI-A2 only |
 | `crates/tack-runner/src/secrets.rs` (new), the store path in `crates/tack-runner/src/config.rs`, the `secret_reference` branch of each adapter, `tack runner secret …` in `crates/tack-cli/src/main.rs` (one subcommand arm + one module) | VI-B1 |
-| The `[provider.*]` section of `RunnerConfig`, each adapter's spawn environment/args, `bootstrap::probe`, `crates/tack-cli/src/doctor.rs`, the gateway rows of `docs/CONFIG.md` | VI-B2 — **after B1 merges** |
+| The `[provider.*]` section of `RunnerConfig`, each adapter's spawn environment/args, `bootstrap::probe`, `crates/tack-cli/src/doctor.rs`, the gateway rows of `docs/CONFIG.md` | VI-B2 — **after B1 merges**. Exception recorded 2026-09-03: the refined ADR 0061 decision 1 requires `tack runner doctor` to report which store backend is in effect, so **VI-B1 owns that one `doctor.rs` line** and the store's wiring in `bootstrap.rs`. B2 owns everything else in both files and must not revert it |
 | `crates/tack-api/src/handlers/local_runner.rs` (new), its mounts in `router.rs` (those only), the control handle in `crates/tack-cli/src/local_runner.rs`, the persisted on/off flag, `frontend/src/features/agents/{ExecutionToggle,ProviderKeyPanel}.tsx` + their client and tests | VI-B3 |
 | `frontend/src/features/agents/**` except B3's two panels, `frontend/src/app/routes.tsx`, the nav entry, the *Advanced* section re-mounting `RunnerFleetSection`, the one mounting line in `features/fleet/FleetPage.tsx`, the first-run banner on the Board | VI-C1 |
 | `frontend/src/shared/runWithAgent/**`, the attempt-state chip on Board cards | VI-C2 |
@@ -962,9 +962,14 @@ type's `Debug`/`Display` are hardcoded to `[REDACTED]` exactly like `RunnerCrede
 optional scheme: `store:<name>` (the default when no scheme is present, so the frozen
 fixture's bare name stays valid) resolves from the store; `env:<VARIABLE>` reads the
 runner's own environment at spawn — the path for a systemd-started runner with no
-keychain and no wish to keep a file. Resolution happens in the adapter's `validate` step
-— before any journal record or worktree exists; a missing name or unset variable is a
-typed pre-spawn failure (`secret_reference_unresolved`, naming the reference only).
+keychain and no wish to keep a file. Resolution happens in the adapter's `validate` step; a missing name or unset variable is
+a typed pre-spawn failure (`secret_reference_unresolved`, naming the reference only).
+**Corrected 2026-09-03 by VI-B1, which measured the engine rather than trusting this
+paragraph:** `validate` does *not* run before the journal record and the worktree exist.
+`engine.rs::run_claimed` persists and fsyncs the journal entry and provisions the real
+checkout *first*, on purpose — a documented crash-safety boundary that a secret-store card
+must not reorder. The true claim, and the one to assert, is narrower: `validate` itself
+writes nothing, so a rejection there leaves whatever the engine already did untouched.
 **Today's warn-and-skip becomes an error**, because once a resolver exists a silently
 missing variable is a fake success. No KEK-encrypted file, no third backend, no
 per-project label pinning: the roadmap's "How the runner keeps a provider key" names
