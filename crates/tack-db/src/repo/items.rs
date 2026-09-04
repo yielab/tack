@@ -737,10 +737,10 @@ impl Repository {
     /// limit check depends on can never be interleaved with another
     /// writer racing the same column.
     ///
-    /// Card R2 (2026-08-05): `dispatcher::apply_mapped_status` used to do
-    /// this as two separate steps — [`Repository::count_items_by_status`]
+    /// Do not reintroduce this as two separate steps —
+    /// [`Repository::count_items_by_status`]
     /// then a plain [`Repository::update_item`] — with no lock spanning
-    /// them. Two concurrent callers moving *different* items into the same
+    /// them: two concurrent callers moving *different* items into the same
     /// WIP-limited column could each read "under the limit" before either
     /// had written, and both would then commit, pushing the column over its
     /// configured limit. `BEGIN IMMEDIATE` (rather than the plain deferred

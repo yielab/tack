@@ -238,8 +238,8 @@ pub async fn import_github(
 
             // `ItemSource::Github` — this title/description came from a GitHub
             // issue, filed by anyone who could open one on the linked repo.
-            // Untrusted for dispatch purposes (see `tack_core::models::ItemSource`
-            // and TODO.md's C2 card) for the lifetime of the item.
+            // Untrusted for dispatch purposes (see `tack_core::models::ItemSource`)
+            // for the lifetime of the item.
             match state
                 .repo
                 .create_item_with_source(project_id, &status, data, ItemSource::Github)

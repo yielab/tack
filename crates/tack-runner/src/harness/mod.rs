@@ -242,7 +242,8 @@ pub enum HarnessRegistrationError {
     #[error(
         "probe for harness kind {kind:?} declares cancel support {support:?}, which exceeds \
          what the shared process-group cancellation primitive can honestly promise \
-         ({ceiling:?}); see docs/agent-handoffs/part-iii/III-D5.md finding 1"
+         ({ceiling:?}): a descendant that starts its own session or process group is not \
+         reachable by a group-wide signal"
     )]
     OverclaimedCancelSupport {
         kind: String,

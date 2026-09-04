@@ -3,8 +3,8 @@
 //! the `sprint_dispatch` module they're backed by.
 //!
 //! Covers: 404 with `TACK_ORCH_ENABLE` unset / unknown sprint; 409 for an
-//! unlinked project; an empty sprint; a diamond dependency graph (the
-//! acceptance bar TODO.md names explicitly) — topological order, dependency
+//! unlinked project; an empty sprint; a diamond dependency graph —
+//! topological order, dependency
 //! readiness gating a downstream item even once its direct blockers start
 //! (but haven't finished), and a satisfied dependency unblocking its
 //! dependents; the in-flight cap being honoured (timing-based) and clamped
@@ -342,7 +342,7 @@ async fn dry_run_reports_an_empty_plan_for_a_sprint_with_no_items() {
     assert_eq!(v["summary"]["total"], 0);
 }
 
-// ─── Diamond dependency graph — the acceptance bar TODO.md names ──────────
+// ─── Diamond dependency graph ──────────────────────────────────────────────
 //
 //        A
 //       / \

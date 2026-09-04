@@ -6,15 +6,15 @@
 //! off the request path, passing the item's own **persisted** trust value
 //! (`item.source.is_trusted()` — migration 029).
 //!
-//! The test that matters most here (per TODO.md's C2 card acceptance bar):
-//! an item imported from GitHub, auto-dispatched, reaches docket with
+//! The test that matters most here: an item imported from GitHub,
+//! auto-dispatched, reaches docket with
 //! `trusted: false` **on the wire** — asserted with a wiremock matcher that
 //! only responds 200 if the flag is genuinely present in the request body,
 //! not by inspecting what a function was called with.
 //!
-//! Also covers the hazards TODO.md's card calls out by name: off unless
-//! `TACK_ORCH_ENABLE` is set (§0 rule 8) and unless the link's
-//! `auto_dispatch` is on; and "don't dispatch on every update" — an item
+//! Also covers the hazards this hook must guard against: it stays off unless
+//! `TACK_ORCH_ENABLE` is set and unless the link's
+//! `auto_dispatch` is on; and it must not dispatch on every update — an item
 //! edited while it's already sitting in a `dispatch_from` status must not
 //! re-dispatch.
 
