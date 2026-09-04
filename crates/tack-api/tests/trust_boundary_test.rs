@@ -26,10 +26,7 @@ fn protected_config() -> AppConfig {
 #[tokio::test]
 async fn suffix_lookalikes_stay_behind_the_bearer_gate() {
     let (app, _) = common::test_app_with_config(protected_config()).await;
-    for uri in [
-        "/api/projects/health",
-        "/api/projects/openapi.json",
-    ] {
+    for uri in ["/api/projects/health", "/api/projects/openapi.json"] {
         let response = app
             .clone()
             .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())

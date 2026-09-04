@@ -52,6 +52,7 @@ in that order):
 | `TACK_RUNNER_ENROLLMENT_TOKEN` | One-time operator-issued token; exchanged for a durable credential and never persisted |
 | `TACK_RUNNER_ID` | Runner identity once enrolled |
 | `TACK_RUNNER_STATE_DIR` | Owner-only directory for the journal and credential |
+| `TACK_RUNNER_SECRET_VALUE` | Value `tack runner secret set` stores; when unset it reads the value from stdin instead. Never a command-line argument, which would be visible in `ps` and shell history. Read once, not persisted by the variable — the store keeps it (OS keychain, or an owner-only file where none answers) |
 
 Runner credentials are redacted in every log, `Debug` impl and error — the redaction is
 structural (`RunnerCredential`'s `Debug`/`Display` are hardcoded to `[REDACTED]`), not

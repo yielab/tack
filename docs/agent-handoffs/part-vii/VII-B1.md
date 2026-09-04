@@ -331,3 +331,45 @@ commit: it only rewrites `TODO.md` and the two `docs/agent-handoffs/*/README.md`
 spell out `02aa4e3` explicitly where they previously said "pinned at dispatch" — no code
 changed. Branched from `02aa4e3` as instructed; recording this so the discrepancy is not
 mistaken for an unnoticed rebase later.
+
+### 2026-09-04 — Wave 18 integrator: the crate could not be built from a clean clone
+
+Adding `crates/tack-desktop` to `[workspace].members` made `cargo build --workspace`,
+`cargo test --workspace` and `cargo clippy --workspace --all-targets` fail for anyone
+who had not first run `make desktop-sidecar`. This card's own verification did not
+catch it because `cargo check --workspace` ran in a worktree where the sidecar had
+already been staged by hand; on `develop` after the merge it failed immediately:
+
+```
+error: failed to run custom build command for `tack-desktop`
+  resource path `binaries/tack-x86_64-unknown-linux-gnu` doesn't exist
+```
+
+and, once that was cleared, again on the gitignored icon set:
+
+```
+error: proc macro panicked
+  message: failed to open icon .../icons/32x32.png: No such file or directory
+```
+
+Both are compile-time reads, not bundle-time ones: `tauri-build` resolves
+`bundle.externalBin` and `generate_context!` opens `bundle.icon` while the crate
+compiles. The MSRV job runs `cargo build --workspace --locked`, so this would have
+turned CI red on the next push.
+
+Fixed at integration, not deferred:
+
+- `bundle.externalBin` moved out of `tauri.conf.json` into a new
+  `crates/tack-desktop/tauri.bundle.conf.json`, merged only when bundling. A plain
+  workspace build no longer demands a per-platform binary that is correctly
+  gitignored. `make desktop` bundles with `--config tauri.bundle.conf.json`; the
+  sidecar permission in `capabilities/default.json` is unaffected, since it names the
+  sidecar independently of the bundle config.
+- The generated icon set is now committed, and the two `.gitignore` lines that
+  excluded it are gone — the resolution commit `3ea96df` had routed that removal to
+  VII-C1, which is now a no-op for VII-C1. `generate_context!` reads these files at
+  compile time, so they are a source input, not build output.
+
+Standing rule for VII-B2, VII-B3 and VII-C1: anything `tauri.conf.json` names is read
+while the crate compiles. A file that a clean clone does not have belongs in the
+bundle overlay, never in the base config.

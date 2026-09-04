@@ -9,12 +9,12 @@ use std::sync::Mutex;
 
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
-use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
+use tauri_plugin_shell::process::CommandChild;
 
 use supervisor::{
-    attach_or_start, shutdown, Outcome, ServerFolders, SidecarHandle, SidecarLauncher,
-    SupervisorError, DEFAULT_PORT,
+    DEFAULT_PORT, Outcome, ServerFolders, SidecarHandle, SidecarLauncher, SupervisorError,
+    attach_or_start, shutdown,
 };
 
 /// [`SidecarHandle`] backed by the real Tauri sidecar child.

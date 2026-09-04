@@ -1,4 +1,4 @@
-.PHONY: build run dev debug cli test test-verbose test-core test-db e2e e2e-install e2e-ui screenshots gif audit load check lint fmt fmt-check reset-db inspect-db api-health api-stats api-projects clean clean-all desktop-sidecar help
+.PHONY: build run dev debug cli test test-verbose test-core test-db e2e e2e-install e2e-ui screenshots gif audit load check lint fmt fmt-check reset-db inspect-db api-health api-stats api-projects clean clean-all desktop-sidecar desktop help
 
 # ─── Default ──────────────────────────────────────
 help: ## Show this help
@@ -21,6 +21,12 @@ desktop-sidecar: ## Build `tack` and stage it as tack-desktop's Tauri sidecar
 	cargo build -p tack-cli --release --features embed-spa
 	mkdir -p crates/tack-desktop/binaries
 	cp target/release/tack crates/tack-desktop/binaries/tack-$$(rustc --print host-tuple)
+
+# `externalBin` lives in tauri.bundle.conf.json, not tauri.conf.json, so a plain
+# `cargo build --workspace` never demands a staged sidecar. Bundling does, and
+# gets it by merging the overlay here.
+desktop: desktop-sidecar ## Bundle the desktop app (stages the sidecar first)
+	cd crates/tack-desktop && cargo tauri build --config tauri.bundle.conf.json
 
 dev: frontend/node_modules ## Development mode: server + Vite hot-reload (Ctrl-C stops both)
 	@trap 'kill 0' SIGINT; \

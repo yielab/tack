@@ -205,3 +205,16 @@ back to "unconfigured" once saved — both are pre-existing gaps this card did n
 
 *(Appended by later readers, dated. The original text above is never rewritten — the
 history of what was believed and later falsified is the point.)*
+
+### 2026-09-04 — Wave 16 integrator: what the "genuine beta.7 install copy" actually proves
+
+The `run_all` transcript above is real and the copy was real, but the database it ran
+against held **zero projects** (`projects before: 0`). It therefore proves that
+migration 062 applies cleanly on top of a schema that had genuinely migrated through
+061 — worth having, and more than an in-memory harness shows. It does not prove
+anything about existing rows, because there were none. Read the evidence as
+"the migration chain accepts it", not "real data survived it".
+
+Nothing here needs changing; the claim just should not grow in the retelling. A card
+that wants the stronger statement has to seed rows first and assert their contents
+after.

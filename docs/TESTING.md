@@ -1,8 +1,13 @@
 # Tack Testing Guide
 
-**Rust tests:** 207 passing + 1 `#[ignore]` perf test (`cargo test --workspace`)
-**Frontend tests:** 168 Vitest unit tests (`cd frontend && npm test`)
-**With embed-spa feature:** ~210 tests (`cargo test -p tack-api --features embed-spa`)
+**Rust tests:** 1,415 passing + 5 `#[ignore]`d (`cargo test --workspace`) — the perf test and
+the live-harness runner tests, which bill a real agent account
+**Frontend tests:** 734 Vitest unit tests across 85 files (`cd frontend && npm test`)
+**With embed-spa feature:** 472 tests in `tack-api` alone (`cargo test -p tack-api --features
+embed-spa`), which adds the tests that need a built SPA to serve
+
+*Counts measured 2026-09-04. They are a smoke check on whether a suite silently stopped
+running, not a target — a number that drifts is expected, a number that drops is not.*
 
 ## Quick start
 
