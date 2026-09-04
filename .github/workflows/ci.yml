@@ -138,8 +138,14 @@ jobs:
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           key: msrv
+      # `rust-toolchain.toml` pins `channel = "stable"`, and rustup ranks a
+      # toolchain file ABOVE the default that the action sets with `rustup
+      # default`. Without an explicit RUSTUP_TOOLCHAIN — which outranks the
+      # file — this step builds on stable and the pin above decides nothing.
       - name: Build on MSRV
         run: cargo build --workspace --locked
+        env:
+          RUSTUP_TOOLCHAIN: 1.89.0
 
   coverage:
     name: Coverage (llvm-cov + Vitest thresholds)
