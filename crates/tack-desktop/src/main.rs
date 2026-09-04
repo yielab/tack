@@ -164,14 +164,14 @@ fn main() {
         .run(|app_handle, event| {
             // Closing the window quits in this card; B2 changes this to hide.
             // Either way, a spawned child must never outlive the app.
-            if let RunEvent::ExitRequested { .. } = event {
-                if let Some(state) = app_handle.try_state::<DesktopState>() {
-                    let mode = state.0.lock().unwrap().take();
-                    if let Some(ServerMode::Started(process)) = mode {
-                        if let Err(err) = shutdown(process) {
-                            tracing::error!(error = %err, "failed to stop the spawned Tack server");
-                        }
-                    }
+            if let RunEvent::ExitRequested { .. } = event
+                && let Some(state) = app_handle.try_state::<DesktopState>()
+            {
+                let mode = state.0.lock().unwrap().take();
+                if let Some(ServerMode::Started(process)) = mode
+                    && let Err(err) = shutdown(process)
+                {
+                    tracing::error!(error = %err, "failed to stop the spawned Tack server");
                 }
             }
         });
