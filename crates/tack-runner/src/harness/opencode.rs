@@ -527,6 +527,10 @@ pub struct OpenCodeAdapter<C = crate::SystemClock> {
     /// a one-off detection in that case rather than reporting a silently
     /// fabricated version. Mirrors `codex.rs`'s identical cache.
     last_probe: tokio::sync::Mutex<Option<(String, Option<String>)>>,
+    /// Resolves `secret_reference` environment entries. Shared with every
+    /// other adapter the runner constructed at startup — see
+    /// `crate::secrets::SecretStore`.
+    secrets: crate::secrets::SecretStore,
 }
 
 impl OpenCodeAdapter<crate::SystemClock> {
@@ -536,7 +540,11 @@ impl OpenCodeAdapter<crate::SystemClock> {
     /// environment (observed fact 6). `artifact_staging_root` is required
     /// explicitly, matching [`ArtifactStager::new`]'s own no-hidden-default
     /// style.
-    pub fn discover(process_limits: ProcessLimits, artifact_staging_root: PathBuf) -> Self {
+    pub fn discover(
+        process_limits: ProcessLimits,
+        artifact_staging_root: PathBuf,
+        secrets: crate::secrets::SecretStore,
+    ) -> Self {
         Self::with_clock(
             OpenCodeLocator::Search {
                 program_name: OPENCODE_PROGRAM_NAME.to_owned(),
@@ -548,6 +556,7 @@ impl OpenCodeAdapter<crate::SystemClock> {
             default_passthrough_env(),
             artifact_staging_root,
             crate::SystemClock,
+            secrets,
         )
     }
 
@@ -566,6 +575,7 @@ impl OpenCodeAdapter<crate::SystemClock> {
         program: PathBuf,
         prefix_args: Vec<String>,
         artifact_staging_root: PathBuf,
+        secrets: crate::secrets::SecretStore,
     ) -> Self {
         Self::with_clock(
             OpenCodeLocator::Fixed {
@@ -578,6 +588,7 @@ impl OpenCodeAdapter<crate::SystemClock> {
             BTreeMap::new(),
             artifact_staging_root,
             crate::SystemClock,
+            secrets,
         )
     }
 }
@@ -595,6 +606,7 @@ where
         passthrough_env: BTreeMap<String, String>,
         artifact_staging_root: PathBuf,
         clock: C,
+        secrets: crate::secrets::SecretStore,
     ) -> Self {
         Self {
             command,
@@ -607,6 +619,7 @@ where
             next_handle: AtomicU64::new(0),
             running: tokio::sync::Mutex::new(BTreeMap::new()),
             last_probe: tokio::sync::Mutex::new(None),
+            secrets,
         }
     }
 
@@ -1119,7 +1132,16 @@ where
             tracing::warn!(reason, "opencode validate: binary unresolvable");
             HarnessError::Rejected { reason }
         })?;
-        self.check_pairing_supported(&provider, &model).await
+        self.check_pairing_supported(&provider, &model).await?;
+        // Every `secret_reference` entry must resolve before a journal
+        // record or workspace exists. This discards the resolved values —
+        // `start` resolves again for real.
+        super::resolve_environment(
+            &self.secrets,
+            &spec.work.request,
+            &mut SecretMaterial::new(),
+        )?;
+        Ok(())
     }
 
     async fn start(&self, spec: &ExecutionSpec) -> Result<LocalRunHandle, HarnessError> {
@@ -1148,15 +1170,11 @@ where
         secrets.register(prompt.clone());
 
         let mut env = self.base_env();
-        for (key, value) in &spec.work.request.environment {
-            if let Some(literal) = &value.value {
-                secrets.register(literal.clone());
-                env.insert(key.clone(), literal.clone());
-            }
-            // `secret_reference` entries are deliberately never resolved
-            // here: no secret-store client exists in tack-runner yet — the
-            // same gap `codex.rs` has for its own environment resolution.
-        }
+        env.extend(super::resolve_environment(
+            &self.secrets,
+            &spec.work.request,
+            &mut secrets,
+        )?);
 
         let timeout = if spec.work.request.timeout_seconds > 0 {
             Duration::from_secs(spec.work.request.timeout_seconds)
@@ -1499,6 +1517,17 @@ fi
         }
     }
 
+    /// A fresh, hermetic file-backed store per call — never the platform
+    /// keychain — so parallel `#[test]` functions never see each other's
+    /// entries and CI needs no Secret Service.
+    fn test_secret_store() -> crate::secrets::SecretStore {
+        crate::secrets::SecretStore::file(std::env::temp_dir().join(format!(
+            "tack-runner-opencode-secrets-{}-{}.json",
+            std::process::id(),
+            NEXT_DIR.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        )))
+    }
+
     fn adapter_with(
         command: OpenCodeLocator,
         probe_env: BTreeMap<String, String>,
@@ -1511,6 +1540,7 @@ fi
             BTreeMap::new(), // passthrough_env: fake tests never need a real PATH/HOME
             temp_dir("artifacts"),
             clock_at("2026-08-09T12:00:00Z"),
+            test_secret_store(),
         )
     }
 
@@ -1640,6 +1670,7 @@ fi
             BTreeMap::new(),
             temp_dir("artifacts-unresolvable"),
             clock_at("2026-08-09T12:00:00Z"),
+            test_secret_store(),
         );
         let workspace = deterministic_fixture_repo("unresolvable");
         let spec = spec_with(workspace.clone(), Some(("opencode", "big-pickle")), &[]);
@@ -2220,6 +2251,7 @@ fi
             BTreeMap::new(),
             temp_dir("artifacts-absent"),
             clock_at("2026-08-09T12:00:00Z"),
+            test_secret_store(),
         );
 
         let capability = adapter.probe().await;
@@ -2241,6 +2273,7 @@ fi
             BTreeMap::new(),
             temp_dir("artifacts-hang"),
             clock_at("2026-08-09T12:00:00Z"),
+            test_secret_store(),
         );
 
         let capability = tokio::time::timeout(Duration::from_secs(5), adapter.probe())
@@ -2432,6 +2465,7 @@ fi
             passthrough,
             temp_dir("live-artifacts"),
             crate::SystemClock,
+            test_secret_store(),
         );
 
         let capability = adapter.probe().await;
