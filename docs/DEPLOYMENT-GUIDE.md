@@ -16,16 +16,17 @@ behind a reverse proxy."
 1. [Get the binary](#get-the-binary)
 2. [Run it](#run-it)
 3. [Systemd service (recommended)](#systemd-service-recommended)
-4. [Reverse proxy + HTTPS (Caddy)](#reverse-proxy--https-caddy)
-5. [Reverse proxy (nginx)](#reverse-proxy-nginx)
-6. [Docker](#docker)
-7. [Environment configuration](#environment-configuration)
-8. [Backups](#backups)
-9. [Monitoring & logging](#monitoring--logging)
-10. [Security checklist](#security-checklist)
-11. [Scaling considerations](#scaling-considerations)
-12. [Troubleshooting](#troubleshooting)
-13. [Maintenance](#maintenance)
+4. [Per-user service (no root)](#per-user-service-no-root)
+5. [Reverse proxy + HTTPS (Caddy)](#reverse-proxy--https-caddy)
+6. [Reverse proxy (nginx)](#reverse-proxy-nginx)
+7. [Docker](#docker)
+8. [Environment configuration](#environment-configuration)
+9. [Backups](#backups)
+10. [Monitoring & logging](#monitoring--logging)
+11. [Security checklist](#security-checklist)
+12. [Scaling considerations](#scaling-considerations)
+13. [Troubleshooting](#troubleshooting)
+14. [Maintenance](#maintenance)
 
 ---
 
@@ -167,6 +168,28 @@ sudo systemctl status tack
 ```
 
 Logs go to the journal: `sudo journalctl -u tack -f`.
+
+---
+
+## Per-user service (no root)
+
+For a personal machine — no dedicated service account, no `sudo` — `tack service`
+installs the same idea as a **user** unit instead of a system one: a systemd user unit
+on Linux (`~/.config/systemd/user/tack.service`, `systemctl --user`), a launchd agent on
+macOS. It uses this OS's own per-user application-data folder for the database, storage,
+runner state, and log file, so nothing is written next to wherever the command was run.
+Not supported on Windows; install the desktop app there instead.
+
+```sh
+tack service install     # writes the unit, then `systemctl --user enable --now tack`
+tack service status       # prints the unit's state and the health URL
+tack service uninstall    # stops and removes the unit; the data root is left untouched
+```
+
+See [`tack service`](book/src/user-guide/cli.md#service) for real output from all three
+commands. Prefer the system-level unit above for a shared or internet-facing deployment —
+this one runs as your own user and stops when your user session's systemd instance does
+(`loginctl enable-linger` keeps it running across logouts).
 
 ---
 
