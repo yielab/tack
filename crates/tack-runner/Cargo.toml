@@ -10,6 +10,13 @@ authors.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
 clap.workspace = true
+# `secrets.rs`'s platform credential store. Deliberately `keyring-core` (the
+# plug-in core), never the `keyring` convenience crate: `keyring`'s own docs
+# say an application that wants to choose its own fallback order, or swap
+# the store for a test double, should link `keyring-core` and a specific
+# store crate directly instead — this crate needs both (fall back to a file
+# when no platform store answers; use a mock store in tests).
+keyring-core = "1.0.0"
 # III-H1: the runner's own HTTP transport. Reused from the workspace table
 # (already used by tack-api/tack-orch/tack-cli), not a new version pin.
 reqwest = { workspace = true }
@@ -21,6 +28,18 @@ tokio.workspace = true
 toml.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = "1"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-native-keyring-store = "1"
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+# `crypto-rust`: a pure-Rust D-Bus session cipher, so this build never needs
+# a system OpenSSL — matching the choice `keyring`'s own default feature
+# bundle makes for the same underlying crate.
+zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
 
 [dev-dependencies]
 # `test-util` (paused/auto-advancing virtual time) is not part of the

@@ -332,6 +332,10 @@ pub struct CodexAdapter<C = crate::SystemClock> {
     /// falls back to a one-off detection in that case rather than reporting
     /// a silently fabricated version.
     last_probe: tokio::sync::Mutex<Option<(String, Option<String>)>>,
+    /// Resolves `secret_reference` environment entries. Shared with every
+    /// other adapter the runner constructed at startup — see
+    /// `crate::secrets::SecretStore`.
+    secrets: crate::secrets::SecretStore,
 }
 
 impl CodexAdapter<crate::SystemClock> {
@@ -339,7 +343,11 @@ impl CodexAdapter<crate::SystemClock> {
     /// `PATH` (snapshotted once, here) rather than a hardcoded path.
     /// `artifact_staging_root` is required explicitly, matching
     /// [`ArtifactStager::new`]'s own no-hidden-default style.
-    pub fn discover(process_limits: ProcessLimits, artifact_staging_root: PathBuf) -> Self {
+    pub fn discover(
+        process_limits: ProcessLimits,
+        artifact_staging_root: PathBuf,
+        secrets: crate::secrets::SecretStore,
+    ) -> Self {
         Self::with_clock(
             CodexLocator::Search {
                 program_name: CODEX_PROGRAM_NAME.to_owned(),
@@ -350,6 +358,7 @@ impl CodexAdapter<crate::SystemClock> {
             BTreeMap::new(),
             artifact_staging_root,
             crate::SystemClock,
+            secrets,
         )
     }
 
@@ -365,6 +374,7 @@ impl CodexAdapter<crate::SystemClock> {
         program: PathBuf,
         prefix_args: Vec<String>,
         artifact_staging_root: PathBuf,
+        secrets: crate::secrets::SecretStore,
     ) -> Self {
         Self::with_clock(
             CodexLocator::Fixed {
@@ -376,6 +386,7 @@ impl CodexAdapter<crate::SystemClock> {
             BTreeMap::new(),
             artifact_staging_root,
             crate::SystemClock,
+            secrets,
         )
     }
 }
@@ -391,6 +402,7 @@ where
         probe_env: BTreeMap<String, String>,
         artifact_staging_root: PathBuf,
         clock: C,
+        secrets: crate::secrets::SecretStore,
     ) -> Self {
         Self {
             command,
@@ -402,6 +414,7 @@ where
             next_handle: AtomicU64::new(0),
             running: tokio::sync::Mutex::new(BTreeMap::new()),
             last_probe: tokio::sync::Mutex::new(None),
+            secrets,
         }
     }
 
@@ -719,6 +732,14 @@ where
             tracing::warn!(reason, "codex validate: binary unresolvable");
             HarnessError::Rejected { reason }
         })?;
+        // Every `secret_reference` entry must resolve before a journal
+        // record or workspace exists. This discards the resolved values —
+        // `start` resolves again for real.
+        super::resolve_environment(
+            &self.secrets,
+            &spec.work.request,
+            &mut SecretMaterial::new(),
+        )?;
         Ok(())
     }
 
@@ -763,17 +784,7 @@ where
         let mut secrets = SecretMaterial::new();
         secrets.register(prompt.clone());
 
-        let mut env = BTreeMap::new();
-        for (key, value) in &spec.work.request.environment {
-            if let Some(literal) = &value.value {
-                secrets.register(literal.clone());
-                env.insert(key.clone(), literal.clone());
-            }
-            // `secret_reference` entries are deliberately never resolved
-            // here: no secret-store client exists in tack-runner yet (the
-            // same, already-documented gap D4 flagged for event/artifact
-            // transport). See the handoff.
-        }
+        let env = super::resolve_environment(&self.secrets, &spec.work.request, &mut secrets)?;
 
         let timeout = if spec.work.request.timeout_seconds > 0 {
             Duration::from_secs(spec.work.request.timeout_seconds)
@@ -1039,6 +1050,17 @@ mod tests {
         }
     }
 
+    /// A fresh, hermetic file-backed store per call — never the platform
+    /// keychain — so parallel `#[test]` functions never see each other's
+    /// entries and CI needs no Secret Service.
+    fn test_secret_store() -> crate::secrets::SecretStore {
+        crate::secrets::SecretStore::file(std::env::temp_dir().join(format!(
+            "tack-runner-codex-secrets-{}-{}.json",
+            std::process::id(),
+            NEXT_DIR.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        )))
+    }
+
     fn adapter_with_env(probe_env: BTreeMap<String, String>) -> CodexAdapter<FixedClock> {
         CodexAdapter::with_clock(
             fixed_command(),
@@ -1047,6 +1069,7 @@ mod tests {
             probe_env,
             temp_dir("artifacts"),
             clock_at("2026-08-09T12:00:00Z"),
+            test_secret_store(),
         )
     }
 
@@ -1160,6 +1183,7 @@ mod tests {
             BTreeMap::new(),
             temp_dir("artifacts-unresolvable"),
             clock_at("2026-08-09T12:00:00Z"),
+            test_secret_store(),
         );
         let workspace = deterministic_fixture_repo("unresolvable");
         let spec = spec_with(
@@ -1530,6 +1554,7 @@ mod tests {
             BTreeMap::new(),
             temp_dir("artifacts-absent"),
             clock_at("2026-08-09T12:00:00Z"),
+            test_secret_store(),
         );
 
         let capability = adapter.probe().await;
@@ -1550,6 +1575,7 @@ mod tests {
             ]),
             temp_dir("artifacts-hang"),
             clock_at("2026-08-09T12:00:00Z"),
+            test_secret_store(),
         );
 
         let capability = tokio::time::timeout(Duration::from_secs(5), adapter.probe())
@@ -1718,6 +1744,7 @@ mod tests {
         let adapter = CodexAdapter::discover(
             ProcessLimits::new(1_048_576, 1_048_576, Duration::from_secs(30)),
             temp_dir("live-artifacts"),
+            test_secret_store(),
         );
 
         let capability = adapter.probe().await;

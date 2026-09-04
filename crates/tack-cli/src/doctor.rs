@@ -11,7 +11,9 @@
 use std::time::Duration;
 
 use tack_orch::execution::{CapabilitySupport, CapabilityValue, HarnessCapability};
-use tack_runner::{bootstrap, harness::process::ProcessLimits};
+use tack_runner::{
+    RunnerConfig, RunnerConfigSources, SecretStore, bootstrap, harness::process::ProcessLimits,
+};
 
 /// Irrelevant to a probe (each adapter's own `--version` call is bounded by
 /// a separate, shorter, internal timeout — see e.g.
@@ -51,7 +53,17 @@ async fn probe() -> bootstrap::DiscoveryReport {
     // this path feeds — `wait()`'s artifact-staging directory — is never
     // reached; nothing is created or written under it.
     let staging_root = std::env::temp_dir().join("tack-runner-doctor-unused-staging");
-    bootstrap::probe(&staging_root, &PROCESS_LIMITS).await
+    // The real state dir a `runner start` in this same environment would
+    // use (honors `--state-dir`/`TACK_RUNNER_STATE_DIR`), so the backend
+    // this reports is the one a live runner would actually pick — never a
+    // second, independently derived guess.
+    let config = RunnerConfig::from_sources(RunnerConfigSources {
+        environment: RunnerConfig::environment_overrides(),
+        ..RunnerConfigSources::default()
+    })
+    .unwrap_or_else(|_| RunnerConfig::defaults());
+    let secrets = SecretStore::open(&config.secret_store_path());
+    bootstrap::probe(&staging_root, &PROCESS_LIMITS, &secrets).await
 }
 
 /// What this machine's probe found for one harness kind.
@@ -158,6 +170,10 @@ fn render(report: &bootstrap::DiscoveryReport) {
     render_feature("decisions", &capabilities.features.decisions);
     render_feature("artifacts", &capabilities.features.artifacts);
     render_feature("usage", &capabilities.features.usage);
+    println!();
+
+    println!("Secret store (resolves `secret_reference` environment entries):");
+    println!("  backend: {}", report.secret_backend);
     println!();
 
     println!(
@@ -456,6 +472,7 @@ mod tests {
             claude_code_discovery_error: Some(
                 "no executable named `claude` was found on PATH".to_owned(),
             ),
+            secret_backend: tack_runner::secrets::SecretBackendKind::File,
         };
 
         render(&report);
