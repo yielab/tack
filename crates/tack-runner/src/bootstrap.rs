@@ -17,8 +17,8 @@ use tack_orch::execution::{
 };
 
 use crate::{
-    Clock, LocalFilesystem, RunnerConfig, RunnerError, RunnerRuntime, Shutdown, SystemClock,
-    SystemProcessSupervisor,
+    Clock, LocalFilesystem, RunnerConfig, RunnerError, RunnerRuntime, SecretStore, Shutdown,
+    SystemClock, SystemProcessSupervisor,
     client::{
         AttemptDataProtocol, HttpPullProtocol, HttpRunnerClient, OwnerOnlyJournal, RetryPolicy,
         RunnerEngine, WorkspaceManager, workspace::git::GitWorktreeProvisioner,
@@ -69,7 +69,8 @@ pub async fn build_runtime(
     // is otherwise the only production `RunnerProtocolClient` in the tree
     // and cannot reach a server at all.
     let staging_root = config.state_dir.join("staging");
-    let adapters = build_adapter_registry(&limits.harness_process, &staging_root);
+    let secrets = SecretStore::open(&config.secret_store_path());
+    let adapters = build_adapter_registry(&limits.harness_process, &staging_root, &secrets);
     let capabilities = report_capabilities(&adapters, &SystemClock).await;
     let protocol = Arc::new(HttpPullProtocol::new(
         &config.api_base_url,
@@ -134,6 +135,9 @@ pub async fn run(
 pub struct DiscoveryReport {
     pub capabilities: RunnerCapabilities,
     pub claude_code_discovery_error: Option<String>,
+    /// Which backend `secrets` answered from — `tack runner doctor` prints
+    /// this so a file is never mistaken for a keychain.
+    pub secret_backend: crate::secrets::SecretBackendKind,
 }
 
 /// Runs the exact discovery/capability-probing step [`build_runtime`]
@@ -144,13 +148,20 @@ pub struct DiscoveryReport {
 /// this machine can do without enrolling a runner. It calls this instead of
 /// re-deriving [`build_adapter_registry`]/[`report_capabilities`] itself, so
 /// there remains exactly one place that decides how a harness gets probed,
-/// never two that could quietly diverge.
-pub async fn probe(staging_root: &Path, process_limits: &ProcessLimits) -> DiscoveryReport {
-    let adapters = build_adapter_registry(process_limits, staging_root);
+/// never two that could quietly diverge. `secrets` is never resolved against
+/// during a probe (no attempt exists to resolve for); it is only asked which
+/// backend it is, which the adapters need at construction regardless.
+pub async fn probe(
+    staging_root: &Path,
+    process_limits: &ProcessLimits,
+    secrets: &SecretStore,
+) -> DiscoveryReport {
+    let adapters = build_adapter_registry(process_limits, staging_root, secrets);
     let capabilities = report_capabilities(&adapters, &SystemClock).await;
     DiscoveryReport {
         capabilities,
-        claude_code_discovery_error: ClaudeCodeAdapter::discover().err(),
+        claude_code_discovery_error: ClaudeCodeAdapter::discover(secrets.clone()).err(),
+        secret_backend: secrets.backend(),
     }
 }
 
@@ -164,27 +175,36 @@ pub async fn probe(staging_root: &Path, process_limits: &ProcessLimits) -> Disco
 /// copy's version cache is therefore separate from the adapter copy's, so the
 /// adapter falls back to its own one-off version detection at `wait()` time —
 /// documented behaviour, never a fabricated version.
-fn build_adapter_registry(process_limits: &ProcessLimits, staging_root: &Path) -> AdapterRegistry {
+fn build_adapter_registry(
+    process_limits: &ProcessLimits,
+    staging_root: &Path,
+    secrets: &SecretStore,
+) -> AdapterRegistry {
     let mut registry = AdapterRegistry::new();
 
-    let codex = CodexAdapter::discover(process_limits.clone(), staging_root.to_path_buf());
+    let codex = CodexAdapter::discover(
+        process_limits.clone(),
+        staging_root.to_path_buf(),
+        secrets.clone(),
+    );
     let kind = HarnessProbe::harness_kind(&codex);
     registry.register_adapter(kind, Box::new(codex));
     if registry
         .register_probe(Box::new(CodexAdapter::discover(
             process_limits.clone(),
             staging_root.to_path_buf(),
+            secrets.clone(),
         )))
         .is_err()
     {
         tracing::warn!(harness = "codex", "probe rejected at registration");
     }
 
-    match ClaudeCodeAdapter::discover() {
+    match ClaudeCodeAdapter::discover(secrets.clone()) {
         Ok(adapter) => {
             let kind = HarnessProbe::harness_kind(&adapter);
             registry.register_adapter(kind, Box::new(adapter));
-            match ClaudeCodeAdapter::discover() {
+            match ClaudeCodeAdapter::discover(secrets.clone()) {
                 Ok(probe) => {
                     if registry.register_probe(Box::new(probe)).is_err() {
                         tracing::warn!(harness = "claude_code", "probe rejected at registration");
@@ -197,13 +217,18 @@ fn build_adapter_registry(process_limits: &ProcessLimits, staging_root: &Path) -
         Err(_) => tracing::info!(harness = "claude_code", "binary not found; not registered"),
     }
 
-    let opencode = OpenCodeAdapter::discover(process_limits.clone(), staging_root.to_path_buf());
+    let opencode = OpenCodeAdapter::discover(
+        process_limits.clone(),
+        staging_root.to_path_buf(),
+        secrets.clone(),
+    );
     let kind = HarnessProbe::harness_kind(&opencode);
     registry.register_adapter(kind, Box::new(opencode));
     if registry
         .register_probe(Box::new(OpenCodeAdapter::discover(
             process_limits.clone(),
             staging_root.to_path_buf(),
+            secrets.clone(),
         )))
         .is_err()
     {

@@ -67,9 +67,12 @@ use std::collections::BTreeMap;
 
 use async_trait::async_trait;
 use tack_orch::execution::{
-    CapabilitySupport, FeatureCapabilities, HarnessCapability, HarnessKind as DomainHarnessKind,
+    CapabilitySupport, ExecutionRequestSnapshot, FeatureCapabilities, HarnessCapability,
+    HarnessKind as DomainHarnessKind,
 };
 use thiserror::Error;
+
+use crate::secrets::SecretStore;
 
 pub use crate::client::engine::{
     CancelObservation, CancellationEvidence, ExecutionSpec, HarnessAdapter, HarnessError,
@@ -118,6 +121,53 @@ impl ModelObservationSource {
             Self::NotObserved => "not_observed",
         }
     }
+}
+
+/// Resolves `request.environment` into concrete `NAME=value` pairs — the one
+/// mechanism `claude_code.rs`, `codex.rs` and `opencode.rs` all call from
+/// both `validate` (to fail pre-spawn, discarding the map) and `start` (to
+/// build the spawned process's real environment). A literal `value` is used
+/// as-is; a `secret_reference` resolves through `store`. Either way the
+/// value is also registered with `secrets` so it is redacted if it ever
+/// surfaces in captured harness output — exactly like a literal `value`
+/// already was before this existed.
+///
+/// A `secret_reference` this store cannot resolve fails typed, naming only
+/// the reference — never fabricated as a silently-unset variable. Calling
+/// this from `validate` means that failure happens before any journal
+/// record or workspace exists.
+pub(crate) fn resolve_environment(
+    store: &SecretStore,
+    request: &ExecutionRequestSnapshot,
+    secrets: &mut redact::SecretMaterial,
+) -> Result<BTreeMap<String, String>, HarnessError> {
+    let mut resolved = BTreeMap::new();
+    for (name, value) in &request.environment {
+        match (&value.value, &value.secret_reference) {
+            (Some(literal), _) => {
+                secrets.register(literal.clone());
+                resolved.insert(name.clone(), literal.clone());
+            }
+            (None, Some(reference)) => {
+                let secret = store.resolve(reference).map_err(|error| {
+                    tracing::warn!(
+                        name = %name,
+                        reference = %reference,
+                        error = %error,
+                        "secret_reference could not be resolved before spawn"
+                    );
+                    HarnessError::Rejected {
+                        reason: format!("secret_reference_unresolved: {reference}"),
+                    }
+                })?;
+                tracing::debug!(name = %name, reference = %reference, "secret_reference resolved");
+                secrets.register(secret.expose().to_owned());
+                resolved.insert(name.clone(), secret.expose().to_owned());
+            }
+            (None, None) => {}
+        }
+    }
+    Ok(resolved)
 }
 
 /// Harness discovery/capability reporting, independent of any specific
@@ -845,6 +895,13 @@ mod tests {
         path
     }
 
+    /// A fresh, hermetic file-backed store per call — never the platform
+    /// keychain — so parallel `#[test]` functions never see each other's
+    /// entries and CI needs no Secret Service.
+    fn cross_adapter_secret_store() -> SecretStore {
+        SecretStore::file(cross_adapter_temp_dir("secrets").join("secrets.json"))
+    }
+
     /// One deterministic fixture script, driven identically by all three
     /// real adapters. Never the shared `fake_harness_command()` — that
     /// fixture is env-var-driven and single-purpose per spawn, which cannot
@@ -944,6 +1001,7 @@ exit 0
             program.clone(),
             args.clone(),
             staging_root.clone(),
+            cross_adapter_secret_store(),
         );
         let codex_spec = real_adapter_spec(
             "codex",
@@ -963,6 +1021,7 @@ exit 0
         let claude = crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
             program.clone(),
             args.clone(),
+            cross_adapter_secret_store(),
         );
         let claude_spec = real_adapter_spec(
             "claude-code",
@@ -986,6 +1045,7 @@ exit 0
             program.clone(),
             args.clone(),
             staging_root.clone(),
+            cross_adapter_secret_store(),
         );
         let opencode_spec =
             real_adapter_spec("opencode", "demo", "model-a", opencode_workspace.clone());
@@ -1038,15 +1098,20 @@ exit 0
                 codex_program.clone(),
                 codex_args.clone(),
                 staging_root.clone(),
+                cross_adapter_secret_store(),
             )),
         );
         forward.register_adapter(
             DomainHarnessKind::new("claude-code"),
             Box::new(
-                crate::harness::claude_code::ClaudeCodeAdapter::discover().unwrap_or_else(|_| {
+                crate::harness::claude_code::ClaudeCodeAdapter::discover(
+                    cross_adapter_secret_store(),
+                )
+                .unwrap_or_else(|_| {
                     crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
                         PathBuf::from("/bin/sh"),
                         vec!["-c".to_owned(), "exit 0".to_owned()],
+                        cross_adapter_secret_store(),
                     )
                 }),
             ),
@@ -1060,6 +1125,7 @@ exit 0
                     std::time::Duration::from_secs(10),
                 ),
                 staging_root.clone(),
+                cross_adapter_secret_store(),
             )),
         );
 
@@ -1073,15 +1139,20 @@ exit 0
                     std::time::Duration::from_secs(10),
                 ),
                 staging_root.clone(),
+                cross_adapter_secret_store(),
             )),
         );
         backward.register_adapter(
             DomainHarnessKind::new("claude-code"),
             Box::new(
-                crate::harness::claude_code::ClaudeCodeAdapter::discover().unwrap_or_else(|_| {
+                crate::harness::claude_code::ClaudeCodeAdapter::discover(
+                    cross_adapter_secret_store(),
+                )
+                .unwrap_or_else(|_| {
                     crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
                         PathBuf::from("/bin/sh"),
                         vec!["-c".to_owned(), "exit 0".to_owned()],
+                        cross_adapter_secret_store(),
                     )
                 }),
             ),
@@ -1092,6 +1163,7 @@ exit 0
                 codex_program.clone(),
                 codex_args.clone(),
                 staging_root.clone(),
+                cross_adapter_secret_store(),
             )),
         );
 
@@ -1141,6 +1213,7 @@ exit 0
                         std::time::Duration::from_secs(10),
                     ),
                     staging_root.clone(),
+                    cross_adapter_secret_store(),
                 ),
             ))
             .expect("opencode probe registers cleanly");
@@ -1149,14 +1222,19 @@ exit 0
                 codex_program.clone(),
                 codex_args.clone(),
                 staging_root.clone(),
+                cross_adapter_secret_store(),
             )))
             .expect("codex probe registers cleanly");
         probe_registry
             .register_probe(Box::new(
-                crate::harness::claude_code::ClaudeCodeAdapter::discover().unwrap_or_else(|_| {
+                crate::harness::claude_code::ClaudeCodeAdapter::discover(
+                    cross_adapter_secret_store(),
+                )
+                .unwrap_or_else(|_| {
                     crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
                         PathBuf::from("/bin/sh"),
                         vec!["-c".to_owned(), "exit 0".to_owned()],
+                        cross_adapter_secret_store(),
                     )
                 }),
             ))
