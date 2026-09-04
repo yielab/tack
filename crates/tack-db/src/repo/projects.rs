@@ -2,7 +2,7 @@ use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
-use tack_core::models::{CreateProject, Project, ProjectType, UpdateProject};
+use tack_core::models::{CreateProject, Project, ProjectModelDefault, ProjectType, UpdateProject};
 use tack_core::vocabulary::vocabulary_for_type;
 use tack_core::workflow::workflow_for_type;
 
@@ -50,6 +50,7 @@ impl Repository {
             project_type: input.project_type,
             vocabulary,
             workflow,
+            default_model: None,
             created_at: now,
             updated_at: now,
             archived: false,
@@ -59,27 +60,27 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn get_project(&self, id: Uuid) -> Result<Option<Project>, sqlx::Error> {
         let row = sqlx::query_as::<_, ProjectRow>(
-            "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, archived, created_at, updated_at
+            "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, archived, created_at, updated_at
              FROM projects WHERE id = ?"
         )
         .bind(id.to_string())
         .fetch_optional(self.pool())
         .await?;
 
-        Ok(row.map(|r| r.into_project()))
+        row.map(|r| r.into_project()).transpose()
     }
 
     #[instrument(skip(self))]
     pub async fn list_projects(&self, workspace_id: Uuid) -> Result<Vec<Project>, sqlx::Error> {
         let rows = sqlx::query_as::<_, ProjectRow>(
-            "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, archived, created_at, updated_at
+            "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, archived, created_at, updated_at
              FROM projects WHERE workspace_id = ? AND archived = 0 ORDER BY updated_at DESC"
         )
         .bind(workspace_id.to_string())
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_project()).collect())
+        rows.into_iter().map(|r| r.into_project()).collect()
     }
 
     #[instrument(skip(self))]
@@ -124,6 +125,15 @@ impl Repository {
                 .execute(self.pool())
                 .await?;
         }
+        if let Some(ref default_model) = input.default_model {
+            let json = serde_json::to_string(default_model).unwrap();
+            sqlx::query("UPDATE projects SET default_model = ?, updated_at = ? WHERE id = ?")
+                .bind(&json)
+                .bind(&now)
+                .bind(id.to_string())
+                .execute(self.pool())
+                .await?;
+        }
         if let Some(archived) = input.archived {
             sqlx::query("UPDATE projects SET archived = ?, updated_at = ? WHERE id = ?")
                 .bind(archived as i32)
@@ -157,14 +167,30 @@ struct ProjectRow {
     project_type: String,
     vocabulary: String,
     workflow: String,
+    default_model: Option<String>,
     archived: i32,
     created_at: String,
     updated_at: String,
 }
 
 impl ProjectRow {
-    fn into_project(self) -> Project {
-        Project {
+    /// Every other column here tolerates malformed JSON by silently
+    /// defaulting — a pre-existing choice this method doesn't change.
+    /// `default_model` doesn't: it is only ever written as the exact
+    /// serialization of a validated `ProjectModelDefault` (see
+    /// `Repository::update_project`), so a decode failure here means the
+    /// column holds something no write path produced, and this returns a
+    /// real error instead of silently discarding a configured default.
+    fn into_project(self) -> Result<Project, sqlx::Error> {
+        let default_model = self
+            .default_model
+            .as_deref()
+            .map(|raw| {
+                serde_json::from_str::<ProjectModelDefault>(raw)
+                    .map_err(|error| sqlx::Error::Protocol(error.to_string()))
+            })
+            .transpose()?;
+        Ok(Project {
             id: Uuid::parse_str(&self.id).unwrap(),
             workspace_id: Uuid::parse_str(&self.workspace_id).unwrap(),
             name: self.name,
@@ -174,6 +200,7 @@ impl ProjectRow {
             vocabulary: serde_json::from_str(&self.vocabulary).unwrap_or_default(),
             workflow: serde_json::from_str(&self.workflow)
                 .unwrap_or_else(|_| tack_core::workflow::simple_workflow()),
+            default_model,
             created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
                 .map(|d| d.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now()),
@@ -181,6 +208,6 @@ impl ProjectRow {
                 .map(|d| d.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now()),
             archived: self.archived != 0,
-        }
+        })
     }
 }
