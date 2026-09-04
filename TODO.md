@@ -337,8 +337,9 @@ and reported `not_measured` for a live run.
 
 **Owns:** the `desktop` job in `.github/workflows/release.yml`, one `tack-desktop` check
 step in `ci.yml`, `crates/tack-desktop/icons/tack.svg` (source; generated sizes via
-`cargo tauri icon`, committed as the CLI produces them), the release-notes paragraph, and
-the VII-C1 handoff.
+`cargo tauri icon`, committed as the CLI produces them — **VII-B1's `.gitignore` currently
+excludes them under the old reading of rule 5; this card removes those two lines** and
+deletes B1's `placeholder-source.svg`), the release-notes paragraph, and the VII-C1 handoff.
 
 **Context.** Decision 7. Matrix: `ubuntu-22.04` → `.deb` + `.AppImage`; `macos-latest` →
 `.dmg` for `aarch64-apple-darwin` and `x86_64-apple-darwin`; `windows-latest` → `.msi`.
@@ -408,6 +409,7 @@ download.
 | A terminal user gets the same daemon without the app | VII-A2 live proof |
 | Data lives in the OS folders; the working directory stays clean; an existing database can be chosen | VII-B3 |
 | Unsigned bundles exist for Linux, macOS and Windows, and the one-time warning is documented where the download is | VII-C1 |
+| The download page states each bundle's real size, including the AppImage's, rather than implying the server binary's | VII-C2 — measured 2026-09-03 on Linux: `.deb` 12.4 MB (uses the system webview), `.AppImage` 87.9 MB (carries its own). The product's "one small binary" line is about `tack`, and the app page must not blur the two |
 | A stranger installs from the release page and reaches a finished attempt without a terminal | VII-D1 transcript |
 
 **Deliberately not in this Part**, recorded so no card adopts them by drift:
