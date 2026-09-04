@@ -71,7 +71,7 @@ card's block only. It names what to read, how much it costs, the gate, and when 
 
 | Wave | Cards | Phase | Status |
 |---|---|---|---|
-| 18 — The daemon, two ways | VII-A2 · VII-B1 | 61 | Ready — parallel. A2 needs nothing on the machine; **B1 needs `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libxdo-dev` and `cargo install tauri-cli --version '^2' --locked` first** (measured absent 2026-09-03) |
+| 18 — The daemon, two ways | VII-A2 · VII-B1 | 61 | Ready — parallel, base `02aa4e3`. A2 needs nothing on the machine; **B1 needs `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libxdo-dev` and `cargo install tauri-cli --version '^2' --locked` first** (measured absent 2026-09-03) |
 | 19 — Lifecycle and data | VII-B2 · VII-B3 | 61 | Not started — parallel, after B1 |
 | 20 — Ship | VII-C1 → VII-C2 | 61 | Not started — C1 after B2 + B3; C2 after C1 **and Part VI's VI-C1** |
 | 21 — Proof | VII-D1 | 61 | Not started — last |
@@ -455,7 +455,7 @@ i18n, time tracking and in-UI diff review stay deferred — see §VI.5.
 | Wave | Cards | Phase | Status |
 |---|---|---|---|
 | 14 — Truth first | VI-A1 · VI-A2 · VI-A3 | 60 | **Integrated** at `da075ec` on `develop` (handoffs: `docs/agent-handoffs/part-vi/VI-A1.md`, `VI-A2.md`, `VI-A3.md`). All three adversarially verified against the real tree, not just their own reports — A1's live worked example re-checked, A3's stranger-read test and render proofs opened, A2's ADR cited by line against 0050/0058. `mdbook build` clean; the only `docs/CONFIG.md` conflict (A1's new bullet vs. A2's rewritten paragraph, both anticipated it) resolved keeping both contributions. **ADR 0061 is `Status: proposed` — Wave 15 (VI-B1/B2/B3) does not branch until the user records acceptance with a date in `VI-A2.md`.** One non-blocking finding routed to VI-D1: `docs/book/src/roadmap.md:3273` wants a forward reference to ADR 0061 once accepted (not fixed here — outside every Wave-14 card's ownership). |
-| 15 — Provider at the runner boundary | VI-B1 · VI-B2 · VI-B3 | 60 | **Ready** — ADR 0061 accepted by the user on 2026-09-03 (recorded in `docs/agent-handoffs/part-vi/VI-A2.md`, amendments). Sequential B1 → B2 → B3; base SHA pinned in the dispatch plan at dispatch. Decision 1 of ADR 0061 was refined on 2026-09-03 before acceptance (platform keychain first, owner-only file where none answers, backend reported); VI-B1's card and dispatch block already match. |
+| 15 — Provider at the runner boundary | VI-B1 · VI-B2 · VI-B3 | 60 | **Ready** — ADR 0061 accepted by the user on 2026-09-03 (recorded in `docs/agent-handoffs/part-vi/VI-A2.md`, amendments). Sequential B1 → B2 → B3; base `02aa4e3`. Decision 1 of ADR 0061 was refined on 2026-09-03 before acceptance (platform keychain first, owner-only file where none answers, backend reported); VI-B1's card and dispatch block already match. |
 | 16 — UI-first flow | VI-C1 · VI-C2 · VI-C3 · VI-C4 | 60 | Not started — C3 and C4 need only VI-A2 and may run alongside Wave 15; C1 needs B2 + B3; C2 needs C3 |
 | 17 — Proof | VI-D1 · VI-D2 | 60 | Not started — last wave. D2 (assets) needs C1, C2 and Part V's V-C2, which owns `docs/screenshots/`; D1 goes last and needs everything |
 
