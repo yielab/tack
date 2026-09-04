@@ -19,8 +19,8 @@ decision of record is `docs/adr/0062-desktop-app-and-background-service.md`, acc
 | Wave | Cards | Parallel? | Needs | Base SHA |
 |---|---|---|---|---|
 | 18 | VII-A2 · VII-B1 | yes | ADR 0062 accepted (done); Tauri prerequisites verified installed 2026-09-03 (tauri-cli 2.11.4, webkit2gtk-4.1) | `2958e9e` — **both dispatched 2026-09-03**; — the 2026-09-03 planning commit; branch from the `develop` tip |
-| 19 | VII-B2 · VII-B3 | yes | B1 integrated | Wave 18 integration SHA |
-| 20 | VII-C1 → VII-C2 | no | C1: B2 + B3; C2: C1 **and Part VI's VI-C1** | Wave 19 integration SHA |
+| 19 | VII-B2 · VII-B3 | yes | B1 integrated | **Integrated 2026-09-04** — dispatched from `8b71756` |
+| 20 | VII-C1 → VII-C2 | no | C1: B2 + B3; C2: C1 **and Part VI's VI-C1** | Wave 19 is integrated; pin the tip with `git rev-parse --short develop` at dispatch. C1 also owns collapsing the two first-run signals Wave 19 left in the data root (B2's `.autostart-initialized` marker and B3's `settings.json`) |
 | 21 | VII-D1 | — | everything | Wave 20 integration SHA |
 
 **Integration line: `develop`.** Every card branches from it as `agent/vii-<card>-<slug>`
