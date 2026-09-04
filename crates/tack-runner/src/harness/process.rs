@@ -769,10 +769,10 @@ mod tests {
 
     async fn wait_for_pidfile(path: &Path) -> u32 {
         for _ in 0..200 {
-            if let Ok(contents) = std::fs::read_to_string(path) {
-                if let Ok(pid) = contents.trim().parse::<u32>() {
-                    return pid;
-                }
+            if let Ok(contents) = std::fs::read_to_string(path)
+                && let Ok(pid) = contents.trim().parse::<u32>()
+            {
+                return pid;
             }
             time::sleep(Duration::from_millis(25)).await;
         }
