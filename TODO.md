@@ -71,7 +71,7 @@ card's block only. It names what to read, how much it costs, the gate, and when 
 
 | Wave | Cards | Phase | Status |
 |---|---|---|---|
-| 18 — The daemon, two ways | VII-A2 · VII-B1 | 61 | **Integrated 2026-09-04** — both cards on `develop`; handoffs `docs/agent-handoffs/part-vii/VII-A2.md`, `VII-B1.md`. Integration found that adding `tack-desktop` to the workspace broke `cargo build --workspace` on a clean clone (`tauri-build` reads `externalBin` and `generate_context!` reads the icons at compile time); fixed by moving `externalBin` to `tauri.bundle.conf.json` and committing the icon set, which also settles the `.gitignore` question `3ea96df` had routed to VII-C1. VII-B2 and VII-B3 are dispatchable in parallel from the integration tip |
+| 18 — The daemon, two ways | VII-A2 · VII-B1 | 61 | **Integrated 2026-09-04** — both cards on `develop`; handoffs `docs/agent-handoffs/part-vii/VII-A2.md`, `VII-B1.md`. Integration found the workspace membership itself was wrong: Tauri pulls GTK/WebKit/glib into whatever workspace holds it, so `cargo build --workspace` first demanded a staged sidecar and committed icons, then failed three CI jobs on `glib-2.0 not found` — the server would have needed desktop system libraries to compile. **`crates/tack-desktop` is now excluded from the root workspace and is its own**, with its own lockfile, CI job and Dependabot entry; `externalBin` moved to a bundle-only overlay and the icon set is committed, which also settles the `.gitignore` question `3ea96df` had routed to VII-C1. VII-B2 and VII-B3 work inside that workspace and must not touch the root lockfile. VII-B2 and VII-B3 are dispatchable in parallel from the integration tip |
 | 19 — Lifecycle and data | VII-B2 · VII-B3 | 61 | Not started — parallel, after B1 |
 | 20 — Ship | VII-C1 → VII-C2 | 61 | Not started — C1 after B2 + B3; C2 after C1 **and Part VI's VI-C1** |
 | 21 — Proof | VII-D1 | 61 | Not started — last |
@@ -133,9 +133,13 @@ rule 8 applies as written.
 1. **The server is never re-implemented or re-linked.** `tack-desktop` spawns the bundled
    `tack` binary. No crate under `crates/tack-desktop` depends on `tack-api`, `tack-db`,
    `tack-orch` or `tack-runner`; a test asserts the dependency list from `cargo metadata`.
-2. **No webview or GTK dependency enters an existing crate.**
-   `cargo tree -p tack-cli -e normal | grep -ci "tauri\|webkit\|gtk"` is `0` before and
-   after every card; the musl release job is untouched.
+2. **No webview or GTK dependency enters an existing crate — or the workspace holding
+   them.** `cargo tree -p tack-cli -e normal | grep -ci "tauri\|webkit\|gtk"` is `0`
+   before and after every card; the musl release job is untouched. **Amended 2026-09-04:**
+   this rule was written about crates, and the first violation happened one level up —
+   `tack-desktop` as a workspace member made `glib-2.0` a prerequisite for building the
+   server, red in three CI jobs. `crates/tack-desktop` is now `exclude`d from the root
+   workspace and is its own; nothing in it may be added back to the root `members`.
 3. **The work outlives the window — proven, never claimed.** Every lifecycle claim is a
    measured sequence: start an attempt, close the window, observe `/api/health` and the
    attempt's state from a *second process* while the window is closed, reopen, observe the

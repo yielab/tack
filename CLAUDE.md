@@ -81,7 +81,7 @@ rules that bite:
 ```
 crates/
 ├── tack-core/     Pure business logic, zero I/O (models, workflow, vocabulary, DAG)
-├── tack-db/       SQLite via sqlx; 61 migrations; FTS5; repository pattern in repo/
+├── tack-db/       SQLite via sqlx; 62 migrations; FTS5; repository pattern in repo/
 ├── tack-orch/     ControlPlane trait + reconciler + neutral runner-v1 execution domain.
 │                  Depends on core+db only — must NEVER depend on tack-api
 ├── tack-api/      Axum server (library; tack_api::serve). ~90 documented paths + WebSocket
@@ -91,6 +91,13 @@ crates/
 
 frontend/          SolidJS + Tailwind v4; two-axis design tokens (mode × palette);
                    types generated from the OpenAPI spec
+
+crates/tack-desktop/   Tauri shell that supervises `tack` as a bundled sidecar. NOT a
+                   member of the workspace above — its own, via `exclude` in the root
+                   Cargo.toml, because Tauri drags GTK/WebKit/glib into whatever workspace
+                   holds it and the server must keep building where none of that exists.
+                   `make desktop` builds it; `cargo --workspace` never sees it. Its own
+                   Cargo.lock, CI job and Dependabot entry.
 ```
 
 Boundary rules: **two auth surfaces, structurally separated** — operator routes under

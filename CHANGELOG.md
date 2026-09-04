@@ -40,6 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`tack-desktop` is its own Cargo workspace, so the server still builds without a
+  desktop.** As a workspace member it pulled GTK, WebKit and glib into every
+  `cargo build --workspace` — CI's Rust, MSRV and embed-spa jobs all failed with
+  `The system library 'glib-2.0' ... was not found`, and a contributor on a headless
+  machine could not have built the server at all. It now has its own lockfile, its own CI
+  job, and its own Dependabot entry; `make desktop` builds it. A new test fails if its
+  version drifts from the root workspace's, since it can no longer inherit it.
 - **Generated files can no longer produce a merge conflict.** `Cargo.lock`,
   `frontend/package-lock.json`, `docs/openapi.json` and
   `frontend/src/shared/api/schema.gen.ts` are marked `merge=tack-generated`; the driver

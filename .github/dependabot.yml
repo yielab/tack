@@ -47,6 +47,27 @@ updates:
         applies-to: security-updates
         patterns: ["*"]
 
+  # tack-desktop is its own workspace (see the `exclude` in the root Cargo.toml),
+  # so its lockfile is invisible to the entry above and needs its own.
+  - package-ecosystem: cargo
+    directory: "/crates/tack-desktop"
+    target-branch: develop
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+    groups:
+      desktop-minor-patch:
+        update-types: ["minor", "patch"]
+      desktop-major:
+        update-types: ["major"]
+      desktop-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
   # Frontend npm packages
   - package-ecosystem: npm
     directory: "/frontend"

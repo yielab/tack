@@ -9,6 +9,7 @@
 # behaviour these files had before, so a clone that skipped setup is degraded,
 # never broken.
 Cargo.lock                            merge=tack-generated linguist-generated=true
+crates/tack-desktop/Cargo.lock        merge=tack-generated linguist-generated=true
 frontend/package-lock.json            merge=tack-generated linguist-generated=true
 docs/openapi.json                     merge=tack-generated linguist-generated=true
 frontend/src/shared/api/schema.gen.ts merge=tack-generated linguist-generated=true
