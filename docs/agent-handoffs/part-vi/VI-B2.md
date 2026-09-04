@@ -603,3 +603,26 @@ things still open are exactly the ones the original handoff already named as out
 (opencode's gateway path, the catalog metadata contract gap) or as genuinely unmeasurable
 here (Windows/macOS behavior, whether the process-environment test flake has a production
 analogue).
+
+### 2026-09-04 — the catalog URL was a hardcoded constant, not endpoint data; fixed
+
+Integration review caught it: `CATALOG_URL` was a module-level `const`, while `base_url`,
+`credential_env_var` and `display_name` were already per-provider rows in
+`known_endpoint`. Moved it to its own lookup, `catalog_url(provider) -> Option<&'static
+str>`, keyed by provider alone rather than by `(provider, wire)` — a catalog is a property
+of the provider (Vercel serves one model list for both wires), so folding it into
+`KnownEndpoint` would have duplicated the same URL across both of that provider's rows.
+`fetch_catalog_ids` and `attach_catalog` now take the URL as a value instead of reading the
+constant; no other behavior changed, confirmed by a live `tack runner doctor` run
+immediately after (373 models, same as every prior run this session). `ProviderConfig`
+still exposes only `enabled`/`secret` — no third config knob, no trait, no registry, per
+the coordinator's explicit instruction. This is what makes ADR 0063 decision 4 ("adding an
+endpoint is a configuration entry, never writing code") actually true: before this fix, a
+second provider's catalog would have silently fetched from Vercel's URL (the constant),
+which is exactly the "row plus a code change, or silently wrong" failure mode the design
+was supposed to rule out.
+
+Gates re-run clean after the change: `cargo test -p tack-runner --lib` (259/259, 6
+ignored), `cargo test -p tack-orch --test runner_contract` (18/18), `cargo test -p tack-api
+--test wave2_gate` (5/5), `cargo clippy --all-targets -- -D warnings` (clean), `cargo fmt
+--check` (clean).
