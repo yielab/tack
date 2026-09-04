@@ -16,10 +16,13 @@ import {
 // III-F4: the attempts/events/decisions/artifacts UI added to the Execution
 // tab (`shared/runWithAgent/{AttemptList,EventTimeline,DecisionInbox,
 // ArtifactDownloadPanel}.tsx`), proven through the real production router —
-// not a mock.
+// not a mock. VI-C4 replaced both panels' manual "enter an id you already
+// know" fallback with real discovery (`GET .../attempts/{n}/decisions`,
+// `GET .../attempts/{n}/artifacts`) — every assertion below finds a
+// decision/artifact through its listed row, never by typing an id.
 
 test.describe('Execution tab — real attempts/decisions/artifacts against the production router', () => {
-  test('a claimed attempt renders honestly, and decision/artifact actions each fail with a distinct, visible reason', async ({
+  test('a claimed attempt renders honestly, decisions/artifacts are discovered as empty before anything is raised, and a real raised decision refuses to resolve without a token', async ({
     page,
     request,
   }) => {
@@ -45,6 +48,8 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
 
     const lease = await claimOnceWithLease(request, runnerId, credential, `f4-claim-${Date.now()}`);
     expect(lease?.requestId).toBe(requestId);
+    const attemptId = lease!.attemptId;
+    const fencingToken = lease!.fencingToken;
 
     // Force a fresh mount so `store.ts#loadAttempts` runs against the
     // now-claimed request (realtime refresh is proven separately at the
@@ -67,37 +72,43 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
 
     await drawer2.getByRole('button', { name: /Show events, decisions & artifacts/ }).click();
     await expect(drawer2.getByText('No events reported yet')).toBeVisible();
+    // Discovered honestly through the real list routes this card adds —
+    // nothing raised yet, never a fake empty state conflated with a typed
+    // id that simply hasn't been entered.
+    await expect(drawer2.getByText('No decisions raised yet')).toBeVisible();
+    await expect(drawer2.getByText('No artifacts yet')).toBeVisible();
 
-    // 1) Resolve with NO decision token entered — the real, fail-closed
+    await acceptAndStartAttempt(request, runnerId, credential, attemptId, fencingToken);
+    const decisionId = `dec-${Date.now()}`;
+    await createRunnerDecision(request, runnerId, credential, attemptId, fencingToken, decisionId, [
+      { option_id: 'allow_once', label: 'Allow once' },
+      { option_id: 'deny', label: 'Deny' },
+    ]);
+
+    await page.reload();
+    await waitForApp(page);
+    const drawer3 = page.getByRole('dialog');
+    await drawer3.getByRole('tab', { name: 'Execution' }).click();
+    await drawer3.getByRole('button', { name: /Show events, decisions & artifacts/ }).click();
+
+    // The real decision the runner just raised — found through the list,
+    // no id typed anywhere.
+    await expect(drawer3.getByText('e2e: allow this action?')).toBeVisible();
+    await expect(drawer3.getByText('Pending')).toBeVisible();
+
+    // Resolve with NO decision token entered — the real, fail-closed
     // default this card's brief names explicitly ("decisions cannot be
     // resolved on this deployment" is a real, expected operator-facing
     // state). Toasts render via a `<Portal>` to `document.body`, outside
-    // the dialog subtree — asserted page-wide, not `drawer2`-scoped.
-    await drawer2.getByLabel('Decision id').fill('dec_does_not_exist');
-    await drawer2.getByLabel('Answer (option id)').fill('allow_once');
-    await drawer2.getByRole('button', { name: 'Resolve decision' }).click();
+    // the dialog subtree — asserted page-wide, not `drawer3`-scoped.
+    await drawer3.getByRole('radio', { name: 'Allow once' }).check();
+    await drawer3.getByRole('button', { name: 'Resolve' }).click();
     await expect(
       page.getByText(/not configured decision resolution|token entered above is wrong/),
     ).toBeVisible();
-
-    // 2) Enter the real decision token (configured server-side by this
-    // spec's own `playwright.config.ts` addition) and retry against a
-    // decision id that genuinely does not exist — a DIFFERENT, distinct
-    // 404 from the real, mounted resolve endpoint.
-    await drawer2.getByLabel('Your decision token').fill('e2e-decision-token');
-    await drawer2.getByRole('button', { name: 'Save' }).click();
-    await drawer2.getByRole('button', { name: 'Resolve decision' }).click();
-    await expect(page.getByText('No decision with that id exists for this attempt.')).toBeVisible();
-
-    // 3) Artifact download against an id that genuinely does not exist — a
-    // real 404 from the real, mounted download endpoint (no token needed —
-    // this route has no separate credential).
-    await drawer2.getByLabel('Artifact id').fill('art_does_not_exist');
-    await drawer2.getByRole('button', { name: 'Download artifact' }).click();
-    await expect(drawer2.getByText('No artifact with that id exists for this attempt.')).toBeVisible();
   });
 
-  test('a real pending decision resolves through the UI against the production router (token configured), and a real artifact downloads', async ({
+  test('a real pending decision resolves through the UI against the production router (token configured), and a real artifact downloads — both discovered, never typed', async ({
     page,
     request,
   }) => {
@@ -130,6 +141,11 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await expect(drawer.getByText('Attempt #1')).toBeVisible();
     await drawer.getByRole('button', { name: /Show events, decisions & artifacts/ }).click();
 
+    // Both discovered through their real list routes — no id typed
+    // anywhere, unlike the pre-VI-C4 manual-entry fallback.
+    await expect(drawer.getByText('e2e: allow this action?')).toBeVisible();
+    await expect(drawer.getByText(`${artifactId}.txt`)).toBeVisible();
+
     // Enter the deployment's real decision token (this file's own
     // `playwright.config.ts` addition configures `TACK_EXECUTION_DECISION_TOKEN`
     // for exactly this test) — mirrors `features/approvals/ApprovalsPage.tsx`'s
@@ -137,26 +153,23 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await drawer.getByLabel('Your decision token').fill('e2e-decision-token');
     await drawer.getByRole('button', { name: 'Save' }).click();
 
-    // Resolve the REAL decision via the manual quick action (no
-    // discovery/list endpoint exists — see `shared/execution/decisions.ts`'s
-    // header comment) — a genuine POST to the real, mounted resolve route.
-    await drawer.getByLabel('Decision id').fill(decisionId);
-    const allowRadio = drawer.getByRole('radio', { name: 'Allow once' });
-    // No radios exist for the manual quick action (it's freeform-by-id, see
-    // DecisionInbox.tsx) — this decision is unknown to the list either way,
-    // so the manual form's own "Answer (option id)" text field is used.
-    await expect(allowRadio).toHaveCount(0);
-    await drawer.getByLabel('Answer (option id)').fill('allow_once');
-    await drawer.getByRole('button', { name: 'Resolve decision' }).click();
+    // Resolve the REAL decision from its listed row — a genuine POST to the
+    // real, mounted resolve route.
+    await drawer.getByRole('radio', { name: 'Allow once' }).check();
+    await drawer.getByRole('button', { name: 'Resolve' }).click();
     // Toast — Portal-rendered outside the dialog subtree, page-wide assert.
     await expect(page.getByText('Decision resolved.')).toBeVisible();
+    // The list refetches after a successful resolve — the row's own badge
+    // flips from Pending to Resolved without a page reload, proving the
+    // resolve genuinely landed server-side (the strongest UI-observable
+    // proof) ahead of the idempotent-replay check below.
+    await expect(drawer.getByText('Resolved')).toBeVisible();
 
-    // Idempotent replay proves the resolve genuinely landed server-side —
-    // the strongest available proof given no read/list endpoint exists.
+    // Idempotent replay proves the resolve genuinely landed server-side.
     // Must match the UI's submitted answer byte-for-byte (including the
-    // explicit `text: null` `DecisionInbox.tsx#ManualDecisionResolve` always
-    // sends for an empty "Details" field) — a structurally different answer
-    // shape is a genuine `idempotency_conflict`, not a replay.
+    // explicit `text: null` `DecisionInbox.tsx#DecisionRow` always sends for
+    // an empty "Details" field) — a structurally different answer shape is
+    // a genuine `idempotency_conflict`, not a replay.
     const replay = await request.post(`${API}/attempts/${attemptId}/decisions/${decisionId}/resolve`, {
       headers: { 'x-tack-decision-token': 'e2e-decision-token' },
       data: { answer: { option_id: 'allow_once', text: null } },
@@ -165,22 +178,20 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     const replayBody = await replay.json();
     expect(replayBody.replayed).toBe(true);
 
-    // Download the REAL artifact — a genuine browser download event,
-    // verified byte-for-byte against what the runner uploaded.
+    // Download the REAL artifact from its listed row — a genuine browser
+    // download event, verified byte-for-byte against what the runner
+    // uploaded.
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      (async () => {
-        await drawer.getByLabel('Artifact id').fill(artifactId);
-        await drawer.getByRole('button', { name: 'Download artifact' }).click();
-      })(),
+      drawer.getByRole('button', { name: 'Download' }).click(),
     ]);
-    // Chromium appends a MIME-inferred extension (`.txt`, since the fetched
-    // Blob's type is `text/plain`) to a `download` attribute value that has
-    // no extension of its own — a browser download-manager quirk, not a
-    // claim this app makes; `.download = artifactId` is set verbatim in
-    // `ArtifactDownloadPanel.tsx`. Assert containment, not byte-exact
-    // equality, for exactly that reason.
-    expect(download.suggestedFilename()).toContain(artifactId);
+    // Chromium appends a MIME-inferred extension to a `download` attribute
+    // value that has no extension of its own — a browser download-manager
+    // quirk, not a claim this app makes; `.download = artifact.name` is set
+    // verbatim in `ArtifactDownloadPanel.tsx`, and `name` already carries
+    // `.txt` here, so containment (not exact-match) stays the honest
+    // assertion.
+    expect(download.suggestedFilename()).toContain(`${artifactId}.txt`);
     const stream = await download.createReadStream();
     const chunks: Buffer[] = [];
     for await (const chunk of stream!) chunks.push(chunk as Buffer);

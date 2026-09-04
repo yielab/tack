@@ -1,9 +1,27 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
+import type { ArtifactRecord } from '../execution';
 import ArtifactDownloadPanel from './ArtifactDownloadPanel';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const disposers: Array<() => void> = [];
+
+const VERIFIED: ArtifactRecord = {
+  artifact_id: 'art_1',
+  kind: 'diff',
+  name: 'patch.diff',
+  media_type: 'text/plain',
+  size_bytes: 1234,
+  content_verified: true,
+  created_at: '2026-08-06T12:00:00Z',
+};
+
+const UNVERIFIED: ArtifactRecord = {
+  ...VERIFIED,
+  artifact_id: 'art_2',
+  name: 'log.txt',
+  content_verified: false,
+};
 
 function mount() {
   const container = document.createElement('div');
@@ -16,8 +34,25 @@ function mount() {
   return container;
 }
 
+function jsonOk(body: unknown) {
+  return new Response(JSON.stringify(body), { status: 200 });
+}
+
 function jsonError(status: number, code: string, message: string) {
   return new Response(JSON.stringify({ error: { status, message, code } }), { status });
+}
+
+/** Routes a mocked `fetch` by URL shape: the list call
+ *  (`.../artifacts`) vs. a per-artifact content download
+ *  (`.../artifacts/{id}/content`) — the two GETs this panel makes. */
+function mockFetch(list: ArtifactRecord[], download: () => Response) {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+    const url = String(input);
+    if (url.endsWith('/artifacts')) {
+      return Promise.resolve(jsonOk({ protocol_version: 1, data: list }));
+    }
+    return Promise.resolve(download());
+  });
 }
 
 afterEach(() => {
@@ -26,44 +61,65 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function fillArtifactId(c: HTMLElement, id: string) {
-  const input = c.querySelector('input') as HTMLInputElement;
-  input.value = id;
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-}
-
-describe('ArtifactDownloadPanel — disabled control names its reason', () => {
-  it('the Download button starts disabled with a visible reason until an artifact id is entered', () => {
+describe('ArtifactDownloadPanel — discovers artifacts, never asks for an id', () => {
+  it('renders every listed artifact as a real row with a Download button, no id field anywhere', async () => {
+    mockFetch([VERIFIED, UNVERIFIED], () => new Response('bytes'));
     const c = mount();
-    const btn = c.querySelector('button') as HTMLButtonElement;
-    expect(btn.disabled).toBe(true);
-    expect(c.textContent).toContain('Enter an artifact id to enable download.');
+    await flush();
+    await flush();
 
-    fillArtifactId(c, 'art_1');
-    expect(btn.disabled).toBe(false);
+    expect(c.querySelector('input')).toBeNull();
+    expect(c.textContent).toContain('patch.diff');
+    expect(c.textContent).toContain('log.txt');
+    expect(c.querySelectorAll('button')).toHaveLength(2);
+  });
+
+  it('an unverified artifact is visibly marked distinct from a verified one', async () => {
+    mockFetch([VERIFIED, UNVERIFIED], () => new Response('bytes'));
+    const c = mount();
+    await flush();
+    await flush();
+
+    expect(c.textContent).toContain('Not verified yet');
+    const rows = [...c.querySelectorAll('li')];
+    const unverifiedRow = rows.find((li) => li.textContent?.includes('log.txt'));
+    const verifiedRow = rows.find((li) => li.textContent?.includes('patch.diff'));
+    expect(unverifiedRow?.textContent).toContain('Not verified yet');
+    expect(verifiedRow?.textContent).not.toContain('Not verified yet');
+  });
+
+  it('an empty list renders a real empty state, not a silently blank panel', async () => {
+    mockFetch([], () => new Response('bytes'));
+    const c = mount();
+    await flush();
+    await flush();
+
+    expect(c.textContent).toContain('No artifacts yet');
   });
 });
 
-describe('ArtifactDownloadPanel — every outcome is a distinct, visible state (acceptance bar: "artifact failure visible")', () => {
-  it('calls GET /executions/{id}/attempts/{n}/artifacts/{artifact_id}/content and shows "Downloaded." on success', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response('artifact bytes', { status: 200, headers: { 'Content-Type': 'application/octet-stream' } }),
-    );
+describe('ArtifactDownloadPanel — every download outcome is a distinct, visible state (acceptance bar: "artifact failure visible")', () => {
+  it('clicking Download calls GET .../artifacts/{artifact_id}/content for that exact row and shows "Downloaded." on success', async () => {
+    const fetchMock = mockFetch([VERIFIED], () => new Response('artifact bytes', { status: 200 }));
     const c = mount();
-    fillArtifactId(c, 'art_1');
-    const btn = c.querySelector('button') as HTMLButtonElement;
-    btn.click();
     await flush();
     await flush();
 
-    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/executions/exec_1/attempts/2/artifacts/art_1/content');
+    (c.querySelector('button') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+
+    const downloadCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/content'));
+    expect(String(downloadCall?.[0])).toBe('/api/executions/exec_1/attempts/2/artifacts/art_1/content');
     expect(c.textContent).toContain('Downloaded.');
   });
 
   it('a 404 shows "No artifact with that id exists" — distinct from the 409 message', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonError(404, 'not_found', 'Artifact not found'));
+    mockFetch([VERIFIED], () => jsonError(404, 'not_found', 'Artifact not found'));
     const c = mount();
-    fillArtifactId(c, 'missing');
+    await flush();
+    await flush();
+
     (c.querySelector('button') as HTMLButtonElement).click();
     await flush();
     await flush();
@@ -73,9 +129,11 @@ describe('ArtifactDownloadPanel — every outcome is a distinct, visible state (
   });
 
   it('a 409 shows the "content has not been verified yet" state — distinct from 404, and framed as retryable', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonError(409, 'conflict', 'not verified'));
+    mockFetch([UNVERIFIED], () => jsonError(409, 'conflict', 'not verified'));
     const c = mount();
-    fillArtifactId(c, 'art_1');
+    await flush();
+    await flush();
+
     (c.querySelector('button') as HTMLButtonElement).click();
     await flush();
     await flush();
@@ -85,9 +143,11 @@ describe('ArtifactDownloadPanel — every outcome is a distinct, visible state (
   });
 
   it('a generic 500 shows a distinct error message rather than either the 404 or 409 text', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonError(500, 'internal_error', 'server exploded'));
+    mockFetch([VERIFIED], () => jsonError(500, 'internal_error', 'server exploded'));
     const c = mount();
-    fillArtifactId(c, 'art_1');
+    await flush();
+    await flush();
+
     (c.querySelector('button') as HTMLButtonElement).click();
     await flush();
     await flush();
@@ -96,31 +156,22 @@ describe('ArtifactDownloadPanel — every outcome is a distinct, visible state (
     expect(c.textContent).not.toContain('No artifact with that id exists');
     expect(c.textContent).not.toContain("hasn't been verified yet");
   });
-
-  it('editing the artifact id after a failure clears the stale status', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonError(404, 'not_found', 'gone'));
-    const c = mount();
-    fillArtifactId(c, 'missing');
-    (c.querySelector('button') as HTMLButtonElement).click();
-    await flush();
-    await flush();
-    expect(c.textContent).toContain('No artifact with that id exists');
-
-    fillArtifactId(c, 'something-else');
-    expect(c.textContent).not.toContain('No artifact with that id exists');
-  });
 });
 
 describe('ArtifactDownloadPanel — keyboard accessibility', () => {
-  it('the artifact-id field and Download button are real, natively-focusable form controls with no negative tabindex', () => {
+  it('every Download button is a real, natively-focusable form control with no negative tabindex', async () => {
+    mockFetch([VERIFIED, UNVERIFIED], () => new Response('bytes'));
     const c = mount();
-    const input = c.querySelector('input') as HTMLInputElement;
-    const button = c.querySelector('button') as HTMLButtonElement;
-    for (const el of [input, button]) {
-      const tabindex = el.getAttribute('tabindex');
+    await flush();
+    await flush();
+
+    const buttons = [...c.querySelectorAll('button')];
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const btn of buttons) {
+      const tabindex = btn.getAttribute('tabindex');
       if (tabindex !== null) expect(Number(tabindex)).toBeGreaterThanOrEqual(0);
     }
-    input.focus();
-    expect(document.activeElement).toBe(input);
+    buttons[0].focus();
+    expect(document.activeElement).toBe(buttons[0]);
   });
 });
