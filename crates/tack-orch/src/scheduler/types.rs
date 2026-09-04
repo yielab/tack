@@ -193,8 +193,8 @@ pub enum IneligibleReason {
     },
     /// [`ModelSelector::AutoSelect`] was requested. No capability field in
     /// runner-v1 v1 (`docs/contracts/runner-v1/capabilities.json`) records
-    /// whether a harness safely accepts an unspecified model — two of three
-    /// real adapters (Codex, OpenCode) reject auto-select pre-spawn rather
+    /// whether a harness safely accepts an unspecified model — one of the two
+    /// real adapters (Codex) rejects auto-select pre-spawn rather
     /// than fabricate a selection. Until a capability snapshot can attest to
     /// this, every candidate is reported ineligible for an auto-select
     /// request with this named reason rather than silently narrowing to

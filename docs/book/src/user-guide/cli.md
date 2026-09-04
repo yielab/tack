@@ -285,15 +285,6 @@ claude-code
   model_combinations: (none reported)
   model_passthrough: supported — the adapter forwards requested_model_id verbatim via --model; the CLI validates it at run time (an invalid model returns is_error:true), so operator-specified opaque models are accepted without the probe claiming any model list
 
-opencode
-  status:      present
-  version:     1.18.0
-  credentials: OpenCode authenticates itself against its own credential store (default ~/.local/share/opencode), populated by `opencode auth login` or provider-specific configuration. Tack never reads, stores, or forwards it. This adapter forwards PATH, HOME and the XDG_* variables from the runner process's own environment, so the installed CLI can find its existing config; anything else must come through the execution request's own `environment` field.
-  model_combinations:
-    llamacpp (reported): qwen3.6-35b-uncensored
-    opencode (reported): big-pickle, ling-3.0-flash-fin-free, mimo-v2.5-free, muse-spark-1.2-contributor-free, nemotron-3-ultra-free, nemotron-3.5-lightning-free
-  model_passthrough: unsupported — the adapter validates the requested model against opencode's enumerated combinations and refuses undeclared ones pre-spawn, so operator-specified models outside model_combinations are not accepted
-
 Runner-wide capabilities (apply identically to every harness above):
   cancel     advisory    — process-group signal cannot reach a detached descendant
   resume     unsupported — no resumable session contract

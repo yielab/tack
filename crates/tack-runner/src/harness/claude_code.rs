@@ -255,10 +255,10 @@ impl ClaudeCodeAdapter<SystemClock> {
     }
 
     /// Test-only: thin wrapper over the already-`pub`
-    /// [`Self::with_binary`], named to match `codex.rs`'s/`opencode.rs`'s
+    /// [`Self::with_binary`], named to match `codex.rs`'s
     /// identical `for_fixture` so `harness::mod::tests`'s "same fixture
-    /// completes through all three fake adapters" acceptance proof can
-    /// construct all three adapters through one uniform call shape.
+    /// completes through both real adapters" acceptance proof can
+    /// construct both adapters through one uniform call shape.
     #[cfg(test)]
     pub(crate) fn for_fixture(
         program: PathBuf,
@@ -424,7 +424,7 @@ impl<C: Clock> ClaudeCodeAdapter<C> {
     /// Stages the (already-scrubbed) combined stdout/stderr as a `log`
     /// artifact inside the attempt's own workspace, via
     /// [`super::artifact::ArtifactStager`] — the exact pattern
-    /// `codex.rs`/`opencode.rs` already prove out. `artifacts: Supported`
+    /// `codex.rs` already proves out. `artifacts: Supported`
     /// once had no backing implementation: `wait()` never called this before.
     /// Stages under the workspace's own `.artifacts` directory, matching
     /// this adapter's live test's own choice (`ArtifactStager::new(workspace.join(".artifacts"))`)
@@ -821,17 +821,17 @@ fn feature_capabilities() -> FeatureCapabilities {
         // the workspace, but `wait()` used not to actually
         // staged anything — `stage_run_log` below closes that gap by
         // staging the raw, already-redacted stdout/stderr transcript, the
-        // same thing the Codex and OpenCode adapters honestly call
+        // same thing the Codex adapter honestly calls
         // `Advisory` rather than `Supported`. No Claude-Code-specific
         // per-file artifact discovery (e.g. a real git diff of files it
         // changed) is implemented, so this adapter now reports the same
-        // honest ceiling they do.
+        // honest ceiling it does.
         artifacts: CapabilityValue {
             support: CapabilitySupport::Advisory,
             reason: Some(
                 "Real Write/Edit tool output lands in the workspace, but only the raw, \
                  already-redacted stdout/stderr transcript is staged as a log artifact today \
-                 (matching what the Codex and OpenCode adapters report); no Claude-Code-specific \
+                 (matching what the Codex adapter reports); no Claude-Code-specific \
                  per-file artifact discovery is implemented."
                     .to_string(),
             ),
@@ -1210,7 +1210,7 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
         // `artifacts: Advisory` (downgraded from an
         // unbacked `Supported` — see `feature_capabilities`) is only honest
         // if `wait()` actually stages something. Best-effort, exactly like
-        // `codex.rs`/`opencode.rs`'s identical `stage_run_log`: a staging
+        // `codex.rs`'s identical `stage_run_log`: a staging
         // failure only omits the `artifact` key, never fails the attempt.
         let mut terminal_reason = parsed.terminal_reason;
         if let Some(artifact) = Self::stage_run_log(
@@ -1632,7 +1632,7 @@ mod tests {
     /// called `ArtifactStager::stage_file`, only the live (billed, opt-in)
     /// test's own test body did, bypassing the adapter entirely. This proves
     /// the fix through the adapter's own `wait()`, via the free fake-binary
-    /// path, matching `codex.rs`'s/`opencode.rs`'s identical proof shape.
+    /// path, matching `codex.rs`'s identical proof shape.
     #[tokio::test]
     async fn fake_binary_success_stages_a_real_log_artifact() {
         let adapter = adapter_with_fake_binary();
@@ -2699,12 +2699,11 @@ mod tests {
 
     // ---- live, opt-in test against the real installed `claude` ----------
 
-    /// Opt-in, matching `codex.rs` and `opencode.rs`'s own
+    /// Opt-in, matching `codex.rs`'s own
     /// `#[ignore]`-gated live tests: never runs under a plain `cargo test`,
     /// never required in CI, and never fails just because `claude` is
     /// absent. Unlike Codex's live test (version probe plus a
-    /// purely local artifact stage, no real model call) or OpenCode's
-    /// (routed to a genuinely free zen model), a real Claude Code
+    /// purely local artifact stage, no real model call), a real Claude Code
     /// invocation is billed — so this test additionally requires
     /// `TACK_RUN_LIVE_CLAUDE_CODE_TEST=1` even under `--ignored`, so that
     /// flag alone can never surprise-spend real money. Never depends on a
@@ -2719,8 +2718,8 @@ mod tests {
     /// and deletes itself — never this checkout).
     #[tokio::test]
     #[ignore = "opt-in: requires a real `claude` binary on PATH *and* \
-                TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 (a real invocation is billed, unlike D1/D3's \
-                free live tests); run with TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo test -p \
+                TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 (a real invocation is billed, unlike Codex's \
+                free live test); run with TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo test -p \
                 tack-runner --lib -- --ignored claude_code::tests::live_"]
     async fn live_claude_code_records_version_and_a_real_artifact_when_opted_in() {
         if std::env::var("TACK_RUN_LIVE_CLAUDE_CODE_TEST").as_deref() != Ok("1") {

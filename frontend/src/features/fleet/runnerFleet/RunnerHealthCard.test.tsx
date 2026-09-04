@@ -206,7 +206,7 @@ describe('RunnerHealthCard — harness display', () => {
       ...fullySupportedCapabilities,
       harnesses: [
         {
-          harness_kind: 'opencode',
+          harness_kind: 'claude-code',
           installed_version: '0.9.0',
           probe_error: 'binary not found on PATH',
           probed_at: '2026-08-01T00:00:00Z',
@@ -223,7 +223,7 @@ describe('RunnerHealthCard — harness display', () => {
       labels: {},
       capabilities: capsWithProbeError,
     });
-    expect(c.textContent).toContain('opencode');
+    expect(c.textContent).toContain('claude-code');
     expect(c.textContent).toContain('0.9.0');
     expect(c.textContent).toContain('binary not found on PATH');
   });

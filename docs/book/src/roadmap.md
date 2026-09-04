@@ -3349,11 +3349,10 @@ is an amendment to ADR 0061, not a card's judgement.
 The harnesses' own logins are the first case and already work. The gateway is the second
 case, and the only one worth building now, because it is simultaneously: a **single API
 key** rather than a vendor OAuth flow; documented by its vendor with a **dedicated endpoint
-for each of the three harnesses** in this tree (`/claude-code`, `/codex/v1`, and OpenCode's
-native `vercel` provider — fetched 2026-09-03, to be re-fetched before any card relies on
-it); and a **catalog endpoint**, so the model picker shows what a runner measured rather
-than a list someone typed. That combination is the only route to "a UI-only user
-authenticates without a console".
+for each harness** in this tree (`/claude-code`, `/codex/v1` — fetched 2026-09-03, to be
+re-fetched before any card relies on it); and a **catalog endpoint**, so the model picker
+shows what a runner measured rather than a list someone typed. That combination is the
+only route to "a UI-only user authenticates without a console".
 
 It is added as a **provider configuration at the runner** — the key lives in the runner's
 owner-only state directory next to its own credential, the runner's probe fetches the
@@ -3394,7 +3393,7 @@ of ADR 0061 adds) and is what makes the other two shapes possible without a rede
 
 | Secret | Example | Held by | Standard |
 |---|---|---|---|
-| A harness's own login | Claude Code's OAuth session, `codex login`, `opencode auth login` | **the harness CLI** — Tack never reads or copies it | OAuth 2.0 device flow (RFC 8628); each CLI keeps its own session (the OS keychain on macOS, an owner-only file on Linux). Every orchestrator worth copying delegates here. |
+| A harness's own login | Claude Code's OAuth session, `codex login` | **the harness CLI** — Tack never reads or copies it | OAuth 2.0 device flow (RFC 8628); each CLI keeps its own session (the OS keychain on macOS, an owner-only file on Linux). Every orchestrator worth copying delegates here. |
 | A provider API key injected into the harness's environment | a Vercel AI Gateway key | **the runner**, on the machine that launches the harness | OS keychain first, owner-only file second — what `gh` and `docker` do. Never the shared board database. |
 | Tack's own secrets | operator token, runner enrollment credential, S3 backup key | already settled | hashed on the server; owner-only and `[REDACTED]` on the runner |
 
@@ -3473,8 +3472,8 @@ on the Part VI board (§VI.0), and applied verbatim by VI-A3:
 >
 > **The runner** is a small worker that lives where the code and the credentials already
 > are — a laptop, a CI box, a machine with a GPU. It pulls work from the board, checks out
-> an isolated workspace, launches the coding agent you already use — Claude Code, Codex or
-> OpenCode — and reports back. **It holds the keys; the board never sees them.**
+> an isolated workspace, launches the coding agent you already use — Claude Code or
+> Codex — and reports back. **It holds the keys; the board never sees them.**
 >
 > They are separate because they scale and fail differently. **One board, many runners:**
 > a board on a small VPS dispatches to runners on ten developers' machines, each with its

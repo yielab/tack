@@ -1,7 +1,7 @@
 //! Rust-side accessors for the shared fake harness fixture
 //! (`fake_harness.sh`, documented in full at the top of that file).
 //!
-//! D1/D2/D3 drive this exact fixture from their own crash/fake tests: spawn
+//! D1/D2 drive this exact fixture from their own crash/fake tests: spawn
 //! it through [`super::process::ProcessSpec`] with `TACK_FAKE_HARNESS_MODE`
 //! (and mode-specific variables) set in `ProcessSpec::env`, exactly as this
 //! module's own tests and `process.rs`'s tests already do. Nothing here is

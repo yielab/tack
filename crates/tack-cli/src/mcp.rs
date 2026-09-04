@@ -599,7 +599,7 @@ fn tool_specs() -> Value {
                     "runner_id": { "type": "string", "description": "Exact runner id (mutually exclusive with fleet_id)" },
                     "fleet_id": { "type": "string", "description": "Fleet id (mutually exclusive with runner_id)" },
                     "agent_profile_id": { "type": "string" },
-                    "harness": { "type": "string", "description": "Requested harness kind, e.g. codex, claude_code, opencode" },
+                    "harness": { "type": "string", "description": "Requested harness kind, e.g. codex, claude_code" },
                     "agent_profile_snapshot": {
                         "type": "object",
                         "description": "Resolved agent profile: {name, instructions, tool_policy, timeout_seconds, budgets} — all required, no safe empty default"

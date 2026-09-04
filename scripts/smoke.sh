@@ -100,17 +100,17 @@ create_execution() {
 
 step 1 "Harness availability (reported honestly, never rounded up)"
 AVAIL=()
-for h in codex claude opencode; do
+for h in codex claude; do
   if command -v "$h" >/dev/null 2>&1; then
     printf '   present: %-10s %s\n' "$h" "$("$h" --version 2>&1 | head -1)"; AVAIL+=("$h")
   else
     printf '   ABSENT:  %-10s (cannot be part of any coverage claim)\n' "$h"
-    unmet "harness binary '$h' is not installed on this machine — its leg of the three-harness criterion is unverifiable here"
+    unmet "harness binary '$h' is not installed on this machine — its leg of the two-harness criterion is unverifiable here"
   fi
 done
-printf '   real harness coverage: %d of 3\n' "${#AVAIL[@]}"
+printf '   real harness coverage: %d of 2\n' "${#AVAIL[@]}"
 if [ "$LIVE" = 1 ]; then note "mode: --live (real binaries; a real model run happens in step 7)"
-else note "mode: fake (shim binaries stand in for all three harnesses; the rest of the pipeline is real)"; fi
+else note "mode: fake (shim binaries stand in for both harnesses; the rest of the pipeline is real)"; fi
 
 step 2 "Build tack + tack-runner"
 cargo build -p tack-cli -p tack-runner 2>&1 | tail -3
@@ -118,8 +118,8 @@ cargo build -p tack-cli -p tack-runner 2>&1 | tail -3
 [ -x "$ROOT/target/debug/tack-runner" ] && ok "tack-runner built" || { bad "tack-runner missing"; exit 1; }
 
 # Shim harness binaries. Used by the main runner in fake mode, and by step 9's
-# dedicated runner in BOTH modes. A shim answers the adapter's real probes
-# (`--version`, opencode's `models`) and treats any other invocation as a run:
+# dedicated runner in BOTH modes. A shim answers the adapter's real probe
+# (`--version`) and treats any other invocation as a run:
 # it records a marker (its own pid — the duplicate-execution counter step 9
 # asserts on), drains the prompt from stdin, honors SMOKE_HANG until the
 # release file appears, prints one line and exits 0. Adapters spawn harnesses
@@ -128,12 +128,11 @@ cargo build -p tack-cli -p tack-runner 2>&1 | tail -3
 # also proves that plumbing end to end.
 SHIMS="$WORK/shims"; MARKERS="$WORK/harness-runs"; RELEASE_FILE="$WORK/shim-release"
 mkdir -p "$SHIMS" "$MARKERS"
-cat > "$SHIMS/opencode" <<SHIM
+cat > "$SHIMS/claude" <<SHIM
 #!/bin/sh
 PATH=/usr/bin:/bin
 case "\${1:-}" in
   --version|-v) echo "1.0.0"; exit 0 ;;
-  models) echo "fake/smoke-model"; exit 0 ;;
 esac
 marker="$MARKERS/run-\${SMOKE_HANG:+hang-}\$\$-\$(date +%s%N)"
 echo "\$\$" > "\$marker"
@@ -142,9 +141,9 @@ if [ "\${SMOKE_HANG:-}" = "1" ] && [ ! -f "$RELEASE_FILE" ]; then sleep 600; fi
 echo "smoke-fake-harness-ok"
 exit 0
 SHIM
-chmod +x "$SHIMS/opencode"
-cp "$SHIMS/opencode" "$SHIMS/claude"; cp "$SHIMS/opencode" "$SHIMS/codex"
-chmod +x "$SHIMS/claude" "$SHIMS/codex"
+chmod +x "$SHIMS/claude"
+cp "$SHIMS/claude" "$SHIMS/codex"
+chmod +x "$SHIMS/codex"
 
 step 3 "Start the API server (no Docket configured — its absence must not disable runner execution)"
 # Run from $WORK, never the repo root: the developer's tack.toml would otherwise be
@@ -219,23 +218,31 @@ AGENT_PROFILE=$(curl -sf -X POST "$API/api/agent-profiles" -H 'content-type: app
   | jq -r '.agent_profile_id // empty')
 [ -n "$AGENT_PROFILE" ] && ok "agent profile $AGENT_PROFILE" || bad "could not create agent profile"
 
-# Pick the step-7 pairing from what the runner DECLARED (that is what the
-# scheduler checks). Live mode prefers a local llamacpp/* combination so the
-# run is unbilled; SMOKE_LIVE_MODEL=provider/model overrides.
-if [ "$LIVE" = 1 ] && [ -n "${SMOKE_LIVE_MODEL:-}" ]; then
-  S7_PROVIDER="${SMOKE_LIVE_MODEL%%/*}"; S7_MODEL="${SMOKE_LIVE_MODEL#*/}"
+# codex is the step-7 harness under test. Neither remaining adapter declares
+# real model_combinations (both attest model_passthrough:supported instead —
+# see step 6's own printed declarations), so the pairing is not read from the
+# runner's CAPS; it is supplied directly, exactly as step 8 already does for
+# both harnesses. Fake mode uses a placeholder pairing (passthrough accepts
+# any explicit provider/model pre-spawn). Live mode has no free/local option
+# left now that opencode (the only harness that offered one) is gone, so it
+# requires an explicit SMOKE_LIVE_MODEL=provider/model — never a silent
+# default that would bill a real vendor without the operator's say-so.
+S7_KIND=codex
+if [ "$LIVE" = 1 ]; then
+  if [ -n "${SMOKE_LIVE_MODEL:-}" ]; then
+    S7_PROVIDER="${SMOKE_LIVE_MODEL%%/*}"; S7_MODEL="${SMOKE_LIVE_MODEL#*/}"
+  else
+    S7_PROVIDER=""; S7_MODEL=""
+  fi
 else
-  PAIR=$(jq -r '[.harnesses[]? | select(.harness_kind=="opencode") | .model_combinations[]? |
-                 {p:.model_provider, m:.model_ids[0]}] |
-                (map(select(.p=="llamacpp")) + .) | first | "\(.p) \(.m)"' <<<"$CAPS")
-  S7_PROVIDER="${PAIR%% *}"; S7_MODEL="${PAIR#* }"
+  S7_PROVIDER=openai; S7_MODEL=gpt-5-codex
 fi
 S7_TIMEOUT=120; [ "$LIVE" = 1 ] && S7_TIMEOUT=300
-if [ -z "$S7_PROVIDER" ] || [ "$S7_PROVIDER" = "null" ]; then
-  bad "the runner declared no opencode model combination to schedule against"
+if [ -z "$S7_PROVIDER" ]; then
+  bad "no free/local model option remains now that opencode is removed — set SMOKE_LIVE_MODEL=provider/model to run step 7 live (this will be billed)"
 else
-  note "pairing under test: opencode $S7_PROVIDER/$S7_MODEL (from the runner's own declaration)"
-  REQ7=$(create_execution "$ITEM" "$RUNNER_ID" opencode "$S7_PROVIDER" "$S7_MODEL" "$S7_TIMEOUT" '{}' "smoke-s7-$$")
+  note "pairing under test: $S7_KIND $S7_PROVIDER/$S7_MODEL"
+  REQ7=$(create_execution "$ITEM" "$RUNNER_ID" "$S7_KIND" "$S7_PROVIDER" "$S7_MODEL" "$S7_TIMEOUT" '{}' "smoke-s7-$$")
   [ -n "$REQ7" ] && ok "execution request $REQ7 queued" || bad "execution request refused"
   STATE=$(wait_for "attempts_json '$REQ7' | jq -r '.data[0] | select(.state==\"succeeded\" or .state==\"failed\" or .state==\"needs_operator\" or .state==\"lost\" or .state==\"cancelled\") | .state'" "$((S7_TIMEOUT + 30))" || true)
   ATT=$(attempts_json "$REQ7" | jq -c '.data[0] // {}')
@@ -260,18 +267,18 @@ else
 fi
 
 step 8 "The same neutral request through each harness kind, per kind, never rounded up"
-declare -A S8_PROVIDER=( [codex]=openai [claude-code]=anthropic [opencode]="$S7_PROVIDER" )
-declare -A S8_MODEL=( [codex]=gpt-5-codex [claude-code]=claude-sonnet-4-5 [opencode]="$S7_MODEL" )
-declare -A S8_BINARY=( [codex]=codex [claude-code]=claude [opencode]=opencode )
-for kind in codex claude-code opencode; do
+declare -A S8_PROVIDER=( [codex]=openai [claude-code]=anthropic )
+declare -A S8_MODEL=( [codex]=gpt-5-codex [claude-code]=claude-sonnet-4-5 )
+declare -A S8_BINARY=( [codex]=codex [claude-code]=claude )
+for kind in codex claude-code; do
   bin="${S8_BINARY[$kind]}"
   if [ "$LIVE" = 1 ] && ! command -v "$bin" >/dev/null 2>&1; then
     printf '   %-12s ABSENT — not installed, not claimed, not counted\n' "$kind:"
     continue
   fi
-  # In fake mode the shim declares fake/smoke-model for opencode only; codex and
-  # claude-code probes declare no models BY DESIGN (their adapters refuse to
-  # invent a list), which is exactly what this step must surface.
+  # Both codex and claude-code probes declare no models BY DESIGN (their
+  # adapters refuse to invent a list) and rely on model_passthrough:supported
+  # instead, which is exactly what this step must surface.
   provider="${S8_PROVIDER[$kind]}"; model="${S8_MODEL[$kind]}"
   REQ=$(create_execution "$ITEM" "$RUNNER_ID" "$kind" "$provider" "$model" 120 '{}' "smoke-s8-$kind-$$")
   if [ -z "$REQ" ]; then bad "$kind: execution request refused outright"; continue; fi
@@ -346,7 +353,7 @@ fi
 # can therefore never pollute the duplicate-execution count.
 hang_runs() { ls "$MARKERS"/run-hang-* 2>/dev/null | wc -l; }
 S9_RUNNING=0
-REQ9=$(create_execution "$ITEM" "$RUNNER_B" opencode fake smoke-model 600 \
+REQ9=$(create_execution "$ITEM" "$RUNNER_B" codex fake smoke-model 600 \
   '{"SMOKE_HANG":{"value":"1","secret_reference":null}}' "smoke-s9-$$")
 if wait_for "attempts_json '$REQ9' | jq -r '.data[0] | select(.state==\"running\") | .attempt_id'" 30 >/dev/null; then
   S9_RUNNING=1
@@ -358,7 +365,7 @@ fi
 # Capacity evidence while the runner is saturated (capacity 1, one live lease):
 # a second request for the same runner must NOT be claimed. Only meaningful
 # while the hanging attempt genuinely holds the lease.
-REQ9B=$(create_execution "$ITEM" "$RUNNER_B" opencode fake smoke-model 120 '{}' "smoke-s9b-$$")
+REQ9B=$(create_execution "$ITEM" "$RUNNER_B" codex fake smoke-model 120 '{}' "smoke-s9b-$$")
 if [ "$S9_RUNNING" = 1 ]; then
   sleep 6
   if [ -z "$(attempts_json "$REQ9B" | jq -r '.data[0].attempt_id // empty')" ]; then
@@ -451,13 +458,11 @@ else
 fi
 
 if [ -n "$SA_RUNNER" ] && [ -n "$SA_ITEM" ] && [ -n "$SA_PROFILE" ]; then
-  SA_CAPS=$(curl -sf "$STANDALONE_API/api/runners" | jq -c ".data[] | select(.runner_id==\"$SA_RUNNER\") | .capability_snapshot")
-  SA_PAIR=$(jq -r '[.harnesses[]? | select(.harness_kind=="opencode") | .model_combinations[]? |
-                 {p:.model_provider, m:.model_ids[0]}] |
-                (map(select(.p=="llamacpp")) + .) | first | "\(.p) \(.m)"' <<<"$SA_CAPS")
-  SA_PROVIDER="${SA_PAIR%% *}"; SA_MODEL="${SA_PAIR#* }"
-  if [ -z "$SA_PROVIDER" ] || [ "$SA_PROVIDER" = "null" ]; then
-    bad "the embedded runner declared no opencode model combination to schedule against"
+  # Reuses step 7's already-resolved pairing (same reasoning: neither adapter
+  # declares real model_combinations to read from, and live mode needs an
+  # explicit SMOKE_LIVE_MODEL now that opencode's free/local option is gone).
+  if [ -z "$S7_PROVIDER" ]; then
+    bad "no free/local model option remains now that opencode is removed — set SMOKE_LIVE_MODEL=provider/model to run step 10 live"
   else
     # create_execution/attempts_json read $API (and create_execution reads
     # $AGENT_PROFILE) as globals; swap them to the standalone server for this
@@ -465,7 +470,7 @@ if [ -n "$SA_RUNNER" ] && [ -n "$SA_ITEM" ] && [ -n "$SA_PROFILE" ]; then
     # script can accidentally address the standalone server or profile.
     ORIGINAL_API="$API"; ORIGINAL_PROFILE="$AGENT_PROFILE"
     API="$STANDALONE_API"; AGENT_PROFILE="$SA_PROFILE"
-    REQ10=$(create_execution "$SA_ITEM" "$SA_RUNNER" opencode "$SA_PROVIDER" "$SA_MODEL" 120 '{}' "smoke-s10-$$")
+    REQ10=$(create_execution "$SA_ITEM" "$SA_RUNNER" "$S7_KIND" "$S7_PROVIDER" "$S7_MODEL" 120 '{}' "smoke-s10-$$")
     if [ -n "$REQ10" ]; then
       ok "standalone execution request $REQ10 queued against the self-provisioned runner"
       ST10=$(wait_for "attempts_json '$REQ10' | jq -r '.data[0] | select(.state==\"succeeded\" or .state==\"failed\" or .state==\"needs_operator\" or .state==\"lost\" or .state==\"cancelled\") | .state'" 150 || true)
@@ -527,7 +532,7 @@ else
 fi
 
 printf '\n\033[1m== RESULT ==\033[0m\n'
-if [ "$LIVE" = 1 ]; then MODE_DESC="live, ${#AVAIL[@]}/3 real harnesses installed"; else MODE_DESC="fake shim harnesses, pipeline real"; fi
+if [ "$LIVE" = 1 ]; then MODE_DESC="live, ${#AVAIL[@]}/2 real harnesses installed"; else MODE_DESC="fake shim harnesses, pipeline real"; fi
 if [ "$FAILED" = 0 ]; then printf '\033[32mSMOKE PASSED\033[0m — %s\n' "$MODE_DESC"
 else printf '\033[31mSMOKE FAILED\033[0m — %s; see the failing step above\n' "$MODE_DESC"; fi
 if [ "${#UNMET[@]}" -gt 0 ]; then

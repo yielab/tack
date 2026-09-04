@@ -1,8 +1,8 @@
 #!/bin/sh
-# Shared fake harness binary for D1 (Codex), D2 (Claude Code) and D3
-# (OpenCode) deterministic CI tests, and for D4's own process/event-sink
+# Shared fake harness binary for the Codex and Claude Code
+# deterministic CI tests, and for the process/event-sink
 # tests. POSIX `sh`, not bash: no compilation step, always runnable, and one
-# behavior for every OS this runner targets (see the D4 handoff and
+# behavior for every OS this runner targets (see
 # `crates/tack-runner/src/harness/fixtures/mod.rs` for the Rust-side
 # accessors `fake_harness_path()`/`fake_harness_command()`).
 #
