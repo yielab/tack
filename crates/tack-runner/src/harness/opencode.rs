@@ -987,10 +987,10 @@ where
     ) -> Option<serde_json::Value> {
         let relative = PathBuf::from(".tack-runner").join("opencode-run.log");
         let absolute = workspace_path.join(&relative);
-        if let Some(parent) = absolute.parent() {
-            if std::fs::create_dir_all(parent).is_err() {
-                return None;
-            }
+        if let Some(parent) = absolute.parent()
+            && std::fs::create_dir_all(parent).is_err()
+        {
+            return None;
         }
         let mut combined = String::new();
         combined.push_str("=== stdout ===\n");
@@ -2386,10 +2386,10 @@ fi
 
     async fn wait_for_pidfile(path: &std::path::Path) -> u32 {
         for _ in 0..200 {
-            if let Ok(contents) = std::fs::read_to_string(path) {
-                if let Ok(pid) = contents.trim().parse::<u32>() {
-                    return pid;
-                }
+            if let Ok(contents) = std::fs::read_to_string(path)
+                && let Ok(pid) = contents.trim().parse::<u32>()
+            {
+                return pid;
             }
             tokio::time::sleep(Duration::from_millis(25)).await;
         }

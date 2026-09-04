@@ -414,10 +414,10 @@ impl<C: Clock> ClaudeCodeAdapter<C> {
     ) -> Option<Value> {
         let relative = PathBuf::from(".tack-runner").join("claude-code-run.log");
         let absolute = workspace_path.join(&relative);
-        if let Some(parent) = absolute.parent() {
-            if std::fs::create_dir_all(parent).is_err() {
-                return None;
-            }
+        if let Some(parent) = absolute.parent()
+            && std::fs::create_dir_all(parent).is_err()
+        {
+            return None;
         }
         let mut combined = String::new();
         combined.push_str("=== stdout ===\n");
@@ -1122,10 +1122,9 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
             &entry.attempt_id,
             &result.stdout.text,
             &result.stderr.text,
-        ) {
-            if let Some(object) = terminal_reason.as_object_mut() {
-                object.insert("artifact".to_string(), artifact);
-            }
+        ) && let Some(object) = terminal_reason.as_object_mut()
+        {
+            object.insert("artifact".to_string(), artifact);
         }
 
         Ok(HarnessOutcome {
