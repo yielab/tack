@@ -1,6 +1,6 @@
 # VI-C4 handoff
 
-- Base SHA / branch / final SHA: base `02aa4e3` (develop tip at dispatch); branch
+- Base SHA / branch / final SHA: base `2958e9e` (develop tip at dispatch); branch
   `agent/vi-c4-attempt-lists`; not committed — working tree only, per instruction.
 - Files changed (must equal ownership list): see "Files changed, against ownership"
   below — three files touched beyond the literal ownership sentence, each justified there.

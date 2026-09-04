@@ -1,6 +1,6 @@
 # VI-C2 handoff
 
-- Base SHA / branch / final SHA: base `d08a238` (`develop`'s actual tip at dispatch —
+- Base SHA / branch / final SHA: base `8b71756` (`develop`'s actual tip at dispatch —
   VI-B1, VI-C3, VI-C4 already integrated there). Branch `agent/vi-c2-modal-defaults`. Not
   committed — final SHA is n/a; the worktree holds the changes.
 - Files changed (must equal ownership list): Owns is
@@ -179,12 +179,12 @@
   `model_passthrough` (the one new type field) is a boolean-ish capability attestation,
   never a credential.
 - Safe merge order and likely conflicts: needs VI-C3 merged first (this branch already
-  has it, via `develop` at `d08a238`). No file-level overlap with VI-B1/B2/B3/C1/C4's
+  has it, via `develop` at `8b71756`). No file-level overlap with VI-B1/B2/B3/C1/C4's
   ownership rows. `docs/openapi.json`/`schema.gen.ts` untouched by this card (no backend
   change) — nothing to regenerate. The three non-owned frontend files this card touched
   (`Board.tsx`, `Sprints.tsx`, `ItemDetailDrawer.tsx`) are not claimed by any other Part
   VI or Part VII card's ownership row as of this branch's base; still, the integrator
-  should re-check that against whatever landed on `develop` after `d08a238` before
+  should re-check that against whatever landed on `develop` after `8b71756` before
   merging, since neither this card nor its dispatch block can see the future.
 - Checklist: no unowned crate/backend file touched (frontend-only diff); no live secret;
   no panic stub (every new function returns a typed value, `field-for-fetch` errors are
@@ -223,7 +223,7 @@ A row with no evidence is a claim to delete, not a row to leave blank.
   `git diff -- frontend/src/shared/runWithAgent/shared.ts | grep -n
   gateHarnessModelSelection` → **no output** (the function name does not appear in the
   diff at all — not one line inside it changed). Verified two ways: that grep, and a
-  Python brace-matched extraction of the function body from `d08a238`'s copy vs. the
+  Python brace-matched extraction of the function body from `8b71756`'s copy vs. the
   working tree, byte-compared equal.
 - Vitest: **756 passed, 0 failed, 85 files** (`npx vitest run`), up from VI-C3's recorded
   726 — the +30 are this card's new cases across `shared.test.ts`,

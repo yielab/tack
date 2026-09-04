@@ -1,6 +1,6 @@
 # VII-A2 handoff
 
-- Base SHA / branch / final SHA: `02aa4e3` (Wave 18 base) / `agent/vii-a2-service` /
+- Base SHA / branch / final SHA: `2958e9e` (Wave 18 base) / `agent/vii-a2-service` /
   uncommitted at handoff time (working tree has the full diff, nothing committed — see
   Next step).
 - Files changed (must equal ownership list): `crates/tack-cli/src/service.rs` (new),
@@ -194,12 +194,12 @@ the invoking shell.
   (`/home/ox/Sites/objetivosMios/.claude/worktrees/agent-a1c6d07896072a9f4`) was checked
   out at `e5206c7` — a commit that predates Part VII entirely (no `docs/adr/0062-*.md`,
   no `docs/agent-handoffs/part-vii/`, no Part VII section in `TODO.md`) — even though the
-  dispatch instructions named base SHA `02aa4e3`. The first few reads in this session
+  dispatch instructions named base SHA `2958e9e`. The first few reads in this session
   used an absolute path into the *sibling* checkout at `/home/ox/Sites/objetivosMios`
-  (which was already past `02aa4e3`) by mistake, which is why they briefly appeared to
+  (which was already past `2958e9e`) by mistake, which is why they briefly appeared to
   succeed before later commands against the worktree's own relative paths failed to find
-  the same files. Fixed by running `git switch -c agent/vii-a2-service 02aa4e3` directly
-  in the worktree — `02aa4e3` was already a real commit in the shared `.git` object
+  the same files. Fixed by running `git switch -c agent/vii-a2-service 2958e9e` directly
+  in the worktree — `2958e9e` was already a real commit in the shared `.git` object
   store, just not what the worktree happened to have checked out — which brought the
   named files into the worktree as expected. Everything after that point was read from
   the correct worktree path. Flagging this for whoever prepares the next agent's

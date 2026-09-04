@@ -1,7 +1,7 @@
 # VII-B1 handoff
 
-- Base SHA / branch / final SHA: branched `agent/vii-b1-desktop-skeleton` from `02aa4e3`
-  (the SHA the Wave 18 row names). `develop`'s actual tip at branch time was `85f2bfa`,
+- Base SHA / branch / final SHA: branched `agent/vii-b1-desktop-skeleton` from `2958e9e`
+  (the SHA the Wave 18 row names). `develop`'s actual tip at branch time was `92a42cd`,
   one commit ahead — a doc-only commit that pins this very SHA into the board text (see
   Amendments). Not committed: the branch holds an uncommitted working tree; there is no
   final SHA yet.
@@ -325,11 +325,11 @@ exactly the process that was there before the app ever ran.
 *(Appended by later readers, dated. The original text above is never rewritten.)*
 
 **2026-09-04 — base SHA note.** `develop`'s tip when this branch was created was
-`85f2bfa` ("plan: pin the Wave 15 and Wave 18 base SHA"), one commit ahead of the
-`02aa4e3` this handoff (and the dispatch prompt) names as the base. Inspected the
+`92a42cd` ("plan: pin the Wave 15 and Wave 18 base SHA"), one commit ahead of the
+`2958e9e` this handoff (and the dispatch prompt) names as the base. Inspected the
 commit: it only rewrites `TODO.md` and the two `docs/agent-handoffs/*/README.md` files to
-spell out `02aa4e3` explicitly where they previously said "pinned at dispatch" — no code
-changed. Branched from `02aa4e3` as instructed; recording this so the discrepancy is not
+spell out `2958e9e` explicitly where they previously said "pinned at dispatch" — no code
+changed. Branched from `2958e9e` as instructed; recording this so the discrepancy is not
 mistaken for an unnoticed rebase later.
 
 ### 2026-09-04 — Wave 18 integrator: the crate could not be built from a clean clone
@@ -366,7 +366,7 @@ Fixed at integration, not deferred:
   sidecar permission in `capabilities/default.json` is unaffected, since it names the
   sidecar independently of the bundle config.
 - The generated icon set is now committed, and the two `.gitignore` lines that
-  excluded it are gone — the resolution commit `3ea96df` had routed that removal to
+  excluded it are gone — the resolution commit `7cc6221` had routed that removal to
   VII-C1, which is now a no-op for VII-C1. `generate_context!` reads these files at
   compile time, so they are a source input, not build output.
 

@@ -18,7 +18,7 @@ decision of record is `docs/adr/0062-desktop-app-and-background-service.md`, acc
 
 | Wave | Cards | Parallel? | Needs | Base SHA |
 |---|---|---|---|---|
-| 18 | VII-A2 · VII-B1 | yes | ADR 0062 accepted (done); Tauri prerequisites verified installed 2026-09-03 (tauri-cli 2.11.4, webkit2gtk-4.1) | `02aa4e3` — **both dispatched 2026-09-03**; — the 2026-09-03 planning commit; branch from the `develop` tip |
+| 18 | VII-A2 · VII-B1 | yes | ADR 0062 accepted (done); Tauri prerequisites verified installed 2026-09-03 (tauri-cli 2.11.4, webkit2gtk-4.1) | `2958e9e` — **both dispatched 2026-09-03**; — the 2026-09-03 planning commit; branch from the `develop` tip |
 | 19 | VII-B2 · VII-B3 | yes | B1 integrated | Wave 18 integration SHA |
 | 20 | VII-C1 → VII-C2 | no | C1: B2 + B3; C2: C1 **and Part VI's VI-C1** | Wave 19 integration SHA |
 | 21 | VII-D1 | — | everything | Wave 20 integration SHA |
@@ -31,8 +31,8 @@ decision of record is `docs/adr/0062-desktop-app-and-background-service.md`, acc
 1. `git status --porcelain` on `develop` is empty and the planning edits are committed.
 2. Record the base SHA in the table above and in the Part VII status table. **Pin the actual
    tip — `git rev-parse --short develop` — not the SHA of the planning commit.** On
-   2026-09-03 the prompts named `02aa4e3` while `develop` was already at `85f2bfa`; every
-   agent branched from `02aa4e3` and ended up two docs-only commits behind. Harmless that
+   2026-09-03 the prompts named `2958e9e` while `develop` was already at `92a42cd`; every
+   agent branched from `2958e9e` and ended up two docs-only commits behind. Harmless that
    time, a conflict the next time the gap contains code.
 3. **Before VII-B1, on the dispatch machine (needs sudo — the user does this, not an agent):**
 

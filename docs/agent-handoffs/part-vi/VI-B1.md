@@ -1,6 +1,6 @@
 # VI-B1 handoff
 
-- Base SHA / branch / final SHA: base `02aa4e3` (the develop tip the dispatch README named);
+- Base SHA / branch / final SHA: base `2958e9e` (the develop tip the dispatch README named);
   branch `agent/vi-b1-secret-store`; not committed (final SHA n/a — working tree only, per
   instruction not to commit).
 - Files changed (must equal ownership list): see "Files changed vs. ownership" below —
@@ -44,7 +44,7 @@ declared `rust-version` field doesn't by itself prove a build fails), I installe
 1. **This branch**, `cargo +1.85.0 build -p tack-runner --lib`: fails at dependency
    resolution — `aes@0.9.3 requires rustc 1.89`, plus several `zbus`/`secret-service` crates
    at 1.87–1.88. This is the cost of this card's dependency choice, and it is real.
-2. **The unmodified base** (`git worktree add` at `02aa4e3`, no VI-B1 changes at all),
+2. **The unmodified base** (`git worktree add` at `2958e9e`, no VI-B1 changes at all),
    same command against `tack-runner` (which doesn't even depend on `keyring-core`
    there): **also fails to resolve on rustc 1.85.0** — `serde_with@3.22.0 requires
    rustc 1.88`, plus `icu_collections`/`icu_locale_core`/`icu_normalizer`/`icu_properties`/
@@ -52,7 +52,7 @@ declared `rust-version` field doesn't by itself prove a build fails), I installe
    workspace dependency this card never touched; its lockfile-pinned version is identical
    on both trees.
 
-So: **the `develop` line at `02aa4e3` already cannot build under the CI-pinned MSRV
+So: **the `develop` line at `2958e9e` already cannot build under the CI-pinned MSRV
 toolchain, independent of anything in this card.** This card's own additions raise the
 floor further (1.88 → 1.89 by way of `aes`), but they are not the reason the floor was
 already broken. Given the very recent, dedicated fix in this repo's history for exactly
@@ -111,7 +111,7 @@ touched before the failure. My test proves the narrower, true claim; see "Test r
 | The file fallback engages when no platform store answers | `DBUS_SESSION_BUS_ADDRESS=/dev/null tack runner doctor` → `backend: file` (measured) |
 | `env:` references resolve the same way `store:` ones do | `secrets::tests::resolve_env_scheme_reads_the_process_environment` |
 | `runner_contract` is byte-identical (no fixture edited) | `cargo test -p tack-orch --test runner_contract` — 18 passed; `git diff --name-only -- docs/contracts/ crates/tack-orch/tests/runner_contract.rs` → 0 files |
-| `cargo audit` gained no new findings from the new dependency tree | measured against both the current tree and a scratch checkout of the unmodified `02aa4e3` lockfile — identical 5 warnings, both pre-existing (see "Not checked") |
+| `cargo audit` gained no new findings from the new dependency tree | measured against both the current tree and a scratch checkout of the unmodified `2958e9e` lockfile — identical 5 warnings, both pre-existing (see "Not checked") |
 
 A row with no evidence is a claim to delete, not a row to leave blank — every row above
 was actually run this session, not assumed.
@@ -132,8 +132,8 @@ was actually run this session, not assumed.
 - `cargo audit`: 0 vulnerabilities (errors) on this tree; 5 allowed warnings
   (`proc-macro-error2` unmaintained, `event-listener` unsound-in-narrow-case, `chacha20`
   0.10.0 yanked, `spin` 0.9.8 and 0.10.0 yanked) — **all 5 are present on the unmodified
-  `02aa4e3` lockfile too**, verified in a scratch worktree; this card added none.
-  `02aa4e3`'s lockfile additionally reports 1 vulnerability (`rsa` 0.9.10, RUSTSEC-2023-0071,
+  `2958e9e` lockfile too**, verified in a scratch worktree; this card added none.
+  `2958e9e`'s lockfile additionally reports 1 vulnerability (`rsa` 0.9.10, RUSTSEC-2023-0071,
   medium) that this repo's checked-in `.cargo/audit.toml` already allow-lists — also
   pre-existing, unrelated to this card.
 - Cargo.lock: 51 new crates locked (the `keyring-core` + `zbus-secret-service-keyring-store`
@@ -298,7 +298,7 @@ There is no lower-MSRV alternative in the same architecture generation — an ol
   rather than assuming every one of those facts, and the MSRV question turned out to have
   a much bigger, unrelated answer worth chasing to ground. Exact token accounting wasn't
   captured mid-session; the two extra real builds (one on this branch, one on a scratch
-  worktree of `02aa4e3`) were the largest single cost beyond ordinary code-writing.
+  worktree of `2958e9e`) were the largest single cost beyond ordinary code-writing.
 
 ## Amendments
 

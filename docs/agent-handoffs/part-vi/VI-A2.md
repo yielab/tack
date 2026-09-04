@@ -8,7 +8,7 @@ dated amendment (see the template's own instruction below):
 > User acceptance date: _______________ (append as an "## Amendments" entry when given —
 > do not edit this line yourself)
 
-- Base SHA / branch / final SHA: base `4740ee0c630dff6c411580d297791d5180dfc6a7` (`develop`
+- Base SHA / branch / final SHA: base `767d385813b5b5b86a140a121f3957fcb69f4f4d` (`develop`
   tip, matches the Wave 14 dispatch SHA in `docs/agent-handoffs/part-vi/README.md`'s table),
   branch `agent/vi-a2-adr-0061`, final SHA — see the last commit on this branch (uncommitted
   at handoff time per instruction; not committed).
