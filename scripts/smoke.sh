@@ -218,15 +218,15 @@ AGENT_PROFILE=$(curl -sf -X POST "$API/api/agent-profiles" -H 'content-type: app
   | jq -r '.agent_profile_id // empty')
 [ -n "$AGENT_PROFILE" ] && ok "agent profile $AGENT_PROFILE" || bad "could not create agent profile"
 
-# codex is the step-7 harness under test. Neither remaining adapter declares
-# real model_combinations (both attest model_passthrough:supported instead —
-# see step 6's own printed declarations), so the pairing is not read from the
+# codex is the step-7 harness under test. Neither adapter declares real
+# model_combinations (both attest model_passthrough:supported instead — see
+# step 6's own printed declarations), so the pairing is not read from the
 # runner's CAPS; it is supplied directly, exactly as step 8 already does for
 # both harnesses. Fake mode uses a placeholder pairing (passthrough accepts
-# any explicit provider/model pre-spawn). Live mode has no free/local option
-# left now that opencode (the only harness that offered one) is gone, so it
-# requires an explicit SMOKE_LIVE_MODEL=provider/model — never a silent
-# default that would bill a real vendor without the operator's say-so.
+# any explicit provider/model pre-spawn). Neither harness offers a free or
+# local model, so live mode requires an explicit SMOKE_LIVE_MODEL=provider/model
+# — never a silent default that would bill a real vendor without the
+# operator's say-so.
 S7_KIND=codex
 if [ "$LIVE" = 1 ]; then
   if [ -n "${SMOKE_LIVE_MODEL:-}" ]; then
@@ -239,7 +239,7 @@ else
 fi
 S7_TIMEOUT=120; [ "$LIVE" = 1 ] && S7_TIMEOUT=300
 if [ -z "$S7_PROVIDER" ]; then
-  bad "no free/local model option remains now that opencode is removed — set SMOKE_LIVE_MODEL=provider/model to run step 7 live (this will be billed)"
+  bad "neither harness offers a free or local model option — set SMOKE_LIVE_MODEL=provider/model to run step 7 live (this will be billed)"
 else
   note "pairing under test: $S7_KIND $S7_PROVIDER/$S7_MODEL"
   REQ7=$(create_execution "$ITEM" "$RUNNER_ID" "$S7_KIND" "$S7_PROVIDER" "$S7_MODEL" "$S7_TIMEOUT" '{}' "smoke-s7-$$")
@@ -314,13 +314,13 @@ for kind in codex claude-code; do
       <<<"$HARNESS_CAP")
     if [ -n "$PROBE_ERROR" ]; then
       bad "$kind: request never claimable — this runner's own probe of the $kind binary failed ($PROBE_ERROR), so the scheduler will not place any $kind work on it regardless of model declarations (crates/tack-api/src/handlers/runner_protocol.rs HarnessProbeError, checked before model eligibility)"
-      unmet "§III.6 'attempts through Codex, Claude Code and OpenCode': $kind is unschedulable on this runner because its probe failed, not because of a model policy"
+      unmet "§III.6 'attempts through Codex and Claude Code': $kind is unschedulable on this runner because its probe failed, not because of a model policy"
     elif [ "$DECLARED" = "true" ] || [ "$PASSTHROUGH" = "supported" ]; then
       bad "$kind: request was never claimed even though the runner declares $provider/$model schedulable (declared=$DECLARED, model_passthrough=$PASSTHROUGH) — the runner most likely had no free capacity at the time; step 8 shares this runner with whatever step 7 left it doing"
-      unmet "§III.6 'attempts through Codex, Claude Code and OpenCode': $kind was declared schedulable but not claimed within this run's wait window — retry against an otherwise-idle runner before concluding $kind itself is broken"
+      unmet "§III.6 'attempts through Codex and Claude Code': $kind was declared schedulable but not claimed within this run's wait window — retry against an otherwise-idle runner before concluding $kind itself is broken"
     else
       bad "$kind: request never claimable — the $kind adapter declares no matching model_combinations and no supported model_passthrough attestation for $provider/$model, so the scheduler has no eligible pairing to place (crates/tack-orch/src/scheduler/select.rs, ModelCombinationNotDeclared; AutoSelect is likewise always rejected)"
-      unmet "§III.6 'attempts through Codex, Claude Code and OpenCode': $kind/$provider/$model is not declared schedulable by this runner"
+      unmet "§III.6 'attempts through Codex and Claude Code': $kind/$provider/$model is not declared schedulable by this runner"
     fi
     curl -sf -X POST "$API/api/executions/$REQ/cancel" >/dev/null 2>&1
   fi
@@ -459,10 +459,10 @@ fi
 
 if [ -n "$SA_RUNNER" ] && [ -n "$SA_ITEM" ] && [ -n "$SA_PROFILE" ]; then
   # Reuses step 7's already-resolved pairing (same reasoning: neither adapter
-  # declares real model_combinations to read from, and live mode needs an
-  # explicit SMOKE_LIVE_MODEL now that opencode's free/local option is gone).
+  # declares real model_combinations to read from, and neither offers a free
+  # or local model, so live mode needs an explicit SMOKE_LIVE_MODEL).
   if [ -z "$S7_PROVIDER" ]; then
-    bad "no free/local model option remains now that opencode is removed — set SMOKE_LIVE_MODEL=provider/model to run step 10 live"
+    bad "neither harness offers a free or local model option — set SMOKE_LIVE_MODEL=provider/model to run step 10 live"
   else
     # create_execution/attempts_json read $API (and create_execution reads
     # $AGENT_PROFILE) as globals; swap them to the standalone server for this

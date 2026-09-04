@@ -264,3 +264,70 @@ outside `docs/`, and deliberately left 29 untouched:
 ## Amendments
 
 *(Appended by later readers, dated. The original text above is never rewritten.)*
+
+### 2026-09-04 — integration review: four remaining mentions, one a real defect
+
+The original sweep left four spots naming opencode that should have been rewritten, not
+preserved as history. Fixed:
+
+1. **`scripts/smoke.sh`'s three `§III.6` "attempts through Codex, Claude Code and
+   OpenCode" `unmet` messages (lines ~317/320/323) — a real defect, not style.** These
+   are quoted as the acceptance criterion, but the criterion they quote now names a
+   harness the tree does not have: a failing smoke run would report against a standard
+   nothing can ever meet, and point whoever reads it at a nonexistent broken adapter.
+   Reworded all three to `§III.6 'attempts through Codex and Claude Code'`. `TODO.md`
+   §III.6 itself is untouched — still frozen archive, still says OpenCode; the script
+   simply stopped quoting a line that no longer describes the product.
+2. **`crates/tack-runner/src/provider.rs:42-46`.** The original handoff explicitly listed
+   this file as "told not to touch" and left its doc comment naming opencode as the
+   disqualified harness. On review that comment was explaining the project's history
+   (a harness that used to be considered and was ruled out), not the code's current
+   behavior, which CLAUDE.md's own rule forbids. Reworded `CATALOG_ELIGIBLE_HARNESSES`'s
+   doc comment to state the general disqualifying criterion — needing more than
+   per-spawn injection (a written, persistent config file, or a package loaded at the
+   harness's own startup) — without naming the removed harness. The constant's value
+   (`["claude-code", "codex"]`) is unchanged.
+3. **`scripts/smoke.sh`'s "opencode is gone/removed" comments and operator message**
+   (originally lines ~227, ~242, ~463, ~465). Reworded to state the current fact directly
+   — "neither harness offers a free or local model option" — rather than referencing the
+   removal as an event. The fail-closed behavior itself (an explicit `SMOKE_LIVE_MODEL`
+   is required before `--live` will spend real money) is unchanged; only the wording is
+   different.
+4. **`README.md`**, flagged in the original handoff as correctly out of scope (cross-Part
+   conflict rule), stays out of scope — being handled at integration, no action taken
+   here.
+
+`grep -rIl "opencode|OpenCode" crates/ frontend/src/ scripts/ CLAUDE.md` now returns
+nothing. `docs/` and the historical files listed in "What I did not touch, and why" above
+are unaffected by this amendment — nothing there changed.
+
+**Gates re-run after the fix:** `cargo test --workspace` green (same pre-existing flake
+as before — this run it was `harness::codex::tests::a_configured_provider_request_spawns_with_its_endpoint_variable_present`
+on one run and `harness::claude_code::tests::...variables_present` on another, both
+clearing on immediate rerun; still order-dependent, still present on the unmodified base,
+still not a regression from this branch). `cargo clippy --all-targets -- -D warnings`
+clean. `cargo fmt --check` clean. `bash -n scripts/smoke.sh` clean (not executed, per
+instruction). `docs/contracts/runner-v1/**` and `runner_contract.rs` still show zero diff
+against the base.
+
+**Answering the coordinator's question: is a stale capability entry's disappearance
+visible anywhere, or fully silent?** Traced it — it is fully silent. The refresh handler
+(`crates/tack-api/src/handlers/runner_protocol.rs::refresh`) logs exactly one line per
+refresh, `tracing::info!(runner_id, rotated, "runner capability refresh accepted")` — no
+harness list, no diff against the previous snapshot, fired identically whether the
+harness set changed, shrank, or stayed the same. The write itself
+(`UPDATE agent_runners SET ... capability_snapshot=? ...`) unconditionally overwrites the
+old JSON blob; nothing reads the old value first to compare it against the new one, in
+this handler or anywhere else searched (`runner_admin.rs`'s `GET /api/runners` path,
+which serves whatever the current snapshot says, and the frontend, which renders it the
+same way). On the runner's own side, `build_adapter_registry` never knew opencode
+existed after this change — there is no "this harness used to be here" state to log
+either, since the registry is rebuilt fresh on every process start with no memory of a
+prior run. So: no log line names the harness that disappeared, `tack runner doctor` only
+ever shows current state (never a before/after), and the fleet UI has no diffing logic
+of any kind. An operator who is not independently comparing two captured snapshots would
+never learn a harness dropped out of a runner's declared capabilities — not from this
+change specifically, but as a standing property of the capability-refresh mechanism
+itself: it was already true before opencode existed, for any harness kind's disappearance
+by any cause (a binary uninstalled, a config change, a downgrade). Recorded as a finding,
+per the coordinator's request; no fix attempted — out of scope for this card.
