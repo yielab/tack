@@ -380,6 +380,16 @@ jobs:
       # those measurements so the gate catches an accidental dependency that defeats
       # `opt-level = "z"` / lto / strip, not routine drift — and a doc-correction request
       # for CLAUDE.md's stale figure is recorded in the III-G4 handoff.
+      #
+      # Re-baselined 2026-09-04: the runner measured 6.20 MB, over the 5 MB budget, and
+      # the gate caught it. Not drift — the secret store resolves a claim's
+      # `secret_reference` from the OS keychain (ADR 0061 decision 1), which pulls
+      # secret-service, zbus and a crypto stack: 12 crates that were not in this binary
+      # before. Deliberate and accepted, so the budget moves to 8 MB — 35% over the new
+      # measurement, the same headroom rule as before. If the runner ever has to be small
+      # again for a constrained host, the lever is making the keychain backend a default
+      # cargo feature that such a build turns off; that is a decision for a card, not a
+      # thing to build speculatively.
       - name: Binary-size budget
         run: |
           set -euo pipefail
@@ -388,14 +398,14 @@ jobs:
           TACK_MB=$(echo "scale=1; $TACK_SIZE / 1048576" | bc)
           RUNNER_MB=$(echo "scale=1; $RUNNER_SIZE / 1048576" | bc)
           echo "tack binary:        $TACK_SIZE bytes (${TACK_MB} MB), budget 26214400 (25 MB)"
-          echo "tack-runner binary: $RUNNER_SIZE bytes (${RUNNER_MB} MB), budget 5242880 (5 MB)"
+          echo "tack-runner binary: $RUNNER_SIZE bytes (${RUNNER_MB} MB), budget 8388608 (8 MB)"
           FAIL=0
           if [ "$TACK_SIZE" -gt 26214400 ]; then
             echo "ERROR: tack binary exceeds the 25 MB budget"
             FAIL=1
           fi
-          if [ "$RUNNER_SIZE" -gt 5242880 ]; then
-            echo "ERROR: tack-runner binary exceeds the 5 MB budget"
+          if [ "$RUNNER_SIZE" -gt 8388608 ]; then
+            echo "ERROR: tack-runner binary exceeds the 8 MB budget"
             FAIL=1
           fi
           exit $FAIL
