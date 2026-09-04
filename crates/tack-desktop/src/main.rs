@@ -3,8 +3,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod first_run;
+mod lifecycle;
 mod paths;
 mod supervisor;
+mod tray;
 
 use std::sync::Mutex;
 
@@ -77,6 +79,16 @@ fn main() {
     tracing_subscriber::fmt::init();
 
     tauri::Builder::default()
+        // Must be registered before any other plugin (tauri-plugin-single-instance's
+        // own requirement): a second launch focuses the existing window instead of
+        // opening a new one.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            lifecycle::show_and_focus(app);
+        }))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(DesktopState(Mutex::new(None)))
@@ -90,6 +102,9 @@ fn main() {
             let port = settings.port;
             let base_url = format!("http://127.0.0.1:{port}");
             let folders = paths.server_folders(settings.database_path.as_deref());
+
+            tray::ensure_launch_at_login_default_on_first_run(&handle, &paths.root);
+            tray::build(&handle).map_err(|e| e.to_string())?;
 
             tauri::async_runtime::spawn(async move {
                 let client = reqwest::Client::new();
@@ -177,11 +192,13 @@ fn main() {
 
             Ok(())
         })
+        .on_window_event(lifecycle::handle_window_event)
         .build(tauri::generate_context!())
         .expect("error while building the tauri application")
         .run(|app_handle, event| {
-            // Closing the window quits in this card; B2 changes this to hide.
-            // Either way, a spawned child must never outlive the app.
+            // The window hides rather than closes, so this fires only from
+            // an explicit Quit or an external signal — never from a window
+            // close. Either way, a spawned child must never outlive the app.
             if let RunEvent::ExitRequested { .. } = event
                 && let Some(state) = app_handle.try_state::<DesktopState>()
             {

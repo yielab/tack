@@ -28,6 +28,9 @@
     "shell:allow-kill",
     "shell:allow-stdin-write",
     "dialog:allow-message",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled"
   ]
 }
