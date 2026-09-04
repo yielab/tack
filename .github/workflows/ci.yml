@@ -122,17 +122,19 @@ jobs:
         run: cargo test -p tack-cli --test e6_scheduler_e2e_test -- --test-threads=1
 
   msrv:
-    name: MSRV (Rust 1.85 — edition 2024 floor)
+    name: MSRV (Rust 1.89 — dependency floor)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      # The workspace uses edition 2024, which requires Rust >= 1.85. This job
-      # enforces that documented MSRV so an accidental use of a newer-only
-      # feature fails CI. Bump policy: the MSRV may be raised in a minor release
+      # Edition 2024 sets a 1.85 language floor, but the dependency graph sets a
+      # higher one: object_store -> crc-fast needs 1.89, tracing-appender -> time
+      # needs 1.88, and the idna/icu stack needs 1.86. The pin is the real floor,
+      # not the language's. Bump policy: the MSRV may be raised in a minor release
       # when a dependency or language feature requires it; update this pin, the
       # README/CONTRIBUTING badges, and `rust-version` in Cargo.toml together.
-      - uses: dtolnay/rust-toolchain@1.85.0
+      # Verify with `cargo +<pin> build --workspace --locked` before changing it.
+      - uses: dtolnay/rust-toolchain@1.89.0
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           key: msrv
