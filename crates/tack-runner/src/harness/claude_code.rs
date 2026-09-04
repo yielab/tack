@@ -225,14 +225,22 @@ pub struct ClaudeCodeAdapter<C = SystemClock> {
     /// stays correct defensively rather than assuming a caller convention it
     /// cannot see from its own trait bound.
     cancelled: tokio::sync::Mutex<std::collections::BTreeSet<String>>,
+    /// Resolves `secret_reference` environment entries. Shared with every
+    /// other adapter the runner constructed at startup — see
+    /// `crate::secrets::SecretStore`.
+    secrets: crate::secrets::SecretStore,
 }
 
 impl ClaudeCodeAdapter<SystemClock> {
     /// Discovers the installed `claude` binary via the runner process's own
     /// `PATH` and constructs an adapter around it with the real system
     /// clock. The primary, non-test constructor.
-    pub fn discover() -> Result<Self, String> {
-        Ok(Self::with_binary(discover_installed_binary()?, SystemClock))
+    pub fn discover(secrets: crate::secrets::SecretStore) -> Result<Self, String> {
+        Ok(Self::with_binary(
+            discover_installed_binary()?,
+            SystemClock,
+            secrets,
+        ))
     }
 
     /// Test-only: thin wrapper over the already-`pub`
@@ -241,13 +249,18 @@ impl ClaudeCodeAdapter<SystemClock> {
     /// completes through all three fake adapters" acceptance proof can
     /// construct all three adapters through one uniform call shape.
     #[cfg(test)]
-    pub(crate) fn for_fixture(program: PathBuf, prefix_args: Vec<String>) -> Self {
+    pub(crate) fn for_fixture(
+        program: PathBuf,
+        prefix_args: Vec<String>,
+        secrets: crate::secrets::SecretStore,
+    ) -> Self {
         Self::with_binary(
             HarnessBinary {
                 program,
                 prefix_args,
             },
             SystemClock,
+            secrets,
         )
     }
 }
@@ -257,13 +270,18 @@ impl<C: Clock> ClaudeCodeAdapter<C> {
     /// Used directly by tests to point at the shared fake harness fixture
     /// (`crate::harness::fixtures::fake_harness_command`) instead of a real
     /// `claude` install.
-    pub fn with_binary(binary: HarnessBinary, clock: C) -> Self {
+    pub fn with_binary(
+        binary: HarnessBinary,
+        clock: C,
+        secrets: crate::secrets::SecretStore,
+    ) -> Self {
         Self {
             binary,
             clock,
             cancel_grace: Duration::from_secs(5),
             processes: tokio::sync::Mutex::new(BTreeMap::new()),
             cancelled: tokio::sync::Mutex::new(std::collections::BTreeSet::new()),
+            secrets,
         }
     }
 
@@ -916,6 +934,12 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
             return Err(HarnessError::Rejected { reason });
         }
 
+        // Every `secret_reference` entry must resolve before a journal
+        // record or workspace exists. This discards the resolved values —
+        // `start` resolves again for real — so a rejection here can never
+        // leave state behind to clean up.
+        super::resolve_environment(&self.secrets, request, &mut SecretMaterial::new())?;
+
         Ok(())
     }
 
@@ -927,25 +951,11 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
             _ => workspace_root.clone(),
         };
 
-        let mut env = self.base_environment();
         let mut secrets = SecretMaterial::new();
-        for (name, value) in &request.environment {
-            match (&value.value, &value.secret_reference) {
-                (Some(raw), _) => {
-                    secrets.register(raw.clone());
-                    env.insert(name.clone(), raw.clone());
-                }
-                (None, Some(_reference)) => {
-                    tracing::warn!(
-                        name = %name,
-                        "claude-code adapter cannot resolve a secret-reference environment entry \
-                         yet (no secret-store client exists in this crate); the entry was \
-                         skipped rather than fabricated"
-                    );
-                }
-                (None, None) => {}
-            }
-        }
+        let resolved_environment =
+            super::resolve_environment(&self.secrets, request, &mut secrets)?;
+        let mut env = self.base_environment();
+        env.extend(resolved_environment);
 
         let tools_value = request.permission_policy.tools.join(",");
 
@@ -1232,8 +1242,26 @@ mod tests {
         }
     }
 
+    /// A fresh, hermetic file-backed store per call — never the platform
+    /// keychain — so parallel `#[test]` functions never see each other's
+    /// entries and CI needs no Secret Service.
+    fn test_secret_store() -> crate::secrets::SecretStore {
+        crate::secrets::SecretStore::file(std::env::temp_dir().join(format!(
+            "tack-runner-claude-code-secrets-{}-{}.json",
+            std::process::id(),
+            NEXT_DIR.fetch_add(1, Ordering::SeqCst)
+        )))
+    }
+
     fn adapter_with_fake_binary() -> ClaudeCodeAdapter<FixedClock> {
-        ClaudeCodeAdapter::with_binary(fake_binary(), clock())
+        ClaudeCodeAdapter::with_binary(fake_binary(), clock(), test_secret_store())
+            .with_cancel_grace(Duration::from_millis(150))
+    }
+
+    fn adapter_with_fake_binary_and_secrets(
+        secrets: crate::secrets::SecretStore,
+    ) -> ClaudeCodeAdapter<FixedClock> {
+        ClaudeCodeAdapter::with_binary(fake_binary(), clock(), secrets)
             .with_cancel_grace(Duration::from_millis(150))
     }
 
@@ -1432,7 +1460,7 @@ mod tests {
             program: PathBuf::from("/nonexistent/definitely/not/claude"),
             prefix_args: Vec::new(),
         };
-        let adapter = ClaudeCodeAdapter::with_binary(missing, clock());
+        let adapter = ClaudeCodeAdapter::with_binary(missing, clock(), test_secret_store());
         let workspace = temp_workspace("validate-missing-binary");
         let spec = spec_with(
             "claude-code",
@@ -1455,6 +1483,14 @@ mod tests {
         EnvironmentValue {
             value: Some(value.to_string()),
             secret_reference: None,
+            additional: Default::default(),
+        }
+    }
+
+    fn secret_reference_entry(reference: &str) -> EnvironmentValue {
+        EnvironmentValue {
+            value: None,
+            secret_reference: Some(reference.to_string()),
             additional: Default::default(),
         }
     }
@@ -1756,24 +1792,204 @@ mod tests {
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 
-    #[test]
-    fn secret_reference_only_environment_entries_are_never_silently_treated_as_satisfied() {
-        // Structural: `EnvironmentValue{value: None, secret_reference: Some(_)}`
-        // is skipped (with a warning) in `start`, never substituted with an
-        // empty string that would look like an intentionally-blank value.
-        // Exercised directly against the match arm rather than a full spawn,
-        // since the effect (nothing inserted into `env`) is the same either
-        // way and this keeps the test process-free.
-        let value = EnvironmentValue {
-            value: None,
-            secret_reference: Some("vault://example/token".to_string()),
-            additional: Default::default(),
-        };
-        match (&value.value, &value.secret_reference) {
-            (Some(_), _) => panic!("this arm must not be taken for a secret_reference-only entry"),
-            (None, Some(reference)) => assert_eq!(reference, "vault://example/token"),
-            (None, None) => panic!("this arm must not be taken either"),
+    // -----------------------------------------------------------------
+    // secret_reference resolution: the value reaches the spawned process,
+    // never a log line; a reference the store cannot resolve fails typed
+    // and pre-spawn, before the adapter touches anything.
+    // -----------------------------------------------------------------
+
+    // A *scoped* subscriber (`tracing::dispatcher::set_default`, not
+    // `tracing_subscriber::fmt().init()`): this test file shares a test
+    // binary with `git.rs`, which installs its own *global* default for the
+    // same reason (see its identical comment) — a second global `.init()`
+    // here would panic ("a global default trace dispatcher has already been
+    // set"). A scoped dispatcher avoids that collision and is sufficient
+    // here because the callsite this test exercises
+    // (`harness::resolve_environment`'s resolved-reference log line) is
+    // reached by no other test in this crate, so nothing can have cached its
+    // interest as "never" before this test's guard is the active dispatcher
+    // for the first, and only, real evaluation. The guard is held for the
+    // whole test (a `#[tokio::test]` with no `flavor` runs single-threaded,
+    // so it stays valid across every `.await` in the test body).
+    thread_local! {
+        static SECRET_LOG_CAPTURE: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+
+    struct SecretLogCapture;
+
+    impl std::io::Write for SecretLogCapture {
+        fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+            SECRET_LOG_CAPTURE.with(|captured| captured.borrow_mut().extend_from_slice(buffer));
+            Ok(buffer.len())
         }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl tracing_subscriber::fmt::MakeWriter<'_> for SecretLogCapture {
+        type Writer = Self;
+
+        fn make_writer(&self) -> Self::Writer {
+            SecretLogCapture
+        }
+    }
+
+    #[must_use = "the capture is only active while this guard is alive"]
+    fn install_secret_log_capture() -> tracing::dispatcher::DefaultGuard {
+        SECRET_LOG_CAPTURE.with(|captured| captured.borrow_mut().clear());
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(SecretLogCapture)
+            .with_max_level(tracing::Level::DEBUG)
+            .with_ansi(false)
+            .finish();
+        tracing::dispatcher::set_default(&tracing::Dispatch::new(subscriber))
+    }
+
+    /// Acceptance: a live attempt with a `secret_reference` environment
+    /// entry reaches the spawned process with the resolved value set — the
+    /// shim here proves it by writing the value's *byte length* to a marker
+    /// file it controls, never the value itself. Captured `tracing` output
+    /// for the same run names the entry (positive control: asserted
+    /// present) and never contains the value.
+    #[tokio::test]
+    async fn secret_reference_resolves_and_only_its_length_reaches_the_shim() {
+        let _log_capture = install_secret_log_capture();
+        let workspace = temp_workspace("secret-reference-length");
+        let secret_value = "topsecret-canary-9f3a21";
+        let store = crate::secrets::SecretStore::file(std::env::temp_dir().join(format!(
+            "tack-runner-claude-code-secret-length-store-{}-{}.json",
+            std::process::id(),
+            NEXT_DIR.fetch_add(1, Ordering::SeqCst)
+        )));
+        store.set("demo", secret_value).expect("seed the store");
+
+        let marker = workspace.join("secret-length.marker");
+        let script = format!(
+            "#!/bin/sh\nprintf '%s' \"$SECRET_VAR\" | wc -c > {}\nexit 0\n",
+            marker.display()
+        );
+        let script_path = workspace.join("shim.sh");
+        std::fs::write(&script_path, script).expect("write shim script");
+        let binary = HarnessBinary {
+            program: PathBuf::from("/bin/sh"),
+            prefix_args: vec![script_path.display().to_string()],
+        };
+
+        let adapter = ClaudeCodeAdapter::with_binary(binary, clock(), store);
+        let mut environment = BTreeMap::new();
+        environment.insert("SECRET_VAR".to_string(), secret_reference_entry("demo"));
+        let spec = spec_with(
+            "claude-code",
+            None,
+            &[],
+            true,
+            environment,
+            workspace.clone(),
+        );
+
+        adapter
+            .validate(&spec)
+            .await
+            .expect("a resolvable secret_reference validates");
+        let handle = adapter.start(&spec).await.expect("start");
+        let outcome = adapter.wait(&handle).await.expect("wait");
+        assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+
+        let recorded = std::fs::read_to_string(&marker).expect("shim wrote the length marker");
+        let recorded_length: usize = recorded.trim().parse().expect("marker holds a byte count");
+        assert_eq!(
+            recorded_length,
+            secret_value.len(),
+            "the shim must have received the resolved value, not something else"
+        );
+
+        let captured = SECRET_LOG_CAPTURE
+            .with(|captured| String::from_utf8(captured.borrow().clone()))
+            .expect("utf-8");
+        assert!(
+            captured.contains("demo") || captured.contains("SECRET_VAR"),
+            "the test is only load-bearing if resolution actually logged the entry: {captured:?}"
+        );
+        assert!(
+            !captured.contains(secret_value),
+            "the resolved secret value reached a log line: {captured}"
+        );
+
+        std::fs::remove_dir_all(workspace).expect("cleanup");
+    }
+
+    /// Acceptance: a `secret_reference` the store cannot resolve fails at
+    /// `validate` with a typed reason naming only the reference, before the
+    /// adapter does anything else — proven here at the adapter boundary
+    /// (`validate` itself never touches a filesystem path outside checking
+    /// its own binary exists). The engine-level ordering constraint this
+    /// interacts with (workspace provisioning and the journal write both
+    /// already precede `HarnessAdapter::validate` in
+    /// `RunnerEngine::run_claimed`) is recorded in the handoff, not
+    /// re-litigated here.
+    #[tokio::test]
+    async fn validate_rejects_a_missing_secret_reference_typed_and_touches_nothing() {
+        let workspace = temp_workspace("secret-reference-missing");
+        std::fs::write(workspace.join("sentinel.txt"), b"before").expect("seed workspace");
+
+        let state_dir = std::env::temp_dir().join(format!(
+            "tack-runner-claude-code-secret-missing-state-{}-{}",
+            std::process::id(),
+            NEXT_DIR.fetch_add(1, Ordering::SeqCst)
+        ));
+        // Deliberately not created: a failed lookup must not bring the file
+        // fallback's directory into existence just by trying.
+        let store = crate::secrets::SecretStore::file(state_dir.join("secrets.json"));
+
+        let adapter = adapter_with_fake_binary_and_secrets(store);
+        let mut environment = BTreeMap::new();
+        environment.insert(
+            "SECRET_VAR".to_string(),
+            secret_reference_entry("does-not-exist"),
+        );
+        let spec = spec_with(
+            "claude-code",
+            None,
+            &[],
+            true,
+            environment,
+            workspace.clone(),
+        );
+
+        let error = adapter
+            .validate(&spec)
+            .await
+            .expect_err("a missing secret_reference must fail pre-spawn");
+        assert!(
+            matches!(
+                &error,
+                HarnessError::Rejected { reason }
+                    if reason.starts_with("secret_reference_unresolved:")
+                        && reason.contains("does-not-exist")
+            ),
+            "unexpected error: {error:?}"
+        );
+
+        assert!(
+            !state_dir.exists(),
+            "a rejected validate must not create the secret store's state directory"
+        );
+        assert_eq!(
+            std::fs::read_to_string(workspace.join("sentinel.txt")).expect("sentinel survives"),
+            "before",
+            "a rejected validate must not modify the workspace it was given"
+        );
+        assert_eq!(
+            std::fs::read_dir(&workspace)
+                .expect("read workspace")
+                .count(),
+            1,
+            "a rejected validate must not add files to the workspace it was given"
+        );
+
+        std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 
     /// Direct regression guards for both capability corrections
@@ -2202,7 +2418,7 @@ mod tests {
             );
             return;
         }
-        let Ok(adapter) = ClaudeCodeAdapter::discover() else {
+        let Ok(adapter) = ClaudeCodeAdapter::discover(test_secret_store()) else {
             eprintln!("skipping live claude-code test: no `claude` binary discoverable on PATH");
             return;
         };

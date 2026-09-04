@@ -11,6 +11,7 @@ use tack_cli::vocab;
 mod doctor;
 mod local_enrollment;
 mod local_runner;
+mod secret;
 
 // ─── CLI structure ────────────────────────────────────────────────────────────
 
@@ -730,6 +731,45 @@ enum RunnerAction {
         #[arg(long)]
         json: bool,
     },
+    /// Manage this machine's runner-local secret store — the provider keys
+    /// a harness's environment can reference via `secret_reference` without
+    /// ever putting them in a request body, a log line, or the board's own
+    /// database.
+    Secret {
+        #[command(subcommand)]
+        action: SecretAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum SecretAction {
+    /// Store a secret under `name` (e.g. `vercel-ai-gateway/default`). The
+    /// value is read from TACK_RUNNER_SECRET_VALUE or, if unset, from
+    /// stdin — never from argv.
+    Set {
+        /// Entry name
+        name: String,
+        /// Local directory for runner state. Overrides file and environment configuration.
+        #[arg(long)]
+        state_dir: Option<std::path::PathBuf>,
+    },
+    /// List the entry names held in the store. Never prints a value.
+    List {
+        /// Local directory for runner state. Overrides file and environment configuration.
+        #[arg(long)]
+        state_dir: Option<std::path::PathBuf>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove a secret. Not an error if it was already absent.
+    Remove {
+        /// Entry name
+        name: String,
+        /// Local directory for runner state. Overrides file and environment configuration.
+        #[arg(long)]
+        state_dir: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -828,6 +868,11 @@ fn main() -> anyhow::Result<()> {
             action: RunnerAction::Doctor { json },
         } => {
             return doctor::run(json);
+        }
+        Commands::Runner {
+            action: RunnerAction::Secret { action },
+        } => {
+            return secret::run(action);
         }
         Commands::Config { url, token, show } => {
             return cmd_config(
@@ -1077,6 +1122,7 @@ fn main() -> anyhow::Result<()> {
             // Already handled above; unreachable but required for exhaustiveness.
             RunnerAction::Start { .. } => unreachable!(),
             RunnerAction::Doctor { .. } => unreachable!(),
+            RunnerAction::Secret { .. } => unreachable!(),
         },
 
         Commands::AgentProfile { action } => match action {
