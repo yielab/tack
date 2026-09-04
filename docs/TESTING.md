@@ -372,7 +372,7 @@ model shows up first. See [`tests/load/README.md`](../tests/load/README.md).
 | Job | Gate |
 | --- | --- |
 | `rust` | fmt + clippy + `cargo test --workspace` |
-| `msrv` | build on the documented MSRV (Rust 1.85, the edition-2024 floor) |
+| `msrv` | build on the documented MSRV (Rust 1.89, the dependency floor; edition 2024 alone needs only 1.85) |
 | `coverage` | `cargo-llvm-cov` line floors (core ≥85%, db/api ≥70%) + Vitest coverage thresholds |
 | `deny` | `cargo-deny` license allow-list + duplicate-dependency (multiple-versions) check |
 | `frontend` | type-check + token lint + build + bundle-size budget |
