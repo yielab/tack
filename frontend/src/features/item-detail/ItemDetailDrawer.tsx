@@ -1,4 +1,4 @@
-import { type Component, createResource, createSignal, createMemo, createEffect, onCleanup, Show } from 'solid-js';
+import { type Component, createResource, createSignal, createMemo, createEffect, onCleanup, untrack, Show } from 'solid-js';
 import { useSearchParams } from '@solidjs/router';
 import Drawer from '../../shared/ui/Drawer';
 import Tabs, { type TabItem } from '../../shared/ui/Tabs';
@@ -45,6 +45,15 @@ const BASE_TABS: TabItem[] = [
  * item, and exposes inline header editing + a tab bar. Built on the kit Drawer
  * (ESC + focus return).
  */
+/** Every tab id this drawer can land on directly, including the dynamic
+ *  "Agent Activity" tab `tabs()` below only adds once activity exists —
+ *  `?tab=` is honored regardless of whether that tab is showing yet. */
+const DEEP_LINKABLE_TAB_IDS = new Set([...BASE_TABS.map((t) => t.id), 'agent']);
+
+function tabFromSearchParam(value: string | string[] | undefined): string {
+  return typeof value === 'string' && DEEP_LINKABLE_TAB_IDS.has(value) ? value : 'details';
+}
+
 const ItemDetailDrawer: Component = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const itemId = () => (searchParams.item as string | undefined) || undefined;
@@ -54,7 +63,30 @@ const ItemDetailDrawer: Component = () => {
     (id) => (id ? api.items.get(id) : null),
   );
 
-  const [activeTab, setActiveTab] = createSignal('details');
+  // Defaults to `details`, but a `?tab=` alongside `?item=` (the attempt-state
+  // chip on a Board card, or `onCreated` switching this same drawer to
+  // `execution` after a fresh run) opens straight to that tab instead.
+  //
+  // Tracks `itemId()` only, the same one-shot-per-open pattern the dispatch
+  // reset effect below already uses — NOT `searchParams.tab` itself, and the
+  // param is read `untrack`ed and immediately cleared once applied. Every
+  // other "open an item" call site across the app (Timeline, Calendar,
+  // List, `Board.tsx`'s own card-body click, `DependenciesTab`) calls
+  // `setSearchParams({ item: id })` with no `tab` key, and `setSearchParams`
+  // merges rather than replaces — so without the clear, a `tab=execution`
+  // left over from one chip click would silently redirect every
+  // subsequently opened item to the Execution tab. The one known gap this
+  // leaves: re-clicking the chip for the item ALREADY open (itemId
+  // unchanged) does not re-apply the tab — a narrower, and much less
+  // surprising, edge case than the leak this avoids.
+  const [activeTab, setActiveTab] = createSignal(tabFromSearchParam(untrack(() => searchParams.tab)));
+  createEffect(() => {
+    const id = itemId();
+    if (!id) return;
+    const requestedTab = untrack(() => searchParams.tab);
+    setActiveTab(tabFromSearchParam(requestedTab));
+    if (requestedTab !== undefined) setSearchParams({ tab: undefined }, { replace: true });
+  });
 
   // Agent activity is fetched once here — not inside `AgentActivityTab`, unlike
   // every other tab — because the drawer needs to know whether the item HAS
@@ -210,6 +242,7 @@ const ItemDetailDrawer: Component = () => {
               <RunWithAgentButton
                 itemId={it().id}
                 itemTitle={it().title}
+                projectId={it().project_id}
                 onCreated={() => setActiveTab('execution')}
               />
             </div>
