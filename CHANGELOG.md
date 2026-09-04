@@ -9,13 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A project can name its own default agent model.** Model choice gains a project tier
+  between the agent profile and the fleet default, edited from the Agents panel in project
+  settings; a run that takes the value reports `project` as its provenance.
+- **The runner resolves secret references.** A claim's environment entry can carry a
+  `secret_reference`, which the runner now resolves from the OS keychain, or from an
+  owner-only file where no keychain answers. Managed with `tack runner secret
+  set|list|remove`; `tack runner doctor` names the backend that answered. Previously every
+  harness adapter dropped the reference with a warning, so a run looked healthy while the
+  key never arrived.
+- **`tack service install|uninstall|status`** registers the board as a per-user background
+  service — systemd user units, launchd, or a Windows scheduled task — so work outlives the
+  window that started it. No root on any platform.
+- **An attempt's artifacts and decisions are listable**: `GET
+  /api/executions/{request_id}/attempts/{attempt_number}/artifacts` and `.../decisions`,
+  operator-gated and read-only. The decision inbox and artifact panel fetch these instead of
+  asking for an id you would have to know already.
+- **`tack-desktop`**, a Tauri shell that owns a window and a desktop icon and supervises
+  `tack` as a bundled sidecar — attaching to a server that already answers, starting one
+  only when none does. Built with `make desktop`.
+
 ### Changed
 
 - **Minimum supported Rust version is now 1.89** (was 1.85). Edition 2024 still only needs
   1.85, but the dependency graph does not: `object_store` pulls `crc-fast` (1.89),
-  `tracing-appender` pulls `time` (1.88), and the `idna`/`icu` stack needs 1.86. CI's MSRV
-  job had been failing on `develop` for this reason before any of it was noticed; `cargo
-  +1.89.0 build --workspace --locked` is clean.
+  `tracing-appender` pulls `time` (1.88), and the `idna`/`icu` stack needs 1.86.
+  `cargo +1.89.0 build --workspace --locked` is clean.
+
+### Fixed
+
+- **CI's MSRV job now builds on the version it pins.** `rust-toolchain.toml` selects
+  `stable`, and rustup ranks a toolchain file above the default that the setup action sets,
+  so the job had been building on stable since it was created — a green check that verified
+  nothing about the floor, which is how the dependency graph drifted three minor versions
+  past the documented MSRV unnoticed.
 
 ### Removed
 

@@ -213,3 +213,18 @@ the invoking shell.
 ## Amendments
 
 *(Appended by later readers, dated. The original text above is never rewritten.)*
+
+### 2026-09-04 — Wave 18 integrator: what stayed unproven
+
+Recorded so the next reader does not mistake the byte-pin tests for platform coverage:
+
+- The launchd path is byte-pin tested and has never been executed. No macOS machine
+  was available. `launchctl bootstrap gui/$UID` and the plist's behaviour on a real
+  session are unverified; the Windows path likewise.
+- "`uninstall` leaves data alone" is proven by a live run — data root file count 5
+  before and after — but not by an automated test, because `uninstall_systemd()`
+  shells out to the real `systemctl`. A regression here would pass CI silently.
+
+Neither blocks the merge. The first needs hardware; the second needs the systemd call
+behind a seam a test can substitute, which is a small refactor a later Part VII card
+can take.
