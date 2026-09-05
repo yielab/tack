@@ -19,7 +19,7 @@ accepted by the user before Wave 15 opens. The story every doc reuses is §VI.0'
 | Wave | Cards | Parallel? | Needs | Base SHA |
 |---|---|---|---|---|
 | 14 | VI-A1 · VI-A2 · VI-A3 | all three | nothing | `8152df7` — dispatched 2026-09-03 |
-| 15 | VI-B1 → VI-B2 → VI-B3 | **no** — sequential | ADR 0061 accepted (2026-09-03, `VI-A2.md` amendments) | **B2 branches from the 2026-09-04 integration tip — pin it with `git rev-parse --short develop`, do not reuse a SHA from this row.** B1 was dispatched 2026-09-03 from `2958e9e`; — the 2026-09-03 planning commit; branch from the `develop` tip. Decision 1 refined 2026-09-03 (keychain first, file fallback) — B1's block below already matches |
+| 15 | VI-B1 → VI-B2 → (VI-B3 ∥ VI-B4) → VI-B5 | **partly** — B3 and B4 are parallel, everything else sequential | ADR 0061 accepted (2026-09-03, `VI-A2.md` amendments) | **B2 branches from the 2026-09-04 integration tip — pin it with `git rev-parse --short develop`, do not reuse a SHA from this row.** B1 was dispatched 2026-09-03 from `2958e9e`; — the 2026-09-03 planning commit; branch from the `develop` tip. Decision 1 refined 2026-09-03 (keychain first, file fallback) — B1's block below already matches |
 | 16 | VI-C3 · VI-C4 first; then VI-C1; then VI-C2 | C3 ∥ C4 (may start during Wave 15); C1 after B2+B3; C2 after C3 | see each block | **C2, C3 and C4 integrated 2026-09-04.** C1 is the only one left and still needs B2 + B3; it branches from the Wave 15 integration SHA |
 | 17 | VI-D2 → VI-D1 | no | D2: C1, C2 and Part V's V-C2 landed; D1: everything | Wave 16 integration SHA |
 
@@ -369,6 +369,46 @@ the `stat`); the non-loopback 404 proof (the test name); the persisted-flag roun
 **Stop if:** the runner cannot be started after `serve` is up without a second code path
 into the runtime. Escalate with the exact seam; do not call runner handlers directly (the
 Part IV mistake this directory's sibling README warns about applies here unchanged).
+
+---
+
+### VI-B4 — A provider is a module, and a second module proves it (parallel with B3)
+
+**Branch:** `agent/vi-b4-provider-trait` from the `develop` tip you are given.
+
+**Read (≈ 16k):**
+- The board prelude (~7k) and the VI-B4 card.
+- ADR 0063 — the decision table (`sed -n '23,58p' docs/adr/0063-harness-credential-modes.md`)
+  and the amendment of 2026-09-05 at the bottom (`sed -n '/^## Amendment — 2026-09-05: accepted/,$p'`).
+  Decisions 4 and 5 are the card; read no other ADR.
+- `crates/tack-runner/src/provider.rs` whole (399 l, ~5k) — the file you restructure. It is
+  the only file you must read whole.
+- Its callers, by grep, not by opening the files: `rg -n "attach_catalog|resolve_endpoint|CatalogStatus|Wire::" crates/ --include='*.rs'`.
+  Then read only the ranges that grep names.
+- `rg -n "VERCEL_AI_GATEWAY|ProviderConfig" -B2 -A8 crates/tack-runner/src/config.rs`.
+- The catalog half of doctor: `rg -n "provider|catalog" -B2 -A10 crates/tack-cli/src/doctor.rs | head -60`.
+- Anthropic's current model-list documentation, fetched — not the card's paragraph about it.
+
+**Do not read:** any harness adapter whole (`codex.rs` and `claude_code.rs` are 1,761 and
+2,300 lines); `bootstrap.rs` beyond the ranges the grep names; `docs/openapi.json`; any
+handoff except `VI-B2.md`'s measured vendor table
+(`grep -n -A 12 -i "measured vendor" docs/agent-handoffs/part-vi/VI-B2.md`).
+
+**Gate:** `CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/VI-B4 cargo nextest run --workspace`
+— the whole workspace, because this card's core claim is that nothing outside the provider
+modules changed. Plus `cargo clippy --workspace --all-targets -- -D warnings`,
+`./scripts/check-comments.sh`, `./scripts/check-test-hygiene.sh`, and the vendor-string grep
+your own gate adds.
+
+**Handoff extras:** the `git diff --stat` for the Anthropic module alone (the card's central
+proof); the vendor-string grep with its command and its zero; the byte-identical
+`runner_contract` result; the live gateway transcript; the two catalog bodies you parsed,
+with any field one publishes and the other does not.
+
+**Stop if:** the common shape needs a field one provider cannot express — record both bodies
+and hand the shape to VI-B5, do not invent a union type. Do not touch
+`docs/contracts/runner-v1/**` or `crates/tack-orch/src/execution.rs` for any reason: your own
+acceptance requires them byte-identical.
 
 ---
 

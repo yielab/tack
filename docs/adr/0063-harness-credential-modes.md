@@ -39,7 +39,9 @@ of these calls; nothing above depends on anything below it.
 
 ---
 
-- **Status:** proposed
+- **Status:** accepted 2026-09-05 — the user approved the two credential modes and
+  directed the provider-as-a-module shape that replaced decision 4. Recorded in the
+  amendment of that date at the bottom of this file.
 - **Date:** 2026-09-04
 - **Relationship to earlier ADRs:** refines ADR 0061
   (`0061-provider-credentials-at-the-runner-boundary.md`), which established that a runner
@@ -197,3 +199,24 @@ the wire for a price, a context window or a modality, and `additional` must not 
 this — a contract change smuggled through the escape hatch is a contract change nobody
 reviewed. Decision 5 needs a named field on the wire type and a revision of the byte-pinned
 fixtures in `docs/contracts/runner-v1/`. Decisions 1–4 and 6–8 need no contract change.
+
+## Amendment — 2026-09-05: accepted
+
+The user accepted this ADR on 2026-09-05, having first rejected the decision 4 it was
+written with. Two things were made explicit in accepting it, and neither was in the
+original text:
+
+**The two modes were never in question.** Subscription login (a harness that logs in by
+itself — Codex, Claude) and API key plus endpoint are different mechanisms, and the endpoint
+in the second may be a vendor's own API (Anthropic, OpenAI) or a gateway (Vercel AI Gateway,
+OpenRouter) without that being a third mode. Presenting this as an open choice was a
+misreading; it was a directive.
+
+**The abstraction is the deliverable.** Providers that use an endpoint and a key must be
+modular and scalable, so that adding one later is simple. Each provider's module must
+understand its own provider's endpoints and get what is needed from them: which models
+exist, what they cost, what their limits are, and whatever else that provider publishes.
+"Simple" is the requirement. "Without writing code" was not, and is not achievable, because
+providers do not follow one exact standard.
+
+Wave 15 gains VI-B4, which builds the trait and proves it with a second provider module.

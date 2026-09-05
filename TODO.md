@@ -10,8 +10,8 @@
 
 | Part | Cycle | Phases | Status | Where |
 |---|---|---|---|---|
-| **VII** | **Desktop app & background service** | 61 | **ACTIVE** — ADR 0062 accepted 2026-09-03; **Waves 18 and 19 integrated 2026-09-04** (VII-A2, VII-B1, VII-B2, VII-B3). Wave 20 (VII-C1) next | [§VII](#part-vii--desktop-app--background-service-phase-61), top of this file |
-| **VI** | **Agent Onboarding & Provider UX** | 60 | **ACTIVE** — Wave 14 integrated at `927f850`; ADR 0061 accepted 2026-09-03 (decision 1 refined the same day: keychain first, file fallback); **VI-B1, VI-B2, VI-C2, VI-C3 and VI-C4 integrated 2026-09-04**. VI-B3 next. **ADR 0063 is proposed** — it splits harness credentialing into two modes, makes an endpoint configuration rather than code, and removes opencode; VI-B3 should not branch until it is accepted or rejected | [§VI](#part-vi--agent-onboarding--provider-ux-phase-60), top of this file |
+| **VII** | **Desktop app & background service** | 61 | **ACTIVE** — ADR 0062 accepted 2026-09-03; **Waves 18 and 19 integrated 2026-09-04** (VII-A2, VII-B1, VII-B2, VII-B3). **VII-C1 dispatched 2026-09-05** alongside Part VI's VI-B3 and VI-B4; it shares no file with either | [§VII](#part-vii--desktop-app--background-service-phase-61), top of this file |
+| **VI** | **Agent Onboarding & Provider UX** | 60 | **ACTIVE** — Wave 14 integrated at `927f850`; ADR 0061 accepted 2026-09-03 (decision 1 refined the same day: keychain first, file fallback); **VI-B1, VI-B2, VI-C2, VI-C3 and VI-C4 integrated 2026-09-04**. **ADR 0063 accepted 2026-09-05** — two credential modes, and a provider in the key+endpoint mode is a module behind a trait (its decision 4 was rewritten before acceptance; the "an endpoint is configuration, never code" version was the ADR author's invention and was rejected). That unblocked VI-B3 and added VI-B4/VI-B5. **Wave 15b dispatched 2026-09-05: VI-B3 ∥ VI-B4** | [§VI](#part-vi--agent-onboarding--provider-ux-phase-60), top of this file |
 | **V** | **Adoption & First Public Release** | 59 | **ACTIVE** — Waves 11–12 done, Wave 13 in flight (V-C2 unblocked, V-C3 waiting on it) | [§V](#part-v--adoption--first-public-release-phase-59) |
 | **IV** | **Standalone Single-Binary Operation** | 58 | Done — Wave 10 integrated at `83fefab` | [§IV](#part-iv--standalone-single-binary-operation-phase-58) |
 | III | Harness-Agnostic Runner Fleet | 50–57 | Feature-complete, **tag refused** | [§III](#part-iii--harness-agnostic-runner-fleet-phases-5057), archive |
@@ -474,7 +474,7 @@ i18n, time tracking and in-UI diff review stay deferred — see §VI.5.
 | Wave | Cards | Phase | Status |
 |---|---|---|---|
 | 14 — Truth first | VI-A1 · VI-A2 · VI-A3 | 60 | **Integrated** at `927f850` on `develop` (handoffs: `docs/agent-handoffs/part-vi/VI-A1.md`, `VI-A2.md`, `VI-A3.md`). All three adversarially verified against the real tree, not just their own reports — A1's live worked example re-checked, A3's stranger-read test and render proofs opened, A2's ADR cited by line against 0050/0058. `mdbook build` clean; the only `docs/CONFIG.md` conflict (A1's new bullet vs. A2's rewritten paragraph, both anticipated it) resolved keeping both contributions. **ADR 0061 is `Status: proposed` — Wave 15 (VI-B1/B2/B3) does not branch until the user records acceptance with a date in `VI-A2.md`.** One non-blocking finding routed to VI-D1: `docs/book/src/roadmap.md:3273` wants a forward reference to ADR 0061 once accepted (not fixed here — outside every Wave-14 card's ownership). |
-| 15 — Provider at the runner boundary | VI-B1 · VI-B2 · VI-B3 | 60 | **VI-B1 and VI-B2 integrated 2026-09-04** (handoffs `docs/agent-handoffs/part-vi/VI-B1.md`, `VI-B2.md`); B3 next. **opencode was removed from the tree the same day** (ADR 0063 decision 8, handoff `docs/agent-handoffs/part-vi/opencode-removal.md`) — Tack ships adapters for two harnesses and is not limited to two: an unknown harness name still parses and is refused at claim with the same typed reason any undeclared one gets. **VI-B2 landed narrower and better-shaped than its card:** opencode's gateway path was measured working but deliberately not built, because it is the only harness that could not be credentialed by per-spawn injection — it needed a written config file. The provider machinery carries no vendor name: a second endpoint (LiteLLM, OpenRouter, or a vendor's own API) is three data rows in `crates/tack-runner/src/provider.rs` and no code path. Two card errors corrected by measurement: the default secret name had to be `vercel-ai-gateway/default`, since `SecretStore::resolve` never appends the label, and the card's vendor URL for codex 404s. **Escalated, unresolved:** the catalog publishes per-model pricing, context windows and modalities, and `ModelCombination` has nowhere to put them — a reviewed wire field, not the `additional` map. ADR 0063 decision 5 records it. ADR 0061 accepted by the user on 2026-09-03 (recorded in `docs/agent-handoffs/part-vi/VI-A2.md`, amendments). Sequential B1 → B2 → B3; base `2958e9e`. Decision 1 of ADR 0061 was refined on 2026-09-03 before acceptance (platform keychain first, owner-only file where none answers, backend reported); VI-B1's card and dispatch block already match. |
+| 15 — Provider at the runner boundary | VI-B1 · VI-B2 · VI-B3 | 60 | **VI-B1 and VI-B2 integrated 2026-09-04** (handoffs `docs/agent-handoffs/part-vi/VI-B1.md`, `VI-B2.md`). **VI-B3 and VI-B4 dispatched in parallel 2026-09-05**; VI-B5 follows B4 alone, because it changes the contract B4's acceptance holds byte-identical. **opencode was removed from the tree the same day** (ADR 0063 decision 8, handoff `docs/agent-handoffs/part-vi/opencode-removal.md`) — Tack ships adapters for two harnesses and is not limited to two: an unknown harness name still parses and is refused at claim with the same typed reason any undeclared one gets. **VI-B2 landed narrower and better-shaped than its card:** opencode's gateway path was measured working but deliberately not built, because it is the only harness that could not be credentialed by per-spawn injection — it needed a written config file. That card also claimed the provider machinery carries no vendor name and that a second endpoint is three data rows and no code path. **Measured 2026-09-05, it is not:** `attach_catalog` looks up the Vercel config key by name rather than walking the configured providers, and the three rows only suffice for a provider whose catalog is a bearer-authenticated `data[].id` list. VI-B4 makes the claim true. Two card errors corrected by measurement: the default secret name had to be `vercel-ai-gateway/default`, since `SecretStore::resolve` never appends the label, and the card's vendor URL for codex 404s. **Escalated, now carded:** the catalog publishes per-model pricing, context windows and modalities, and `ModelCombination` has nowhere to put them — a reviewed wire field, not the `additional` map. ADR 0063 decision 5 records it; **VI-B5 owns it**. ADR 0061 accepted by the user on 2026-09-03 (recorded in `docs/agent-handoffs/part-vi/VI-A2.md`, amendments). Sequential B1 → B2 → B3; base `2958e9e`. Decision 1 of ADR 0061 was refined on 2026-09-03 before acceptance (platform keychain first, owner-only file where none answers, backend reported); VI-B1's card and dispatch block already match. |
 | 16 — UI-first flow | VI-C1 · VI-C2 · VI-C3 · VI-C4 | 60 | **VI-C2, VI-C3 and VI-C4 integrated 2026-09-04** (handoffs `docs/agent-handoffs/part-vi/VI-C2.md`, `VI-C3.md`, `VI-C4.md`). C2 merged with no conflict — it is frontend-only and shared no file with the desktop cards it integrated alongside. C1 still needs B2 + B3. VI-C4's two routes ship with no handler test in `tack-api` — the next Wave 16 card touching that crate owns adding them (see its amendment). |
 | 17 — Proof | VI-D1 · VI-D2 | 60 | Not started — last wave. D2 (assets) needs C1, C2 and Part V's V-C2, which owns `docs/screenshots/`; D1 goes last and needs everything |
 
@@ -672,13 +672,15 @@ estimate). Seven rules are specific to this Part:
 | `docs/adr/0061-*.md`, the one provider-credentials bullet in `docs/CONFIG.md` | VI-A2 only |
 | `crates/tack-runner/src/secrets.rs` (new), the store path in `crates/tack-runner/src/config.rs`, the `secret_reference` branch of each adapter, `tack runner secret …` in `crates/tack-cli/src/main.rs` (one subcommand arm + one module) | VI-B1 |
 | The `[provider.*]` section of `RunnerConfig`, each adapter's spawn environment/args, `bootstrap::probe`, `crates/tack-cli/src/doctor.rs`, the gateway rows of `docs/CONFIG.md` | VI-B2 — **after B1 merges**. Exception recorded 2026-09-03: the refined ADR 0061 decision 1 requires `tack runner doctor` to report which store backend is in effect, so **VI-B1 owns that one `doctor.rs` line** and the store's wiring in `bootstrap.rs`. B2 owns everything else in both files and must not revert it |
+| `crates/tack-runner/src/provider.rs` and the module tree replacing it, the catalog half of `crates/tack-cli/src/doctor.rs`, the registry | VI-B4 — **after B2 merges**. Disjoint from VI-B3 and may run alongside it. B4 must not touch the wire type or the fixtures; that is B5's, and B4's own acceptance depends on them staying byte-identical |
+| The per-model field on `ModelCombination`, `docs/contracts/runner-v1/**`, the pin table in `crates/tack-orch/tests/runner_contract.rs` | VI-B5 — **after B4 merges**, and the only card that may change the wire contract in this Part |
 | `crates/tack-api/src/handlers/local_runner.rs` (new), its mounts in `router.rs` (those only), the control handle in `crates/tack-cli/src/local_runner.rs`, the persisted on/off flag, `frontend/src/features/agents/{ExecutionToggle,ProviderKeyPanel}.tsx` + their client and tests | VI-B3 |
 | `frontend/src/features/agents/**` except B3's two panels, `frontend/src/app/routes.tsx`, the nav entry, the *Advanced* section re-mounting `RunnerFleetSection`, the one mounting line in `features/fleet/FleetPage.tsx`, the first-run banner on the Board | VI-C1 |
 | `frontend/src/shared/runWithAgent/**`, the attempt-state chip on Board cards | VI-C2 |
 | `migrations.rs` (**062 only**), `crates/tack-core` project model, `crates/tack-db/src/repo/` project reads/writes, the project handlers, `crates/tack-orch/src/model_policy/wiring.rs` project tier, `frontend/src/features/settings/**` Agents tab, `frontend/src/features/fleet/runnerFleet/{AgentProfilesPanel,FleetsPanel}.tsx` | VI-C3 |
 | The two attempt list handlers, their mounts in `router.rs` (those two only), `DecisionInbox.tsx`, `ArtifactDownloadPanel.tsx`, `frontend/src/features/item-detail/tabs/AgentActivityTab.tsx` | VI-C4 |
 | `docs/openapi.json`, `frontend/src/shared/api/schema.gen.ts` | **generated** — regenerated by whichever of B3 / C3 / C4 lands; the integrator re-runs `UPDATE_OPENAPI=1 … openapi_contract` and `npm run gen:api` after each merge. Never hand-edited |
-| `docs/contracts/runner-v1/**`, `crates/tack-orch/tests/runner_contract.rs` | **nobody by default.** VI-B2 escalates with evidence if a capability field is genuinely needed. Smuggling one through `additional` to dodge the pin is forbidden — that is a contract change without a review |
+| `docs/contracts/runner-v1/**`, `crates/tack-orch/tests/runner_contract.rs` | **VI-B5, and nobody else.** VI-B2 escalated the field and VI-B5 carries it; every other card holds these files byte-identical and escalates with evidence instead. Smuggling one through `additional` to dodge the pin is forbidden — that is a contract change without a review |
 | `scripts/smoke.sh`, the amendments to every page VI-A1 wrote, the final pass on `docs/CONFIG.md`, the one "Run it" sentence in `README.md` that names the Agents page (and the final README merge), `CHANGELOG.md` `[Unreleased]` | VI-D1 |
 | `README.md` (whole-file restructure), `docs/book/src/introduction.md`, the opening paragraph of `docs/book/src/developer/README.md`, `docs/diagrams/**` (new), the first sentence of `CLAUDE.md`'s overview | VI-A3 — **`README.md` collides with Part V's V-C3; see §VI.3** |
 | `docs/screenshots/hero.gif`, `agents.png`, `attempt.png`, `two-machines.png`, and the README image markup for them | VI-D2 — **`docs/screenshots/**` is V-C2's until it lands; see §VI.3** |
@@ -692,7 +694,8 @@ estimate). Seven rules are specific to this Part:
 VI-A1 (docs: the path, the truth) ─────────────────────────────────────────────┐
 VI-A3 (README + introduction + diagram) ───────────────────────────────────────┤
                                                                                │
-VI-A2 (ADR 0061) ──┬── VI-B1 (secret store) ── VI-B2 (Vercel AI Gateway) ──┐   │
+VI-A2 (ADR 0061) ──┬── VI-B1 (secret store) ── VI-B2 (Vercel AI Gateway) ──┬── VI-B4 (provider trait) ── VI-B5 (catalog on the wire)
+                   │                                                      │   │
                    │                        └── VI-B3 (embedded: on/off, key) ──┼── VI-C1 (Agents page) ──┐
                    │                                                             │                          │
                    ├── VI-C3 (project agent settings) ── VI-C2 (modal) ──────────┴──────────────────────────┼── VI-D1 (proof + docs)
@@ -712,6 +715,10 @@ encode a guess.
 **Wave 15 is sequential.** B1 first (the store). B2 needs the store to read the key. B3 needs
 the store to write it and is opaque to what the key is for, but merges after B2 so its
 "catalog appears after save" observation has something to observe.
+
+**B4 and B5 extend Wave 15, and only B4 is parallel.** B4 (the provider trait, ADR 0063
+decision 4) needs B2 and shares no file with B3, so the two run together. B5 changes the wire
+contract B4's acceptance pins byte-identical, so it cannot run beside B4 — it follows it.
 
 **Wave 16 has two independent starts.** C3 and C4 need only the ADR's vocabulary and can run
 alongside Wave 15 — they are the widest diffs on the board and should start early. C1 waits
@@ -1108,6 +1115,93 @@ value at mode `600`. Request bodies never reach a log line (capture, with the na
 asserted present). Playwright: toggle on → paste → save → catalog count rendered → the key
 never appears in the DOM. The re-probe is proven by the catalog count changing in the same
 test, with no restart.
+
+---
+
+### VI-B4 — A provider is a module, and a second module proves it
+
+**Needs VI-B2 merged.** Independent of VI-B3 — disjoint files, may run alongside it.
+Implements ADR 0063 decisions 4 and 5 (accepted 2026-09-05).
+
+**Owns:** `crates/tack-runner/src/provider.rs` and whatever module tree replaces it, the
+provider block of `crates/tack-cli/src/doctor.rs` **only where it prints the catalog**, the
+`[provider.*]` config shape where the registry requires it, and the VI-B4 handoff.
+**Escalates, does not edit,** `docs/contracts/runner-v1/**`, `crates/tack-orch/src/execution.rs`
+and any frontend file.
+
+**Context — what is actually there today, measured.** `provider.rs` is 399 lines and holds
+the whole mechanism as `match` arms: `known_endpoint(provider, wire)` returns a static row,
+`catalog_url(provider)` returns a static URL, and `attach_catalog` does not consult either —
+it looks up `VERCEL_AI_GATEWAY_CONFIG_KEY` by name and asks that one provider. So the claim
+that a second endpoint is "three data rows and no code path" holds only for a provider whose
+catalog is a `{"data":[{"id":…}]}` list behind a bearer header, and only for a provider the
+config happens to be keyed under. Anthropic's own API is neither: its catalog is
+`GET /v1/models` with `x-api-key` and `anthropic-version` headers, not `Authorization:
+Bearer`. That difference is the whole reason this card exists.
+
+`fetch_catalog_ids` also discards everything the catalog publishes except the id — the
+prices, context windows and modalities that ADR 0063 decision 5 calls the point of asking.
+
+**Tasks:**
+- A `Provider` trait, one implementation per provider, and a registry the machinery walks.
+  A provider knows its own config key, its endpoint per `Wire`, its catalog request
+  (URL, headers, auth placement) and how to parse its own catalog body into one common
+  shape. **No vendor name may appear outside a provider module** — assert it: a grep for
+  each vendor string over the non-module files is part of the gate, and the current
+  `attach_catalog` fails it today.
+- The common shape: model id, plus what the provider publishes and typed as absent when it
+  does not. Unmeasured is nullable — a provider that publishes no price yields `None`, never
+  a zero. This is decision 5's shape; **it stops at the runner's own surface in this card**
+  (`doctor --json`), because carrying it to the board is a wire change VI-B5 owns.
+- `attach_catalog` walks the enabled entries of `RunnerConfig::providers` and asks each
+  registered provider for its own catalog, instead of naming one. `CatalogStatus` becomes
+  per-provider; a provider whose secret does not resolve must not suppress another's
+  catalog.
+- **A second real provider module: Anthropic's own API** (`api.anthropic.com`,
+  `x-api-key`, `anthropic-version`). Fetch the vendor's current docs; do not trust this
+  paragraph's header names without checking them. It is in scope precisely because its auth
+  header and catalog shape differ from Vercel's — a trait with one implementation proves
+  nothing.
+- `doctor` prints one block per configured provider, with the model count, the timestamp and
+  the price/limit fields where the provider published them and `Not measured` where it did
+  not. Keys are never printed, by any path.
+
+**Acceptance:** the Vercel path is unchanged in observable behaviour — the four existing
+`provider.rs` tests pass untouched, `runner_contract` is byte-identical, and a live gateway
+attempt still completes (transcript in the handoff). Adding the Anthropic module touched no
+file outside its own module and one registry line, stated as a `git diff --stat` in the
+handoff — that stat **is** the card's proof, so if it is not true, say so rather than
+reshaping the diff. A vendor-string grep over the non-module files returns nothing, proven
+load-bearing by putting `vercel` back into `attach_catalog` once. A provider configured with
+an unresolvable secret yields its own typed status and the other provider's catalog still
+arrives, in one test. `tack runner doctor --json` byte-matches the live capability snapshot
+as IV-A5 established.
+
+**Stop if:** the common catalog shape cannot be filled from Vercel's and Anthropic's bodies
+without one of them needing a field the other cannot express. Record both bodies and the
+field, and hand the shape to VI-B5 rather than inventing a union type.
+
+---
+
+### VI-B5 — The catalog reaches the board: price, context window and modality on the wire
+
+**Needs VI-B4 merged.** Not dispatched with it: it changes the frozen wire contract that
+B4's acceptance holds byte-identical, and the two cannot both be true at once.
+
+**Owns:** the per-model field on `ModelCombination` in `crates/tack-orch/src/execution.rs`,
+`docs/contracts/runner-v1/**` and the pin table in `crates/tack-orch/tests/runner_contract.rs`,
+the runner side that fills it, and the VI-B5 handoff.
+
+**Context.** VI-B2 escalated this and it is still open: the catalog publishes per-model
+pricing, context windows and modalities, and `ModelCombination` carries a provider, a bare
+list of ids and a `discovery` string. The `additional` map must not be used — §VI.2 records
+that smuggling a field through it is a contract change without a review, which is the thing
+being avoided.
+
+**Acceptance:** the fixture revision and the pin table land in the same change as the field.
+A runner that reports no metadata still round-trips, so an older runner against a newer
+board is not a break. Rendering it is VI-C1's or a later card's; this card carries it no
+further than the API response.
 
 ---
 
