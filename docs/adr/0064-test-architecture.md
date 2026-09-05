@@ -30,7 +30,7 @@ suite 2.3 times per push; and `docs/TESTING.md` keeps describing a suite of 207 
 | 3 | **Dev profile: `debug = "line-tables-only"`.** Backtraces keep file and line. | One test binary: 344 MB with full debuginfo, 54 MB stripped — 84% debuginfo. 28 of the 30 GB in `target/debug` are executables. |
 | 4 | **One integration-test binary per subject, not per file.** `tack-api/tests/` goes from 36 files to about five (`handlers`, `orchestration`, `runner_protocol`, `security`, `wiring`); `tack-db` from 12 to two; `tack-orch` from 10 to three with `runner_contract` kept on its own. Files named after board cards are renamed after their subject in the same move; the eight private `fn setup` copies use `common::test_app*`. | Each integration file is its own crate and its own full link: 36 × 4.9 s CPU = 178 s per `tack-api` change, 12 GB of disk. The Rust community's standing advice is one integration binary per crate; nextest makes that free at run time because parallelism is per test, not per binary. |
 | 5 | **CI runs each test once.** One `cargo nextest run --workspace` with JUnit output replaces `cargo test --workspace` plus the five re-runs of its own subsets. The two regenerate-and-diff gates (OpenAPI, golden) stay — they do something different. Coverage and the release-profile embed-SPA build leave the per-push path (main, tags, manual). `CARGO_INCREMENTAL=0` in CI. | The re-runs exist, per the workflow's own comment, so each gate shows its own status past a first failure; `fail-fast = false` plus per-test reporting gives that without re-running. Per push today: Rust job 5–6 min, coverage 4–5 min, embed-SPA 5–11 min, E2E 4–5 min. |
-| 6 | **Fixed waits become conditions.** The twelve `sleep(200–500 ms)` in `tack-api` and `tack-orch` tests become bounded polls, or paused time (`tokio::time::pause`) where the code under test is clock-driven. | Fixed waits are the flakiness that retry policies exist to hide, and ~4 s of wall: `traces_ingestion_test` is 2 tests in 4.07 s. |
+| 6 | **Fixed waits become conditions.** The sixteen fixed `sleep`s of 200 ms and up in `tack-api` and `tack-orch` tests become bounded polls, or paused time (`tokio::time::pause`) where the code under test is clock-driven. | Fixed waits are the flakiness that retry policies exist to hide, and ~4 s of wall: `traces_ingestion_test` is 2 tests in 4.07 s. |
 | 7 | **A number in `docs/TESTING.md` carries the command that produces it, or goes.** | It says 207 Rust tests and names `tests/api_test.rs` as *the* handler suite; there are 1,399 tests in 65 files. |
 
 Deliberately **not** decided: splitting `tack-api` into crates, `sccache`, `mold`, optimizing
@@ -149,7 +149,10 @@ five times, once per crate, each an instrumented build that shares nothing with 
 | tack-cli | 86 | 16 | 2 | the scheduler E2E is forced to `--test-threads=1` in CI although it already picks a free port |
 
 Counts: `grep -rcE '#\[(tokio::)?test' crates/<crate>/{src,tests}`. Fixed waits ≥ 200 ms in
-tests: 12 (`grep -rnE 'sleep\(.*from_millis\([2-9][0-9]{2}' crates/*/tests`). Isolation is
+tests: **16**, of which the four longest are in `tack-orch`'s ingestion pair (2.6 s, 2.4 s and
+two of 1.4 s) — which is what makes `traces_ingestion_test` 2 tests in 4.07 s:
+`grep -rnE 'sleep\([^)]*from_(millis\([0-9_]+|secs\([0-9_]+)' crates/*/tests`, discarding
+the sub-200 ms hits. Isolation is
 sound: every `tack-api` and `tack-db` test opens its own `sqlite::memory:` pool; `set_var`
 appears only in `tack-api/src/server.rs`'s own unit tests and two runner unit tests.
 
@@ -229,3 +232,15 @@ drop the override; it is not made here. The 40-run tally for that binary is ther
 failure, not the "zero of 20" claimed in (b).
 With the override in place, a third 20-run loop of the full suite finished with 0 failures
 (mean 14.5 s, max 15.0 s); the codex shim fix held across all 40 post-fix runs.
+
+**Same day — a load-bearing number in this ADR was wrong, and the regrouping card that had to
+live with it caught it.** "Fixed waits ≥ 200 ms in tests: 12" undercounted: the command beside
+it, `sleep\(.*from_millis\([2-9][0-9]{2}`, cannot match a Rust digit separator, so every
+`from_millis(1_400)`-style literal was invisible to it. The real count is **16**, and the four
+it missed are the *longest* waits in the suite — 2.6 s, 2.4 s and two of 1.4 s, all in
+`tack-orch`'s `ingestion`/`traces` pair. The ADR therefore under-reported precisely the sleeps
+that explain its own "`traces_ingestion_test` is 2 tests in 4.07 s" measurement. Decision 6 and
+the measurement table above are corrected in place, with the working command; this paragraph
+records that they were wrong first. A fifth separator-style literal, `from_millis(1_500)` in
+`docket_tick_contract_test.rs`, sits in a protected oracle and is outside any regrouping card's
+scope.
