@@ -83,6 +83,11 @@ tack-runner = { path = "../tack-runner" }
 # tack-runner's bootstrap module reports, so this crate needs their real
 # types rather than re-declaring shadow copies of its own.
 tack-orch = { path = "../tack-orch" }
+# `EmbeddedRunnerControl` (`local_runner.rs`) implements `tack-api`'s
+# `LocalRunnerControl` trait — the async trait itself is `#[async_trait]`,
+# so the implementor needs the same macro. Already a workspace dependency
+# (tack-api, tack-orch); not newly introduced to the lockfile.
+async-trait = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 clap = { workspace = true }
@@ -95,15 +100,14 @@ reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], def
 # Shell completion generation — maintained by clap team, ~50 KB compiled
 clap_complete = "4"
 dirs = "6.0.0"
+# `EmbeddedRunnerControl` (`local_runner.rs`) records secret set-at
+# timestamps and the runtime's `since`-running timestamp. Already a
+# workspace dependency (tack-api, tack-db, tack-runner, ...); moved here
+# from `[dev-dependencies]` (where III-E6's CLI E2E test had it for its own,
+# unrelated reason) now that production code needs it too.
+chrono = { workspace = true }
 
 [dev-dependencies]
 wiremock = "0.6"
 tokio = { workspace = true }
-# Card III-E6's cross-surface CLI E2E test (`tests/e6_scheduler_e2e_test.rs`)
-# spawns a real `tack serve` subprocess and speaks the runner-v1 protocol
-# directly (the CLI itself has no runner-protocol commands — see that
-# file's module doc); `chrono` builds capability-report timestamps for
-# those direct HTTP calls. Already a workspace dependency (tack-api,
-# tack-db, ...); not newly introduced to the lockfile.
-chrono = { workspace = true }
 tempfile = { workspace = true }

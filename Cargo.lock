@@ -3612,6 +3612,7 @@ name = "tack-cli"
 version = "0.1.0-beta.7"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "clap",
  "clap_complete",

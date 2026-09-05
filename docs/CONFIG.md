@@ -31,7 +31,7 @@ The API server loads configuration from `tack.toml` (if present) or environment 
 | `TACK_BACKUP_PREFIX` | `tack` | Object key prefix inside the bucket |
 | `TACK_BACKUP_INTERVAL_SECS` | _(none)_ | Auto-backup interval in seconds; omit for manual-only |
 | `TACK_BACKUP_RETENTION` | `10` | Number of remote backups to keep after each upload |
-| `TACK_LOCAL_RUNNER_ENABLE` | `false` | Enables the embedded runner started by `tack serve --with-runner` — the same gate the `--with-runner` flag sets; either satisfies it (`crates/tack-cli/src/local_runner.rs::with_runner_enabled`). `1` or `true` (case-insensitive) turn it on; anything else, including unset, is off. Read by the `tack` CLI binary, not `AppConfig` — there is no `tack.toml` equivalent (deliberate, see [Embedded runner](#embedded-runner-tack-serve---with-runner) below). Off by default and refused outright (never silently downgraded) on a non-loopback bind |
+| `TACK_LOCAL_RUNNER_ENABLE` | `false` | Startup default for whether the embedded runner runs — the same gate `tack serve --with-runner` sets; either satisfies it. `1` or `true` (case-insensitive) turn it on; anything else, including unset, is off. Read into `AppConfig::local_runner_enable`; a `PUT /api/local-runner` from the UI (ADR 0061 decisions 2 and 6) overrides it at runtime in `app_meta`, the same precedence `TACK_ORCH_ENABLE` already has — see [Embedded runner](#embedded-runner-tack-serve---with-runner) below. Off by default and refused outright (never silently downgraded) on a non-loopback bind |
 | `TACK_ORCH_ENABLE` | `false` | Enables the orchestration reconciler and the `/api/control-planes`, `/api/projects/{id}/orch-link`, `/api/fleet` routes (and their later-wave successors). Unset ⇒ no reconciler task spawned, every orch route 404s |
 | `TACK_ORCH_POLL_SECS` | `10` | Reconciler base poll interval in seconds (before per-plane backoff + jitter) |
 | `TACK_ORCH_EVENT_RETENTION_DAYS` | `90` | Days of `orch_events` (and, once ingested, `orch_metrics`) history kept before the retention sweep rolls old rows into per-day aggregates and deletes them |
@@ -78,6 +78,17 @@ enroll` call, no token to copy anywhere.
   `127.0.0.1`/`localhost`/an equivalent loopback address); this is a startup error, never
   a silent downgrade to a runner-less server, because an embedded runner executes
   arbitrary coding-agent processes on the host serving the UI.
+- **UI toggle (ADR 0061 decisions 2 and 6).** `GET`/`PUT /api/local-runner` let a
+  loopback-only UI turn the embedded runner on/off after `tack serve` is already up, with
+  no restart — a `PUT` persists the choice to `app_meta` (overriding
+  `TACK_LOCAL_RUNNER_ENABLE` from then on, the same precedence
+  `PUT /api/settings/orchestration` already established) and starts or stops the runner
+  task to match. `PUT`/`GET`/`DELETE /api/local-runner/secrets(/{name})` hand the runner
+  a provider key the same way — write-only, never echoed, stored in whichever backend
+  `tack runner secret set` would have used. Every one of these routes is absent (a plain
+  404, not a gate that refuses) on any non-loopback bind, or when the process embedding
+  the server never wired an embedded runner in at all (a bare library caller of
+  `tack_api::serve()`).
 - **First run.** A fresh state directory with no stored session self-provisions: it
   creates its own pending-runner row and redeems its own one-time enrollment token
   in-process, so no token is ever printed, copied, or configured by hand. A later start
