@@ -447,7 +447,7 @@ async fn retention_disabled_by_default_leaves_the_same_expired_artifact_row_and_
 /// artifact is exactly the shape the race guard below cares about. This test
 /// does not attempt to win that race against the real background sweep
 /// (inherently timing-dependent — the deterministic proof lives in
-/// `crates/tack-db/tests/f2_event_artifact_retention_test.rs`); it only
+/// `crates/tack-db/tests/repository/event_artifact_retention.rs`); it only
 /// confirms the production path purges a manifest-only row (no upload ever
 /// happened) via the guarded delete, end to end.
 #[tokio::test]

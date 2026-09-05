@@ -1,6 +1,6 @@
 //! Integration tests against the real, fully wired production router.
 //!
-//! Unlike `executions_runner_admin.rs`/`c2_handlers_test.rs` (routers built
+//! Unlike `executions_runner_admin.rs`/`runner_protocol/lifecycle.rs` (routers built
 //! local to those files) and `runner_vertical_slice.rs` (a repository/runner-fake
 //! seam), every test in this file drives
 //! `tack_api::router::build_router` — exactly as `tack serve` would run it —

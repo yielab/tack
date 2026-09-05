@@ -32,7 +32,8 @@ use uuid::Uuid;
 use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-// ─── Helpers (mirrors orch_dispatch_test.rs / auto_dispatch_test.rs) ──────
+// ─── Helpers (mirrors orchestration/dispatch/item.rs /
+// orchestration/auto_dispatch/hook.rs) ──────────────────────────────────────
 
 fn orch_config() -> AppConfig {
     AppConfig {

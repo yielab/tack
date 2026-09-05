@@ -1,6 +1,6 @@
 //! Tests for `handlers/decisions.rs` (operator-scoped decision resolution).
-//! Loaded via `#[path]`, the same technique `c1_handlers_test.rs`/
-//! `lifecycle.rs` use on their own handler modules, even though
+//! Loaded via `#[path]`, the same technique `handlers/executions_runner_admin.rs`/
+//! `runner_protocol/lifecycle.rs` use on their own handler modules, even though
 //! `decisions` is also registered in `handlers.rs` and mounted into the
 //! production router (see that module's own doc comment) — loading it here
 //! gives this file its own directly-constructed router, isolated from that
@@ -170,7 +170,8 @@ fn new_request<'a>(id: &'a str, item_id: &'a str, key: &'a str) -> NewExecutionR
     // `claim_execution_idempotent_with_snapshot` deserializes
     // `request_snapshot` into `tack_orch::execution::ExecutionRequestSnapshot`
     // and fails the claim if it doesn't round-trip, so this must be a fully
-    // well-formed snapshot — mirrors `execution_repo_test.rs`'s own
+    // well-formed snapshot — mirrors
+    // `crates/tack-db/tests/repository/execution_repo.rs`'s own
     // `request()` helper template exactly (field-for-field), rather than
     // inventing a new shape here.
     let request_snapshot: &'static str = Box::leak(
@@ -205,7 +206,8 @@ fn new_request<'a>(id: &'a str, item_id: &'a str, key: &'a str) -> NewExecutionR
 
 /// Claims a fresh attempt (via the real production claim path, `Naive`
 /// selection) and bumps it straight to `running` — the same
-/// state-independent shortcut `execution_repo_test.rs`'s own tests use,
+/// state-independent shortcut
+/// `crates/tack-db/tests/repository/execution_repo.rs`'s own tests use,
 /// since decision resolution does not gate on attempt state (only on the
 /// decision row's own `state`/`expires_at`).
 async fn claim_running_attempt(
@@ -1023,7 +1025,8 @@ async fn the_correct_decision_token_alongside_a_valid_principal_resolves() {
 // ---------------------------------------------------------------------
 // 17. Concurrency: BEGIN IMMEDIATE serializes competing resolves.
 //
-// Modeled directly on `execution_repo_test.rs`'s
+// Modeled directly on
+// `crates/tack-db/tests/repository/execution_repo.rs`'s
 // `artifact_and_decision_cannot_land_against_concurrently_terminal_attempt`:
 // a manually-held `BEGIN IMMEDIATE` transaction forces both racing resolves
 // to queue behind it before either can even read the row, closing the

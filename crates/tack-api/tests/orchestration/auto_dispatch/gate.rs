@@ -30,7 +30,7 @@ use tower::ServiceExt;
 use uuid::Uuid;
 use wiremock::MockServer;
 
-// ─── Helpers (mirrors auto_dispatch_test.rs) ───────────────────────────────
+// ─── Helpers (mirrors orchestration/auto_dispatch/hook.rs) ─────────────────
 
 async fn app_with_state(config: AppConfig) -> (Router, AppState) {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
@@ -110,7 +110,7 @@ async fn patch_status(app: &Router, item_id: Uuid, status: &str) -> axum::respon
     .await
 }
 
-/// Same shape as `auto_dispatch_test.rs`'s helper: seeds a control plane +
+/// Same shape as `orchestration/auto_dispatch/hook.rs`'s helper: seeds a control plane +
 /// linked project entirely at the repo layer, bypassing the
 /// `TACK_ORCH_ENABLE`-gated HTTP routes — which, in this test, are 409ing
 /// anyway once orchestration is toggled off, exactly as an operator would
@@ -221,8 +221,8 @@ async fn auto_dispatch_does_not_fire_when_orch_enable_env_is_set_but_the_ui_togg
     );
 
     // Give a wrongly-firing hook time to show up, then assert nothing did —
-    // same polling shape `auto_dispatch_test.rs` uses for the equivalent
-    // "off by default" case.
+    // same polling shape `orchestration/auto_dispatch/hook.rs` uses for the
+    // equivalent "off by default" case.
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     let hits = server.received_requests().await.unwrap_or_default();
     assert!(

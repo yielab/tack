@@ -32,7 +32,8 @@ use tokio::sync::broadcast;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-// ─── Helpers (mirrors orch_test.rs / orch_agent_activity_test.rs) ─────────────
+// ─── Helpers (mirrors orchestration/control_plane/resource.rs /
+// orchestration/reporting/agent_activity.rs) ────────────────────────────────
 
 fn orch_config() -> AppConfig {
     AppConfig {

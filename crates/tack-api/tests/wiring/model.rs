@@ -26,7 +26,7 @@ const OPERATOR_TOKEN: &str = "f6b-model-wiring-operator-token";
 const BASE_REVISION: &str = "f6b0123456789abcdef0123456789abcdef0123";
 
 // ---------------------------------------------------------------------
-// Infrastructure — same shape as `wave2_gate.rs`/`e6_routes_test.rs`: a
+// Infrastructure — same shape as `wave2_gate.rs`/`handlers/operator_read_routes.rs`: a
 // fresh in-memory database and the real production router, so this file's
 // assertions can read persisted rows directly rather than trusting a
 // handler's own return value.

@@ -2,7 +2,8 @@
 //! fencing, events, completion, recovery, and the operator/runner
 //! auth non-substitution proof.
 //!
-//! Loads `handlers/runner_protocol.rs` the same way `c1_handlers_test.rs`
+//! Loads `handlers/runner_protocol.rs` the same way
+//! `handlers/executions_runner_admin.rs`
 //! loads its own handlers: via `#[path]`. `runner_protocol.rs`'s own
 //! `mod runner_auth;` then resolves relative to that file's path
 //! (`handlers/runner_protocol/runner_auth.rs`), which is what keeps the
@@ -184,7 +185,7 @@ async fn setup() -> (Router, Repository, FakeClock, String) {
     // restriction" — the effective limit still collapses to the fixed 4 MiB
     // protocol ceiling via `effective_body_limit_bytes`. The min-of-configured-and-ceiling
     // precedence itself is proven against the real production router in
-    // `c5_integration_test.rs`, not here.
+    // `handlers/production_router.rs`, not here.
     let app = runner_protocol::routes(state, usize::MAX);
     (app, repo, clock, item.id.to_string())
 }

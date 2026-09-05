@@ -34,8 +34,9 @@ const OPERATOR_TOKEN: &str = "wave2-gate-operator-token";
 /// fixture in this file. Nothing here validates it beyond "some string is
 /// present" (checked directly against the handler/type sources this file was
 /// written from), but keeping it consistent with the 40-hex-character shape
-/// `c1_handlers_test.rs`/`c2_handlers_test.rs`/`c5_integration_test.rs`
-/// already use avoids relying on that being untested.
+/// `handlers/executions_runner_admin.rs`/`runner_protocol/lifecycle.rs`/
+/// `handlers/production_router.rs` already use avoids relying on that being
+/// untested.
 const BASE_REVISION: &str = "abc123def456abc123def456abc123def456abc";
 
 // ---------------------------------------------------------------------
@@ -514,9 +515,9 @@ async fn wave2_gate_claim_start_stream_complete_and_survive_restart() {
 
     // --- Step 6: API restart. Rebuild the router/AppState around the *same*
     //     pool, mid-flight (the attempt is still `running`, not terminal) —
-    //     every in-process value `c5_integration_test.rs`'s own restart test
-    //     also discards (broadcast channel, orch runtime, router/middleware
-    //     closures) is newly constructed here too. ---
+    //     every in-process value `handlers/production_router.rs`'s own
+    //     restart test also discards (broadcast channel, orch runtime,
+    //     router/middleware closures) is newly constructed here too. ---
     let app = router_for(pool.clone(), workspace_id, config.clone()).await;
 
     // The runner continues with its *existing* credential and fence: a

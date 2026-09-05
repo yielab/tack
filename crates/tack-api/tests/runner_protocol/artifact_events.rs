@@ -15,7 +15,7 @@
 //!
 //! Repository-level atomicity/retention proofs (forced insert failure,
 //! bounded-batch purge) live in
-//! `crates/tack-db/tests/f2_event_artifact_retention_test.rs`; the deep
+//! `crates/tack-db/tests/repository/event_artifact_retention.rs`; the deep
 //! bounded-memory / "compression bomb" proof lives in
 //! `artifact_storage.rs`'s own colocated unit tests. This file proves the
 //! HTTP wiring: the real route, the real per-route body-limit override, the

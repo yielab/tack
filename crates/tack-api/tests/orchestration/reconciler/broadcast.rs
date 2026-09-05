@@ -7,7 +7,8 @@
 //! nothing**. Every test here subscribes to the same broadcast channel the
 //! store was constructed with and asserts on what does or doesn't arrive,
 //! rather than on the DB state (that half is already covered by
-//! `orch_repo_test.rs`/`ingestion_test.rs`).
+//! `crates/tack-db/tests/repository/orch_repo.rs`/
+//! `crates/tack-orch/tests/ingestion/runs.rs`).
 
 use chrono::Utc;
 use tack_api::handlers::websocket::BoardEvent;

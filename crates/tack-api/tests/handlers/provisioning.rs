@@ -28,7 +28,8 @@ use uuid::Uuid;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-// ─── Helpers (mirrors orch_dispatch_test.rs / orch_approvals_test.rs) ─────
+// ─── Helpers (mirrors orchestration/dispatch/item.rs /
+// orchestration/reporting/approvals.rs) ─────────────────────────────────────
 
 fn orch_config() -> AppConfig {
     AppConfig {
@@ -93,8 +94,8 @@ async fn req(
 }
 
 /// A template with no explicit `workflow` — falls back to `simple_workflow()`
-/// ("To Do" / "Doing" / "Done"), same default `templates_orchestration_test.rs`
-/// relies on.
+/// ("To Do" / "Doing" / "Done"), same default
+/// `orchestration/fleet_templates/templates.rs` relies on.
 async fn create_template(app: &Router) -> Uuid {
     let res = req(
         app,

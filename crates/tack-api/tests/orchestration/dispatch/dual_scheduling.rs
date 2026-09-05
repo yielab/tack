@@ -25,9 +25,9 @@ use uuid::Uuid;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-// ─── Harness (mirrors orch_dispatch_test.rs's own helpers, deliberately not
-// shared — a private copy avoids coupling this file's tests to that file's
-// helper signatures changing later) ────────────
+// ─── Harness (mirrors orchestration/dispatch/item.rs's own helpers,
+// deliberately not shared — a private copy avoids coupling this file's
+// tests to that file's helper signatures changing later) ──────────────────
 
 fn orch_config() -> AppConfig {
     AppConfig {
