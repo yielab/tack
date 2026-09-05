@@ -1,19 +1,19 @@
-# ADR 0063: A harness is credentialed one of two ways, and an endpoint is data
+# ADR 0063: A harness is credentialed one of two ways, and a provider is a module
 
 **Decide:** approve that every harness on a runner is credentialed in exactly one of two
 modes. Either it uses **the person's own subscription** — it logs in by itself, Tack holds
 no credential, the plan decides which models exist and there is no per-attempt cost — or it
 uses **an API key and an endpoint** that Tack's runner holds and hands it. A gateway
 (Vercel AI Gateway, LiteLLM, OpenRouter) and a vendor's own API (`api.anthropic.com`,
-`api.openai.com`) are the same mode. Approve further that **adding an endpoint is adding a
-configuration entry, never writing code**, and that an endpoint's own catalog is what tells
-Tack which models it offers, what they are quoted to cost, and what their limits are.
+`api.openai.com`) are the same mode. Approve further that a provider in that second mode is
+**a module behind one trait** — it knows its own endpoints and how to read its own catalog —
+so that adding the next one is writing one module, not editing the code that calls them.
 
 **Why now:** VI-B2 is adding the first endpoint-and-key path. Written the obvious way it
 spells `vercel` into the config type, the discovery step, the `doctor` output and each
 harness adapter — so the second endpoint means a second pass through all four, and the
 third means a third. Deciding the shape while there is exactly one implementation is the
-difference between adding a row and rewriting a layer.
+difference between writing one module and rewriting a layer.
 
 **If you do nothing:** every future endpoint costs an adapter change per harness; the
 snapshot keeps conflating "which program ran", "who paid" and "which model" in one string;
@@ -27,8 +27,8 @@ price, not its context window, not whether it can even accept an image.
 | 1 | Two modes, chosen per harness per runner: **subscription** or **key + endpoint**. There is no third. Subscription is the default and is exactly today's behaviour — nobody is migrated. | These are the only two things that actually differ. Everything else is a value inside one of them. |
 | 2 | A gateway and a vendor's own API are **one mode, not two**. | `api.anthropic.com` is a base URL with a bearer key, exactly like Vercel's. Treating "direct" as its own case doubles the work for no gain. |
 | 3 | A harness declares **which wire it can be pointed at**, never which vendors it supports. | claude-code takes an Anthropic-wire endpoint through environment variables; codex takes an OpenAI-responses endpoint through invocation flags. Those are properties of the harness; vendors are properties of the endpoint. Adding a harness stays one declaration. |
-| 4 | **An endpoint is a configuration entry: name, base URL, credential, wire.** Adding LiteLLM or OpenRouter is a row, not a code change, and no vendor name appears in a type, a function or a config key of the machinery. | This is the whole point of the abstraction. If `vercel` is spelled into the machinery, the second endpoint pays the first one's cost again. |
-| 5 | **The endpoint's own catalog is the source** of which models it offers, their quoted prices, and their limits — stored per model, as published. | The endpoint already knows. Anything Tack maintains by hand goes stale, and a hand-kept list is how you promise a model that fails at claim. |
+| 4 | **A provider is a module behind one trait.** It knows its own endpoints per wire, and it knows how to read its own catalog into the shape Tack stores — models, prices, limits, whatever else that provider publishes. Adding OpenRouter is a new module and one registry line; no vendor name appears in the machinery that calls the trait. | Providers do not share a catalog format, an auth header or a pricing shape, so a config table cannot describe them and pretending otherwise pushes the differences into the caller. Putting each provider's differences inside its own module is what keeps adding the next one simple. |
+| 5 | **The provider's own catalog is the source** of which models it offers, their quoted prices, and their limits — stored per model, as published, parsed by that provider's module into one common shape. | The provider already knows. Anything Tack maintains by hand goes stale, and a hand-kept list is how you promise a model that fails at claim. |
 | 6 | **A quoted price is never a measured spend.** They are separate values that never merge, and a quote is never used to fill in a cost that was not measured. | A catalog price is what a vendor advertises; what an attempt cost is what its harness reported. Blurring them turns an estimate into a receipt. |
 | 7 | **What an endpoint does not publish is null, not zero and never inferred.** | Measured: 101 of 373 models publish no context window and 21 publish no price. Rendering those as `0` would be a lie in the direction that hurts — a free model with no limit. |
 | 8 | **opencode is removed from the tree** — adapter, tests, fixtures and documentation. Tack supports claude-code and codex. | It cannot state which model served a request, it is the only harness needing a written config file rather than per-spawn injection, and it is environment-sensitive in ways the other two are not. Keeping it means carrying code that cannot satisfy decisions 3, 5 and 6. |
@@ -155,3 +155,45 @@ binding, and **decision 5 — per-model prices and limits, which requires a revi
 field — has neither been accepted nor implemented.** A later card must not treat this
 amendment as acceptance of the table as a whole. If the user disagrees with this reading,
 they strike this paragraph.
+
+## Amendment — 2026-09-05: decision 4 was wrong and has been replaced
+
+The original decision 4 read "**an endpoint is a configuration entry: name, base URL,
+credential, wire** — adding LiteLLM or OpenRouter is a row, not a code change". That was the
+ADR author's invention, not a directive, and it does not survive contact with the providers
+it names. A config table can only describe providers that agree on a shape, and they do not:
+the catalog lives at a different path per provider, returns a different JSON body, prices
+in different units, and authenticates with a different header. Written that way, every
+difference between providers ends up in the code that reads the table — which is the
+coupling the decision claimed to remove, moved one level up.
+
+Decision 4 now says a provider is a module behind one trait. The differences live inside
+each module; the machinery that calls them stays vendor-free. Adding OpenRouter is one
+module and one registry line — simple, which is the actual goal, rather than zero lines,
+which was never achievable.
+
+## What exists today, measured against these decisions
+
+Read from the code on 2026-09-05, not from this document.
+
+| Decision | State |
+|---|---|
+| 1 — two modes | **Built.** Subscription is the absence of a `[provider.<name>]` entry; `provider.rs` treats it as a typed `None`, never a second branch. |
+| 2 — gateway and direct API are one mode | **Built.** Both are a base URL plus a bearer credential in the same `KnownEndpoint` shape. |
+| 3 — a harness declares a wire | **Built.** `Wire::{AnthropicMessages, OpenAiResponses}`; claude-code takes an endpoint through environment variables, codex through invocation flags. |
+| 4 — a provider is a module | **Not built.** There is no trait. `known_endpoint` and `catalog_url` are `match` arms over a provider name, and `attach_catalog` looks up `VERCEL_AI_GATEWAY_CONFIG_KEY` directly rather than iterating configured providers. |
+| 5 — the catalog is the source | **Partly built.** The catalog is fetched, but `fetch_catalog_ids` keeps only `id` and drops every other field, and `ProviderConfig` carries only `enabled` and `secret`. |
+| 6 — a quote is never a measurement | Nothing to break yet: no quoted price is stored. |
+| 7 — unpublished is null | Nothing to break yet, same reason. |
+| 8 — opencode removed | **Done**, in its own change; no fixture byte moved. |
+
+Of the four endpoints these decisions are meant to serve, exactly one works:
+`vercel-ai-gateway`, on both wires. Anthropic direct, OpenAI direct and OpenRouter do not
+exist.
+
+**The one contract change still required.** `ModelCombination` carries `model_provider`, a
+`Vec<ModelId>`, a `discovery` string and a flattened `additional` map. There is nowhere on
+the wire for a price, a context window or a modality, and `additional` must not be used for
+this — a contract change smuggled through the escape hatch is a contract change nobody
+reviewed. Decision 5 needs a named field on the wire type and a revision of the byte-pinned
+fixtures in `docs/contracts/runner-v1/`. Decisions 1–4 and 6–8 need no contract change.
