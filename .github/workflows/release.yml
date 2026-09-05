@@ -144,6 +144,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # `GITHUB_REF_NAME` is a clean tag ("v0.1.0-beta.7") on every real release
+      # trigger (a tag push) but is the branch name on a `workflow_dispatch` dry
+      # run, e.g. "agent/vii-c1-release-bundles" — with a "/" in it, `mkdir`
+      # (below) and `New-Item` read that as a directory separator and fail or
+      # nest unexpectedly. Substituted only when a "/" is present, so a real
+      # tag's staged directory/asset names are byte-identical to before.
+      - name: Compute a filesystem-safe ref name for staging directories
+        run: echo "SAFE_REF_NAME=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_ENV"
+
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "20"
@@ -195,7 +204,7 @@ jobs:
         if: matrix.archive == 'tar.gz'
         run: |
           set -euo pipefail
-          STAGE="tack-${GITHUB_REF_NAME}-${{ matrix.platform }}"
+          STAGE="tack-${SAFE_REF_NAME}-${{ matrix.platform }}"
           mkdir "$STAGE"
           cp "target/${{ matrix.target }}/release/tack" "$STAGE/"
           cp LICENSE README.md "$STAGE/"
@@ -218,7 +227,7 @@ jobs:
           tar czf "$STAGE.tar.gz" "$STAGE"
           echo "ASSET=$STAGE.tar.gz" >> "$GITHUB_ENV"
 
-          RUNNER_STAGE="tack-runner-${GITHUB_REF_NAME}-${{ matrix.platform }}"
+          RUNNER_STAGE="tack-runner-${SAFE_REF_NAME}-${{ matrix.platform }}"
           mkdir "$RUNNER_STAGE"
           cp "target/${{ matrix.target }}/release/tack-runner" "$RUNNER_STAGE/"
           cp LICENSE "$RUNNER_STAGE/"
@@ -249,7 +258,7 @@ jobs:
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
-          $stage = "tack-$env:GITHUB_REF_NAME-${{ matrix.platform }}"
+          $stage = "tack-$env:SAFE_REF_NAME-${{ matrix.platform }}"
           New-Item -ItemType Directory -Path $stage | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/tack.exe" $stage
           Copy-Item LICENSE, README.md $stage
@@ -275,7 +284,7 @@ jobs:
           Compress-Archive -Path $stage -DestinationPath "$stage.zip"
           "ASSET=$stage.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-          $runnerStage = "tack-runner-$env:GITHUB_REF_NAME-${{ matrix.platform }}"
+          $runnerStage = "tack-runner-$env:SAFE_REF_NAME-${{ matrix.platform }}"
           New-Item -ItemType Directory -Path $runnerStage | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/tack-runner.exe" $runnerStage
           Copy-Item LICENSE $runnerStage
