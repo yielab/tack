@@ -10,8 +10,8 @@
 
 | Part | Cycle | Phases | Status | Where |
 |---|---|---|---|---|
-| **VII** | **Desktop app & background service** | 61 | **ACTIVE** — ADR 0062 accepted 2026-09-03; **Waves 18 and 19 integrated 2026-09-04** (VII-A2, VII-B1, VII-B2, VII-B3). **VII-C1 integrated 2026-09-05** at `03df038`. Linux and Windows bundles build in a real run; macOS was blocked on a keychain feature fixed on this line at `33dbbb2` and has not been re-run since. Wave 21's VII-D1 inherits one finding: the built Linux app starts and shows no window, and the supervisor's catch-all error arm exits with no dialog, so any unnamed failure is silent | [§VII](#part-vii--desktop-app--background-service-phase-61), top of this file |
-| **VI** | **Agent Onboarding & Provider UX** | 60 | **ACTIVE** — Wave 14 integrated at `927f850`; ADR 0061 accepted 2026-09-03 (decision 1 refined the same day: keychain first, file fallback); **VI-B1, VI-B2, VI-C2, VI-C3 and VI-C4 integrated 2026-09-04**. **ADR 0063 accepted 2026-09-05** — two credential modes, and a provider in the key+endpoint mode is a module behind a trait (its decision 4 was rewritten before acceptance; the "an endpoint is configuration, never code" version was the ADR author's invention and was rejected). That unblocked VI-B3 and added VI-B4/VI-B5. **VI-B3 and VI-B4 integrated 2026-09-05** at `03df038`. VI-B5 and VI-C1 are both unblocked; VI-C1 needs no further card first | [§VI](#part-vi--agent-onboarding--provider-ux-phase-60), top of this file |
+| **VII** | **Desktop app & background service** | 61 | **ACTIVE** — ADR 0062 accepted 2026-09-03; **Waves 18 and 19 integrated 2026-09-04** (VII-A2, VII-B1, VII-B2, VII-B3). **VII-C1 integrated 2026-09-05** at `03df038`. Linux and Windows bundles build in a real run; macOS was blocked on a keychain feature fixed on this line at `33dbbb2` and has not been re-run since. That finding — the built Linux app starts and shows no window, and the supervisor's catch-all error arm exits with no dialog, so any unnamed failure is silent — became **VII-C3**, dispatched 2026-09-05. It blocks VII-D1 | [§VII](#part-vii--desktop-app--background-service-phase-61), top of this file |
+| **VI** | **Agent Onboarding & Provider UX** | 60 | **ACTIVE** — Wave 14 integrated at `927f850`; ADR 0061 accepted 2026-09-03 (decision 1 refined the same day: keychain first, file fallback); **VI-B1, VI-B2, VI-C2, VI-C3 and VI-C4 integrated 2026-09-04**. **ADR 0063 accepted 2026-09-05** — two credential modes, and a provider in the key+endpoint mode is a module behind a trait (its decision 4 was rewritten before acceptance; the "an endpoint is configuration, never code" version was the ADR author's invention and was rejected). That unblocked VI-B3 and added VI-B4/VI-B5. **VI-B3 and VI-B4 integrated 2026-09-05** at `03df038`. **Wave 15c/16 dispatched the same day: VI-B5 ∥ VI-C1**, and Part VII's VII-C3 alongside them — three disjoint file sets | [§VI](#part-vi--agent-onboarding--provider-ux-phase-60), top of this file |
 | **V** | **Adoption & First Public Release** | 59 | **ACTIVE** — Waves 11–12 done, Wave 13 in flight (V-C2 unblocked, V-C3 waiting on it) | [§V](#part-v--adoption--first-public-release-phase-59) |
 | **IV** | **Standalone Single-Binary Operation** | 58 | Done — Wave 10 integrated at `83fefab` | [§IV](#part-iv--standalone-single-binary-operation-phase-58) |
 | III | Harness-Agnostic Runner Fleet | 50–57 | Feature-complete, **tag refused** | [§III](#part-iii--harness-agnostic-runner-fleet-phases-5057), archive |
@@ -174,6 +174,7 @@ rule 8 applies as written.
 | `crates/tack-desktop/src/paths.rs`, `src/first_run.rs`, `settings.json` handling, the version check in `supervisor.rs`, the `dirs` dependency line in `crates/tack-desktop/Cargo.toml` | VII-B3 — **after B1** |
 | `.github/workflows/release.yml` (one new `desktop` job), `.github/workflows/ci.yml` (one `tack-desktop` check step), `crates/tack-desktop/icons/tack.svg`, the release-notes paragraph about unsigned builds | VII-C1 |
 | `README.md` §"Run it" (that section only), the book's install page, `docs/book/src/developer/crate-tour.md` entry for `tack-desktop`, `docs/screenshots/desktop-window.png` + `desktop-tray.png`, `CHANGELOG.md` `[Unreleased]` desktop lines | VII-C2 — **`README.md` and `docs/screenshots/**` are shared with Parts V and VI; see §VII.3** |
+| `crates/tack-desktop/src/{main,supervisor,first_run}.rs` | VII-C3 — **after C1 merges**. Disjoint from `tray.rs` and `lifecycle.rs`, which VII-B2 owns and this card must not change |
 | `docs/agent-handoffs/part-vii/VII-D1.md` (the transcript), the per-platform `measured / not_measured` table in the book's install page | VII-D1 |
 | `TODO.md`, `docs/book/src/roadmap.md` statuses | wave integrator only |
 
@@ -388,6 +389,51 @@ Vocabulary check (§VI.1 rule 8) over everything written. README conflicts per �
 card's title without prompting (transcript). Screenshots are real, commands recorded,
 alt text describes what is shown. `mdbook build docs/book` clean. `README.md` diff
 touches §"Run it" only.
+
+---
+
+### VII-C3 — The app opens a window, or it says why it did not
+
+**Needs VII-C1 merged** (there is a built artifact to launch). Wave 20. **Blocks VII-D1**,
+which cannot walk a stranger through an app that shows nothing.
+
+**Owns:** `crates/tack-desktop/src/{main,supervisor,first_run}.rs`, and the VII-C3 handoff.
+
+**Context — two separate things, and only one of them is a mystery.** VII-C1 launched its
+own built AppImage and the one CI produced. In both, the process starts and no window ever
+appears.
+
+The part that is not a mystery is in `main.rs`. The window is built only after
+`attach_or_start` returns `Ok`, and of the error arms, two — a port held by something else,
+an attached server older than the bundle — show a dialog before exiting. The third, the
+catch-all, calls `handle.exit(1)` after a `tracing::error!` and nothing else. A GUI
+application's log goes nowhere a user will look, so **every failure but those two is
+indistinguishable from the app not starting at all**. That is a defect on its own terms,
+independent of what triggered it here, and it is the reason nobody can say what triggered
+it here.
+
+The part that is a mystery is why the supervisor failed. Nothing was listening on the port,
+so the app had to spawn its bundled sidecar. Whether the sidecar is missing from the bundle,
+named something the launcher does not look for, not executable, or simply slower to answer
+`/api/health` than the wait allows, is unmeasured — do not guess in the handoff.
+
+**Tasks:** make every exit path say something a person sees, with the specific reason, not a
+generic apology; find the real cause by running the built artifact with the app's own log
+visible; fix it if it is in this card's files, and escalate with the measurement if it is
+not. If the cause is a timeout, the fix is not a longer sleep — it is a bounded wait whose
+expiry is reported as an expiry.
+
+**Acceptance:** launching the built Linux artifact on a machine with no `tack` running opens
+a window showing the board, stated with the artifact's name and where it came from. Every
+`Err` arm of `attach_or_start`'s match is proven to render something visible, by forcing
+each one — including the catch-all, proven by injecting a failure and watching the dialog,
+then reverting. A sidecar that never answers is reported as that, with its own wait bound
+named, not as silence. The tray still behaves as VII-B2 left it: closing hides, Quit stops.
+
+**Stop if:** the cause turns out to be in the bundling rather than the app — the sidecar
+absent from the artifact, or staged under a name Tauri does not resolve. That is VII-C1's
+file, not this card's: record the exact path you expected and what the artifact actually
+contains, and hand it over.
 
 ---
 

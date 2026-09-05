@@ -21,7 +21,8 @@ decision of record is `docs/adr/0062-desktop-app-and-background-service.md`, acc
 | 18 | VII-A2 · VII-B1 | yes | ADR 0062 accepted (done); Tauri prerequisites verified installed 2026-09-03 (tauri-cli 2.11.4, webkit2gtk-4.1) | `2958e9e` — **both dispatched 2026-09-03**; — the 2026-09-03 planning commit; branch from the `develop` tip |
 | 19 | VII-B2 · VII-B3 | yes | B1 integrated | **Integrated 2026-09-04** — dispatched from `8b71756` |
 | 20 | VII-C1 → VII-C2 | no | C1: B2 + B3; C2: C1 **and Part VI's VI-C1** | Wave 19 is integrated; pin the tip with `git rev-parse --short develop` at dispatch. C1 also owns collapsing the two first-run signals Wave 19 left in the data root (B2's `.autostart-initialized` marker and B3's `settings.json`) |
-| 21 | VII-D1 | — | everything | Wave 20 integration SHA — `03df038`. **It inherits a live finding:** the built Linux app starts and never shows a window, and the supervisor's catch-all error arm calls `handle.exit(1)` with no dialog, so any failure but the two named ones is silent. The silence is a defect on its own, whatever triggered it |
+| 20b | VII-C3 | — | VII-C1 merged |  `develop` tip at dispatch |
+| 21 | VII-D1 | — | everything, VII-C3 included | Wave 20 integration SHA — `03df038`. **It inherits a live finding:** the built Linux app starts and never shows a window, and the supervisor's catch-all error arm calls `handle.exit(1)` with no dialog, so any failure but the two named ones is silent. The silence is a defect on its own, whatever triggered it |
 
 **Integration line: `develop`.** Every card branches from it as `agent/vii-<card>-<slug>`
 (`agent/vii-a2-service`, `agent/vii-b1-desktop-skeleton`, …) and never merges itself.
@@ -296,6 +297,43 @@ paragraph verbatim.
 
 **Stop if:** the workflow cannot be triggered (permissions, minutes) — record the exact
 error and hand the run to the integrator; do not merge an untested pipeline.
+
+---
+
+### VII-C3 — The app opens a window, or it says why it did not
+
+**Branch:** `agent/vii-c3-window-or-reason` from the `develop` tip you are given.
+
+**Read (≈ 12k):**
+- The board prelude and the VII-C3 card.
+- `crates/tack-desktop/src/main.rs` whole (~200 l) — the file the defect is in.
+- `crates/tack-desktop/src/supervisor.rs` whole (~430 l) — the function whose failures are
+  being made visible; its tests already cover attach-vs-spawn.
+- `crates/tack-desktop/src/first_run.rs` whole (~90 l).
+- The dialog pattern already in the tree: `rg -n "blocking_show" -B6 crates/tack-desktop/src/`.
+- From `VII-C1.md`, only the paragraph on launching the built app
+  (`grep -n -B4 -A12 -i "window" docs/agent-handoffs/part-vii/VII-C1.md`).
+
+**Do not read:** `lifecycle.rs` or `tray.rs` beyond a grep (VII-B2 owns both and they are
+not the failure); any crate outside `tack-desktop`; `release.yml`.
+
+**Build and run it, do not reason about it.** `make desktop` produces the bundle; the
+card is not done until you have launched the artifact with no `tack` running and seen what
+happens, with the app's own log visible. A conclusion reached by reading the code alone is
+the thing this card exists to replace.
+
+**Gate:** `cargo fmt --manifest-path crates/tack-desktop/Cargo.toml --all --check`;
+`cargo clippy --manifest-path crates/tack-desktop/Cargo.toml --all-targets -- -D warnings`;
+`cargo test --manifest-path crates/tack-desktop/Cargo.toml`; `./scripts/check-comments.sh`.
+The desktop crate is **not** in the workspace, so `--workspace` never sees it — pass the
+manifest path every time. Set `CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/VII-C3`.
+
+**Handoff extras:** what the window failure actually was, measured; the forced-failure proof
+for each `Err` arm including the catch-all; the artifact you launched and where it came
+from; a paste of what the user sees for each failure, verbatim.
+
+**Stop if:** the cause is in the bundle rather than the app — record the path you expected,
+what the artifact contains, and hand it to VII-C1's owner.
 
 ---
 

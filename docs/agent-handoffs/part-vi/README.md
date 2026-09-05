@@ -430,6 +430,49 @@ acceptance requires them byte-identical.
 
 ---
 
+### VI-B5 — The catalog reaches the board: price, context window and modality on the wire
+
+**Branch:** `agent/vi-b5-catalog-on-the-wire` from the `develop` tip you are given.
+**Needs VI-B4, which is merged.** The only card in this Part allowed to change the frozen
+contract.
+
+**Read (≈ 14k):**
+- The board prelude and the VI-B5 card; ADR 0063 decision 5 only
+  (`sed -n '23,58p' docs/adr/0063-harness-credential-modes.md`).
+- `crates/tack-orch/src/execution/capabilities.rs` whole (~130 l) — `ModelCombination` and
+  `HarnessCapability` are here, not in an `execution.rs`.
+- `crates/tack-orch/tests/runner_contract/domain.rs` and `fixtures.rs` — how a fixture is
+  loaded and byte-pinned; you are changing what these assert.
+- `docs/contracts/runner-v1/capabilities.json` — the fixture that gains the field.
+- The shape you are carrying: `rg -n "struct CatalogEntry" -A 20 crates/tack-runner/src/provider/mod.rs`,
+  and the two parsers (`anthropic.rs`, `vercel_ai_gateway.rs`) by grep for what each fills.
+- Where the runner builds the combination: `rg -n "ModelCombination" -B4 -A12 crates/tack-runner/src/provider/mod.rs`.
+
+**Do not read:** any harness adapter; `docs/openapi.json`; the frontend; `TODO.md` whole.
+
+**The two rules this card exists to respect.** The `additional` map is `#[serde(flatten)]`
+and must not carry this — smuggling a field through it is a contract change with no review,
+which §VI.2 forbids by name. And a runner that reports no metadata must still round-trip
+against a newer board: an older runner is not a break, so the new field is defaulted and
+absent-means-absent, never zero. Never render an unmeasured price as `$0.00`; the literal
+this tree uses is `Not measured`.
+
+**Gate:** `cargo nextest run --workspace` (the whole workspace — the contract test is the
+point of this card), `cargo nextest run --workspace -E 'binary(runner_contract)'` shown
+separately in the handoff, `cargo clippy --workspace --all-targets -- -D warnings`,
+`./scripts/check-comments.sh`, `./scripts/check-test-hygiene.sh`. Regenerate the spec rather
+than hand-editing it: `UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary(openapi_contract)'`
+then `cd frontend && npm run gen:api`. Set `CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/VI-B5`.
+
+**Handoff extras:** the fixture diff and the matching pin-table change, side by side; the
+old-runner round trip as a named test; which of the two providers publishes which field,
+measured from their real bodies rather than from their docs.
+
+**Stop if:** the two providers' catalogs cannot fill one shape without a union type — that
+was VI-B4's own stop condition and it did not fire, so if it fires now, say what changed.
+
+---
+
 ## Wave 16 — UI-first flow
 
 ### VI-C3 — Project-level agent settings (start early; may branch from the Wave 14 SHA)
