@@ -9,7 +9,9 @@ use serde::Deserialize;
 use tauri::menu::CheckMenuItem;
 use tauri::{AppHandle, Manager, WindowEvent};
 use tauri_plugin_autostart::ManagerExt;
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult};
+use tauri_plugin_dialog::{
+    DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
+};
 
 const MAIN_WINDOW: &str = "main";
 
@@ -124,7 +126,11 @@ pub fn quit(app: AppHandle) {
 }
 
 fn quit_warning_message(in_flight: usize) -> String {
-    let noun = if in_flight == 1 { "attempt" } else { "attempts" };
+    let noun = if in_flight == 1 {
+        "attempt"
+    } else {
+        "attempts"
+    };
     let verb = if in_flight == 1 { "is" } else { "are" };
     format!("{in_flight} agent {noun} {verb} running. Quit anyway?")
 }
@@ -206,7 +212,10 @@ mod tests {
 
         let count = count_in_flight_executions(&client, &base_url).await;
 
-        assert_eq!(count, 3, "queued, running and needs_operator are in flight; the rest are terminal");
+        assert_eq!(
+            count, 3,
+            "queued, running and needs_operator are in flight; the rest are terminal"
+        );
     }
 
     #[tokio::test]
