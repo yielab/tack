@@ -52,6 +52,29 @@ Reproduce: `cargo test --workspace 2>&1 | wc -c` against `cargo nextest run --wo
 `cargo test` still works — nothing forbids it — but it is not what CI, `make test` or the
 `/gate` skill call, and nothing in this repository should tell anyone to run it.
 
+**A test's temporary paths come from a guard.** Ask `tempfile` for the directory and hold
+the guard; never build a path with `env::temp_dir().join(...)`:
+
+```rust
+let dir = tempfile::tempdir().expect("temporary directory");
+let db_path = dir.path().join("subject.db");   // -wal, -shm and the migration
+                                               // runner's snapshot land beside it
+```
+
+Both failure modes of the hand-built form are gone: the guard removes the directory when it
+drops, so a panicking test cleans up too, and it removes *everything* inside, so nothing has
+to be named — the reason the old form leaked was that no test knew the migration runner
+writes a `.before-037_orch_runs_rebuild.sqlite` next to any file-backed database. Measured
+2026-09-05: one green run left **83** entries in `/tmp` before, **0** after; 4,499 had
+accumulated. Reproduce: `touch /tmp/mark && cargo nextest run --workspace && find /tmp
+-maxdepth 1 -newer /tmp/mark | wc -l`.
+
+The one thing the compiler will not catch: a helper that builds the directory and returns
+only a path deletes it as it returns. Return the guard alongside — `(Repository, TempDir)` —
+or take the directory as a parameter. Production code may use the temp directory and is not
+scanned; `scripts/check-test-hygiene.sh` (~0.7 s, in `pre-push` and CI) covers everything
+under `crates/*/tests/` and every `#[cfg(test)] mod tests`.
+
 ## Where the tests live, and how each crate is tested
 
 | Crate | Where | Harness | What belongs here |
@@ -117,7 +140,7 @@ pull request, and by hand (`workflow_dispatch`).
 
 | Job | What it runs | When |
 |---|---|---|
-| `rust` | `scripts/check-comments.sh` → `cargo fmt --check` → `cargo clippy --workspace --all-targets -- -D warnings` → **`cargo nextest run --workspace --profile ci`** (one run; JUnit uploaded as `junit-rust`) → the OpenAPI and golden regenerate-and-diff gates | every push and PR |
+| `rust` | `scripts/check-comments.sh` → `scripts/check-test-hygiene.sh` → `cargo fmt --check` → `cargo clippy --workspace --all-targets -- -D warnings` → **`cargo nextest run --workspace --profile ci`** (one run; JUnit uploaded as `junit-rust`) → the OpenAPI and golden regenerate-and-diff gates | every push and PR |
 | `frontend` | schema drift, type-check, token lint, build, entry-bundle budget | every push and PR |
 | `docs` | `mdbook build` + link check | every push and PR |
 | `msrv` | `cargo build --workspace --locked` on the pinned dependency floor | every push and PR |
@@ -133,7 +156,8 @@ throughout: CI never reuses incremental state, and keeping it only inflates the 
 
 ### Pre-push hook
 
-`git config core.hooksPath .githooks` activates it. It runs the comment check, `cargo fmt`,
+`git config core.hooksPath .githooks` activates it. It runs the comment and test-hygiene
+checks, `cargo fmt`,
 `cargo clippy` and the generated-file freshness checks — **not the test suite**, on purpose:
 a hook that takes a minute is a hook people bypass, and the suite is CI's job. Run
 `cargo nextest run --workspace` yourself before pushing anything you claim is green.

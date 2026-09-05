@@ -882,24 +882,26 @@ mod tests {
     // these two tests are deliberately narrow, cross-cutting proofs that
     // only make sense here, where both are in scope together.
 
-    static NEXT_CROSS_ADAPTER_DIR: std::sync::atomic::AtomicUsize =
-        std::sync::atomic::AtomicUsize::new(0);
-
-    fn cross_adapter_temp_dir(label: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "tack-runner-d5-cross-adapter-{label}-{}-{}",
-            std::process::id(),
-            NEXT_CROSS_ADAPTER_DIR.fetch_add(1, Ordering::SeqCst)
-        ));
-        std::fs::create_dir_all(&path).expect("create temp dir");
-        path
+    /// A scratch directory that removes itself, and everything written under
+    /// it, when the returned guard drops — including when an assertion panics
+    /// first.
+    fn cross_adapter_temp_dir(label: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(label)
+            .tempdir()
+            .expect("temporary directory")
     }
 
     /// A fresh, hermetic file-backed store per call — never the platform
     /// keychain — so parallel `#[test]` functions never see each other's
     /// entries and CI needs no Secret Service.
-    fn cross_adapter_secret_store() -> SecretStore {
-        SecretStore::file(cross_adapter_temp_dir("secrets").join("secrets.json"))
+    /// Takes the directory rather than making one, so the store's file cannot
+    /// outlive the guard that removes it. Each call gets its own file inside
+    /// that directory: two adapters in one test must not share a store.
+    fn cross_adapter_secret_store(dir: &std::path::Path) -> SecretStore {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        SecretStore::file(dir.join(format!("secrets-{n}.json")))
     }
 
     /// One deterministic fixture script, driven identically by both
@@ -917,9 +919,12 @@ mod tests {
     /// exit code alone (Codex always does; Claude Code falls
     /// back to exit-code classification when stdout does not parse as its
     /// own structured output).
-    fn cross_adapter_fixture_command() -> (PathBuf, Vec<String>) {
+    /// Returns the guard alongside the command: the script lives inside it,
+    /// so dropping it before the adapters run would delete the program they
+    /// are about to spawn.
+    fn cross_adapter_fixture_command() -> (PathBuf, Vec<String>, tempfile::TempDir) {
         let dir = cross_adapter_temp_dir("script");
-        let script_path = dir.join("fixture.sh");
+        let script_path = dir.path().join("fixture.sh");
         let script = r#"#!/bin/sh
 for arg in "$@"; do
   case "$arg" in
@@ -934,6 +939,7 @@ exit 0
         (
             PathBuf::from("/bin/sh"),
             vec![script_path.display().to_string()],
+            dir,
         )
     }
 
@@ -992,21 +998,25 @@ exit 0
     /// `AttemptState::Succeeded` from the identical input.
     #[tokio::test]
     async fn the_same_fixture_completes_through_both_real_adapters() {
-        let (program, args) = cross_adapter_fixture_command();
-        let staging_root = cross_adapter_temp_dir("artifacts");
+        let secrets_dir = cross_adapter_temp_dir("secrets");
+        let secrets = secrets_dir.path();
+        let (program, args, _script_dir) = cross_adapter_fixture_command();
+        let staging_root_dir = cross_adapter_temp_dir("artifacts");
+        let staging_root = staging_root_dir.path();
 
-        let codex_workspace = cross_adapter_temp_dir("codex-ws");
+        let codex_workspace_dir = cross_adapter_temp_dir("codex-ws");
+        let codex_workspace = codex_workspace_dir.path();
         let codex = crate::harness::codex::CodexAdapter::for_fixture(
             program.clone(),
             args.clone(),
-            staging_root.clone(),
-            cross_adapter_secret_store(),
+            staging_root.to_path_buf(),
+            cross_adapter_secret_store(secrets),
         );
         let codex_spec = real_adapter_spec(
             "codex",
             "openai",
             "opaque/model-alpha",
-            codex_workspace.clone(),
+            codex_workspace.to_path_buf(),
         );
         codex.validate(&codex_spec).await.expect("codex validate");
         let codex_handle = codex.start(&codex_spec).await.expect("codex start");
@@ -1016,17 +1026,18 @@ exit 0
             crate::client::AttemptState::Succeeded
         );
 
-        let claude_workspace = cross_adapter_temp_dir("claude-ws");
+        let claude_workspace_dir = cross_adapter_temp_dir("claude-ws");
+        let claude_workspace = claude_workspace_dir.path();
         let claude = crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
             program.clone(),
             args.clone(),
-            cross_adapter_secret_store(),
+            cross_adapter_secret_store(secrets),
         );
         let claude_spec = real_adapter_spec(
             "claude-code",
             "anthropic",
             "claude-fixture-model",
-            claude_workspace.clone(),
+            claude_workspace.to_path_buf(),
         );
         claude
             .validate(&claude_spec)
@@ -1056,13 +1067,16 @@ exit 0
     /// the registration-time ceiling check.
     #[tokio::test]
     async fn registering_both_real_adapters_is_order_independent() {
-        let staging_root = cross_adapter_temp_dir("order-artifacts");
+        let secrets_dir = cross_adapter_temp_dir("order-secrets");
+        let secrets = secrets_dir.path();
+        let staging_root_dir = cross_adapter_temp_dir("order-artifacts");
+        let staging_root = staging_root_dir.path();
         // codex has no fallible `discover()` to `unwrap_or_else` around like
         // claude-code below, so it needs an explicit fixture: a real `codex`
         // binary is a local-dev-only assumption (CI runners don't install
         // it), and `for_fixture` resolves unconditionally, which is exactly
         // what the assertions below need — see the doc comment further down.
-        let (codex_program, codex_args) = cross_adapter_fixture_command();
+        let (codex_program, codex_args, _codex_script_dir) = cross_adapter_fixture_command();
 
         let mut forward = AdapterRegistry::new();
         forward.register_adapter(
@@ -1070,21 +1084,21 @@ exit 0
             Box::new(crate::harness::codex::CodexAdapter::for_fixture(
                 codex_program.clone(),
                 codex_args.clone(),
-                staging_root.clone(),
-                cross_adapter_secret_store(),
+                staging_root.to_path_buf(),
+                cross_adapter_secret_store(secrets),
             )),
         );
         forward.register_adapter(
             DomainHarnessKind::new("claude-code"),
             Box::new(
                 crate::harness::claude_code::ClaudeCodeAdapter::discover(
-                    cross_adapter_secret_store(),
+                    cross_adapter_secret_store(secrets),
                 )
                 .unwrap_or_else(|_| {
                     crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
                         PathBuf::from("/bin/sh"),
                         vec!["-c".to_owned(), "exit 0".to_owned()],
-                        cross_adapter_secret_store(),
+                        cross_adapter_secret_store(secrets),
                     )
                 }),
             ),
@@ -1095,13 +1109,13 @@ exit 0
             DomainHarnessKind::new("claude-code"),
             Box::new(
                 crate::harness::claude_code::ClaudeCodeAdapter::discover(
-                    cross_adapter_secret_store(),
+                    cross_adapter_secret_store(secrets),
                 )
                 .unwrap_or_else(|_| {
                     crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
                         PathBuf::from("/bin/sh"),
                         vec!["-c".to_owned(), "exit 0".to_owned()],
-                        cross_adapter_secret_store(),
+                        cross_adapter_secret_store(secrets),
                     )
                 }),
             ),
@@ -1111,8 +1125,8 @@ exit 0
             Box::new(crate::harness::codex::CodexAdapter::for_fixture(
                 codex_program.clone(),
                 codex_args.clone(),
-                staging_root.clone(),
-                cross_adapter_secret_store(),
+                staging_root.to_path_buf(),
+                cross_adapter_secret_store(secrets),
             )),
         );
 
@@ -1152,20 +1166,20 @@ exit 0
             .register_probe(Box::new(crate::harness::codex::CodexAdapter::for_fixture(
                 codex_program.clone(),
                 codex_args.clone(),
-                staging_root.clone(),
-                cross_adapter_secret_store(),
+                staging_root.to_path_buf(),
+                cross_adapter_secret_store(secrets),
             )))
             .expect("codex probe registers cleanly");
         probe_registry
             .register_probe(Box::new(
                 crate::harness::claude_code::ClaudeCodeAdapter::discover(
-                    cross_adapter_secret_store(),
+                    cross_adapter_secret_store(secrets),
                 )
                 .unwrap_or_else(|_| {
                     crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
                         PathBuf::from("/bin/sh"),
                         vec!["-c".to_owned(), "exit 0".to_owned()],
-                        cross_adapter_secret_store(),
+                        cross_adapter_secret_store(secrets),
                     )
                 }),
             ))

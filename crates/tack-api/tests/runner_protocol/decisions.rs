@@ -1043,7 +1043,8 @@ async fn the_correct_decision_token_alongside_a_valid_principal_resolves() {
 
 #[tokio::test]
 async fn concurrent_conflicting_resolves_serialize_to_exactly_one_winner() {
-    let db_path = std::env::temp_dir().join(format!("tack-api-f1-race-{}.db", Uuid::new_v4()));
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let db_path = dir.path().join("resolve-race.db");
     let pool = init_pool(&format!("sqlite://{}?mode=rwc", db_path.display()))
         .await
         .expect("file-backed pool");
@@ -1204,18 +1205,4 @@ async fn concurrent_conflicting_resolves_serialize_to_exactly_one_winner() {
         final_answer["option_id"] == allow_answer["option_id"]
             || final_answer["option_id"] == deny_answer["option_id"]
     );
-
-    drop(repo);
-    let db_file_name = db_path.file_name().unwrap().to_string_lossy().into_owned();
-    if let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) {
-        for entry in entries.flatten() {
-            if entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with(&*db_file_name)
-            {
-                let _ = std::fs::remove_file(entry.path());
-            }
-        }
-    }
 }

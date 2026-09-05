@@ -380,11 +380,18 @@ async fn snapshot_db(pool: &SqlitePool, db_path: &Path) -> Result<Vec<u8>, Backu
         .execute(pool)
         .await?;
 
-    // Remove secrets/identity from the snapshot before reading its bytes.
-    scrub_snapshot_secrets(&temp).await?;
-
-    let bytes = tokio::fs::read(&temp).await?;
+    // From here the snapshot file exists and still holds every secret the live
+    // database does, so no path may return without removing it: a `?` between
+    // here and the removal would leave an unscrubbed copy of the whole
+    // database in a shared temporary directory.
+    let scrubbed: Result<Vec<u8>, BackupError> = async {
+        scrub_snapshot_secrets(&temp).await?;
+        Ok(tokio::fs::read(&temp).await?)
+    }
+    .await;
     let _ = tokio::fs::remove_file(&temp).await;
+
+    let bytes = scrubbed?;
     debug!(db = %db_path.display(), bytes = bytes.len(), "DB snapshot complete");
     Ok(bytes)
 }
@@ -1116,8 +1123,9 @@ mod tests {
             generation: 0,
         };
 
-        let db_path = std::env::temp_dir().join(format!("tack-tamper-{}.db", Uuid::new_v4()));
-        let storage = std::env::temp_dir().join(format!("tack-tamper-{}", Uuid::new_v4()));
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let db_path = dir.path().join("tamper.db");
+        let storage = dir.path().join("storage");
         let res = stage_restore(
             bundle,
             &manifest,
@@ -1171,7 +1179,8 @@ mod tests {
         use sqlx::Connection;
         use sqlx::sqlite::SqliteConnectOptions;
 
-        let path = std::env::temp_dir().join(format!("tack-scrub-{}.db", Uuid::new_v4()));
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let path = dir.path().join("scrub.db");
         let secret = "SUPER-SECRET-S3-KEY-9f8e7d6c5b4a";
 
         {
@@ -1275,7 +1284,7 @@ mod tests {
         // The row itself must still exist (scrubbing nulls the token, it must
         // not delete the row — a restored backup should still know which
         // planes were registered, just forget their credentials).
-        let extracted_path = dir.join("extracted-check.db");
+        let extracted_path = dir.path().join("extracted-check.db");
         tokio::fs::write(&extracted_path, &db_bytes).await.unwrap();
         let mut conn = SqliteConnectOptions::new()
             .filename(&extracted_path)
@@ -1299,7 +1308,6 @@ mod tests {
         );
 
         pool.close().await;
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     // ── control_planes.secrets (migration 033) must be scrubbed too —
@@ -1364,7 +1372,7 @@ mod tests {
         // The row itself must still exist (scrubbing nulls secrets, it must not
         // delete the row — a restored backup should still show which planes
         // were registered, just forget their credentials).
-        let extracted_path = dir.join("extracted-secrets-check.db");
+        let extracted_path = dir.path().join("extracted-secrets-check.db");
         tokio::fs::write(&extracted_path, &db_bytes).await.unwrap();
         let mut conn = SqliteConnectOptions::new()
             .filename(&extracted_path)
@@ -1388,7 +1396,6 @@ mod tests {
         );
 
         pool.close().await;
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     // ── Scrubbing must not fail against a snapshot whose control_planes
@@ -1403,7 +1410,8 @@ mod tests {
         use sqlx::Connection;
         use sqlx::sqlite::SqliteConnectOptions;
 
-        let path = std::env::temp_dir().join(format!("tack-scrub-pre033-{}.db", Uuid::new_v4()));
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let path = dir.path().join("scrub-pre033.db");
 
         {
             let mut conn = SqliteConnectOptions::new()
@@ -1547,9 +1555,9 @@ mod tests {
     }
 
     // Build a file-backed pool + config for full backup-path tests.
-    async fn file_backed() -> (SqlitePool, AppConfig, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!("tack-gen-{}", Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
+    async fn file_backed() -> (SqlitePool, AppConfig, tempfile::TempDir) {
+        let temp = tempfile::tempdir().expect("temporary directory");
+        let dir = temp.path();
         let db_path = dir.join("tack.db");
         let db_url = format!("sqlite:{}?mode=rwc", db_path.to_string_lossy());
         let pool = tack_db::init_pool(&db_url).await.unwrap();
@@ -1561,13 +1569,13 @@ mod tests {
             backup_retention: 10,
             ..AppConfig::default()
         };
-        (pool, cfg, dir)
+        (pool, cfg, temp)
     }
 
     #[tokio::test]
     async fn perform_backup_bumps_generation_and_enforces_conflict() {
         let store = make_store();
-        let (pool, cfg, dir) = file_backed().await;
+        let (pool, cfg, _dir) = file_backed().await;
 
         // First backup: generation 0 → 1.
         let m1 = perform_backup(&pool, &cfg, store.as_ref(), false)
@@ -1619,7 +1627,6 @@ mod tests {
         assert_eq!(generation(&pool).await.unwrap(), 3);
 
         pool.close().await;
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     // ── 28.5: verify_bundle validates without staging ─────────────────────────

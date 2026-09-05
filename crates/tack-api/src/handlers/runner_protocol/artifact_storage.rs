@@ -299,16 +299,14 @@ async fn reject_symlink(path: &Path) -> Result<(), ArtifactContentError> {
 mod tests {
     use super::*;
     use futures::stream;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
-    static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
-
-    fn temp_root(label: &str) -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "tack-api-artifact-storage-{label}-{}-{}",
-            std::process::id(),
-            NEXT_DIR.fetch_add(1, Ordering::SeqCst)
-        ))
+    /// Storage root that removes itself and everything under it when the
+    /// returned guard drops, on a panicking test as much as a passing one.
+    fn temp_root(label: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(label)
+            .tempdir()
+            .expect("temporary directory")
     }
 
     fn sha256_hex(bytes: &[u8]) -> String {
@@ -336,8 +334,9 @@ mod tests {
     /// fail with `Err(Io)`.
     #[tokio::test]
     async fn a_realistic_long_runner_generated_artifact_id_does_not_overflow_a_filename() {
-        let root = temp_root("long-id");
-        let storage = ArtifactStorage::new(&root);
+        let root_dir = temp_root("long-id");
+        let root = root_dir.path();
+        let storage = ArtifactStorage::new(root);
         let long_attempt_id = format!("att_{}", uuid::Uuid::new_v4());
         let long_artifact_id = format!(
             "art_{}",
@@ -366,13 +365,14 @@ mod tests {
         use tokio::io::AsyncReadExt;
         file.read_to_end(&mut buf).await.unwrap();
         assert_eq!(buf, content);
-        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn stores_content_matching_its_declared_size_and_checksum() {
-        let root = temp_root("happy-path");
-        let storage = ArtifactStorage::new(&root);
+        let root_dir = temp_root("happy-path");
+        let root = root_dir.path();
+        let storage = ArtifactStorage::new(root);
         let content = b"diff --git a b\n";
         let stored = storage
             .store_streaming(
@@ -393,13 +393,14 @@ mod tests {
         use tokio::io::AsyncReadExt;
         file.read_to_end(&mut buf).await.unwrap();
         assert_eq!(buf, content);
-        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn splits_across_many_chunks_and_still_matches() {
-        let root = temp_root("chunked");
-        let storage = ArtifactStorage::new(&root);
+        let root_dir = temp_root("chunked");
+        let root = root_dir.path();
+        let storage = ArtifactStorage::new(root);
         let chunks: Vec<&'static [u8]> = vec![b"abc", b"def", b"ghi", b"jkl"];
         let whole: Vec<u8> = chunks.concat();
         let stored = storage
@@ -413,7 +414,7 @@ mod tests {
             .await
             .expect("store");
         assert_eq!(stored.bytes_written, whole.len() as u64);
-        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     /// Load-bearing proof performed by hand (not left in the tree):
@@ -426,8 +427,9 @@ mod tests {
     /// Restored the check and confirmed the test passes again.
     #[tokio::test]
     async fn checksum_mismatch_stages_nothing() {
-        let root = temp_root("checksum-mismatch");
-        let storage = ArtifactStorage::new(&root);
+        let root_dir = temp_root("checksum-mismatch");
+        let root = root_dir.path();
+        let storage = ArtifactStorage::new(root);
         let content = b"real content";
         let wrong_sha = sha256_hex(b"different content entirely");
         let result = storage
@@ -448,7 +450,7 @@ mod tests {
             entries.next_entry().await.unwrap().is_none(),
             "attempt directory must be empty after a checksum mismatch"
         );
-        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     /// Load-bearing: temporarily removing the
@@ -458,8 +460,9 @@ mod tests {
     /// delivers only 5 of its declared 105 bytes.
     #[tokio::test]
     async fn undersize_stream_is_a_size_mismatch_not_a_silent_success() {
-        let root = temp_root("undersize");
-        let storage = ArtifactStorage::new(&root);
+        let root_dir = temp_root("undersize");
+        let root = root_dir.path();
+        let storage = ArtifactStorage::new(root);
         let content = b"short";
         let result = storage
             .store_streaming(
@@ -471,7 +474,7 @@ mod tests {
             )
             .await;
         assert_eq!(result, Err(ArtifactContentError::SizeMismatch));
-        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     /// The "compression bomb" defense: a manifest can declare an innocuous
@@ -487,8 +490,9 @@ mod tests {
     /// guard and confirmed the test passes again, promptly.
     #[tokio::test]
     async fn an_oversized_or_unbounded_stream_is_rejected_before_it_could_exhaust_memory() {
-        let root = temp_root("bomb");
-        let storage = ArtifactStorage::new(&root);
+        let root_dir = temp_root("bomb");
+        let root = root_dir.path();
+        let storage = ArtifactStorage::new(root);
         // Declares a tiny size but the stream never ends on its own —
         // each chunk is small (bounded per-poll memory) but the stream is
         // conceptually infinite, standing in for a decompression bomb whose
@@ -508,13 +512,14 @@ mod tests {
             entries.next_entry().await.unwrap().is_none(),
             "no partial content may remain after an oversize rejection"
         );
-        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn malicious_ids_never_escape_the_storage_root_via_traversal() {
-        let root = temp_root("traversal");
-        let storage = ArtifactStorage::new(&root);
+        let root_dir = temp_root("traversal");
+        let root = root_dir.path();
+        let storage = ArtifactStorage::new(root);
         let content = b"payload";
         let malicious_attempt_id = "../../../../etc/passwd\0evil";
         let malicious_artifact_id = "../../outside";
@@ -528,7 +533,7 @@ mod tests {
             )
             .await
             .expect("store (the malicious id is merely hex-encoded, never interpreted)");
-        let canonical_root = std::fs::canonicalize(&root).unwrap();
+        let canonical_root = std::fs::canonicalize(root).unwrap();
         let full_path = root.join(&stored.content_reference);
         let canonical_full = std::fs::canonicalize(full_path.parent().unwrap()).unwrap();
         assert!(
@@ -536,7 +541,7 @@ mod tests {
             "stored content must land inside the canonical storage root"
         );
         assert!(!stored.content_reference.contains(".."));
-        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     /// Load-bearing proof performed by hand (not left in the tree):
@@ -555,19 +560,19 @@ mod tests {
     async fn refuses_to_write_through_a_symlinked_attempt_directory() {
         use std::os::unix::fs::symlink;
 
-        let root = temp_root("symlink-escape");
-        std::fs::create_dir_all(&root).unwrap();
-        let outside = temp_root("symlink-escape-outside");
-        std::fs::create_dir_all(&outside).unwrap();
+        let root_dir = temp_root("symlink-escape");
+        let root = root_dir.path();
+        let outside_dir = temp_root("symlink-escape-outside");
+        let outside = outside_dir.path();
 
         // Pre-create the attempt directory as a symlink pointing outside the
         // storage root, simulating an attacker (or a prior, unrelated bug)
         // that got a symlink planted where this module expects a plain
         // directory.
         let attempt_dir_path = root.join(encode_id("attempt-escape"));
-        symlink(&outside, &attempt_dir_path).expect("plant symlink");
+        symlink(outside, &attempt_dir_path).expect("plant symlink");
 
-        let storage = ArtifactStorage::new(&root);
+        let storage = ArtifactStorage::new(root);
         let content = b"should never land outside";
         let result = storage
             .store_streaming(
@@ -587,14 +592,15 @@ mod tests {
             "symlink target must remain untouched"
         );
         let _ = std::fs::remove_file(&attempt_dir_path);
-        let _ = std::fs::remove_dir_all(&root);
-        let _ = std::fs::remove_dir_all(&outside);
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(outside);
     }
 
     #[tokio::test]
     async fn a_stream_error_mid_upload_stages_nothing() {
-        let root = temp_root("stream-error");
-        let storage = ArtifactStorage::new(&root);
+        let root_dir = temp_root("stream-error");
+        let root = root_dir.path();
+        let storage = ArtifactStorage::new(root);
         let failing = stream::iter(vec![
             Ok::<_, std::io::Error>(Bytes::from_static(b"partial-")),
             Err(std::io::Error::other("connection reset")),
@@ -606,6 +612,6 @@ mod tests {
         let attempt_dir = root.join(encode_id("attempt-6"));
         let mut entries = tokio::fs::read_dir(&attempt_dir).await.unwrap();
         assert!(entries.next_entry().await.unwrap().is_none());
-        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(root);
     }
 }

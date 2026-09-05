@@ -68,15 +68,18 @@ impl ExecutionClock for FakeClock {
     }
 }
 
-fn temp_storage_root(label: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!(
-        "tack-api-f2-artifact-events-{label}-{}-{}",
-        std::process::id(),
-        Uuid::new_v4()
-    ))
+/// Artifact storage root for one artifact-events test.
+///
+/// The `TempDir` removes the directory and everything under it when it drops,
+/// so a failing assertion leaves nothing behind either.
+fn temp_storage_root(label: &str) -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix(label)
+        .tempdir()
+        .expect("temporary directory")
 }
 
-async fn setup() -> (Router, Repository, FakeClock, String, std::path::PathBuf) {
+async fn setup() -> (Router, Repository, FakeClock, String, tempfile::TempDir) {
     // Must run before any handler code in this binary executes — see
     // `log_capture.rs`'s own doc comment for the `tracing` interest-cache
     // race this closes.
@@ -139,7 +142,7 @@ async fn setup() -> (Router, Repository, FakeClock, String, std::path::PathBuf) 
 
     let storage_root = temp_storage_root("root");
     let state = runner_protocol::RunnerProtocolState::new(repo.clone(), Arc::new(clock.clone()))
-        .with_artifact_storage_root(storage_root.clone());
+        .with_artifact_storage_root(storage_root.path().to_path_buf());
     let app = runner_protocol::routes(state, usize::MAX);
     (app, repo, clock, item.id.to_string(), storage_root)
 }
@@ -500,7 +503,8 @@ async fn dir_is_empty_or_absent(path: &std::path::Path) -> bool {
 
 #[tokio::test]
 async fn artifact_content_round_trips_through_upload_and_download() {
-    let (app, repo, clock, item_id, storage_root) = setup().await;
+    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
+    let storage_root = storage_root_dir.path();
     let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "roundtrip").await;
     let content = b"diff --git a/x b/x\n+hello\n".to_vec();
     manifest_artifact(&app, &attempt, "art-1", &content, Some("text/x-diff")).await;
@@ -550,7 +554,7 @@ async fn artifact_content_round_trips_through_upload_and_download() {
     let download_state = runner_protocol::artifact_download::ArtifactDownloadState {
         repo: repo.clone(),
         artifact_storage: Arc::new(runner_protocol::artifact_storage::ArtifactStorage::new(
-            storage_root.clone(),
+            storage_root,
         )),
     };
     let download_app = runner_protocol::artifact_download::routes(download_state);
@@ -603,7 +607,8 @@ async fn artifact_content_round_trips_through_upload_and_download() {
 /// change and confirmed the test passes again.
 #[tokio::test]
 async fn checksum_mismatch_stages_nothing() {
-    let (app, repo, clock, item_id, storage_root) = setup().await;
+    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
+    let storage_root = storage_root_dir.path();
     let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "checksum").await;
     let declared_content = b"the real bytes".to_vec();
     manifest_artifact(&app, &attempt, "art-mismatch", &declared_content, None).await;
@@ -650,7 +655,8 @@ async fn checksum_mismatch_stages_nothing() {
 /// check, which the mismatched-length case above cannot.
 #[tokio::test]
 async fn same_size_wrong_bytes_is_a_pure_checksum_mismatch_and_stages_nothing() {
-    let (app, repo, clock, item_id, storage_root) = setup().await;
+    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
+    let storage_root = storage_root_dir.path();
     let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "checksum-samesize").await;
     let declared_content = b"AAAAAAAAAA".to_vec();
     manifest_artifact(&app, &attempt, "art-samesize", &declared_content, None).await;
@@ -692,7 +698,8 @@ async fn same_size_wrong_bytes_is_a_pure_checksum_mismatch_and_stages_nothing() 
 
 #[tokio::test]
 async fn oversize_upload_is_rejected_and_stages_nothing() {
-    let (app, repo, clock, item_id, storage_root) = setup().await;
+    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
+    let storage_root = storage_root_dir.path();
     let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "oversize").await;
     let declared_content = b"tiny".to_vec(); // manifest declares 4 bytes
     manifest_artifact(&app, &attempt, "art-oversize", &declared_content, None).await;
@@ -737,7 +744,8 @@ async fn oversize_upload_is_rejected_and_stages_nothing() {
 
 #[tokio::test]
 async fn crafted_traversal_artifact_id_lands_safely_inside_the_storage_root() {
-    let (app, repo, clock, item_id, storage_root) = setup().await;
+    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
+    let storage_root = storage_root_dir.path();
     let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "traversal").await;
     let content = b"safe content".to_vec();
     // The manifest step takes `artifact_id` from a JSON string field — no
@@ -798,7 +806,8 @@ async fn crafted_traversal_artifact_id_lands_safely_inside_the_storage_root() {
 
 #[tokio::test]
 async fn content_is_immutable_once_verified() {
-    let (app, repo, clock, item_id, storage_root) = setup().await;
+    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
+    let storage_root = storage_root_dir.path();
     let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "immutable").await;
     let content = b"first and only".to_vec();
     manifest_artifact(&app, &attempt, "art-immutable", &content, None).await;
@@ -839,7 +848,8 @@ async fn content_is_immutable_once_verified() {
 
 #[tokio::test]
 async fn stale_fencing_token_is_rejected_before_any_write() {
-    let (app, repo, clock, item_id, storage_root) = setup().await;
+    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
+    let storage_root = storage_root_dir.path();
     let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "stale-fence").await;
     let content = b"content".to_vec();
     manifest_artifact(&app, &attempt, "art-stale", &content, None).await;
@@ -865,7 +875,8 @@ async fn stale_fencing_token_is_rejected_before_any_write() {
 
 #[tokio::test]
 async fn missing_fencing_header_is_invalid_request() {
-    let (app, repo, clock, item_id, storage_root) = setup().await;
+    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
+    let storage_root = storage_root_dir.path();
     let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "missing-fence").await;
     let content = b"content".to_vec();
     manifest_artifact(&app, &attempt, "art-missing-fence", &content, None).await;
@@ -885,7 +896,8 @@ async fn missing_fencing_header_is_invalid_request() {
 
 #[tokio::test]
 async fn content_type_mismatch_with_declared_media_type_is_rejected() {
-    let (app, repo, clock, item_id, storage_root) = setup().await;
+    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
+    let storage_root = storage_root_dir.path();
     let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "content-type").await;
     let content = b"diff content".to_vec();
     manifest_artifact(&app, &attempt, "art-ct", &content, Some("text/x-diff")).await;
@@ -914,7 +926,8 @@ async fn content_type_mismatch_with_declared_media_type_is_rejected() {
 
 #[tokio::test]
 async fn download_of_an_unverified_manifest_is_a_named_conflict_not_a_404() {
-    let (app, repo, clock, item_id, storage_root) = setup().await;
+    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
+    let storage_root = storage_root_dir.path();
     let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "download-unverified").await;
     manifest_artifact(&app, &attempt, "art-unverified", b"content", None).await;
 
@@ -933,7 +946,7 @@ async fn download_of_an_unverified_manifest_is_a_named_conflict_not_a_404() {
     let download_state = runner_protocol::artifact_download::ArtifactDownloadState {
         repo: repo.clone(),
         artifact_storage: Arc::new(runner_protocol::artifact_storage::ArtifactStorage::new(
-            storage_root.clone(),
+            storage_root,
         )),
     };
     let response = runner_protocol::artifact_download::routes(download_state)
@@ -958,11 +971,12 @@ async fn download_of_an_unverified_manifest_is_a_named_conflict_not_a_404() {
 
 #[tokio::test]
 async fn download_without_an_operator_principal_is_unauthorized() {
-    let (_app, repo, _clock, _item_id, storage_root) = setup().await;
+    let (_app, repo, _clock, _item_id, storage_root_dir) = setup().await;
+    let storage_root = storage_root_dir.path();
     let download_state = runner_protocol::artifact_download::ArtifactDownloadState {
         repo: repo.clone(),
         artifact_storage: Arc::new(runner_protocol::artifact_storage::ArtifactStorage::new(
-            storage_root.clone(),
+            storage_root,
         )),
     };
     let response = runner_protocol::artifact_download::routes(download_state)
@@ -981,11 +995,12 @@ async fn download_without_an_operator_principal_is_unauthorized() {
 
 #[tokio::test]
 async fn download_of_an_unknown_artifact_is_not_found() {
-    let (_app, repo, _clock, _item_id, storage_root) = setup().await;
+    let (_app, repo, _clock, _item_id, storage_root_dir) = setup().await;
+    let storage_root = storage_root_dir.path();
     let download_state = runner_protocol::artifact_download::ArtifactDownloadState {
         repo: repo.clone(),
         artifact_storage: Arc::new(runner_protocol::artifact_storage::ArtifactStorage::new(
-            storage_root.clone(),
+            storage_root,
         )),
     };
     let response = runner_protocol::artifact_download::routes(download_state)
@@ -1012,7 +1027,8 @@ async fn download_of_an_unknown_artifact_is_not_found() {
 
 #[tokio::test]
 async fn an_upload_larger_than_the_default_json_body_ceiling_still_succeeds() {
-    let (app, repo, clock, item_id, storage_root) = setup().await;
+    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
+    let storage_root = storage_root_dir.path();
     let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "large").await;
     // 6 MiB: comfortably over the 4 MiB router-wide DefaultBodyLimit meant
     // for JSON control-plane bodies, comfortably under the 50 MiB protocol
@@ -1064,7 +1080,8 @@ const SECRET_ARTIFACT_MARKER: &[u8] = b"SECRET_ARTIFACT_BYTES_MARKER_9e21c";
 
 #[tokio::test]
 async fn logs_never_leak_event_payloads_or_artifact_content_only_ids() {
-    let (app, repo, clock, item_id, storage_root) = setup().await;
+    let (app, repo, clock, item_id, storage_root_dir) = setup().await;
+    let storage_root = storage_root_dir.path();
     let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "redaction").await;
 
     let (guard, captured) = CaptureGuard::start();

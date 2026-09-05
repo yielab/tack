@@ -1130,16 +1130,14 @@ mod tests {
         ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(10))
     }
 
-    static NEXT_DIR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
-    fn temp_dir(label: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "tack-runner-codex-{label}-{}-{}",
-            std::process::id(),
-            NEXT_DIR.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-        ));
-        std::fs::create_dir_all(&path).expect("create temp dir");
-        path
+    /// A scratch directory that removes itself, and everything written under
+    /// it, when the returned guard drops — including when an assertion panics
+    /// first. Whatever holds a path into it must hold the guard too.
+    fn temp_dir(label: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(label)
+            .tempdir()
+            .expect("temporary directory")
     }
 
     /// A minimal, deterministic "fixture repo" workspace: a couple of known
@@ -1149,10 +1147,10 @@ mod tests {
     /// the
     /// `each_workspace_confined_process_only_ever_sees_its_own_canary_file`
     /// pattern).
-    fn deterministic_fixture_repo(label: &str) -> PathBuf {
+    fn deterministic_fixture_repo(label: &str) -> tempfile::TempDir {
         let root = temp_dir(label);
-        std::fs::write(root.join("README.md"), b"# fixture repo\n").expect("write README");
-        std::fs::write(root.join("main.rs"), b"fn main() {}\n").expect("write main.rs");
+        std::fs::write(root.path().join("README.md"), b"# fixture repo\n").expect("write README");
+        std::fs::write(root.path().join("main.rs"), b"fn main() {}\n").expect("write main.rs");
         root
     }
 
@@ -1167,27 +1165,34 @@ mod tests {
     /// A fresh, hermetic file-backed store per call — never the platform
     /// keychain — so parallel `#[test]` functions never see each other's
     /// entries and CI needs no Secret Service.
-    fn test_secret_store() -> crate::secrets::SecretStore {
-        crate::secrets::SecretStore::file(std::env::temp_dir().join(format!(
-            "tack-runner-codex-secrets-{}-{}.json",
-            std::process::id(),
-            NEXT_DIR.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-        )))
+    /// Takes the directory rather than making one, so the store's file cannot
+    /// outlive the guard that removes it. File-backed, never the platform
+    /// keychain, so parallel tests never see each other's entries and CI
+    /// needs no Secret Service.
+    fn test_secret_store(dir: &std::path::Path) -> crate::secrets::SecretStore {
+        crate::secrets::SecretStore::file(dir.join("secrets.json"))
     }
 
-    fn adapter_with_env(probe_env: BTreeMap<String, String>) -> CodexAdapter<FixedClock> {
-        CodexAdapter::with_clock(
+    /// Returns the adapter with the scratch directory its artifact staging
+    /// root and secret store both live in: drop the guard and the adapter is
+    /// pointing at nothing.
+    fn adapter_with_env(
+        probe_env: BTreeMap<String, String>,
+    ) -> (CodexAdapter<FixedClock>, tempfile::TempDir) {
+        let scratch = temp_dir("artifacts");
+        let adapter = CodexAdapter::with_clock(
             fixed_command(),
             generous_limits(),
             Duration::from_secs(5),
             probe_env,
-            temp_dir("artifacts"),
+            scratch.path().to_path_buf(),
             clock_at("2026-08-09T12:00:00Z"),
-            test_secret_store(),
-        )
+            test_secret_store(scratch.path()),
+        );
+        (adapter, scratch)
     }
 
-    fn adapter() -> CodexAdapter<FixedClock> {
+    fn adapter() -> (CodexAdapter<FixedClock>, tempfile::TempDir) {
         adapter_with_env(BTreeMap::new())
     }
 
@@ -1255,10 +1260,11 @@ mod tests {
 
     #[tokio::test]
     async fn validate_rejects_a_mismatched_harness_kind() {
-        let adapter = adapter();
-        let workspace = deterministic_fixture_repo("kind-mismatch");
+        let (adapter, _scratch) = adapter();
+        let workspace_dir = deterministic_fixture_repo("kind-mismatch");
+        let workspace = workspace_dir.path();
         let mut spec = spec_with(
-            workspace.clone(),
+            workspace.to_path_buf(),
             Some(("openai", "opaque/model-alpha")),
             &[],
         );
@@ -1273,9 +1279,10 @@ mod tests {
 
     #[tokio::test]
     async fn validate_rejects_an_auto_selected_model_pre_spawn() {
-        let adapter = adapter();
-        let workspace = deterministic_fixture_repo("auto-select");
-        let spec = spec_with(workspace.clone(), None, &[]);
+        let (adapter, _scratch) = adapter();
+        let workspace_dir = deterministic_fixture_repo("auto-select");
+        let workspace = workspace_dir.path();
+        let spec = spec_with(workspace.to_path_buf(), None, &[]);
 
         assert!(matches!(
             adapter.validate(&spec).await,
@@ -1286,22 +1293,25 @@ mod tests {
 
     #[tokio::test]
     async fn validate_rejects_an_unresolvable_binary() {
-        let empty_dir = temp_dir("empty-path");
+        let empty_dir_dir = temp_dir("empty-path");
+        let empty_dir = empty_dir_dir.path();
+        let scratch = temp_dir("artifacts-unresolvable");
         let adapter = CodexAdapter::with_clock(
             CodexLocator::Search {
                 program_name: "codex".to_owned(),
-                search_dirs: vec![empty_dir.clone()],
+                search_dirs: vec![empty_dir.to_path_buf()],
             },
             generous_limits(),
             Duration::from_secs(1),
             BTreeMap::new(),
-            temp_dir("artifacts-unresolvable"),
+            scratch.path().to_path_buf(),
             clock_at("2026-08-09T12:00:00Z"),
-            test_secret_store(),
+            test_secret_store(scratch.path()),
         );
-        let workspace = deterministic_fixture_repo("unresolvable");
+        let workspace_dir = deterministic_fixture_repo("unresolvable");
+        let workspace = workspace_dir.path();
         let spec = spec_with(
-            workspace.clone(),
+            workspace.to_path_buf(),
             Some(("openai", "opaque/model-alpha")),
             &[],
         );
@@ -1324,10 +1334,11 @@ mod tests {
     #[tokio::test]
     async fn unsupported_selection_fails_pre_spawn_even_when_the_process_would_otherwise_hang_forever()
      {
-        let adapter = adapter();
-        let workspace = deterministic_fixture_repo("pre-spawn-hang-guard");
+        let (adapter, _scratch) = adapter();
+        let workspace_dir = deterministic_fixture_repo("pre-spawn-hang-guard");
+        let workspace = workspace_dir.path();
         let spec = spec_with(
-            workspace.clone(),
+            workspace.to_path_buf(),
             None, // auto-select: rejected by check_selection before spawn
             &[
                 ("TACK_FAKE_HARNESS_MODE", "hang"),
@@ -1356,10 +1367,11 @@ mod tests {
     #[tokio::test]
     async fn fake_binary_success_completes_succeeded_with_normalized_output_and_a_staged_artifact()
     {
-        let adapter = adapter();
-        let workspace = deterministic_fixture_repo("exec-success");
+        let (adapter, _scratch) = adapter();
+        let workspace_dir = deterministic_fixture_repo("exec-success");
+        let workspace = workspace_dir.path();
         let spec = spec_with(
-            workspace.clone(),
+            workspace.to_path_buf(),
             Some(("openai", "opaque/model-alpha")),
             &[("TACK_FAKE_HARNESS_MODE", "success")],
         );
@@ -1411,10 +1423,11 @@ mod tests {
 
     #[tokio::test]
     async fn fake_binary_failure_completes_failed_with_the_exit_code_in_terminal_reason() {
-        let adapter = adapter();
-        let workspace = deterministic_fixture_repo("exec-failure");
+        let (adapter, _scratch) = adapter();
+        let workspace_dir = deterministic_fixture_repo("exec-failure");
+        let workspace = workspace_dir.path();
         let spec = spec_with(
-            workspace.clone(),
+            workspace.to_path_buf(),
             Some(("openai", "opaque/model-alpha")),
             &[
                 ("TACK_FAKE_HARNESS_MODE", "failure"),
@@ -1444,10 +1457,11 @@ mod tests {
     /// shape to second-guess an exit code.
     #[tokio::test]
     async fn fake_binary_malformed_output_does_not_panic_and_still_produces_a_typed_result() {
-        let adapter = adapter();
-        let workspace = deterministic_fixture_repo("exec-malformed");
+        let (adapter, _scratch) = adapter();
+        let workspace_dir = deterministic_fixture_repo("exec-malformed");
+        let workspace = workspace_dir.path();
         let spec = spec_with(
-            workspace.clone(),
+            workspace.to_path_buf(),
             Some(("openai", "opaque/model-alpha")),
             &[("TACK_FAKE_HARNESS_MODE", "malformed")],
         );
@@ -1471,11 +1485,12 @@ mod tests {
     /// own test).
     #[tokio::test]
     async fn cancel_kills_the_whole_descendant_tree_via_the_adapter() {
-        let adapter = adapter();
-        let workspace = deterministic_fixture_repo("exec-cancel");
+        let (adapter, _scratch) = adapter();
+        let workspace_dir = deterministic_fixture_repo("exec-cancel");
+        let workspace = workspace_dir.path();
         let pidfile = workspace.join("grandchild.pid");
         let spec = spec_with(
-            workspace.clone(),
+            workspace.to_path_buf(),
             Some(("openai", "opaque/model-alpha")),
             &[
                 ("TACK_FAKE_HARNESS_MODE", "spawn_child"),
@@ -1508,7 +1523,7 @@ mod tests {
     /// stale after a restart) is a typed rejection, never a silent success.
     #[tokio::test]
     async fn cancel_and_wait_on_an_untracked_handle_are_typed_rejections() {
-        let adapter = adapter();
+        let (adapter, _scratch) = adapter();
         let handle = LocalRunHandle {
             process_id: "codex:999999:0".to_owned(),
         };
@@ -1534,10 +1549,11 @@ mod tests {
     #[tokio::test]
     async fn secret_canaries_never_survive_into_terminal_reason_or_the_staged_artifact() {
         const CANARY_ENV: &str = "tack-test-codex-canary-env-58d1";
-        let adapter = adapter();
-        let workspace = deterministic_fixture_repo("redaction");
+        let (adapter, _scratch) = adapter();
+        let workspace_dir = deterministic_fixture_repo("redaction");
+        let workspace = workspace_dir.path();
         let mut spec = spec_with(
-            workspace.clone(),
+            workspace.to_path_buf(),
             Some(("openai", "opaque/model-alpha")),
             &[
                 ("TACK_FAKE_HARNESS_MODE", "echo_canary"),
@@ -1578,7 +1594,7 @@ mod tests {
 
     #[tokio::test]
     async fn probe_reports_a_recognized_version_with_no_error() {
-        let adapter = adapter_with_env(env_map(&[
+        let (adapter, _scratch) = adapter_with_env(env_map(&[
             ("TACK_FAKE_HARNESS_MODE", "version"),
             ("TACK_FAKE_HARNESS_VERSION", "9.9.9"),
         ]));
@@ -1605,7 +1621,7 @@ mod tests {
     /// output's tokens instead.
     #[tokio::test]
     async fn probe_recognizes_a_program_name_prefixed_version_string() {
-        let adapter = adapter_with_env(env_map(&[
+        let (adapter, _scratch) = adapter_with_env(env_map(&[
             ("TACK_FAKE_HARNESS_MODE", "version"),
             ("TACK_FAKE_HARNESS_VERSION", "codex-cli 0.149.1"),
         ]));
@@ -1620,7 +1636,8 @@ mod tests {
     /// explicit `probe_error`, never a fabricated clean version (rule 7).
     #[tokio::test]
     async fn probe_reports_an_unrecognized_version_string_as_an_explicit_probe_error() {
-        let adapter = adapter_with_env(env_map(&[("TACK_FAKE_HARNESS_MODE", "unknown_version")]));
+        let (adapter, _scratch) =
+            adapter_with_env(env_map(&[("TACK_FAKE_HARNESS_MODE", "unknown_version")]));
         let capability = adapter.probe().await;
 
         assert_eq!(capability.installed_version, "");
@@ -1637,7 +1654,8 @@ mod tests {
     /// malformed test above).
     #[tokio::test]
     async fn probe_reports_malformed_version_output_as_an_explicit_probe_error() {
-        let adapter = adapter_with_env(env_map(&[("TACK_FAKE_HARNESS_MODE", "malformed")]));
+        let (adapter, _scratch) =
+            adapter_with_env(env_map(&[("TACK_FAKE_HARNESS_MODE", "malformed")]));
         let capability = adapter.probe().await;
 
         assert_eq!(capability.installed_version, "");
@@ -1646,7 +1664,7 @@ mod tests {
 
     #[tokio::test]
     async fn probe_reports_a_nonzero_exit_as_an_explicit_probe_error() {
-        let adapter = adapter_with_env(env_map(&[
+        let (adapter, _scratch) = adapter_with_env(env_map(&[
             ("TACK_FAKE_HARNESS_MODE", "failure"),
             ("TACK_FAKE_HARNESS_EXIT_CODE", "3"),
         ]));
@@ -1658,18 +1676,20 @@ mod tests {
 
     #[tokio::test]
     async fn probe_reports_an_absent_binary_as_an_explicit_probe_error_never_a_fake_success() {
-        let empty_dir = temp_dir("probe-empty-path");
+        let empty_dir_dir = temp_dir("probe-empty-path");
+        let empty_dir = empty_dir_dir.path();
+        let scratch = temp_dir("artifacts-absent");
         let adapter = CodexAdapter::with_clock(
             CodexLocator::Search {
                 program_name: "codex".to_owned(),
-                search_dirs: vec![empty_dir.clone()],
+                search_dirs: vec![empty_dir.to_path_buf()],
             },
             generous_limits(),
             Duration::from_secs(1),
             BTreeMap::new(),
-            temp_dir("artifacts-absent"),
+            scratch.path().to_path_buf(),
             clock_at("2026-08-09T12:00:00Z"),
-            test_secret_store(),
+            test_secret_store(scratch.path()),
         );
 
         let capability = adapter.probe().await;
@@ -1680,6 +1700,7 @@ mod tests {
 
     #[tokio::test]
     async fn probe_never_hangs_past_its_own_timeout() {
+        let scratch = temp_dir("artifacts-hang");
         let adapter = CodexAdapter::with_clock(
             fixed_command(),
             generous_limits(),
@@ -1688,9 +1709,9 @@ mod tests {
                 ("TACK_FAKE_HARNESS_MODE", "hang"),
                 ("TACK_FAKE_HARNESS_SLEEP_SECONDS", "3600"),
             ]),
-            temp_dir("artifacts-hang"),
+            scratch.path().to_path_buf(),
             clock_at("2026-08-09T12:00:00Z"),
-            test_secret_store(),
+            test_secret_store(scratch.path()),
         );
 
         let capability = tokio::time::timeout(Duration::from_secs(5), adapter.probe())
@@ -1702,7 +1723,7 @@ mod tests {
 
     #[tokio::test]
     async fn harness_kind_matches_what_probe_itself_reports() {
-        let adapter = adapter();
+        let (adapter, _scratch) = adapter();
         let capability = adapter.probe().await;
         assert_eq!(
             HarnessProbe::harness_kind(&adapter).as_str(),
@@ -1720,7 +1741,7 @@ mod tests {
     /// through the registration side effect.
     #[test]
     fn declared_cancel_capability_is_advisory_not_supported() {
-        let adapter = adapter();
+        let (adapter, _scratch) = adapter();
         let declared = HarnessProbe::declared_capabilities(&adapter);
         assert_eq!(declared.cancel.support, CapabilitySupport::Advisory);
         assert!(declared.cancel.reason.is_some());
@@ -1747,7 +1768,7 @@ mod tests {
 
     #[tokio::test]
     async fn reconcile_with_no_recorded_process_id_reports_stopped_without_dispatch() {
-        let adapter = adapter();
+        let (adapter, _scratch) = adapter();
         let observation = adapter
             .reconcile(&journal_with_process(None))
             .await
@@ -1757,7 +1778,7 @@ mod tests {
 
     #[tokio::test]
     async fn reconcile_rejects_an_unrecognized_handle_encoding_as_explicitly_unavailable() {
-        let adapter = adapter();
+        let (adapter, _scratch) = adapter();
         let journal = journal_with_process(Some("not-a-codex-handle"));
         assert!(matches!(
             adapter.reconcile(&journal).await,
@@ -1768,7 +1789,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn reconcile_observes_a_real_alive_process_as_running() {
-        let adapter = adapter();
+        let (adapter, _scratch) = adapter();
         // A real, independently-alive process this test controls directly
         // (not spawned via the adapter, but a genuine live pid either way).
         let mut child = std::process::Command::new("sleep")
@@ -1787,7 +1808,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn reconcile_observes_a_dead_pid_as_stopped() {
-        let adapter = adapter();
+        let (adapter, _scratch) = adapter();
         let mut child = std::process::Command::new("true")
             .spawn()
             .expect("spawn true");
@@ -1890,24 +1911,27 @@ mod tests {
     /// configured and enabled on this same adapter.
     #[tokio::test]
     async fn a_direct_model_request_spawns_with_no_provider_endpoint_variable_present() {
-        let workspace = deterministic_fixture_repo("provider-guard-direct");
+        let workspace_dir = deterministic_fixture_repo("provider-guard-direct");
+        let workspace = workspace_dir.path();
         let marker = workspace.join("env-names.marker");
-        let secrets = test_secret_store();
+        let scratch = temp_dir("secrets");
+        let secrets = test_secret_store(scratch.path());
         secrets
             .set("demo-secret", "unused-by-a-direct-request")
             .expect("seed store");
+        let scratch = temp_dir("artifacts");
         let adapter = CodexAdapter::with_clock(
-            env_name_dump_locator(&workspace, &marker),
+            env_name_dump_locator(workspace, &marker),
             generous_limits(),
             Duration::from_secs(5),
             BTreeMap::new(),
-            temp_dir("artifacts"),
+            scratch.path().to_path_buf(),
             clock_at("2026-08-09T12:00:00Z"),
             secrets,
         )
         .with_providers(enabled_gateway_providers("demo-secret"));
 
-        let spec = spec_with(workspace.clone(), Some(("openai", "gpt-5")), &[]);
+        let spec = spec_with(workspace.to_path_buf(), Some(("openai", "gpt-5")), &[]);
         adapter.validate(&spec).await.expect("validate");
         let handle = adapter.start(&spec).await.expect("start");
         let _ = adapter.wait(&handle).await.expect("wait");
@@ -1923,25 +1947,27 @@ mod tests {
     /// configured provider does receive its credential variable name.
     #[tokio::test]
     async fn a_configured_provider_request_spawns_with_its_endpoint_variable_present() {
-        let workspace = deterministic_fixture_repo("provider-guard-configured");
+        let workspace_dir = deterministic_fixture_repo("provider-guard-configured");
+        let workspace = workspace_dir.path();
         let marker = workspace.join("env-names.marker");
-        let secrets = test_secret_store();
+        let scratch = temp_dir("secrets");
+        let secrets = test_secret_store(scratch.path());
         secrets
             .set("demo-secret", "a-resolvable-value")
             .expect("seed store");
         let adapter = CodexAdapter::with_clock(
-            env_name_dump_locator(&workspace, &marker),
+            env_name_dump_locator(workspace, &marker),
             generous_limits(),
             Duration::from_secs(5),
             BTreeMap::new(),
-            temp_dir("artifacts"),
+            scratch.path().to_path_buf(),
             clock_at("2026-08-09T12:00:00Z"),
             secrets,
         )
         .with_providers(enabled_gateway_providers("demo-secret"));
 
         let spec = spec_with(
-            workspace.clone(),
+            workspace.to_path_buf(),
             Some((crate::config::VERCEL_AI_GATEWAY_PROVIDER, "openai/gpt-5.1")),
             &[],
         );
@@ -1967,7 +1993,8 @@ mod tests {
     /// own built-in provider.
     #[tokio::test]
     async fn a_disabled_provider_rejects_the_request_before_any_process_spawns() {
-        let secrets = test_secret_store();
+        let scratch = temp_dir("secrets");
+        let secrets = test_secret_store(scratch.path());
         secrets
             .set("demo-secret", "irrelevant")
             .expect("seed store");
@@ -1978,10 +2005,12 @@ mod tests {
                 secret: "demo-secret".to_owned(),
             },
         )]);
-        let adapter = adapter_with_env(BTreeMap::new()).with_providers(providers);
-        let workspace = deterministic_fixture_repo("provider-guard-disabled");
+        let (adapter, _scratch) = adapter_with_env(BTreeMap::new());
+        let adapter = adapter.with_providers(providers);
+        let workspace_dir = deterministic_fixture_repo("provider-guard-disabled");
+        let workspace = workspace_dir.path();
         let spec = spec_with(
-            workspace,
+            workspace.to_path_buf(),
             Some((crate::config::VERCEL_AI_GATEWAY_PROVIDER, "openai/gpt-5.1")),
             &[],
         );
@@ -2016,17 +2045,18 @@ mod tests {
     /// tests above already cover both independently).
     #[tokio::test]
     #[ignore = "opt-in: requires a real `codex` binary on PATH; run with \
-                `cargo test -p tack-runner --lib -- --ignored codex::tests::live_`"]
+                `cargo nextest run --workspace --run-ignored ignored-only -E 'test(/codex::tests::live_/)'`"]
     async fn live_probe_and_artifact_staging_against_a_real_codex_binary_when_present() {
         if locate_in_dirs(CODEX_PROGRAM_NAME, &system_path_dirs()).is_none() {
             eprintln!("skipping live codex test: `codex` not found on PATH");
             return;
         }
 
+        let scratch = temp_dir("live-artifacts");
         let adapter = CodexAdapter::discover(
             ProcessLimits::new(1_048_576, 1_048_576, Duration::from_secs(30)),
-            temp_dir("live-artifacts"),
-            test_secret_store(),
+            scratch.path().to_path_buf(),
+            test_secret_store(scratch.path()),
         );
 
         let capability = adapter.probe().await;
@@ -2044,12 +2074,14 @@ mod tests {
             "codex version probe must recognize the installed binary's real output"
         );
 
-        let workspace = deterministic_fixture_repo("live-artifact");
-        let stager = ArtifactStager::new(temp_dir("live-artifact-staging"));
+        let workspace_dir = deterministic_fixture_repo("live-artifact");
+        let workspace = workspace_dir.path();
+        let staging = temp_dir("live-artifact-staging");
+        let stager = ArtifactStager::new(staging.path().to_path_buf());
         let staged = stager
             .stage_file(
                 "live-attempt",
-                &workspace,
+                workspace,
                 std::path::Path::new("README.md"),
                 "log",
                 "text/plain",
@@ -2078,8 +2110,8 @@ mod tests {
     #[tokio::test]
     #[ignore = "opt-in: requires a real `codex` binary on PATH, a `vercel_ai_gateway` entry in \
                 this machine's secret store, *and* TACK_RUN_LIVE_CODEX_GATEWAY_TEST=1 (a real \
-                invocation is billed); run with TACK_RUN_LIVE_CODEX_GATEWAY_TEST=1 cargo test -p \
-                tack-runner --lib -- --ignored codex::tests::live_"]
+                invocation is billed); run with TACK_RUN_LIVE_CODEX_GATEWAY_TEST=1 cargo nextest \
+                run --workspace --run-ignored ignored-only -E 'test(/codex::tests::live_/)'"]
     async fn live_codex_through_the_configured_provider_when_opted_in() {
         if std::env::var("TACK_RUN_LIVE_CODEX_GATEWAY_TEST").as_deref() != Ok("1") {
             eprintln!(
@@ -2106,14 +2138,16 @@ mod tests {
             },
         )]);
 
+        let scratch = temp_dir("live-gateway-artifacts");
         let adapter = CodexAdapter::discover(
             ProcessLimits::new(1_048_576, 1_048_576, Duration::from_secs(60)),
-            temp_dir("live-gateway-artifacts"),
+            scratch.path().to_path_buf(),
             secrets,
         )
         .with_providers(providers);
 
-        let workspace = deterministic_fixture_repo("live-gateway");
+        let workspace_dir = deterministic_fixture_repo("live-gateway");
+        let workspace = workspace_dir.path();
         // Codex refuses to run outside a git repository; a real workspace
         // is always a git checkout (`WorkspaceManager`), so this makes the
         // fixture structurally match production rather than special-casing
@@ -2125,18 +2159,18 @@ mod tests {
         ] {
             std::process::Command::new("git")
                 .args(&args)
-                .current_dir(&workspace)
+                .current_dir(workspace)
                 .status()
                 .expect("git init the fixture repo");
         }
         std::process::Command::new("git")
             .args(["add", "-A"])
-            .current_dir(&workspace)
+            .current_dir(workspace)
             .status()
             .expect("git add");
         std::process::Command::new("git")
             .args(["commit", "-q", "-m", "fixture"])
-            .current_dir(&workspace)
+            .current_dir(workspace)
             .status()
             .expect("git commit");
         // `openai/gpt-5.1` and `openai/gpt-5.1-codex` were both measured
@@ -2148,7 +2182,7 @@ mod tests {
         // `openai/gpt-5.6-sol` is Vercel's own documented default model
         // for Codex through the gateway.
         let mut spec = spec_with(
-            workspace.clone(),
+            workspace.to_path_buf(),
             Some((
                 crate::config::VERCEL_AI_GATEWAY_PROVIDER,
                 "openai/gpt-5.6-sol",

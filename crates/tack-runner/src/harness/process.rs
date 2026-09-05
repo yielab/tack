@@ -408,18 +408,15 @@ mod tests {
     use super::*;
     use crate::harness::fixtures::fake_harness_command;
     use std::path::Path;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
-    static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
-
-    fn temp_workspace(label: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "tack-runner-process-{label}-{}-{}",
-            std::process::id(),
-            NEXT_DIR.fetch_add(1, Ordering::SeqCst)
-        ));
-        std::fs::create_dir_all(&root).expect("create temp workspace");
-        root
+    /// A scratch directory that removes itself, and everything written under
+    /// it, when the returned guard drops — including when an assertion panics
+    /// first.
+    fn temp_workspace(label: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(label)
+            .tempdir()
+            .expect("temporary directory")
     }
 
     fn spec(workspace: &Path, env: BTreeMap<String, String>) -> ProcessSpec {
@@ -446,8 +443,9 @@ mod tests {
 
     #[tokio::test]
     async fn success_mode_exits_cleanly_and_captures_stdout() {
-        let workspace = temp_workspace("success");
-        let process = spec(&workspace, env_with_mode("success"))
+        let workspace_dir = temp_workspace("success");
+        let workspace = workspace_dir.path();
+        let process = spec(workspace, env_with_mode("success"))
             .spawn()
             .await
             .expect("spawn");
@@ -464,10 +462,11 @@ mod tests {
 
     #[tokio::test]
     async fn failure_mode_reports_configured_exit_code() {
-        let workspace = temp_workspace("failure");
+        let workspace_dir = temp_workspace("failure");
+        let workspace = workspace_dir.path();
         let mut env = env_with_mode("failure");
         env.insert("TACK_FAKE_HARNESS_EXIT_CODE".to_owned(), "17".to_owned());
-        let process = spec(&workspace, env).spawn().await.expect("spawn");
+        let process = spec(workspace, env).spawn().await.expect("spawn");
         let result = process
             .wait_with_capture(&generous_limits(), &SecretMaterial::new())
             .await
@@ -482,10 +481,12 @@ mod tests {
     /// declared workspace root is refused before anything is spawned.
     #[tokio::test]
     async fn spawn_refuses_a_working_directory_outside_its_workspace_root() {
-        let workspace = temp_workspace("escape-root");
-        let sibling = temp_workspace("escape-sibling");
-        let mut escaping = spec(&workspace, env_with_mode("success"));
-        escaping.working_directory = sibling.clone();
+        let workspace_dir = temp_workspace("escape-root");
+        let workspace = workspace_dir.path();
+        let sibling_dir = temp_workspace("escape-sibling");
+        let sibling = sibling_dir.path();
+        let mut escaping = spec(workspace, env_with_mode("success"));
+        escaping.working_directory = sibling.to_path_buf();
 
         assert!(matches!(
             escaping.spawn().await,
@@ -510,8 +511,10 @@ mod tests {
     /// adapter from pointing at the wrong workspace in the first place.)
     #[tokio::test]
     async fn each_workspace_confined_process_only_ever_sees_its_own_canary_file() {
-        let workspace_a = temp_workspace("isolation-a");
-        let workspace_b = temp_workspace("isolation-b");
+        let workspace_a_dir = temp_workspace("isolation-a");
+        let workspace_a = workspace_a_dir.path();
+        let workspace_b_dir = temp_workspace("isolation-b");
+        let workspace_b = workspace_b_dir.path();
         std::fs::write(workspace_a.join("canary.txt"), "workspace-a-secret")
             .expect("write workspace a canary");
         std::fs::write(workspace_b.join("canary.txt"), "workspace-b-secret")
@@ -522,7 +525,7 @@ mod tests {
             "TACK_FAKE_HARNESS_READ_PATH".to_owned(),
             "canary.txt".to_owned(),
         );
-        let read_a = spec(&workspace_a, env_a)
+        let read_a = spec(workspace_a, env_a)
             .spawn()
             .await
             .expect("spawn")
@@ -538,7 +541,7 @@ mod tests {
             "TACK_FAKE_HARNESS_READ_PATH".to_owned(),
             "canary.txt".to_owned(),
         );
-        let read_b = spec(&workspace_b, env_b)
+        let read_b = spec(workspace_b, env_b)
             .spawn()
             .await
             .expect("spawn")
@@ -560,7 +563,8 @@ mod tests {
     /// deadlock the child on a full pipe).
     #[tokio::test]
     async fn high_volume_output_is_memory_bounded_and_explicitly_truncated() {
-        let workspace = temp_workspace("high-volume");
+        let workspace_dir = temp_workspace("high-volume");
+        let workspace = workspace_dir.path();
         const VOLUME_BYTES: usize = 8 * 1024 * 1024;
         const CAP: usize = 64 * 1024;
         let mut env = env_with_mode("high_volume");
@@ -569,7 +573,7 @@ mod tests {
             VOLUME_BYTES.to_string(),
         );
         let limits = ProcessLimits::new(CAP, CAP, Duration::from_secs(30));
-        let result = spec(&workspace, env)
+        let result = spec(workspace, env)
             .spawn()
             .await
             .expect("spawn")
@@ -602,7 +606,8 @@ mod tests {
     /// reap that grandchild, not merely the shell that spawned it.
     #[tokio::test]
     async fn cancel_kills_the_whole_descendant_tree_not_only_the_direct_child() {
-        let workspace = temp_workspace("cancel-tree");
+        let workspace_dir = temp_workspace("cancel-tree");
+        let workspace = workspace_dir.path();
         let pidfile = workspace.join("grandchild.pid");
         let mut env = env_with_mode("spawn_child");
         env.insert(
@@ -613,7 +618,7 @@ mod tests {
             "TACK_FAKE_HARNESS_SLEEP_SECONDS".to_owned(),
             "3600".to_owned(),
         );
-        let process = spec(&workspace, env).spawn().await.expect("spawn");
+        let process = spec(workspace, env).spawn().await.expect("spawn");
         let direct_child_pid = process.pid();
 
         let grandchild_pid = wait_for_pidfile(&pidfile).await;
@@ -650,14 +655,15 @@ mod tests {
     /// caller or being reported as any other terminal shape.
     #[tokio::test]
     async fn a_process_exceeding_its_timeout_is_killed_and_reported_as_timed_out() {
-        let workspace = temp_workspace("timeout");
+        let workspace_dir = temp_workspace("timeout");
+        let workspace = workspace_dir.path();
         let mut env = env_with_mode("hang");
         env.insert(
             "TACK_FAKE_HARNESS_SLEEP_SECONDS".to_owned(),
             "3600".to_owned(),
         );
         let limits = ProcessLimits::new(4096, 4096, Duration::from_millis(50));
-        let result = spec(&workspace, env)
+        let result = spec(workspace, env)
             .spawn()
             .await
             .expect("spawn")
@@ -677,7 +683,8 @@ mod tests {
     /// `ProcessSpec`'s own `Debug` output must never contain it either.
     #[tokio::test]
     async fn secret_canaries_never_survive_into_captured_output_or_spec_debug() {
-        let workspace = temp_workspace("canary");
+        let workspace_dir = temp_workspace("canary");
+        let workspace = workspace_dir.path();
         const CANARY_ENV: &str = "tack-test-canary-env-73f1";
         const CANARY_STDIN: &str = "tack-test-canary-stdin-91ab";
         let mut env = env_with_mode("echo_canary");
@@ -687,7 +694,7 @@ mod tests {
             "TACK_TEST_SECRET".to_owned(),
         );
 
-        let mut process_spec = spec(&workspace, env);
+        let mut process_spec = spec(workspace, env);
         process_spec.stdin = Some(CANARY_STDIN.as_bytes().to_vec());
 
         let debug_output = format!("{process_spec:?}");
@@ -725,10 +732,11 @@ mod tests {
     async fn every_documented_fixture_mode_behaves_as_documented() {
         let limits = generous_limits();
 
-        let workspace = temp_workspace("mode-version");
+        let workspace_dir = temp_workspace("mode-version");
+        let workspace = workspace_dir.path();
         let mut env = env_with_mode("version");
         env.insert("TACK_FAKE_HARNESS_VERSION".to_owned(), "9.9.9".to_owned());
-        let result = spec(&workspace, env)
+        let result = spec(workspace, env)
             .spawn()
             .await
             .expect("spawn")
@@ -737,10 +745,11 @@ mod tests {
             .expect("wait");
         assert_eq!(result.exit, ProcessExit::Exited(0));
         assert!(result.stdout.text.contains("9.9.9"));
-        std::fs::remove_dir_all(&workspace).expect("cleanup");
+        std::fs::remove_dir_all(workspace).expect("cleanup");
 
-        let workspace = temp_workspace("mode-unknown-version");
-        let result = spec(&workspace, env_with_mode("unknown_version"))
+        let workspace_dir = temp_workspace("mode-unknown-version");
+        let workspace = workspace_dir.path();
+        let result = spec(workspace, env_with_mode("unknown_version"))
             .spawn()
             .await
             .expect("spawn")
@@ -749,10 +758,11 @@ mod tests {
             .expect("wait");
         assert_eq!(result.exit, ProcessExit::Exited(0));
         assert!(result.stdout.text.contains("999.999.999"));
-        std::fs::remove_dir_all(&workspace).expect("cleanup");
+        std::fs::remove_dir_all(workspace).expect("cleanup");
 
-        let workspace = temp_workspace("mode-malformed");
-        let result = spec(&workspace, env_with_mode("malformed"))
+        let workspace_dir = temp_workspace("mode-malformed");
+        let workspace = workspace_dir.path();
+        let result = spec(workspace, env_with_mode("malformed"))
             .spawn()
             .await
             .expect("spawn")
@@ -764,7 +774,7 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(&result.stdout.text).is_err(),
             "malformed mode must actually produce unparseable output"
         );
-        std::fs::remove_dir_all(&workspace).expect("cleanup");
+        std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 
     async fn wait_for_pidfile(path: &Path) -> u32 {

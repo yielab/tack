@@ -12,25 +12,19 @@
 //! recoverability, not just to itself.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use tack_runner::client::{
     AttemptId, AttemptJournal, AttemptLease, AttemptState, FencingToken, JournalError,
     JournalState, OwnerOnlyJournal, RunnerId, Timestamp, WorkspaceId, WorkspaceJournal,
 };
 
-static NEXT_ROOT: AtomicUsize = AtomicUsize::new(0);
-
-fn temporary_root(label: &str) -> PathBuf {
-    let n = NEXT_ROOT.fetch_add(1, Ordering::SeqCst);
-    std::env::temp_dir().join(format!(
-        "tack-runner-g2-journal-{label}-{}-{n}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ))
+/// A scratch directory that removes itself, and everything written under it,
+/// when the returned guard drops — including when an assertion panics first.
+fn temporary_root(label: &str) -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix(label)
+        .tempdir()
+        .expect("temporary directory")
 }
 
 fn record(attempt_id: &str, fencing_token: u64) -> AttemptJournal {
@@ -59,8 +53,9 @@ fn record(attempt_id: &str, fencing_token: u64) -> AttemptJournal {
 // =======================================================================
 #[test]
 fn a_bit_rotted_journal_file_is_a_typed_malformed_error_not_a_panic() {
-    let root = temporary_root("bitrot-single");
-    let journal = OwnerOnlyJournal::new(&root);
+    let root_dir = temporary_root("bitrot-single");
+    let root = root_dir.path();
+    let journal = OwnerOnlyJournal::new(root);
     let good = record("attempt-g2-good", 1);
     journal
         .persist_before_spawn(&good)
@@ -81,7 +76,7 @@ fn a_bit_rotted_journal_file_is_a_typed_malformed_error_not_a_panic() {
         "expected a typed Malformed error, got {loaded:?}"
     );
 
-    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_dir_all(root);
 }
 
 // =======================================================================
@@ -98,8 +93,9 @@ fn a_bit_rotted_journal_file_is_a_typed_malformed_error_not_a_panic() {
 // =======================================================================
 #[test]
 fn one_corrupted_journal_file_currently_blocks_recovery_of_every_other_attempt() {
-    let root = temporary_root("bitrot-batch");
-    let journal = OwnerOnlyJournal::new(&root);
+    let root_dir = temporary_root("bitrot-batch");
+    let root = root_dir.path();
+    let journal = OwnerOnlyJournal::new(root);
 
     let healthy_a = record("attempt-g2-healthy-a", 1);
     let healthy_b = record("attempt-g2-healthy-b", 1);
@@ -149,7 +145,7 @@ fn one_corrupted_journal_file_currently_blocks_recovery_of_every_other_attempt()
         "the healthy record's own state is untouched by its sibling's corruption"
     );
 
-    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_dir_all(root);
 }
 
 // =======================================================================
@@ -161,8 +157,9 @@ fn one_corrupted_journal_file_currently_blocks_recovery_of_every_other_attempt()
 // =======================================================================
 #[test]
 fn a_truncated_zero_length_journal_file_is_malformed_not_missing() {
-    let root = temporary_root("truncated");
-    let journal = OwnerOnlyJournal::new(&root);
+    let root_dir = temporary_root("truncated");
+    let root = root_dir.path();
+    let journal = OwnerOnlyJournal::new(root);
     let record = record("attempt-g2-truncated", 1);
     journal
         .persist_before_spawn(&record)
@@ -176,5 +173,5 @@ fn a_truncated_zero_length_journal_file_is_malformed_not_missing() {
         "a truncated journal must not be confused with `Missing` (which would wrongly permit a second spawn): got {loaded:?}"
     );
 
-    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_dir_all(root);
 }

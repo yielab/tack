@@ -355,22 +355,16 @@ fn make_owner_only(_path: &Path) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs,
-        sync::atomic::{AtomicUsize, Ordering},
-    };
+    use std::fs;
 
     use super::*;
     use crate::client::{AttemptState, Timestamp};
 
-    static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
-
-    fn temporary_root() -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "tack-runner-journal-{}-{}",
-            std::process::id(),
-            NEXT_DIR.fetch_add(1, Ordering::SeqCst)
-        ))
+    /// A scratch directory that removes itself, and everything written under
+    /// it, when the returned guard drops — including when an assertion panics
+    /// first.
+    fn temporary_root() -> tempfile::TempDir {
+        tempfile::tempdir().expect("temporary directory")
     }
 
     fn record() -> AttemptJournal {
@@ -395,8 +389,9 @@ mod tests {
 
     #[test]
     fn pre_spawn_journal_is_atomic_owner_only_and_recoverable() {
-        let root = temporary_root();
-        let journal = OwnerOnlyJournal::new(&root);
+        let root_dir = temporary_root();
+        let root = root_dir.path();
+        let journal = OwnerOnlyJournal::new(root);
         let record = record();
         journal
             .persist_before_spawn(&record)
@@ -443,8 +438,9 @@ mod tests {
 
     #[test]
     fn load_and_recovery_reject_a_filename_that_disagrees_with_the_record_attempt() {
-        let root = temporary_root();
-        let journal = OwnerOnlyJournal::new(&root);
+        let root_dir = temporary_root();
+        let root = root_dir.path();
+        let journal = OwnerOnlyJournal::new(root);
         let record = record();
         journal
             .persist_before_spawn(&record)
@@ -466,8 +462,9 @@ mod tests {
 
     #[test]
     fn quarantined_attempt_cannot_be_persisted_for_a_second_spawn() {
-        let root = temporary_root();
-        let journal = OwnerOnlyJournal::new(&root);
+        let root_dir = temporary_root();
+        let root = root_dir.path();
+        let journal = OwnerOnlyJournal::new(root);
         let record = record();
         journal
             .persist_before_spawn(&record)
@@ -491,8 +488,11 @@ mod tests {
         use std::os::unix::fs::symlink;
 
         for name in ["root", "journal", "quarantine"] {
-            let root = temporary_root();
-            let target = root.with_extension(format!("{name}-target"));
+            let guard = temporary_root();
+            // `root` must not exist yet: the "root" case symlinks the path
+            // itself, and `target` has to be a sibling it can point at.
+            let root = guard.path().join(name);
+            let target = guard.path().join(format!("{name}-target"));
             fs::create_dir_all(&target).expect("target directory");
             match name {
                 "root" => symlink(&target, &root).expect("root symlink"),

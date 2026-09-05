@@ -545,17 +545,21 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    fn workdir(tag: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("tack-swap-{tag}-{}", Uuid::new_v4()));
-        fs::create_dir_all(&d).unwrap();
-        d
+    /// Working directory that removes itself when the returned guard drops,
+    /// so a failed assertion leaves nothing behind either.
+    fn workdir(tag: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(tag)
+            .tempdir()
+            .expect("temporary directory")
     }
 
     /// The DB swap succeeds but the storage swap fails — the whole
     /// operation must roll back so the original DB is intact and bootable.
     #[test]
     fn restore_swap_rolls_back_when_storage_swap_fails() {
-        let dir = workdir("storage-fail");
+        let dir_guard = workdir("storage-fail");
+        let dir = dir_guard.path();
         let db_path = dir.join("tack.db");
         let restore_db = dir.join("tack.db.restore");
         fs::write(&db_path, b"ORIGINAL").unwrap();
@@ -581,13 +585,14 @@ mod tests {
         // No stray .bak left behind for the DB.
         assert!(!Path::new(&format!("{}.bak-TS", db_path.to_string_lossy())).exists());
 
-        fs::remove_dir_all(&dir).ok();
+        fs::remove_dir_all(dir).ok();
     }
 
     /// Happy path: DB + storage both swap, and a timestamped .bak is kept.
     #[test]
     fn restore_swap_promotes_db_and_storage() {
-        let dir = workdir("ok");
+        let dir_guard = workdir("ok");
+        let dir = dir_guard.path();
         let db_path = dir.join("tack.db");
         let restore_db = dir.join("tack.db.restore");
         fs::write(&db_path, b"ORIGINAL").unwrap();
@@ -612,14 +617,15 @@ mod tests {
         assert!(!restore_db.exists());
         assert!(!storage_restore.exists());
 
-        fs::remove_dir_all(&dir).ok();
+        fs::remove_dir_all(dir).ok();
     }
 
     /// Stale `-wal`/`-shm` sidecars of the replaced DB are deleted so SQLite
     /// cannot replay them onto the freshly restored database.
     #[test]
     fn restore_swap_deletes_stale_wal_shm() {
-        let dir = workdir("wal");
+        let dir_guard = workdir("wal");
+        let dir = dir_guard.path();
         let db_path = dir.join("tack.db");
         let restore_db = dir.join("tack.db.restore");
         fs::write(&db_path, b"ORIGINAL").unwrap();
@@ -643,7 +649,7 @@ mod tests {
         );
         assert_eq!(fs::read(&db_path).unwrap(), b"RESTORED");
 
-        fs::remove_dir_all(&dir).ok();
+        fs::remove_dir_all(dir).ok();
     }
 
     // Serializes the tests below that must mutate process env vars to steer

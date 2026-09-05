@@ -3155,8 +3155,8 @@ async fn artifact_and_decision_reject_lease_expiry_equality_without_writes() {
 // declines to write.
 #[tokio::test]
 async fn artifact_and_decision_cannot_land_against_concurrently_terminal_attempt() {
-    let db_path =
-        std::env::temp_dir().join(format!("tack-db-defect2-race-{}.db", uuid::Uuid::new_v4()));
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let db_path = dir.path().join("terminal-attempt-race.db");
     let pool = init_pool(&format!("sqlite://{}?mode=rwc", db_path.display()))
         .await
         .expect("file-backed pool");
@@ -3299,23 +3299,6 @@ async fn artifact_and_decision_cannot_land_against_concurrently_terminal_attempt
             .await
             .unwrap();
     assert_eq!(state, "succeeded");
-
-    // This is a disposable per-test file, not the shared in-memory harness —
-    // clean it (WAL sidecars and any pre-upgrade migration backup included)
-    // up rather than leaking it into the temp directory.
-    drop(repo);
-    let db_file_name = db_path.file_name().unwrap().to_string_lossy().into_owned();
-    if let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) {
-        for entry in entries.flatten() {
-            if entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with(&*db_file_name)
-            {
-                let _ = std::fs::remove_file(entry.path());
-            }
-        }
-    }
 }
 
 #[tokio::test]

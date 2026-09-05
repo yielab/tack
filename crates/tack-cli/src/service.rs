@@ -352,8 +352,11 @@ fn status_launchd() -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
-    fn test_dir(case: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("tack-service-test-{case}-{}", std::process::id()))
+    fn test_dir(case: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(case)
+            .tempdir()
+            .expect("temporary directory")
     }
 
     #[test]
@@ -451,8 +454,8 @@ WantedBy=default.target\n"
 
     #[test]
     fn ensure_data_root_creates_root_and_subdirs_0700_on_unix() {
-        let root = test_dir("ensure-root");
-        std::fs::remove_dir_all(&root).ok();
+        let guard = test_dir("ensure-root");
+        let root = guard.path().join("data-root");
 
         ensure_data_root(&root).unwrap();
 

@@ -45,6 +45,7 @@ and tokens and teaches you nothing the cheap check did not already say.
 | Only `.md` outside `docs/book/` — README, boards, handoffs, ADRs | nothing | any cargo command |
 | `docs/book/**` | `mdbook build docs/book` | any cargo command |
 | Only comments, doc comments or log/error strings in `.rs` | `scripts/check-comments.sh` and `cargo check --workspace` | the test suite — a comment cannot move a test, and if one moves you changed behaviour by accident |
+| Any test file, or a `#[cfg(test)]` module | `scripts/check-test-hygiene.sh` before the suite (~0.7 s) | discovering in CI that a new test leaves its scratch files behind |
 | Rust code, any crate | `cargo nextest run --workspace` (~15 s to execute; the compile is only what you changed) and `cargo clippy --workspace --all-targets -- -D warnings` | `cargo test`; `-p` |
 | Iterating on one failing test | `cargo nextest run --workspace -E 'test(<name>)'` until it passes, then the row above once | the full suite on every edit |
 | Wire shapes, DTOs, handlers, the API surface | the row above **plus** the contract gates below | — |

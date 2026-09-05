@@ -289,7 +289,7 @@ GitHub Actions runs the following on every push to `main`, `develop` and `claude
 1. **`cargo nextest run --workspace --profile ci`** — every Rust test, once, each in its own process; the JUnit report carries each test's status. The `#[ignore]`d tests (the perf test and the live-harness runner tests, which bill a real agent account) stay skipped.
 2. **regenerate-and-diff gates** — the OpenAPI spec and tack-orch's golden files are regenerated from the code and must match what is committed.
 3. **frontend job** — `npm run type-check`, `npm run build`, the design-token lint and a bundle-size budget.
-4. **quality gates** — `scripts/check-comments.sh`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, the Playwright accessibility scan (axe, WCAG AA).
+4. **quality gates** — `scripts/check-comments.sh`, `scripts/check-test-hygiene.sh`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, the Playwright accessibility scan (axe, WCAG AA).
 
 Two jobs run on pull requests and pushes to `main` only, because each costs as much as the whole test job: **coverage** (`cargo llvm-cov` floors per crate) and **embed-spa** (the size-optimised release build with the SPA embedded, and its binary-size budget).
 

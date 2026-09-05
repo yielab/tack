@@ -4,7 +4,7 @@ use common::{create_test_workspace, setup_test_db};
 use std::time::{Duration, Instant};
 use tack_core::models::{CreateProject, ItemFilter, ProjectType};
 
-// Run with: cargo test -p tack-db -- --ignored
+// Run with: cargo nextest run --workspace --run-ignored ignored-only -E 'test(list_items_p95)'
 // Skipped in normal CI to avoid ~5s wall time on every push.
 
 #[tokio::test]

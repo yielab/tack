@@ -193,12 +193,15 @@ async fn running_attempt(repo: &Repository, item_id: &str, tag: &str) -> (String
     (claim.lease.attempt_id, claim.lease.fencing_token)
 }
 
-fn temp_storage_root(label: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!(
-        "tack-api-f6d-sweep-wiring-{label}-{}-{}",
-        std::process::id(),
-        Uuid::new_v4()
-    ))
+/// Artifact storage root for one sweep-wiring test.
+///
+/// The `TempDir` removes the directory and everything under it when it drops,
+/// so a failing assertion leaves nothing behind either.
+fn temp_storage_root(label: &str) -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix(label)
+        .tempdir()
+        .expect("temporary directory")
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -307,7 +310,8 @@ where
 async fn retention_enabled_purges_expired_artifact_row_and_blob_but_spares_a_fresh_one() {
     let (repo, item_id) = setup().await;
     let (attempt_id, fence) = running_attempt(&repo, &item_id, "artifacts-enabled").await;
-    let storage_root = temp_storage_root("enabled");
+    let storage_root_dir = temp_storage_root("enabled");
+    let storage_root = storage_root_dir.path();
     let storage_dir = storage_root.to_string_lossy().into_owned();
     let artifact_root = std::path::PathBuf::from(format!("{storage_dir}/execution-artifacts"));
     let artifact_storage = ArtifactStorage::new(artifact_root.clone());
@@ -388,7 +392,8 @@ async fn retention_enabled_purges_expired_artifact_row_and_blob_but_spares_a_fre
 async fn retention_disabled_by_default_leaves_the_same_expired_artifact_row_and_blob_untouched() {
     let (repo, item_id) = setup().await;
     let (attempt_id, fence) = running_attempt(&repo, &item_id, "artifacts-disabled").await;
-    let storage_root = temp_storage_root("disabled");
+    let storage_root_dir = temp_storage_root("disabled");
+    let storage_root = storage_root_dir.path();
     let storage_dir = storage_root.to_string_lossy().into_owned();
     let artifact_root = std::path::PathBuf::from(format!("{storage_dir}/execution-artifacts"));
     let artifact_storage = ArtifactStorage::new(artifact_root.clone());
@@ -454,7 +459,8 @@ async fn retention_disabled_by_default_leaves_the_same_expired_artifact_row_and_
 async fn retention_enabled_purges_an_old_manifest_row_with_no_upload_ever_completed() {
     let (repo, item_id) = setup().await;
     let (attempt_id, fence) = running_attempt(&repo, &item_id, "manifest-only").await;
-    let storage_root = temp_storage_root("manifest-only");
+    let storage_root_dir = temp_storage_root("manifest-only");
+    let storage_root = storage_root_dir.path();
     let storage_dir = storage_root.to_string_lossy().into_owned();
 
     repo.record_execution_artifact(
@@ -560,7 +566,8 @@ async fn overdue_decision_expires_via_the_periodic_sweep_while_a_future_one_stay
         .expect("create future decision");
     assert!(written);
 
-    let storage_root = temp_storage_root("decisions");
+    let storage_root_dir = temp_storage_root("decisions");
+    let storage_root = storage_root_dir.path();
     let runtime = ExecutionRuntime::new();
     runtime
         .start(
@@ -637,7 +644,8 @@ async fn overdue_decision_stays_pending_while_retention_is_disabled() {
         .expect("create overdue decision");
     assert!(written);
 
-    let storage_root = temp_storage_root("decisions-disabled");
+    let storage_root_dir = temp_storage_root("decisions-disabled");
+    let storage_root = storage_root_dir.path();
     let runtime = ExecutionRuntime::new();
     runtime
         .start(

@@ -257,7 +257,7 @@ fn assert_matches_golden(method: &str, golden: &MethodGolden) {
 
     let committed = fs::read_to_string(&path).unwrap_or_else(|e| {
         panic!(
-            "could not read {} ({e}).\nGenerate it with: UPDATE_GOLDEN=1 cargo test -p tack-orch --test docket_wire_contract_test",
+            "could not read {} ({e}).\nGenerate it with: UPDATE_GOLDEN=1 cargo nextest run --workspace -E 'binary(docket_wire_contract_test)'",
             path.display()
         )
     });
@@ -265,7 +265,7 @@ fn assert_matches_golden(method: &str, golden: &MethodGolden) {
         committed,
         rendered,
         "\n\n{} drifted from what DocketAdapter actually sent/decoded.\n\
-         Regenerate with:\n    UPDATE_GOLDEN=1 cargo test -p tack-orch --test docket_wire_contract_test\n",
+         Regenerate with:\n    UPDATE_GOLDEN=1 cargo nextest run --workspace -E 'binary(docket_wire_contract_test)'\n",
         path.display()
     );
 }

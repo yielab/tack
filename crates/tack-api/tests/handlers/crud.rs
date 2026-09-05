@@ -385,11 +385,9 @@ async fn restore_invalid_bytes_returns_bad_request() {
 async fn backup_roundtrip_with_file_db() {
     use axum::body::to_bytes;
     use std::path::PathBuf;
-    use uuid::Uuid;
 
-    let tmp_dir = std::env::temp_dir().join(format!("tack-test-{}", Uuid::new_v4()));
-    std::fs::create_dir_all(&tmp_dir).unwrap();
-    let db_path = tmp_dir.join("test.db");
+    let tmp_dir = tempfile::tempdir().expect("temporary directory");
+    let db_path = tmp_dir.path().join("test.db");
     let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
 
     let (app, _) = common::test_app_with_file_db(&db_url).await;
@@ -432,7 +430,6 @@ async fn backup_roundtrip_with_file_db() {
     assert!(restore_path.exists(), ".restore file should be staged");
 
     // Clean up
-    let _ = std::fs::remove_dir_all(&tmp_dir);
 }
 
 // ─── Embedded SPA — only compiled with --features embed-spa ──────────

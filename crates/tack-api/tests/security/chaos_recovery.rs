@@ -35,12 +35,13 @@ const BASE_REVISION: &str = "abc123def456abc123def456abc123def456abc";
 // database and its own production router from scratch.
 // ---------------------------------------------------------------------
 
-fn distinctive_temp_dir(label: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!(
-        "tack-api-g2-{label}-{}-{}",
-        std::process::id(),
-        Uuid::new_v4()
-    ))
+/// Storage root for one chaos test, removed with everything under it when the
+/// guard drops — including on the panic an adversarial test is likeliest to hit.
+fn distinctive_temp_dir(label: &str) -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix(label)
+        .tempdir()
+        .expect("temporary directory")
 }
 
 async fn app_in_memory(storage_dir: &std::path::Path) -> (axum::Router, sqlx::SqlitePool) {
@@ -422,8 +423,8 @@ async fn walk_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
 // =======================================================================
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
 async fn two_distinct_runners_in_the_same_fleet_race_to_claim_one_request_and_exactly_one_wins() {
-    let dir = distinctive_temp_dir("fleet-race");
-    tokio::fs::create_dir_all(&dir).await.expect("scratch dir");
+    let dir_guard = distinctive_temp_dir("fleet-race");
+    let dir = dir_guard.path();
     let db_path = dir.join("g2-fleet-race.sqlite3");
     let storage_dir = dir.join("storage");
     let (app, pool) = app_file_backed(&db_path, &storage_dir).await;
@@ -521,8 +522,8 @@ async fn two_distinct_runners_in_the_same_fleet_race_to_claim_one_request_and_ex
 // =======================================================================
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
 async fn a_duplicated_credential_used_concurrently_never_grants_two_leases_for_the_same_request() {
-    let dir = distinctive_temp_dir("dup-credential");
-    tokio::fs::create_dir_all(&dir).await.expect("scratch dir");
+    let dir_guard = distinctive_temp_dir("dup-credential");
+    let dir = dir_guard.path();
     let db_path = dir.join("g2-dup-credential.sqlite3");
     let storage_dir = dir.join("storage");
     let (app, pool) = app_file_backed(&db_path, &storage_dir).await;
@@ -595,8 +596,9 @@ async fn a_duplicated_credential_used_concurrently_never_grants_two_leases_for_t
 #[tokio::test]
 async fn a_revoked_runner_credential_is_rejected_everywhere_and_cannot_advance_its_leased_attempt()
 {
-    let storage_dir = distinctive_temp_dir("revoke");
-    let (app, pool) = app_in_memory(&storage_dir).await;
+    let storage_dir_guard = distinctive_temp_dir("revoke");
+    let storage_dir = storage_dir_guard.path();
+    let (app, pool) = app_in_memory(storage_dir).await;
 
     let item_id = create_project_and_item(&app).await;
     let agent_profile_id = agent_profile(&app, "revoke").await;
@@ -703,8 +705,9 @@ async fn a_revoked_runner_credential_is_rejected_everywhere_and_cannot_advance_i
 // =======================================================================
 #[tokio::test]
 async fn stale_fence_writes_nothing_on_heartbeat_decisions_artifacts_cancellation_and_recovery() {
-    let storage_dir = distinctive_temp_dir("stale-fence");
-    let (app, pool) = app_in_memory(&storage_dir).await;
+    let storage_dir_guard = distinctive_temp_dir("stale-fence");
+    let storage_dir = storage_dir_guard.path();
+    let (app, pool) = app_in_memory(storage_dir).await;
 
     let item_id = create_project_and_item(&app).await;
     let agent_profile_id = agent_profile(&app, "stale-fence").await;
@@ -940,8 +943,9 @@ async fn stale_fence_writes_nothing_on_heartbeat_decisions_artifacts_cancellatio
 #[tokio::test]
 async fn oversized_artifact_declared_size_is_rejected_per_item_and_cumulative_without_writing_a_row()
  {
-    let storage_dir = distinctive_temp_dir("oversized-artifact");
-    let (app, pool) = app_in_memory(&storage_dir).await;
+    let storage_dir_guard = distinctive_temp_dir("oversized-artifact");
+    let storage_dir = storage_dir_guard.path();
+    let (app, pool) = app_in_memory(storage_dir).await;
     let item_id = create_project_and_item(&app).await;
     let attempt = ready_running_attempt(&app, &item_id, "oversized").await;
     let hdr = auth(&attempt.credential);
@@ -1055,8 +1059,9 @@ async fn oversized_artifact_declared_size_is_rejected_per_item_and_cumulative_wi
 // =======================================================================
 #[tokio::test]
 async fn artifact_id_path_traversal_payloads_never_escape_the_configured_storage_root() {
-    let storage_dir = distinctive_temp_dir("traversal");
-    let (app, _pool) = app_in_memory(&storage_dir).await;
+    let storage_dir_guard = distinctive_temp_dir("traversal");
+    let storage_dir = storage_dir_guard.path();
+    let (app, _pool) = app_in_memory(storage_dir).await;
     let item_id = create_project_and_item(&app).await;
     let attempt = ready_running_attempt(&app, &item_id, "traversal").await;
     let hdr = auth(&attempt.credential);
@@ -1122,10 +1127,10 @@ async fn artifact_id_path_traversal_payloads_never_escape_the_configured_storage
     // configured storage root, and specifically no file named after any raw
     // traversal fragment exists anywhere on disk under it or above it.
     if storage_dir.exists() {
-        let written = walk_files(&storage_dir).await;
+        let written = walk_files(storage_dir).await;
         for path in &written {
             assert!(
-                path.starts_with(&storage_dir),
+                path.starts_with(storage_dir),
                 "artifact file {path:?} escaped the configured storage_dir {storage_dir:?}"
             );
         }
@@ -1153,8 +1158,9 @@ async fn artifact_id_path_traversal_payloads_never_escape_the_configured_storage
 #[tokio::test]
 async fn event_batch_checkpoint_mismatch_is_rejected_and_a_byte_identical_replay_stays_idempotent()
 {
-    let storage_dir = distinctive_temp_dir("reorder");
-    let (app, pool) = app_in_memory(&storage_dir).await;
+    let storage_dir_guard = distinctive_temp_dir("reorder");
+    let storage_dir = storage_dir_guard.path();
+    let (app, pool) = app_in_memory(storage_dir).await;
     let item_id = create_project_and_item(&app).await;
     let attempt = ready_running_attempt(&app, &item_id, "reorder").await;
     let hdr = auth(&attempt.credential);
@@ -1262,8 +1268,9 @@ async fn event_batch_checkpoint_mismatch_is_rejected_and_a_byte_identical_replay
 // =======================================================================
 #[tokio::test]
 async fn a_corrupted_request_snapshot_row_degrades_to_a_typed_error_not_a_panic() {
-    let storage_dir = distinctive_temp_dir("corrupt-row");
-    let (app, pool) = app_in_memory(&storage_dir).await;
+    let storage_dir_guard = distinctive_temp_dir("corrupt-row");
+    let storage_dir = storage_dir_guard.path();
+    let (app, pool) = app_in_memory(storage_dir).await;
     let item_id = create_project_and_item(&app).await;
     let agent_profile_id = agent_profile(&app, "corrupt-row").await;
     let runner = enroll_runner(&app, "Corrupt-row runner").await;

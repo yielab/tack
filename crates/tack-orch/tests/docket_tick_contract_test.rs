@@ -805,7 +805,7 @@ fn assert_matches_golden(file_name: &str, actual: &str) {
 
     let committed = std::fs::read_to_string(&path).unwrap_or_else(|e| {
         panic!(
-            "could not read {} ({e}).\nGenerate it with: UPDATE_GOLDEN=1 cargo test -p tack-orch --test docket_tick_contract_test",
+            "could not read {} ({e}).\nGenerate it with: UPDATE_GOLDEN=1 cargo nextest run --workspace -E 'binary(docket_tick_contract_test)'",
             path.display()
         )
     });
@@ -814,7 +814,7 @@ fn assert_matches_golden(file_name: &str, actual: &str) {
         committed,
         actual,
         "\n\n{} is out of date with the reconciler's observed tick behaviour.\n\
-         Regenerate it with:\n    UPDATE_GOLDEN=1 cargo test -p tack-orch --test docket_tick_contract_test\n",
+         Regenerate it with:\n    UPDATE_GOLDEN=1 cargo nextest run --workspace -E 'binary(docket_tick_contract_test)'\n",
         path.display()
     );
 }

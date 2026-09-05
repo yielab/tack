@@ -303,7 +303,8 @@ mod tests {
 
     #[test]
     fn a_direct_vendor_provider_resolves_to_no_endpoint_at_all() {
-        let secrets = SecretStore::file(std::env::temp_dir().join("tack-provider-test-direct"));
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let secrets = SecretStore::file(dir.path().join("secrets.json"));
         let result = resolve_endpoint(
             &providers(true, "demo"),
             &secrets,
@@ -315,7 +316,8 @@ mod tests {
 
     #[test]
     fn a_disabled_provider_is_a_typed_not_configured_error() {
-        let secrets = SecretStore::file(std::env::temp_dir().join("tack-provider-test-disabled"));
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let secrets = SecretStore::file(dir.path().join("secrets.json"));
         let result = resolve_endpoint(
             &providers(false, "demo"),
             &secrets,
@@ -329,8 +331,8 @@ mod tests {
 
     #[test]
     fn an_enabled_provider_with_no_such_secret_is_a_typed_secret_error() {
-        let secrets =
-            SecretStore::file(std::env::temp_dir().join("tack-provider-test-missing-secret"));
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let secrets = SecretStore::file(dir.path().join("secrets.json"));
         let result = resolve_endpoint(
             &providers(true, "does-not-exist"),
             &secrets,
@@ -344,7 +346,8 @@ mod tests {
 
     #[test]
     fn a_configured_provider_resolves_the_wire_specific_endpoint() {
-        let path = std::env::temp_dir().join("tack-provider-test-resolved");
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let path = dir.path().join("secrets.json");
         let secrets = SecretStore::file(path.clone());
         secrets
             .set("demo-secret", "the-real-key")
@@ -372,13 +375,12 @@ mod tests {
         .expect("endpoint present");
         assert_eq!(codex.base_url, "https://ai-gateway.vercel.sh/codex/v1");
         assert_eq!(codex.credential_env_var, "AI_GATEWAY_API_KEY");
-
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn credential_is_never_visible_through_debug() {
-        let path = std::env::temp_dir().join("tack-provider-test-debug-redaction");
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let path = dir.path().join("secrets.json");
         let store = SecretStore::file(path.clone());
         store
             .set("demo-secret", "must-never-be-printed")
@@ -393,6 +395,5 @@ mod tests {
         .expect("endpoint present");
 
         assert!(!format!("{endpoint:?}").contains("must-never-be-printed"));
-        let _ = std::fs::remove_file(&path);
     }
 }

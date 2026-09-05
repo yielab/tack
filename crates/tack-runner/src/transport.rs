@@ -2198,21 +2198,19 @@ mod tests {
 
     #[test]
     fn a_persisted_session_round_trips_and_is_owner_only() {
-        let directory =
-            std::env::temp_dir().join(format!("tack-runner-session-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&directory);
-        fs::create_dir_all(&directory).expect("state dir");
+        let guard = tempfile::tempdir().expect("temporary directory");
+        let directory = guard.path();
         let session = session();
-        store_session(&directory, &session).expect("session is stored");
+        store_session(directory, &session).expect("session is stored");
 
-        let loaded = load_session(&directory).expect("session is readable");
+        let loaded = load_session(directory).expect("session is readable");
         assert_eq!(loaded.runner_id, session.runner_id);
         assert_eq!(loaded.credential().expose(), SECRET_CREDENTIAL);
 
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mode = fs::metadata(session_path(&directory))
+            let mode = fs::metadata(session_path(directory))
                 .expect("metadata")
                 .permissions()
                 .mode()
@@ -2222,13 +2220,14 @@ mod tests {
                 "a live credential must not be group/world readable"
             );
         }
-        let _ = fs::remove_dir_all(&directory);
     }
 
     #[test]
     fn a_missing_session_file_is_absent_not_an_error() {
-        let directory = std::env::temp_dir().join("tack-runner-session-absent");
-        let _ = fs::remove_dir_all(&directory);
+        let guard = tempfile::tempdir().expect("temporary directory");
+        // A path under the guard that was never created: an absent session
+        // directory must read as absent, not as an error.
+        let directory = guard.path().join("absent");
         assert!(load_session(&directory).is_none());
     }
 

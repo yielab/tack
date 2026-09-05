@@ -1297,7 +1297,6 @@ mod tests {
         AttemptId, AttemptLease, ClaimRequestId, ClaimedWork, FencingToken, RunnerId, Workspace,
         WorkspaceId as ClientWorkspaceId,
     };
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use tack_orch::execution::{
         AgentProfileSnapshot, AttemptSnapshot, EnvironmentValue, ExecutionRequestSnapshot,
         ExecutionState, HarnessKind as DomainHarnessKindType, PermissionPolicy, RepositorySnapshot,
@@ -1317,16 +1316,14 @@ mod tests {
         FixedClock(std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_754_000_000))
     }
 
-    static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
-
-    fn temp_workspace(label: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "tack-runner-claude-code-{label}-{}-{}",
-            std::process::id(),
-            NEXT_DIR.fetch_add(1, Ordering::SeqCst)
-        ));
-        std::fs::create_dir_all(&root).expect("create temp workspace");
-        root
+    /// A scratch directory that removes itself, and everything written under
+    /// it, when the returned guard drops — including when an assertion panics
+    /// first. Whatever holds a path into it must hold the guard too.
+    fn temp_workspace(label: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(label)
+            .tempdir()
+            .expect("temporary directory")
     }
 
     fn fake_binary() -> HarnessBinary {
@@ -1337,20 +1334,25 @@ mod tests {
         }
     }
 
-    /// A fresh, hermetic file-backed store per call — never the platform
-    /// keychain — so parallel `#[test]` functions never see each other's
-    /// entries and CI needs no Secret Service.
-    fn test_secret_store() -> crate::secrets::SecretStore {
-        crate::secrets::SecretStore::file(std::env::temp_dir().join(format!(
-            "tack-runner-claude-code-secrets-{}-{}.json",
-            std::process::id(),
-            NEXT_DIR.fetch_add(1, Ordering::SeqCst)
-        )))
+    /// Takes the directory rather than making one, so the store's file cannot
+    /// outlive the guard that removes it. File-backed, never the platform
+    /// keychain, so parallel tests never see each other's entries and CI
+    /// needs no Secret Service.
+    fn test_secret_store(dir: &Path) -> crate::secrets::SecretStore {
+        crate::secrets::SecretStore::file(dir.join("secrets.json"))
     }
 
-    fn adapter_with_fake_binary() -> ClaudeCodeAdapter<FixedClock> {
-        ClaudeCodeAdapter::with_binary(fake_binary(), clock(), test_secret_store())
-            .with_cancel_grace(Duration::from_millis(150))
+    /// Returns the adapter with the scratch directory its secret store lives
+    /// in: drop the guard and the adapter is pointing at nothing.
+    fn adapter_with_fake_binary() -> (ClaudeCodeAdapter<FixedClock>, tempfile::TempDir) {
+        let scratch = temp_workspace("secrets");
+        let adapter = ClaudeCodeAdapter::with_binary(
+            fake_binary(),
+            clock(),
+            test_secret_store(scratch.path()),
+        )
+        .with_cancel_grace(Duration::from_millis(150));
+        (adapter, scratch)
     }
 
     fn adapter_with_fake_binary_and_secrets(
@@ -1454,15 +1456,16 @@ mod tests {
 
     #[tokio::test]
     async fn validate_accepts_a_well_formed_claude_code_spec() {
-        let adapter = adapter_with_fake_binary();
-        let workspace = temp_workspace("validate-ok");
+        let (adapter, _scratch) = adapter_with_fake_binary();
+        let workspace_dir = temp_workspace("validate-ok");
+        let workspace = workspace_dir.path();
         let spec = spec_with(
             "claude-code",
             None,
             &["Read"],
             true,
             BTreeMap::new(),
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
         assert!(adapter.validate(&spec).await.is_ok());
         std::fs::remove_dir_all(workspace).expect("cleanup");
@@ -1476,15 +1479,16 @@ mod tests {
     /// created.
     #[tokio::test]
     async fn validate_rejects_an_unsupported_model_provider_before_any_process_launches() {
-        let adapter = adapter_with_fake_binary();
-        let workspace = temp_workspace("validate-bad-provider");
+        let (adapter, _scratch) = adapter_with_fake_binary();
+        let workspace_dir = temp_workspace("validate-bad-provider");
+        let workspace = workspace_dir.path();
         let spec = spec_with(
             "claude-code",
             Some("openai"),
             &[],
             true,
             BTreeMap::new(),
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
         assert!(matches!(
             adapter.validate(&spec).await,
@@ -1499,16 +1503,17 @@ mod tests {
 
     #[tokio::test]
     async fn validate_accepts_every_known_provider_family_case_insensitively() {
-        let adapter = adapter_with_fake_binary();
+        let (adapter, _scratch) = adapter_with_fake_binary();
         for provider in ["anthropic", "BEDROCK", "Vertex", "foundry"] {
-            let workspace = temp_workspace("validate-provider-ok");
+            let workspace_dir = temp_workspace("validate-provider-ok");
+            let workspace = workspace_dir.path();
             let spec = spec_with(
                 "claude-code",
                 Some(provider),
                 &[],
                 true,
                 BTreeMap::new(),
-                workspace.clone(),
+                workspace.to_path_buf(),
             );
             assert!(
                 adapter.validate(&spec).await.is_ok(),
@@ -1520,9 +1525,17 @@ mod tests {
 
     #[tokio::test]
     async fn validate_rejects_a_spec_requesting_a_different_harness_kind() {
-        let adapter = adapter_with_fake_binary();
-        let workspace = temp_workspace("validate-wrong-kind");
-        let spec = spec_with("codex", None, &[], true, BTreeMap::new(), workspace.clone());
+        let (adapter, _scratch) = adapter_with_fake_binary();
+        let workspace_dir = temp_workspace("validate-wrong-kind");
+        let workspace = workspace_dir.path();
+        let spec = spec_with(
+            "codex",
+            None,
+            &[],
+            true,
+            BTreeMap::new(),
+            workspace.to_path_buf(),
+        );
         assert!(matches!(
             adapter.validate(&spec).await,
             Err(HarnessError::Rejected { .. })
@@ -1532,15 +1545,16 @@ mod tests {
 
     #[tokio::test]
     async fn validate_rejects_a_network_tool_when_network_is_denied() {
-        let adapter = adapter_with_fake_binary();
-        let workspace = temp_workspace("validate-network-conflict");
+        let (adapter, _scratch) = adapter_with_fake_binary();
+        let workspace_dir = temp_workspace("validate-network-conflict");
+        let workspace = workspace_dir.path();
         let spec = spec_with(
             "claude-code",
             None,
             &["WebFetch"],
             false,
             BTreeMap::new(),
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
         assert!(matches!(
             adapter.validate(&spec).await,
@@ -1555,15 +1569,18 @@ mod tests {
             program: PathBuf::from("/nonexistent/definitely/not/claude"),
             prefix_args: Vec::new(),
         };
-        let adapter = ClaudeCodeAdapter::with_binary(missing, clock(), test_secret_store());
-        let workspace = temp_workspace("validate-missing-binary");
+        let secrets_dir = temp_workspace("secrets");
+        let adapter =
+            ClaudeCodeAdapter::with_binary(missing, clock(), test_secret_store(secrets_dir.path()));
+        let workspace_dir = temp_workspace("validate-missing-binary");
+        let workspace = workspace_dir.path();
         let spec = spec_with(
             "claude-code",
             None,
             &[],
             true,
             BTreeMap::new(),
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
         assert!(matches!(
             adapter.validate(&spec).await,
@@ -1598,8 +1615,9 @@ mod tests {
     /// structured-result parse.
     #[tokio::test]
     async fn fake_binary_success_mode_is_reported_succeeded_via_the_honest_exit_code_fallback() {
-        let adapter = adapter_with_fake_binary();
-        let workspace = temp_workspace("fake-success");
+        let (adapter, _scratch) = adapter_with_fake_binary();
+        let workspace_dir = temp_workspace("fake-success");
+        let workspace = workspace_dir.path();
         let mut environment = BTreeMap::new();
         environment.insert("TACK_FAKE_HARNESS_MODE".to_string(), env_entry("success"));
         let spec = spec_with(
@@ -1608,7 +1626,7 @@ mod tests {
             &[],
             true,
             environment,
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
 
         adapter.validate(&spec).await.expect("validate");
@@ -1635,8 +1653,9 @@ mod tests {
     /// path, matching `codex.rs`'s identical proof shape.
     #[tokio::test]
     async fn fake_binary_success_stages_a_real_log_artifact() {
-        let adapter = adapter_with_fake_binary();
-        let workspace = temp_workspace("fake-success-artifact");
+        let (adapter, _scratch) = adapter_with_fake_binary();
+        let workspace_dir = temp_workspace("fake-success-artifact");
+        let workspace = workspace_dir.path();
         let mut environment = BTreeMap::new();
         environment.insert("TACK_FAKE_HARNESS_MODE".to_string(), env_entry("success"));
         let spec = spec_with(
@@ -1645,7 +1664,7 @@ mod tests {
             &[],
             true,
             environment,
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
 
         adapter.validate(&spec).await.expect("validate");
@@ -1669,8 +1688,9 @@ mod tests {
     /// Acceptance: fake-binary failure.
     #[tokio::test]
     async fn fake_binary_failure_mode_is_reported_failed_via_the_honest_exit_code_fallback() {
-        let adapter = adapter_with_fake_binary();
-        let workspace = temp_workspace("fake-failure");
+        let (adapter, _scratch) = adapter_with_fake_binary();
+        let workspace_dir = temp_workspace("fake-failure");
+        let workspace = workspace_dir.path();
         let mut environment = BTreeMap::new();
         environment.insert("TACK_FAKE_HARNESS_MODE".to_string(), env_entry("failure"));
         environment.insert("TACK_FAKE_HARNESS_EXIT_CODE".to_string(), env_entry("7"));
@@ -1680,7 +1700,7 @@ mod tests {
             &[],
             true,
             environment,
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
 
         adapter.validate(&spec).await.expect("validate");
@@ -1708,8 +1728,9 @@ mod tests {
     /// from `success` by content alone).
     #[tokio::test]
     async fn fake_binary_malformed_mode_never_panics_and_never_fabricates_structured_data() {
-        let adapter = adapter_with_fake_binary();
-        let workspace = temp_workspace("fake-malformed");
+        let (adapter, _scratch) = adapter_with_fake_binary();
+        let workspace_dir = temp_workspace("fake-malformed");
+        let workspace = workspace_dir.path();
         let mut environment = BTreeMap::new();
         environment.insert("TACK_FAKE_HARNESS_MODE".to_string(), env_entry("malformed"));
         let spec = spec_with(
@@ -1718,7 +1739,7 @@ mod tests {
             &[],
             true,
             environment,
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
 
         adapter.validate(&spec).await.expect("validate");
@@ -1784,8 +1805,9 @@ mod tests {
     /// `process::tests::cancel_kills_the_whole_descendant_tree_...`.
     #[tokio::test]
     async fn cancel_stops_the_process_and_forgets_its_own_bookkeeping_entry() {
-        let adapter = adapter_with_fake_binary();
-        let workspace = temp_workspace("cancel");
+        let (adapter, _scratch) = adapter_with_fake_binary();
+        let workspace_dir = temp_workspace("cancel");
+        let workspace = workspace_dir.path();
         let mut environment = BTreeMap::new();
         environment.insert("TACK_FAKE_HARNESS_MODE".to_string(), env_entry("hang"));
         environment.insert(
@@ -1798,7 +1820,7 @@ mod tests {
             &[],
             true,
             environment,
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
 
         adapter.validate(&spec).await.expect("validate");
@@ -1826,7 +1848,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancel_of_an_unknown_handle_is_a_typed_error_not_a_panic() {
-        let adapter = adapter_with_fake_binary();
+        let (adapter, _scratch) = adapter_with_fake_binary();
         let handle = LocalRunHandle {
             process_id: "not-a-number".to_string(),
         };
@@ -1849,8 +1871,9 @@ mod tests {
     #[tokio::test]
     async fn a_planted_canary_in_the_environment_never_survives_into_the_returned_outcome() {
         const CANARY: &str = "tack-d2-claude-code-canary-6f31a2";
-        let adapter = adapter_with_fake_binary();
-        let workspace = temp_workspace("canary");
+        let (adapter, _scratch) = adapter_with_fake_binary();
+        let workspace_dir = temp_workspace("canary");
+        let workspace = workspace_dir.path();
         let mut environment = BTreeMap::new();
         environment.insert(
             "TACK_FAKE_HARNESS_MODE".to_string(),
@@ -1867,7 +1890,7 @@ mod tests {
             &[],
             true,
             environment,
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
 
         adapter.validate(&spec).await.expect("validate");
@@ -1951,13 +1974,11 @@ mod tests {
     #[tokio::test]
     async fn secret_reference_resolves_and_only_its_length_reaches_the_shim() {
         let _log_capture = install_secret_log_capture();
-        let workspace = temp_workspace("secret-reference-length");
+        let workspace_dir = temp_workspace("secret-reference-length");
+        let workspace = workspace_dir.path();
         let secret_value = "topsecret-canary-9f3a21";
-        let store = crate::secrets::SecretStore::file(std::env::temp_dir().join(format!(
-            "tack-runner-claude-code-secret-length-store-{}-{}.json",
-            std::process::id(),
-            NEXT_DIR.fetch_add(1, Ordering::SeqCst)
-        )));
+        let store_dir = temp_workspace("secret-length-store");
+        let store = crate::secrets::SecretStore::file(store_dir.path().join("secrets.json"));
         store.set("demo", secret_value).expect("seed the store");
 
         let marker = workspace.join("secret-length.marker");
@@ -1981,7 +2002,7 @@ mod tests {
             &[],
             true,
             environment,
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
 
         adapter
@@ -2026,16 +2047,14 @@ mod tests {
     /// proves the adapter-boundary behavior.
     #[tokio::test]
     async fn validate_rejects_a_missing_secret_reference_typed_and_touches_nothing() {
-        let workspace = temp_workspace("secret-reference-missing");
+        let workspace_dir = temp_workspace("secret-reference-missing");
+        let workspace = workspace_dir.path();
         std::fs::write(workspace.join("sentinel.txt"), b"before").expect("seed workspace");
 
-        let state_dir = std::env::temp_dir().join(format!(
-            "tack-runner-claude-code-secret-missing-state-{}-{}",
-            std::process::id(),
-            NEXT_DIR.fetch_add(1, Ordering::SeqCst)
-        ));
+        let state_guard = temp_workspace("secret-missing-state");
         // Deliberately not created: a failed lookup must not bring the file
         // fallback's directory into existence just by trying.
+        let state_dir = state_guard.path().join("state");
         let store = crate::secrets::SecretStore::file(state_dir.join("secrets.json"));
 
         let adapter = adapter_with_fake_binary_and_secrets(store);
@@ -2050,7 +2069,7 @@ mod tests {
             &[],
             true,
             environment,
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
 
         let error = adapter
@@ -2077,7 +2096,7 @@ mod tests {
             "a rejected validate must not modify the workspace it was given"
         );
         assert_eq!(
-            std::fs::read_dir(&workspace)
+            std::fs::read_dir(workspace)
                 .expect("read workspace")
                 .count(),
             1,
@@ -2097,7 +2116,7 @@ mod tests {
     /// the fix itself).
     #[test]
     fn declared_capabilities_match_the_reconciled_iii_d5_values() {
-        let adapter = adapter_with_fake_binary();
+        let (adapter, _scratch) = adapter_with_fake_binary();
         let declared = HarnessProbe::declared_capabilities(&adapter);
         assert_eq!(declared.cancel.support, CapabilitySupport::Advisory);
         assert!(declared.cancel.reason.is_some());
@@ -2152,7 +2171,7 @@ mod tests {
     /// replace its honesty note.
     #[tokio::test]
     async fn probe_attests_model_passthrough_instead_of_inventing_a_model_list() {
-        let adapter = adapter_with_fake_binary();
+        let (adapter, _scratch) = adapter_with_fake_binary();
         let capability = adapter.probe().await;
 
         assert!(capability.model_combinations.is_empty());
@@ -2169,13 +2188,14 @@ mod tests {
     /// shared fixture's dedicated `unknown_version` mode.
     #[tokio::test]
     async fn probe_reports_the_shared_fixtures_unknown_version_output_honestly() {
-        let adapter = adapter_with_fake_binary();
+        let (adapter, _scratch) = adapter_with_fake_binary();
         // `detect_version` always invokes `--version` with no env override,
         // so this test instead exercises the same parsing path `probe`
         // depends on by driving the fixture in `unknown_version` mode
         // directly through `ProcessSpec`, matching exactly what
         // `detect_version` does internally.
-        let workspace = std::env::temp_dir();
+        let workspace_dir = temp_workspace("unknown-version-probe");
+        let workspace = workspace_dir.path().to_path_buf();
         let mut env = BTreeMap::new();
         env.insert(
             "TACK_FAKE_HARNESS_MODE".to_string(),
@@ -2187,7 +2207,7 @@ mod tests {
             args,
             env,
             stdin: None,
-            working_directory: workspace.clone(),
+            working_directory: workspace.to_path_buf(),
             workspace_root: workspace,
         };
         let result = spec
@@ -2370,7 +2390,7 @@ mod tests {
 
     #[tokio::test]
     async fn reconcile_with_no_recorded_process_id_needs_no_dispatch() {
-        let adapter = adapter_with_fake_binary();
+        let (adapter, _scratch) = adapter_with_fake_binary();
         let journal = journal_with_process(None);
         let observation = adapter.reconcile(&journal).await.expect("reconcile");
         assert_eq!(observation, RecoveryObservation::ProcessStopped);
@@ -2378,7 +2398,7 @@ mod tests {
 
     #[tokio::test]
     async fn reconcile_reports_process_stopped_for_a_pid_that_no_longer_exists() {
-        let adapter = adapter_with_fake_binary();
+        let (adapter, _scratch) = adapter_with_fake_binary();
         // A pid that is astronomically unlikely to be a live process on any
         // CI/dev machine, without relying on a fixed platform-specific
         // sentinel like `i32::MAX`.
@@ -2389,7 +2409,7 @@ mod tests {
 
     #[tokio::test]
     async fn reconcile_with_an_undecodable_process_id_is_explicitly_unavailable() {
-        let adapter = adapter_with_fake_binary();
+        let (adapter, _scratch) = adapter_with_fake_binary();
         let journal = journal_with_process(Some("not-a-pid"));
         assert!(matches!(
             adapter.reconcile(&journal).await,
@@ -2400,8 +2420,9 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn reconcile_reports_process_running_for_a_genuinely_still_running_fake_harness() {
-        let adapter = adapter_with_fake_binary();
-        let workspace = temp_workspace("reconcile-running");
+        let (adapter, _scratch) = adapter_with_fake_binary();
+        let workspace_dir = temp_workspace("reconcile-running");
+        let workspace = workspace_dir.path();
         let mut environment = BTreeMap::new();
         // Deliberately `spawn_child`, not `hang`: `hang` mode `exec`s into
         // `sleep` (see `fake_harness.sh`'s own doc comment), which replaces
@@ -2427,7 +2448,7 @@ mod tests {
             &[],
             true,
             environment,
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
         adapter.validate(&spec).await.expect("validate");
         let handle = adapter.start(&spec).await.expect("start");
@@ -2471,7 +2492,7 @@ mod tests {
         // A real, currently-alive pid that this adapter did *not* spawn and
         // that does not resolve to `self.binary.program` at all: this
         // adapter's own test-runner process itself.
-        let adapter = adapter_with_fake_binary();
+        let (adapter, _scratch) = adapter_with_fake_binary();
         let own_pid = std::process::id();
         let journal = journal_with_process(Some(&own_pid.to_string()));
         let observation = adapter.reconcile(&journal).await.expect("reconcile");
@@ -2550,11 +2571,13 @@ mod tests {
     /// can never be confused by a shared environment variable.
     #[tokio::test]
     async fn a_direct_model_request_spawns_with_no_provider_endpoint_variable_present() {
-        let workspace = temp_workspace("provider-guard-direct");
+        let workspace_dir = temp_workspace("provider-guard-direct");
+        let workspace = workspace_dir.path();
         let marker = workspace.join("env-names.marker");
-        let binary = env_name_dump_binary(&workspace, &marker);
+        let binary = env_name_dump_binary(workspace, &marker);
 
-        let secrets = test_secret_store();
+        let secrets_dir = temp_workspace("secrets");
+        let secrets = test_secret_store(secrets_dir.path());
         secrets
             .set("demo-secret", "unused-by-a-direct-request")
             .expect("seed store");
@@ -2567,7 +2590,7 @@ mod tests {
             &[],
             true,
             BTreeMap::new(),
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
         adapter
             .validate(&spec)
@@ -2594,11 +2617,13 @@ mod tests {
     /// variable names.
     #[tokio::test]
     async fn a_configured_provider_request_spawns_with_its_endpoint_variables_present() {
-        let workspace = temp_workspace("provider-guard-configured");
+        let workspace_dir = temp_workspace("provider-guard-configured");
+        let workspace = workspace_dir.path();
         let marker = workspace.join("env-names.marker");
-        let binary = env_name_dump_binary(&workspace, &marker);
+        let binary = env_name_dump_binary(workspace, &marker);
 
-        let secrets = test_secret_store();
+        let secrets_dir = temp_workspace("secrets");
+        let secrets = test_secret_store(secrets_dir.path());
         secrets
             .set("demo-secret", "a-resolvable-value")
             .expect("seed store");
@@ -2611,7 +2636,7 @@ mod tests {
             &[],
             true,
             BTreeMap::new(),
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
         adapter
             .validate(&spec)
@@ -2640,8 +2665,10 @@ mod tests {
     /// with a typed reason, not silently fall back to a direct request.
     #[tokio::test]
     async fn a_disabled_provider_rejects_the_request_before_any_process_spawns() {
-        let workspace = temp_workspace("provider-guard-disabled");
-        let secrets = test_secret_store();
+        let workspace_dir = temp_workspace("provider-guard-disabled");
+        let workspace = workspace_dir.path();
+        let secrets_dir = temp_workspace("secrets");
+        let secrets = test_secret_store(secrets_dir.path());
         secrets
             .set("demo-secret", "irrelevant")
             .expect("seed store");
@@ -2661,7 +2688,7 @@ mod tests {
             &[],
             true,
             BTreeMap::new(),
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
         let error = adapter
             .validate(&spec)
@@ -2719,8 +2746,8 @@ mod tests {
     #[tokio::test]
     #[ignore = "opt-in: requires a real `claude` binary on PATH *and* \
                 TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 (a real invocation is billed, unlike Codex's \
-                free live test); run with TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo test -p \
-                tack-runner --lib -- --ignored claude_code::tests::live_"]
+                free live test); run with TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo nextest \
+                run --workspace --run-ignored ignored-only -E 'test(/claude_code::tests::live_/)'"]
     async fn live_claude_code_records_version_and_a_real_artifact_when_opted_in() {
         if std::env::var("TACK_RUN_LIVE_CLAUDE_CODE_TEST").as_deref() != Ok("1") {
             eprintln!(
@@ -2729,7 +2756,8 @@ mod tests {
             );
             return;
         }
-        let Ok(adapter) = ClaudeCodeAdapter::discover(test_secret_store()) else {
+        let secrets_dir = temp_workspace("secrets");
+        let Ok(adapter) = ClaudeCodeAdapter::discover(test_secret_store(secrets_dir.path())) else {
             eprintln!("skipping live claude-code test: no `claude` binary discoverable on PATH");
             return;
         };
@@ -2746,11 +2774,12 @@ mod tests {
             capability.installed_version
         );
 
-        let workspace = temp_workspace("live-fixture-repo");
+        let workspace_dir = temp_workspace("live-fixture-repo");
+        let workspace = workspace_dir.path();
         let run = |program: &str, args: &[&str]| {
             std::process::Command::new(program)
                 .args(args)
-                .current_dir(&workspace)
+                .current_dir(workspace)
                 .output()
                 .expect("git available for the live test's disposable fixture repo")
         };
@@ -2772,7 +2801,7 @@ mod tests {
             &["Write"],
             false,
             environment,
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
         // Overrides the shared helper's default "Print exactly: ok" prompt
         // (used by every other test in this module) with one that actually
@@ -2801,7 +2830,7 @@ mod tests {
         let staged = super::super::artifact::ArtifactStager::new(workspace.join(".artifacts"))
             .stage_file(
                 "live-test-attempt",
-                &workspace,
+                workspace,
                 Path::new("README.md"),
                 "log",
                 "text/markdown",
@@ -2822,7 +2851,7 @@ mod tests {
             staged.sha256, staged.size_bytes
         );
 
-        std::fs::remove_dir_all(&workspace).expect("cleanup disposable fixture repo");
+        std::fs::remove_dir_all(workspace).expect("cleanup disposable fixture repo");
     }
 
     /// Live proof of the provider endpoint path, not the direct one above:
@@ -2836,8 +2865,8 @@ mod tests {
     #[tokio::test]
     #[ignore = "opt-in: requires a real `claude` binary on PATH, a `vercel_ai_gateway` entry in \
                 this machine's secret store, *and* TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 (a real \
-                invocation is billed); run with TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo test -p \
-                tack-runner --lib -- --ignored claude_code::tests::live_"]
+                invocation is billed); run with TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo nextest \
+                run --workspace --run-ignored ignored-only -E 'test(/claude_code::tests::live_/)'"]
     async fn live_claude_code_through_the_configured_provider_when_opted_in() {
         if std::env::var("TACK_RUN_LIVE_CLAUDE_CODE_TEST").as_deref() != Ok("1") {
             eprintln!(
@@ -2866,10 +2895,11 @@ mod tests {
         };
         let adapter = adapter.with_providers(providers);
 
-        let workspace = temp_workspace("live-gateway");
+        let workspace_dir = temp_workspace("live-gateway");
+        let workspace = workspace_dir.path();
         std::process::Command::new("git")
             .args(["init", "-q"])
-            .current_dir(&workspace)
+            .current_dir(workspace)
             .status()
             .expect("git init");
         let mut spec = spec_with(
@@ -2878,7 +2908,7 @@ mod tests {
             &[],
             true,
             BTreeMap::new(),
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
         spec.work.request.requested_model_id = Some(tack_orch::execution::RequestedModelId::new(
             "anthropic/claude-opus-4.6",
@@ -2890,7 +2920,7 @@ mod tests {
                 "skipping live claude-code gateway test: no configured provider entry to \
                  validate against ({error})"
             );
-            std::fs::remove_dir_all(&workspace).expect("cleanup");
+            std::fs::remove_dir_all(workspace).expect("cleanup");
             return;
         }
         let handle = adapter
@@ -2933,7 +2963,7 @@ mod tests {
             "a gateway-routed run must never claim harness_reported"
         );
 
-        std::fs::remove_dir_all(&workspace).expect("cleanup disposable fixture repo");
+        std::fs::remove_dir_all(workspace).expect("cleanup disposable fixture repo");
     }
 
     /// The live counterpart to the fake-shim guard tests above: with the
@@ -2945,7 +2975,7 @@ mod tests {
     /// ("Not logged in"), which is the point: if it had instead reached
     /// the gateway, it would have succeeded, exactly like the test above.
     #[tokio::test]
-    #[ignore = "opt-in: requires a real `claude` binary on PATH *and*                 TACK_RUN_LIVE_CLAUDE_CODE_TEST=1; run with                 TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo test -p tack-runner --lib -- --ignored                 claude_code::tests::live_"]
+    #[ignore = "opt-in: requires a real `claude` binary on PATH *and*                 TACK_RUN_LIVE_CLAUDE_CODE_TEST=1; run with                 TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo nextest run --workspace                 --run-ignored ignored-only -E 'test(/claude_code::tests::live_/)'"]
     async fn live_claude_code_direct_model_never_reaches_the_configured_provider_when_opted_in() {
         if std::env::var("TACK_RUN_LIVE_CLAUDE_CODE_TEST").as_deref() != Ok("1") {
             eprintln!(
@@ -2975,10 +3005,11 @@ mod tests {
         };
         let adapter = adapter.with_providers(providers);
 
-        let workspace = temp_workspace("live-direct-guard");
+        let workspace_dir = temp_workspace("live-direct-guard");
+        let workspace = workspace_dir.path();
         std::process::Command::new("git")
             .args(["init", "-q"])
-            .current_dir(&workspace)
+            .current_dir(workspace)
             .status()
             .expect("git init");
         // No requested_model_provider at all: the direct/subscription path.
@@ -2988,7 +3019,7 @@ mod tests {
             &[],
             true,
             BTreeMap::new(),
-            workspace.clone(),
+            workspace.to_path_buf(),
         );
 
         adapter
@@ -3018,6 +3049,6 @@ mod tests {
             "a direct request must never show the gateway's own error shape: {serialized}"
         );
 
-        std::fs::remove_dir_all(&workspace).expect("cleanup");
+        std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 }

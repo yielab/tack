@@ -51,15 +51,16 @@ use uuid::Uuid;
 
 const BASE_REVISION: &str = "abc123def456abc123def456abc123def456abc";
 
-/// A fresh, uniquely-named directory under the OS temp dir — never
-/// `./storage`, so any bytes found under `./storage/execution-artifacts`
-/// after this test runs would prove the wiring did *not* take effect.
-fn distinctive_temp_storage_dir(label: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!(
-        "tack-api-f6a-wiring-{label}-{}-{}",
-        std::process::id(),
-        Uuid::new_v4()
-    ))
+/// A guard directory to hang a storage path off — never `./storage`, so any
+/// bytes found under `./storage/execution-artifacts` after this test runs
+/// would prove the wiring did *not* take effect. The storage path itself is
+/// `path().join("storage")`, which does not exist until the router creates
+/// it: the tests assert its absence first and its presence afterwards.
+fn distinctive_temp_root(label: &str) -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix(label)
+        .tempdir()
+        .expect("temporary directory")
 }
 
 /// Builds the real production router (`tack_api::router::build_router`)
@@ -373,7 +374,8 @@ async fn walk_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
 #[tokio::test]
 async fn artifact_content_is_stored_under_configured_storage_dir_and_downloadable_through_the_real_router()
  {
-    let storage_dir = distinctive_temp_storage_dir("roundtrip");
+    let storage_root = distinctive_temp_root("roundtrip");
+    let storage_dir = storage_root.path().join("storage");
     // The directory must not exist yet — proves nothing pre-seeded it.
     assert!(!storage_dir.exists());
 
@@ -536,7 +538,8 @@ async fn artifact_content_is_stored_under_configured_storage_dir_and_downloadabl
 // ---------------------------------------------------------------------
 #[tokio::test]
 async fn unauthenticated_operator_download_request_is_still_gated_by_a_real_lookup() {
-    let storage_dir = distinctive_temp_storage_dir("unknown");
+    let storage_root = distinctive_temp_root("unknown");
+    let storage_dir = storage_root.path().join("storage");
     let (app, _pool) = real_app(&storage_dir).await;
 
     // No such execution/attempt/artifact exists at all. This proves the

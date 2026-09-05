@@ -11,10 +11,7 @@
 use std::{
     path::{Path, PathBuf},
     process::Command as SyncCommand,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -36,8 +33,6 @@ use tack_runner::{
         workspace::git::{CHECKOUT_MARKER, GitWorktreeProvisioner},
     },
 };
-
-static NEXT_ROOT: AtomicUsize = AtomicUsize::new(0);
 
 /// Resolves `git` to an absolute path instead of relying on `PATH`.
 ///
@@ -63,15 +58,13 @@ fn git_program() -> PathBuf {
     PathBuf::from("git")
 }
 
-fn temp_root(label: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "tack-h3-{label}-{}-{}",
-        std::process::id(),
-        NEXT_ROOT.fetch_add(1, Ordering::SeqCst)
-    ));
-    let _ = std::fs::remove_dir_all(&path);
-    std::fs::create_dir_all(&path).expect("temporary root");
-    path
+/// A scratch directory that removes itself, and everything written under it,
+/// when the returned guard drops — including when an assertion panics first.
+fn temp_root(label: &str) -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix(label)
+        .tempdir()
+        .expect("temporary directory")
 }
 
 fn run_git(directory: &Path, args: &[&str]) -> String {
@@ -91,16 +84,17 @@ fn run_git(directory: &Path, args: &[&str]) -> String {
 /// A real repository with a distinctive file, so "the harness saw the
 /// checkout" can be asserted on content rather than on the mere existence of
 /// a directory.
-fn source_repository() -> (PathBuf, String) {
-    let path = temp_root("source");
-    run_git(&path, &["-c", "init.defaultBranch=main", "init", "--quiet"]);
-    run_git(&path, &["config", "user.email", "runner@example.invalid"]);
-    run_git(&path, &["config", "user.name", "Tack Runner Test"]);
+fn source_repository() -> (tempfile::TempDir, String) {
+    let path_dir = temp_root("source");
+    let path = path_dir.path();
+    run_git(path, &["-c", "init.defaultBranch=main", "init", "--quiet"]);
+    run_git(path, &["config", "user.email", "runner@example.invalid"]);
+    run_git(path, &["config", "user.name", "Tack Runner Test"]);
     std::fs::write(path.join("PLAN.md"), "the item to work on\n").expect("write");
-    run_git(&path, &["add", "."]);
-    run_git(&path, &["commit", "--quiet", "-m", "plan"]);
-    let commit = run_git(&path, &["rev-parse", "HEAD"]);
-    (path, commit)
+    run_git(path, &["add", "."]);
+    run_git(path, &["commit", "--quiet", "-m", "plan"]);
+    let commit = run_git(path, &["rev-parse", "HEAD"]);
+    (path_dir, commit)
 }
 
 /// What the harness process observed from inside its own working directory.
@@ -384,11 +378,13 @@ fn claim(attempt: &str) -> ClaimRequest {
 
 #[tokio::test]
 async fn a_claimed_attempt_reaches_a_real_harness_process_with_its_own_checkout() {
-    let (source, commit) = source_repository();
-    let root = temp_root("run");
+    let (source_dir, commit) = source_repository();
+    let source = source_dir.path();
+    let root_dir = temp_root("run");
+    let root = root_dir.path();
     let adapter = RealProcessAdapter::default();
     let engine = RunnerEngine::new(
-        FakeProtocol::new(work("attempt-h3", &source, &commit), false),
+        FakeProtocol::new(work("attempt-h3", source, &commit), false),
         adapter.clone(),
         OwnerOnlyJournal::new(root.join("journal")),
         WorkspaceManager::new(
@@ -418,9 +414,6 @@ async fn a_claimed_attempt_reaches_a_real_harness_process_with_its_own_checkout(
         "the harness ran outside the runner's workspace root: {}",
         observed.working_directory
     );
-
-    std::fs::remove_dir_all(&root).expect("cleanup");
-    std::fs::remove_dir_all(&source).expect("cleanup");
 }
 
 /// The complement of the test above: without a real provisioner, the
@@ -428,11 +421,13 @@ async fn a_claimed_attempt_reaches_a_real_harness_process_with_its_own_checkout(
 /// therefore proven to break the claim, rather than assumed to.
 #[tokio::test]
 async fn without_a_real_provisioner_the_same_attempt_never_reaches_the_harness() {
-    let (source, commit) = source_repository();
-    let root = temp_root("unavailable");
+    let (source_dir, commit) = source_repository();
+    let source = source_dir.path();
+    let root_dir = temp_root("unavailable");
+    let root = root_dir.path();
     let adapter = RealProcessAdapter::default();
     let engine = RunnerEngine::new(
-        FakeProtocol::new(work("attempt-h3-gap", &source, &commit), false),
+        FakeProtocol::new(work("attempt-h3-gap", source, &commit), false),
         adapter.clone(),
         OwnerOnlyJournal::new(root.join("journal")),
         WorkspaceManager::new(
@@ -455,18 +450,17 @@ async fn without_a_real_provisioner_the_same_attempt_never_reaches_the_harness()
             .is_empty(),
         "no harness process may start without a checkout"
     );
-
-    std::fs::remove_dir_all(&root).expect("cleanup");
-    std::fs::remove_dir_all(&source).expect("cleanup");
 }
 
 #[tokio::test]
 async fn a_completed_attempt_leaves_no_checkout_behind() {
-    let (source, commit) = source_repository();
-    let root = temp_root("cleanup");
+    let (source_dir, commit) = source_repository();
+    let source = source_dir.path();
+    let root_dir = temp_root("cleanup");
+    let root = root_dir.path();
     let workspaces = root.join("workspaces");
     let engine = RunnerEngine::new(
-        FakeProtocol::new(work("attempt-h3-done", &source, &commit), false),
+        FakeProtocol::new(work("attempt-h3-done", source, &commit), false),
         RealProcessAdapter::default(),
         OwnerOnlyJournal::new(root.join("journal")),
         WorkspaceManager::new(
@@ -488,18 +482,17 @@ async fn a_completed_attempt_leaves_no_checkout_behind() {
         remaining.is_empty(),
         "a completed attempt must leave no checkout behind: {remaining:?}"
     );
-
-    std::fs::remove_dir_all(&root).expect("cleanup");
-    std::fs::remove_dir_all(&source).expect("cleanup");
 }
 
 #[tokio::test]
 async fn a_cancelled_attempt_leaves_no_checkout_behind() {
-    let (source, commit) = source_repository();
-    let root = temp_root("cancelled");
+    let (source_dir, commit) = source_repository();
+    let source = source_dir.path();
+    let root_dir = temp_root("cancelled");
+    let root = root_dir.path();
     let workspaces = root.join("workspaces");
     let engine = RunnerEngine::new(
-        FakeProtocol::new(work("attempt-h3-cancel", &source, &commit), true),
+        FakeProtocol::new(work("attempt-h3-cancel", source, &commit), true),
         RealProcessAdapter::default(),
         OwnerOnlyJournal::new(root.join("journal")),
         WorkspaceManager::new(
@@ -522,9 +515,6 @@ async fn a_cancelled_attempt_leaves_no_checkout_behind() {
         remaining.is_empty(),
         "a cancelled attempt must leave no checkout behind: {remaining:?}"
     );
-
-    std::fs::remove_dir_all(&root).expect("cleanup");
-    std::fs::remove_dir_all(&source).expect("cleanup");
 }
 
 /// Crash recovery: a runner killed after provisioning leaves a checkout on
@@ -534,12 +524,14 @@ async fn a_cancelled_attempt_leaves_no_checkout_behind() {
 /// provisioner.
 #[tokio::test]
 async fn a_checkout_left_by_a_killed_runner_is_removed_by_the_restart() {
-    let (source, commit) = source_repository();
-    let root = temp_root("recovery");
+    let (source_dir, commit) = source_repository();
+    let source = source_dir.path();
+    let root_dir = temp_root("recovery");
+    let root = root_dir.path();
     let workspaces = root.join("workspaces");
     let journal = OwnerOnlyJournal::new(root.join("journal"));
     let killed = RunnerEngine::new(
-        FakeProtocol::new(work("attempt-h3-killed", &source, &commit), false),
+        FakeProtocol::new(work("attempt-h3-killed", source, &commit), false),
         // The adapter fails to start, which is where a `kill -9` most often
         // lands: after the checkout exists, before anything terminal is
         // reported. The journal record survives; so does the checkout.
@@ -570,7 +562,7 @@ async fn a_checkout_left_by_a_killed_runner_is_removed_by_the_restart() {
     assert_eq!(journal.unresolved().expect("journal").len(), 1);
 
     let restarted = RunnerEngine::new(
-        FakeProtocol::new(work("attempt-h3-killed", &source, &commit), false),
+        FakeProtocol::new(work("attempt-h3-killed", source, &commit), false),
         RealProcessAdapter::default(),
         journal.clone(),
         WorkspaceManager::new(
@@ -585,9 +577,6 @@ async fn a_checkout_left_by_a_killed_runner_is_removed_by_the_restart() {
         "the restart must not leave the killed attempt's checkout behind"
     );
     assert!(journal.unresolved().expect("journal").is_empty());
-
-    std::fs::remove_dir_all(&root).expect("cleanup");
-    std::fs::remove_dir_all(&source).expect("cleanup");
 }
 
 /// The deliberate other half of the rule above: an attempt the runner could
@@ -596,12 +585,14 @@ async fn a_checkout_left_by_a_killed_runner_is_removed_by_the_restart() {
 /// cleanup on recovery must be conditional, not unconditional.
 #[tokio::test]
 async fn a_quarantined_attempt_keeps_its_checkout_as_evidence() {
-    let (source, commit) = source_repository();
-    let root = temp_root("quarantine");
+    let (source_dir, commit) = source_repository();
+    let source = source_dir.path();
+    let root_dir = temp_root("quarantine");
+    let root = root_dir.path();
     let workspaces = root.join("workspaces");
     let journal = OwnerOnlyJournal::new(root.join("journal"));
     let killed = RunnerEngine::new(
-        FakeProtocol::new(work("attempt-h3-quarantine", &source, &commit), false),
+        FakeProtocol::new(work("attempt-h3-quarantine", source, &commit), false),
         FailingStartAdapter {
             reconcile_is_ambiguous: false,
         },
@@ -624,7 +615,7 @@ async fn a_quarantined_attempt_keeps_its_checkout_as_evidence() {
         .expect("the interrupted attempt left a checkout");
 
     let restarted = RunnerEngine::new(
-        FakeProtocol::new(work("attempt-h3-quarantine", &source, &commit), false),
+        FakeProtocol::new(work("attempt-h3-quarantine", source, &commit), false),
         FailingStartAdapter {
             reconcile_is_ambiguous: true,
         },
@@ -643,9 +634,6 @@ async fn a_quarantined_attempt_keeps_its_checkout_as_evidence() {
         orphan.join(CHECKOUT_MARKER).exists(),
         "a quarantined attempt's checkout must survive for the operator"
     );
-
-    std::fs::remove_dir_all(&root).expect("cleanup");
-    std::fs::remove_dir_all(&source).expect("cleanup");
 }
 
 /// Fails to start, and optionally cannot say what happened afterwards. The

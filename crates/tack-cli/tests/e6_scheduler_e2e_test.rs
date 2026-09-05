@@ -17,26 +17,27 @@
 
 use std::net::TcpListener;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
 /// Owns the `tack serve` child process and its temp database directory;
-/// kills the process and removes the directory on drop so a panicking
-/// assertion never leaks a listening server or scratch files into the next
-/// test run.
+/// kills the process on drop, and the `TempDir` removes the directory after
+/// it, so a panicking assertion never leaks a listening server or scratch
+/// files into the next test run. `dir` is declared last deliberately: struct
+/// fields drop in declaration order, and the directory must outlive the
+/// server still writing into it.
 struct ServerGuard {
     child: Child,
-    dir: std::path::PathBuf,
     base_url: String,
+    #[allow(dead_code)]
+    dir: tempfile::TempDir,
 }
 
 impl Drop for ServerGuard {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
-        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 
@@ -48,30 +49,20 @@ fn free_port() -> u16 {
     listener.local_addr().expect("local addr").port()
 }
 
-/// A unique scratch directory per server instance — no external `tempfile`
-/// dependency needed. PID + a per-process atomic counter is enough
-/// uniqueness for a single test binary's own subprocesses.
-fn scratch_dir() -> std::path::PathBuf {
-    static COUNTER: AtomicU32 = AtomicU32::new(0);
-    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!(
-        "tack-e6-cli-e2e-{}-{}-{}",
-        std::process::id(),
-        n,
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    std::fs::create_dir_all(&dir).expect("create scratch dir");
-    dir
+/// A scratch directory per server instance, removed when the guard holding it
+/// drops.
+fn scratch_dir() -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix("e6-cli-e2e")
+        .tempdir()
+        .expect("create scratch dir")
 }
 
 const OPERATOR_TOKEN: &str = "e6-cli-e2e-operator-token";
 
 fn start_server() -> ServerGuard {
     let dir = scratch_dir();
-    let db_path = dir.join("e6-cli-e2e.db");
+    let db_path = dir.path().join("e6-cli-e2e.db");
     let port = free_port();
     let base_url = format!("http://127.0.0.1:{port}");
 
@@ -84,7 +75,7 @@ fn start_server() -> ServerGuard {
             format!("sqlite:{}?mode=rwc", db_path.display()),
         )
         .env("TACK_API_TOKEN", OPERATOR_TOKEN)
-        .env("TACK_STORAGE_DIR", dir.join("storage"))
+        .env("TACK_STORAGE_DIR", dir.path().join("storage"))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
