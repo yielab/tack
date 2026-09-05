@@ -15,7 +15,7 @@
 //! see `handlers/orch.rs`'s module doc above `OrchBudgetResponse` for why that
 //! isn't reachable and isn't built.
 
-mod common;
+use crate::common;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
