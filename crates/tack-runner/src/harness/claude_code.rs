@@ -105,23 +105,43 @@ use crate::{Clock, SystemClock, client::AttemptState, client::Timestamp};
 const HARNESS_KIND: &str = "claude-code";
 
 /// Provider families the installed `claude` 2.1.223 binary genuinely knows
-/// about. `"anthropic"` is the first-party default (no flag needed); the
-/// other three are switched via environment variables the CLI itself
+/// about on its own — facts about the binary, never about how Tack is
+/// configured. `"anthropic"` is the first-party default (no flag needed);
+/// the other three are switched via environment variables the CLI itself
 /// documents only indirectly (`--bare`'s help text names them collectively
 /// as "3P providers"). Their exact names were confirmed by `strings` against
 /// the installed binary (`ANTHROPIC_BEDROCK_BASE_URL`, `ANTHROPIC_VERTEX_*`,
 /// `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`,
 /// `CLAUDE_CODE_USE_FOUNDRY` all present) — static inspection of the shipped
 /// artifact, not a live provider switch (never attempted: it would need real
-/// cloud credentials that would not be fabricated for this).
-const KNOWN_PROVIDERS: &[&str] = &[
-    "anthropic",
-    "bedrock",
-    "vertex",
-    "foundry",
-    crate::config::VERCEL_AI_GATEWAY_PROVIDER,
-    crate::config::ANTHROPIC_PROVIDER,
-];
+/// cloud credentials that would not be fabricated for this). A
+/// Tack-configured provider (Vercel's gateway, Anthropic's own API used as a
+/// key+endpoint rather than the native mode above) is not one of these —
+/// see [`is_known_provider`], which checks both halves without listing the
+/// configured one here by name.
+const NATIVE_PROVIDER_FAMILIES: &[&str] = &["anthropic", "bedrock", "vertex", "foundry"];
+
+/// Every provider family this adapter accepts: one of the harness's own
+/// native families above, or the wire name of a provider
+/// `crate::provider::registry` actually knows about. The configured half is
+/// never copied into a second, hand-maintained list — it is asked of the
+/// registry directly, so a new `Provider` module is reachable from
+/// claude-code the moment it is registered, with no second edit site here.
+fn is_known_provider(name: &str) -> bool {
+    NATIVE_PROVIDER_FAMILIES.contains(&name)
+        || crate::provider::registry()
+            .iter()
+            .any(|provider| provider.wire_name() == name)
+}
+
+/// The full list [`is_known_provider`] checks against, built fresh for a
+/// rejection reason — never cached, since the registry half can change
+/// between builds and this is only ever assembled on the one rejected path.
+fn known_provider_families() -> Vec<&'static str> {
+    let mut families: Vec<&'static str> = NATIVE_PROVIDER_FAMILIES.to_vec();
+    families.extend(crate::provider::registry().iter().map(|p| p.wire_name()));
+    families
+}
 
 /// Tool names that touch the network, matched case-insensitively against a
 /// requested `permission_policy.tools` entry. Used only to reject a
@@ -624,12 +644,15 @@ fn parsed_from_result_line(
         .map(str::to_ascii_lowercase)
         .unwrap_or_else(|| "anthropic".to_string());
     let (model_id, model_observation_source) = match init_model {
-        // A gateway-routed request cannot be confirmed from this line
-        // alone: it is emitted before any network call reaches the
-        // gateway, so it states what the CLI was configured to request,
-        // not what the gateway actually served. Recorded as
-        // `requested_not_confirmed` rather than `harness_reported`.
-        Some(model) if model_provider == crate::config::VERCEL_AI_GATEWAY_PROVIDER => (
+        // This line is emitted before any network call reaches whatever
+        // endpoint `model_provider` names, so it states what the CLI was
+        // configured to request, not necessarily what answered. Whether
+        // that distinction matters is a property of the endpoint, not of
+        // any one vendor — `requires_unconfirmed_model_recording` asks the
+        // matching registered provider (a name matching none, including
+        // every native family above, is never unconfirmed here: that
+        // question only applies to a Tack-configured endpoint).
+        Some(model) if crate::provider::requires_unconfirmed_model_recording(&model_provider) => (
             model,
             ModelObservationSource::RequestedNotConfirmed
                 .as_str()
@@ -926,10 +949,11 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
 
         if let Some(provider) = &request.requested_model_provider {
             let normalized = provider.as_str().trim().to_ascii_lowercase();
-            if !KNOWN_PROVIDERS.contains(&normalized.as_str()) {
+            if !is_known_provider(&normalized) {
+                let known = known_provider_families();
                 let reason = format!(
                     "requested model provider {:?} is not one of this adapter's known provider \
-                     families {KNOWN_PROVIDERS:?}",
+                     families {known:?}",
                     provider.as_str()
                 );
                 tracing::warn!(

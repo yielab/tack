@@ -187,4 +187,69 @@ wrong here in the same way, which is itself worth flagging to whoever verifies b
 
 ## Amendments
 
-*(none yet)*
+### 2026-09-05 — the vendor-string grep was too narrow; two production sites named a vendor
+
+The coordinator reviewed this card and found my grep proved less than the acceptance
+claims: I checked `resolve_endpoint`/`attach_catalog` (genuinely zero) but not the whole
+tree. Grepping every file for the vendor constants, excluding only `provider/` and
+`config.rs`, and splitting each file's production code from its own `#[cfg(test)] mod
+tests` (not just "past line N") found two real, non-test hits — both left standing by
+the original claim above, which is why this is an amendment rather than a correction to
+that claim.
+
+**1. `claude_code.rs`'s `KNOWN_PROVIDERS` was a second registry that did not know it was
+one.** It hardcoded `crate::config::VERCEL_AI_GATEWAY_PROVIDER` and
+`crate::config::ANTHROPIC_PROVIDER` alongside claude-code's own four native vendor
+families (`anthropic`/`bedrock`/`vertex`/`foundry`), so adding a *third* provider would
+have meant a module, a registry line, *and* an edit here — exactly the second edit site
+this card exists to remove. Fixed: `KNOWN_PROVIDERS` is now `NATIVE_PROVIDER_FAMILIES`
+(only the four native names, which are facts about the installed binary, never about
+Tack's configuration) plus a new `is_known_provider(name)` function that asks
+`crate::provider::registry()` for the configured half live, and
+`known_provider_families()` for the rejection message. Neither `VERCEL_AI_GATEWAY_PROVIDER`
+nor `ANTHROPIC_PROVIDER` appears in `claude_code.rs`'s production code any more.
+
+**2. The `requested_not_confirmed` vs `harness_reported` match arm named Vercel when the
+real distinction is "reached through a proxy," not "is Vercel."** The old guard was
+`model_provider == crate::config::VERCEL_AI_GATEWAY_PROVIDER`. A second gateway (say,
+OpenRouter) would never match it, so an attempt routed through that gateway would record
+`harness_reported` for a model nothing had actually confirmed — a false capability claim,
+which this repo treats as load-bearing. Fixed with the coordinator's suggested shape: a
+new `Provider` trait method, `confirms_served_model_from_init_line(&self) -> bool`,
+defaulting to `false` (the safe, unconfirmed answer) so a provider module that does not
+override it is never credited with a capability it hasn't proven. Both existing modules
+state their own value explicitly rather than relying on the default:
+`VercelAiGateway` returns `false` (a gateway can route/fall back/alias to a different
+model than requested); `Anthropic` returns `true` (a direct vendor API serves the
+requested model or fails outright, never a silent substitute — the coordinator's own
+read of this, confirmed unaffected by the fix). `provider::requires_unconfirmed_model_recording(name)`
+looks the name up in the registry and asks that method; a name matching no registered
+provider (every native family, or an unrecognized string) returns `false`, unchanged from
+before. `claude_code.rs`'s match arm now reads
+`crate::provider::requires_unconfirmed_model_recording(&model_provider)` and no longer
+names any vendor.
+
+This was a design decision with only one reasonable shape once framed as "a property of
+the endpoint, not of the vendor," so it was implemented rather than escalated, per the
+coordinator's own fallback instruction.
+
+**The corrected grep** (the one that should have been in the original claim, and the one
+a future card should reuse): for each of `codex.rs`, `claude_code.rs`, `doctor.rs` and
+`bootstrap.rs`, find that file's own `#[cfg(test)]` (or top-level `mod tests`) line
+number, `head -n $((that line - 1))` the file, and grep the result for
+`VERCEL_AI_GATEWAY_PROVIDER|VERCEL_AI_GATEWAY_CONFIG_KEY|ANTHROPIC_PROVIDER|ANTHROPIC_CONFIG_KEY`
+— never grep the whole file, since every one of these files legitimately uses the
+constants in test fixtures. After both fixes: zero hits in all four files' production
+code. Proven load-bearing the same way as before: reintroduced
+`crate::config::VERCEL_AI_GATEWAY_PROVIDER` into `is_known_provider`, watched the same
+grep catch it at the exact line, reverted.
+
+Re-ran after both fixes: `cargo nextest run --workspace` — **1402 passed, 0 failed, 7
+skipped** (unchanged). `cargo nextest run --workspace -E 'binary(runner_contract)'` —
+**18/18**, still byte-identical; `docs/contracts/runner-v1/**` and
+`crates/tack-orch/src/execution.rs` remain untouched (`git status --porcelain` against
+both paths: no output). `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo fmt --check`, `./scripts/check-comments.sh`, `./scripts/check-test-hygiene.sh`: all
+clean. Diff for this amendment alone: 4 files, 96 insertions(+), 19 deletions(-)
+(`claude_code.rs` 62, `provider/mod.rs` 34, `vercel_ai_gateway.rs` 10,
+`anthropic.rs` 9).
