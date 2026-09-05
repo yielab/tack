@@ -120,6 +120,7 @@ const KNOWN_PROVIDERS: &[&str] = &[
     "vertex",
     "foundry",
     crate::config::VERCEL_AI_GATEWAY_PROVIDER,
+    crate::config::ANTHROPIC_PROVIDER,
 ];
 
 /// Tool names that touch the network, matched case-insensitively against a

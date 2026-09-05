@@ -25,6 +25,28 @@ pub const VERCEL_AI_GATEWAY_CONFIG_KEY: &str = "vercel_ai_gateway";
 /// must spell the full entry name.
 pub const DEFAULT_VERCEL_AI_GATEWAY_SECRET: &str = "vercel-ai-gateway/default";
 
+/// The `[provider.<name>]`/`RunnerConfig::providers` key for Anthropic's
+/// own API (ADR 0063 decisions 2 and 4: a vendor's own API and a gateway
+/// are the same key+endpoint mode).
+pub const ANTHROPIC_CONFIG_KEY: &str = "anthropic";
+
+/// The value recorded as `ModelProvider`/`requested_model_provider` when a
+/// request wants this provider's *configured, Tack-managed* endpoint.
+/// Deliberately not the bare string `"anthropic"`: that string is already
+/// claude-code's own native vendor-family identifier (its default when a
+/// request names no provider at all — see `claude_code.rs`'s own
+/// `KNOWN_PROVIDER_FAMILIES`-style vocabulary), meaning a request can
+/// legitimately name "anthropic" as its target vendor while still wanting
+/// the harness's own ambient subscription, not this runner's injected key.
+/// A distinct wire name keeps those two requests distinguishable, exactly
+/// as `VERCEL_AI_GATEWAY_PROVIDER` already is not a vendor family a harness
+/// would ever produce on its own.
+pub const ANTHROPIC_PROVIDER: &str = "anthropic-direct";
+
+/// Default `secret` entry name for the provider above, mirroring
+/// [`DEFAULT_VERCEL_AI_GATEWAY_SECRET`].
+pub const DEFAULT_ANTHROPIC_SECRET: &str = "anthropic/default";
+
 /// A credential whose normal formatting is always redacted.
 #[derive(Clone, PartialEq, Eq)]
 pub struct EnrollmentCredential(String);
@@ -100,10 +122,11 @@ pub struct RunnerConfig {
     pub state_dir: PathBuf,
     pub enrollment_credential: Option<EnrollmentCredential>,
     /// Configured provider endpoints, keyed by `[provider.<name>]` table
-    /// name. One entry is seeded by [`RunnerConfig::defaults`]
-    /// ([`VERCEL_AI_GATEWAY_CONFIG_KEY`], disabled); a name absent from
-    /// this map has no configured endpoint at all, not merely a disabled
-    /// one — the harness's own subscription/login mode applies.
+    /// name. One entry per known provider is seeded by
+    /// [`RunnerConfig::defaults`] ([`VERCEL_AI_GATEWAY_CONFIG_KEY`],
+    /// [`ANTHROPIC_CONFIG_KEY`], both disabled); a name absent from this
+    /// map has no configured endpoint at all, not merely a disabled one —
+    /// the harness's own subscription/login mode applies.
     pub providers: BTreeMap<String, ProviderConfig>,
 }
 
@@ -137,6 +160,13 @@ impl RunnerConfig {
             ProviderConfig {
                 enabled: false,
                 secret: DEFAULT_VERCEL_AI_GATEWAY_SECRET.to_owned(),
+            },
+        );
+        providers.insert(
+            ANTHROPIC_CONFIG_KEY.to_owned(),
+            ProviderConfig {
+                enabled: false,
+                secret: DEFAULT_ANTHROPIC_SECRET.to_owned(),
             },
         );
         Self {
@@ -197,6 +227,19 @@ impl RunnerConfig {
             providers.insert(
                 VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
                 ProviderOverride { enabled, secret },
+            );
+        }
+        let anthropic_enabled = std::env::var("TACK_RUNNER_PROVIDER_ANTHROPIC_ENABLED")
+            .ok()
+            .map(|value| value == "1" || value.eq_ignore_ascii_case("true"));
+        let anthropic_secret = std::env::var("TACK_RUNNER_PROVIDER_ANTHROPIC_SECRET").ok();
+        if anthropic_enabled.is_some() || anthropic_secret.is_some() {
+            providers.insert(
+                ANTHROPIC_CONFIG_KEY.to_owned(),
+                ProviderOverride {
+                    enabled: anthropic_enabled,
+                    secret: anthropic_secret,
+                },
             );
         }
         ConfigOverrides {
@@ -335,6 +378,55 @@ mod tests {
             .expect("default provider entry present");
         assert!(!provider.enabled);
         assert_eq!(provider.secret, DEFAULT_VERCEL_AI_GATEWAY_SECRET);
+    }
+
+    /// Mirrors the test above for the second known provider — both are
+    /// seeded disabled, independently of each other.
+    #[test]
+    fn the_anthropic_provider_also_defaults_to_disabled_with_the_expected_secret_name() {
+        let config = RunnerConfig::defaults();
+        let provider = config
+            .providers
+            .get(ANTHROPIC_CONFIG_KEY)
+            .expect("default provider entry present");
+        assert!(!provider.enabled);
+        assert_eq!(provider.secret, DEFAULT_ANTHROPIC_SECRET);
+    }
+
+    /// Enabling one known provider through the environment must not
+    /// disturb the other's own (disabled) default — proves the two
+    /// providers' config overrides are independent, keyed maps rather than
+    /// one override clobbering the whole `providers` map.
+    #[test]
+    fn enabling_one_known_provider_does_not_affect_the_others_default() {
+        let config = RunnerConfig::from_sources(RunnerConfigSources {
+            environment: ConfigOverrides {
+                providers: BTreeMap::from([(
+                    ANTHROPIC_CONFIG_KEY.to_owned(),
+                    ProviderOverride {
+                        enabled: Some(true),
+                        secret: Some("anthropic-secret".to_owned()),
+                    },
+                )]),
+                ..ConfigOverrides::default()
+            },
+            ..RunnerConfigSources::default()
+        })
+        .expect("configuration should load");
+
+        let anthropic = config
+            .providers
+            .get(ANTHROPIC_CONFIG_KEY)
+            .expect("anthropic entry present");
+        assert!(anthropic.enabled);
+        assert_eq!(anthropic.secret, "anthropic-secret");
+
+        let vercel = config
+            .providers
+            .get(VERCEL_AI_GATEWAY_CONFIG_KEY)
+            .expect("vercel entry still present at its default");
+        assert!(!vercel.enabled);
+        assert_eq!(vercel.secret, DEFAULT_VERCEL_AI_GATEWAY_SECRET);
     }
 
     /// Mirrors `configuration_precedence_is_defaults_file_environment_then_cli`,
