@@ -1,14 +1,12 @@
 //! Integration tests against the real, fully wired production router.
 //!
-//! Unlike `c1_handlers_test.rs`/`c2_handlers_test.rs` (routers built local to
-//! those files) and `runner_vertical_slice.rs` (a repository/runner-fake
+//! Unlike `executions_runner_admin.rs`/`c2_handlers_test.rs` (routers built
+//! local to those files) and `runner_vertical_slice.rs` (a repository/runner-fake
 //! seam), every test in this file drives
 //! `tack_api::router::build_router` — exactly as `tack serve` would run it —
 //! so the claims that the production router completes the mock vertical
 //! slice, and that runner routes sit outside the operator auth exemption,
 //! hold for the *actual* mounted app, not a stand-in.
-
-mod common;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};

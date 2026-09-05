@@ -34,7 +34,7 @@ use tokio::sync::broadcast;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-// ─── Helpers (mirrors board_drag_wip_race_test.rs) ─────────────────────────
+// ─── Helpers (mirrors security/board_drag_wip_race.rs) ─────────────────────
 
 async fn app_with_state() -> (Router, AppState) {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");

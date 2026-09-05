@@ -1,5 +1,10 @@
-mod common;
+//! CRUD and lifecycle coverage for the operator-facing HTTP handlers: health,
+//! the API token gate, request body limits, input validation, vocabulary and
+//! workflow configuration, backup/restore, the embedded SPA, custom fields,
+//! board filtering, item update/delete, sprints, roles, comments,
+//! dependencies, search, export, item provenance, and the GitHub push sync.
 
+use crate::common;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use tack_api::config::AppConfig;
