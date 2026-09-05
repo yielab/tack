@@ -8,7 +8,7 @@
 //! (absent/null/value); `orch-link` save-time validation against the
 //! project's workflow; and the `/api/fleet` unreachable-vs-zero distinction.
 
-mod common;
+use crate::common;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
