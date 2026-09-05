@@ -43,7 +43,7 @@
 //! `AutoSelect`), the existing, unmodified claim path enforces "unavailable
 //! choice never leases" automatically — proven end-to-end, using only
 //! already-existing repository methods, in
-//! `crates/tack-orch/tests/model_policy_test.rs`.
+//! `crates/tack-orch/tests/scheduling/policy.rs`.
 
 use tack_core::models::ProjectModelDefault;
 use tack_db::Repository;

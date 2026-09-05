@@ -1,7 +1,7 @@
 //! Repository-level tests: event-batch atomicity and event/artifact
 //! retention sweep behavior. HTTP-level artifact-content (streaming,
 //! checksum, path-safety) tests live in
-//! `crates/tack-api/tests/f2_artifact_events_test.rs`; this file only proves
+//! `crates/tack-api/tests/runner_protocol/artifact_events.rs`; this file only proves
 //! what belongs at the `tack-db` layer.
 
 use crate::common;

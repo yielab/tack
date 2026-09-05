@@ -333,7 +333,7 @@ impl Repository {
     /// obvious one — a counter that only moves on the common path is worse
     /// than none, because a caller would trust a stale `ETag` computed from
     /// a version this method silently left behind. See
-    /// `crates/tack-db/tests/version_concurrency_test.rs`'s
+    /// `crates/tack-db/tests/repository/version_concurrency.rs`'s
     /// `version_increments_on_every_item_update`.
     #[instrument(skip(self))]
     pub async fn update_item(

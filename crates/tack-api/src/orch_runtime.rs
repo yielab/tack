@@ -44,7 +44,7 @@
 //! `reconciler::tests::repeated_global_start_stop_cycles_leave_no_task_running`
 //! (three consecutive start/stop cycles, asserting exactly one task per
 //! cycle) and, at the HTTP layer, in
-//! `tack-api`'s `tests/orch_settings_test.rs`.
+//! `tack-api`'s `tests/orchestration/control_plane/settings.rs`.
 //!
 //! # The list of planes isn't read once
 //!

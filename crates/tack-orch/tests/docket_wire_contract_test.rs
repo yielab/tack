@@ -99,7 +99,7 @@ fn load_text_fixture(name: &str) -> String {
 /// lines — not valid JSON syntax — stripped before use as a mock response.
 /// Same convention as `docket_adapter_test.rs`; duplicated rather than
 /// shared because integration test binaries in this crate don't share a
-/// `tests/common` module (there isn't one — see `traces_ingestion_test.rs`
+/// `tests/common` module (there isn't one — see `ingestion/traces.rs`
 /// and `docket_adapter_test.rs`, each self-contained) and this file's
 /// ownership is deliberately scoped to not touch either.
 fn load_json_fixture(name: &str) -> String {

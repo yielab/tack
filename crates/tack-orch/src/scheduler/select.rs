@@ -6,7 +6,7 @@
 //! `(request, candidates, now, policy)` tuple always produces the same
 //! [`SelectionOutcome`], and the outcome does not depend on `candidates`'
 //! slice order (see the order-independence tests in
-//! `crates/tack-orch/tests/scheduler_test.rs`) — only on its *content*.
+//! `crates/tack-orch/tests/scheduling/scheduler.rs`) — only on its *content*.
 
 use chrono::{DateTime, Duration, Utc};
 
