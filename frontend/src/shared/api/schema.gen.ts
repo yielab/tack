@@ -4235,10 +4235,10 @@ export interface components {
          * @description Documents `tack_orch::execution::MeasurementSource`'s wire shape —
          *     used by `AttemptSummary.usage_economics`. Defined here,
          *     not in `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope`
-         *     above is: this file must keep compiling standalone when a test loads it
-         *     via `#[path]` (`c1_handlers_test.rs`, `c2_handlers_test.rs`) — a
-         *     `crate::openapi` (or any other module's) reference would not resolve in
-         *     that separate test-binary crate root. `tack-orch` has no `ToSchema`
+         *     above is: this file must keep compiling standalone when its regression
+         *     tests load it via `#[path]` from a separate test-binary crate root,
+         *     where a `crate::openapi` (or any other module's) reference would not
+         *     resolve. `tack-orch` has no `ToSchema`
          *     (see `usage_provenance.rs`'s own module doc), so this is a
          *     hand-verified mirror, never constructed or serialized by real code —
          *     `#[allow(dead_code)]` for the identical reason `RunnerV1ErrorEnvelope`
@@ -4819,10 +4819,10 @@ export interface components {
          *     `tack-orch` must stay free of an OpenAPI-generation dependency (see that
          *     crate's own architecture boundary), so the real type cannot derive
          *     `ToSchema` itself. Defined here (not in `crate::openapi`) so this file
-         *     keeps compiling standalone when a test loads it via
-         *     `#[path = "../src/handlers/executions.rs"]` (`c1_handlers_test.rs`,
-         *     `c2_handlers_test.rs`) — a `crate::openapi` import would not resolve in
-         *     that separate test-binary crate root. `code` is documented as a free
+         *     keeps compiling standalone when its regression tests load it via
+         *     `#[path = "../src/handlers/executions.rs"]` from a separate test-binary
+         *     crate root, where a `crate::openapi` import would not resolve. `code` is
+         *     documented as a free
          *     string rather than an enum because `StableErrorCode` lives in
          *     `tack-orch` for the same reason; its fifteen frozen values are
          *     enumerated in `docs/contracts/runner-v1/README.md`.
@@ -4836,8 +4836,7 @@ export interface components {
          *     library crate this is invisible to `dead_code` (a `pub` item in a
          *     library is assumed reachable by external callers); it only surfaces
          *     when this file is compiled standalone into a test *binary* via
-         *     `#[path]` (`c1_handlers_test.rs`/`c2_handlers_test.rs`), which has no
-         *     external callers at all.
+         *     `#[path]`, which has no external callers at all.
          */
         RunnerV1ErrorEnvelope: {
             error: components["schemas"]["RunnerV1Error"];

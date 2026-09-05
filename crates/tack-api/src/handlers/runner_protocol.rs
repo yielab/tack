@@ -18,7 +18,8 @@
 //! token before calling a B2 repository method, and every payload is checked
 //! against `docs/contracts/runner-v1/limits.json` before any repository call
 //! — so a rejected request writes nothing (see `payload_too_large` case
-//! notes below and the acceptance tests in `tests/c2_handlers_test.rs`).
+//! notes below and the acceptance tests in
+//! `tests/runner_protocol/lifecycle.rs`).
 
 use std::sync::Arc;
 
@@ -120,9 +121,10 @@ impl RunnerProtocolState {
     /// root without changing `new`'s call signature. Production
     /// (`router.rs#runner_protocol_routes`) calls this to swap in the
     /// operator-configured `TACK_STORAGE_DIR`. Also used directly by
-    /// `f2_artifact_events_test.rs`; `#[allow(dead_code)]` because the
-    /// unrelated `c2_handlers_test.rs` also loads this file via `#[path]`
-    /// (for its own auth non-substitution test) without calling this — see
+    /// `runner_protocol/artifact_events.rs`; `#[allow(dead_code)]` because
+    /// the unrelated `runner_protocol/lifecycle.rs` also loads this file via
+    /// `#[path]` (for its own auth non-substitution test) without calling
+    /// this — see
     /// `artifact_download.rs`'s module-level allow for the fuller
     /// precedent.
     #[allow(dead_code)]
@@ -502,7 +504,7 @@ async fn authenticate_attempt_request(
 /// `embedded_capability_snapshot_parses_full_and_sparse_fixtures` in
 /// `capabilities.rs` proves both `enrollment.request.json` and
 /// `refresh.request.json` parse; `full_capabilities()` in
-/// `c2_handlers_test.rs` sends the same full shape.
+/// `runner_protocol/lifecycle.rs` sends the same full shape.
 ///
 /// This function still owns exactly two things `EmbeddedCapabilitySnapshot`
 /// does not and should not encode — a shape type has no opinion on protocol

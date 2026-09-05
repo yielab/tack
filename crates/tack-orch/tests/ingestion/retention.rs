@@ -55,8 +55,8 @@ async fn claim_replay_count(repo: &Repository) -> i64 {
 /// Fresh file-backed database (WAL, `mode=rwc` — production's own setup),
 /// migrated, with one workspace/project/item/runner/request/attempt seeded
 /// via direct SQL (this crate has no `tack-db` test-fixture harness to
-/// import — see `crates/tack-db/tests/execution_retention_test.rs`'s own
-/// module doc for the identical reasoning). Returns `(repo, attempt_id)`.
+/// import — see `crates/tack-db/tests/repository/execution_retention.rs`'s
+/// own module doc for the identical reasoning). Returns `(repo, attempt_id)`.
 async fn seed_real_db(now: DateTime<Utc>) -> (Repository, String) {
     let db_path =
         std::env::temp_dir().join(format!("tack-orch-f5-prod-{}.db", uuid::Uuid::new_v4()));
