@@ -20,6 +20,11 @@ readonly ALLOW='
 crates/tack-api/tests/wave2_gate.rs
 '
 
+# Names that look like a file reference but are prose. Each needs a reason.
+readonly ALLOW_CITED='
+foo.rs
+'
+
 report() {
   local title=$1 explanation=$2 hits=$3
   [ -z "$hits" ] && return 0
@@ -61,6 +66,33 @@ report "Dates" \
 report "AI attribution" \
   "This project does not credit a model for its code. Naming a harness (Claude Code, Codex) is fine; claiming one wrote this is not." \
   "$(commentish '(Co-Authored-By|Generated with|Co-authored-by).*(Claude|Copilot|GPT)|🤖|\b(written|authored|generated) by (an? )?(AI|model|agent|assistant|Claude|GPT|Copilot)\b')"
+
+# A comment that points at a file must point at a file that exists. Renaming or
+# merging a module silently turns every citation of its old name into a dead end,
+# and a reader who follows two dead pointers stops trusting the third.
+#
+# Matches on basename, so it catches a removed or renamed file rather than a
+# wrong directory. A filename broken across a line wrap hides from this check —
+# which is a reason not to wrap one.
+dead_pointers() {
+  local known cited
+  known=$(git ls-files '*.rs' 2>/dev/null | sed 's#.*/##' | sort -u)
+  [ -z "$known" ] && return 0
+  cited=$(grep -rhE '^[[:space:]]*(//|///|//!)' --include='*.rs' "${ROOTS[@]}" 2>/dev/null \
+    | grep -oE '[A-Za-z0-9_.-]+\.rs' | sort -u \
+    | grep -vxFf <(printf '%s\n' "$ALLOW_CITED" | grep -v '^$') || true)
+  [ -z "$cited" ] && return 0
+  local dead
+  dead=$(comm -23 <(printf '%s\n' "$cited") <(printf '%s\n' "$known"))
+  [ -z "$dead" ] && return 0
+  grep -rnE "$(printf '%s\n' "$dead" | sed 's/\./\\./g' | paste -sd'|')" \
+    --include='*.rs' "${ROOTS[@]}" 2>/dev/null \
+    | grep -E ':[[:space:]]*(//|///|//!)' || true
+}
+
+report "Pointers to files that do not exist" \
+  "The named file was renamed or merged away. Repoint it to the new path, or state the fact the name stood in for — the second survives the next reorganisation." \
+  "$(dead_pointers)"
 
 if [ "$status" -ne 0 ]; then
   cat <<'EOF'
