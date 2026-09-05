@@ -159,6 +159,14 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # `targets:` above adds the target to the toolchain this action resolves and
+      # installs (named `stable`) — not to the toolchain `rust-toolchain.toml` pins,
+      # which rustup's directory-scoped override makes the one cargo actually uses
+      # once the repo is checked out. Unqualified, this adds it to whatever's active
+      # here, which is the pinned toolchain.
+      - name: Add the target to the pinned toolchain
+        run: rustup target add ${{ matrix.target }}
+
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           key: ${{ matrix.target }}
@@ -346,6 +354,14 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # `targets:` above adds the target to the toolchain this action resolves and
+      # installs (named `stable`) — not to the toolchain `rust-toolchain.toml` pins,
+      # which rustup's directory-scoped override makes the one cargo actually uses
+      # once the repo is checked out. Unqualified, this adds it to whatever's active
+      # here, which is the pinned toolchain.
+      - name: Add the target to the pinned toolchain
+        run: rustup target add ${{ matrix.target }}
+
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           workspaces: |
@@ -379,6 +395,40 @@ jobs:
           if [ "${{ matrix.os }}" = "windows-latest" ]; then EXT=".exe"; fi
           cp "target/${{ matrix.target }}/release/tack$EXT" \
              "crates/tack-desktop/binaries/tack-${{ matrix.target }}$EXT"
+
+      # MSI's ProductVersion is numeric-only (major.minor.patch.build, each field
+      # capped, per WixConfig.version — https://v2.tauri.app/reference/config/#wixconfig)
+      # and the workspace version is `0.1.0-beta.7` — a non-numeric prerelease
+      # identifier, so Tauri's own major.minor.patch fallback derivation rejects it.
+      # `bundle.windows.wix.version` overrides just the MSI installer's internal
+      # version; `tauri.conf.json`'s own `version` (shown everywhere else — the CLI,
+      # the archives, the in-app version) is never touched. The prerelease counter
+      # becomes the build field (`beta.7` -> `.7`) so beta releases keep a strictly
+      # increasing ProductVersion, which Windows Installer needs to recognize an
+      # upgrade; a version with no prerelease passes through unchanged.
+      - name: Set the MSI ProductVersion (bundle.windows.wix.version)
+        if: matrix.os == 'windows-latest'
+        working-directory: crates/tack-desktop
+        run: |
+          set -euo pipefail
+          WORKSPACE_VERSION=$(grep -m1 '^version' ../../Cargo.toml | cut -d'"' -f2)
+          BASE="${WORKSPACE_VERSION%%-*}"
+          if [ "$BASE" != "$WORKSPACE_VERSION" ]; then
+            PRE="${WORKSPACE_VERSION#*-}"
+            BUILD_NUM="${PRE##*.}"
+            case "$BUILD_NUM" in
+              ''|*[!0-9]*)
+                echo "Prerelease '$PRE' has no trailing numeric field — refusing to guess an MSI ProductVersion for it." >&2
+                exit 1
+                ;;
+            esac
+            WIX_VERSION="${BASE}.${BUILD_NUM}"
+          else
+            WIX_VERSION="$BASE"
+          fi
+          echo "Workspace version $WORKSPACE_VERSION -> MSI ProductVersion $WIX_VERSION"
+          jq --arg v "$WIX_VERSION" '.bundle.windows.wix.version = $v' tauri.bundle.conf.json > tauri.bundle.conf.json.tmp
+          mv tauri.bundle.conf.json.tmp tauri.bundle.conf.json
 
       - name: cargo tauri build
         working-directory: crates/tack-desktop
