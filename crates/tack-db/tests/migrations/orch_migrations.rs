@@ -15,7 +15,7 @@
 //!     `run_all` is called again (simulating an installed `tack.db` picking up a new
 //!     Tack release);
 //!   - foreign-key enforcement (see
-//!     `test_foreign_key_rejects_orphan_item` in `integration_test.rs`) still holds for
+//!     `test_foreign_key_rejects_orphan_item` in `integration.rs`) still holds for
 //!     every new table that has an incoming FK. `control_planes` is the root of this
 //!     schema's FK graph — it has no FK columns of its own — so there is nothing to
 //!     orphan and no test for it here.
@@ -42,9 +42,7 @@
 //! silently retrying `DROP TABLE` against data that might be all that
 //! survived a crash.
 
-mod common;
-
-use common::setup_test_db;
+use crate::common::{self, setup_test_db};
 use sqlx::Row;
 use tack_db::{init_pool, migrations};
 use uuid::Uuid;
@@ -120,7 +118,7 @@ async fn test_fresh_db_migrates_all_orch_tables() {
         "024_orch_approvals must have been applied on a fresh db"
     );
     // Not asserting 024 is the *last* migration applied: migrations
-    // 025-027 landed after this test was written (see orch_metrics_test.rs for their
+    // 025-027 landed after this test was written (see orch_metrics.rs for their
     // coverage), and later migrations will add more after those. This test's job is
     // "the six orch tables from 019-024 exist," which the loop above already checks.
 }
@@ -162,7 +160,7 @@ async fn test_upgrade_from_018_applies_new_orch_migrations_in_place() {
         .await
         .expect("count migrations");
     // >= 24 rather than == 24: migrations 025-027 landed after this
-    // test was written (see orch_metrics_test.rs), and later migrations will add more.
+    // test was written (see orch_metrics.rs), and later migrations will add more.
     // The exact count isn't this test's job — "the six orch tables from 019-024 exist
     // after upgrading in place" (asserted above) is.
     assert!(

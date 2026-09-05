@@ -10,10 +10,8 @@
 //! fix: a local-only sweep (no HTTP call, so it cannot perturb
 //! `docket_tick_contract_test.rs`'s pinned per-tick request sequence).
 
-mod common;
-
+use crate::common::{create_test_workspace, make_item, make_project, setup_test_db};
 use chrono::{Duration, Utc};
-use common::{create_test_workspace, make_item, make_project, setup_test_db};
 use tack_db::repo::orch::{CreateControlPlane, UpsertOrchLink};
 use uuid::Uuid;
 

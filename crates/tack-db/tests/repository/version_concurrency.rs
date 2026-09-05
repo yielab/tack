@@ -10,9 +10,7 @@
 //! moved, plus the atomic compare-and-swap `claim_item_version` gives the
 //! HTTP layer its concurrency guard.
 
-mod common;
-
-use common::{create_test_workspace, make_item, make_project};
+use crate::common::{self, create_test_workspace, make_item, make_project};
 use tack_core::models::{CreateItem, ItemType, Priority, UpdateItem};
 use tack_core::workflow::StatusCategory;
 

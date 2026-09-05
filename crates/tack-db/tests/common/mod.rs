@@ -13,11 +13,6 @@ pub async fn setup_test_db() -> Repository {
 }
 
 /// Insert a bare workspace row; returns its ID.
-///
-/// `allow(dead_code)` because each integration-test file compiles `common` into its own
-/// binary: `orch_metrics_test.rs` needs `setup_test_db` but never creates a workspace,
-/// so this is genuinely unused *there* while still used by every other test binary.
-#[allow(dead_code)]
 pub async fn create_test_workspace(repo: &Repository) -> Uuid {
     let id = Uuid::new_v4();
     let vocab = serde_json::to_string(&vocabulary::default_vocabulary()).unwrap();
@@ -33,6 +28,10 @@ pub async fn create_test_workspace(repo: &Repository) -> Uuid {
 }
 
 /// Create a software project in the given workspace; returns the Project.
+///
+/// `allow(dead_code)`: `common` is compiled once per test binary, and
+/// `perf_test` (its own binary — seeds a flat item list directly, never a
+/// project tree) needs `setup_test_db`/`create_test_workspace` but not this.
 #[allow(dead_code)]
 pub async fn make_project(repo: &Repository, workspace_id: Uuid) -> tack_core::models::Project {
     repo.create_project(
@@ -49,6 +48,8 @@ pub async fn make_project(repo: &Repository, workspace_id: Uuid) -> tack_core::m
 }
 
 /// Create a minimal task item in the project's initial workflow status.
+///
+/// `allow(dead_code)`: same reason as [`make_project`] — unused by `perf_test`.
 #[allow(dead_code)]
 pub async fn make_item(
     repo: &Repository,

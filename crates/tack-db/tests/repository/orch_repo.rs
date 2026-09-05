@@ -10,10 +10,8 @@
 //!     no duplicate rows and no error;
 //! - unrecognised remote-state strings are stored and returned as-is.
 
-mod common;
-
+use crate::common::{create_test_workspace, make_item, make_project, setup_test_db};
 use chrono::Utc;
-use common::{create_test_workspace, make_item, make_project, setup_test_db};
 use tack_db::repo::orch::{
     CreateControlPlane, NewOrchApproval, NewOrchEvent, NewOrchRun, NewOrchTask, UpdateControlPlane,
     UpsertOrchLink,
@@ -802,7 +800,7 @@ async fn test_uncorrelated_approvals_still_appear_in_pending_inbox() {
 // orch_metrics
 // ════════════════════════════════════════════════════════════════════════════════════
 
-// Covered by `orch_metrics_test.rs`, not here.
+// Covered by `orch_metrics.rs`, not here.
 
 // ════════════════════════════════════════════════════════════════════════════════════
 // orch_trace_cursors (migration 028)

@@ -1,6 +1,4 @@
-mod common;
-
-use common::{create_test_workspace, setup_test_db};
+use crate::common::{self, create_test_workspace, setup_test_db};
 use tack_core::models::*;
 use tack_core::vocabulary;
 use tack_core::workflow;

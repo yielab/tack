@@ -9,9 +9,7 @@
 //!     *safe* value (untrusted), never to `manual` by accident — the
 //!     "unsafe state is never the accidental default" rule.
 
-mod common;
-
-use common::{create_test_workspace, make_project, setup_test_db};
+use crate::common::{create_test_workspace, make_project, setup_test_db};
 use tack_core::models::{CreateItem, ItemSource, ItemType, Priority, UpdateItem};
 use tack_db::{Repository, init_pool, migrations};
 use uuid::Uuid;
