@@ -10,8 +10,9 @@
 //! unit test can prove the sweep *functions* work in isolation; only this
 //! file proves the running server actually calls them. Reachable normally
 //! via `tack_api::execution_runtime` and `tack_api::handlers::*` (both `pub
-//! mod`, fully integrated production code — unlike `f1_decisions_test.rs`/
-//! `f2_artifact_events_test.rs`, this file needs no `#[path]` loading).
+//! mod`, fully integrated production code — unlike `decisions.rs`/
+//! `artifact_events.rs` (modules of the `runner_protocol` binary), this
+//! file needs no `#[path]` loading).
 
 use std::time::Duration as StdDuration;
 
@@ -158,8 +159,9 @@ fn new_request<'a>(
 
 /// Claims a fresh attempt against a real, long-lived lease (10 minutes —
 /// comfortably longer than any sweep-wait loop below) and bumps it straight
-/// to `running`, mirroring `f1_decisions_test.rs::claim_running_attempt`'s
-/// own shortcut (the resolve/expiry paths under test don't gate on how an
+/// to `running`, mirroring `decisions.rs::claim_running_attempt`'s own
+/// shortcut (`decisions.rs` is a module of the `runner_protocol` binary;
+/// the resolve/expiry paths under test here don't gate on how an
 /// attempt got to `running`, only on its current state/lease).
 async fn running_attempt(repo: &Repository, item_id: &str, tag: &str) -> (String, i64) {
     let request_id = format!("req-{tag}");
