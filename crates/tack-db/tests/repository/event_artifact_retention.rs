@@ -4,7 +4,7 @@
 //! `crates/tack-api/tests/f2_artifact_events_test.rs`; this file only proves
 //! what belongs at the `tack-db` layer.
 
-mod common;
+use crate::common;
 
 use std::sync::Mutex;
 
@@ -81,9 +81,9 @@ async fn ready_repo_on(repo: Repository) -> (Repository, String, FakeClock) {
 }
 
 /// File-backed pool (WAL, `mode=rwc` — the same setup production uses),
-/// matching `execution_retention_test.rs`'s own
+/// matching `execution_retention.rs`'s own
 /// `concurrent_purges_never_deadlock_against_a_file_backed_database` /
-/// `execution_repo_test.rs`'s `defect2`-style race tests. A shared in-memory
+/// `execution_repo.rs`'s `defect2`-style race tests. A shared in-memory
 /// pool can mask a race that only shows up against real file I/O and
 /// locking — CLAUDE.md's own warning about this exact class of test.
 async fn file_backed_repo(label: &str) -> (Repository, std::path::PathBuf) {
@@ -215,7 +215,7 @@ fn event<'a>(
 
 /// Forces the *second* event's INSERT to fail via a `BEFORE INSERT` trigger
 /// (the same deterministic technique `completion_replay_insert_failure_rolls_back_terminal_transition`
-/// already uses in `execution_repo_test.rs` for an analogous claim), inside a
+/// already uses in `execution_repo.rs` for an analogous claim), inside a
 /// batch whose first event would otherwise succeed. Proves the whole batch —
 /// not just the failing row — rolls back: zero event rows land, and the
 /// attempt's `event_checkpoint` stays exactly at its last successfully

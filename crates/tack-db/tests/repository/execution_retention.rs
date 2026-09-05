@@ -2,7 +2,7 @@
 //! methods (`Repository::purge_stale_execution_replays`,
 //! `purge_stale_terminal_execution_events`, `execution_fleet_snapshot`).
 //!
-//! Deliberately does not reuse `execution_repo_test.rs`'s `ready_repo()`
+//! Deliberately does not reuse `execution_repo.rs`'s `ready_repo()`
 //! harness for the concurrency test below — see that file's own
 //! `artifact_and_decision_cannot_land_against_concurrently_terminal_attempt`
 //! test for why a shared in-memory pool's shared-cache locking accidentally
@@ -12,7 +12,7 @@
 //! bookkeeping/replay tables and `execution_events` only need valid FK
 //! targets, not a fully-formed, snapshot-validated request.
 
-mod common;
+use crate::common;
 
 use chrono::{DateTime, Duration, Utc};
 use tack_db::{Repository, init_pool, migrations};

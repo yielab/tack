@@ -17,10 +17,8 @@
 //!   - batching: a backlog larger than one batch is fully swept across multiple
 //!     bounded transactions, not just the first `batch_size` rows.
 
-mod common;
-
+use crate::common::setup_test_db;
 use chrono::{Duration, Utc};
-use common::setup_test_db;
 use sqlx::Row;
 use tack_db::repo::orch::{CreateControlPlane, NewOrchEvent, NewOrchMetric};
 use tack_db::{init_pool, migrations};

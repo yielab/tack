@@ -8,9 +8,7 @@
 //! `crates/tack-api/tests/wip_limit_race_test.rs`, since it needs the full
 //! dispatch flow to drive real concurrent HTTP requests.
 
-mod common;
-
-use common::{create_test_workspace, make_project};
+use crate::common::{self, create_test_workspace, make_project};
 use tack_core::CoreError;
 use tack_core::models::{CreateItem, ItemType, Priority};
 use tack_db::repo::items::StatusUpdateOutcome;
