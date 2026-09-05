@@ -1,6 +1,6 @@
 //! Tests for `handlers/decisions.rs` (operator-scoped decision resolution).
 //! Loaded via `#[path]`, the same technique `c1_handlers_test.rs`/
-//! `c2_handlers_test.rs` use on their own handler modules, even though
+//! `lifecycle.rs` use on their own handler modules, even though
 //! `decisions` is also registered in `handlers.rs` and mounted into the
 //! production router (see that module's own doc comment) — loading it here
 //! gives this file its own directly-constructed router, isolated from that
@@ -15,10 +15,17 @@
 //! credential, that it is fail-closed on expiry, that it is
 //! idempotent/replay-safe, and that it never touches item status.
 
-#[path = "../src/handlers/decisions.rs"]
+// The name collision with this file's own module path (`decisions::decisions`)
+// is coincidental — this test module and the product file it loads happen
+// to share a subject name — not a sign the product module is nested under
+// itself.
+#[allow(clippy::module_inception)]
+#[path = "../../src/handlers/decisions.rs"]
 mod decisions;
 
 use std::sync::{Arc, Mutex};
+
+use crate::log_capture::{CaptureGuard, ensure_global_log_capture_installed};
 
 use axum::{
     Router,
@@ -1207,71 +1214,5 @@ async fn concurrent_conflicting_resolves_serialize_to_exactly_one_winner() {
                 let _ = std::fs::remove_file(entry.path());
             }
         }
-    }
-}
-
-// ---------------------------------------------------------------------
-// Log capture boilerplate — identical technique to
-// `c2_handlers_test.rs`'s own (see its doc comment for the full race-window
-// rationale); duplicated here rather than shared, since these are two
-// independent test binaries.
-// ---------------------------------------------------------------------
-
-thread_local! {
-    static LOG_CAPTURE: std::cell::RefCell<Option<Arc<Mutex<Vec<u8>>>>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-static GLOBAL_LOG_CAPTURE_INIT: std::sync::Once = std::sync::Once::new();
-
-fn ensure_global_log_capture_installed() {
-    GLOBAL_LOG_CAPTURE_INIT.call_once(|| {
-        let subscriber = tracing_subscriber::fmt()
-            .with_writer(GlobalLogWriter)
-            .with_max_level(tracing::Level::DEBUG)
-            .finish();
-        tracing::subscriber::set_global_default(subscriber).expect(
-            "GLOBAL_LOG_CAPTURE_INIT guards the only global tracing subscriber this binary ever installs",
-        );
-    });
-}
-
-struct GlobalLogWriter;
-
-impl std::io::Write for GlobalLogWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        LOG_CAPTURE.with(|cell| {
-            if let Some(buffer) = cell.borrow().as_ref() {
-                buffer.lock().unwrap().extend_from_slice(buf);
-            }
-        });
-        Ok(buf.len())
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for GlobalLogWriter {
-    type Writer = GlobalLogWriter;
-    fn make_writer(&'a self) -> Self::Writer {
-        GlobalLogWriter
-    }
-}
-
-struct CaptureGuard;
-
-impl CaptureGuard {
-    fn start() -> (Self, Arc<Mutex<Vec<u8>>>) {
-        ensure_global_log_capture_installed();
-        let buffer = Arc::new(Mutex::new(Vec::new()));
-        LOG_CAPTURE.with(|cell| *cell.borrow_mut() = Some(buffer.clone()));
-        (Self, buffer)
-    }
-}
-
-impl Drop for CaptureGuard {
-    fn drop(&mut self) {
-        LOG_CAPTURE.with(|cell| *cell.borrow_mut() = None);
     }
 }
