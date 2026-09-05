@@ -1,5 +1,11 @@
-mod common;
+//! The operator bearer-token boundary: a path that only looks like an
+//! unauthenticated route (a suffix appended to `/api/projects`) still lands
+//! behind `require_token`, `/api/health` stays open, the response carries a
+//! CSP that disallows inline/executable content, and a WebSocket handshake
+//! driven over a raw TCP connection authorizes via the subprotocol-embedded
+//! credential with no token in the query string.
 
+use crate::common;
 use axum::{
     body::Body,
     http::{Request, StatusCode, header},
