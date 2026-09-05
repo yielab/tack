@@ -106,3 +106,4 @@ tokio = { workspace = true }
 # those direct HTTP calls. Already a workspace dependency (tack-api,
 # tack-db, ...); not newly introduced to the lockfile.
 chrono = { workspace = true }
+tempfile = { workspace = true }

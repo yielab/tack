@@ -146,6 +146,14 @@ notes (workflow validation, auto-status propagation, WebSocket events, attachmen
   freezing 9k lines in place, and it was 13× wrong within two weeks of being written while
   four documents kept repeating it. If you are about to rely on a count someone else wrote,
   run its command first; if it has no command, that is the finding.
+- **A test's temporary paths come from a `tempfile` guard, never from
+  `env::temp_dir().join(...)`.** A hand-built path is removed by a statement at the end of
+  the test, which a failing assertion skips, and the removal has to name each file, so
+  whatever the code under test writes *beside* it — SQLite's `-wal`/`-shm`, the migration
+  runner's pre-upgrade snapshot — is never named. Hold the guard as long as anything reads
+  the path: a helper returning only the path deletes the directory as it returns, and the
+  compiler will not tell you. `scripts/check-test-hygiene.sh` enforces this (~0.7s, in
+  `pre-push` and CI); production code may still use the temp directory and is not scanned.
 - **Each board card writes one handoff** in `docs/agent-handoffs/`; corrections are
   appended as amendments, never rewritten.
 - Changing an API response shape updates the matching frontend unit/E2E mocks in the

@@ -293,3 +293,51 @@ those gates into silent no-ops.
   of the wave running the suite. A `TempDir` guard in each helper is the fix.
 
 Step 5 (fixed waits) remains opportunistic and unstarted; the corrected count is 16, not 12.
+
+**2026-09-05 — the temp-directory leak is fixed, and this ADR had it wrong.** The entry
+above calls it "the runner's temp-directory leak" and counts 3,252 `tack-runner-*` entries.
+Both halves misled. Measured across one green run (`touch /tmp/mark && cargo nextest run
+--workspace && find /tmp -maxdepth 1 -newer /tmp/mark`): **83 entries per run**, of which
+the runner accounts for about 40. The largest single category is not a directory any test
+creates — it is **21 `.before-037_orch_runs_rebuild.sqlite` files**, the migration runner's
+pre-upgrade snapshot, written beside every file-backed test database by production code the
+tests do not know about. `tack-db`'s two race tests removed `.db`, `-wal` and `-shm` by name
+and left the snapshot every time; the accumulated total was **4,499 entries, 276 MB**, and
+`tack-runner-*` was a minority of it. Counting by the prefix in the claim is what hid this.
+
+The fix is one shape rather than a `TempDir` per helper as predicted: **the test's files
+live inside a directory that is a guard.** That kills both failure modes at once — the
+guard drops on a panicking test as well as a passing one, and it removes everything inside,
+so no sidecar has to be named. `tempfile` is a workspace dev-dependency; all 59
+`env::temp_dir()` call sites in test code are converted (6 production sites remain); **83 entries per run → 0**, and a
+green run now adds nothing at all to `/tmp`. `scripts/check-test-hygiene.sh` (~0.7 s, first
+in `pre-push` and CI, proven load-bearing against a planted violation in both a `tests/`
+file and a `#[cfg(test)]` module) keeps it that way. Four production sites are untouched and
+unscanned: production may use the temp directory.
+
+**What the conversion cost, and the trap the compiler does not catch.** A helper that
+creates the guard and returns only a path deletes the directory as it returns — the
+signature still type-checks. It bit twice: `cross_adapter_fixture_command()` returned the
+path of a shell script inside a dropped guard (the test then failed, which is how it was
+found), and `test_secret_store()` in both harness adapters handed back a store whose file
+lived in one. The rule that came out of it, now in `CLAUDE.md` and `docs/TESTING.md`:
+return the guard alongside, or take the directory as a parameter.
+
+**Two production defects surfaced on the way, both fixed here.** `remote_backup.rs`'s
+`snapshot_db` and `handlers/backup.rs`'s download path each created a `VACUUM INTO` snapshot
+and removed it only on the success path — so a failure between the snapshot and the read
+left a full, **unscrubbed** copy of the database, secrets included, in a shared temp
+directory. Both now remove it on every path. Separately, `provider.rs`'s tests wrote real
+secret values to fixed, predictable paths (`/tmp/tack-provider-test-resolved`); they use
+guards now.
+
+**Step 5's count was wrong twice, for the same reason both times.** The correction above
+raised "fixed waits ≥ 200 ms" from 12 to 16 after finding that the pattern could not match
+Rust's digit separator. Re-measured 2026-09-05 over every `sleep` call in test code, the
+real figure is **25 waits totalling 18.5 s** — in a suite whose whole wall clock is 14.7 s.
+The two the corrected pattern still missed are `StdDuration::from_millis(200)` (a different
+type prefix) and `sleep(PERSIST_GRACE)` (a named constant); a third, `REQUEST_WAIT_CAP`, is
+already the bounded-poll shape this step is aiming for and is not a fixed wait at all. The
+lesson is not "grep harder": a count assembled by pattern-matching call syntax will keep
+being wrong. Step 5's inventory is `docs/adr/0064-fixed-waits.txt`, produced by the script
+recorded there, and the step is done when that file is empty — not when a grep is.

@@ -3,6 +3,8 @@ set -e
 
 echo "→ comments carry no board archaeology"
 ./scripts/check-comments.sh
+echo "→ tests take their temporary paths from a guard"
+./scripts/check-test-hygiene.sh
 echo "→ cargo fmt --all --check"
 cargo fmt --all --check
 

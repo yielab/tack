@@ -167,31 +167,30 @@ fn owner_only_file(_path: &Path) -> Result<(), ArtifactError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
-    static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
-
-    fn temp_dir(label: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "tack-runner-artifact-{label}-{}-{}",
-            std::process::id(),
-            NEXT_DIR.fetch_add(1, Ordering::SeqCst)
-        ));
-        fs::create_dir_all(&path).expect("create temp dir");
-        path
+    /// A scratch directory that removes itself, and everything written under
+    /// it, when the returned guard drops — including when an assertion panics
+    /// first.
+    fn temp_dir(label: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(label)
+            .tempdir()
+            .expect("temporary directory")
     }
 
     #[test]
     fn stages_a_file_with_a_correct_checksum_and_size() {
-        let workspace = temp_dir("workspace");
-        let staging = temp_dir("staging");
+        let workspace_dir = temp_dir("workspace");
+        let workspace = workspace_dir.path();
+        let staging_dir = temp_dir("staging");
+        let staging = staging_dir.path();
         fs::write(workspace.join("changes.patch"), b"diff --git a b\n").expect("write source");
 
-        let stager = ArtifactStager::new(&staging);
+        let stager = ArtifactStager::new(staging);
         let staged = stager
             .stage_file(
                 "attempt-one",
-                &workspace,
+                workspace,
                 Path::new("changes.patch"),
                 "patch",
                 "text/x-diff",
@@ -211,12 +210,15 @@ mod tests {
 
     #[test]
     fn refuses_a_source_outside_its_workspace_root() {
-        let workspace = temp_dir("workspace-escape");
-        let staging = temp_dir("staging-escape");
-        let outside = temp_dir("outside");
+        let workspace_dir = temp_dir("workspace-escape");
+        let workspace = workspace_dir.path();
+        let staging_dir = temp_dir("staging-escape");
+        let staging = staging_dir.path();
+        let outside_dir = temp_dir("outside");
+        let outside = outside_dir.path();
         fs::write(outside.join("secret.txt"), b"not part of this workspace").expect("write");
 
-        let stager = ArtifactStager::new(&staging);
+        let stager = ArtifactStager::new(staging);
         let escaping_relative = Path::new("..")
             .join(
                 outside
@@ -229,7 +231,7 @@ mod tests {
 
         let result = stager.stage_file(
             "attempt-one",
-            &workspace,
+            workspace,
             &escaping_relative,
             "log",
             "text/plain",
@@ -245,16 +247,19 @@ mod tests {
     fn refuses_a_symlinked_source() {
         use std::os::unix::fs::symlink;
 
-        let workspace = temp_dir("workspace-symlink");
-        let staging = temp_dir("staging-symlink");
-        let outside = temp_dir("outside-symlink");
+        let workspace_dir = temp_dir("workspace-symlink");
+        let workspace = workspace_dir.path();
+        let staging_dir = temp_dir("staging-symlink");
+        let staging = staging_dir.path();
+        let outside_dir = temp_dir("outside-symlink");
+        let outside = outside_dir.path();
         fs::write(outside.join("real.txt"), b"outside content").expect("write outside file");
         symlink(outside.join("real.txt"), workspace.join("link.txt")).expect("symlink");
 
-        let stager = ArtifactStager::new(&staging);
+        let stager = ArtifactStager::new(staging);
         let result = stager.stage_file(
             "attempt-one",
-            &workspace,
+            workspace,
             Path::new("link.txt"),
             "log",
             "text/plain",
@@ -270,17 +275,20 @@ mod tests {
     /// independent directories with independent content, never colliding.
     #[test]
     fn distinct_attempts_get_isolated_staging_directories() {
-        let workspace_a = temp_dir("workspace-a");
-        let workspace_b = temp_dir("workspace-b");
-        let staging = temp_dir("staging-shared");
+        let workspace_a_dir = temp_dir("workspace-a");
+        let workspace_a = workspace_a_dir.path();
+        let workspace_b_dir = temp_dir("workspace-b");
+        let workspace_b = workspace_b_dir.path();
+        let staging_dir = temp_dir("staging-shared");
+        let staging = staging_dir.path();
         fs::write(workspace_a.join("out.txt"), b"attempt-a-content").expect("write a");
         fs::write(workspace_b.join("out.txt"), b"attempt-b-content").expect("write b");
 
-        let stager = ArtifactStager::new(&staging);
+        let stager = ArtifactStager::new(staging);
         let staged_a = stager
             .stage_file(
                 "attempt-a",
-                &workspace_a,
+                workspace_a,
                 Path::new("out.txt"),
                 "log",
                 "text/plain",
@@ -289,7 +297,7 @@ mod tests {
         let staged_b = stager
             .stage_file(
                 "attempt-b",
-                &workspace_b,
+                workspace_b,
                 Path::new("out.txt"),
                 "log",
                 "text/plain",
@@ -315,15 +323,17 @@ mod tests {
     fn staged_files_and_directories_are_owner_only() {
         use std::os::unix::fs::PermissionsExt;
 
-        let workspace = temp_dir("workspace-perms");
-        let staging = temp_dir("staging-perms");
+        let workspace_dir = temp_dir("workspace-perms");
+        let workspace = workspace_dir.path();
+        let staging_dir = temp_dir("staging-perms");
+        let staging = staging_dir.path();
         fs::write(workspace.join("out.txt"), b"content").expect("write");
 
-        let stager = ArtifactStager::new(&staging);
+        let stager = ArtifactStager::new(staging);
         let staged = stager
             .stage_file(
                 "attempt-one",
-                &workspace,
+                workspace,
                 Path::new("out.txt"),
                 "log",
                 "text/plain",

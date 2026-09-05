@@ -87,6 +87,13 @@ hex = "0.4"
 
 # Testing
 assert_matches = "1.5"
+# Every temporary path a test needs. The directory is deleted when the guard
+# drops, so a panicking test cleans up too, and anything the code under test
+# writes *beside* the path it was given — SQLite's `-wal` and `-shm`, the
+# migration runner's pre-upgrade snapshot — dies with the directory instead of
+# having to be named. Hand-rolled `env::temp_dir().join(unique_name)` cannot do
+# either, which is why it is rejected by `scripts/check-test-hygiene.sh`.
+tempfile = "3"
 # Mock HTTP server for adapter tests (tack-orch's DocketAdapter, docket.rs —
 # same crate tack-api's github_sync push tests already use).
 wiremock = "0.6"

@@ -30,17 +30,13 @@ fn fixture(name: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("fixture {name} is readable"))
 }
 
-fn temp_state_dir(label: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "tack-runner-bootstrap-{label}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos()
-    ));
-    let _ = std::fs::remove_dir_all(&path);
-    path
+/// A state directory that removes itself, and everything written under it,
+/// when the returned guard drops — including when an assertion panics first.
+fn temp_state_dir(label: &str) -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix(label)
+        .tempdir()
+        .expect("temporary directory")
 }
 
 fn test_limits() -> RunnerLimits {
@@ -107,12 +103,13 @@ fn spawn_delayed_enrollment_server(respond_after: Duration) -> String {
 
 #[tokio::test]
 async fn the_composition_root_stops_on_an_injected_shutdown_with_no_process_signal() {
+    let state_dir = temp_state_dir("shutdown");
     let base_url = spawn_delayed_enrollment_server(Duration::from_millis(300));
     let config = RunnerConfig::from_sources(RunnerConfigSources {
         command_line: ConfigOverrides {
             api_base_url: Some(base_url),
             runner_id: Some("bootstrap-entrypoint-test".into()),
-            state_dir: Some(temp_state_dir("shutdown")),
+            state_dir: Some(state_dir.path().to_path_buf()),
             enrollment_credential: Some(EnrollmentCredential::new("test-only-credential")),
             ..ConfigOverrides::default()
         },
@@ -148,11 +145,12 @@ async fn the_composition_root_stops_on_an_injected_shutdown_with_no_process_sign
 /// exactly as `RunnerRuntime::run` already does once started.
 #[tokio::test]
 async fn build_runtime_fails_fast_on_a_missing_enrollment_credential() {
+    let state_dir = temp_state_dir("missing-credential");
     let config = RunnerConfig::from_sources(RunnerConfigSources {
         command_line: ConfigOverrides {
             api_base_url: Some("http://127.0.0.1:1".into()),
             runner_id: Some("bootstrap-entrypoint-test".into()),
-            state_dir: Some(temp_state_dir("missing-credential")),
+            state_dir: Some(state_dir.path().to_path_buf()),
             enrollment_credential: None,
             ..ConfigOverrides::default()
         },

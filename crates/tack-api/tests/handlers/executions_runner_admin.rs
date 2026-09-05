@@ -462,8 +462,8 @@ async fn changed_payload_idempotency_conflict_is_not_retryable_with_key_detail()
 /// same file to pass.
 #[tokio::test]
 async fn provision_local_runner_writes_through_its_own_pool_to_the_same_database() {
-    let db_path =
-        std::env::temp_dir().join(format!("tack-api-c1-local-provision-{}.db", Uuid::new_v4()));
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let db_path = dir.path().join("local-provision.db");
     let database_url = format!("sqlite://{}?mode=rwc", db_path.display());
     let pool = init_pool(&database_url).await.expect("file-backed pool");
     migrations::run_all(&pool).await.expect("migrations");

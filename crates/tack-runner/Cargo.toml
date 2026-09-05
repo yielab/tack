@@ -46,3 +46,4 @@ zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] 
 # `full` feature bundle `[dependencies]` pulls in, and is only ever needed
 # by tests.
 tokio = { workspace = true, features = ["test-util"] }
+tempfile = { workspace = true }

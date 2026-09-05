@@ -258,15 +258,10 @@ fn owner_only(_path: &Path) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs,
-        sync::atomic::{AtomicUsize, Ordering},
-    };
+    use std::fs;
 
     use super::*;
     use crate::client::{AttemptId, AttemptState, FencingToken, RunnerId, Timestamp};
-
-    static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
 
     #[derive(Default)]
     struct FakeProvisioner;
@@ -282,12 +277,11 @@ mod tests {
         }
     }
 
-    fn root() -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "tack-runner-workspace-{}-{}",
-            std::process::id(),
-            NEXT_DIR.fetch_add(1, Ordering::SeqCst)
-        ))
+    /// A scratch directory that removes itself, and everything written under
+    /// it, when the returned guard drops — including when an assertion panics
+    /// first.
+    fn root() -> tempfile::TempDir {
+        tempfile::tempdir().expect("temporary directory")
     }
 
     fn lease(id: &str) -> AttemptLease {
@@ -311,8 +305,9 @@ mod tests {
 
     #[tokio::test]
     async fn attempts_receive_distinct_deterministic_workspaces() {
-        let root = root();
-        let manager = WorkspaceManager::new(&root, FakeProvisioner);
+        let root_dir = root();
+        let root = root_dir.path();
+        let manager = WorkspaceManager::new(root, FakeProvisioner);
         let first = manager
             .prepare(&lease("attempt-one"), &repository())
             .await
@@ -333,8 +328,9 @@ mod tests {
 
     #[tokio::test]
     async fn cleanup_refuses_root_and_unresolved_paths() {
-        let root = root();
-        let manager = WorkspaceManager::new(&root, FakeProvisioner);
+        let root_dir = root();
+        let root = root_dir.path();
+        let manager = WorkspaceManager::new(root, FakeProvisioner);
         let workspace = manager
             .prepare(&lease("attempt-one"), &repository())
             .await
@@ -342,7 +338,7 @@ mod tests {
         let root_workspace = Workspace {
             attempt_id: workspace.attempt_id.clone(),
             id: workspace.id.clone(),
-            path: root.clone(),
+            path: root.to_path_buf(),
             base_revision: workspace.base_revision.clone(),
         };
         let unresolved = Workspace {
@@ -372,8 +368,9 @@ mod tests {
     async fn cleanup_refuses_a_symlink_before_resolving_its_target() {
         use std::os::unix::fs::symlink;
 
-        let root = root();
-        let manager = WorkspaceManager::new(&root, FakeProvisioner);
+        let root_dir = root();
+        let root = root_dir.path();
+        let manager = WorkspaceManager::new(root, FakeProvisioner);
         let workspace = manager
             .prepare(&lease("attempt-one"), &repository())
             .await
@@ -398,8 +395,9 @@ mod tests {
     async fn provision_rejects_an_existing_attempt_path_symlink() {
         use std::os::unix::fs::symlink;
 
-        let root = root();
-        let manager = WorkspaceManager::new(&root, FakeProvisioner);
+        let root_dir = root();
+        let root = root_dir.path();
+        let manager = WorkspaceManager::new(root, FakeProvisioner);
         let planned = manager
             .plan(&lease("attempt-one"), &repository())
             .expect("plan");
@@ -415,8 +413,9 @@ mod tests {
 
     #[tokio::test]
     async fn cleanup_refuses_a_marker_that_does_not_match_the_workspace_identity() {
-        let root = root();
-        let manager = WorkspaceManager::new(&root, FakeProvisioner);
+        let root_dir = root();
+        let root = root_dir.path();
+        let manager = WorkspaceManager::new(root, FakeProvisioner);
         let workspace = manager
             .prepare(&lease("attempt-one"), &repository())
             .await
@@ -439,14 +438,15 @@ mod tests {
     /// deletes directories.
     #[tokio::test]
     async fn cleanup_refuses_a_git_repository_root() {
-        let root = root();
+        let root_dir = root();
+        let root = root_dir.path();
         fs::create_dir_all(root.join(".git")).expect("simulate a real git repository");
         let canary = root.join("canary-attempt");
         fs::create_dir_all(&canary).expect("canary attempt directory");
         fs::write(canary.join(".tack-attempt"), "attempt-one").expect("canary marker");
         fs::write(canary.join("work.txt"), "do not delete").expect("canary file");
 
-        let manager = WorkspaceManager::new(&root, FakeProvisioner);
+        let manager = WorkspaceManager::new(root, FakeProvisioner);
         let workspace = Workspace {
             attempt_id: AttemptId::new("attempt-one"),
             id: WorkspaceId::new("ws_canary"),
@@ -480,13 +480,15 @@ mod tests {
     /// itself being a symlink.
     #[tokio::test]
     async fn cleanup_refuses_a_dot_dot_traversal_outside_the_root() {
-        let root = root();
-        let victim = self::root();
-        fs::create_dir_all(&root).expect("workspace root");
-        fs::create_dir_all(&victim).expect("sibling victim directory");
+        let root_dir = root();
+        let root = root_dir.path();
+        let victim_dir = self::root();
+        let victim = victim_dir.path();
+        fs::create_dir_all(root).expect("workspace root");
+        fs::create_dir_all(victim).expect("sibling victim directory");
         fs::write(victim.join("important.txt"), "do not delete").expect("victim file");
 
-        let manager = WorkspaceManager::new(&root, FakeProvisioner);
+        let manager = WorkspaceManager::new(root, FakeProvisioner);
         let escaping_path = root
             .join("..")
             .join(victim.file_name().expect("victim directory name"));
@@ -506,8 +508,6 @@ mod tests {
             "sibling directory reached via .. survives a refused cleanup"
         );
         assert!(victim.join("important.txt").exists());
-        fs::remove_dir_all(&root).expect("remove temporary workspace root");
-        fs::remove_dir_all(&victim).expect("remove temporary victim directory");
     }
 
     /// The existing symlink test proves a symlink *as the final path
@@ -522,16 +522,18 @@ mod tests {
     async fn cleanup_refuses_traversal_through_a_symlinked_intermediate_directory() {
         use std::os::unix::fs::symlink;
 
-        let root = root();
-        let outside = self::root();
-        fs::create_dir_all(&root).expect("workspace root");
+        let root_dir = root();
+        let root = root_dir.path();
+        let outside_dir = self::root();
+        let outside = outside_dir.path();
+        fs::create_dir_all(root).expect("workspace root");
         let victim = outside.join("victim");
         fs::create_dir_all(&victim).expect("victim directory");
         fs::write(victim.join("important.txt"), "do not delete").expect("victim file");
 
-        let manager = WorkspaceManager::new(&root, FakeProvisioner);
+        let manager = WorkspaceManager::new(root, FakeProvisioner);
         let escape_link = root.join("escape");
-        symlink(&outside, &escape_link).expect("create escaping symlink");
+        symlink(outside, &escape_link).expect("create escaping symlink");
 
         let workspace = Workspace {
             attempt_id: AttemptId::new("attempt-one"),
@@ -551,7 +553,6 @@ mod tests {
             "victim directory outside root survives a refused cleanup"
         );
         assert!(victim.join("important.txt").exists());
-        fs::remove_dir_all(&root).expect("remove temporary workspace root");
-        fs::remove_dir_all(&outside).expect("remove temporary outside root");
+        fs::remove_dir_all(outside).expect("remove temporary outside root");
     }
 }

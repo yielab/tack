@@ -4,7 +4,7 @@
 //!    the spec generated from the annotated handlers + DTOs. Regenerate with:
 //!
 //!    ```sh
-//!    UPDATE_OPENAPI=1 cargo test -p tack-api --test openapi_contract
+//!    UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary(openapi_contract)'
 //!    ```
 //!
 //! 2. **Served endpoint** — `GET /api/openapi.json` returns a valid, non-empty
@@ -48,7 +48,7 @@ fn openapi_spec_matches_committed_file() {
 
     let committed = std::fs::read_to_string(&path).unwrap_or_else(|e| {
         panic!(
-            "could not read {} ({e}).\nGenerate it with: UPDATE_OPENAPI=1 cargo test -p tack-api --test openapi_contract",
+            "could not read {} ({e}).\nGenerate it with: UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary(openapi_contract)'",
             path.display()
         )
     });
@@ -56,7 +56,7 @@ fn openapi_spec_matches_committed_file() {
     assert_eq!(
         committed, generated,
         "\n\ndocs/openapi.json is out of date with the API code.\n\
-         Regenerate it with:\n    UPDATE_OPENAPI=1 cargo test -p tack-api --test openapi_contract\n"
+         Regenerate it with:\n    UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary(openapi_contract)'\n"
     );
 }
 

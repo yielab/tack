@@ -561,11 +561,8 @@ async fn execution_fleet_snapshot_reports_bounded_id_free_counts() {
 #[tokio::test]
 async fn concurrent_purges_never_deadlock_against_a_file_backed_database() {
     for i in 0..8 {
-        let db_path = std::env::temp_dir().join(format!(
-            "tack-db-f5-retention-race-{}-{}.db",
-            i,
-            uuid::Uuid::new_v4()
-        ));
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let db_path = dir.path().join("retention-race.db");
         let pool = init_pool(&format!("sqlite://{}?mode=rwc", db_path.display()))
             .await
             .expect("file-backed pool");
@@ -597,10 +594,6 @@ async fn concurrent_purges_never_deadlock_against_a_file_backed_database() {
             0,
             "iteration {i}: no stale row survives the race"
         );
-
-        let _ = std::fs::remove_file(&db_path);
-        let _ = std::fs::remove_file(format!("{}-wal", db_path.display()));
-        let _ = std::fs::remove_file(format!("{}-shm", db_path.display()));
     }
 }
 
@@ -614,11 +607,8 @@ async fn concurrent_purges_never_deadlock_against_a_file_backed_database() {
 #[tokio::test]
 async fn concurrent_event_purges_never_deadlock_against_a_file_backed_database() {
     for i in 0..8 {
-        let db_path = std::env::temp_dir().join(format!(
-            "tack-db-f5-event-race-{}-{}.db",
-            i,
-            uuid::Uuid::new_v4()
-        ));
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let db_path = dir.path().join("event-race.db");
         let pool = init_pool(&format!("sqlite://{}?mode=rwc", db_path.display()))
             .await
             .expect("file-backed pool");
@@ -655,9 +645,5 @@ async fn concurrent_event_purges_never_deadlock_against_a_file_backed_database()
             0,
             "iteration {i}: no stale event survives the race"
         );
-
-        let _ = std::fs::remove_file(&db_path);
-        let _ = std::fs::remove_file(format!("{}-wal", db_path.display()));
-        let _ = std::fs::remove_file(format!("{}-shm", db_path.display()));
     }
 }

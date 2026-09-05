@@ -1,5 +1,4 @@
 use std::{
-    path::PathBuf,
     sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
@@ -26,8 +25,6 @@ use tack_runner::{
         WorkspaceJournal, WorkspaceManager, WorktreeProvisioner,
     },
 };
-
-static NEXT_ROOT: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FailurePoint {
@@ -345,12 +342,13 @@ impl WorktreeProvisioner for FakeWorktree {
     }
 }
 
-fn root(label: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "tack-c4-{label}-{}-{}",
-        std::process::id(),
-        NEXT_ROOT.fetch_add(1, Ordering::SeqCst)
-    ))
+/// A scratch directory that removes itself, and everything written under it,
+/// when the returned guard drops — including when an assertion panics first.
+fn root(label: &str) -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix(label)
+        .tempdir()
+        .expect("temporary directory")
 }
 
 fn actual_execution() -> tack_orch::execution::ActualExecution {
@@ -431,19 +429,14 @@ fn claim() -> ClaimRequest {
     }
 }
 
-fn remove_test_root(path: &PathBuf) {
-    if path.exists() {
-        std::fs::remove_dir_all(path).expect("remove test root");
-    }
-}
-
 #[tokio::test]
 async fn after_claim_before_spawn_failure_recovers_as_process_stopped_without_respawn() {
-    let root = root("before-spawn");
+    let root_dir = root("before-spawn");
+    let root = root_dir.path();
     let protocol = FakeProtocol::new(work(), FailurePoint::None, false);
     let adapter = FakeAdapter::new(RecoveryObservation::ProcessStopped);
     let failed_worktree = FakeWorktree::fails();
-    let journal = OwnerOnlyJournal::new(&root);
+    let journal = OwnerOnlyJournal::new(root);
     let engine = RunnerEngine::new(
         protocol.clone(),
         adapter.clone(),
@@ -488,15 +481,15 @@ async fn after_claim_before_spawn_failure_recovers_as_process_stopped_without_re
             .any(|event| event == "recovery:ProcessStopped")
     );
     drop(evidence);
-    remove_test_root(&root);
 }
 
 #[tokio::test]
 async fn after_spawn_before_ack_failure_is_audited_ambiguous_and_never_retried() {
-    let root = root("spawn-before-ack");
+    let root_dir = root("spawn-before-ack");
+    let root = root_dir.path();
     let protocol = FakeProtocol::new(work(), FailurePoint::ProcessStartAck, false);
     let adapter = FakeAdapter::new(RecoveryObservation::Ambiguous);
-    let journal = OwnerOnlyJournal::new(&root);
+    let journal = OwnerOnlyJournal::new(root);
     let engine = RunnerEngine::new(
         protocol.clone(),
         adapter.clone(),
@@ -532,15 +525,15 @@ async fn after_spawn_before_ack_failure_is_audited_ambiguous_and_never_retried()
             .any(|event| event == "recovery:Ambiguous")
     );
     drop(evidence);
-    remove_test_root(&root);
 }
 
 #[tokio::test]
 async fn completion_response_loss_stays_in_terminal_outbox_without_duplicate_send() {
-    let root = root("completion");
+    let root_dir = root("completion");
+    let root = root_dir.path();
     let protocol = FakeProtocol::new(work(), FailurePoint::Completion, false);
     let adapter = FakeAdapter::new(RecoveryObservation::Ambiguous);
-    let journal = OwnerOnlyJournal::new(&root);
+    let journal = OwnerOnlyJournal::new(root);
     let engine = RunnerEngine::new(
         protocol.clone(),
         adapter.clone(),
@@ -562,15 +555,15 @@ async fn completion_response_loss_stays_in_terminal_outbox_without_duplicate_sen
     assert!(evidence.events.iter().any(|event| event == "completion"));
     drop(evidence);
     assert_eq!(journal.unresolved().expect("journal scan").len(), 1);
-    remove_test_root(&root);
 }
 
 #[tokio::test]
 async fn cancellation_response_loss_stays_in_terminal_outbox_without_duplicate_send() {
-    let root = root("cancellation");
+    let root_dir = root("cancellation");
+    let root = root_dir.path();
     let protocol = FakeProtocol::new(work(), FailurePoint::Cancellation, true);
     let adapter = FakeAdapter::new(RecoveryObservation::Ambiguous);
-    let journal = OwnerOnlyJournal::new(&root);
+    let journal = OwnerOnlyJournal::new(root);
     let engine = RunnerEngine::new(
         protocol.clone(),
         adapter.clone(),
@@ -599,16 +592,16 @@ async fn cancellation_response_loss_stays_in_terminal_outbox_without_duplicate_s
     assert_eq!(process.cancels, 1, "only the requested cancellation runs");
     drop(process);
     assert_eq!(journal.unresolved().expect("journal scan").len(), 1);
-    remove_test_root(&root);
 }
 
 #[tokio::test]
 async fn failed_ambiguity_report_stays_pending_then_restart_quarantines_without_respawn() {
-    let root = root("ambiguity-report-retry");
+    let root_dir = root("ambiguity-report-retry");
+    let root = root_dir.path();
     let protocol = FakeProtocol::new(work(), FailurePoint::ProcessStartAck, false);
     protocol.fail_recovery_reports(1);
     let adapter = FakeAdapter::new(RecoveryObservation::Ambiguous);
-    let journal = OwnerOnlyJournal::new(&root);
+    let journal = OwnerOnlyJournal::new(root);
     let engine = RunnerEngine::new(
         protocol.clone(),
         adapter.clone(),
@@ -685,15 +678,15 @@ async fn failed_ambiguity_report_stays_pending_then_restart_quarantines_without_
             .is_some(),
         "server-acknowledged ambiguity is preserved as local quarantine evidence"
     );
-    remove_test_root(&root);
 }
 
 #[tokio::test]
 async fn process_running_recovery_observation_reports_ambiguity_and_quarantines_without_spawn() {
-    let root = root("process-running-recovery");
+    let root_dir = root("process-running-recovery");
+    let root = root_dir.path();
     let protocol = FakeProtocol::new(work(), FailurePoint::None, false);
     let adapter = FakeAdapter::new(RecoveryObservation::ProcessRunning);
-    let journal = OwnerOnlyJournal::new(&root);
+    let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
     journal
         .persist_before_spawn(&tack_runner::client::AttemptJournal::prepared(
@@ -757,15 +750,15 @@ async fn process_running_recovery_observation_reports_ambiguity_and_quarantines_
             .next()
             .is_some()
     );
-    remove_test_root(&root);
 }
 
 #[tokio::test]
 async fn reoffered_quarantined_attempt_is_rejected_before_a_second_spawn() {
-    let root = root("quarantined-reoffer");
+    let root_dir = root("quarantined-reoffer");
+    let root = root_dir.path();
     let protocol = FakeProtocol::new(work(), FailurePoint::ProcessStartAck, false);
     let adapter = FakeAdapter::new(RecoveryObservation::Ambiguous);
-    let journal = OwnerOnlyJournal::new(&root);
+    let journal = OwnerOnlyJournal::new(root);
     let first = RunnerEngine::new(
         protocol.clone(),
         adapter.clone(),
@@ -831,5 +824,4 @@ async fn reoffered_quarantined_attempt_is_rejected_before_a_second_spawn() {
             .next()
             .is_some()
     );
-    remove_test_root(&root);
 }

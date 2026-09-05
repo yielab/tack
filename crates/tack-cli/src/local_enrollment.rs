@@ -78,37 +78,31 @@ mod tests {
 
     #[test]
     fn has_stored_session_is_false_for_an_empty_directory() {
-        let dir = std::env::temp_dir().join(format!(
-            "tack-local-enrollment-test-empty-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
+        let guard = tempfile::tempdir().expect("temporary directory");
+        let dir = guard.path();
 
-        assert!(!has_stored_session(&dir));
+        assert!(!has_stored_session(dir));
 
-        std::fs::remove_dir_all(&dir).ok();
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
     fn has_stored_session_is_true_once_session_json_exists() {
-        let dir = std::env::temp_dir().join(format!(
-            "tack-local-enrollment-test-present-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
+        let guard = tempfile::tempdir().expect("temporary directory");
+        let dir = guard.path();
         std::fs::write(dir.join("session.json"), "{}").unwrap();
 
-        assert!(has_stored_session(&dir));
+        assert!(has_stored_session(dir));
 
-        std::fs::remove_dir_all(&dir).ok();
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
     fn has_stored_session_is_false_when_state_dir_does_not_exist_yet() {
-        let dir = std::env::temp_dir().join(format!(
-            "tack-local-enrollment-test-missing-{}",
-            std::process::id()
-        ));
+        let guard = tempfile::tempdir().expect("temporary directory");
+        // A path under the guard that was never created: `has_stored_session`
+        // must answer for a state directory that does not exist at all.
+        let dir = guard.path().join("absent");
 
         assert!(!has_stored_session(&dir));
     }

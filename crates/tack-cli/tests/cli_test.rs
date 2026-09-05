@@ -243,11 +243,11 @@ async fn bearer_token_is_forwarded() {
 #[test]
 fn config_save_and_reload() {
     // Write to a temp file by temporarily overriding HOME
-    let tmp = std::env::temp_dir().join(format!("tackrc_test_{}", std::process::id()));
-    std::fs::create_dir_all(&tmp).unwrap();
+    let guard = tempfile::tempdir().expect("temporary directory");
+    let tmp = guard.path();
     let original_home = std::env::var("HOME").ok();
     // SAFETY: single-threaded test; no concurrent env reads in this process.
-    unsafe { std::env::set_var("HOME", &tmp) };
+    unsafe { std::env::set_var("HOME", tmp) };
 
     config::save("http://test:9999", Some("tok123")).unwrap();
 
@@ -280,7 +280,7 @@ fn config_save_and_reload() {
         Some(h) => unsafe { std::env::set_var("HOME", h) },
         None => unsafe { std::env::remove_var("HOME") },
     }
-    let _ = std::fs::remove_dir_all(&tmp);
+    let _ = std::fs::remove_dir_all(tmp);
 }
 
 // ── vocab fetch falls back gracefully when project 404s ───────────────────────

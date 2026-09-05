@@ -1,0 +1,40 @@
+# Fixed waits of 200 ms and up in test code — ADR 0064 step 5's inventory.
+#
+# Regenerate:  python3 scripts/list-fixed-waits.py > docs/adr/0064-fixed-waits.txt
+#
+# The script resolves `Duration::from_millis/from_secs` in any type prefix
+# (`Duration::`, `StdDuration::`, `std::time::Duration::`) and named `const`s
+# defined in the same file — the three forms a grep on call syntax kept missing.
+# Test code is every file under crates/*/tests/ plus the '#[cfg(test)] mod tests'
+# tail of a source file.
+#
+# Step 5 is done when the list below is empty: each wait becomes a bounded poll,
+# or paused time (tokio::time::pause) where the code under test is clock-driven.
+# A bounded cap on a poll is not a fixed wait and never appears here.
+
+25 waits, 18.5 s in total
+  2600 ms  crates/tack-orch/tests/ingestion/traces.rs:155
+  2500 ms  crates/tack-orch/src/reconciler.rs:3710
+  2400 ms  crates/tack-orch/tests/ingestion/runs.rs:277
+  1400 ms  crates/tack-orch/tests/ingestion/runs.rs:144
+  1400 ms  crates/tack-orch/tests/ingestion/traces.rs:195
+  1300 ms  crates/tack-orch/src/execution_observability.rs:426
+  1300 ms  crates/tack-orch/src/execution_retention.rs:422
+   500 ms  crates/tack-api/tests/orchestration/reconciler/wiring.rs:252
+   500 ms  crates/tack-api/tests/wiring/execution_sweep.rs:435
+   500 ms  crates/tack-api/tests/wiring/execution_sweep.rs:664
+   400 ms  crates/tack-orch/tests/ingestion/runs.rs:107
+   400 ms  crates/tack-orch/tests/ingestion/runs.rs:268
+   400 ms  crates/tack-orch/tests/ingestion/traces.rs:271
+   400 ms  crates/tack-orch/tests/ingestion/traces.rs:327
+   300 ms  crates/tack-orch/src/reconciler.rs:2845
+   300 ms  crates/tack-orch/src/reconciler.rs:2981
+   300 ms  crates/tack-orch/src/reconciler.rs:3576
+   200 ms  crates/tack-api/src/orch_runtime.rs:525
+   200 ms  crates/tack-api/tests/orchestration/auto_dispatch/gate.rs:226
+   200 ms  crates/tack-api/tests/orchestration/auto_dispatch/hook.rs:401
+   200 ms  crates/tack-api/tests/orchestration/auto_dispatch/hook.rs:437
+   200 ms  crates/tack-api/tests/orchestration/auto_dispatch/hook.rs:498
+   200 ms  crates/tack-orch/src/reconciler.rs:3653
+   200 ms  crates/tack-orch/tests/docket_tick_contract_test.rs:524
+   200 ms  crates/tack-orch/tests/ingestion/retention.rs:210

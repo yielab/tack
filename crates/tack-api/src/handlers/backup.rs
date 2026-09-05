@@ -43,20 +43,22 @@ pub async fn get_backup(State(state): State<AppState>) -> ApiResult<Response> {
         .execute(state.pool())
         .await?;
 
-    // Strip the S3 secret and install identity from the downloadable snapshot so
-    // they never leave the machine inside a backup file.
-    remote_backup::scrub_snapshot_secrets(&temp_path)
-        .await
-        .map_err(|e| {
-            let _ = std::fs::remove_file(&temp_path);
-            ApiError::Internal(anyhow::anyhow!("{e}"))
-        })?;
-
-    let bytes = tokio::fs::read(&temp_path)
-        .await
-        .map_err(|e| ApiError::Internal(e.into()))?;
-
+    // From here the snapshot exists and still holds every secret the live
+    // database does, so no path may return without removing it. Strip the S3
+    // secret and install identity so they never leave the machine inside a
+    // backup file.
+    let scrubbed: Result<Vec<u8>, ApiError> = async {
+        remote_backup::scrub_snapshot_secrets(&temp_path)
+            .await
+            .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))?;
+        tokio::fs::read(&temp_path)
+            .await
+            .map_err(|e| ApiError::Internal(e.into()))
+    }
+    .await;
     let _ = tokio::fs::remove_file(&temp_path).await;
+
+    let bytes = scrubbed?;
 
     let filename = db_path
         .file_name()

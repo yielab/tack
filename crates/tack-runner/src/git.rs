@@ -512,25 +512,20 @@ fn write_checkout_marker(path: &Path, commit: &str) -> Result<(), WorkspaceError
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        process::Command as SyncCommand,
-        sync::atomic::{AtomicUsize, Ordering},
-    };
+    use std::process::Command as SyncCommand;
 
     use super::*;
     use crate::client::{AttemptId, WorkspaceId};
 
-    static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
-
     /// Resolves `git` to an absolute path instead of relying on `PATH`.
     ///
     /// Not paranoia: `harness::claude_code`'s discovery test overwrites the
-    /// process-wide `PATH` for the duration of its assertion, and the Rust test
-    /// harness runs tests on many threads, so any concurrently-running test that
-    /// resolves a bare program name can observe that empty `PATH` and fail with a
-    /// spurious "binary not found". This was found as a one-in-many-runs failure
-    /// of `a_checkout_of_a_different_revision_is_never_reused` during
-    /// `cargo test --workspace`.
+    /// process-wide `PATH` for the duration of its assertion, so resolving a
+    /// bare program name here would depend on whether that test is running.
+    /// An absolute path is independent of it. This showed up as a
+    /// one-in-many-runs "binary not found" in
+    /// `a_checkout_of_a_different_revision_is_never_reused` back when the
+    /// whole binary's tests shared one process.
     fn git_program() -> PathBuf {
         for candidate in [
             "/usr/bin/git",
@@ -545,15 +540,14 @@ mod tests {
         PathBuf::from("git")
     }
 
-    fn temp_dir(label: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "tack-runner-git-{label}-{}-{}",
-            std::process::id(),
-            NEXT_DIR.fetch_add(1, Ordering::SeqCst)
-        ));
-        let _ = fs::remove_dir_all(&path);
-        fs::create_dir_all(&path).expect("temporary directory");
-        path
+    /// A scratch directory that removes itself, and everything written under
+    /// it, when the returned guard drops — including when an assertion panics
+    /// first.
+    fn temp_dir(label: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(label)
+            .tempdir()
+            .expect("temporary directory")
     }
 
     fn run_git(directory: &Path, args: &[&str]) -> String {
@@ -573,36 +567,43 @@ mod tests {
     /// A real git repository with two commits — never a fake: these
     /// operations must be proven against real git.
     struct SourceRepository {
-        path: PathBuf,
         first_commit: String,
         second_commit: String,
+        /// Declared last: struct fields drop in declaration order, and the
+        /// repository's directory must outlive whatever still reads `path()`.
+        dir: tempfile::TempDir,
     }
 
     impl SourceRepository {
+        fn path(&self) -> &Path {
+            self.dir.path()
+        }
+
         fn create() -> Self {
-            let path = temp_dir("source");
-            run_git(&path, &["-c", "init.defaultBranch=main", "init", "--quiet"]);
-            run_git(&path, &["config", "user.email", "runner@example.invalid"]);
-            run_git(&path, &["config", "user.name", "Tack Runner Test"]);
+            let path_dir = temp_dir("source");
+            let path = path_dir.path();
+            run_git(path, &["-c", "init.defaultBranch=main", "init", "--quiet"]);
+            run_git(path, &["config", "user.email", "runner@example.invalid"]);
+            run_git(path, &["config", "user.name", "Tack Runner Test"]);
             fs::write(path.join("README.md"), "first\n").expect("write");
-            run_git(&path, &["add", "."]);
-            run_git(&path, &["commit", "--quiet", "-m", "first"]);
-            let first_commit = run_git(&path, &["rev-parse", "HEAD"]);
+            run_git(path, &["add", "."]);
+            run_git(path, &["commit", "--quiet", "-m", "first"]);
+            let first_commit = run_git(path, &["rev-parse", "HEAD"]);
             fs::write(path.join("README.md"), "second\n").expect("write");
             fs::write(path.join("added.txt"), "only in the second commit\n").expect("write");
-            run_git(&path, &["add", "."]);
-            run_git(&path, &["commit", "--quiet", "-m", "second"]);
-            let second_commit = run_git(&path, &["rev-parse", "HEAD"]);
+            run_git(path, &["add", "."]);
+            run_git(path, &["commit", "--quiet", "-m", "second"]);
+            let second_commit = run_git(path, &["rev-parse", "HEAD"]);
             Self {
-                path,
                 first_commit,
                 second_commit,
+                dir: path_dir,
             }
         }
 
         fn spec(&self, revision: &str) -> RepositorySpec {
             RepositorySpec {
-                remote: self.path.to_string_lossy().into_owned(),
+                remote: self.path().to_string_lossy().into_owned(),
                 base_revision: revision.to_owned(),
             }
         }
@@ -635,8 +636,9 @@ mod tests {
     #[tokio::test]
     async fn an_attempt_receives_a_real_checkout_of_the_requested_commit() {
         let source = SourceRepository::create();
-        let root = temp_dir("root");
-        let workspace = attempt_workspace(&root, "attempt-one", &source.first_commit);
+        let root_dir = temp_dir("root");
+        let root = root_dir.path();
+        let workspace = attempt_workspace(root, "attempt-one", &source.first_commit);
 
         GitWorktreeProvisioner::new(git_program(), DEFAULT_GIT_TIMEOUT)
             .provision(&workspace, &source.spec(&source.first_commit))
@@ -665,14 +667,14 @@ mod tests {
             source.first_commit
         );
         fs::remove_dir_all(root).expect("cleanup");
-        fs::remove_dir_all(source.path).expect("cleanup");
     }
 
     #[tokio::test]
     async fn a_branch_name_resolves_through_the_remote_tracking_ref() {
         let source = SourceRepository::create();
-        let root = temp_dir("root");
-        let workspace = attempt_workspace(&root, "attempt-branch", "main");
+        let root_dir = temp_dir("root");
+        let root = root_dir.path();
+        let workspace = attempt_workspace(root, "attempt-branch", "main");
 
         GitWorktreeProvisioner::new(git_program(), DEFAULT_GIT_TIMEOUT)
             .provision(&workspace, &source.spec("main"))
@@ -681,15 +683,15 @@ mod tests {
 
         assert_eq!(head_of(&workspace), source.second_commit);
         fs::remove_dir_all(root).expect("cleanup");
-        fs::remove_dir_all(source.path).expect("cleanup");
     }
 
     #[tokio::test]
     async fn two_concurrent_attempts_cannot_see_each_others_files() {
         let source = SourceRepository::create();
-        let root = temp_dir("root");
-        let first = attempt_workspace(&root, "attempt-one", &source.first_commit);
-        let second = attempt_workspace(&root, "attempt-two", &source.second_commit);
+        let root_dir = temp_dir("root");
+        let root = root_dir.path();
+        let first = attempt_workspace(root, "attempt-one", &source.first_commit);
+        let second = attempt_workspace(root, "attempt-two", &source.second_commit);
         let provisioner = GitWorktreeProvisioner::new(git_program(), DEFAULT_GIT_TIMEOUT);
 
         let first_spec = source.spec(&source.first_commit);
@@ -717,7 +719,6 @@ mod tests {
             fs::canonicalize(second.path.join(".git")).expect("second git dir"),
         );
         fs::remove_dir_all(root).expect("cleanup");
-        fs::remove_dir_all(source.path).expect("cleanup");
     }
 
     #[tokio::test]
@@ -727,8 +728,9 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
 
             let source = SourceRepository::create();
-            let root = temp_dir("root");
-            let workspace = attempt_workspace(&root, "attempt-one", &source.first_commit);
+            let root_dir = temp_dir("root");
+            let root = root_dir.path();
+            let workspace = attempt_workspace(root, "attempt-one", &source.first_commit);
 
             GitWorktreeProvisioner::new(git_program(), DEFAULT_GIT_TIMEOUT)
                 .provision(&workspace, &source.spec(&source.first_commit))
@@ -751,7 +753,6 @@ mod tests {
                 & 0o777;
             assert_eq!(sentinel, 0o600);
             fs::remove_dir_all(root).expect("cleanup");
-            fs::remove_dir_all(source.path).expect("cleanup");
         }
     }
 
@@ -766,8 +767,9 @@ mod tests {
     #[tokio::test]
     async fn a_runner_killed_mid_provision_leaves_nothing_a_restart_inherits() {
         let source = SourceRepository::create();
-        let root = temp_dir("root");
-        let workspace = attempt_workspace(&root, "attempt-one", &source.first_commit);
+        let root_dir = temp_dir("root");
+        let root = root_dir.path();
+        let workspace = attempt_workspace(root, "attempt-one", &source.first_commit);
 
         let killed = GitWorktreeProvisioner::new(git_program(), Duration::from_micros(1))
             .provision(&workspace, &source.spec(&source.first_commit))
@@ -795,14 +797,14 @@ mod tests {
             "first\n"
         );
         fs::remove_dir_all(root).expect("cleanup");
-        fs::remove_dir_all(source.path).expect("cleanup");
     }
 
     #[tokio::test]
     async fn a_partial_checkout_without_a_sentinel_is_discarded_not_reused() {
         let source = SourceRepository::create();
-        let root = temp_dir("root");
-        let workspace = attempt_workspace(&root, "attempt-one", &source.first_commit);
+        let root_dir = temp_dir("root");
+        let root = root_dir.path();
+        let workspace = attempt_workspace(root, "attempt-one", &source.first_commit);
         // The debris a kill can leave: a half-written git directory, a stray
         // file, and a nested directory — but no sentinel.
         fs::create_dir_all(workspace.path.join(".git/objects")).expect("partial git dir");
@@ -820,14 +822,14 @@ mod tests {
             "debris from an interrupted attempt must not survive into the new checkout"
         );
         fs::remove_dir_all(root).expect("cleanup");
-        fs::remove_dir_all(source.path).expect("cleanup");
     }
 
     #[tokio::test]
     async fn a_sentinel_that_disagrees_with_head_is_not_trusted() {
         let source = SourceRepository::create();
-        let root = temp_dir("root");
-        let workspace = attempt_workspace(&root, "attempt-one", &source.first_commit);
+        let root_dir = temp_dir("root");
+        let root = root_dir.path();
+        let workspace = attempt_workspace(root, "attempt-one", &source.first_commit);
         let provisioner = GitWorktreeProvisioner::new(git_program(), DEFAULT_GIT_TIMEOUT);
         provisioner
             .provision(&workspace, &source.spec(&source.first_commit))
@@ -851,14 +853,14 @@ mod tests {
             source.first_commit
         );
         fs::remove_dir_all(root).expect("cleanup");
-        fs::remove_dir_all(source.path).expect("cleanup");
     }
 
     #[tokio::test]
     async fn a_completed_checkout_is_reused_on_restart_instead_of_refetched() {
         let source = SourceRepository::create();
-        let root = temp_dir("root");
-        let workspace = attempt_workspace(&root, "attempt-one", &source.first_commit);
+        let root_dir = temp_dir("root");
+        let root = root_dir.path();
+        let workspace = attempt_workspace(root, "attempt-one", &source.first_commit);
         let provisioner = GitWorktreeProvisioner::new(git_program(), DEFAULT_GIT_TIMEOUT);
         provisioner
             .provision(&workspace, &source.spec(&source.first_commit))
@@ -876,14 +878,14 @@ mod tests {
         assert!(workspace.path.join("in-progress.txt").exists());
         assert_eq!(head_of(&workspace), source.first_commit);
         fs::remove_dir_all(root).expect("cleanup");
-        fs::remove_dir_all(source.path).expect("cleanup");
     }
 
     #[tokio::test]
     async fn a_checkout_of_a_different_revision_is_never_reused() {
         let source = SourceRepository::create();
-        let root = temp_dir("root");
-        let workspace = attempt_workspace(&root, "attempt-one", &source.first_commit);
+        let root_dir = temp_dir("root");
+        let root = root_dir.path();
+        let workspace = attempt_workspace(root, "attempt-one", &source.first_commit);
         let provisioner = GitWorktreeProvisioner::new(git_program(), DEFAULT_GIT_TIMEOUT);
         provisioner
             .provision(&workspace, &source.spec(&source.first_commit))
@@ -897,7 +899,6 @@ mod tests {
 
         assert_eq!(head_of(&workspace), source.second_commit);
         fs::remove_dir_all(root).expect("cleanup");
-        fs::remove_dir_all(source.path).expect("cleanup");
     }
 
     // -----------------------------------------------------------------
@@ -907,9 +908,10 @@ mod tests {
     #[tokio::test]
     async fn a_revision_that_does_not_exist_is_typed_and_writes_no_sentinel() {
         let source = SourceRepository::create();
-        let root = temp_dir("root");
+        let root_dir = temp_dir("root");
+        let root = root_dir.path();
         let missing = "0123456789abcdef0123456789abcdef01234567";
-        let workspace = attempt_workspace(&root, "attempt-one", missing);
+        let workspace = attempt_workspace(root, "attempt-one", missing);
 
         let error = GitWorktreeProvisioner::new(git_program(), DEFAULT_GIT_TIMEOUT)
             .provision(&workspace, &source.spec(missing))
@@ -923,13 +925,13 @@ mod tests {
             "a failed provision leaves no repository a later attempt could mistake for a checkout"
         );
         fs::remove_dir_all(root).expect("cleanup");
-        fs::remove_dir_all(source.path).expect("cleanup");
     }
 
     #[tokio::test]
     async fn an_unreachable_repository_is_typed_as_unreachable() {
-        let root = temp_dir("root");
-        let workspace = attempt_workspace(&root, "attempt-one", "main");
+        let root_dir = temp_dir("root");
+        let root = root_dir.path();
+        let workspace = attempt_workspace(root, "attempt-one", "main");
         let repository = RepositorySpec {
             remote: root
                 .join("no-such-repository")
@@ -951,8 +953,9 @@ mod tests {
     #[tokio::test]
     async fn a_missing_git_binary_is_typed_not_a_generic_io_failure() {
         let source = SourceRepository::create();
-        let root = temp_dir("root");
-        let workspace = attempt_workspace(&root, "attempt-one", &source.first_commit);
+        let root_dir = temp_dir("root");
+        let root = root_dir.path();
+        let workspace = attempt_workspace(root, "attempt-one", &source.first_commit);
 
         let error =
             GitWorktreeProvisioner::new("tack-runner-no-such-git-binary", Duration::from_secs(5))
@@ -962,7 +965,6 @@ mod tests {
 
         assert_eq!(error, WorkspaceError::GitUnavailable);
         fs::remove_dir_all(root).expect("cleanup");
-        fs::remove_dir_all(source.path).expect("cleanup");
     }
 
     /// Writes an executable stand-in and waits until it is actually
@@ -997,10 +999,12 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn a_hanging_git_is_killed_and_reported_as_a_timeout() {
-        let root = temp_dir("root");
-        let bin = temp_dir("bin");
-        let program = stand_in_program(&bin, "git", "sleep 30");
-        let workspace = attempt_workspace(&root, "attempt-one", "main");
+        let root_dir = temp_dir("root");
+        let root = root_dir.path();
+        let bin_dir = temp_dir("bin");
+        let bin = bin_dir.path();
+        let program = stand_in_program(bin, "git", "sleep 30");
+        let workspace = attempt_workspace(root, "attempt-one", "main");
         let repository = RepositorySpec {
             remote: "https://example.invalid/repository.git".into(),
             base_revision: "main".into(),
@@ -1028,8 +1032,9 @@ mod tests {
     #[tokio::test]
     async fn a_directory_marked_for_another_attempt_is_refused_and_untouched() {
         let source = SourceRepository::create();
-        let root = temp_dir("root");
-        let workspace = attempt_workspace(&root, "attempt-one", &source.first_commit);
+        let root_dir = temp_dir("root");
+        let root = root_dir.path();
+        let workspace = attempt_workspace(root, "attempt-one", &source.first_commit);
         fs::write(workspace.path.join(ATTEMPT_MARKER), "a-different-attempt").expect("marker");
         fs::write(
             workspace.path.join("evidence.txt"),
@@ -1055,13 +1060,13 @@ mod tests {
             "no entry was created or removed by the refusal"
         );
         fs::remove_dir_all(root).expect("cleanup");
-        fs::remove_dir_all(source.path).expect("cleanup");
     }
 
     #[tokio::test]
     async fn a_directory_with_no_marker_is_refused_and_untouched() {
         let source = SourceRepository::create();
-        let root = temp_dir("root");
+        let root_dir = temp_dir("root");
+        let root = root_dir.path();
         let path = root.join("unmarked");
         fs::create_dir_all(&path).expect("directory");
         fs::write(path.join("evidence.txt"), "not ours").expect("evidence");
@@ -1080,7 +1085,6 @@ mod tests {
         assert_eq!(error, WorkspaceError::UnsafePath);
         assert!(path.join("evidence.txt").exists());
         fs::remove_dir_all(root).expect("cleanup");
-        fs::remove_dir_all(source.path).expect("cleanup");
     }
 
     #[cfg(unix)]
@@ -1089,7 +1093,8 @@ mod tests {
         use std::os::unix::fs::symlink;
 
         let source = SourceRepository::create();
-        let root = temp_dir("root");
+        let root_dir = temp_dir("root");
+        let root = root_dir.path();
         let victim = root.join("victim");
         fs::create_dir_all(&victim).expect("victim");
         fs::write(victim.join(ATTEMPT_MARKER), "attempt-one").expect("marker");
@@ -1111,7 +1116,6 @@ mod tests {
         assert_eq!(error, WorkspaceError::UnsafePath);
         assert!(victim.join("important.txt").exists());
         fs::remove_dir_all(root).expect("cleanup");
-        fs::remove_dir_all(source.path).expect("cleanup");
     }
 
     // -----------------------------------------------------------------
@@ -1167,8 +1171,9 @@ mod tests {
     #[tokio::test]
     async fn a_credential_in_the_remote_url_never_reaches_a_log_line() {
         const PASSWORD: &str = "canary-git-password-9f3a";
-        let root = temp_dir("root");
-        let workspace = attempt_workspace(&root, "attempt-one", "main");
+        let root_dir = temp_dir("root");
+        let root = root_dir.path();
+        let workspace = attempt_workspace(root, "attempt-one", "main");
         let remote =
             format!("https://tack-user:{PASSWORD}@127.0.0.1:1/org/repo.git?token={PASSWORD}");
         let repository = RepositorySpec {

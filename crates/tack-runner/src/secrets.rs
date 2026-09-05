@@ -348,26 +348,17 @@ fn write_owner_only(path: &Path, bytes: &[u8]) -> Result<(), SecretError> {
 mod tests {
     use super::*;
 
-    fn temp_path(label: &str) -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "tack-runner-secrets-test-{label}-{}-{}",
-            std::process::id(),
-            uuid_like()
-        ))
-    }
-
-    // No `uuid` dependency in this crate; a counter is enough to keep
-    // parallel `#[test]` functions in this module from colliding on the
-    // same temp file.
-    fn uuid_like() -> u64 {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static COUNTER: AtomicU64 = AtomicU64::new(0);
-        COUNTER.fetch_add(1, Ordering::Relaxed)
+    /// A store file inside a directory that removes itself when the returned
+    /// guard drops. The caller holds the guard: the file must not outlive it.
+    fn temp_store() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let path = dir.path().join("secrets.json");
+        (dir, path)
     }
 
     #[test]
     fn file_backend_round_trips_a_secret_and_reports_itself() {
-        let path = temp_path("round-trip");
+        let (_dir, path) = temp_store();
         let store = SecretStore::file(path.clone());
 
         assert_eq!(store.backend(), SecretBackendKind::File);
@@ -383,7 +374,8 @@ mod tests {
 
     #[test]
     fn file_backend_missing_name_is_not_found_not_a_crash() {
-        let store = SecretStore::file(temp_path("missing"));
+        let (_dir, path) = temp_store();
+        let store = SecretStore::file(path);
         let error = store.get("absent").expect_err("nothing was ever set");
         assert!(matches!(error, SecretError::NotFound(name) if name == "absent"));
     }
@@ -394,7 +386,7 @@ mod tests {
         {
             use std::os::unix::fs::PermissionsExt;
 
-            let path = temp_path("perms");
+            let (_dir, path) = temp_store();
             let store = SecretStore::file(path.clone());
             store.set("demo", "value").expect("set");
 
@@ -410,7 +402,8 @@ mod tests {
 
     #[test]
     fn resolve_defaults_to_the_store_scheme_for_a_bare_name() {
-        let store = SecretStore::file(temp_path("bare-name"));
+        let (_dir, path) = temp_store();
+        let store = SecretStore::file(path);
         store.set("demo", "bare-name-value").expect("set");
 
         assert_eq!(
@@ -430,7 +423,8 @@ mod tests {
         unsafe {
             std::env::set_var("TACK_SECRETS_TEST_ENV_VALUE", "env-value");
         }
-        let store = SecretStore::file(temp_path("env-scheme"));
+        let (_dir, path) = temp_store();
+        let store = SecretStore::file(path);
 
         assert_eq!(
             store
@@ -451,7 +445,8 @@ mod tests {
 
     #[test]
     fn resolve_rejects_an_empty_name() {
-        let store = SecretStore::file(temp_path("empty-name"));
+        let (_dir, path) = temp_store();
+        let store = SecretStore::file(path);
         assert!(matches!(
             store.resolve("store:"),
             Err(SecretError::InvalidReference(reference)) if reference == "store:"

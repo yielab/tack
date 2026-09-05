@@ -83,37 +83,32 @@ mod tests {
 
     #[test]
     fn writes_the_full_content() {
-        let dir = std::env::temp_dir().join(format!("tack-securefs-test-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
+        let guard = tempfile::tempdir().expect("temporary directory");
+        let dir = guard.path();
         let path = dir.join("secret.toml");
 
         write_owner_only_atomic(&path, b"token = \"abc\"\n").unwrap();
 
         let read = fs::read_to_string(&path).unwrap();
         assert_eq!(read, "token = \"abc\"\n");
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn overwrite_replaces_content_and_leaves_no_temp_file() {
-        let dir = std::env::temp_dir().join(format!(
-            "tack-securefs-test-overwrite-{}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&dir).unwrap();
+        let guard = tempfile::tempdir().expect("temporary directory");
+        let dir = guard.path();
         let path = dir.join("secret.toml");
 
         write_owner_only_atomic(&path, b"first\n").unwrap();
         write_owner_only_atomic(&path, b"second\n").unwrap();
 
         assert_eq!(fs::read_to_string(&path).unwrap(), "second\n");
-        let leftover: Vec<_> = fs::read_dir(&dir)
+        let leftover: Vec<_> = fs::read_dir(dir)
             .unwrap()
             .filter_map(|e| e.ok())
             .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
             .collect();
         assert!(leftover.is_empty(), "temp file left behind: {leftover:?}");
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[cfg(unix)]
@@ -121,16 +116,14 @@ mod tests {
     fn file_is_owner_only() {
         use std::os::unix::fs::PermissionsExt;
 
-        let dir =
-            std::env::temp_dir().join(format!("tack-securefs-test-perms-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
+        let guard = tempfile::tempdir().expect("temporary directory");
+        let dir = guard.path();
         let path = dir.join("secret.toml");
 
         write_owner_only_atomic(&path, b"token = \"abc\"\n").unwrap();
 
         let mode = fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "expected 0600, got {:o}", mode & 0o777);
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[cfg(unix)]
@@ -138,9 +131,8 @@ mod tests {
     fn overwriting_a_looser_permission_file_still_ends_owner_only() {
         use std::os::unix::fs::PermissionsExt;
 
-        let dir =
-            std::env::temp_dir().join(format!("tack-securefs-test-loose-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
+        let guard = tempfile::tempdir().expect("temporary directory");
+        let dir = guard.path();
         let path = dir.join("secret.toml");
 
         // Simulate a pre-existing world-readable file (e.g. written before
@@ -153,6 +145,5 @@ mod tests {
         let mode = fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
         assert_eq!(fs::read_to_string(&path).unwrap(), "new\n");
-        fs::remove_dir_all(&dir).ok();
     }
 }

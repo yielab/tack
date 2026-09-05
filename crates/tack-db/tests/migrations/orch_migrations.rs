@@ -1333,7 +1333,8 @@ async fn test_migration_history_checksum_tampering_refuses_to_run() {
 
 #[tokio::test]
 async fn test_file_backed_rebuild_creates_an_automatic_pre_upgrade_snapshot() {
-    let db_path = std::env::temp_dir().join(format!("tack-migration-{}.db", Uuid::new_v4()));
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let db_path = dir.path().join("pre-upgrade-snapshot.db");
     let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
     let pool = init_pool(&db_url).await.expect("file-backed pool");
     migrations::run_up_to(&pool, "036_control_planes_version")
@@ -1348,14 +1349,4 @@ async fn test_file_backed_rebuild_creates_an_automatic_pre_upgrade_snapshot() {
         std::path::Path::new(&backup_path).is_file(),
         "the first pending rebuild must create a durable pre-upgrade SQLite snapshot"
     );
-
-    drop(pool);
-    for path in [
-        db_path,
-        std::path::PathBuf::from(&backup_path),
-        std::path::PathBuf::from(format!("{}-shm", backup_path)),
-        std::path::PathBuf::from(format!("{}-wal", backup_path)),
-    ] {
-        let _ = std::fs::remove_file(path);
-    }
 }

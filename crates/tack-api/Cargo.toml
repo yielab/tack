@@ -56,3 +56,4 @@ tokio = { workspace = true }
 tower = { workspace = true }
 # Mock GitHub's HTTP API in github_sync push tests
 wiremock = "0.6"
+tempfile = { workspace = true }

@@ -50,11 +50,14 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
-      # Cheapest gate in the file (~0.2s) and the only one that catches a
-      # comment written for a teammate instead of a reader. Runs before the
-      # compiler so a failure costs nothing.
+      # The two cheapest gates in the file (~0.2s and ~0.7s), and the only
+      # ones that catch a comment written for a teammate instead of a reader,
+      # or a test that leaves its scratch files in the runner's temp
+      # directory. Both run before the compiler so a failure costs nothing.
       - name: Comments carry no board archaeology
         run: ./scripts/check-comments.sh
+      - name: Tests take their temporary paths from a guard
+        run: ./scripts/check-test-hygiene.sh
       - name: Check formatting
         run: cargo fmt --all --check
       - name: Clippy

@@ -56,10 +56,12 @@ async fn claim_replay_count(repo: &Repository) -> i64 {
 /// migrated, with one workspace/project/item/runner/request/attempt seeded
 /// via direct SQL (this crate has no `tack-db` test-fixture harness to
 /// import — see `crates/tack-db/tests/repository/execution_retention.rs`'s
-/// own module doc for the identical reasoning). Returns `(repo, attempt_id)`.
-async fn seed_real_db(now: DateTime<Utc>) -> (Repository, String) {
-    let db_path =
-        std::env::temp_dir().join(format!("tack-orch-f5-prod-{}.db", uuid::Uuid::new_v4()));
+/// own module doc for the identical reasoning). Returns `(repo, attempt_id,
+/// dir)`; the `TempDir` owns the database file and every sidecar written
+/// beside it, so holding it as long as the repo is the whole cleanup.
+async fn seed_real_db(now: DateTime<Utc>) -> (Repository, String, tempfile::TempDir) {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let db_path = dir.path().join("retention.db");
     let pool = init_pool(&format!("sqlite://{}?mode=rwc", db_path.display()))
         .await
         .expect("file-backed pool");
@@ -127,7 +129,7 @@ async fn seed_real_db(now: DateTime<Utc>) -> (Repository, String) {
     .await
     .unwrap();
 
-    (repo, attempt_id)
+    (repo, attempt_id, dir)
 }
 
 /// The headline claim: "stale raw rows roll up/purge
@@ -142,7 +144,7 @@ async fn seed_real_db(now: DateTime<Utc>) -> (Repository, String) {
 #[tokio::test]
 async fn retention_sweep_purges_real_stale_rows_via_the_spawned_task_and_shutdown_joins_cleanly() {
     let now = now_fixed();
-    let (repo, attempt_id) = seed_real_db(now).await;
+    let (repo, attempt_id, _db_dir) = seed_real_db(now).await;
     let old = now - Duration::days(100);
 
     sqlx::query(
@@ -247,7 +249,7 @@ impl ExecutionObservabilityStore for SpyObservabilityStore {
 #[tokio::test]
 async fn health_watch_surfaces_real_stale_lease_and_needs_operator_via_the_spawned_task() {
     let now = now_fixed();
-    let (repo, attempt_id) = seed_real_db(now).await;
+    let (repo, attempt_id, _db_dir) = seed_real_db(now).await;
 
     // Expire this attempt's lease without changing its (non-terminal) state
     // — exactly the "recovery service hasn't caught up yet" scenario.

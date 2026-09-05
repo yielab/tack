@@ -355,13 +355,11 @@ mod tests {
         );
     }
 
-    fn unique_temp_dir(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "tack-local-runner-test-{label}-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&dir).expect("create test temp dir");
-        dir
+    fn unique_temp_dir(label: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(label)
+            .tempdir()
+            .expect("temporary directory")
     }
 
     /// A `database_url` that fails at parse time, before any filesystem or
@@ -377,10 +375,11 @@ mod tests {
 
     #[tokio::test]
     async fn ensure_runner_credential_leaves_a_manual_credential_untouched() {
-        let state_dir = unique_temp_dir("manual");
+        let state_dir_guard = unique_temp_dir("manual");
+        let state_dir = state_dir_guard.path();
         let mut runner_config = RunnerConfig {
             enrollment_credential: Some(EnrollmentCredential::new("manually-configured-token")),
-            state_dir: state_dir.clone(),
+            state_dir: state_dir.to_path_buf(),
             ..RunnerConfig::defaults()
         };
         let server_config = unreachable_database_url();
@@ -399,16 +398,17 @@ mod tests {
             "manually-configured-token",
             "a manual credential must win over both the stored-session placeholder and self-provisioning"
         );
-        std::fs::remove_dir_all(&state_dir).ok();
+        std::fs::remove_dir_all(state_dir).ok();
     }
 
     #[tokio::test]
     async fn ensure_runner_credential_reuses_a_stored_session_without_self_provisioning() {
-        let state_dir = unique_temp_dir("stored-session");
+        let state_dir_guard = unique_temp_dir("stored-session");
+        let state_dir = state_dir_guard.path();
         std::fs::write(state_dir.join("session.json"), "{}").expect("write session.json");
         let mut runner_config = RunnerConfig {
             enrollment_credential: None,
-            state_dir: state_dir.clone(),
+            state_dir: state_dir.to_path_buf(),
             ..RunnerConfig::defaults()
         };
         // Deliberately unreachable: if this path wrongly called
@@ -426,15 +426,16 @@ mod tests {
             runner_config.enrollment_credential.is_some(),
             "build_runtime's precondition still needs a credential to be present"
         );
-        std::fs::remove_dir_all(&state_dir).ok();
+        std::fs::remove_dir_all(state_dir).ok();
     }
 
     #[tokio::test]
     async fn ensure_runner_credential_attempts_self_provisioning_when_nothing_else_is_available() {
-        let state_dir = unique_temp_dir("no-session");
+        let state_dir_guard = unique_temp_dir("no-session");
+        let state_dir = state_dir_guard.path();
         let mut runner_config = RunnerConfig {
             enrollment_credential: None,
-            state_dir: state_dir.clone(),
+            state_dir: state_dir.to_path_buf(),
             ..RunnerConfig::defaults()
         };
         let server_config = unreachable_database_url();
@@ -447,6 +448,6 @@ mod tests {
              attempted — proved here by its failure against a deliberately unreachable database, \
              the same database_url the previous test proves does NOT get touched when a session exists"
         );
-        std::fs::remove_dir_all(&state_dir).ok();
+        std::fs::remove_dir_all(state_dir).ok();
     }
 }

@@ -86,23 +86,18 @@ async fn ready_repo_on(repo: Repository) -> (Repository, String, FakeClock) {
 /// `execution_repo.rs`'s `defect2`-style race tests. A shared in-memory
 /// pool can mask a race that only shows up against real file I/O and
 /// locking — CLAUDE.md's own warning about this exact class of test.
-async fn file_backed_repo(label: &str) -> (Repository, std::path::PathBuf) {
-    let db_path = std::env::temp_dir().join(format!(
-        "tack-db-f6d-artifact-race-{label}-{}-{}.db",
-        std::process::id(),
-        uuid::Uuid::new_v4()
-    ));
+///
+/// The returned `TempDir` owns the database file and every sidecar SQLite or
+/// the migration runner writes beside it; hold it for as long as the repo and
+/// they all go away together, on a panicking test as much as a passing one.
+async fn file_backed_repo(label: &str) -> (Repository, tempfile::TempDir) {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let db_path = dir.path().join(format!("artifact-race-{label}.db"));
     let pool = init_pool(&format!("sqlite://{}?mode=rwc", db_path.display()))
         .await
         .expect("file-backed pool");
     migrations::run_all(&pool).await.expect("migrations");
-    (Repository::new(pool), db_path)
-}
-
-fn remove_file_backed_db(db_path: &std::path::Path) {
-    let _ = std::fs::remove_file(db_path);
-    let _ = std::fs::remove_file(format!("{}-wal", db_path.display()));
-    let _ = std::fs::remove_file(format!("{}-shm", db_path.display()));
+    (Repository::new(pool), dir)
 }
 
 fn request<'a>(id: &'a str, item_id: &'a str, key: &'a str) -> NewExecutionRequest<'a> {
@@ -740,7 +735,7 @@ async fn delete_execution_artifacts_by_row_ids_is_a_no_op_on_an_empty_list() {
 
 #[tokio::test]
 async fn delete_unresolved_execution_artifacts_by_row_ids_skips_a_row_resolved_concurrently() {
-    let (file_repo, db_path) = file_backed_repo("guard-skips").await;
+    let (file_repo, _db_dir) = file_backed_repo("guard-skips").await;
     let (repo, item_id, clock) = ready_repo_on(file_repo).await;
     let fence = ready_running_attempt(
         &repo,
@@ -831,8 +826,6 @@ async fn delete_unresolved_execution_artifacts_by_row_ids_skips_a_row_resolved_c
         Some("attempt-race-guard-hex/real-upload.blob".to_string()),
         "the row — and the fresh reference the race just wrote — must still be there"
     );
-
-    remove_file_backed_db(&db_path);
 }
 
 /// Load-bearing counter-proof: the *old*, unconditional
@@ -846,7 +839,7 @@ async fn delete_unresolved_execution_artifacts_by_row_ids_skips_a_row_resolved_c
 /// silently widen the unconditional method's use back onto this branch.
 #[tokio::test]
 async fn unconditional_delete_would_have_orphaned_the_racily_resolved_row() {
-    let (file_repo, db_path) = file_backed_repo("guard-counterexample").await;
+    let (file_repo, _db_dir) = file_backed_repo("guard-counterexample").await;
     let (repo, item_id, clock) = ready_repo_on(file_repo).await;
     let fence = ready_running_attempt(
         &repo,
@@ -918,8 +911,6 @@ async fn unconditional_delete_would_have_orphaned_the_racily_resolved_row() {
          why sweep_artifacts must not use this method for rows observed \
          with content_reference: None at list-time"
     );
-
-    remove_file_backed_db(&db_path);
 }
 
 /// Control: with no race, the guarded method still deletes an unresolved row
@@ -928,7 +919,7 @@ async fn unconditional_delete_would_have_orphaned_the_racily_resolved_row() {
 /// impossible.
 #[tokio::test]
 async fn delete_unresolved_execution_artifacts_by_row_ids_deletes_when_nothing_raced() {
-    let (file_repo, db_path) = file_backed_repo("guard-no-race").await;
+    let (file_repo, _db_dir) = file_backed_repo("guard-no-race").await;
     let (repo, item_id, clock) = ready_repo_on(file_repo).await;
     let fence = ready_running_attempt(
         &repo,
@@ -991,8 +982,6 @@ async fn delete_unresolved_execution_artifacts_by_row_ids_deletes_when_nothing_r
     .await
     .unwrap();
     assert_eq!(remaining, 0);
-
-    remove_file_backed_db(&db_path);
 }
 
 #[tokio::test]
