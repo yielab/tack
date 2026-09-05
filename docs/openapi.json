@@ -2616,6 +2616,102 @@
         }
       }
     },
+    "/api/local-runner": {
+      "get": {
+        "tags": [
+          "local-runner"
+        ],
+        "summary": "GET /api/local-runner — the persisted preference, the live runtime\nstate, and the current provider catalog. Only mounted on a loopback bind\nwith a control actually wired in — see `router.rs`'s `local_runner_routes`.",
+        "operationId": "get_local_runner",
+        "responses": {
+          "200": {
+            "description": "Embedded-runner preference, runtime state, and provider catalog",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "local-runner"
+        ],
+        "summary": "PUT /api/local-runner — save the preference and start/stop the embedded\nrunner to match, immediately, with no restart. Persist first, then\nreconcile the runtime — same ordering `put_orch_settings` uses and for\nthe same reason: a crash between the two still boots correctly next time.",
+        "operationId": "put_local_runner",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLocalRunner"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Preference saved and the runtime reconciled to match"
+          }
+        }
+      }
+    },
+    "/api/local-runner/secrets": {
+      "get": {
+        "tags": [
+          "local-runner"
+        ],
+        "summary": "GET /api/local-runner/secrets — names and set-at timestamps only.",
+        "operationId": "list_local_runner_secrets",
+        "responses": {
+          "200": {
+            "description": "Stored secret names and set-at timestamps, never values",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-runner/secrets/{name}": {
+      "put": {
+        "tags": [
+          "local-runner"
+        ],
+        "summary": "PUT /api/local-runner/secrets/{name} — store a value. Never echoes it\nback, not even as a hash: the response carries nothing but a status code.",
+        "operationId": "put_local_runner_secret",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetLocalRunnerSecret"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Stored; the value is never echoed back"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "local-runner"
+        ],
+        "summary": "DELETE /api/local-runner/secrets/{name} — not an error if already absent.",
+        "operationId": "delete_local_runner_secret",
+        "responses": {
+          "204": {
+            "description": "Removed (or already absent)"
+          }
+        }
+      }
+    },
     "/api/metrics": {
       "get": {
         "tags": [
@@ -11084,6 +11180,17 @@
           "value": {}
         }
       },
+      "SetLocalRunnerSecret": {
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "type": "string"
+          }
+        }
+      },
       "Sprint": {
         "type": "object",
         "required": [
@@ -11806,6 +11913,17 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "UpdateLocalRunner": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
           }
         }
       },

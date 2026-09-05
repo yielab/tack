@@ -2,6 +2,7 @@
 //! binary (in the `tack-cli` crate) can start the HTTP server in-process.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
@@ -10,6 +11,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::config::AppConfig;
+use crate::handlers::local_runner::{LocalRunnerControl, effective_local_runner_enabled};
 use crate::handlers::settings::effective_orch_enabled;
 use crate::orch_store::build_control_plane_store;
 use crate::remote_backup;
@@ -19,9 +21,12 @@ use tack_db::{Repository, init_pool, migrations, repo};
 use tack_orch::reconciler;
 
 /// Boot the Tack HTTP server: load config, run migrations, start background
-/// tasks, and serve until a shutdown signal is received.
+/// tasks, and serve until a shutdown signal is received. No embedded runner
+/// is ever wired in — `AppState::local_runner` is `None` and the routes in
+/// `handlers::local_runner` are absent regardless of bind address. Use
+/// [`serve_with_ready_and_local_runner`] to wire one in.
 pub async fn serve() -> anyhow::Result<()> {
-    serve_inner(None).await
+    serve_inner(None, None).await
 }
 
 /// Like [`serve`], but sends the real bound [`SocketAddr`] over `ready_tx`
@@ -33,11 +38,35 @@ pub async fn serve() -> anyhow::Result<()> {
 ///
 /// If the receiver has already been dropped, the send is a no-op: the
 /// server still starts and runs normally, it just has nobody to tell.
+/// No embedded runner is wired in — see [`serve`]'s doc comment.
 pub async fn serve_with_ready(ready_tx: oneshot::Sender<SocketAddr>) -> anyhow::Result<()> {
-    serve_inner(Some(ready_tx)).await
+    serve_inner(Some(ready_tx), None).await
 }
 
-async fn serve_inner(ready_tx: Option<oneshot::Sender<SocketAddr>>) -> anyhow::Result<()> {
+/// Like [`serve_with_ready`], additionally wiring `local_runner` into
+/// `AppState` so `handlers::local_runner`'s routes exist (still only on a
+/// loopback bind — `router::build_router`'s own gate). `local_runner`'s
+/// preference (`app_meta`, falling back to `AppConfig::local_runner_enable`
+/// — `--with-runner`/`TACK_LOCAL_RUNNER_ENABLE`) is checked once the
+/// listener is bound and, if on, started before this function blocks on
+/// `axum::serve` — the exact same [`LocalRunnerControl::start`] call
+/// `PUT /api/local-runner` makes later, so there is only ever one code path
+/// into the runtime, not a boot-time one and a UI-triggered one. A start
+/// failure at boot takes the whole process down (returned as an error)
+/// rather than leaving a server running with the preference on but nothing
+/// actually started; the caller of `PUT /api/local-runner` gets the same
+/// error back instead, since starting the server itself never failed.
+pub async fn serve_with_ready_and_local_runner(
+    ready_tx: oneshot::Sender<SocketAddr>,
+    local_runner: Arc<dyn LocalRunnerControl>,
+) -> anyhow::Result<()> {
+    serve_inner(Some(ready_tx), Some(local_runner)).await
+}
+
+async fn serve_inner(
+    ready_tx: Option<oneshot::Sender<SocketAddr>>,
+    local_runner: Option<Arc<dyn LocalRunnerControl>>,
+) -> anyhow::Result<()> {
     // Load configuration
     let config = AppConfig::load();
 
@@ -84,6 +113,7 @@ async fn serve_inner(ready_tx: Option<oneshot::Sender<SocketAddr>>) -> anyhow::R
         broadcast_tx,
         webhook,
         orch_runtime: crate::orch_runtime::OrchRuntime::new(),
+        local_runner: local_runner.clone(),
     };
 
     // Spawn background task: automatic remote backup on configured interval.
@@ -210,6 +240,16 @@ async fn serve_inner(ready_tx: Option<oneshot::Sender<SocketAddr>>) -> anyhow::R
         .start(state.repo.clone(), (&config).into())
         .await;
 
+    // A cheap `Clone` (mostly `Arc`s and a `Uuid`/`AppConfig` underneath),
+    // kept only so the auto-start check below — after the listener binds,
+    // below `build_router` moving `state` into the router it builds — still
+    // has a live `AppState` to read `app_meta` through. `tack-cli` must
+    // never open the database itself (`CLAUDE.md`'s crate map), so this
+    // effective-enabled check has to happen here, not in the composing
+    // binary, even though the binary is what decided whether to embed a
+    // runner at all.
+    let state_for_local_runner = state.clone();
+
     // Build router
     let app = build_router(state);
 
@@ -227,6 +267,30 @@ async fn serve_inner(ready_tx: Option<oneshot::Sender<SocketAddr>>) -> anyhow::R
     let bound_addr = listener.local_addr()?;
     if let Some(tx) = ready_tx {
         let _ = tx.send(bound_addr);
+    }
+
+    // Bring a wired-in embedded runner up to whatever its persisted
+    // preference (or the `--with-runner`/`TACK_LOCAL_RUNNER_ENABLE` default,
+    // where the UI has never overridden it) already says — the exact same
+    // `LocalRunnerControl::start` call `PUT /api/local-runner` makes later,
+    // so a boot-time start and a UI-triggered one are one code path, not
+    // two. Loopback is re-checked here against the *persisted* preference,
+    // separately from `local_runner.rs::ensure_loopback`'s check against
+    // this boot's own flag: a preference saved from an earlier loopback
+    // session must never auto-start a runner on a server now bound
+    // elsewhere — it is silently not honored, matching
+    // `router::build_router`'s identical rule for the route's own
+    // existence, rather than erroring on an ordinary deployment that
+    // happens to carry a stale row. A start failure while genuinely on
+    // loopback takes the whole server down (loud, matching
+    // `local_runner.rs`'s existing "either side dying kills the process"
+    // posture for the `--with-runner` flag specifically) rather than
+    // leaving it serving with the preference on but nothing running.
+    if let Some(control) = &local_runner
+        && state_for_local_runner.config.binds_loopback()
+        && effective_local_runner_enabled(&state_for_local_runner).await
+    {
+        control.start().await?;
     }
 
     // Plain-stdout banner for end users running the distributed binary —
@@ -729,5 +793,116 @@ mod tests {
     #[test]
     fn serve_still_takes_no_arguments() {
         let _: fn() -> _ = serve;
+    }
+
+    /// A control whose `start()` records whether it was ever called — the
+    /// auto-start check under test in
+    /// `a_persisted_enable_preference_never_auto_starts_on_a_non_loopback_bind`
+    /// below is the only thing calling it in that test.
+    struct RecordingControl {
+        started: std::sync::atomic::AtomicBool,
+    }
+
+    #[async_trait::async_trait]
+    impl LocalRunnerControl for RecordingControl {
+        async fn status(&self) -> crate::handlers::local_runner::RuntimeStatus {
+            crate::handlers::local_runner::RuntimeStatus {
+                state: crate::handlers::local_runner::RuntimeState::Stopped,
+                since: None,
+            }
+        }
+        async fn start(
+            &self,
+        ) -> Result<(), crate::handlers::local_runner::LocalRunnerControlError> {
+            self.started
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+        async fn stop(&self) {}
+        async fn list_secrets(&self) -> Vec<crate::handlers::local_runner::SecretMeta> {
+            Vec::new()
+        }
+        async fn set_secret(
+            &self,
+            _name: &str,
+            _value: &str,
+        ) -> Result<(), crate::handlers::local_runner::LocalRunnerControlError> {
+            Ok(())
+        }
+        async fn remove_secret(
+            &self,
+            _name: &str,
+        ) -> Result<(), crate::handlers::local_runner::LocalRunnerControlError> {
+            Ok(())
+        }
+        async fn catalog(&self) -> crate::handlers::local_runner::CatalogSnapshot {
+            crate::handlers::local_runner::CatalogSnapshot::NotConfigured
+        }
+    }
+
+    /// The regression this seam exists to prevent: a preference saved from
+    /// an earlier loopback session (here, simulated with
+    /// `TACK_LOCAL_RUNNER_ENABLE=1` — the env-default half of the same
+    /// precedence `app_meta` would otherwise win) must never auto-start an
+    /// embedded runner on a server now bound to `0.0.0.0`. Proved directly
+    /// against `RecordingControl::start`, not just against the route being
+    /// absent — a route being unreachable would not by itself prove the
+    /// runner never actually started.
+    #[tokio::test]
+    async fn a_persisted_enable_preference_never_auto_starts_on_a_non_loopback_bind() {
+        let _env_guard = SERVE_ENV_LOCK.lock().await;
+        let _restore = EnvRestore {
+            port: std::env::var("TACK_PORT").ok(),
+            database_url: std::env::var("TACK_DATABASE_URL").ok(),
+        };
+        let previous_host = std::env::var("TACK_HOST").ok();
+        let previous_enable = std::env::var("TACK_LOCAL_RUNNER_ENABLE").ok();
+        let previous_unauth = std::env::var("TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK").ok();
+        // SAFETY: serialized by `SERVE_ENV_LOCK` above.
+        unsafe {
+            std::env::set_var("TACK_PORT", "0");
+            std::env::set_var("TACK_DATABASE_URL", "sqlite::memory:");
+            std::env::set_var("TACK_HOST", "0.0.0.0");
+            std::env::set_var("TACK_LOCAL_RUNNER_ENABLE", "1");
+            std::env::set_var("TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK", "1");
+        }
+
+        let control = Arc::new(RecordingControl {
+            started: std::sync::atomic::AtomicBool::new(false),
+        });
+        let local_runner: Arc<dyn LocalRunnerControl> = control.clone();
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let server = tokio::spawn(serve_with_ready_and_local_runner(ready_tx, local_runner));
+
+        let addr = ready_rx.await.expect("readiness signal never arrived");
+        // The server itself must still come up normally — refusing to
+        // *start the runner* is not refusing to *serve*.
+        let response = reqwest::get(format!("http://{addr}/api/health"))
+            .await
+            .expect("server must still boot and serve on a non-loopback bind");
+        assert!(response.status().is_success());
+
+        assert!(
+            !control.started.load(std::sync::atomic::Ordering::SeqCst),
+            "a non-loopback bind must never auto-start the embedded runner, \
+             even with TACK_LOCAL_RUNNER_ENABLE=1"
+        );
+
+        server.abort();
+        // SAFETY: still serialized by `SERVE_ENV_LOCK`.
+        unsafe {
+            match previous_host {
+                Some(v) => std::env::set_var("TACK_HOST", v),
+                None => std::env::remove_var("TACK_HOST"),
+            }
+            match previous_enable {
+                Some(v) => std::env::set_var("TACK_LOCAL_RUNNER_ENABLE", v),
+                None => std::env::remove_var("TACK_LOCAL_RUNNER_ENABLE"),
+            }
+            match previous_unauth {
+                Some(v) => std::env::set_var("TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK", v),
+                None => std::env::remove_var("TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK"),
+            }
+        }
     }
 }
