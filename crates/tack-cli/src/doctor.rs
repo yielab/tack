@@ -8,6 +8,7 @@
 //! runner would report: this command and a live runner share one source of
 //! truth.
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use tack_orch::execution::{CapabilitySupport, CapabilityValue, HarnessCapability};
@@ -176,7 +177,6 @@ fn render(report: &bootstrap::DiscoveryReport) {
     println!();
 
     render_provider(&report.provider_catalog);
-    println!();
 
     println!(
         "Every harness above can also authenticate itself directly, using its own \
@@ -188,29 +188,46 @@ fn render(report: &bootstrap::DiscoveryReport) {
     );
 }
 
-/// Renders the one provider endpoint this build knows how to configure —
-/// which harnesses it reaches and, when it is on, the catalog state.
-fn render_provider(catalog: &tack_runner::provider::CatalogStatus) {
-    println!("Provider endpoint (vercel_ai_gateway):");
-    println!("  reaches: claude-code, codex");
-    match catalog {
-        tack_runner::provider::CatalogStatus::NotConfigured => {
-            println!("  status:  not configured");
+/// Renders one block per provider this build knows how to configure —
+/// which harnesses it reaches and, when it is on, the catalog state. Every
+/// provider is walked in registry order regardless of whether it is
+/// enabled, mirroring how a disabled entry was always shown before a
+/// second provider existed.
+fn render_provider(catalog: &BTreeMap<String, tack_runner::provider::CatalogStatus>) {
+    for provider in tack_runner::provider::registry() {
+        let reaches = tack_runner::provider::reaches(provider.as_ref());
+        println!("Provider endpoint ({}):", provider.config_key());
+        println!("  reaches: {}", reaches.join(", "));
+        match catalog.get(provider.config_key()) {
+            None | Some(tack_runner::provider::CatalogStatus::NotConfigured) => {
+                println!("  status:  not configured");
+            }
+            Some(tack_runner::provider::CatalogStatus::SecretUnresolved) => {
+                println!("  status:  configured, but its secret does not resolve");
+            }
+            Some(tack_runner::provider::CatalogStatus::Unreachable { status }) => match status {
+                Some(status) => println!("  status:  catalog error (HTTP {status})"),
+                None => println!("  status:  catalog error (request failed)"),
+            },
+            Some(tack_runner::provider::CatalogStatus::Configured {
+                model_count,
+                priced_model_count,
+                context_window_model_count,
+                checked_at,
+            }) => {
+                println!("  status:  configured");
+                println!("  catalog: {model_count} models, checked at {checked_at}");
+                println!(
+                    "  price:   {priced_model_count} of {model_count} models published a price ({} Not measured)",
+                    model_count - priced_model_count
+                );
+                println!(
+                    "  limit:   {context_window_model_count} of {model_count} models published a context window ({} Not measured)",
+                    model_count - context_window_model_count
+                );
+            }
         }
-        tack_runner::provider::CatalogStatus::SecretUnresolved => {
-            println!("  status:  configured, but its secret does not resolve");
-        }
-        tack_runner::provider::CatalogStatus::Unreachable { status } => match status {
-            Some(status) => println!("  status:  catalog error (HTTP {status})"),
-            None => println!("  status:  catalog error (request failed)"),
-        },
-        tack_runner::provider::CatalogStatus::Configured {
-            model_count,
-            checked_at,
-        } => {
-            println!("  status:  configured");
-            println!("  catalog: {model_count} models, checked at {checked_at}");
-        }
+        println!();
     }
 }
 
@@ -495,10 +512,15 @@ mod tests {
                 "no executable named `claude` was found on PATH".to_owned(),
             ),
             secret_backend: tack_runner::secrets::SecretBackendKind::File,
-            provider_catalog: tack_runner::provider::CatalogStatus::Configured {
-                model_count: 373,
-                checked_at: fixed_timestamp(),
-            },
+            provider_catalog: BTreeMap::from([(
+                tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
+                tack_runner::provider::CatalogStatus::Configured {
+                    model_count: 373,
+                    priced_model_count: 352,
+                    context_window_model_count: 355,
+                    checked_at: fixed_timestamp(),
+                },
+            )]),
         };
 
         render(&report);
@@ -507,16 +529,29 @@ mod tests {
     /// `render_provider` is exercised for its side effects (stdout), not a
     /// return value; this only proves every `CatalogStatus` variant renders
     /// to completion, so a future variant addition fails loudly here
-    /// instead of only in a manual `--json` read.
+    /// instead of only in a manual `--json` read. Also proves a provider
+    /// this build knows about but the map has no entry for (an empty map)
+    /// renders as "not configured" instead of panicking on a missing key.
     #[test]
     fn render_provider_does_not_panic_for_any_catalog_status() {
-        render_provider(&tack_runner::provider::CatalogStatus::NotConfigured);
-        render_provider(&tack_runner::provider::CatalogStatus::SecretUnresolved);
-        render_provider(&tack_runner::provider::CatalogStatus::Unreachable { status: Some(401) });
-        render_provider(&tack_runner::provider::CatalogStatus::Unreachable { status: None });
-        render_provider(&tack_runner::provider::CatalogStatus::Configured {
-            model_count: 373,
-            checked_at: fixed_timestamp(),
-        });
+        render_provider(&BTreeMap::new());
+        for status in [
+            tack_runner::provider::CatalogStatus::NotConfigured,
+            tack_runner::provider::CatalogStatus::SecretUnresolved,
+            tack_runner::provider::CatalogStatus::Unreachable { status: Some(401) },
+            tack_runner::provider::CatalogStatus::Unreachable { status: None },
+            tack_runner::provider::CatalogStatus::Configured {
+                model_count: 373,
+                priced_model_count: 352,
+                context_window_model_count: 355,
+                checked_at: fixed_timestamp(),
+            },
+        ] {
+            let mut catalog = BTreeMap::new();
+            for provider in tack_runner::provider::registry() {
+                catalog.insert(provider.config_key().to_owned(), status.clone());
+            }
+            render_provider(&catalog);
+        }
     }
 }
