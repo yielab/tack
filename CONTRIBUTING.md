@@ -88,8 +88,9 @@ Tack/
 │   │   │       ├── custom_fields.rs
 │   │   │       └── templates.rs
 │   │   └── tests/
-│   │       ├── integration_test.rs  # DB integration tests
-│   │       └── perf_test.rs         # 50k-item perf test (#[ignore])
+│   │       ├── repository.rs       # CRUD, retention, concurrency (one binary)
+│   │       ├── migrations.rs       # schema/upgrade tests (one binary)
+│   │       └── perf_test.rs        # 50k-item perf test (#[ignore])
 │   ├── tack-api/             # Axum HTTP server + WebSocket
 │   │   ├── src/
 │   │   │   ├── main.rs         # Server entry point + staged restore
@@ -119,7 +120,12 @@ Tack/
 │   │   │       └── websocket.rs
 │   │   └── tests/
 │   │       ├── common/mod.rs       # test_app(), test_app_with_config()
-│   │       └── api_test.rs         # 38 handler integration tests
+│   │       ├── handlers.rs         # CRUD, routes, economics, provisioning
+│   │       ├── orchestration.rs    # dispatch, approvals, reconciler, fleet
+│   │       ├── runner_protocol.rs  # lifecycle, decisions, artifact events
+│   │       ├── security.rs         # auth surfaces, CORS, write races
+│   │       ├── wiring.rs           # proofs that a seam is load-bearing
+│   │       └── wave2_gate.rs       # named CI gate, kept its own binary
 │   └── tack-cli/             # clap CLI (talks to API over HTTP)
 │       └── src/
 │           ├── main.rs         # All commands
@@ -235,7 +241,7 @@ mod tests {
 }
 ```
 
-**API handler tests** go in `crates/tack-api/tests/api_test.rs` using `axum::Router::oneshot()`:
+**API handler tests** go under `crates/tack-api/tests/handlers/`, in the module whose subject fits, using `axum::Router::oneshot()`:
 
 ```rust
 #[tokio::test]
@@ -252,7 +258,7 @@ async fn my_handler_returns_200() {
 }
 ```
 
-**DB integration tests** go in `crates/tack-db/tests/integration_test.rs`:
+**DB integration tests** go under `crates/tack-db/tests/repository/` (or `migrations/` for schema work):
 
 ```rust
 #[tokio::test]
@@ -282,7 +288,7 @@ If you're looking for a focused starting point, these areas are self-contained a
 | Vocabulary translation | Add a non-English vocabulary pack for an existing project type | `tack-core/src/vocabulary.rs` |
 | CLI output polish | Improve table formatting or add a `--format table\|csv\|json` flag to a command | `tack-cli/src/main.rs` |
 | Frontend view polish | Fix a visual edge case, improve empty-state UX, or add keyboard shortcuts | `frontend/src/pages/` or `frontend/src/components/` |
-| Test coverage | Add handler tests for an endpoint that only has a smoke test | `crates/tack-api/tests/api_test.rs` |
+| Test coverage | Add handler tests for an endpoint that only has a smoke test | `crates/tack-api/tests/handlers/` |
 
 The crate layering rule is the main constraint: keep `tack-core` free of I/O and `tack-cli` free of direct DB access (all data goes through the HTTP API). See the Dependency Flow section above.
 
@@ -297,7 +303,7 @@ The crate layering rule is the main constraint: keep `tack-core` free of I/O and
 3. **Add a repository module** at `crates/tack-db/src/repo/time_entries.rs`; add `pub mod time_entries;` to `repo.rs`
 4. **Add a handler module** at `crates/tack-api/src/handlers/time_entries.rs`; add it to the `use crate::handlers::{...}` import in `router.rs`
 5. **Add routes** in `crates/tack-api/src/router.rs`
-6. **Write tests** in `crates/tack-api/tests/api_test.rs`
+6. **Write tests** under `crates/tack-api/tests/handlers/`
 
 ### Adding a New Workflow Preset
 

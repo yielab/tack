@@ -406,9 +406,9 @@ difference.
   Vendor/harness credentials (an OpenAI key, an Anthropic key, etc.) are the runner
   operator's own local environment — Tack's API never sees, stores, or forwards them.
 - Logs never carry the credential value. Redaction is tested with a positive control:
-  the redaction test in `f1_decisions_test.rs`/`f2_artifact_events_test.rs` captures
-  real `tracing` output and asserts the secret marker never appears **and** an id
-  does appear, ruling out "the capture rig just isn't observing anything."
+  the redaction tests capture real `tracing` output and assert the secret marker
+  never appears **and** that an id does appear, ruling out "the capture rig just
+  isn't observing anything."
 
 ---
 
@@ -541,7 +541,7 @@ states the compatibility decision verbatim:
 That guard is one-directional today: an active runner-v1 request blocks a legacy Docket
 dispatch, but creating a runner-v1 request on an item that already has an active
 `orch_tasks` row is **not** refused. That gap is proven open by
-`crates/tack-api/tests/g1_dual_dispatch_test.rs` rather than assumed closed. See
+`crates/tack-api/tests/orchestration/dispatch/dual_scheduling.rs` rather than assumed closed. See
 [Orchestration & the Fleet View](orchestration.md) for everything Docket-specific:
 registering a control plane, dispatch, budgets, and why every dollar figure there says
 "estimated." That surface is gated entirely behind `TACK_ORCH_ENABLE` and is unrelated

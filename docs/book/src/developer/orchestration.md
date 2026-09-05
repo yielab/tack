@@ -439,8 +439,8 @@ just on the dispatch path where it was first found: `dispatcher::apply_mapped_st
 (the original fix, card R2, reproduced 12/12 concurrent dispatches over-filling a
 WIP-5 column before the fix) and `handlers::items::update_item` (the human board-drag
 path, card R3). Both reproduced the identical race live before being fixed — see
-their own test files (`wip_limit_race_test.rs`, `board_drag_wip_race_test.rs`) for
-the exact repro methodology (genuinely concurrent
+their own test modules (`crates/tack-api/tests/security/wip_limit_race.rs` and
+`board_drag_wip_race.rs`) for the exact repro methodology (genuinely concurrent
 requests via `tokio::spawn` on a multi-thread runtime, asserting the pre-fix code
 over-fills the column before touching anything).
 
@@ -487,7 +487,7 @@ the scenario this feature exists to protect) reads as "unchanged, still parked a
 `on_waiting_approval`'s value" — and the terminal transition fires anyway, silently
 overwriting the human's decision. Resolving to a single expected value from the
 attempt's own last known `remote_status`, rather than a set, is what fixes it. See
-`crates/tack-api/tests/orch_terminal_status_test.rs`'s
+`crates/tack-api/tests/orchestration/reconciler/terminal_status.rs`'s
 `a_human_move_since_dispatch_blocks_on_succeeded_even_when_the_value_collides_with_on_waiting_approval`.
 
 **Accepted limit:** this cannot detect a human re-choosing the exact status the
@@ -681,7 +681,7 @@ card fixed while it was in the file, not something this cycle introduced —
 `frontend/src/features/approvals/api.ts` has sent that header on every grant/deny decision
 since Phase 36, and it has only ever worked because production is same-origin via
 `embed-spa`. Any cross-origin deployment through `TACK_ALLOWED_ORIGINS` would have failed
-every approval preflight silently. See `crates/tack-api/tests/cors_test.rs` — there was no
+every approval preflight silently. See `crates/tack-api/tests/security/cors.rs` — there was no
 CORS test anywhere in this repo before it.
 
 ### Two writers this control deliberately does not cover
@@ -754,11 +754,9 @@ directly rather than assumed — Tack builds no workaround for either:
   (`every_orch_route_404s_when_disabled`, and a suite asserting the literal
   control-plane token string never appears in any response body); the dispatch,
   sprint-dispatch, terminal-status, approvals, budget/policy, provisioning, and
-  economics test files (`orch_dispatch_test.rs`, `sprint_dispatch_test.rs`,
-  `orch_terminal_status_test.rs`, `orch_approvals_test.rs`,
-  `orch_budget_policy_test.rs`, `provisioning_test.rs`, `economics_test.rs`); and
-  the two WIP-race regression suites (`wip_limit_race_test.rs`,
-  `board_drag_wip_race_test.rs`) that reproduce the race
+  economics tests, which live under `crates/tack-api/tests/orchestration/` and
+  `handlers/`; and the two WIP-race regression suites under
+  `crates/tack-api/tests/security/` that reproduce the race
   live before asserting the fix.
 
 None of these require a live docket instance for CI — the adapter tests run against

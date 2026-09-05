@@ -244,3 +244,52 @@ the measurement table above are corrected in place, with the working command; th
 records that they were wrong first. A fifth separator-style literal, `from_millis(1_500)` in
 `docket_tick_contract_test.rs`, sits in a protected oracle and is outside any regrouping card's
 scope.
+
+**2026-09-05 — STEP 4 DONE, and step 5 is still open.** Five branches regrouped one crate's
+tests each and merged into `develop` with no conflict; two more repaired what the regrouping
+broke. Measured on the merge rather than taken from any card's report:
+
+| | Before | After |
+|---|---|---|
+| Test binaries | 73 | **32** |
+| `tack-api` / `tack-db` / `tack-orch` test files | 36 / 12 / 10 | 8 / 3 / 6 |
+| Rebuild the suite after touching `tack-api/src/lib.rs` | 28.1 s | **4.89 s** |
+| Rebuild the suite after touching `tack-core/src/lib.rs` | 21.0 s | **6.91 s** |
+| Live test binaries on disk | 73, ~344 MB each | 32, 68 MB mean, **2.1 GB total** |
+| Full run | 14.5 s | 15.3 s |
+| Tests | 1,392 | 1,392 — every per-package count identical |
+
+`target/debug/deps` still measures 34 GB because cargo never evicts the binaries of a layout
+that no longer exists; 2.1 GB is the live set, and a `cargo clean` is what reconciles the two.
+
+Decision 4 predicted "about five" binaries for `tack-api`; it is eight, because
+`openapi_contract`, `wave2_gate` and `runner_vertical_slice` keep their own identity —
+CI and `/gate` select the first two by binary name, so folding them in would have turned
+those gates into silent no-ops.
+
+**What the cards found that this ADR did not anticipate:**
+
+- **Regrouping breaks every comment that names a moved file** — 93 of them, in production
+  sources as much as in tests. The repair is now mechanical rather than remembered:
+  `scripts/check-comments.sh` gained a rule that a filename cited in a comment must be a
+  filename that exists, proven load-bearing by breaking a pointer and watching it fire. It
+  matches on basename, so a name split across a line wrap hides from it — a reason not to
+  wrap one. `foo.rs` is allowlisted as prose.
+- **Four comments asserted things that were never true**, found by agents verifying a claim
+  before repointing it rather than after: two named tests that never existed at any commit
+  (`handlers/decisions.rs`), one claimed a Prometheus round-trip nothing tests
+  (`handlers/orch.rs`), and one claimed a wiring test exercises `server.rs` when it builds
+  its own config (`orchestration/control_plane/settings.rs`, repointed and flagged, not
+  silently tightened). A matching false claim in `openapi.rs` is recorded and unfixed.
+- **Two doc comments that fed `docs/openapi.json`** cited internal test files, so an
+  implementation detail was published in the API spec. Rewritten to state behaviour, and the
+  spec regenerated.
+- **`ingestion_test.rs` was split, not renamed**, so git's rename detection could not map it
+  and the mapping handed to the cards was silently incomplete for that one file. Both agents
+  that hit it went and checked which destination still carried the assertions rather than
+  guessing.
+- **The runner's tests never remove their temp directories.** Still true, still unfixed:
+  `/tmp` was cleared to zero and refilled with 3,252 `tack-runner-*` entries within minutes
+  of the wave running the suite. A `TempDir` guard in each helper is the fix.
+
+Step 5 (fixed waits) remains opportunistic and unstarted; the corrected count is 16, not 12.
