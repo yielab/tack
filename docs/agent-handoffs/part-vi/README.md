@@ -19,7 +19,7 @@ accepted by the user before Wave 15 opens. The story every doc reuses is §VI.0'
 | Wave | Cards | Parallel? | Needs | Base SHA |
 |---|---|---|---|---|
 | 14 | VI-A1 · VI-A2 · VI-A3 | all three | nothing | `8152df7` — dispatched 2026-09-03 |
-| 15 | VI-B1 → VI-B2 → (VI-B3 ∥ VI-B4) → VI-B5 | **partly** — B3 and B4 are parallel, everything else sequential | ADR 0061 accepted (2026-09-03, `VI-A2.md` amendments) | **B2 branches from the 2026-09-04 integration tip — pin it with `git rev-parse --short develop`, do not reuse a SHA from this row.** B1 was dispatched 2026-09-03 from `2958e9e`; — the 2026-09-03 planning commit; branch from the `develop` tip. Decision 1 refined 2026-09-03 (keychain first, file fallback) — B1's block below already matches |
+| 15 | VI-B1 → VI-B2 → (VI-B3 ∥ VI-B4) → VI-B5 | **partly** — B3 and B4 ran in parallel and integrated 2026-09-05 at `03df038`; B5 is sequential and next | ADR 0061 accepted (2026-09-03, `VI-A2.md` amendments) | **B2 branches from the 2026-09-04 integration tip — pin it with `git rev-parse --short develop`, do not reuse a SHA from this row.** B1 was dispatched 2026-09-03 from `2958e9e`; — the 2026-09-03 planning commit; branch from the `develop` tip. Decision 1 refined 2026-09-03 (keychain first, file fallback) — B1's block below already matches |
 | 16 | VI-C3 · VI-C4 first; then VI-C1; then VI-C2 | C3 ∥ C4 (may start during Wave 15); C1 after B2+B3; C2 after C3 | see each block | **C2, C3 and C4 integrated 2026-09-04.** C1 is the only one left and still needs B2 + B3; it branches from the Wave 15 integration SHA |
 | 17 | VI-D2 → VI-D1 | no | D2: C1, C2 and Part V's V-C2 landed; D1: everything | Wave 16 integration SHA |
 
@@ -44,6 +44,24 @@ accepted by the user before Wave 15 opens. The story every doc reuses is §VI.0'
    VI-C1 and for VI-D2 on `README.md`.
 4. Reap finished worktree targets — parallel builds fill `/home`
    (`du -sh /var/tmp/tack-agent-targets/*`).
+
+### What the 2026-09-05 parallel pair added
+
+**Two cards can share no file and still not compile together.** VI-B3 and VI-B4 had
+disjoint ownership, merged with no textual conflict, and each was green in its own
+worktree. The merge did not build: B4 changed a type B3 called, in a file B3 owned. A
+`git merge-tree` dry run says nothing about this — only building from the merge does.
+So the rule is not "check for conflicts before merging", it is **build the merge before
+trusting either report**, which is what the checklist below already says and what this
+pair is the concrete case for.
+
+**Ask a card for the grep it ran, not the number it got.** VI-B4's acceptance was a
+vendor-name grep returning zero, and it did return zero — over the two dispatch
+functions. Over the whole tree, splitting each file at its own `#[cfg(test)] mod tests`,
+two production sites remained, and one of them would have recorded an unobserved model
+as harness-reported the day a second gateway was added. A check that passes because it
+looks in the wrong place is worse than no check, because it also stops anyone looking
+again. When a card's acceptance is a command, run the command.
 
 ### Conflicts, after the 2026-09-04 integration
 
