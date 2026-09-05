@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
+echo "→ comments carry no board archaeology"
+./scripts/check-comments.sh
 echo "→ cargo fmt --all --check"
 cargo fmt --all --check
 
