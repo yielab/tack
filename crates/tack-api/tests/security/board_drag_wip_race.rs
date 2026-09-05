@@ -3,7 +3,7 @@
 //! write the new status as two separate, unlocked steps
 //! (`Repository::count_items_by_status` followed by a plain
 //! `Repository::update_item`), the same race
-//! `crates/tack-api/tests/wip_limit_race_test.rs` guards against on the
+//! `crates/tack-api/tests/security/wip_limit_race.rs` guards against on the
 //! dispatch path, but only on that one call site. This is the everyday
 //! path: a human dragging cards on the board, or any API client calling
 //! `PATCH /api/items/{id}` directly.
@@ -32,7 +32,7 @@ use tokio::sync::broadcast;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-// ─── Helpers (mirrors wip_limit_race_test.rs) ──────────────────────────────
+// ─── Helpers (mirrors wip_limit_race.rs) ───────────────────────────────────
 
 async fn app_with_state() -> (Router, AppState) {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");

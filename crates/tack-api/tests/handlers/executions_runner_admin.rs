@@ -1,10 +1,10 @@
 //! HTTP tests for `handlers/executions.rs` and `handlers/runner_admin.rs`,
 //! loaded via `#[path]` — global-router registration is proven separately
-//! (`c5_integration_test.rs`).
+//! (`production_router.rs`).
 
-#[path = "../src/handlers/executions.rs"]
+#[path = "../../src/handlers/executions.rs"]
 mod executions;
-#[path = "../src/handlers/runner_admin.rs"]
+#[path = "../../src/handlers/runner_admin.rs"]
 mod runner_admin;
 
 use axum::{

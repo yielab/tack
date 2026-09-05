@@ -9,8 +9,7 @@
 //! from real seeded data, project_type/item_type slicing, the rework-signal item-
 //! level correlation via `orch_events`, and the CSV/JSON export shapes.
 
-mod common;
-
+use crate::common;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
