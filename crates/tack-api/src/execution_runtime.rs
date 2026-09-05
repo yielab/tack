@@ -304,7 +304,7 @@ async fn wait_until_stopped(rx: &mut watch::Receiver<bool>) {
 /// file (no injected clock there either). Tests needing an "old" fixture
 /// backdate `created_at`/`expires_at` directly via SQL against real
 /// wall-clock `now()`, the same technique
-/// `f2_event_artifact_retention_test.rs` already uses.
+/// `crates/tack-db/tests/repository/event_artifact_retention.rs` already uses.
 #[allow(clippy::too_many_arguments)]
 fn spawn_artifact_and_decision_sweep(
     enabled: bool,
@@ -409,7 +409,7 @@ mod tests {
     /// function returns before ever touching `ArtifactStorage`/the
     /// filesystem — see `spawn_artifact_and_decision_sweep`'s own doc
     /// comment. Real on-disk behavior is proved separately in
-    /// `crates/tack-api/tests/f6d_execution_sweep_wiring_test.rs`.
+    /// `crates/tack-api/tests/wiring/execution_sweep.rs`.
     fn unused_storage_dir() -> String {
         "/tmp/tack-api-execution-runtime-test-unused-storage-dir".to_string()
     }

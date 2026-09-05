@@ -20,9 +20,8 @@
 //! - It carries real regression coverage that would need to be reproduced from
 //!   scratch under "deprecate": `docket_adapter_test.rs`, `docket_wire_contract_test.
 //!   rs` (per-method wire oracle), `docket_tick_contract_test.rs` (tick-level
-//!   request-sequence oracle), plus `orch_dispatch_test.rs`, `orch_reconciler_wiring_
-//!   test.rs`, `auto_dispatch_test.rs`, `sprint_dispatch_test.rs`,
-//!   `orch_approvals_test.rs`, and more in `tack-api`/`tack-db`.
+//!   request-sequence oracle), plus dispatch, reconciler-wiring, auto-dispatch,
+//!   sprint-dispatch, and approvals suites in `tack-api`, and more in `tack-db`.
 //! - "Export" (migrate `orch_*` data into the neutral `execution_requests`/
 //!   `execution_attempts` shape and drop the bridge) was considered and rejected:
 //!   docket's own capability snapshot (`DocketAdapter::capabilities`) reports
@@ -70,8 +69,8 @@
 //! `tack-api::handlers::executions` (`POST /api/executions`) does not check
 //! `orch_tasks` before creating a new request, so a caller can still create a
 //! runner-v1 request that collides with an item Docket already owns. A collision
-//! test (`crates/tack-api/tests/g1_dual_dispatch_test.rs`) documents — rather than
-//! hides — this open asymmetry.
+//! test (`crates/tack-api/tests/orchestration/dispatch/dual_scheduling.rs`)
+//! documents — rather than hides — this open asymmetry.
 //!
 //! # Provider-scoped ids and the normalized-attempt projection
 //!

@@ -39,19 +39,21 @@ impl Default for RetentionPolicy {
 // `spawn_artifact_and_decision_sweep` is the recurring caller, riding the
 // same `TACK_EXECUTION_RETENTION_*` schedule/gate as
 // `tack_orch::execution_retention`'s replay/event purge. Their own direct
-// tests live in this file's test module below; `f2_artifact_events_test.rs`
+// tests live in this file's test module below; `runner_protocol/artifact_events.rs`
 // exercises the HTTP upload/download surface instead, never these functions
-// directly. See `crates/tack-db/tests/f2_event_artifact_retention_test.rs`
+// directly. See `crates/tack-db/tests/repository/event_artifact_retention.rs`
 // for the functions this module calls.
 //
-// The `#[allow(dead_code)]` below exists because `f2_artifact_events_test.rs`
-// and `crates/tack-api/tests/c2_handlers_test.rs` both load this file via
-// `#[path]` (pulling in `runner_protocol.rs` and its submodules) without
+// The `#[allow(dead_code)]` below exists because `runner_protocol/artifact_events.rs`
+// and `runner_protocol/lifecycle.rs` each load an independent `#[path]` copy
+// of this file (pulling in `runner_protocol.rs` and its submodules) without
 // also loading `execution_runtime.rs`, which lives outside that `#[path]`
-// tree. Dead-code analysis is per compiled binary, so those two binaries
-// alone would otherwise flag every item below as unused even though the
-// real `tack-api` library (and every other test binary that links it
-// normally, e.g. `f6d_execution_sweep_wiring_test.rs`) has a live caller.
+// tree. Dead-code analysis follows the module graph, not the binary — the
+// two copies are distinct items even though both modules now live in the
+// same `runner_protocol` test binary — so each copy alone would otherwise
+// flag every item below as unused even though the real `tack-api` library
+// (and every other test binary that links it normally, e.g.
+// `wiring/execution_sweep.rs`) has a live caller.
 // The same `#[path]` duplication exists in `artifact_download.rs`'s own
 // module-level allow.
 #[allow(dead_code)]
