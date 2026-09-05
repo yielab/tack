@@ -12,7 +12,7 @@
 //! construction project's linear workflow rejecting an illegal `on_running`
 //! target, recording `status_map_rejected`, and leaving the item untouched.
 
-mod common;
+use crate::common;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};

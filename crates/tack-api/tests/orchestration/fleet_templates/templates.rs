@@ -12,7 +12,7 @@
 //! anywhere in this path — nothing here is gated, because nothing here does
 //! anything beyond storing a JSON blob.
 
-mod common;
+use crate::common;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};

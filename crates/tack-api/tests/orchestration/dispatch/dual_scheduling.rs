@@ -10,8 +10,6 @@
 //! against the production request path: every "writes nothing" claim below
 //! is backed by a direct row-count assertion, not just a status code.
 
-mod common;
-
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};

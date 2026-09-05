@@ -10,8 +10,6 @@
 //! for a registered control plane, observable via `reconciler_running` and
 //! `control_plane_count`, with repeated toggles never leaking a task.
 
-mod common;
-
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};

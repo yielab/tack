@@ -13,7 +13,7 @@
 //! rather than as one blanket value for the batch; and the dry-run's output
 //! matching a real run's order and skip set exactly.
 
-mod common;
+use crate::common;
 
 use std::time::{Duration, Instant};
 
