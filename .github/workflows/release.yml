@@ -10,6 +10,12 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Lets a card branch or a maintainer trigger a real run of the build/bundle
+  # jobs (e.g. to verify a change to this file) without pushing a version tag.
+  # `check-version` skips its tag/version match outside a tag push, and
+  # `release`/`container` refuse to run at all — a workflow_dispatch run
+  # never creates a GitHub Release or publishes a container image.
+  workflow_dispatch:
 
 # One run per tag — re-pushing a tag after a failed release (a real thing
 # that has happened) cancels the run it superseded instead of racing it.
@@ -45,6 +51,10 @@ jobs:
       - name: Verify versions match
         run: |
           set -euo pipefail
+          if [ "${{ github.ref_type }}" != "tag" ]; then
+            echo "Not a tag push (event: ${{ github.event_name }}) — skipping the tag/version check."
+            exit 0
+          fi
           CARGO_VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           echo "Cargo.toml: $CARGO_VERSION — tag: $TAG_VERSION"
@@ -134,6 +144,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # `GITHUB_REF_NAME` is a clean tag ("v0.1.0-beta.7") on every real release
+      # trigger (a tag push) but is the branch name on a `workflow_dispatch` dry
+      # run, e.g. "agent/vii-c1-release-bundles" — with a "/" in it, `mkdir`
+      # (below) and `New-Item` read that as a directory separator and fail or
+      # nest unexpectedly. Substituted only when a "/" is present, so a real
+      # tag's staged directory/asset names are byte-identical to before.
+      - name: Compute a filesystem-safe ref name for staging directories
+        run: echo "SAFE_REF_NAME=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_ENV"
+
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "20"
@@ -148,6 +167,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      # `targets:` above adds the target to the toolchain this action resolves and
+      # installs (named `stable`) — not to the toolchain `rust-toolchain.toml` pins,
+      # which rustup's directory-scoped override makes the one cargo actually uses
+      # once the repo is checked out. Unqualified, this adds it to whatever's active
+      # here, which is the pinned toolchain.
+      - name: Add the target to the pinned toolchain
+        run: rustup target add ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
@@ -177,7 +204,7 @@ jobs:
         if: matrix.archive == 'tar.gz'
         run: |
           set -euo pipefail
-          STAGE="tack-${GITHUB_REF_NAME}-${{ matrix.platform }}"
+          STAGE="tack-${SAFE_REF_NAME}-${{ matrix.platform }}"
           mkdir "$STAGE"
           cp "target/${{ matrix.target }}/release/tack" "$STAGE/"
           cp LICENSE README.md "$STAGE/"
@@ -200,7 +227,7 @@ jobs:
           tar czf "$STAGE.tar.gz" "$STAGE"
           echo "ASSET=$STAGE.tar.gz" >> "$GITHUB_ENV"
 
-          RUNNER_STAGE="tack-runner-${GITHUB_REF_NAME}-${{ matrix.platform }}"
+          RUNNER_STAGE="tack-runner-${SAFE_REF_NAME}-${{ matrix.platform }}"
           mkdir "$RUNNER_STAGE"
           cp "target/${{ matrix.target }}/release/tack-runner" "$RUNNER_STAGE/"
           cp LICENSE "$RUNNER_STAGE/"
@@ -231,7 +258,7 @@ jobs:
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
-          $stage = "tack-$env:GITHUB_REF_NAME-${{ matrix.platform }}"
+          $stage = "tack-$env:SAFE_REF_NAME-${{ matrix.platform }}"
           New-Item -ItemType Directory -Path $stage | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/tack.exe" $stage
           Copy-Item LICENSE, README.md $stage
@@ -257,7 +284,7 @@ jobs:
           Compress-Archive -Path $stage -DestinationPath "$stage.zip"
           "ASSET=$stage.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-          $runnerStage = "tack-runner-$env:GITHUB_REF_NAME-${{ matrix.platform }}"
+          $runnerStage = "tack-runner-$env:SAFE_REF_NAME-${{ matrix.platform }}"
           New-Item -ItemType Directory -Path $runnerStage | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/tack-runner.exe" $runnerStage
           Copy-Item LICENSE $runnerStage
@@ -289,9 +316,157 @@ jobs:
             ${{ env.RUNNER_ASSET }}
           if-no-files-found: error
 
+  # ADR 0062 decision 7: the app ships for all three desktop OSes next to the
+  # server/CLI archives `build` produces above, unsigned. `ci.yml`'s `desktop`
+  # job only checks the crate compiles (no system libs for bundling there);
+  # this one installs them and actually runs `cargo tauri build`.
+  desktop:
+    name: Desktop app bundle (${{ matrix.platform }})
+    needs: check-version
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: desktop-linux
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
+          - platform: desktop-macos-aarch64
+            os: macos-latest
+            target: aarch64-apple-darwin
+            bundles: dmg
+          - platform: desktop-macos-x86_64
+            os: macos-latest
+            target: x86_64-apple-darwin
+            bundles: dmg
+          - platform: desktop-windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: msi
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        run: |
+          npm --prefix frontend ci
+          npm --prefix frontend run build
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # `targets:` above adds the target to the toolchain this action resolves and
+      # installs (named `stable`) — not to the toolchain `rust-toolchain.toml` pins,
+      # which rustup's directory-scoped override makes the one cargo actually uses
+      # once the repo is checked out. Unqualified, this adds it to whatever's active
+      # here, which is the pinned toolchain.
+      - name: Add the target to the pinned toolchain
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: |
+            .
+            crates/tack-desktop
+          key: ${{ matrix.platform }}
+
+      # Same packages as ci.yml's `desktop` job, on the same runner image the
+      # dispatch checklist verified them against (docs/agent-handoffs/part-vii/README.md).
+      - name: Install Tauri's Linux system dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libxdo-dev librsvg2-dev
+
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --version '^2' --locked
+
+      - name: Build tack sidecar
+        run: cargo build --release --target ${{ matrix.target }} -p tack-cli --features embed-spa
+
+      # Tauri's `externalBin` resolves `binaries/tack` (tauri.bundle.conf.json)
+      # to `binaries/tack-<target-triple>`, `.exe`-suffixed on Windows.
+      - name: Stage sidecar for Tauri externalBin
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p crates/tack-desktop/binaries
+          EXT=""
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then EXT=".exe"; fi
+          cp "target/${{ matrix.target }}/release/tack$EXT" \
+             "crates/tack-desktop/binaries/tack-${{ matrix.target }}$EXT"
+
+      # MSI's ProductVersion is numeric-only (major.minor.patch.build, each field
+      # capped, per WixConfig.version — https://v2.tauri.app/reference/config/#wixconfig)
+      # and the workspace version is `0.1.0-beta.7` — a non-numeric prerelease
+      # identifier, so Tauri's own major.minor.patch fallback derivation rejects it.
+      # `bundle.windows.wix.version` overrides just the MSI installer's internal
+      # version; `tauri.conf.json`'s own `version` (shown everywhere else — the CLI,
+      # the archives, the in-app version) is never touched. The prerelease counter
+      # becomes the build field (`beta.7` -> `.7`) so beta releases keep a strictly
+      # increasing ProductVersion, which Windows Installer needs to recognize an
+      # upgrade; a version with no prerelease passes through unchanged.
+      - name: Set the MSI ProductVersion (bundle.windows.wix.version)
+        if: matrix.os == 'windows-latest'
+        working-directory: crates/tack-desktop
+        run: |
+          set -euo pipefail
+          WORKSPACE_VERSION=$(grep -m1 '^version' ../../Cargo.toml | cut -d'"' -f2)
+          BASE="${WORKSPACE_VERSION%%-*}"
+          if [ "$BASE" != "$WORKSPACE_VERSION" ]; then
+            PRE="${WORKSPACE_VERSION#*-}"
+            BUILD_NUM="${PRE##*.}"
+            case "$BUILD_NUM" in
+              ''|*[!0-9]*)
+                echo "Prerelease '$PRE' has no trailing numeric field — refusing to guess an MSI ProductVersion for it." >&2
+                exit 1
+                ;;
+            esac
+            WIX_VERSION="${BASE}.${BUILD_NUM}"
+          else
+            WIX_VERSION="$BASE"
+          fi
+          echo "Workspace version $WORKSPACE_VERSION -> MSI ProductVersion $WIX_VERSION"
+          jq --arg v "$WIX_VERSION" '.bundle.windows.wix.version = $v' tauri.bundle.conf.json > tauri.bundle.conf.json.tmp
+          mv tauri.bundle.conf.json.tmp tauri.bundle.conf.json
+
+      - name: cargo tauri build
+        working-directory: crates/tack-desktop
+        run: |
+          cargo tauri build --config tauri.bundle.conf.json \
+            --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+      - name: Stage bundle output
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist-desktop
+          find crates/tack-desktop/target/${{ matrix.target }}/release/bundle -type f \
+            \( -name '*.deb' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.msi' \) \
+            -exec cp {} dist-desktop/ \;
+          ls -la dist-desktop
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ matrix.platform }}
+          path: dist-desktop/*
+          if-no-files-found: error
+
   release:
     name: Create GitHub Release
-    needs: [test, sbom, build]
+    needs: [test, sbom, build, desktop]
+    # Never on a workflow_dispatch run (used to test-drive this file on a
+    # branch) — only a real version-tag push creates a release.
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -310,7 +485,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-          pattern: "{linux-x86_64,macos-aarch64,macos-x86_64,windows-x86_64,sbom}"
+          pattern: "{linux-x86_64,macos-aarch64,macos-x86_64,windows-x86_64,desktop-linux,desktop-macos-aarch64,desktop-macos-x86_64,desktop-windows,sbom}"
 
       - name: Generate SHA256SUMS
         working-directory: dist
@@ -336,6 +511,19 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+          # ADR 0062 decision 7: desktop bundles are unsigned (signing needs a
+          # paid certificate, a separate decision) — `body` is a fixed prefix,
+          # softprops/action-gh-release appends the auto-generated notes after it.
+          body: |
+            The desktop app (`.deb`, `.AppImage`, `.dmg`, `.msi` below) is unsigned:
+            signing certificates are a separate, not-yet-made decision. Two
+            one-time warnings to expect on first launch:
+
+            - **macOS:** Gatekeeper blocks the unsigned app on a normal double-click.
+              Right-click (or Control-click) the app → **Open** → **Open** in the
+              dialog. Only needed once.
+            - **Windows:** SmartScreen will warn about an unrecognized app. Click
+              **More info** → **Run anyway**. Only needed once.
           # Tags with a pre-release suffix (v0.1.0-beta.7) are marked as
           # GitHub pre-releases and excluded from /releases/latest.
           prerelease: ${{ contains(github.ref_name, '-') }}
@@ -343,6 +531,9 @@ jobs:
   container:
     name: Publish container image (ghcr.io)
     needs: [check-version, test]
+    # Never on a workflow_dispatch run — only a real version-tag push
+    # publishes an image.
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

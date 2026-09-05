@@ -3,9 +3,9 @@
 //! not emit click events on Linux, so every action lives in the menu —
 //! nothing here depends on clicking the icon itself.
 
+use tauri::AppHandle;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::AppHandle;
 use tauri_plugin_autostart::ManagerExt;
 
 use crate::lifecycle;
@@ -19,7 +19,8 @@ const MENU_ID_QUIT: &str = "quit";
 /// exist yet. Disabled and labeled
 /// accordingly rather than a second switch guessing at a shape that isn't
 /// there yet.
-const AGENT_EXECUTION_LABEL: &str = "Agent execution: unknown — the switch arrives with the Agents page";
+const AGENT_EXECUTION_LABEL: &str =
+    "Agent execution: unknown — the switch arrives with the Agents page";
 
 /// Builds the tray icon and attaches its menu. Call once from `setup`, after
 /// [`ensure_launch_at_login_default_on_first_run`] so the checkbox's initial
