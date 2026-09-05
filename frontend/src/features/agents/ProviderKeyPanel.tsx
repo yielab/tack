@@ -30,9 +30,11 @@ function catalogText(catalog: CatalogSnapshot): string {
  * One write-only field — the Vercel AI Gateway key (ADR 0061 decision 2).
  * The value is never round-tripped: `PUT /api/local-runner/secrets/{name}`
  * answers `204` with no body, and `GET .../secrets` reports only the name
- * and when it was set. This build has exactly one provider, so there is
- * nothing to pick — every call here hardcodes
- * `VERCEL_AI_GATEWAY_SECRET_NAME`.
+ * and when it was set. This panel is that one provider's field and nothing
+ * more — every call here names `VERCEL_AI_GATEWAY_SECRET_NAME`, and the
+ * catalog line below it is that provider's own. The runner can hold several
+ * configured providers; offering a choice between them needs a screen built
+ * for it and a response shaped per provider, neither of which is here.
  *
  * Setting a key also re-probes the catalog server-side
  * (`put_local_runner_secret`'s own doc comment,

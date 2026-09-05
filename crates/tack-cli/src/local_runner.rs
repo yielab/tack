@@ -236,21 +236,30 @@ fn save_secret_meta(state_dir: &Path, meta: &HashMap<String, DateTime<Utc>>) {
     }
 }
 
-fn map_catalog_status(status: tack_runner::provider::CatalogStatus) -> CatalogSnapshot {
+/// Narrows the per-provider catalog map to the single status this response
+/// carries. The panel it feeds is one provider's key field, so the line it
+/// renders is that provider's own catalog; no entry for it reads the same as
+/// an unconfigured one, which is what it is. A screen that offers more than
+/// one provider needs a response shaped per provider, not this one.
+///
+/// The per-model price and context-window counts stop here on purpose:
+/// putting them in this response puts them on the wire, and the capability
+/// type has nowhere to carry per-model metadata yet.
+fn map_catalog_status(status: Option<&tack_runner::provider::CatalogStatus>) -> CatalogSnapshot {
+    use tack_runner::provider::CatalogStatus;
     match status {
-        tack_runner::provider::CatalogStatus::NotConfigured => CatalogSnapshot::NotConfigured,
-        tack_runner::provider::CatalogStatus::SecretUnresolved => CatalogSnapshot::SecretUnresolved,
-        tack_runner::provider::CatalogStatus::Unreachable { status } => {
-            CatalogSnapshot::Unreachable {
-                http_status: status,
-            }
-        }
-        tack_runner::provider::CatalogStatus::Configured {
+        None | Some(CatalogStatus::NotConfigured) => CatalogSnapshot::NotConfigured,
+        Some(CatalogStatus::SecretUnresolved) => CatalogSnapshot::SecretUnresolved,
+        Some(CatalogStatus::Unreachable { status }) => CatalogSnapshot::Unreachable {
+            http_status: *status,
+        },
+        Some(CatalogStatus::Configured {
             model_count,
             checked_at,
-        } => CatalogSnapshot::Configured {
-            model_count,
-            checked_at,
+            ..
+        }) => CatalogSnapshot::Configured {
+            model_count: *model_count,
+            checked_at: *checked_at,
         },
     }
 }
@@ -445,7 +454,11 @@ impl LocalRunnerControl for EmbeddedRunnerControl {
             &state.runner_config.providers,
         )
         .await;
-        map_catalog_status(report.provider_catalog)
+        map_catalog_status(
+            report
+                .provider_catalog
+                .get(tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY),
+        )
     }
 }
 
@@ -693,10 +706,9 @@ mod tests {
         let dir = unique_temp_dir("catalog-disabled");
         let control = control_with_state_dir(dir.path());
 
-        // `RunnerConfig::defaults()` seeds the Vercel provider disabled —
-        // `attach_catalog` returns before any network I/O in that case (see
-        // `provider.rs`), which is exactly what makes this assertion safe to
-        // run without network access.
+        // `RunnerConfig::defaults()` seeds the Vercel provider disabled, and
+        // a disabled entry is skipped before any network I/O — which is what
+        // makes this assertion safe to run with no network access.
         let catalog = control.catalog().await;
 
         assert!(matches!(catalog, CatalogSnapshot::NotConfigured));
