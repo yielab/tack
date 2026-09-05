@@ -55,6 +55,8 @@ in that order):
 | `TACK_RUNNER_SECRET_VALUE` | Value `tack runner secret set` stores; when unset it reads the value from stdin instead. Never a command-line argument, which would be visible in `ps` and shell history. Read once, not persisted by the variable — the store keeps it (OS keychain, or an owner-only file where none answers) |
 | `TACK_RUNNER_PROVIDER_VERCEL_AI_GATEWAY_ENABLED` | Turns on the `vercel_ai_gateway` provider endpoint (`[provider.vercel_ai_gateway]` in the TOML config). `1` or `true` (case-insensitive) enable it; default `false`. Off by default — this points a harness at a network endpoint and needs a credential, so it is a deliberate opt-in, never a fallback the runner takes on its own |
 | `TACK_RUNNER_PROVIDER_VERCEL_AI_GATEWAY_SECRET` | Secret-store entry name the provider's credential is resolved from. Default `vercel-ai-gateway/default` — `SecretStore::resolve` does not append `/default` on its own, so a bare `vercel-ai-gateway` here resolves nothing |
+| `TACK_RUNNER_PROVIDER_ANTHROPIC_ENABLED` | Turns on Anthropic's own API as a provider endpoint (`[provider.anthropic]` in the TOML config) — a runner-held key pointed at `api.anthropic.com` directly, distinct from claude-code's own subscription login. Same on/off convention and off-by-default posture as the Vercel entry above |
+| `TACK_RUNNER_PROVIDER_ANTHROPIC_SECRET` | Secret-store entry name this provider's credential is resolved from. Default `anthropic/default` |
 
 Runner credentials are redacted in every log, `Debug` impl and error — the redaction is
 structural (`RunnerCredential`'s `Debug`/`Display` are hardcoded to `[REDACTED]`), not

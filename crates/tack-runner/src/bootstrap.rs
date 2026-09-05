@@ -144,12 +144,13 @@ pub struct DiscoveryReport {
     /// Which backend `secrets` answered from — `tack runner doctor` prints
     /// this so a file is never mistaken for a keychain.
     pub secret_backend: crate::secrets::SecretBackendKind,
-    /// What asking the configured provider for its model catalog produced.
-    /// The catalog itself, when one was fetched, already lives inside
-    /// `capabilities` (merged into each eligible harness's
-    /// `model_combinations`) — this field is the typed reason for every
-    /// other outcome, for `tack runner doctor`'s own rendering.
-    pub provider_catalog: crate::provider::CatalogStatus,
+    /// What asking each configured provider for its model catalog
+    /// produced, keyed by `Provider::config_key`. Every entry a fetch
+    /// actually reached already lives inside `capabilities` (merged into
+    /// each eligible harness's `model_combinations`) — this field is the
+    /// typed reason for every other outcome, for `tack runner doctor`'s own
+    /// rendering.
+    pub provider_catalog: BTreeMap<String, crate::provider::CatalogStatus>,
 }
 
 /// Runs the exact discovery/capability-probing step [`build_runtime`]
