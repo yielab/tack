@@ -3,14 +3,15 @@
 //!
 //! Loads `handlers/runner_protocol.rs` (and, through it, its own
 //! `artifact_storage`/`retention`/`artifact_download` submodules) the same
-//! way `c2_handlers_test.rs` does — via `#[path]`.
+//! way `lifecycle.rs` does — via `#[path]`, independently of that file's
+//! own copy (see the `#[allow(clippy::duplicate_mod)]` below).
 //! `artifact_download::routes(...)` is proven here as its own,
 //! separately-constructed local router (never merged with the runner-only
 //! `runner_protocol::routes(...)` router), isolating this file's
 //! fencing/immutability/path-safety/redaction claims from the production
 //! router's own auth and mounting. That route is also mounted in the real
 //! production router (`router.rs#operator_execution_routes`) and proven end
-//! to end by `f6a_artifact_wiring_test.rs`.
+//! to end by `artifact.rs` (the `wiring` binary).
 //!
 //! Repository-level atomicity/retention proofs (forced insert failure,
 //! bounded-batch purge) live in
@@ -21,10 +22,16 @@
 //! real fencing/immutability/path-safety behavior end to end, and log
 //! redaction over a real captured `tracing` subscriber.
 
-#[path = "../src/handlers/runner_protocol.rs"]
+// `lifecycle`'s own copy of this same `#[path]` load is a second,
+// independent module tree over the identical file — allowed deliberately,
+// see that module's own comment on its copy.
+#[allow(clippy::duplicate_mod)]
+#[path = "../../src/handlers/runner_protocol.rs"]
 mod runner_protocol;
 
 use std::sync::{Arc, Mutex};
+
+use crate::log_capture::{CaptureGuard, ensure_global_log_capture_installed};
 
 use axum::{
     Router,
@@ -71,9 +78,8 @@ fn temp_storage_root(label: &str) -> std::path::PathBuf {
 
 async fn setup() -> (Router, Repository, FakeClock, String, std::path::PathBuf) {
     // Must run before any handler code in this binary executes — see
-    // `ensure_global_log_capture_installed`'s own doc comment (mirroring
-    // `c2_handlers_test.rs`'s identical rationale for the identical
-    // `tracing` interest-cache race).
+    // `log_capture.rs`'s own doc comment for the `tracing` interest-cache
+    // race this closes.
     ensure_global_log_capture_installed();
     let pool = init_pool("sqlite::memory:").await.expect("pool");
     migrations::run_all(&pool).await.expect("migrations");
@@ -1042,74 +1048,13 @@ fn hex_encode(value: &str) -> String {
 // ---------------------------------------------------------------------
 // 9. Redaction: event payloads and artifact content never reach logs.
 //
-// Mirrors `c2_handlers_test.rs`'s `logs_never_contain_raw_credentials_only_ids`
+// Mirrors `lifecycle.rs`'s `logs_never_contain_raw_credentials_only_ids`
 // rig exactly (a real, process-global `tracing_subscriber::fmt` subscriber,
 // captured per-test via a thread-local so parallel tests in this binary
-// cannot see each other's output) — see that test's own extensive comment
-// for why a *global* default subscriber, not a thread-local `set_default`,
-// is what actually closes the race. Reproduced here rather than shared
-// because each integration-test file is its own compiled binary; a `tracing`
-// global default is process-wide, so two files can't share the same guard.
+// cannot see each other's output) — see `log_capture.rs`'s doc comment for
+// why a *global* default subscriber, not a thread-local `set_default`, is
+// what actually closes the race.
 // ---------------------------------------------------------------------
-
-thread_local! {
-    static LOG_CAPTURE: std::cell::RefCell<Option<Arc<Mutex<Vec<u8>>>>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-static GLOBAL_LOG_CAPTURE_INIT: std::sync::Once = std::sync::Once::new();
-
-fn ensure_global_log_capture_installed() {
-    GLOBAL_LOG_CAPTURE_INIT.call_once(|| {
-        let subscriber = tracing_subscriber::fmt()
-            .with_writer(GlobalLogWriter)
-            .with_max_level(tracing::Level::DEBUG)
-            .finish();
-        tracing::subscriber::set_global_default(subscriber).expect(
-            "GLOBAL_LOG_CAPTURE_INIT guards the only global tracing subscriber this binary ever installs",
-        );
-    });
-}
-
-struct GlobalLogWriter;
-
-impl std::io::Write for GlobalLogWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        LOG_CAPTURE.with(|cell| {
-            if let Some(buffer) = cell.borrow().as_ref() {
-                buffer.lock().unwrap().extend_from_slice(buf);
-            }
-        });
-        Ok(buf.len())
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for GlobalLogWriter {
-    type Writer = GlobalLogWriter;
-    fn make_writer(&'a self) -> Self::Writer {
-        GlobalLogWriter
-    }
-}
-
-struct CaptureGuard;
-
-impl CaptureGuard {
-    fn start() -> (Self, Arc<Mutex<Vec<u8>>>) {
-        ensure_global_log_capture_installed();
-        let buffer = Arc::new(Mutex::new(Vec::new()));
-        LOG_CAPTURE.with(|cell| *cell.borrow_mut() = Some(buffer.clone()));
-        (Self, buffer)
-    }
-}
-
-impl Drop for CaptureGuard {
-    fn drop(&mut self) {
-        LOG_CAPTURE.with(|cell| *cell.borrow_mut() = None);
-    }
-}
 
 /// Distinctive markers unlikely to appear anywhere in genuine log
 /// scaffolding (ids, status words, etc.), so their absence from captured

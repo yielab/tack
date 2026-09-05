@@ -1,10 +1,17 @@
-//! Runner-protocol handler HTTP tests.
+//! Runner-protocol lifecycle over HTTP: enroll, refresh, claim, heartbeat,
+//! fencing, events, completion, recovery, and the operator/runner
+//! auth non-substitution proof.
 //!
 //! Loads `handlers/runner_protocol.rs` the same way `c1_handlers_test.rs`
 //! loads its own handlers: via `#[path]`. `runner_protocol.rs`'s own
 //! `mod runner_auth;` then resolves relative to that file's path
 //! (`handlers/runner_protocol/runner_auth.rs`), which is what keeps the
 //! auth module unregistered in `handlers.rs` while still compiling here.
+//! `artifact_events` (the sibling module in this binary) loads the same
+//! product file again under its own module path rather than sharing this
+//! one — each keeps its own directly-constructed router, matching the two
+//! files' own separate history before this binary merged them; see the
+//! `#[allow(clippy::duplicate_mod)]` below.
 //!
 //! `executions.rs` is loaded read-only, the same technique its own test
 //! already uses on itself, so the operator/runner auth
@@ -14,13 +21,22 @@
 //! test does not need, and pulling it into this binary would make this
 //! file's compilation depend on runner_admin.rs's own edits.)
 
-#[path = "../src/handlers/runner_protocol.rs"]
+// `artifact_events`'s own copy of this same `#[path]` load is a second,
+// independent module tree over the identical file — clippy's default
+// lint set forbids that within one crate. Allowed deliberately: collapsing
+// the two into one shared module would also collapse `runner_protocol.rs`'s
+// own colocated unit tests from two independent copies into one, changing
+// this binary's test count.
+#[allow(clippy::duplicate_mod)]
+#[path = "../../src/handlers/runner_protocol.rs"]
 mod runner_protocol;
 
-#[path = "../src/handlers/executions.rs"]
+#[path = "../../src/handlers/executions.rs"]
 mod executions;
 
 use std::sync::{Arc, Mutex};
+
+use crate::log_capture::{CaptureGuard, ensure_global_log_capture_installed};
 
 use axum::{
     Router,
@@ -77,12 +93,11 @@ impl ExecutionClock for FakeClock {
 // ---------------------------------------------------------------------
 
 async fn setup() -> (Router, Repository, FakeClock, String) {
-    // Must run before anything else in every test (see
-    // `ensure_global_log_capture_installed`'s doc comment, test group 8,
-    // below): it closes the race window between this file's tests by making
-    // sure no test's HTTP request can reach production handler code before
-    // the one global `tracing` subscriber this binary ever installs is in
-    // place.
+    // Must run before anything else in every test (see `log_capture.rs`'s
+    // doc comment): it closes the race window between this binary's tests
+    // by making sure no test's HTTP request can reach production handler
+    // code before the one global `tracing` subscriber this binary ever
+    // installs is in place.
     ensure_global_log_capture_installed();
     let pool = init_pool("sqlite::memory:").await.expect("pool");
     migrations::run_all(&pool).await.expect("migrations");
@@ -1289,113 +1304,11 @@ async fn recovery_observation_safe_requeue_requeues_the_request_and_replays_idem
 // ---------------------------------------------------------------------
 // 8. Logs carry ids only.
 //
-// This is the only test in the file that captures `tracing` output, and it
-// deliberately does *not* use a bare `tracing::subscriber::set_default`
-// thread-local override. That was tried first and is flaky under cargo's
-// default parallel execution (~1 in 10):
-// `tracing`'s callsite-interest cache is process-global, not per-subscriber.
-// The *first* time any thread in this binary hits a given `event!` callsite
-// (e.g. the `tracing::info!(runner_id = ..., "runner enrolled")` in
-// `runner_protocol::enroll`, which every other test that calls `POST
-// /enroll` also hits), the `Interest` returned by whatever subscriber is
-// active *on that thread at that exact moment* is cached forever for that
-// callsite — a thread-local override active on a *different* thread is never
-// consulted. Every other test in this file installs no subscriber at all, so
-// if one of them is the first to touch that callsite (a near coin-flip under
-// parallel execution), the interest gets cached as `never` against the
-// ambient no-op dispatcher, and this test's own `set_default` guard can no
-// longer make that callsite fire for it — the capture buffer stays silently
-// empty.
-//
-// The fix: install a single, permanent, process-global default subscriber
-// (`ensure_global_log_capture_installed`, called from `setup()`, so every
-// test in this file — including this one — is guaranteed to run it before
-// its first HTTP request). Once a global default exists, `tracing` never
-// falls back to the no-op dispatcher again on *any* thread, so no sibling
-// test can poison a callsite's cached interest; every first-touch, from any
-// thread, resolves against this real subscriber. Per-test isolation is then
-// just a thread-local flag (`LOG_CAPTURE`) the global writer consults to
-// decide whether to keep what it's given — safe here specifically because
-// every `#[tokio::test]` in this file runs its whole async body on one
-// dedicated OS thread (default current-thread runtime flavor), so the flag
-// never needs to survive a cross-thread hop mid-`.await`. The subscriber
-// itself is still real `tracing_subscriber::fmt` formatting real output from
-// the production handlers — nothing here is mocked or hand-constructed.
+// This is the only test in this module that captures `tracing` output.
+// See `log_capture.rs` for the process-global subscriber this relies on,
+// and why a global default (not a thread-local `set_default`) is what
+// actually makes capture reliable when many tests share this binary.
 // ---------------------------------------------------------------------
-
-thread_local! {
-    /// Set only by `CaptureGuard::start`, and only on the calling test's own
-    /// thread. `None` on every other thread in the binary (i.e. for the
-    /// other twelve tests here), so the shared global writer below silently
-    /// discards everything it's given for them.
-    static LOG_CAPTURE: std::cell::RefCell<Option<Arc<Mutex<Vec<u8>>>>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-static GLOBAL_LOG_CAPTURE_INIT: std::sync::Once = std::sync::Once::new();
-
-/// Installs the one `tracing` subscriber this test binary ever installs, as
-/// the process-wide global default — exactly once, idempotently. See the
-/// comment on test group 8 above for why a global default (rather than a
-/// thread-local `set_default`) is what actually closes the race, not just
-/// narrows it.
-fn ensure_global_log_capture_installed() {
-    GLOBAL_LOG_CAPTURE_INIT.call_once(|| {
-        let subscriber = tracing_subscriber::fmt()
-            .with_writer(GlobalLogWriter)
-            .with_max_level(tracing::Level::DEBUG)
-            .finish();
-        tracing::subscriber::set_global_default(subscriber).expect(
-            "GLOBAL_LOG_CAPTURE_INIT guards the only global tracing subscriber \
-             this binary ever installs",
-        );
-    });
-}
-
-/// Zero-sized `MakeWriter` for the global subscriber. Every event it's given
-/// is routed through the calling thread's `LOG_CAPTURE` slot, so writes from
-/// the eleven tests that never call `CaptureGuard::start` go nowhere.
-struct GlobalLogWriter;
-
-impl std::io::Write for GlobalLogWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        LOG_CAPTURE.with(|cell| {
-            if let Some(buffer) = cell.borrow().as_ref() {
-                buffer.lock().unwrap().extend_from_slice(buf);
-            }
-        });
-        Ok(buf.len())
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for GlobalLogWriter {
-    type Writer = GlobalLogWriter;
-    fn make_writer(&'a self) -> Self::Writer {
-        GlobalLogWriter
-    }
-}
-
-/// RAII scope: while alive, real `tracing` output from this thread is
-/// collected into the returned buffer instead of being discarded.
-struct CaptureGuard;
-
-impl CaptureGuard {
-    fn start() -> (Self, Arc<Mutex<Vec<u8>>>) {
-        ensure_global_log_capture_installed();
-        let buffer = Arc::new(Mutex::new(Vec::new()));
-        LOG_CAPTURE.with(|cell| *cell.borrow_mut() = Some(buffer.clone()));
-        (Self, buffer)
-    }
-}
-
-impl Drop for CaptureGuard {
-    fn drop(&mut self) {
-        LOG_CAPTURE.with(|cell| *cell.borrow_mut() = None);
-    }
-}
 
 #[tokio::test]
 async fn logs_never_contain_raw_credentials_only_ids() {
