@@ -280,8 +280,8 @@ In this card, closing the window quits (B2 makes it hide).
 the window terminates the child (assert no process, bounded). Attach: start `tack serve`
 by hand, launch the app → attached, quit → the hand-started server still answers. §VII.1
 rules 1–2 asserted by tests that read `cargo metadata` / `cargo tree`. Single instance is
-not tested here — it is B2's. `cargo test -p
-tack-desktop` runs the supervisor against a fake sidecar (a script answering `/api/health`)
+not tested here — it is B2's. `cargo nextest run --manifest-path
+crates/tack-desktop/Cargo.toml` runs the supervisor against a fake sidecar (a script answering `/api/health`)
 so CI needs no webview.
 
 ---
@@ -1904,7 +1904,7 @@ execution domain, and separating them is the work. It is explicitly **not this c
 
 **Acceptance:** the handoff carries measured numbers, not adjectives. The ADR names the
 option chosen and both rejected, with the cost of each. If gating shipped: a default build
-exposes no docket concept in the UI, the CLI or the config table; `cargo test --workspace` is
+exposes no docket concept in the UI, the CLI or the config table; `cargo nextest run --workspace` is
 green in **both** feature states, with the test counts for each recorded; and no migration was
 altered, proven by the migration list being unchanged.
 
@@ -2214,7 +2214,7 @@ claims, runs and completes against a live `tack serve` exactly as before, and
 `./scripts/smoke.sh` (fake mode) reaches the same steps with the same outcomes as on the
 base SHA, recorded side by side in the handoff. The new entry point is callable from
 outside the crate with an injected shutdown, proven by a test that starts it and stops it
-without a process signal. `cargo test -p tack-runner` is green with no test deleted.
+without a process signal. `cargo nextest run --workspace -E 'package(tack-runner)'` is green with no test deleted.
 
 ### IV-A2 — Server readiness and bound-address seam
 

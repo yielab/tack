@@ -61,8 +61,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - name: Install nextest (prebuilt)
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
+        with:
+          tool: nextest
       - name: Test
-        run: cargo test --workspace
+        run: cargo nextest run --workspace --profile ci
 
   sbom:
     name: Software Bill of Materials (CycloneDX)

@@ -146,7 +146,7 @@ n=$(grep -n "### VII-<ID> " TODO.md|cut -d: -f1); sed -n "${n},$((n+45))p" TODO.
 
 **Do not read:** `crates/tack-api/**`, the frontend, any Part VI handoff.
 
-**Gate:** `CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/VII-A2 cargo test -p tack-cli`;
+**Gate:** `CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/VII-A2 cargo nextest run --workspace -E 'package(tack-cli)'`;
 then the live systemd proof from the card's Acceptance, on this machine, with every
 command and its output in the handoff; then `/gate cli`.
 
@@ -184,7 +184,7 @@ that output, and finish. Nothing in this card can be proven without it.
 **Do not read:** any handler beyond health, the frontend, `docs/openapi.json`, Part VI's
 handoffs, any Tauri page not named (record it in Context spent if you had to).
 
-**Gate:** `CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/VII-B1 cargo test -p tack-desktop`
+**Gate:** `CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/VII-B1 cargo nextest run --manifest-path crates/tack-desktop/Cargo.toml`
 (fake-sidecar tests); `cargo tree -p tack-cli -e normal | grep -ci "tauri\|webkit\|gtk"`
 → `0`; `cargo tauri build` from `crates/tack-desktop` producing `.deb` and `.AppImage`;
 the live launch, close, and attach proofs from the card's Acceptance with `pgrep -af tack`
@@ -224,7 +224,7 @@ $XDG_SESSION_TYPE`, retry once with `GDK_BACKEND=x11`, record both).
 
 **Do not read:** the frontend, any adapter, Part VI's handoffs.
 
-**Gate:** `cargo test -p tack-desktop`; the scripted daemon proof (the card's Acceptance)
+**Gate:** `cargo nextest run --manifest-path crates/tack-desktop/Cargo.toml`; the scripted daemon proof (the card's Acceptance)
 with observations from a second shell recorded verbatim; the autostart file assertions;
 `cargo tauri build` still succeeds.
 
@@ -254,7 +254,7 @@ environment and prove every action through the window instead; say the tray is
 
 **Do not read:** any handler beyond health, the frontend, adapters.
 
-**Gate:** `cargo test -p tack-desktop` (path computation per OS from the crate's own
+**Gate:** `cargo nextest run --manifest-path crates/tack-desktop/Cargo.toml` (path computation per OS from the crate's own
 `cfg`, the settings file, the version comparison against a stubbed fake sidecar); the live
 fresh-user proof on this machine (a new Unix user, or a wiped `XDG_DATA_HOME` pointed at
 a temp dir — say which); the override proof by item count; `cargo tauri build` still

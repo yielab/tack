@@ -48,10 +48,10 @@ cargo build                                # whole workspace compiles
 cargo run -p tack-cli -- serve             # server + web UI at http://127.0.0.1:3210
 cargo run -p tack-runner -- --help         # the runner is a SEPARATE binary from `tack`
 
-cargo test --workspace                     # everything; scope with -p <crate> first
-cargo test -p tack-api --test wave2_gate       # runner lifecycle on the real router
-cargo test -p tack-orch --test runner_contract # byte-pins every runner-v1 fixture
-cargo test -p tack-api --test openapi_contract # spec drift gate
+cargo nextest run --workspace              # the test runner (.config/nextest.toml): ~15 s, prints failures + one summary line
+cargo nextest run --workspace -E 'binary(wave2_gate)'        # select with a filterset — never `-p`: it builds a second copy of every crate
+cargo nextest run --workspace -E 'binary(runner_contract)'   # byte-pins every runner-v1 fixture
+cargo nextest run --workspace -E 'binary(openapi_contract)'  # spec drift gate
 
 cd frontend && npm run dev                 # http://localhost:5173, proxies /api (start API first)
 cd frontend && npm run type-check && npx vitest run
@@ -59,7 +59,9 @@ make e2e                                   # Playwright (make e2e-install once)
 make audit                                 # cargo audit + npm audit
 ```
 
-Live-harness runner tests are `--ignored` (Claude Code's is billed — run deliberately).
+Live-harness runner tests are `#[ignore]` (Claude Code's is billed — run deliberately with
+`--run-ignored ignored-only`). Never `cargo test --workspace`: it prints ~84k tokens for a
+green run where nextest prints ~150.
 Release profile optimizes for size (`lto`, `opt-level="z"`) and compiles slowly — use
 `--release` sparingly. Full testing guide: `docs/TESTING.md`.
 
@@ -125,8 +127,8 @@ notes (workflow validation, auto-status propagation, WebSocket events, attachmen
 - **`docs/contracts/runner-v1/` fixtures outrank any Rust/TS type.** Fixture edits update
   the pin table in `crates/tack-orch/tests/runner_contract.rs` in the same change.
 - **`docs/openapi.json` and `frontend/src/shared/api/schema.gen.ts` are generated** —
-  never hand-edit; regenerate via `UPDATE_OPENAPI=1 cargo test -p tack-api --test
-  openapi_contract` then `cd frontend && npm run gen:api`, or `./scripts/regen-generated.sh`
+  never hand-edit; regenerate via `UPDATE_OPENAPI=1 cargo nextest run --workspace -E
+  'binary(openapi_contract)'` then `cd frontend && npm run gen:api`, or `./scripts/regen-generated.sh`
   for those plus the lockfiles. Never hand-**merge** them either: `.gitattributes` routes
   them through the `tack-generated` driver (`./scripts/setup-git.sh` registers it) and
   `post-merge` regenerates. After merging several branches, regenerate once at the end

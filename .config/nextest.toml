@@ -1,0 +1,40 @@
+# nextest is this repository's test runner: `cargo nextest run --workspace`.
+# Its output is failures plus a one-line summary, so a green run costs whoever
+# reads it ~150 tokens instead of the ~84k that `cargo test` prints for the
+# same 1,400 passing tests.
+#
+# Select what to run with a filterset, never with `-p`: `-p` resolves
+# dependency features differently from `--workspace`, so the two forms build
+# every tack crate twice and each source change is compiled once per form.
+#   cargo nextest run --workspace -E 'package(tack-api)'
+#   cargo nextest run --workspace -E 'binary(wave2_gate)'
+#   cargo nextest run --workspace -E 'rdeps(tack-core)'   # all a core change can reach
+#   cargo nextest run --workspace -E 'test(/fencing/)'    # by test-name regex
+
+[profile.default]
+# A first failure never hides the rest of the run.
+fail-fast = false
+# A flaky test is a finding, never something a retry paints green.
+retries = 0
+# Only failures while running, only failures in the final list.
+status-level = "fail"
+final-status-level = "fail"
+# The slowest binary in the suite finishes in ~6 s; a test still running after a
+# minute is hung, and is killed after three.
+slow-timeout = { period = "60s", terminate-after = 3 }
+
+# CI uses the same rules and keeps a JUnit report, so every test's own status
+# is visible without re-running any subset of the suite.
+[profile.ci]
+[profile.ci.junit]
+path = "junit.xml"
+
+# The scheduler E2E spawns a real `tack serve` on a port it found by
+# bind-then-drop. Two of its tests in flight at once can be handed the same
+# port and end up talking to one server (measured: once in 40 full runs).
+# Until the server can report the port it actually bound, each of these
+# tests runs with nothing else alongside — the guarantee `--test-threads=1`
+# on a sequential `cargo test` used to give.
+[[profile.default.overrides]]
+filter = 'binary(e6_scheduler_e2e_test)'
+threads-required = "num-test-threads"

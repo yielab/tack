@@ -4,6 +4,7 @@ on:
   push:
     branches: ["main", "develop", "claude/**"]
   pull_request:
+  workflow_dispatch:
 
 # Read-only by default; no job here needs to write anything.
 permissions:
@@ -18,11 +19,13 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # CI never reuses incremental state; keeping it only inflates the cache.
+  CARGO_INCREMENTAL: 0
 
 # Every multi-line shell step in this workflow runs under `bash` with
 # `set -euo pipefail` as its first line (see each `run: |` block) so a failing
 # command in the middle of a pipeline — e.g. `git diff --exit-code docs/openapi.json`
-# piped through something, or a `cargo test` piped to a filter — cannot be masked
+# piped through something, or a `cargo nextest run` piped to a filter — cannot be masked
 # by the exit status of the last command in the pipe.
 defaults:
   run:
@@ -56,83 +59,51 @@ jobs:
         run: cargo fmt --all --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Install nextest (prebuilt)
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
+        with:
+          tool: nextest
+      # One run of the whole suite: every test in its own process, no early
+      # exit, failures and a summary as the only output (.config/nextest.toml).
+      # The JUnit report below carries each test's own status, so nothing in
+      # this job re-runs a subset of the suite to get a status line for it.
       - name: Test
-        run: cargo test --workspace
-      # Every gate below runs with `if: success() || failure()` (not the
-      # default "stop at the first red step"): each is logically independent
-      # of the others, so a maintainer pushing once should see every gate's
-      # real status rather than have seven of them report "never ran" behind
-      # whichever one failed first. The job's own conclusion still turns red
-      # if any step here fails — this only removes the early exit, not the
-      # gate.
+        run: cargo nextest run --workspace --profile ci
+      - name: Upload JUnit report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: junit-rust
+          path: target/nextest/ci/junit.xml
+          retention-days: 7
+      # The two gates below do something the run above does not: regenerate a
+      # committed artifact from the code and fail if it differs from what is
+      # committed. They run even after a red Test step so both statuses show.
+      # `--no-tests=fail` keeps a renamed test from turning a gate into a no-op.
       #
-      # Regenerate the committed OpenAPI contract from the code and fail if it
-      # drifted. A handler/DTO change without a spec regen (UPDATE_OPENAPI=1
-      # cargo test -p tack-api --test openapi_contract) is caught here.
+      # OpenAPI: a handler/DTO change without a spec regen (UPDATE_OPENAPI=1
+      # with the filter below, or ./scripts/regen-generated.sh) is caught here.
       - name: OpenAPI contract drift gate
         if: success() || failure()
         run: |
           set -euo pipefail
-          UPDATE_OPENAPI=1 cargo test -p tack-api --test openapi_contract openapi_spec_matches_committed_file
+          UPDATE_OPENAPI=1 cargo nextest run --workspace --no-tests=fail \
+            -E 'binary(openapi_contract) & test(openapi_spec_matches_committed_file)'
           git diff --exit-code docs/openapi.json
-      # Regenerate the tack-orch regression oracles (docs/plans/agnostic-control-plane.md
-      # §6) from the code and fail if they drifted. docket_tick_contract_test is the
-      # primary oracle (one full reconciler tick's ordered request list plus the
-      # resulting orch_runs/orch_approvals/orch_events/orch_metrics/orch_trace_cursors
-      # rows); docket_wire_contract_test is the secondary, per-method oracle. A trait or
-      # reconciler rewrite that changes what leaves the process, or what gets persisted,
-      # without a golden regen is caught here.
+      # tack-orch regression oracles (docs/plans/agnostic-control-plane.md §6):
+      # docket_tick_contract_test is the primary — one full reconciler tick's
+      # ordered request list plus the resulting orch_runs/orch_approvals/
+      # orch_events/orch_metrics/orch_trace_cursors rows; docket_wire_contract_test
+      # is the per-method secondary. A trait or reconciler rewrite that changes
+      # what leaves the process, or what gets persisted, without a golden regen
+      # is caught here.
       - name: tack-orch golden drift gate
         if: success() || failure()
         run: |
           set -euo pipefail
-          UPDATE_GOLDEN=1 cargo test -p tack-orch --test docket_tick_contract_test
-          UPDATE_GOLDEN=1 cargo test -p tack-orch --test docket_wire_contract_test
+          UPDATE_GOLDEN=1 cargo nextest run --workspace --no-tests=fail \
+            -E 'binary(docket_tick_contract_test) | binary(docket_wire_contract_test)'
           git diff --exit-code crates/tack-orch/tests/golden/
-      # The runner-v1 fixtures under docs/contracts/runner-v1/ are the language-neutral
-      # authority (III.1.6); this test byte-pins every one of them and is committed to
-      # git, not generated at job time (`git ls-files docs/contracts/runner-v1` — 47
-      # tracked files). A deliberate mutation of a fixture and revert is exercised
-      # locally (see III-G4 handoff) rather than in this workflow, so CI never carries a
-      # step designed to fail.
-      - name: Runner-v1 fixture drift gate (byte-pinned contract)
-        if: success() || failure()
-        run: cargo test -p tack-orch --test runner_contract
-      # Wave-2 gate: full runner lifecycle proven through the real production router,
-      # not card-local scaffolding.
-      - name: Runner lifecycle gate (real router)
-        if: success() || failure()
-        run: cargo test -p tack-api --test wave2_gate
-      # Fake-binary harness adapters (crates/tack-runner/src/harness/fixtures) and the
-      # runner crash matrix — spawn/ack/completion/cancellation loss and ambiguous
-      # recovery, each proven to never blind-retry. Never uses a live harness binary.
-      - name: Runner fake-adapter and crash-matrix tests
-        if: success() || failure()
-        run: cargo test -p tack-runner
-      # Deterministic recovery from a migration failure mid-run — the runner executes
-      # each ALTER individually with no wrapping transaction (CLAUDE.md), so a partial
-      # apply must leave the DB in a state the next startup can repair, not brick it.
-      - name: Migration crash-recovery test
-        if: success() || failure()
-        run: cargo test -p tack-db --test orch_migrations_test
-      # Security/chaos subset: auth-surface separation (operator vs runner-protocol
-      # tokens cannot substitute for each other), CORS allow-list enforcement, and
-      # concurrent-write race safety (WIP limit, board drag) proven
-      # against a real, contended DB rather than a sequential retry loop.
-      - name: Security/chaos subset
-        if: success() || failure()
-        run: |
-          set -euo pipefail
-          cargo test -p tack-api --test trust_boundary_test
-          cargo test -p tack-api --test cors_test
-          cargo test -p tack-api --test board_drag_wip_race_test
-          cargo test -p tack-api --test wip_limit_race_test
-          cargo test -p tack-api --test runner_vertical_slice
-      # Contention-sensitive: forced to a single test thread, matching
-      # docs/agent-handoffs/part-iii/III-F6.md's isolated-run instruction.
-      - name: Scheduler E2E gate (isolated)
-        if: success() || failure()
-        run: cargo test -p tack-cli --test e6_scheduler_e2e_test -- --test-threads=1
 
   msrv:
     name: MSRV (Rust 1.89 — dependency floor)
@@ -199,6 +170,10 @@ jobs:
 
   coverage:
     name: Coverage (llvm-cov + Vitest thresholds)
+    # Five instrumented builds that share nothing with the normal build, for
+    # floors that decide something at a merge: pull requests, pushes to main
+    # and manual runs — not every push to a working branch.
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -355,6 +330,10 @@ jobs:
 
   embed-spa:
     name: Embed SPA (single-binary packaging)
+    # The size-optimised release profile (lto, opt-level "z", one codegen unit)
+    # is the slowest build in the repository, and the binary-size budget it
+    # feeds matters at a merge: pull requests, pushes to main and manual runs.
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: frontend
@@ -369,10 +348,16 @@ jobs:
         with:
           name: frontend-dist
           path: frontend/dist/
+      - name: Install nextest (prebuilt)
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
+        with:
+          tool: nextest
       - name: Clippy with embed-spa
         run: cargo clippy -p tack-cli --features embed-spa -- -D warnings
+      # `-p` on purpose: a feature build is its own dependency resolution
+      # whichever way it is spelled, and this job's cache is its own.
       - name: Test with embed-spa
-        run: cargo test -p tack-api --features embed-spa
+        run: cargo nextest run -p tack-api --features embed-spa
       - name: Build single binary
         run: cargo build -p tack-cli --release --features embed-spa
       - name: Build tack-runner binary

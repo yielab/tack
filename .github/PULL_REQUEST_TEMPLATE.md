@@ -12,6 +12,6 @@
 
 ## Checklist
 
-- [ ] `cargo test --workspace` passes
+- [ ] `cargo nextest run --workspace` passes
 - [ ] `cargo clippy --all-targets -- -D warnings` clean
 - [ ] `npm run type-check` passes (if frontend changed)

@@ -74,3 +74,7 @@ rg -n "<symbol>" crates/ -A 5 | head -40               # the shape, not the file
 6. **Subagents cost a full context each.** Dispatching one to read three files is more expensive
    than reading three files. Dispatch when the search is genuinely broad and you need only the
    conclusion, not when you already know the path.
+7. **A green test run is eight lines.** `cargo nextest run --workspace` prints failures and one
+   summary line (~150 tokens); `cargo test --workspace` prints one line per passing test (~84k
+   tokens). Never run the latter, never read a green run's output, never re-run it "to see".
+   The `/gate` skill has the diff→command table.

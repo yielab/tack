@@ -742,15 +742,15 @@ directly rather than assumed — Tack builds no workaround for either:
 
 ## Testing this feature
 
-- `cargo test -p tack-orch` — `ControlPlane`/DTO unit tests, the `DocketAdapter`
+- `cargo nextest run --workspace -E 'package(tack-orch)'` — `ControlPlane`/DTO unit tests, the `DocketAdapter`
   integration tests against `wiremock` fixtures (captured from a real
   `docket serve`, plus deliberately malformed/unknown-enum fixtures), the
   Prometheus parser's own tests, and the reconciler's state-machine tests (driven by
   a fake `ControlPlane`/`ControlPlaneStore`, no real network or database).
-- `cargo test -p tack-db` — migration table-existence/upgrade-in-place/FK-orphan
+- `cargo nextest run --workspace -E 'package(tack-db)'` — migration table-existence/upgrade-in-place/FK-orphan
   tests, the repository's CRUD/idempotency tests, and `status_update_checked_test.rs`
   (the atomic WIP-check transaction's own correctness, isolated from any HTTP call).
-- `cargo test -p tack-api` — route-gating and token-leak tests
+- `cargo nextest run --workspace -E 'package(tack-api)'` — route-gating and token-leak tests
   (`every_orch_route_404s_when_disabled`, and a suite asserting the literal
   control-plane token string never appears in any response body); the dispatch,
   sprint-dispatch, terminal-status, approvals, budget/policy, provisioning, and

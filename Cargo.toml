@@ -98,6 +98,7 @@ codegen-units = 1
 opt-level = "z"  # Optimize for size
 
 [profile.dev]
-# Faster compile times for development
 opt-level = 0
-debug = true
+# Line tables only: a backtrace still shows file:line, and full debuginfo is
+# ~85% of every test binary's size for nothing here that reads it.
+debug = "line-tables-only"

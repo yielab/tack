@@ -1,258 +1,152 @@
 # Tack Testing Guide
 
-**Rust tests:** 1,409 passing + 5 `#[ignore]`d (`cargo test --workspace`) — the perf test and
-the live-harness runner tests, which bill a real agent account. `tack-desktop` is a separate
-workspace: 7 more with `cd crates/tack-desktop && cargo test`
-**Frontend tests:** 734 Vitest unit tests across 85 files (`cd frontend && npm test`)
-**With embed-spa feature:** 472 tests in `tack-api` alone (`cargo test -p tack-api --features
-embed-spa`), which adds the tests that need a built SPA to serve
+Every Rust test runs with one command and needs no external service:
 
-*Counts measured 2026-09-04. They are a smoke check on whether a suite silently stopped
-running, not a target — a number that drifts is expected, a number that drops is not.*
+```bash
+cargo nextest run --workspace
+```
+
+The summary line says how many ran — `N tests run: N passed, M skipped`. The skipped ones
+are `#[ignore]`d on purpose: the perf test and the live-harness runner tests, which bill a
+real agent account. `cargo nextest` is not part of cargo; install it once with
+`cargo install cargo-nextest --locked`, or take the prebuilt from <https://get.nexte.st>.
+`tack-desktop` is a workspace of its own:
+`cargo nextest run --manifest-path crates/tack-desktop/Cargo.toml`.
+
+Frontend: `cd frontend && npm test` (Vitest). Browser E2E: `make e2e`.
+
+A count appears in this guide only next to the command that produces it. A number that
+drops between two runs on the same branch is a finding — a suite silently stopped
+running — even when everything passes.
 
 ## Quick start
 
 ```bash
-# Run all Rust tests
-cargo test --workspace
-
-# Show println! output
-cargo test --workspace -- --nocapture
-
-# Single test by name
-cargo test test_workflow_transition_validation
-
-# One crate
-cargo test -p tack-core
-cargo test -p tack-db
-cargo test -p tack-api
-cargo test -p tack-cli
-
-# Frontend
-cd frontend && npm test
+cargo nextest run --workspace                                   # everything — ~15 s to execute on a warm build
+cargo nextest run --workspace -E 'package(tack-db)'             # one crate
+cargo nextest run --workspace -E 'binary(wave2_gate)'           # one test binary
+cargo nextest run --workspace -E 'test(/fencing/)'              # tests whose name matches a regex
+cargo nextest run --workspace --no-capture -E 'test(<name>)'    # see println!/tracing output (runs serially)
+cargo nextest run --workspace --run-ignored ignored-only -E 'package(tack-db)'   # the perf test (50k items, p95 < 100 ms)
+cargo nextest list --workspace                                  # what would run, without running it
 ```
 
-Integration tests use in-memory SQLite — no external services needed.
+Filtersets: `cargo nextest run --help` and <https://nexte.st/docs/filtersets/>.
 
----
+## Two rules, and the measurements behind them
 
-## Test breakdown
+**Always `--workspace`; select with `-E`, never with `-p`.** `cargo test -p tack-api` and
+`cargo test --workspace` resolve dependency features differently, so `target/` keeps two
+copies of every tack crate and each source change is compiled once per form you use.
+Measured 2026-09-05 on a warm cache: switching from `--workspace` to `-p tack-api` with no
+source change recompiled `tack-core`, `tack-db`, `tack-orch` and `tack-api` — 13 s. The `-E`
+filter selects what *runs*; the build is the workspace's either way, and that is the point.
+Reproduce: `cargo test --workspace --no-run && cargo test -p tack-api --no-run` and count the
+`Compiling` lines of the second.
 
-| Crate | Count | Type |
-| --- | --- | --- |
-| `tack-core` | 73 | Unit tests (`#[cfg(test)]` in source files) |
-| `tack-db` | 23 | Integration tests in `tests/integration_test.rs` |
-| `tack-db` | 1 | Performance test (`#[ignore]`, seeds 50k items) |
-| `tack-api` | 38 | Handler integration tests in `tests/api_test.rs` |
-| `tack-api` | 27 | Unit tests (middleware, GitHub URL parsing, config) |
-| `tack-cli` | 29 | CLI tests (wiremock contract + unit) |
-| **Rust total** | **207** | |
-| Frontend | 168 | Vitest unit tests across 23 test files |
+**Never read a green run's output.** `.config/nextest.toml` prints failures and one summary
+line — a green run is ~8 lines. `cargo test --workspace` prints one line per passing test:
+~2,700 lines, ~84k tokens for a reader that is a language model, to learn the word "ok".
+Reproduce: `cargo test --workspace 2>&1 | wc -c` against `cargo nextest run --workspace 2>&1 | wc -c`.
 
----
+`cargo test` still works — nothing forbids it — but it is not what CI, `make test` or the
+`/gate` skill call, and nothing in this repository should tell anyone to run it.
 
-## Core unit tests (`tack-core`)
+## Where the tests live, and how each crate is tested
 
-Business logic lives in `tack-core` with no I/O. Tests go in the same file inside `#[cfg(test)]`.
+| Crate | Where | Harness | What belongs here |
+|---|---|---|---|
+| `tack-core` | `#[cfg(test)]` next to the code | plain `#[test]`; the crate has no I/O | business rules — a rule that can be tested without a database is tested here, not above |
+| `tack-db` | `crates/tack-db/tests/` | `common::setup_test_db()`: a fresh `sqlite::memory:` pool with every migration applied, per test | repository round-trips, migrations, FTS, cascades. **Locking claims need a file-backed DB** — the in-memory harness masks races |
+| `tack-orch` | `#[cfg(test)]` and `crates/tack-orch/tests/` | `runner_contract` byte-pins `docs/contracts/runner-v1/`; the `docket_*_contract_test` pair regenerates golden files | control-plane logic, reconciler, the neutral execution domain. A fixture edit updates `tests/runner_contract/fixtures.rs` in the same change |
+| `tack-api` | `crates/tack-api/tests/` | `common::test_app()`, `test_app_with_config()`, `test_app_with_file_db()`: a wired router over an in-memory DB, driven with `tower::ServiceExt::oneshot` — no port | status codes, response shapes, auth surfaces, wiring that proves a handler is reachable |
+| `tack-runner` | mostly `#[cfg(test)]`; `crates/tack-runner/tests/` | fake harness binaries under `src/harness/fixtures/`; the crash matrix | credential handling, journal, subprocess boundary. Live-harness tests are `#[ignore]` and billed |
+| `tack-cli` | `crates/tack-cli/tests/` | `wiremock` stubs the API; the scheduler E2E spawns a real `tack serve` on a bind-then-drop port, so `.config/nextest.toml` runs each of its tests with nothing alongside | request shaping, error surfacing, the end-to-end scheduler path |
 
-```bash
-cargo test -p tack-core   # 73 tests
-```
+Each `tests/*.rs` file is its own binary — its own crate, its own full link, seconds of CPU
+and tens of megabytes on disk per file. **Add a test to the existing file whose subject
+fits; do not add a file per feature.** (ADR 0064 groups the existing files by subject.)
 
-Key test areas:
+Conventions that hold everywhere: `assert_matches!` for enum variants; `#[tokio::test]` for
+async; a test of "writes nothing" or "rejects before X" asserts the absence directly (row
+counts, an untouched checkpoint) and proves itself load-bearing by reverting the fix once; a
+wait is a bounded poll on a condition, never a fixed `sleep`; a flaky test is recorded, never
+retried into green (`retries = 0` in the nextest config).
 
-- Workflow transition validation across all presets (Scrum, Kanban, construction)
-- WIP limit enforcement (at/below/over limit)
-- Parent auto-complete (all siblings done → parent auto-completes)
-- Dependency cycle detection
-- Vocabulary term resolution
-- Custom field value validation — 28 tests covering all 9 field types, option lists, pattern/min/max rules
-
-Example:
+Example — a handler test with the shared harness:
 
 ```rust
-#[test]
-fn construction_workflow_rejects_skip() {
-    let wf = construction_workflow();
-    assert!(wf.validate_transition("Permit", "Handover").is_err());
+#[tokio::test]
+async fn health_returns_ok() {
+    let (app, _workspace) = common::test_app().await;
+    let res = app
+        .oneshot(Request::builder().uri("/api/health").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
 }
 ```
 
----
+## Contract and regeneration gates
 
-## DB integration tests (`tack-db`)
-
-Located in `crates/tack-db/tests/integration_test.rs`. Each test gets a fresh
-in-memory SQLite database with all migrations applied via `setup_test_db()`.
-
-```bash
-cargo test -p tack-db   # 23 tests + 1 ignored
-```
-
-Covers: project CRUD, item hierarchy, sprint lifecycle, custom fields, boards,
-templates, FTS5 search, dependency graph, assignee filtering, role assignment.
-
-### Performance test (ignored by default)
-
-Seeds 50k items in a single transaction and asserts `list_items` p95 < 100 ms:
+Three tests guard artifacts that are committed rather than computed. They run inside the
+full suite; the first two also *rewrite* the artifact when asked, and CI fails when that
+rewrite differs from what is committed:
 
 ```bash
-cargo test -p tack-db list_items_p95 -- --ignored
+UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary(openapi_contract)' && git diff --exit-code docs/openapi.json
+UPDATE_GOLDEN=1 cargo nextest run --workspace -E 'binary(docket_tick_contract_test) | binary(docket_wire_contract_test)' && git diff --exit-code crates/tack-orch/tests/golden/
+cargo nextest run --workspace -E 'binary(runner_contract)'   # never regenerated: the fixtures are the authority
 ```
 
-### Test helpers (`tests/common/mod.rs`)
+`docs/openapi.json` and `frontend/src/shared/api/schema.gen.ts` are generated;
+`./scripts/regen-generated.sh` does both plus the lockfiles. Never hand-edit or hand-merge
+them.
 
-```rust
-setup_test_db()              // fresh in-memory pool, all migrations applied
-create_test_workspace(&repo) // inserts a workspace, returns its UUID
-make_project(&repo, ws_id)   // creates a software project
-make_item(&repo, project_id) // creates an item in that project
-```
-
----
-
-## API handler tests (`tack-api`)
-
-All tests in `crates/tack-api/tests/`. Uses `axum::Router::oneshot()` to fire
-requests without binding a real port.
-
-```bash
-cargo test -p tack-api   # 82 tests
-```
-
-### API test helpers (`tests/common/mod.rs`)
-
-```rust
-test_app()                        // in-memory DB, default config, wired router
-test_app_with_config(config)      // same with custom AppConfig
-test_app_with_file_db(db_url)     // file-based DB (needed for backup/restore tests)
-```
-
-### Handler integration tests (`tests/api_test.rs`) — 38 tests
-
-- Health endpoint shape (`status`, `version`, `migrations_applied`)
-- API token auth: no token, correct token, wrong token
-- Body size limit (413 for oversized requests)
-- Input validation (empty name/title → 422)
-- Project CRUD and vocabulary persistence
-- Item create/update/delete
-- Sprint lifecycle (create → start → close)
-- Role assignment and removal
-- Comment create and list
-- Dependency create/list/delete and cycle rejection
-- JSON and CSV export
-- Custom field create, set, type validation (422 on wrong type)
-- Board create/update/view with item-type filter
-- FTS5 search (per-project and global)
-- Backup: in-memory DB returns 400, invalid magic bytes return 400, full roundtrip
-- Embedded SPA (with `--features embed-spa`): root → HTML, API takes priority
-
-### Unit tests — 27 tests
-
-- Bearer token middleware (no token / correct / wrong / health bypass)
-- GitHub URL parsing: `owner/repo`, full HTTPS URL, SSH URL, trailing `.git`, invalid inputs
-- Config loading and precedence (env vars over TOML defaults)
-- Webhook payload signing (HMAC-SHA256 signature header)
-
-### Running with embed-spa
+### With the embedded SPA
 
 ```bash
 cd frontend && npm run build && cd ..
-cargo test -p tack-api --features embed-spa
+cargo nextest run -p tack-api --features embed-spa    # -p on purpose: a feature build is its own resolution anyway
 ```
-
----
-
-## CLI tests (`tack-cli`)
-
-Located in `crates/tack-cli/tests/cli_test.rs`. Uses `wiremock` to stub the API.
-
-```bash
-cargo test -p tack-cli   # 29 tests
-```
-
-Covers: `init`, `add`, `list`, `move`, sprint commands, global search, config save/load,
-vocab fetch (including graceful 404 fallback), Bearer token forwarding.
-
----
-
-## Frontend tests
-
-```bash
-cd frontend && npm test   # 168 tests across 23 files
-```
-
-Covers:
-
-- API client contracts (`api.ts`) — request shaping, error propagation
-- `deriveBoard` pure function — column derivation, WIP limit display, item ordering
-- `ProjectItemsContext` — fetch lifecycle, optimistic updates, rollback on error
-- Vocabulary resolver (`vocab.ts`) — term resolution, per-project overrides, defaults
-- Settings panels — vocabulary editor, workflow editor
-- CSV import UI — file selection, column mapping, error handling
-- Keyboard manager — shortcut registration, conflict detection
-- Lens/view persistence — last-view state across navigation
-- Optimistic update rollback — revert on server error
-
----
 
 ## Continuous integration
 
-The CI pipeline (`.github/workflows/ci.yml`) runs several jobs on every push to `develop`
-(see the full [CI gates](#ci-gates-githubworkflowsciyml) table below). The core ones:
+`.github/workflows/ci.yml` runs on every push to `main`, `develop` and `claude/**`, on every
+pull request, and by hand (`workflow_dispatch`).
 
-### `rust` job
+| Job | What it runs | When |
+|---|---|---|
+| `rust` | `scripts/check-comments.sh` → `cargo fmt --check` → `cargo clippy --workspace --all-targets -- -D warnings` → **`cargo nextest run --workspace --profile ci`** (one run; JUnit uploaded as `junit-rust`) → the OpenAPI and golden regenerate-and-diff gates | every push and PR |
+| `frontend` | schema drift, type-check, token lint, build, entry-bundle budget | every push and PR |
+| `docs` | `mdbook build` + link check | every push and PR |
+| `msrv` | `cargo build --workspace --locked` on the pinned dependency floor | every push and PR |
+| `desktop` | fmt, clippy, `cargo test` in the `tack-desktop` workspace | every push and PR |
+| `deny`, `security` | licenses and duplicate versions; `cargo audit` + `npm audit` | every push and PR |
+| `e2e` | Playwright in three browsers, a11y scan, API contract | every push and PR |
+| `coverage` | `cargo llvm-cov` floors per crate + Vitest thresholds | **pull requests, `main`, manual** — five instrumented builds that share nothing with the normal one |
+| `embed-spa` | release build with the SPA embedded, binary-size budget | **pull requests, `main`, manual** — the size-optimised release profile is the slowest build in the repository |
 
-```bash
-cargo fmt --all --check
-cargo clippy --workspace -- -D warnings
-cargo test --workspace
-```
+Every test runs exactly once per CI run. Each test's own status is in the JUnit report,
+which is why no step re-runs a subset "to see its status". `CARGO_INCREMENTAL=0`
+throughout: CI never reuses incremental state, and keeping it only inflates the cache.
 
-### `frontend` job
+### Pre-push hook
 
-```bash
-npm ci
-npm run type-check
-npm run build
-# Gate: entry bundle (index + routing chunks) < 30 KB gzipped
-```
-
-### `embed-spa` job
-
-Runs after `frontend` finishes. Downloads the built dist artifact, then:
-
-```bash
-cargo clippy -p tack-api --features embed-spa -- -D warnings
-cargo test -p tack-api --features embed-spa
-cargo build -p tack-cli --release --features embed-spa
-# Reports binary size (~10 MB)
-```
-
-### Pre-push hook (local)
-
-To catch CI failures before they reach GitHub, activate the pre-push hook:
-
-```bash
-git config core.hooksPath .githooks
-```
-
-This runs `cargo fmt --all --check` and `cargo clippy --workspace -- -D warnings`
-before every `git push`, blocking the push if either check fails.
-
----
+`git config core.hooksPath .githooks` activates it. It runs the comment check, `cargo fmt`,
+`cargo clippy` and the generated-file freshness checks — **not the test suite**, on purpose:
+a hook that takes a minute is a hook people bypass, and the suite is CI's job. Run
+`cargo nextest run --workspace` yourself before pushing anything you claim is green.
 
 ## Coverage
 
-Install `cargo-llvm-cov` (requires LLVM toolchain):
-
 ```bash
 cargo install cargo-llvm-cov
-cargo llvm-cov --workspace --html --output-dir coverage/
-open coverage/index.html
+cargo llvm-cov nextest --workspace --html --output-dir coverage/
 ```
 
-Targets: `tack-core` ≥ 85% lines, `tack-db` + `tack-api` ≥ 70% combined.
+Floors CI enforces: `tack-core` and `tack-runner` ≥ 85 % lines; `tack-db`, `tack-api` and
+`tack-orch` ≥ 70 %.
 
 ---
 
@@ -373,20 +267,3 @@ model shows up first. See [`tests/load/README.md`](../tests/load/README.md).
 
 ---
 
-## CI gates (`.github/workflows/ci.yml`)
-
-| Job | Gate |
-| --- | --- |
-| `rust` | fmt + clippy + `cargo test --workspace` |
-| `msrv` | build on the documented MSRV (Rust 1.89, the dependency floor; edition 2024 alone needs only 1.85) |
-| `coverage` | `cargo-llvm-cov` line floors (core ≥85%, db/api ≥70%) + Vitest coverage thresholds |
-| `deny` | `cargo-deny` license allow-list + duplicate-dependency (multiple-versions) check |
-| `frontend` | type-check + token lint + build + bundle-size budget |
-| `docs` | mdBook build + broken-link check |
-| `embed-spa` | single-binary packaging + release build |
-| `security` | cargo audit + npm audit (high+) |
-| `e2e` | Playwright across chromium/firefox/webkit + a11y + API contract |
-
-A separate scheduled workflow (`.github/workflows/scheduled-audit.yml`) re-runs
-`cargo audit` + `npm audit` weekly so newly disclosed advisories are caught even
-when the code hasn't changed.
