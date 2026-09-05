@@ -30,7 +30,12 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-apple-native-keyring-store = "1"
+# `keychain`: the legacy keychain, which every application can reach. The crate's
+# other store, `protected`, is the data-protection keychain and is only reachable
+# from a sandboxed, signed application, which the runner is not. Neither feature is
+# on by default and the crate refuses to compile on macOS with neither, so this is
+# what makes `keychain::Store` in `secrets.rs` exist at all.
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-native-keyring-store = "1"
