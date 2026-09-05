@@ -1854,7 +1854,16 @@ mod tests {
         // name/value split happens in `recorded_env_names` instead, purely
         // to keep this shim's own process footprint minimal under a
         // heavily parallel test run.
-        let script = format!("#!/bin/sh\nenv > {}\nexit 0\n", marker.display());
+        // Only the run itself records its environment. The adapter also
+        // invokes this shim as `<shim> --version` for its version probe,
+        // with the probe's own empty environment, and that probe can finish
+        // after the run — an unconditional `env > marker` then holds
+        // whichever process wrote last. `exec` is the run's subcommand; the
+        // probe never passes it.
+        let script = format!(
+            "#!/bin/sh\nfor arg in \"$@\"; do [ \"$arg\" = exec ] && env > {}; done\nexit 0\n",
+            marker.display()
+        );
         let script_path = workspace.join("dump-env-names.sh");
         std::fs::write(&script_path, script).expect("write shim script");
         CodexLocator::Fixed {
