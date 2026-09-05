@@ -48,13 +48,14 @@
 //! # Pattern copied, not invented
 //!
 //! The fetch-plus-persist-through-a-real-`spawn_reconcilers`-loop shape is
-//! `tests/ingestion_test.rs` and `tests/traces_ingestion_test.rs`'s, copied
+//! `tests/ingestion/runs.rs` and `tests/ingestion/traces.rs`'s, copied
 //! deliberately rather than reinvented. `TestRepoStore` below is the same
-//! mechanical, thin `ControlPlaneStore` impl those two files each define —
-//! duplicated rather than shared (same reasoning as
-//! `traces_ingestion_test.rs`'s own module doc: `tack-orch` must never
-//! depend on `tack-api`, so there is no single real implementation to
-//! import, and each test file stays scoped to its own concerns).
+//! mechanical, thin `ControlPlaneStore` impl those two files share via
+//! `ingestion/support.rs` — duplicated here rather than imported from there
+//! (same reasoning as `ingestion/support.rs`'s own module doc: `tack-orch`
+//! must never depend on `tack-api`, so there is no single real
+//! implementation to import, and each test binary stays scoped to its own
+//! concerns).
 //! Unlike those two files, THIS file deliberately never seeds an
 //! `orch_tasks` row or an item to correlate against — correlation
 //! (task_ids/context.taskId/session_id matching) is already covered there;
@@ -163,7 +164,7 @@ use tack_orch::reconciler::{
 use tack_orch::{ControlPlane, OrchError};
 
 // ---------------------------------------------------------------------------
-// Fixture setup — mirrors ingestion_test.rs / traces_ingestion_test.rs
+// Fixture setup — mirrors ingestion/support.rs
 // ---------------------------------------------------------------------------
 
 async fn setup_repo() -> Repository {
@@ -236,8 +237,8 @@ async fn link_project(repo: &Repository, project_id: Uuid, plane_id: Uuid, remot
 /// A [`ControlPlaneStore`] backed directly by a real `Repository` — the
 /// test-only stand-in for `tack-api::orch_store::RepoControlPlaneStore` (see
 /// the module doc for why this can't just import that type, and why it is
-/// duplicated here rather than shared with `ingestion_test.rs` and
-/// `traces_ingestion_test.rs`).
+/// duplicated here rather than imported from `ingestion/support.rs`'s copy,
+/// shared there by `ingestion/runs.rs` and `ingestion/traces.rs`).
 struct TestRepoStore {
     repo: Repository,
 }
@@ -431,7 +432,7 @@ fn approval_json(token: &str, action: &str, created: &str) -> String {
 /// `serve.py`'s `_traces_page`/`do_GET` (see `adapters/docket.rs`'s module
 /// doc): `events` is an array of raw JSON **strings**, each independently
 /// encoding one event object, not an array of objects. Copied verbatim from
-/// `traces_ingestion_test.rs`'s own helper of the same name — see the module
+/// `ingestion/traces.rs`'s own helper of the same name — see the module
 /// doc's "Pattern copied, not invented".
 fn traces_body(events: &[serde_json::Value], next: &str) -> String {
     let encoded: Vec<String> = events

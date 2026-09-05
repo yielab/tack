@@ -3088,7 +3088,7 @@ impl Repository {
     ///
     /// See `handlers/runner_protocol/retention.rs::sweep_artifacts` (the
     /// only caller) for how the two delete methods are split across a listed
-    /// batch, and `crates/tack-db/tests/f2_event_artifact_retention_test.rs`
+    /// batch, and `crates/tack-db/tests/repository/event_artifact_retention.rs`
     /// for the deterministic proof of both this guard's effect and what the
     /// unconditional method would have done to the same racing row.
     #[instrument(skip(self, ids))]
@@ -3236,7 +3236,7 @@ impl Repository {
     /// this sweep against every other writer to these tables rather than
     /// deadlocking against them. Proved load-bearing (reverted, watched the
     /// concurrency test fail, restored) in
-    /// `crates/tack-db/tests/execution_retention_test.rs`.
+    /// `crates/tack-db/tests/repository/execution_retention.rs`.
     #[instrument(skip(self))]
     pub async fn purge_stale_execution_replays(
         &self,

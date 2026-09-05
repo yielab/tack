@@ -35,7 +35,9 @@
 //! separated structurally" describes for every other operator/runner pair),
 //! not an exemption entry on the runner surface, and the runner credential
 //! carries zero privilege here even if presented — proven in
-//! `f1_decisions_test.rs`'s `self_resolution_is_denied_*` tests.
+//! `crates/tack-api/tests/runner_protocol/decisions.rs`'s
+//! `self_resolution_via_a_valid_runner_bearer_credential_is_denied_and_writes_nothing`
+//! test.
 //!
 //! `docs/contracts/runner-v1/protocol.json`'s `authentication` block names
 //! `decision_resolution` a "separately_scoped_operator_credential" — distinct
@@ -64,8 +66,10 @@
 //! after commit through the workflow engine" as a **structural
 //! guarantee with nothing to hang a policy off of yet**: no function in this
 //! file ever writes `items.status`, directly or indirectly, full stop —
-//! proven by `expiry_never_touches_item_status` and
-//! `resolve_never_touches_item_status` in `f1_decisions_test.rs`. Wiring a
+//! `resolve` never touches the `items` table at all, and
+//! `crates/tack-api/tests/runner_protocol/decisions.rs`'s own expiry tests
+//! assert the item's status is unchanged across both the fail-closed-conflict
+//! and bulk-sweep paths. Wiring a
 //! real mapping is future work that first needs a policy schema/format
 //! decision from whoever owns `status_map_policy_id`'s contract.
 
@@ -171,8 +175,9 @@ pub const DECISION_TOKEN_HEADER: &str = "x-tack-decision-token";
 
 /// Byte-wise constant-time equality, duplicated verbatim from
 /// `crate::middleware::constant_time_eq` rather than imported — this module
-/// is loaded standalone via `#[path]` in `f1_decisions_test.rs` (a separate
-/// test-binary crate root with no `middleware` module of its own; see this
+/// is loaded standalone via `#[path]` inside
+/// `crates/tack-api/tests/runner_protocol/decisions.rs` (a module tree with
+/// no `middleware` module of its own; see this
 /// file's own module doc comment on why it stays deliberately decoupled from
 /// other files), so a `crate::middleware::...` path would fail to resolve
 /// there even though it resolves fine once this module is wired into the

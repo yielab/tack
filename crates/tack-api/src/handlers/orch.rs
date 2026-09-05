@@ -1400,8 +1400,7 @@ pub async fn get_orch_budget(
 //
 // Prometheus text exposition format — not JSON, unlike every other handler in
 // this module. Round-trips cleanly through `tack_orch::adapters::prometheus::
-// parse`; see `tests/orch_metrics_test.rs`'s
-// `get_metrics_response_parses_with_the_real_prometheus_parser` for the proof.
+// parse`, the same parser that decodes docket's own `/metrics` responses.
 //
 // Sits behind the same gates as every other route in this sub-router
 // (`require_orch_enabled`, plus the ordinary Bearer-token gate applied to the

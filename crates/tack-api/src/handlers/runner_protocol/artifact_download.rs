@@ -7,7 +7,7 @@
 //! surface: `router.rs#operator_execution_routes` mounts [`routes`] as
 //! `GET /api/executions/{request_id}/attempts/{attempt_number}/artifacts/{artifact_id}/content`,
 //! sharing the `TACK_STORAGE_DIR`-derived artifact root with
-//! `runner_protocol_routes`. `crates/tack-api/tests/f6a_artifact_wiring_test.rs`
+//! `runner_protocol_routes`. `crates/tack-api/tests/wiring/artifact.rs`
 //! proves the mount through the real `build_router` and was verified
 //! load-bearing by unmounting it and watching the test 404.
 //!
@@ -24,14 +24,16 @@
 //!
 //! Module-level `dead_code` allow: every item here is reachable in
 //! production (mounted via `router.rs#operator_execution_routes`) and
-//! exercised directly by `f2_artifact_events_test.rs` (which loads this
-//! file the same way), but `crates/tack-api/tests/c2_handlers_test.rs` — an
-//! unrelated test binary — also pulls in `runner_protocol.rs` via `#[path]`
-//! for its own auth non-substitution test, and never calls into this
-//! module. Dead-code analysis is per compiled binary, so *that* binary
-//! alone would otherwise flag every item here as unused. This mirrors the
-//! same precedent in `runner_protocol.rs` itself (`RunnerV1ErrorEnvelope` in
-//! `executions.rs`, and the individually-annotated `Limits` fields).
+//! exercised directly through `runner_protocol/artifact_events.rs`'s own
+//! `#[path]`-loaded copy of `runner_protocol.rs` (which loads this file the
+//! same way). `runner_protocol/lifecycle.rs`, its sibling module in the same
+//! test binary, loads a second, independent copy of that same tree via its
+//! own `#[path]` (see each file's `#[allow(clippy::duplicate_mod)]`) and
+//! never calls into this module from it — the two `#[path]` copies are
+//! distinct items, so `lifecycle`'s copy alone would otherwise flag every
+//! item here as unused. This mirrors the same precedent in
+//! `runner_protocol.rs` itself (`RunnerV1ErrorEnvelope` in `executions.rs`,
+//! and the individually-annotated `Limits` fields).
 #![allow(dead_code)]
 
 use std::sync::Arc;
