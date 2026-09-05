@@ -7,6 +7,10 @@ echo "→ tests take their temporary paths from a guard"
 ./scripts/check-test-hygiene.sh
 echo "→ cargo fmt --all --check"
 cargo fmt --all --check
+# `--all` means the workspace, and tack-desktop is deliberately not in it, so this
+# is the only local check that sees that crate at all. Formatting needs no build,
+# unlike the clippy pass below, which is why CI keeps that half and this does not.
+cargo fmt --manifest-path crates/tack-desktop/Cargo.toml --all --check
 
 echo "→ cargo clippy --workspace --all-targets -- -D warnings"
 cargo clippy --workspace --all-targets -- -D warnings
