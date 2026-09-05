@@ -15,6 +15,8 @@ mod economics;
 mod executions_runner_admin;
 #[path = "handlers/item_concurrency.rs"]
 mod item_concurrency;
+#[path = "handlers/local_runner.rs"]
+mod local_runner;
 #[path = "handlers/operator_read_routes.rs"]
 mod operator_read_routes;
 #[path = "handlers/production_router.rs"]

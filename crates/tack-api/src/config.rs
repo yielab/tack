@@ -117,6 +117,15 @@ pub struct AppConfig {
     #[serde(default)]
     pub orch_approval_token: Option<String>,
 
+    // ── Embedded runner (ADR 0061 decisions 2 and 6) ───────────────────────
+    /// The env/CLI-flag default for whether the in-process embedded runner
+    /// starts. `--with-runner`/`TACK_LOCAL_RUNNER_ENABLE` set this; the UI
+    /// toggle (`PUT /api/local-runner`) overrides it in `app_meta` from
+    /// then on, the same precedence `orch_enable` already establishes —
+    /// see `handlers::local_runner::effective_local_runner_enabled`.
+    #[serde(default)]
+    pub local_runner_enable: bool,
+
     // ── Execution runtime retention/observability ───────────────
     /// Enables the execution-domain retention sweep (replay/idempotency
     /// bookkeeping + terminal `execution_events` purge — see
@@ -206,6 +215,7 @@ impl Default for AppConfig {
             orch_poll_secs: default_orch_poll_secs(),
             orch_event_retention_days: default_orch_event_retention_days(),
             orch_approval_token: None,
+            local_runner_enable: false,
             execution_retention_enable: default_execution_retention_enable(),
             execution_retention_days: default_execution_retention_days(),
             execution_retention_interval_secs: default_execution_retention_interval_secs(),
@@ -447,6 +457,9 @@ impl AppConfig {
         }
         if let Ok(v) = std::env::var("TACK_ORCH_ENABLE") {
             config.orch_enable = v == "1" || v.eq_ignore_ascii_case("true");
+        }
+        if let Ok(v) = std::env::var("TACK_LOCAL_RUNNER_ENABLE") {
+            config.local_runner_enable = v == "1" || v.eq_ignore_ascii_case("true");
         }
         if let Ok(v) = std::env::var("TACK_ORCH_POLL_SECS") {
             config.orch_poll_secs = v.parse().unwrap_or(default_orch_poll_secs());

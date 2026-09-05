@@ -59,6 +59,7 @@ async fn app_with_state(config: AppConfig) -> (Router, AppState, Uuid) {
         broadcast_tx: tx,
         webhook: None,
         orch_runtime: OrchRuntime::new(),
+        local_runner: None,
     };
 
     (build_router(state.clone()), state, workspace_id)

@@ -1185,18 +1185,29 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-/// Start the in-process HTTP server (the app + embedded web UI), optionally
-/// with an embedded runner as a second task in the same process.
+/// Start the in-process HTTP server (the app + embedded web UI) with an
+/// embedded runner always wired in — see `local_runner::serve`'s own doc
+/// comment for why even a plain `tack serve` needs one (ADR 0061 decisions
+/// 2 and 6: the UI can turn it on later, with no restart). `with_runner`
+/// only decides whether it also starts immediately at boot, folded into
+/// `TACK_LOCAL_RUNNER_ENABLE` here so `AppConfig::load()` (inside
+/// `local_runner::serve`) picks it up the same way it would from the
+/// environment — one code path, not a CLI-flag-only branch and a
+/// UI-only branch.
 ///
 /// The rest of the CLI is synchronous (it uses a blocking HTTP client), so we
 /// build a Tokio runtime on demand here rather than making `main` async.
 fn run_server(with_runner: bool) -> anyhow::Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
     if with_runner {
-        runtime.block_on(local_runner::serve_with_embedded_runner())
-    } else {
-        runtime.block_on(tack_api::serve())
+        // SAFETY: single-threaded at this point in `main` — no other code
+        // has spawned a thread yet, so nothing else can race this read/write
+        // of the process environment.
+        unsafe {
+            std::env::set_var("TACK_LOCAL_RUNNER_ENABLE", "1");
+        }
     }
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(local_runner::serve())
 }
 
 // ─── Command implementations ─────────────────────────────────────────────────
