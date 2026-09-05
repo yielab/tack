@@ -211,7 +211,7 @@ Then add the routes in the `api` router builder:
 .route("/milestones/{id}", delete(milestones::delete_milestone))
 ```
 
-At this point the feature is complete. Run `cargo test --workspace` to verify nothing is broken, then add integration tests in `crates/tack-db/tests/integration_test.rs` and handler tests in `crates/tack-api/tests/api_test.rs`.
+At this point the feature is complete. Run `cargo nextest run --workspace` to verify nothing is broken, then add integration tests in `crates/tack-db/tests/integration_test.rs` and handler tests in `crates/tack-api/tests/api_test.rs`.
 
 ---
 

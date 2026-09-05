@@ -19,9 +19,9 @@ cd tack
 # so it cannot be committed — this is the one-time setup)
 ./scripts/setup-git.sh
 
-# Verify the build and tests pass
+# Verify the build and tests pass (nextest is the test runner: cargo install cargo-nextest --locked)
 cargo build
-cargo test --workspace
+cargo nextest run --workspace
 ```
 
 `scripts/setup-git.sh` wires up two things:
@@ -166,17 +166,14 @@ cargo build                    # Debug build (fast compile)
 cargo build --release          # Release build (optimized, ~10 MB binary)
 cargo build -p tack-core     # Build only one crate
 
-# ─── Testing ─────────────────────────────────────
-cargo test --workspace         # Run all 207 tests
-cargo test -p tack-core      # Test core (73 unit tests)
-cargo test -p tack-db        # Test DB layer (23 integration tests)
-cargo test -p tack-api       # Test API (82 tests)
-cargo test -p tack-cli       # Test CLI (29 tests)
-cargo test test_workflow        # Run tests matching a name
-cargo test -- --nocapture      # Show println! output during tests
+# ─── Testing (nextest — see docs/TESTING.md) ─────
+cargo nextest run --workspace                                 # Everything; the summary line carries the count
+cargo nextest run --workspace -E 'package(tack-core)'         # One crate — always --workspace, select with -E, never -p
+cargo nextest run --workspace -E 'test(workflow)'             # Tests matching a name
+cargo nextest run --workspace --no-capture -E 'test(<name>)'  # Show println! output (runs serially)
 
 # Frontend tests
-cd frontend && npm test         # 168 Vitest unit tests
+cd frontend && npm test         # Vitest
 
 # ─── Running ─────────────────────────────────────
 cargo run -p tack-cli -- serve              # Start the API server
@@ -423,13 +420,13 @@ that may not fit the roadmap.
    ```bash
    cargo fmt --all --check
    cargo clippy --workspace --all-targets -- -D warnings
-   cargo test --workspace
+   cargo nextest run --workspace
    ```
 
-   `cargo test --workspace` already runs every named Rust gate CI lists
-   separately (OpenAPI/golden/runner-v1 drift, migration recovery, security
-   subset, scheduler E2E) — those are subsets of the same `cargo test`, not
-   extra commands.
+   That is the same single run CI does — every Rust test runs exactly once.
+   CI's only extra steps are the two regenerate-and-diff gates (the OpenAPI
+   spec and tack-orch's golden files); `./scripts/regen-generated.sh` covers
+   the first, and docs/TESTING.md lists both.
 
    Activating the pre-push hook (`git config core.hooksPath .githooks`) runs the
    fmt + clippy portion automatically.

@@ -271,7 +271,7 @@ smoke. Delete the claim; do not soften it.
 **Do not read:** any adapter whole (the ranges above are the only parts that change);
 `bootstrap.rs`; the frontend; `docs/openapi.json`.
 
-**Gate:** `CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/VI-B1 cargo test -p tack-runner`
+**Gate:** `CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/VI-B1 cargo nextest run --workspace -E 'package(tack-runner)'`
 and `-p tack-orch --test runner_contract` (must be byte-identical — you changed no
 fixture), then `/gate runner`. The reverted-fix proof: remove the resolver once, watch the
 "variable is set" assertion fail, restore, record both runs. The keychain proof is live
@@ -321,8 +321,8 @@ never read it out of the store to inspect it. `tack runner secret list` shows na
 **Do not read:** any adapter outside the ranges; `select.rs` whole (705 l); `mod.rs` of
 harness (1,171 l) beyond a grep; the frontend; other handoffs.
 
-**Gate:** `cargo test -p tack-runner`, `-p tack-orch` (`runner_contract` byte-identical or
-an escalation naming the missing field), `-p tack-api --test wave2_gate`; then
+**Gate:** `cargo nextest run --workspace -E 'package(tack-runner) | package(tack-orch)'` (`runner_contract`
+byte-identical or an escalation naming the missing field), `-E 'binary(wave2_gate)'`; then
 `/gate runner`. **Live proof is billed** — run the real `claude-code` attempt once,
 deliberately, and record the request id; the second harness likewise.
 
@@ -357,9 +357,9 @@ gateway path as a console step, and continue with the others — do not write to
 **Do not read:** `router.rs` whole (528 l) beyond the ranges; any adapter; `bootstrap.rs`
 beyond a grep for the re-probe entry point.
 
-**Gate:** `cargo test -p tack-api` (includes `openapi_contract` — **regenerate**, do not
-hand-edit: `UPDATE_OPENAPI=1 cargo test -p tack-api --test openapi_contract` then
-`cd frontend && npm run gen:api`), `cargo test -p tack-cli`, `/gate api`, `/gate frontend`,
+**Gate:** `cargo nextest run --workspace -E 'package(tack-api)'` (includes `openapi_contract` — **regenerate**, do not
+hand-edit: `UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary(openapi_contract)'` then
+`cd frontend && npm run gen:api`), `cargo nextest run --workspace -E 'package(tack-cli)'`, `/gate api`, `/gate frontend`,
 and the two Playwright specs you add (`make e2e` scoped with `-g`).
 
 **Handoff extras:** secret-path proof (`app_meta` row count before/after; the dump grep;
@@ -398,7 +398,7 @@ Part IV mistake this directory's sibling README warns about applies here unchang
 **Do not read:** `migrations.rs` whole (1,614 l); `select.rs`; any adapter; `RunWithAgentModal.tsx`
 (C2's).
 
-**Gate:** `cargo test -p tack-db` (fresh DB **and** an upgraded copy of a beta.7 `tack.db` —
+**Gate:** `cargo nextest run --workspace -E 'package(tack-db)'` (fresh DB **and** an upgraded copy of a beta.7 `tack.db` —
 say where you got it), `-p tack-orch` (the new project-tier test), `-p tack-api`
 (regenerate `openapi.json`/`schema.gen.ts`), `/gate frontend`, the settings E2E. The
 fleet-member proof goes through the route, not the database.
@@ -429,7 +429,7 @@ blob at read.
 **Do not read:** runner-protocol handlers (`handlers/runner_protocol*.rs` — you add
 operator routes only); any adapter; the modal.
 
-**Gate:** `cargo test -p tack-api` (regenerate the spec), `--test runner_contract`
+**Gate:** `cargo nextest run --workspace -E 'package(tack-api)'` (regenerate the spec), `-E 'binary(runner_contract)'`
 byte-identical, `/gate frontend`, the extended E2E with its byte-equality download proof
 intact.
 
@@ -563,7 +563,7 @@ three render PNGs. Update the status row with the integration SHA. Nothing to re
 
 **Wave 15.** Merge B1, build `tack-runner`; merge B2, build; merge B3, regenerate
 `openapi.json` and `schema.gen.ts`, commit them with the merge. Gate:
-`cargo test -p tack-runner -p tack-orch -p tack-api -p tack-cli`, `runner_contract`
+`cargo nextest run --workspace`, `runner_contract`
 byte-identical (or the accepted revision, with its pin-table update), `wave2_gate`, then
 `./scripts/smoke.sh` (existing steps must stay green). Adversarial: revert B1's resolver →
 its test fails; after a gateway run, `sqlite3 tack.db .dump | grep -c <key>` = 0 and the

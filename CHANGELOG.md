@@ -33,6 +33,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Tests run under nextest, and every test runs once.** `cargo nextest run --workspace`
+  replaces `cargo test` in CI, `make test`, the `/gate` skill and the docs. A green run
+  prints failures and one summary line instead of one line per test; every Rust test runs
+  exactly once per CI run, with a JUnit report in place of the five steps that re-ran
+  subsets of the same suite; coverage and the embedded-SPA release build run on pull
+  requests and `main` rather than on every push; and the dev profile keeps line tables
+  instead of full debuginfo, so a test binary drops from 344 MB to 139 MB. Select tests
+  with `-E 'package(...)'`, never `-p`, which builds a second copy of every crate. ADR 0064.
+
 - **Minimum supported Rust version is now 1.89** (was 1.85). Edition 2024 still only needs
   1.85, but the dependency graph does not: `object_store` pulls `crc-fast` (1.89),
   `tracing-appender` pulls `time` (1.88), and the `idna`/`icu` stack needs 1.86.

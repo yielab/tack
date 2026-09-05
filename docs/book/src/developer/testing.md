@@ -1,50 +1,51 @@
 # Testing
 
-Tack's test suite is structured as a pyramid: fast pure-function tests at the base, integration tests in the middle, handler tests and CLI tests at the top. All 1,409 Rust tests run with a single command and require no external services. `tack-desktop` is a workspace of its own and adds 7 more.
+Tack's test suite is structured as a pyramid: fast pure-function tests at the base, integration tests in the middle, handler tests and CLI tests at the top. Every Rust test runs with a single command — `cargo nextest run --workspace` — and needs no external service; the summary line carries the count. `tack-desktop` is a workspace of its own (`cargo nextest run --manifest-path crates/tack-desktop/Cargo.toml`).
 
-> **Scope of this page.** This chapter explains how to *write and run* the Rust tests, crate by crate. For the full cross-cutting test strategy — including the Playwright end-to-end suite, the k6 load baseline, the security audits, and the CI gate matrix — see [`docs/TESTING.md`](../../../TESTING.md), the authoritative testing reference. Counts here are kept in sync with `cargo test --workspace`.
+> **Scope of this page.** This chapter explains how to *write and run* the Rust tests, crate by crate. For the full cross-cutting test strategy — including the Playwright end-to-end suite, the k6 load baseline, the security audits, and the CI gate matrix — see [`docs/TESTING.md`](../../../TESTING.md), the authoritative testing reference. A count appears here only next to the command that produces it.
 
 ---
 
 ## Test Pyramid
 
-| Crate | Count | Kind | Speed |
-|---|---|---|---|
-| `tack-core` | 73 | Unit — pure functions, zero I/O | Very fast |
-| `tack-db` | 23 + 1 ignored | Integration — in-memory SQLite | Fast |
-| `tack-api` | 82 | Handler + unit — in-memory SQLite + Axum | Fast |
-| `tack-cli` | 29 | Contract — `wiremock` mock server + unit | Fast |
-| **Total** | **207** (+1 ignored perf) | | |
+| Crate | Kind | Run it alone |
+|---|---|---|
+| `tack-core` | Unit — pure functions, zero I/O | `cargo nextest run --workspace -E 'package(tack-core)'` |
+| `tack-db` | Integration — in-memory SQLite (+ one `#[ignore]`d perf test) | `… -E 'package(tack-db)'` |
+| `tack-orch` | Unit + contract — byte-pinned runner-v1 fixtures, golden files | `… -E 'package(tack-orch)'` |
+| `tack-api` | Handler + unit — in-memory SQLite + Axum, no port | `… -E 'package(tack-api)'` |
+| `tack-runner` | Unit + fake-harness crash matrix (live harnesses `#[ignore]`d, billed) | `… -E 'package(tack-runner)'` |
+| `tack-cli` | Contract — `wiremock`, plus a real-process scheduler E2E | `… -E 'package(tack-cli)'` |
 
-The frontend adds **734 Vitest unit tests** (`cd frontend && npm test`) plus a cross-browser **Playwright** end-to-end suite (`make e2e`) that boots an isolated API and the SPA. The `tack-api` count includes 47 handler integration tests (`api_test.rs`) and the crate's inline unit tests.
+Always `--workspace`, selecting with `-E`: `cargo test -p <crate>` resolves dependency features differently and builds a second copy of every crate. The frontend adds the Vitest suite (`cd frontend && npm test`) plus a cross-browser **Playwright** end-to-end suite (`make e2e`) that boots an isolated API and the SPA.
 
 ---
 
 ## Running Tests
 
 ```sh
-# Run the entire workspace at once
-cargo test --workspace
+# Everything — failures and a one-line summary are the whole output
+cargo nextest run --workspace
 
-# Show println!/tracing output from tests
-cargo test --workspace -- --nocapture
+# Show println!/tracing output (runs the selected tests serially)
+cargo nextest run --workspace --no-capture -E 'test(workflow_transition)'
 
-# Run a single test by name (substring match)
-cargo test test_workflow_transition_validation
+# One test, by name (regex)
+cargo nextest run --workspace -E 'test(/^workflow/)'
 
-# Run a single crate
-cargo test -p tack-core
-cargo test -p tack-db
-cargo test -p tack-api
-cargo test -p tack-cli
+# One crate
+cargo nextest run --workspace -E 'package(tack-core)'
 
-# Performance test — ignored by default, requires ~5 s
-cargo test -p tack-db list_items_p95 -- --ignored
+# Performance test — ignored by default, needs ~5 s
+cargo nextest run --workspace --run-ignored ignored-only -E 'test(list_items_p95)'
 
-# Handler tests that require the bundled SPA (needs frontend/dist/ to exist first)
+# Handler tests that require the bundled SPA (needs frontend/dist/ first;
+# -p is right here — a feature build is its own resolution anyway)
 npm run build --prefix frontend
-cargo test -p tack-api --features embed-spa
+cargo nextest run -p tack-api --features embed-spa
 ```
+
+`cargo nextest` is a separate install: `cargo install cargo-nextest --locked`, or the prebuilt from <https://get.nexte.st>. Filtersets are documented at <https://nexte.st/docs/filtersets/>.
 
 ---
 
@@ -86,7 +87,7 @@ assert_matches!(
 
 ## `tack-db` — Integration Tests
 
-Tests live in `crates/tack-db/tests/integration_test.rs`.
+Tests live in `crates/tack-db/tests/`.
 
 Each test gets a fresh in-memory database via the `setup_test_db()` helper:
 
@@ -146,14 +147,14 @@ list_items_p95_under_100ms_at_50k
 This test inserts 50,000 items and measures the P95 latency of `list_items`. It is excluded from normal CI runs because it takes several seconds. Run it manually when you change query structure or add indexes:
 
 ```sh
-cargo test -p tack-db list_items_p95 -- --ignored
+cargo nextest run --workspace --run-ignored ignored-only -E 'test(list_items_p95)'
 ```
 
 ---
 
 ## `tack-api` — Handler Tests
 
-Tests live in `crates/tack-api/tests/api_test.rs`.
+Tests live in `crates/tack-api/tests/`. Add to the file whose subject fits rather than creating a new one: each file is its own binary and its own full link.
 
 The `test_app()` helper in `tests/common/mod.rs` builds a fully wired Axum router backed by an in-memory SQLite database. It returns both the router and the test workspace ID:
 
@@ -283,11 +284,13 @@ Because `TackClient` uses `reqwest::blocking`, tests wrap the call in `tokio::ta
 
 ## CI
 
-GitHub Actions runs the following on every push to `develop`:
+GitHub Actions runs the following on every push to `main`, `develop` and `claude/**`, and on every pull request:
 
-1. **`cargo test --workspace`** — all 1,409 tests. Five are `#[ignore]`d: the perf test and the live-harness runner tests, which bill a real agent account.
-2. **embed-spa job** — builds the frontend with `npm run build`, then runs `cargo test -p tack-api --features embed-spa` to verify the SPA embedding and the additional handler tests that require a built frontend.
-3. **frontend job** — `npm run type-check`, `npm test` (Vitest), and `npm run build`.
-4. **quality gates** — `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, the Playwright accessibility scan (axe, WCAG AA), and a bundle-size budget.
+1. **`cargo nextest run --workspace --profile ci`** — every Rust test, once, each in its own process; the JUnit report carries each test's status. The `#[ignore]`d tests (the perf test and the live-harness runner tests, which bill a real agent account) stay skipped.
+2. **regenerate-and-diff gates** — the OpenAPI spec and tack-orch's golden files are regenerated from the code and must match what is committed.
+3. **frontend job** — `npm run type-check`, `npm run build`, the design-token lint and a bundle-size budget.
+4. **quality gates** — `scripts/check-comments.sh`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, the Playwright accessibility scan (axe, WCAG AA).
+
+Two jobs run on pull requests and pushes to `main` only, because each costs as much as the whole test job: **coverage** (`cargo llvm-cov` floors per crate) and **embed-spa** (the size-optimised release build with the SPA embedded, and its binary-size budget).
 
 The performance test (`list_items_p95`) is not run in CI. Run it locally when profiling query performance. See [`docs/TESTING.md`](../../../TESTING.md) for the complete CI gate matrix and the load/security suites.

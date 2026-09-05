@@ -19,7 +19,11 @@ cargo metadata --format-version 1 --manifest-path crates/tack-desktop/Cargo.toml
 
 if [ "$fast" = false ]; then
   # docs/openapi.json — written by the contract test itself under UPDATE_OPENAPI.
-  UPDATE_OPENAPI=1 cargo test -p tack-api --test openapi_contract >/dev/null
+  # --workspace with a filterset, never -p: -p builds a second copy of every
+  # tack crate with a different feature resolution.
+  command -v cargo-nextest >/dev/null 2>&1 \
+    || { echo "cargo-nextest is missing: cargo install cargo-nextest --locked" >&2; exit 1; }
+  UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary(openapi_contract)' >/dev/null
 fi
 
 # frontend/src/shared/api/schema.gen.ts — derived from docs/openapi.json.

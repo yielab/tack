@@ -44,17 +44,17 @@ cli: ## Run the CLI (use ARGS="..." to pass arguments)
 	cargo run --bin tack -- $(ARGS)
 
 # ─── Testing ─────────────────────────────────────
-test: ## Run all tests
-	cargo test --workspace
+test: ## Run all tests (nextest: failures + one summary line)
+	cargo nextest run --workspace
 
-test-verbose: ## Run all tests with output
-	cargo test --workspace -- --nocapture
+test-verbose: ## Run all tests showing their output (serial)
+	cargo nextest run --workspace --no-capture
 
 test-core: ## Run only core unit tests
-	cargo test -p tack-core
+	cargo nextest run --workspace -E 'package(tack-core)'
 
 test-db: ## Run only database integration tests
-	cargo test -p tack-db
+	cargo nextest run --workspace -E 'package(tack-db)'
 
 # ─── End-to-End (browser) ────────────────────────
 e2e-install: frontend/node_modules ## Install Playwright browsers (one-time)
