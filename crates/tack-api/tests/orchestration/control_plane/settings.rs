@@ -157,7 +157,7 @@ async fn env_default_true_is_reflected_before_any_ui_toggle() {
     // bypassing `server.rs`'s boot sequence — so nothing has called
     // `orch_runtime.start()` yet even though the env default is `true`.
     // That boot-time start is `server.rs`'s job, exercised by
-    // `tack-api/tests/orch_reconciler_wiring_test.rs`, not this file's.
+    // `tack-api/tests/orchestration/reconciler/wiring.rs`, not this file's.
     assert_eq!(body["reconciler_running"], false);
 }
 

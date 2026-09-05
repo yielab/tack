@@ -4,7 +4,7 @@
 //! no production source is touched. Every test below drives the real
 //! production router (`tack_api::router::build_router`, the exact function
 //! `tack serve` calls), mirroring the house convention `wave2_gate.rs` and
-//! `f6a_artifact_wiring_test.rs` established, and every "writes nothing" /
+//! `wiring/artifact.rs` established, and every "writes nothing" /
 //! "rejects before X" claim reads persisted database state directly rather
 //! than trusting a status code alone.
 //!
@@ -31,7 +31,7 @@ const BASE_REVISION: &str = "abc123def456abc123def456abc123def456abc";
 // ---------------------------------------------------------------------
 // Infrastructure — deliberately self-contained (no cross-test-file
 // imports), matching the established precedent in `wave2_gate.rs` and
-// `f6a_artifact_wiring_test.rs`: each adversarial file builds its own clean
+// `wiring/artifact.rs`: each adversarial file builds its own clean
 // database and its own production router from scratch.
 // ---------------------------------------------------------------------
 
@@ -312,7 +312,7 @@ struct RunningAttempt {
 
 /// Enrolls one runner, creates one exact-runner-selected request, claims,
 /// accepts and starts it — leaving the attempt `running`. Mirrors
-/// `f6a_artifact_wiring_test.rs::ready_running_attempt`.
+/// `wiring/artifact.rs::ready_running_attempt`.
 async fn ready_running_attempt(app: &axum::Router, item_id: &str, label: &str) -> RunningAttempt {
     let agent_profile_id = agent_profile(app, label).await;
     let runner = enroll_runner(app, &format!("G2 runner {label}")).await;

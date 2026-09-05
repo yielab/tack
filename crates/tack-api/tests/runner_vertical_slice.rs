@@ -3,7 +3,7 @@
 //! Exercises `Repository` directly at the repository seam — crash/fault
 //! injection around claim, event batching, completion, cancellation,
 //! enrollment, and heartbeat, proving each rolls back and replays exactly
-//! once — rather than through HTTP; `c5_integration_test.rs` and
+//! once — rather than through HTTP; `handlers/production_router.rs` and
 //! `wave2_gate.rs` cover the same lifecycle through the real production
 //! router.
 

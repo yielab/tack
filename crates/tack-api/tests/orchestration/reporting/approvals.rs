@@ -30,7 +30,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const APPROVAL_HEADER: &str = "x-tack-approval-token";
 
-// ─── Helpers (mirrors orch_dispatch_test.rs) ───────────────────────────────
+// ─── Helpers (mirrors orchestration/dispatch/item.rs) ──────────────────────
 
 fn orch_config() -> AppConfig {
     AppConfig {

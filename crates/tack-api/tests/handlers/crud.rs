@@ -1461,7 +1461,8 @@ async fn export_yaml_round_trips_through_import() {
 /// from GitHub is marked untrusted at creation time, and that marker
 /// survives an export → import round trip rather than resetting to
 /// trusted. (The wire-level "docket sees trusted:false" assertion lives in
-/// `crates/tack-api/tests/auto_dispatch_test.rs` and `orch_dispatch_test.rs`
+/// `crates/tack-api/tests/orchestration/auto_dispatch/hook.rs` and
+/// `orchestration/dispatch/item.rs`
 /// — this test covers the provenance marker itself, end to end through the
 /// real HTTP import/export/import path.)
 #[tokio::test]

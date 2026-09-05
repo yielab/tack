@@ -35,7 +35,8 @@ use uuid::Uuid;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-// ─── Helpers (mirrors orch_dispatch_test.rs / sprint_dispatch_test.rs) ────
+// ─── Helpers (mirrors orchestration/dispatch/item.rs /
+// orchestration/auto_dispatch/sprint.rs) ────────────────────────────────────
 
 fn orch_config() -> AppConfig {
     AppConfig {

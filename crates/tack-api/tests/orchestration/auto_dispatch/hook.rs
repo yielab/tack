@@ -34,7 +34,7 @@ use uuid::Uuid;
 use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-// ─── Helpers (mirrors orch_dispatch_test.rs) ───────────────────────────────
+// ─── Helpers (mirrors orchestration/dispatch/item.rs) ──────────────────────
 
 fn orch_config() -> AppConfig {
     AppConfig {
@@ -213,7 +213,7 @@ fn mock_list_tasks_body(task_id: &str) -> serde_json::Value {
 }
 
 /// The hook runs on a background `tokio::spawn` — poll wiremock's received
-/// request log for up to ~2s, the same pattern `api_test.rs`'s GitHub
+/// request log for up to ~2s, the same pattern `handlers/crud.rs`'s GitHub
 /// push-back test already uses for exactly the same "fire and forget"
 /// reason. Returns the number of matching hits observed.
 async fn wait_for_hits(server: &MockServer, path_suffix: &str, at_least: usize) -> usize {

@@ -140,9 +140,9 @@ async fn complete_as_human(app: &Router, item_id: Uuid) {
 }
 
 /// Completes an item after seeding an `orch_tasks` row for it directly (bypassing
-/// a real docket call, same technique `orch_budget_policy_test.rs` uses) — the
-/// "agent" population. `dispatched_at` is caller-controlled so lead-time/staleness
-/// scenarios can be constructed precisely.
+/// a real docket call, same technique `orchestration/reporting/budget_policy.rs`
+/// uses) — the "agent" population. `dispatched_at` is caller-controlled so
+/// lead-time/staleness scenarios can be constructed precisely.
 #[allow(clippy::too_many_arguments)]
 async fn complete_as_agent(
     state: &AppState,
