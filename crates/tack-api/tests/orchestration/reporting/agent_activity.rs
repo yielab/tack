@@ -12,7 +12,7 @@
 //! both pending and decided, newest-requested-first; and `events_truncated`
 //! reflects whether any attempt predates the retention cutoff.
 
-mod common;
+use crate::common;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};

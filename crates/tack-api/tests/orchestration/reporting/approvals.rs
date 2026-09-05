@@ -11,7 +11,7 @@
 //! token (docket 409) surfaces as 409, not 500; and an unknown token 404s
 //! without ever calling docket.
 
-mod common;
+use crate::common;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
