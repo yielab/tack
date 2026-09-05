@@ -160,6 +160,24 @@ pub trait Provider: Send + Sync {
     /// serve that wire at all.
     fn endpoint(&self, wire: Wire) -> Option<KnownEndpoint>;
 
+    /// Whether a harness's own init/result line, once spawned against this
+    /// provider's endpoint, states which model actually served the request —
+    /// as opposed to only which model was requested. A harness's init line
+    /// is emitted before any network call reaches this provider's endpoint,
+    /// so it can only ever state what the harness was configured to
+    /// request; whether that is also what answered depends on whether
+    /// anything between the harness and the model can substitute one model
+    /// for another. A gateway can (routing, fallback, aliasing); a vendor's
+    /// own direct API cannot (it serves the requested model or the request
+    /// fails, never a silent substitute). Defaults to the safe answer —
+    /// `false`, unconfirmed — so a provider module that does not override
+    /// this is never credited with a capability it has not proven; every
+    /// provider in [`registry`] states its own value explicitly rather than
+    /// inheriting the default silently.
+    fn confirms_served_model_from_init_line(&self) -> bool {
+        false
+    }
+
     /// Fetches and parses this provider's own model catalog, using
     /// whatever auth placement and body shape its vendor requires.
     async fn fetch_catalog(
@@ -189,6 +207,22 @@ pub fn reaches(provider: &dyn Provider) -> Vec<&'static str> {
         })
         .copied()
         .collect()
+}
+
+/// Whether a harness adapter parsing its own init/result line for a request
+/// naming `requested_provider` must record the model as
+/// `requested_not_confirmed` rather than `harness_reported` — `true` only
+/// when `requested_provider` names a registered provider whose own
+/// [`Provider::confirms_served_model_from_init_line`] is `false`. A name
+/// matching no registered provider (a harness's own native vendor family,
+/// or an unconfigured/unknown string) is never in question here: those
+/// paths already record `harness_reported` unconditionally, unaffected by
+/// this function.
+pub fn requires_unconfirmed_model_recording(requested_provider: &str) -> bool {
+    registry()
+        .into_iter()
+        .find(|provider| provider.wire_name() == requested_provider)
+        .is_some_and(|provider| !provider.confirms_served_model_from_init_line())
 }
 
 /// Resolves what `requested_provider` needs injected for `wire`, or `None`

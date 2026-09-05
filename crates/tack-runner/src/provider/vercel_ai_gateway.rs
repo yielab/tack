@@ -42,6 +42,16 @@ impl Provider for VercelAiGateway {
         }
     }
 
+    // A gateway can route, fall back, or alias a request to a different
+    // model than the one requested, so a harness's own init line — written
+    // before any call reaches this endpoint — cannot be trusted as what was
+    // actually served. Explicit rather than left to the trait default: a
+    // reader should not have to check the default to know this was decided,
+    // not overlooked.
+    fn confirms_served_model_from_init_line(&self) -> bool {
+        false
+    }
+
     async fn fetch_catalog(
         &self,
         secret: &SecretValue,

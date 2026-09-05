@@ -57,6 +57,15 @@ impl Provider for Anthropic {
         }
     }
 
+    // A direct vendor API is not a proxy: it serves the requested model or
+    // the request fails, never a silent substitute, so a harness's own
+    // init line is trustworthy here even though it is written before this
+    // endpoint answers. Explicit rather than left to the trait default, the
+    // same as the gateway module's own explicit `false`.
+    fn confirms_served_model_from_init_line(&self) -> bool {
+        true
+    }
+
     async fn fetch_catalog(
         &self,
         secret: &SecretValue,
