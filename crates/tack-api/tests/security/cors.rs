@@ -11,14 +11,12 @@
 //! still requires each header it needs to be in that fixed list, which is
 //! exactly what this test pins down.
 
-mod common;
-
 use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use tower::ServiceExt;
 
-use common::test_app;
+use crate::common::test_app;
 use tack_api::handlers::orch::APPROVAL_TOKEN_HEADER;
 
 /// `Access-Control-Allow-Origin` only reflects an origin the server was

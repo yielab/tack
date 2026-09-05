@@ -14,8 +14,6 @@
 //! `pod_created_link_failed` rather than silently dropped or wrongly
 //! treated as a hard failure.
 
-mod common;
-
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
