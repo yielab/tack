@@ -10,6 +10,12 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Lets a card branch or a maintainer trigger a real run of the build/bundle
+  # jobs (e.g. to verify a change to this file) without pushing a version tag.
+  # `check-version` skips its tag/version match outside a tag push, and
+  # `release`/`container` refuse to run at all — a workflow_dispatch run
+  # never creates a GitHub Release or publishes a container image.
+  workflow_dispatch:
 
 # One run per tag — re-pushing a tag after a failed release (a real thing
 # that has happened) cancels the run it superseded instead of racing it.
@@ -45,6 +51,10 @@ jobs:
       - name: Verify versions match
         run: |
           set -euo pipefail
+          if [ "${{ github.ref_type }}" != "tag" ]; then
+            echo "Not a tag push (event: ${{ github.event_name }}) — skipping the tag/version check."
+            exit 0
+          fi
           CARGO_VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           echo "Cargo.toml: $CARGO_VERSION — tag: $TAG_VERSION"
@@ -289,9 +299,115 @@ jobs:
             ${{ env.RUNNER_ASSET }}
           if-no-files-found: error
 
+  # ADR 0062 decision 7: the app ships for all three desktop OSes next to the
+  # server/CLI archives `build` produces above, unsigned. `ci.yml`'s `desktop`
+  # job only checks the crate compiles (no system libs for bundling there);
+  # this one installs them and actually runs `cargo tauri build`.
+  desktop:
+    name: Desktop app bundle (${{ matrix.platform }})
+    needs: check-version
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: desktop-linux
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
+          - platform: desktop-macos-aarch64
+            os: macos-latest
+            target: aarch64-apple-darwin
+            bundles: dmg
+          - platform: desktop-macos-x86_64
+            os: macos-latest
+            target: x86_64-apple-darwin
+            bundles: dmg
+          - platform: desktop-windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: msi
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        run: |
+          npm --prefix frontend ci
+          npm --prefix frontend run build
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: |
+            .
+            crates/tack-desktop
+          key: ${{ matrix.platform }}
+
+      # Same packages as ci.yml's `desktop` job, on the same runner image the
+      # dispatch checklist verified them against (docs/agent-handoffs/part-vii/README.md).
+      - name: Install Tauri's Linux system dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libxdo-dev librsvg2-dev
+
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --version '^2' --locked
+
+      - name: Build tack sidecar
+        run: cargo build --release --target ${{ matrix.target }} -p tack-cli --features embed-spa
+
+      # Tauri's `externalBin` resolves `binaries/tack` (tauri.bundle.conf.json)
+      # to `binaries/tack-<target-triple>`, `.exe`-suffixed on Windows.
+      - name: Stage sidecar for Tauri externalBin
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p crates/tack-desktop/binaries
+          EXT=""
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then EXT=".exe"; fi
+          cp "target/${{ matrix.target }}/release/tack$EXT" \
+             "crates/tack-desktop/binaries/tack-${{ matrix.target }}$EXT"
+
+      - name: cargo tauri build
+        working-directory: crates/tack-desktop
+        run: |
+          cargo tauri build --config tauri.bundle.conf.json \
+            --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+      - name: Stage bundle output
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist-desktop
+          find crates/tack-desktop/target/${{ matrix.target }}/release/bundle -type f \
+            \( -name '*.deb' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.msi' \) \
+            -exec cp {} dist-desktop/ \;
+          ls -la dist-desktop
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ matrix.platform }}
+          path: dist-desktop/*
+          if-no-files-found: error
+
   release:
     name: Create GitHub Release
-    needs: [test, sbom, build]
+    needs: [test, sbom, build, desktop]
+    # Never on a workflow_dispatch run (used to test-drive this file on a
+    # branch) — only a real version-tag push creates a release.
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -310,7 +426,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-          pattern: "{linux-x86_64,macos-aarch64,macos-x86_64,windows-x86_64,sbom}"
+          pattern: "{linux-x86_64,macos-aarch64,macos-x86_64,windows-x86_64,desktop-linux,desktop-macos-aarch64,desktop-macos-x86_64,desktop-windows,sbom}"
 
       - name: Generate SHA256SUMS
         working-directory: dist
@@ -336,6 +452,19 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+          # ADR 0062 decision 7: desktop bundles are unsigned (signing needs a
+          # paid certificate, a separate decision) — `body` is a fixed prefix,
+          # softprops/action-gh-release appends the auto-generated notes after it.
+          body: |
+            The desktop app (`.deb`, `.AppImage`, `.dmg`, `.msi` below) is unsigned:
+            signing certificates are a separate, not-yet-made decision. Two
+            one-time warnings to expect on first launch:
+
+            - **macOS:** Gatekeeper blocks the unsigned app on a normal double-click.
+              Right-click (or Control-click) the app → **Open** → **Open** in the
+              dialog. Only needed once.
+            - **Windows:** SmartScreen will warn about an unrecognized app. Click
+              **More info** → **Run anyway**. Only needed once.
           # Tags with a pre-release suffix (v0.1.0-beta.7) are marked as
           # GitHub pre-releases and excluded from /releases/latest.
           prerelease: ${{ contains(github.ref_name, '-') }}
@@ -343,6 +472,9 @@ jobs:
   container:
     name: Publish container image (ghcr.io)
     needs: [check-version, test]
+    # Never on a workflow_dispatch run — only a real version-tag push
+    # publishes an image.
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
