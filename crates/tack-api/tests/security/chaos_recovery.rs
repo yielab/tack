@@ -85,6 +85,7 @@ async fn build_app(
         broadcast_tx: tx,
         webhook: None,
         orch_runtime: OrchRuntime::new(),
+        local_runner: None,
     };
     (build_router(state), pool)
 }

@@ -1,6 +1,7 @@
 //! Hosts the runner role inside the `tack` binary: `tack runner start` runs
-//! it as the whole process, `tack serve --with-runner` runs it as a task
-//! alongside the server in the same process.
+//! it as the whole process, `tack serve` (with or without `--with-runner`)
+//! runs it as a controllable task alongside the server in the same
+//! process.
 //!
 //! Both paths build a [`tack_runner::RunnerConfig`] through the exact
 //! precedence rules `tack-runner`'s own binary uses
@@ -14,18 +15,38 @@
 //! router or state, and never will — a shortcut here would create a second
 //! implementation of the runner protocol client that `docs/contracts/
 //! runner-v1/` cannot hold accountable.
+//!
+//! **The seam this module adds (ADR 0061 decisions 2 and 6):** [`serve`]
+//! always wires an [`EmbeddedRunnerControl`] into `AppState`
+//! (`tack_api::serve_with_ready_and_local_runner`), whether or not
+//! `--with-runner`/`TACK_LOCAL_RUNNER_ENABLE` says to start it immediately —
+//! that flag now only decides `AppConfig::local_runner_enable`'s startup
+//! value, folded in by [`with_runner_enabled`]/`main.rs` before this
+//! function is reached. `tack_api::server::serve_inner`'s own auto-start
+//! check and `PUT /api/local-runner` both call the exact same
+//! [`EmbeddedRunnerControl::start`] — there is only ever one code path into
+//! the runtime, never a boot-time one and a UI-triggered one.
 
-use std::{
-    path::{Path, PathBuf},
-    time::Duration,
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use tack_api::{
+    CatalogSnapshot, LocalRunnerControl, LocalRunnerControlError, RuntimeState, RuntimeStatus,
+    SecretMeta,
 };
-
 use tack_runner::{
     ConfigError, ConfigOverrides, EnrollmentCredential, RunnerConfig, RunnerConfigSources,
     RunnerError, Shutdown, ShutdownHandle,
     bootstrap::{self, RunnerLimits},
     harness::process::ProcessLimits,
+    secrets::SecretStore,
 };
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 /// Bounds applied to every harness subprocess a runner hosted by this binary
@@ -62,8 +83,13 @@ fn load_runner_config(
     })
 }
 
-/// Whether the embedded runner should start, combining `--with-runner` with
-/// its environment equivalent. Off unless one of the two explicitly says on.
+/// Whether the embedded runner should start at boot, combining
+/// `--with-runner` with its environment equivalent. Off unless one of the
+/// two explicitly says on. This only ever feeds `AppConfig::
+/// local_runner_enable` (`main.rs`'s `run_server`) — the actual on/off
+/// decision at any later moment is `effective_local_runner_enabled`'s
+/// (`tack-api`), which lets a UI toggle override this startup default from
+/// then on.
 pub fn with_runner_enabled(flag: bool) -> bool {
     flag || std::env::var("TACK_LOCAL_RUNNER_ENABLE")
         .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
@@ -117,75 +143,27 @@ async fn run_to_shutdown(config: RunnerConfig) -> anyhow::Result<()> {
     }
 }
 
-/// Rejects a server configuration the embedded runner must never start
-/// against. An embedded runner executes arbitrary agent processes on the
-/// host serving the UI, so a non-loopback bind is refused outright rather
-/// than downgraded to "serve without a runner" — a caller must fail before
-/// starting anything else.
+/// Rejects a server configuration that explicitly asked the embedded runner
+/// to start (`--with-runner`/`TACK_LOCAL_RUNNER_ENABLE`) on a non-loopback
+/// bind. An embedded runner executes arbitrary agent processes on the host
+/// serving the UI, so that combination is refused outright, before any
+/// socket or database opens, rather than downgraded to "serve without a
+/// runner" — a caller must fail loudly rather than silently ignore its own
+/// flag. Callers only reach this when they already know the runner was
+/// asked to auto-start; a plain `tack serve` with no such request is fine
+/// on any bind — see [`serve`]'s own doc comment for why the same
+/// loopback rule, applied to a *persisted* preference instead of this
+/// boot's own flag, is checked again later, after the database opens.
 fn ensure_loopback(config: &tack_api::config::AppConfig) -> anyhow::Result<()> {
     if !config.binds_loopback() {
         anyhow::bail!(
-            "refusing to start --with-runner: {} is not a loopback address. An embedded \
-             runner executes arbitrary agent processes on this host, so it is restricted \
-             to a server bound to loopback",
+            "refusing to start with an embedded runner: {} is not a loopback address. An \
+             embedded runner executes arbitrary agent processes on this host, so it is \
+             restricted to a server bound to loopback",
             config.host
         );
     }
     Ok(())
-}
-
-/// Runs the server and an embedded runner together in one process
-/// (`tack serve --with-runner`).
-///
-/// Refuses to start (before opening a socket or a database) when the server
-/// is not bound to loopback — a startup error, never a silent downgrade to a
-/// runner-less server. Once the server signals the address it actually
-/// bound, the runner config is given a credential (manual, a stored session,
-/// or a freshly self-provisioned one — see [`ensure_runner_credential`]),
-/// pointed at that exact address, and handed to [`supervise`], which makes
-/// either side dying take the whole process down loudly.
-pub async fn serve_with_embedded_runner() -> anyhow::Result<()> {
-    let server_config = tack_api::config::AppConfig::load();
-    ensure_loopback(&server_config)?;
-
-    let mut runner_config = load_runner_config(ConfigOverrides::default(), None)?;
-
-    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
-    let mut server_task = tokio::spawn(tack_api::serve_with_ready(ready_tx));
-
-    let bound_addr = match ready_rx.await {
-        Ok(addr) => addr,
-        Err(_) => {
-            // The sender was dropped without sending, which only happens when
-            // `serve_with_ready` returned before opening its listener; that
-            // task's own result is the error worth surfacing, not the closed
-            // channel.
-            return match server_task.await {
-                Ok(Ok(())) => Err(anyhow::anyhow!("server exited before it became ready")),
-                Ok(Err(error)) => Err(error),
-                Err(join_error) => Err(anyhow::anyhow!("server task panicked: {join_error}")),
-            };
-        }
-    };
-
-    // Only the address the listener actually bound is authoritative — the
-    // configured port may have been 0, letting the OS choose it, and any
-    // `api_base_url` sourced from file or environment describes a different
-    // (remote-runner) deployment shape that does not apply here.
-    runner_config.api_base_url = format!("http://{bound_addr}/api/runner/v1");
-
-    // The server is up and its database is open; a credential failure past
-    // this point must take the server down with it rather than leave it
-    // running with no runner attached to it.
-    if let Err(error) = ensure_runner_credential(&mut runner_config, &server_config).await {
-        server_task.abort();
-        return Err(error);
-    }
-
-    let (shutdown, shutdown_handle) = Shutdown::channel();
-    let mut runner_task = tokio::spawn(bootstrap::run(runner_config, runner_limits(), shutdown));
-
-    supervise(&mut server_task, &mut runner_task, &shutdown_handle).await
 }
 
 /// Makes sure `runner_config` carries something the embedded runner can
@@ -209,8 +187,8 @@ pub async fn serve_with_embedded_runner() -> anyhow::Result<()> {
 ///    `docs/adr/0058-standalone-single-binary-runner.md`).
 ///
 /// Only ever called after [`ensure_loopback`] has already passed, since it
-/// runs after the server has started inside [`serve_with_embedded_runner`] —
-/// self-provisioning inherits that guard rather than re-deriving it.
+/// runs after the server has started — self-provisioning inherits that
+/// guard rather than re-deriving it.
 async fn ensure_runner_credential(
     runner_config: &mut RunnerConfig,
     server_config: &tack_api::config::AppConfig,
@@ -228,46 +206,306 @@ async fn ensure_runner_credential(
     Ok(())
 }
 
-/// Waits on whichever of the server or embedded-runner task finishes first
-/// and reacts honestly to which one it was:
-///
-/// - the server finishing is the normal shutdown path (it owns its own
-///   ctrl-c handling) — the embedded runner has no reason to keep running
-///   once its host process is going down, so it is asked to stop and then
-///   joined;
-/// - the runner finishing first, while nothing asked it to, means it died
-///   or never got started — the server is aborted immediately and the
-///   error is returned, because a server left running with its runner
-///   silently gone is indistinguishable from a scheduler bug to whoever is
-///   watching `tack serve`.
-async fn supervise(
-    server_task: &mut JoinHandle<anyhow::Result<()>>,
-    runner_task: &mut JoinHandle<Result<(), RunnerError>>,
-    shutdown_handle: &ShutdownHandle,
-) -> anyhow::Result<()> {
-    tokio::select! {
-        server_result = &mut *server_task => {
-            shutdown_handle.request();
-            let runner_result = (&mut *runner_task)
-                .await
-                .map_err(|error| anyhow::anyhow!("embedded runner task panicked: {error}"))?;
-            server_result
-                .map_err(|error| anyhow::anyhow!("server task panicked: {error}"))??;
-            runner_result.map_err(anyhow::Error::from)
-        }
-        runner_result = &mut *runner_task => {
-            server_task.abort();
-            let runner_result = runner_result
-                .map_err(|error| anyhow::anyhow!("embedded runner task panicked: {error}"))?;
-            match runner_result {
-                Ok(()) => Err(anyhow::anyhow!(
-                    "embedded runner exited unexpectedly while the server was still running"
-                )),
-                Err(error) => Err(anyhow::anyhow!(
-                    "embedded runner failed while the server was still running: {error}"
-                )),
+/// Where [`EmbeddedRunnerControl`] remembers which secret names it has set
+/// and when — never a value, and deliberately *not* inside
+/// `SecretStore`'s own file/keychain entries: `tack-runner`'s `SecretStore`
+/// tracks no timestamp at all, and it stores one entry per credential name
+/// with no room for metadata alongside it. A name present in the real store
+/// but absent here (set by `tack runner secret set` before this UI ever
+/// ran) reports `set_at: None` rather than a fabricated time.
+fn secret_meta_path(state_dir: &Path) -> PathBuf {
+    state_dir.join("secret_meta.json")
+}
+
+fn load_secret_meta(state_dir: &Path) -> HashMap<String, DateTime<Utc>> {
+    std::fs::read(secret_meta_path(state_dir))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+/// Best-effort: a failure to persist this sidecar loses only "since when"
+/// display metadata, never the secret itself (already durably written to
+/// the real store by the caller before this runs).
+fn save_secret_meta(state_dir: &Path, meta: &HashMap<String, DateTime<Utc>>) {
+    let Ok(json) = serde_json::to_vec(meta) else {
+        return;
+    };
+    if let Err(error) = std::fs::write(secret_meta_path(state_dir), json) {
+        tracing::warn!(%error, "failed to persist local-runner secret metadata (non-fatal)");
+    }
+}
+
+fn map_catalog_status(status: tack_runner::provider::CatalogStatus) -> CatalogSnapshot {
+    match status {
+        tack_runner::provider::CatalogStatus::NotConfigured => CatalogSnapshot::NotConfigured,
+        tack_runner::provider::CatalogStatus::SecretUnresolved => CatalogSnapshot::SecretUnresolved,
+        tack_runner::provider::CatalogStatus::Unreachable { status } => {
+            CatalogSnapshot::Unreachable {
+                http_status: status,
             }
         }
+        tack_runner::provider::CatalogStatus::Configured {
+            model_count,
+            checked_at,
+        } => CatalogSnapshot::Configured {
+            model_count,
+            checked_at,
+        },
+    }
+}
+
+struct Running {
+    shutdown_handle: ShutdownHandle,
+    runner_task: JoinHandle<Result<(), RunnerError>>,
+    since: DateTime<Utc>,
+}
+
+struct State {
+    /// `None` until the server this control is embedded in has bound its
+    /// listener and told [`EmbeddedRunnerControl::set_bound_addr`] — before
+    /// that, [`EmbeddedRunnerControl::start`] has nowhere to point the
+    /// runner's own HTTP client and fails rather than guessing.
+    bound_addr: Option<SocketAddr>,
+    runner_config: RunnerConfig,
+    running: Option<Running>,
+    secret_meta: HashMap<String, DateTime<Utc>>,
+}
+
+/// The seam `tack-api`'s routes call (`handlers::local_runner`'s
+/// `LocalRunnerControl` trait) without ever depending on `tack-runner`
+/// itself. One instance lives for the life of a `tack serve` process,
+/// constructed once in [`serve`] and shared (via `Arc`) between
+/// `AppState::local_runner` and this module's own boot-time wiring.
+pub struct EmbeddedRunnerControl {
+    server_config: tack_api::config::AppConfig,
+    state: Mutex<State>,
+}
+
+impl EmbeddedRunnerControl {
+    fn new(server_config: tack_api::config::AppConfig) -> Result<Self, ConfigError> {
+        let runner_config = load_runner_config(ConfigOverrides::default(), None)?;
+        let secret_meta = load_secret_meta(&runner_config.state_dir);
+        Ok(Self {
+            server_config,
+            state: Mutex::new(State {
+                bound_addr: None,
+                runner_config,
+                running: None,
+                secret_meta,
+            }),
+        })
+    }
+
+    /// Told the server's own bound loopback address once it is known — see
+    /// [`serve`]'s doc comment for why this can't be passed to `new`
+    /// instead: the listener the address comes from hasn't opened yet at
+    /// construction time.
+    async fn set_bound_addr(&self, addr: SocketAddr) {
+        self.state.lock().await.bound_addr = Some(addr);
+    }
+}
+
+#[async_trait]
+impl LocalRunnerControl for EmbeddedRunnerControl {
+    async fn status(&self) -> RuntimeStatus {
+        let mut state = self.state.lock().await;
+        // Self-heals a runner that exited on its own (crashed, or finished
+        // reacting to a prior `stop()`'s shutdown signal) — without this, a
+        // task that died without anyone calling `stop()` would leave
+        // `running` stale and this method would keep reporting "running"
+        // forever.
+        if state
+            .running
+            .as_ref()
+            .is_some_and(|running| running.runner_task.is_finished())
+        {
+            state.running = None;
+        }
+        match &state.running {
+            Some(running) => RuntimeStatus {
+                state: RuntimeState::Running,
+                since: Some(running.since),
+            },
+            None => RuntimeStatus {
+                state: RuntimeState::Stopped,
+                since: None,
+            },
+        }
+    }
+
+    async fn start(&self) -> Result<(), LocalRunnerControlError> {
+        let mut state = self.state.lock().await;
+        if state.running.is_some() {
+            // Idempotent, mirroring `OrchRuntime::start` — a second
+            // `PUT {"enabled": true}` (or the boot-time check racing a UI
+            // toggle) must never spawn a duplicate runner task.
+            return Ok(());
+        }
+        let bound_addr = state.bound_addr.ok_or_else(|| {
+            LocalRunnerControlError::StartFailed(
+                "the server's own address is not yet known".to_owned(),
+            )
+        })?;
+
+        let mut runner_config = state.runner_config.clone();
+        runner_config.api_base_url = format!("http://{bound_addr}/api/runner/v1");
+        ensure_runner_credential(&mut runner_config, &self.server_config)
+            .await
+            .map_err(|error| LocalRunnerControlError::StartFailed(error.to_string()))?;
+
+        let (shutdown, shutdown_handle) = Shutdown::channel();
+        let runner_task = tokio::spawn(bootstrap::run(
+            runner_config.clone(),
+            runner_limits(),
+            shutdown,
+        ));
+        // Remembered so a later stop-then-start reuses whatever credential
+        // resolution just produced (a stored session, or the fresh
+        // self-provisioned one) instead of redoing it from scratch.
+        state.runner_config = runner_config;
+        state.running = Some(Running {
+            shutdown_handle,
+            runner_task,
+            since: Utc::now(),
+        });
+        Ok(())
+    }
+
+    async fn stop(&self) {
+        let mut state = self.state.lock().await;
+        if let Some(running) = state.running.take() {
+            // Doesn't block waiting for the task to actually exit — mirrors
+            // `OrchRuntime::stop`'s own rule: a toggle-off HTTP request must
+            // not hang on however long the runner's own shutdown takes.
+            running.shutdown_handle.request();
+        }
+    }
+
+    async fn list_secrets(&self) -> Vec<SecretMeta> {
+        let state = self.state.lock().await;
+        let store = SecretStore::open(&state.runner_config.secret_store_path());
+        let names = store.list().unwrap_or_default();
+        names
+            .into_iter()
+            .map(|name| {
+                let set_at = state.secret_meta.get(&name).copied();
+                SecretMeta { name, set_at }
+            })
+            .collect()
+    }
+
+    async fn set_secret(&self, name: &str, value: &str) -> Result<(), LocalRunnerControlError> {
+        let mut state = self.state.lock().await;
+        let store = SecretStore::open(&state.runner_config.secret_store_path());
+        store
+            .set(name, value)
+            .map_err(|error| LocalRunnerControlError::SecretStore(error.to_string()))?;
+        state.secret_meta.insert(name.to_owned(), Utc::now());
+        save_secret_meta(&state.runner_config.state_dir, &state.secret_meta);
+
+        // A UI-only user must never also have to hand-edit a TOML
+        // `enabled` flag once they've pasted a key — flip the one provider
+        // this build knows on the moment its default secret name is set.
+        // Narrow on purpose: a deployment that configured a *different*
+        // secret-store entry name via `TACK_RUNNER_PROVIDER_
+        // VERCEL_AI_GATEWAY_SECRET` keeps using its own console-only
+        // toggle, unchanged by this route.
+        if name == tack_runner::config::DEFAULT_VERCEL_AI_GATEWAY_SECRET
+            && let Some(provider) = state
+                .runner_config
+                .providers
+                .get_mut(tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY)
+        {
+            provider.enabled = true;
+        }
+        Ok(())
+    }
+
+    async fn remove_secret(&self, name: &str) -> Result<(), LocalRunnerControlError> {
+        let mut state = self.state.lock().await;
+        let store = SecretStore::open(&state.runner_config.secret_store_path());
+        store
+            .remove(name)
+            .map_err(|error| LocalRunnerControlError::SecretStore(error.to_string()))?;
+        state.secret_meta.remove(name);
+        save_secret_meta(&state.runner_config.state_dir, &state.secret_meta);
+        Ok(())
+    }
+
+    async fn catalog(&self) -> CatalogSnapshot {
+        let state = self.state.lock().await;
+        let staging_root = state.runner_config.state_dir.join("staging");
+        let secrets = SecretStore::open(&state.runner_config.secret_store_path());
+        let limits = runner_limits();
+        let report = bootstrap::probe(
+            &staging_root,
+            &limits.harness_process,
+            &secrets,
+            &state.runner_config.providers,
+        )
+        .await;
+        map_catalog_status(report.provider_catalog)
+    }
+}
+
+/// Runs the server with an embedded runner always wired in — even a plain
+/// `tack serve` with no flag, on any bind, so `PUT /api/local-runner` can
+/// turn it on later with no restart it didn't already need. A non-loopback
+/// bind never starts the runner and never exposes its routes (ADR 0061
+/// decision 6 is a safety invariant, not merely a startup nicety): this
+/// function refuses to boot at all only when *this boot's own* flag or
+/// environment variable explicitly asked for `--with-runner` on a
+/// non-loopback bind (`ensure_loopback`, unchanged from before this
+/// module could be reached any other way); `tack_api::server::serve_inner`
+/// separately re-checks loopback against the *persisted* preference once
+/// the database is open, before ever calling
+/// [`EmbeddedRunnerControl::start`] — so a stale "enabled" row saved from
+/// an earlier loopback session can never auto-start a runner on a
+/// differently-configured deployment, it is just silently not honored.
+/// `PUT /api/local-runner` reaches the identical `start()`, gated the
+/// identical way by `router::build_router`'s own loopback check on the
+/// route's existence. Replaces the old `serve_with_embedded_runner`, which
+/// only ever existed for `--with-runner` and had no way to turn the runner
+/// on afterward without restarting the whole process.
+pub async fn serve() -> anyhow::Result<()> {
+    let server_config = tack_api::config::AppConfig::load();
+    if server_config.local_runner_enable {
+        ensure_loopback(&server_config)?;
+    }
+
+    let control = Arc::new(EmbeddedRunnerControl::new(server_config)?);
+    let local_runner: Arc<dyn tack_api::LocalRunnerControl> = control.clone();
+
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+    let server_task = tokio::spawn(tack_api::serve_with_ready_and_local_runner(
+        ready_tx,
+        local_runner,
+    ));
+
+    let bound_addr = match ready_rx.await {
+        Ok(addr) => addr,
+        Err(_) => {
+            // The sender was dropped without sending, which only happens when
+            // `serve_with_ready_and_local_runner` returned before opening its
+            // listener; that task's own result is the error worth
+            // surfacing, not the closed channel.
+            return match server_task.await {
+                Ok(Ok(())) => Err(anyhow::anyhow!("server exited before it became ready")),
+                Ok(Err(error)) => Err(error),
+                Err(join_error) => Err(anyhow::anyhow!("server task panicked: {join_error}")),
+            };
+        }
+    };
+    control.set_bound_addr(bound_addr).await;
+
+    // Everything past this point — the auto-start decision, ctrl-c
+    // handling, graceful shutdown — is `tack_api::server::serve_inner`'s
+    // own job; this function's only remaining job is to react honestly if
+    // that task ends.
+    match server_task.await {
+        Ok(result) => result,
+        Err(join_error) => Err(anyhow::anyhow!("server task panicked: {join_error}")),
     }
 }
 
@@ -313,46 +551,6 @@ mod tests {
                 None => std::env::remove_var("TACK_LOCAL_RUNNER_ENABLE"),
             }
         }
-    }
-
-    /// Proves the "loud, not silent" half of ADR 0058's failure mode: if the
-    /// embedded runner stops before anything asked it to, the server task is
-    /// not left running.
-    #[tokio::test]
-    async fn supervise_aborts_the_server_when_the_runner_dies_first() {
-        let mut server_task: JoinHandle<anyhow::Result<()>> = tokio::spawn(std::future::pending());
-        let mut runner_task: JoinHandle<Result<(), RunnerError>> =
-            tokio::spawn(async { Err(RunnerError::ClientStopped) });
-        let (_shutdown, shutdown_handle) = Shutdown::channel();
-
-        let result = supervise(&mut server_task, &mut runner_task, &shutdown_handle).await;
-
-        let error = result.expect_err("a runner dying early must surface as a process error");
-        assert!(error.to_string().contains("embedded runner"));
-        let join_error = server_task
-            .await
-            .expect_err("the server task must have been aborted, not left running");
-        assert!(join_error.is_cancelled());
-    }
-
-    /// Proves the clean-shutdown half: the server finishing (its own ctrl-c
-    /// path) tells the embedded runner to stop too, rather than leaving it
-    /// running past its host.
-    #[tokio::test]
-    async fn supervise_stops_the_runner_once_the_server_stops() {
-        let mut server_task: JoinHandle<anyhow::Result<()>> = tokio::spawn(async { Ok(()) });
-        let (mut shutdown, shutdown_handle) = Shutdown::channel();
-        let mut runner_task: JoinHandle<Result<(), RunnerError>> = tokio::spawn(async move {
-            shutdown.requested().await;
-            Ok(())
-        });
-
-        let result = supervise(&mut server_task, &mut runner_task, &shutdown_handle).await;
-
-        assert!(
-            result.is_ok(),
-            "a clean shutdown must not surface an error: {result:?}"
-        );
     }
 
     fn unique_temp_dir(label: &str) -> tempfile::TempDir {
@@ -449,5 +647,150 @@ mod tests {
              the same database_url the previous test proves does NOT get touched when a session exists"
         );
         std::fs::remove_dir_all(state_dir).ok();
+    }
+
+    fn control_with_state_dir(state_dir: &Path) -> EmbeddedRunnerControl {
+        let mut runner_config = RunnerConfig::defaults();
+        runner_config.state_dir = state_dir.to_path_buf();
+        EmbeddedRunnerControl {
+            server_config: unreachable_database_url(),
+            state: Mutex::new(State {
+                bound_addr: None,
+                runner_config,
+                running: None,
+                secret_meta: HashMap::new(),
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_fresh_control_reports_stopped_with_no_since() {
+        let dir = unique_temp_dir("status-fresh");
+        let control = control_with_state_dir(dir.path());
+
+        let status = control.status().await;
+
+        assert_eq!(status.state, RuntimeState::Stopped);
+        assert!(status.since.is_none());
+    }
+
+    #[tokio::test]
+    async fn start_fails_typed_before_the_bound_address_is_known() {
+        let dir = unique_temp_dir("start-no-addr");
+        let control = control_with_state_dir(dir.path());
+
+        let result = control.start().await;
+
+        assert!(matches!(
+            result,
+            Err(LocalRunnerControlError::StartFailed(_))
+        ));
+        assert_eq!(control.status().await.state, RuntimeState::Stopped);
+    }
+
+    #[tokio::test]
+    async fn a_disabled_provider_reports_not_configured_with_no_network_call() {
+        let dir = unique_temp_dir("catalog-disabled");
+        let control = control_with_state_dir(dir.path());
+
+        // `RunnerConfig::defaults()` seeds the Vercel provider disabled —
+        // `attach_catalog` returns before any network I/O in that case (see
+        // `provider.rs`), which is exactly what makes this assertion safe to
+        // run without network access.
+        let catalog = control.catalog().await;
+
+        assert!(matches!(catalog, CatalogSnapshot::NotConfigured));
+    }
+
+    #[tokio::test]
+    async fn set_then_list_then_remove_a_secret_round_trips_with_a_recorded_set_at() {
+        let dir = unique_temp_dir("secret-round-trip");
+        // Forces the file backend (`SecretStore::open`'s own fallback path)
+        // so this test never touches a real keychain.
+        // SAFETY: serialized by this variable's own uniqueness within this
+        // process, same justification as `with_runner_enabled_reads_the_
+        // environment_gate` above.
+        unsafe {
+            std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "/dev/null");
+        }
+        let control = control_with_state_dir(dir.path());
+
+        control
+            .set_secret("vi-b3-test-secret", "shh")
+            .await
+            .expect("set_secret");
+        let listed = control.list_secrets().await;
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].name, "vi-b3-test-secret");
+        assert!(
+            listed[0].set_at.is_some(),
+            "a secret set by this process must record when"
+        );
+
+        control
+            .remove_secret("vi-b3-test-secret")
+            .await
+            .expect("remove_secret");
+        assert!(control.list_secrets().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn setting_the_default_vercel_secret_enables_that_provider() {
+        let dir = unique_temp_dir("secret-enables-provider");
+        unsafe {
+            std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "/dev/null");
+        }
+        let control = control_with_state_dir(dir.path());
+        assert!(matches!(
+            control.catalog().await,
+            CatalogSnapshot::NotConfigured
+        ));
+
+        control
+            .set_secret(tack_runner::config::DEFAULT_VERCEL_AI_GATEWAY_SECRET, "shh")
+            .await
+            .expect("set_secret");
+
+        let enabled = control
+            .state
+            .lock()
+            .await
+            .runner_config
+            .providers
+            .get(tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY)
+            .expect("seeded provider entry")
+            .enabled;
+        assert!(
+            enabled,
+            "the default provider must be enabled once its secret is set"
+        );
+    }
+
+    #[tokio::test]
+    async fn start_then_stop_round_trips_the_runtime_state() {
+        let dir = unique_temp_dir("start-stop");
+        unsafe {
+            std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "/dev/null");
+        }
+        let control = control_with_state_dir(dir.path());
+        // `unreachable_database_url` makes self-provisioning fail deliberately
+        // (no session on disk, no manual credential) — this test only needs
+        // to prove `start()` reaches the point of attempting it, and that a
+        // failure there is reported rather than silently leaving `running`
+        // set. A live start-then-claim proof belongs to an integration test
+        // with a real server, not this unit.
+        control.set_bound_addr("127.0.0.1:1".parse().unwrap()).await;
+
+        let result = control.start().await;
+
+        assert!(
+            matches!(result, Err(LocalRunnerControlError::StartFailed(_))),
+            "self-provisioning against an unreachable database must fail typed: {result:?}"
+        );
+        assert_eq!(
+            control.status().await.state,
+            RuntimeState::Stopped,
+            "a failed start must not leave the control reporting running"
+        );
     }
 }

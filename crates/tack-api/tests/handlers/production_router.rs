@@ -43,6 +43,7 @@ async fn app_state(config: AppConfig, pool: sqlx::SqlitePool, workspace_id: Uuid
         broadcast_tx: tx,
         webhook: None,
         orch_runtime: OrchRuntime::new(),
+        local_runner: None,
     }
 }
 

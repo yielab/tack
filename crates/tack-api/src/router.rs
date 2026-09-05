@@ -17,12 +17,14 @@ use tack_db::repo::execution::{ExecutionClock, SystemExecutionClock};
 
 use crate::config::AppConfig;
 use crate::debug;
+use crate::handlers::local_runner::LocalRunnerControl;
 #[cfg(feature = "embed-spa")]
 use crate::handlers::spa;
 use crate::handlers::{
     attachments, attempt_lists, backup, boards_multi, comments, custom_fields, decisions,
-    dependencies, executions, export, import_github, import_linear, items, orch, projects,
-    provisioning, roles, runner_admin, runner_protocol, settings, sprints, templates, websocket,
+    dependencies, executions, export, import_github, import_linear, items, local_runner, orch,
+    projects, provisioning, roles, runner_admin, runner_protocol, settings, sprints, templates,
+    websocket,
 };
 use crate::middleware::{inject_operator_principal, require_token};
 use crate::orch_runtime::OrchRuntime;
@@ -43,6 +45,14 @@ pub struct AppState {
     /// so `PUT /api/settings/orchestration` starts/stops the exact tasks
     /// `server.rs` spawned (or didn't) at boot.
     pub orch_runtime: OrchRuntime,
+    /// Seam to an embedded runner living in the same process — see
+    /// `handlers::local_runner`'s module doc for why this crate holds a
+    /// trait object rather than depending on `tack-runner` directly.
+    /// `None` for any caller that never wired one in (a bare
+    /// `tack_api::serve()`, or a test that doesn't exercise this feature):
+    /// `local_runner_routes` treats that exactly like a non-loopback bind —
+    /// the routes are absent, not present-and-refusing.
+    pub local_runner: Option<Arc<dyn LocalRunnerControl>>,
 }
 
 impl AppState {
@@ -131,6 +141,32 @@ fn orch_routes(state: AppState) -> Router<AppState> {
             state,
             orch::require_orch_enabled,
         ))
+}
+
+/// Embedded-runner control routes (ADR 0061 decisions 2 and 6) — turn the
+/// in-process runner on/off and hand it a provider secret. Callers merge
+/// this only when both a [`LocalRunnerControl`] was actually wired into
+/// `AppState` and the server is bound to loopback
+/// (`build_router`'s `local_runner_available` check) — never merged at all
+/// otherwise, so the routes are a genuine 404 rather than a gate that
+/// refuses a request it still had to route. Auth is unchanged from every
+/// other `/api/*` route: this sub-router is merged into `api` *before*
+/// `require_token` is layered on below, same as `orch_routes`.
+fn local_runner_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/local-runner",
+            get(local_runner::get_local_runner).put(local_runner::put_local_runner),
+        )
+        .route(
+            "/local-runner/secrets",
+            get(local_runner::list_local_runner_secrets),
+        )
+        .route(
+            "/local-runner/secrets/{name}",
+            put(local_runner::put_local_runner_secret)
+                .delete(local_runner::delete_local_runner_secret),
+        )
 }
 
 /// The operator execution/fleet routes — `/api/executions`,
@@ -300,6 +336,17 @@ pub fn build_router(state: AppState) -> Router {
         .expose_headers([header::ETAG])
         .max_age(Duration::from_secs(3600));
 
+    // Computed once, up front: an embedded runner executes arbitrary agent
+    // processes on this host, so its control routes must not even be
+    // *discoverable* unless both conditions hold — a control was actually
+    // wired into this `AppState` (see `AppState::local_runner`'s doc
+    // comment) and the server is bound to loopback (ADR 0061 decision 6).
+    // Checked here, not inside a middleware layer, so failing it means the
+    // routes are never merged at all — a genuine 404, not a gate that still
+    // had to route the request to refuse it. See `local_runner_routes`'s
+    // own doc comment.
+    let local_runner_available = state.local_runner.is_some() && state.config.binds_loopback();
+
     // ── API routes ───────────────────────────────────────────────────────────
     let api = Router::new()
         // ─── OpenAPI contract (public — no auth to read the schema) ──────
@@ -466,6 +513,13 @@ pub fn build_router(state: AppState) -> Router {
         // with `error.code: "orchestration_disabled"` for every route here
         // while orchestration is off.
         .merge(orch_routes(state.clone()))
+        // ─── Embedded runner control (gated on loopback + a wired-in
+        // control — see `local_runner_available` above) ──────────────────
+        .merge(if local_runner_available {
+            local_runner_routes()
+        } else {
+            Router::new()
+        })
         // ─── Operator execution/fleet API
         // — `/executions`, `/runner-fleets`, `/runners/*`,
         // `/agent-profiles`, `/model-profiles`. Same operator auth as

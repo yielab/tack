@@ -42,6 +42,7 @@ async fn setup() -> (axum::Router, Repository, String) {
         broadcast_tx: tx,
         webhook: None,
         orch_runtime: OrchRuntime::new(),
+        local_runner: None,
     };
     let app = build_router(state);
     let project = repo

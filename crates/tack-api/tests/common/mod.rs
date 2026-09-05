@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
 use axum::Router;
 use tack_api::handlers::websocket::BoardEvent;
 use tack_api::orch_runtime::OrchRuntime;
-use tack_api::{AppState, config::AppConfig, router::build_router};
+use tack_api::{AppState, LocalRunnerControl, config::AppConfig, router::build_router};
 use tack_db::{Repository, init_pool, migrations};
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -15,6 +17,18 @@ pub async fn test_app() -> (Router, Uuid) {
 
 /// Same as `test_app` but with a custom config (e.g. to set an api_token).
 pub async fn test_app_with_config(config: AppConfig) -> (Router, Uuid) {
+    test_app_with_local_runner(config, None).await
+}
+
+/// Same as `test_app_with_config`, additionally wiring `local_runner` into
+/// `AppState` — the seam a test of `handlers::local_runner`'s routes needs
+/// to supply a fake `LocalRunnerControl` (or `None`, to prove those routes
+/// stay absent even on a loopback bind when nothing was ever wired in).
+#[allow(dead_code)] // not every test binary needs a non-default local_runner
+pub async fn test_app_with_local_runner(
+    config: AppConfig,
+    local_runner: Option<Arc<dyn LocalRunnerControl>>,
+) -> (Router, Uuid) {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
     migrations::run_all(&pool).await.expect("migrations");
 
@@ -41,6 +55,7 @@ pub async fn test_app_with_config(config: AppConfig) -> (Router, Uuid) {
         broadcast_tx: tx,
         webhook: None,
         orch_runtime: OrchRuntime::new(),
+        local_runner,
     };
 
     (build_router(state), workspace_id)
@@ -76,6 +91,7 @@ pub async fn test_app_with_file_db(db_url: &str) -> (Router, Uuid) {
         broadcast_tx: tx,
         webhook: None,
         orch_runtime: OrchRuntime::new(),
+        local_runner: None,
     };
 
     (build_router(state), workspace_id)

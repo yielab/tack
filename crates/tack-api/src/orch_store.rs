@@ -153,7 +153,9 @@ impl RepoControlPlaneStore {
     /// `dispatcher::apply_mapped_status` (a workflow-engine status
     /// transition), which never starts or stops the reconciler. Wiring the
     /// real handle through here would need threading it into
-    /// [`with_app_context`] for no caller that needs it.
+    /// [`with_app_context`] for no caller that needs it. `local_runner` is
+    /// `None` for the identical reason — nothing this reconstructed state
+    /// reaches ever controls the embedded runner.
     ///
     /// [`with_app_context`]: RepoControlPlaneStore::with_app_context
     fn as_app_state(&self) -> Option<AppState> {
@@ -164,6 +166,7 @@ impl RepoControlPlaneStore {
             broadcast_tx: self.broadcast_tx.clone(),
             webhook: ctx.webhook.clone(),
             orch_runtime: crate::orch_runtime::OrchRuntime::new(),
+            local_runner: None,
         })
     }
 

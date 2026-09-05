@@ -913,6 +913,12 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::settings::put_backup_settings,
         handlers::settings::get_orch_settings,
         handlers::settings::put_orch_settings,
+        // ── Embedded runner control (ADR 0061 decisions 2 and 6) ────────────
+        handlers::local_runner::get_local_runner,
+        handlers::local_runner::put_local_runner,
+        handlers::local_runner::list_local_runner_secrets,
+        handlers::local_runner::put_local_runner_secret,
+        handlers::local_runner::delete_local_runner_secret,
         // ── Orchestration (Agent-Factory Control Center) ────────────────────
         handlers::orch::create_control_plane,
         handlers::orch::list_control_planes,
@@ -980,6 +986,8 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::backup::RestoreRemoteRequest,
         handlers::settings::UpdateBackupSettings,
         handlers::settings::UpdateOrchSettings,
+        handlers::local_runner::UpdateLocalRunner,
+        handlers::local_runner::SetLocalRunnerSecret,
         handlers::orch::ControlPlaneResponse,
         handlers::orch::CapabilitiesResponse,
         handlers::orch::SupportLevel,
