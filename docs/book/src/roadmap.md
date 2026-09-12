@@ -1249,8 +1249,8 @@ handoff note is in that file's §6.
   shipped**. docket's own `ROADMAP.md` still lists them as `TODO` and is stale against
   its source; `src/docket/serve.py` is the authority. Re-verify before trusting any
   "blocked" marker.
-- The `POST /tasks/{project}` response shape documented in `TODO.md` §1.4 was wrong;
-  corrected after live verification.
+- The `POST /tasks/{project}` response shape documented in
+  `docs/closed-cycles/boards/part-1.md` §1.4 was wrong; corrected after live verification.
 - Migrations run to **029**, not 024 — see the corrected table below.
 
 ### Schema added this cycle (migrations 019–029)
