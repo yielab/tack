@@ -597,17 +597,10 @@ async fn cancel_stops_the_process_and_forgets_its_own_bookkeeping_entry() {
     std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
-#[tokio::test]
-async fn cancel_of_an_unknown_handle_is_a_typed_error_not_a_panic() {
-    let (adapter, _scratch) = adapter_with_fake_binary();
-    let handle = LocalRunHandle {
-        process_id: "not-a-number".to_string(),
-    };
-    assert!(matches!(
-        adapter.cancel(&handle).await,
-        Err(HarnessError::Process)
-    ));
-}
+// A cancel/wait on a handle this adapter instance never produced is now
+// `harness::tests::cancel_and_wait_on_an_untracked_handle_are_typed_rejections_for_both_real_adapters`
+// — `take_running`'s rejection is `local_process.rs`'s own shared
+// bookkeeping, not claude-code-specific.
 
 // ---- redaction ---------------------------------------------------------
 
@@ -1075,65 +1068,16 @@ fn journal_with_process(process_id: Option<&str>) -> AttemptJournal {
     }
 }
 
-/// One row per pid this grammar cannot dispatch a real liveness check
-/// for: none recorded at all, a pid astronomically unlikely to exist,
-/// and a process id that does not even parse — the first two both
-/// honestly report `ProcessStopped`, the third is explicitly
-/// `RecoveryUnavailable` since `decode_handle` failed before any
-/// dispatch could happen.
-struct ReconcileCase {
-    name: &'static str,
-    process_id: Option<&'static str>,
-    expect_unavailable: bool,
-    expected_observation: Option<RecoveryObservation>,
-}
-
-fn reconcile_cases() -> Vec<ReconcileCase> {
-    vec![
-        ReconcileCase {
-            name: "no recorded process id",
-            process_id: None,
-            expect_unavailable: false,
-            expected_observation: Some(RecoveryObservation::ProcessStopped),
-        },
-        ReconcileCase {
-            name: "pid that no longer exists",
-            // Astronomically unlikely to be a live process on any
-            // CI/dev machine, without relying on a fixed
-            // platform-specific sentinel like `i32::MAX`.
-            process_id: Some("2000000000"),
-            expect_unavailable: false,
-            expected_observation: Some(RecoveryObservation::ProcessStopped),
-        },
-        ReconcileCase {
-            name: "undecodable process id",
-            process_id: Some("not-a-pid"),
-            expect_unavailable: true,
-            expected_observation: None,
-        },
-    ]
-}
-
-#[tokio::test]
-async fn reconcile_reports_honest_observations_for_untrackable_pids() {
-    for case in reconcile_cases() {
-        let (adapter, _scratch) = adapter_with_fake_binary();
-        let journal = journal_with_process(case.process_id);
-        let result = adapter.reconcile(&journal).await;
-        if case.expect_unavailable {
-            assert!(
-                matches!(result, Err(HarnessError::RecoveryUnavailable)),
-                "case {:?}",
-                case.name
-            );
-        } else {
-            let expected = case
-                .expected_observation
-                .expect("non-unavailable case names an expected observation");
-            assert_eq!(result.expect("reconcile"), expected, "case {:?}", case.name);
-        }
-    }
-}
+// A missing process id needing no liveness dispatch, an unrecognized
+// handle encoding being explicitly `RecoveryUnavailable`, and a
+// decodable-but-already-dead pid reporting `ProcessStopped` are all
+// `local_process.rs`'s own shared `reconcile()` plumbing, entirely
+// before either grammar's own `reconcile_alive`/`reconcile_unavailable`
+// is ever consulted — proved once, against both real adapters, by
+// `harness::tests::reconcile_reports_shared_pid_plumbing_identically_for_both_real_adapters`.
+// This grammar's own identity check for a still-alive pid
+// (`process_program_matches`, genuinely different from codex's
+// unconditional trust) stays below, in the two Linux-only tests.
 
 #[cfg(target_os = "linux")]
 #[tokio::test]
@@ -1338,43 +1282,12 @@ async fn provider_endpoint_variables_present_only_when_configured_and_requested(
     }
 }
 
-/// A configured-but-disabled provider must reject the request pre-spawn
-/// with a typed reason, not silently fall back to a direct request.
-#[tokio::test]
-async fn a_disabled_provider_rejects_the_request_before_any_process_spawns() {
-    let workspace_dir = temp_workspace("provider-guard-disabled");
-    let workspace = workspace_dir.path();
-    let secrets_dir = temp_workspace("secrets");
-    let secrets = test_secret_store(secrets_dir.path());
-    secrets
-        .set("demo-secret", "irrelevant")
-        .expect("seed store");
-    let providers = std::collections::BTreeMap::from([(
-        crate::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
-        crate::config::ProviderConfig {
-            enabled: false,
-            secret: "demo-secret".to_owned(),
-        },
-    )]);
-    let adapter =
-        ClaudeCodeAdapter::with_binary(fake_binary(), clock(), secrets).with_providers(providers);
-
-    let spec = spec_with(
-        "claude-code",
-        Some(crate::config::VERCEL_AI_GATEWAY_PROVIDER),
-        &[],
-        true,
-        BTreeMap::new(),
-        workspace.to_path_buf(),
-    );
-    let error = adapter
-        .validate(&spec)
-        .await
-        .expect_err("a disabled provider must reject at validate, before any spawn");
-    assert!(matches!(error, HarnessError::Rejected { .. }));
-
-    std::fs::remove_dir_all(workspace).expect("cleanup");
-}
+// A configured-but-disabled provider rejecting pre-spawn is now
+// `harness::tests::disabled_provider_rejects_both_real_adapters_before_any_process_spawns`
+// — `resolve_provider_endpoint`'s discard-and-recheck plumbing lives in
+// `local_process.rs`'s shared `validate`, and the actual "disabled ->
+// reject" check is `provider::resolve_endpoint`'s own, called
+// identically by every grammar.
 
 // Discovery's search logic is pure and lives in `harness::locate`, with
 // its own tests there (found on PATH, found only in a fallback dir, not
