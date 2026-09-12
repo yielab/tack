@@ -3,9 +3,6 @@
 //! that has just entered (or is being manually pushed into) a
 //! dispatch-eligible status, [`dispatch_item`] enqueues a governed task on
 //! the project's linked control plane and records the outcome.
-//!
-//!
-//! Design notes: docs/dev-notes/tack-api/dispatcher.md
 
 use std::collections::HashSet;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -164,16 +161,20 @@ pub enum DispatchOutcome {
 // The dispatcher
 // ─────────────────────────────────────────────────────────────────────────
 
-/// Dispatch `item_id` to its project's linked control plane. See the module
-/// doc for the full flow, the idempotency guarantee, and why `trusted` is a
-/// required, non-optional parameter.
+/// Dispatch `item_id` to its project's linked control plane. See
+/// `try_acquire`'s doc comment for the idempotency guarantee.
+///
+/// `trusted` has no default: docket's own `enqueue_task` treats an omitted
+/// value as "trusted iff `source == \"operator\"\"", which silently grants
+/// operator trust since docket's `source` is always `"operator"`. A
+/// required positional `bool` turns an unsafe omission into a compile
+/// error instead of a silent default.
 ///
 /// Errors (`Err`) are reserved for things genuinely wrong with the request
-/// or the system (unknown item/project, no control-plane link, a lock
-/// contention on a concurrent duplicate, a transport failure talking to the
-/// control plane) — every outcome docket itself can produce on purpose
-/// (block, require approval) is a variant of [`DispatchOutcome`], not an
-/// `Err`.
+/// or system (unknown item/project, no control-plane link, lock
+/// contention, a transport failure) — every outcome docket can produce on
+/// purpose (block, require approval) is a [`DispatchOutcome`] variant,
+/// not an `Err`.
 pub async fn dispatch_item(
     state: &AppState,
     item_id: Uuid,
@@ -209,8 +210,7 @@ pub async fn dispatch_item(
         });
     }
 
-    // Per-item lock — see the module doc's "Idempotency and attempt"
-    // section. Acquired before any read that decides whether to call
+    // Per-item lock, acquired before any read that decides whether to call
     // docket, so two concurrent requests for the same item can never both
     // pass the "already in flight?" check below.
     let Some(_guard) = try_acquire(item_id) else {
@@ -252,6 +252,10 @@ pub async fn dispatch_item(
             task: latest.clone(),
         });
     }
+    // `orch_tasks`' PK is `(item_id, remote_task_id)`: a genuine redispatch
+    // (a previous attempt reached a terminal state) must create a new row,
+    // not collide with the old one. `attempt` is 1 + the highest existing
+    // attempt for this item.
     let next_attempt = existing.first().map(|t| t.attempt).unwrap_or(0) + 1;
 
     let control_plane = build_control_plane(state, link.control_plane_id).await?;
@@ -372,32 +376,20 @@ pub async fn dispatch_item(
 }
 
 /// Apply `target_status` to `item` **through the workflow engine** —
-/// `validate_transition` + an atomic WIP-limit check-and-write, exactly the
-/// same gate `handlers::items::update_item` applies to a human-driven status
-/// change. A refusal is recorded as a
-/// `status_map_rejected` `orch_events` row and returned as
-/// `rejected_reason`; the item is left untouched. On success, mirrors
-/// `update_item`'s side effects (WebSocket broadcast, parent
-/// auto-propagation, GitHub push-back) so a status_map-driven transition is
-/// indistinguishable from a human dragging the card.
+/// `validate_transition` plus an atomic WIP-limit check-and-write, the same
+/// gate `handlers::items::update_item` applies to a human-driven change. A
+/// refusal is recorded as a `status_map_rejected` `orch_events` row and
+/// returned as `rejected_reason`; the item is left untouched. Success
+/// mirrors `update_item`'s side effects (WebSocket, parent propagation,
+/// GitHub push-back).
 ///
-/// **The WIP-limit check and the status write happen in one SQLite
-/// transaction** (`Repository::update_item_status_checked`), not as two
-/// separate steps — a plain `count_items_by_status` read followed by an
-/// unguarded `update_item`
-/// write would let two concurrent dispatches into the same WIP-limited
-/// column both observe "under the limit" and both commit. See that
-/// method's doc comment for the fix.
-/// `validate_transition` itself stays a separate, unguarded check above —
-/// it only depends on the project's static workflow config (explicit
-/// transitions), not on any row count, so it isn't subject to the same
-/// race.
-///
-/// Generic over `target_status`/`trigger` so it can serve both the
-/// dispatch-time triggers here (`on_running`,
-/// `on_waiting_approval`) and the reconciler-driven call for the
-/// terminal triggers (`on_succeeded`/`on_failed`/`on_cancelled`) in
-/// `orch_store.rs`'s `reconcile_terminal_status_map`.
+/// The WIP-limit check and the status write happen in **one** transaction
+/// (`Repository::update_item_status_checked`) — a separate read-then-write
+/// would let two concurrent dispatches both see "under the limit" and both
+/// commit. `validate_transition` stays unguarded above it since it depends
+/// only on static workflow config, never a row count. Generic over
+/// `target_status`/`trigger` so the reconciler's terminal-status path
+/// (`orch_store.rs`) reuses it too.
 pub async fn apply_mapped_status(
     state: &AppState,
     item: &Item,
@@ -588,19 +580,15 @@ fn map_priority(p: &Priority) -> Option<&'static str> {
 /// `handlers::orch::dispatch_item`) doesn't have a stronger signal of its
 /// own to pass instead.
 ///
-/// Item provenance is a real, sticky, creation-time
-/// column (`items.source` / `tack_core::models::ItemSource`, migration
-/// 029), not an inference from a side table. This function is now a thin
-/// read of that column — `ItemSource::is_trusted()` is the single source of
-/// truth for the trust rule itself. Unlike the old `github_links` check,
-/// this correctly covers Linear-imported items too (Linear import leaves no
-/// persistent correlation row of its own, which was exactly the blind spot
-/// the old implementation's doc comment flagged).
+/// A thin read of `items.source` (`tack_core::models::ItemSource`) —
+/// `ItemSource::is_trusted()` is the single source of truth for the trust
+/// rule, and provenance is a real, sticky, creation-time column rather than
+/// an inference from a side table, so this covers Linear-imported items
+/// too (Linear import leaves no persistent correlation row to key off of).
 ///
 /// The auto-dispatch hook (`handlers::items::maybe_auto_dispatch`) does not
-/// call this function — it already has the freshly loaded `Item` in hand
-/// and reads `.source.is_trusted()` directly, which is the same rule
-/// applied one layer up rather than re-fetched here.
+/// call this function — it already has the `Item` in hand and reads
+/// `.source.is_trusted()` directly.
 pub async fn resolve_default_trust(state: &AppState, item_id: Uuid) -> Result<bool, ApiError> {
     let item = state
         .repo

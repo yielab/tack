@@ -3,9 +3,12 @@
 //!
 //! Mirrors `orch_runtime.rs`'s own start/stop shape (a `tokio::sync::watch`
 //! stop signal, one "generation" tracked at a time) with one deliberate
-//! difference: [`ExecutionRuntime::stop`] *joins* both background tasks
-//!
-//! Design notes: docs/dev-notes/tack-api/execution_runtime.md
+//! difference: [`ExecutionRuntime::stop`] *joins* both background tasks —
+//! `server.rs` calls it once, after `axum::serve(...)` returns from graceful
+//! shutdown, so a blocking join here costs nothing (every HTTP request has
+//! already stopped). All retention/observability logic itself lives in
+//! `tack_orch::execution_retention`/`execution_observability`; this module
+//! only wires configuration and the repository into those spawn functions.
 
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -219,51 +222,17 @@ async fn wait_until_stopped(rx: &mut watch::Receiver<bool>) {
 
 /// Spawns the recurring caller `sweep_events`/`sweep_artifacts`
 /// (`handlers/runner_protocol/retention.rs`) and
-/// `expire_overdue_decisions` (`handlers/decisions.rs`) otherwise lack —
-/// both are built and tested in isolation, with no task/interval wiring of
-/// their own; this loop is that wiring. Returns `None` (spawns nothing,
-/// touches neither the repo nor the filesystem) when `enabled` is `false`,
-/// exactly like `execution_retention::spawn_execution_retention_sweep`.
+/// `expire_overdue_decisions` (`handlers/decisions.rs`) otherwise lack.
+/// Returns `None` (spawns nothing) when `enabled` is `false`, exactly like
+/// `execution_retention::spawn_execution_retention_sweep`.
 ///
-/// # Why one shared `enabled`/schedule for three different sweeps
-///
-/// `enabled` is `config.retention_enable` (`TACK_EXECUTION_RETENTION_ENABLE`,
-/// off by default — CLAUDE.md's config table). Artifact/event purging is
-/// real data deletion (rows *and* on-disk blobs), so it must never be more
-/// permissive than the replay/idempotency purge already gated behind this
-/// same flag — riding the identical gate, rather than inventing a second,
-/// looser one, is what keeps that true. Decision expiry is not itself a
-/// deletion (a `pending` row becomes `expired` in place; nothing is dropped)
-/// but is folded into the same task and gate for a narrower reason: it needs
-/// *some* recurring caller, this is the only recurring, cancellable,
-/// join-on-shutdown task this domain has, and reusing it is simpler and no
-/// less safe than inventing a fourth independently-configured background
-/// task for one `UPDATE` statement. If a future operator need ever requires
-/// decision expiry to run under conditions artifact deletion does not (e.g.
-/// on by default), that must be a new, explicit flag — never a loosening of
-/// this one, which stays artifact-deletion's floor.
-///
-/// # Artifact storage root
-///
-/// `artifact_storage` must be rooted at the exact same directory
-/// `router.rs`'s `operator_execution_routes` uses for its own downloads —
-/// see [`ExecutionRuntimeConfig::storage_dir`]'s doc comment. Two
-/// independently-constructed `ArtifactStorage` values pointed at the same
-/// path is intentional (no shared `Arc<ArtifactStorage>` crosses from
-/// `router.rs` into this module); they never race against each other,
-/// because both open files by path, not by holding any in-process lock this
-/// module could instead share.
-///
-/// # No injected clock
-///
-/// Unlike `tack_orch::execution_retention` (whose `RetentionClock` seam
-/// exists because its own tests need a fixed "now"), this loop reads real
-/// wall-clock time (`chrono::Utc::now()`) directly, matching
-/// `execution_observability`'s health watch's own precedent in this same
-/// file (no injected clock there either). Tests needing an "old" fixture
-/// backdate `created_at`/`expires_at` directly via SQL against real
-/// wall-clock `now()`, the same technique
-/// `crates/tack-db/tests/repository/event_artifact_retention.rs` already uses.
+/// All three share `config.retention_enable`
+/// (`TACK_EXECUTION_RETENTION_ENABLE`) even though only artifact/event
+/// purging deletes data — decision expiry rides the same gate rather than
+/// getting a looser one of its own, so it can never run more permissively
+/// than the deletion it's bundled with. A future need to run decision
+/// expiry under different conditions must be a new, explicit flag, never a
+/// loosening of this one.
 #[allow(clippy::too_many_arguments)]
 fn spawn_artifact_and_decision_sweep(
     enabled: bool,

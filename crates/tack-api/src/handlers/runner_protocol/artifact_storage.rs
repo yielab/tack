@@ -1,11 +1,19 @@
 //! Safe, streamed artifact-content storage.
 //!
-//! Server-side counterpart to `tack-runner`'s `harness::artifact::ArtifactStager`
-//! (the local half — see that module's own doc comment: "no artifact-upload
-//! method yet ... this module is the local half only"). This module is the
-//! remote half: it receives whatever bytes a runner PUTs against
+//! Server-side counterpart to `tack-runner`'s
+//! `harness::artifact::ArtifactStager` (see that module's own doc comment —
+//! this is the remote half). Receives whatever bytes a runner PUTs against
+//! `/api/runner/v1/attempts/{attempt_id}/artifacts/{artifact_id}/content`
+//! and commits them to storage only after they are proven to match the
+//! manifest's declared `size_bytes`/`sha256` — a mismatch of either kind
+//! stages nothing (no blob, no `content_reference`).
 //!
-//! Design notes: docs/dev-notes/tack-api/handlers/runner_protocol/artifact_storage.md
+//! Three properties, each proved by this module's own tests: bounded
+//! memory (see [`ArtifactStorage::store_streaming`]'s doc comment); no path
+//! traversal or symlink escape (every path component is hashed, never used
+//! as a literal path segment — see [`encode_id`]; every directory is
+//! canonicalized and containment-checked before a write); and a
+//! checksum/size mismatch stages nothing.
 
 use std::path::{Path, PathBuf};
 
@@ -41,22 +49,18 @@ pub struct StoredArtifactContent {
     pub bytes_written: u64,
 }
 
-/// SHA-256-hashes `value` and hex-encodes the fixed-size digest, so the
-/// result can never be interpreted as a path separator, a `..` traversal
-/// component or a NUL terminator (same defense `tack-runner`'s
-/// `harness/artifact.rs#encode_id` uses on the local side) **and** is always
-/// exactly 64 bytes regardless of `value`'s own length.
+/// SHA-256-hashes `value` and hex-encodes the fixed-size digest — the
+/// result can never be interpreted as a path separator, `..` traversal
+/// component, or NUL terminator (same defense as `tack-runner`'s
+/// `harness/artifact.rs#encode_id`), and is always exactly 64 bytes
+/// regardless of `value`'s length.
 ///
-/// This must hash rather than hex-encode `value` literally: `tack-runner`'s
-/// own `engine.rs::artifact_id` derives an `artifact_id` by hex-encoding
-/// `"{attempt_id}:{fencing_token}:{sha256}"` (already ~220 bytes), and this
-/// value is used twice per filename (once for the temp name, once for the
-/// final blob name). A literal hex-encode of that id blows past Linux's
-/// 255-byte `NAME_MAX`, so every write fails with `ENAMETOOLONG` inside
-/// `Io`, surfaced to the caller as a bare `500`. Hashing bounds the length
-/// unconditionally; content is never read back by literal id
-/// (`open_for_read` takes the already-produced `content_reference`), so
-/// losing reversibility costs nothing.
+/// Must hash rather than hex-encode `value` literally: `tack-runner`'s
+/// `artifact_id` is `hex("{attempt_id}:{fencing_token}:{sha256}")`
+/// (~220 bytes), used twice per filename, which blows past Linux's
+/// 255-byte `NAME_MAX` and fails every write with `ENAMETOOLONG`. Content
+/// is never read back by literal id, so losing reversibility costs
+/// nothing.
 fn encode_id(value: &str) -> String {
     hex::encode(Sha256::digest(value.as_bytes()))
 }
