@@ -611,10 +611,9 @@ impl HarnessGrammar for CodexGrammar {
                 "model_providers.{CODEX_PROVIDER_KEY}.env_key={}",
                 toml_quoted(&endpoint.credential_env_var)
             ));
-            // Measured non-load-bearing in the installed binary (0.149.1)
-            // — "responses" already applies as the effective default — but
-            // set explicitly anyway, defensively, matching the vendor's own
-            // documented shape.
+            // Set explicitly and defensively, matching the vendor's own
+            // documented shape, though non-load-bearing today — see
+            // `fixtures/codex/README.md` for the measurement.
             args.push("-c".to_owned());
             args.push(format!(
                 "model_providers.{CODEX_PROVIDER_KEY}.wire_api={}",
