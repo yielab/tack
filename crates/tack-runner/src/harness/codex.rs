@@ -749,6 +749,11 @@ impl HarnessGrammar for CodexGrammar {
         started_at: DateTime<Utc>,
         ended_at: DateTime<Utc>,
         result: ProcessResult,
+        // codex's `classify_exit` never produces `AttemptState::Cancelled`
+        // (see the module docs' assumption (4)); the shared core still
+        // tracks "was `cancel()` already called on this handle" generically,
+        // for claude-code's benefit, but codex has nothing to do with it.
+        _cancelled: bool,
     ) -> HarnessOutcome {
         let elapsed_ms = ended_at
             .signed_duration_since(started_at)

@@ -6,13 +6,13 @@
 //! [`LocalRunHandle`]), taking ownership of that bookkeeping on
 //! `cancel`/`wait`, reconciling a recorded pid across a restart, and the
 //! shared `secrets`/`providers` an attempt's environment resolves against.
-//! [`HarnessGrammar`] is the seam a concrete vendor (`codex.rs`) fills in:
-//! everything about *its* command line, output classification, capability
-//! claims and handle encoding. Only `codex` implements it today; a second
-//! implementation must be able to hold a full identity check on `reconcile`,
-//! a differently-shaped cancel-failure policy, and stream-based (rather than
-//! exit-code-based) output classification without changing this trait —
-//! each hook below says which of those it exists for.
+//! [`HarnessGrammar`] is the seam a concrete vendor (`codex.rs`,
+//! `claude_code.rs`) fills in: everything about *its* command line, output
+//! classification, capability claims and handle encoding — including a full
+//! identity check on `reconcile`, a differently-shaped cancel-failure
+//! policy, and stream-based (rather than exit-code-based) output
+//! classification, all without changing this trait — each hook below says
+//! which asymmetry it exists for.
 
 use std::{collections::BTreeMap, path::PathBuf};
 
@@ -150,13 +150,17 @@ pub trait HarnessGrammar: Send + Sync + 'static {
     /// terminal reason, staged artifact, usage. A harness that classifies
     /// purely from the process exit code and one that parses a structured
     /// output stream share no parsing logic — this hook exists precisely so
-    /// neither is forced through the other's shape.
+    /// neither is forced through the other's shape. `cancelled` is `true`
+    /// exactly when `cancel` already ran for this handle, tracked
+    /// generically by [`LocalProcessHarness`] itself; a grammar that never
+    /// produces a cancelled terminal state (codex) may ignore it.
     fn outcome(
         &self,
         state: Self::RunState,
         started_at: DateTime<Utc>,
         ended_at: DateTime<Utc>,
         result: ProcessResult,
+        cancelled: bool,
     ) -> HarnessOutcome;
 
     /// Detects the installed version, honestly: every failure mode (binary
@@ -203,7 +207,11 @@ pub(crate) struct RunningProcess<S> {
 /// [`HarnessAdapter`] and [`HarnessProbe`] for any [`HarnessGrammar`] `G`,
 /// so a concrete harness module supplies only `G` plus a thin constructor.
 pub struct LocalProcessHarness<G: HarnessGrammar, C = crate::SystemClock> {
-    grammar: G,
+    /// `pub(crate)`: a grammar-specific builder outside this module (e.g.
+    /// claude-code's `with_cancel_grace`) needs its own grammar's fields
+    /// after construction, and a generic accessor would exist for that one
+    /// caller alone.
+    pub(crate) grammar: G,
     clock: C,
     /// Resolves `secret_reference` environment entries. Shared with every
     /// other adapter the runner constructed at startup — see
@@ -219,6 +227,12 @@ pub struct LocalProcessHarness<G: HarnessGrammar, C = crate::SystemClock> {
     /// rejection, which is simpler proved against the real field than
     /// through an added accessor that would exist for no other caller.
     pub(crate) running: tokio::sync::Mutex<BTreeMap<String, RunningProcess<G::RunState>>>,
+    /// Handles `cancel` has already run for; `wait` removes and reads this
+    /// back so `outcome`'s `cancelled` parameter is honest. Never cleaned up
+    /// if `wait` is never subsequently called for the same handle — a
+    /// small, accepted leak, matching the pre-extraction claude-code
+    /// adapter's own identical design.
+    cancelled: tokio::sync::Mutex<std::collections::BTreeSet<String>>,
 }
 
 impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
@@ -229,6 +243,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             secrets,
             providers: BTreeMap::new(),
             running: tokio::sync::Mutex::new(BTreeMap::new()),
+            cancelled: tokio::sync::Mutex::new(std::collections::BTreeSet::new()),
         }
     }
 
@@ -366,6 +381,10 @@ where
 
     async fn cancel(&self, handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
         let running = self.take_running(&handle.process_id).await?;
+        self.cancelled
+            .lock()
+            .await
+            .insert(handle.process_id.clone());
         let pid = running.process.pid();
         let signal_result = running
             .process
@@ -381,6 +400,7 @@ where
 
     async fn wait(&self, handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError> {
         let running = self.take_running(&handle.process_id).await?;
+        let cancelled = self.cancelled.lock().await.remove(&handle.process_id);
         let result = running
             .process
             .wait_with_capture(&running.limits, &running.secrets)
@@ -394,9 +414,13 @@ where
                 HarnessError::Process
             })?;
         let ended_at = DateTime::<Utc>::from(self.clock.now());
-        Ok(self
-            .grammar
-            .outcome(running.state, running.started_at, ended_at, result))
+        Ok(self.grammar.outcome(
+            running.state,
+            running.started_at,
+            ended_at,
+            result,
+            cancelled,
+        ))
     }
 
     async fn reconcile(
