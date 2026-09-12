@@ -1,0 +1,6 @@
+captured
+claude 2.1.223 (Claude Code)
+
+Real `--output-format stream-json --verbose` transcript observed for
+`claude -p "Print exactly this string..." --model sonnet`, trimmed to the
+fields `parse_run_output` actually reads.

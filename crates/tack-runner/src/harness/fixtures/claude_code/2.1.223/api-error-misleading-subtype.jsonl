@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","model":"claude-3-5-haiku-20241022","claude_code_version":"2.1.223"}
+{"is_error":true,"terminal_reason":"api_error","subtype":"success","api_error_status":404,"result":"model not found","type":"result"}
