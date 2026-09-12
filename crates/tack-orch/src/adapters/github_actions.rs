@@ -1,10 +1,10 @@
 //! `GithubActionsAdapter` — a **compile-only stub** for a second
-//! [`ControlPlane`] implementor.
+//! [`ControlPlane`](crate::ControlPlane) implementor.
 //!
 //! Its only job is to make "both adapters compile against the trait" a fact
 //! CI can check, ahead of wiring the real thing. Every method but
-//! [`kind`](GithubActionsAdapter::kind) and
-//! [`capabilities`](GithubActionsAdapter::capabilities) is `unimplemented!()`
+//! `kind` and
+//! `capabilities` is `unimplemented!()`
 //! — there is no HTTP client, no request/response handling, nothing that
 //! could plausibly talk to a real GitHub Actions instance. Don't add any
 //! until the real adapter is actually being wired.
@@ -14,7 +14,7 @@
 //! adapter whose methods all panic would let an operator create a control
 //! plane that blows up the first time the reconciler polls it.
 //!
-//! [`capabilities`](GithubActionsAdapter::capabilities) is filled in for
+//! `capabilities` is filled in for
 //! real, though, and deliberately so: it's the one method this stub can
 //! answer honestly without making a network call, and having it right now
 //! lets `docs/plans/agnostic-control-plane.md` §II.1.3's `RunState`

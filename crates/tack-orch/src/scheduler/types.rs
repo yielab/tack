@@ -54,7 +54,7 @@ pub enum ModelSelector {
 impl ModelSelector {
     /// `Ok(AutoSelect)` only when both wire fields are absent; exactly one
     /// present is a caller/data error, reported once here rather than
-    /// repeated per candidate as an [`super::select::IneligibleReason`].
+    /// repeated per candidate as an [`IneligibleReason`].
     pub fn from_parts(
         provider: Option<RequestedModelProvider>,
         model_id: Option<RequestedModelId>,

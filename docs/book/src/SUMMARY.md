@@ -33,6 +33,8 @@
 - [Frontend & Design System](developer/frontend.md)
 - [Orchestration Architecture](developer/orchestration.md)
 - [Adding Features](developer/adding-features.md)
+- [Configuration Reference](developer/configuration-reference.md)
+- [MCP Server](developer/mcp.md)
 - [API Reference](developer/api-reference.md)
 - [Testing](developer/testing.md)
 - [Deployment](developer/deployment.md)

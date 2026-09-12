@@ -104,7 +104,7 @@ because every field it sends is visible on the command line; see
 |---|---|---|
 | The **"Run with agent"** modal | Item detail drawer, web UI (`RunWithAgentModal.tsx`) | Auto-selects the runner when exactly one is active, offers the target's own declared models plus "Project default", and blocks with a named reason (and, where one exists, a link to fix it) instead of submitting a request that would queue forever. |
 | `tack execution create` | CLI | Scriptable; every field the API accepts is a flag. Used for the worked example below. |
-| `POST /api/executions` | Raw HTTP | Same JSON body the CLI sends. See [API Reference](../../../API-REFERENCE.md#runner-fleet--execution) for a worked request/response pair. |
+| `POST /api/executions` | Raw HTTP | Same JSON body the CLI sends. See [API Reference](../../../API-REFERENCE.md#worked-examples) for a worked request/response pair. |
 | MCP `create_execution` | `tack mcp`, for an agent driving Tack itself | Same required fields as the REST call. See the [MCP guide](../../../MCP.md). |
 
 The rest of this section is one complete run through the CLI path, executed against a

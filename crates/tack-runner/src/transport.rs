@@ -977,7 +977,7 @@ fn load_session(state_dir: &Path) -> Option<RunnerSession> {
 
 /// The runner id a persisted session under `state_dir` claims, without
 /// validating whether the server this process talks to still recognises
-/// it — only [`establish_session`]'s own `refresh` call settles that.
+/// it — only `establish_session`'s own `refresh` call settles that.
 /// `None` when no session is persisted there, or its contents cannot be
 /// parsed; a caller with no persisted session to compare has nothing to
 /// distinguish, and a caller of this function decides what "no answer"

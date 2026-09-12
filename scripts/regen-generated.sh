@@ -30,3 +30,7 @@ fi
 if [ -d frontend/node_modules ]; then
   npm --prefix frontend run gen:api >/dev/null
 fi
+
+# docs/book/src/developer/api-reference.md — derived from docs/openapi.json,
+# once the block above has confirmed it's current.
+python3 scripts/gen-api-reference.py >/dev/null
