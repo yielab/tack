@@ -213,31 +213,20 @@ pub async fn authenticate(
     })
 }
 
-/// True exactly when an `authenticate` error is the "no row's `credential_hash`
-/// matched this bearer at all" case, as opposed to a revoked, inactive,
-/// expired, or missing-header credential.
+/// True exactly when an `authenticate` error is the "no row's
+/// `credential_hash` matched this bearer at all" case, as opposed to a
+/// revoked, inactive, expired, or missing-header credential.
 ///
-/// This distinction exists for one caller: `/refresh`'s rotation-race
-/// handling (see `runner_protocol.rs::reclassify_refresh_auth_error`).
-/// SQLite has no history of a credential once it is rotated away — the
-/// `UPDATE ... SET credential_hash=?` in `rotate_runner_credential`
-/// overwrites the old hash in place — so a `/refresh` request that loses a
-/// concurrent rotation race and a `/refresh` request carrying a genuinely
-/// bogus credential are indistinguishable by a second query: both hit this
-/// exact "not recognized" branch, for the same reason (no row currently
-/// carries the presented hash). `/refresh`'s rotating branch already accepts
-/// that same ambiguity one step later, when the CAS itself loses a race
-/// (`CredentialRotationResult::HashMismatch`, mapped to `conflict` rather
-/// than disambiguated further — see that match arm's own comment). This
-/// function lets `/refresh` apply the identical policy to the *earlier* of
-/// the two indistinguishable failure points, so a losing rotation gets the
-/// same retryable answer regardless of which point it failed at, instead of
-/// a policy that depends on load-sensitive scheduling of two DB statements.
+/// Used only by `/refresh`'s rotation-race handling
+/// (`runner_protocol.rs::reclassify_refresh_auth_error`): rotation
+/// overwrites the old hash in place, so a losing `/refresh` and one
+/// carrying a genuinely bogus credential are indistinguishable by a second
+/// query. `/refresh` already treats the equivalent ambiguity one step later
+/// (`CredentialRotationResult::HashMismatch` maps to `conflict`), so this
+/// lets it apply the same retryable policy at either point.
 ///
-/// Deliberately does **not** change `authenticate`'s own return value or
-/// behavior for its other 16 call sites in `runner_protocol.rs` — this only
-/// classifies an error already produced, for one caller to decide whether to
-/// remap it.
+/// Does not change `authenticate`'s behavior at its other call sites — it
+/// only classifies an error already produced.
 pub fn is_credential_not_recognized(error_body: &Value) -> bool {
     error_body
         .get("error")

@@ -263,33 +263,21 @@ pub fn restore_conflicts(local_generation: u64, snapshot_generation: u64, force:
 /// new secret column anywhere in the schema.
 const SENSITIVE_META_KEYS: &[&str] = &["backup_config", "install_id"];
 
-/// Strip machine-local secrets/identity from a freshly-created snapshot DB file
-/// so they never ship inside a downloadable or uploadable bundle.
+/// Strip machine-local secrets/identity from a freshly-created snapshot DB
+/// file so they never ship inside a downloadable or uploadable bundle.
 ///
-/// This is the single chokepoint for scrubbing secrets out of a backup
-/// snapshot — every table with a secret-bearing column must be handled here.
-/// Currently that's:
-/// - `app_meta`: the keys in [`SENSITIVE_META_KEYS`] (S3 backup secret key,
-///   install identity) are deleted outright.
-/// - `control_planes.token` (migration 019, the docket Bearer credential): set
-///   to `NULL` rather than deleting the row, so a restored backup still knows
-///   which control planes were registered — the operator just re-enters the
-///   token afterwards. See `crates/tack-db/src/repo/orch.rs` for why the token
-///   never leaves the DB layer in a read DTO either.
-/// - `control_planes.secrets` (migration 033, write-only provider-credentials
-///   JSON — for a GitHub Actions plane, an API credential *and* a webhook
-///   signing secret in one blob): same treatment as `token` and for the same
-///   reason — `NULL`, not row deletion, so a restore still shows which planes
-///   were registered and the operator re-enters both secrets.
+/// The single chokepoint for scrubbing backup secrets — every table with a
+/// secret-bearing column must be handled here: `app_meta`'s
+/// [`SENSITIVE_META_KEYS`] are deleted outright; `control_planes.token`
+/// (migration 019) and `control_planes.secrets` (migration 033) are set to
+/// `NULL` rather than deleting the row, so a restore still shows which
+/// planes were registered and the operator just re-enters the secret(s).
+/// Removing `install_id` means a restore regenerates a fresh one via
+/// [`install_id`] on first use, never adopting the source install's identity.
 ///
-/// Because `install_id` is removed, a restored database has no identity row and
-/// [`install_id`] regenerates a fresh UUID on first use — restores no longer
-/// adopt the source install's identity.
-///
-/// **Add new secret columns here, not just to this doc comment** — this
-/// function is the chokepoint, and it must run before the trailing `VACUUM`
-/// (below) so the freed bytes are actually dropped from the file, not just
-/// unreferenced in the freelist.
+/// **Add new secret columns here, not just to this doc comment**, and
+/// before the trailing `VACUUM` so the freed bytes actually drop from the
+/// file rather than sitting unreferenced in the freelist.
 pub async fn scrub_snapshot_secrets(db_file: &Path) -> Result<(), BackupError> {
     use sqlx::ConnectOptions;
     use sqlx::sqlite::SqliteConnectOptions;
