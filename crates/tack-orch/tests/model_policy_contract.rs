@@ -1,22 +1,12 @@
 //! Binds `crates/tack-orch/src/model_policy`'s precedence walk to the shared
-//! fixture `docs/contracts/model-policy/precedence-table.json`, the single
-//! file `frontend/src/shared/runWithAgent/modelPolicyContract.test.ts` reads
-//! against its own copy of the same walk. Same shape as
-//! `crates/tack-api/tests/openapi_contract.rs`: this test regenerates the
-//! committed fixture from the real `resolve_model_policy` /
-//! `parse_model_default_convention` behavior, and otherwise asserts the
-//! committed file still matches that behavior byte-for-byte.
+//! fixture `docs/contracts/model-policy/precedence-table.json`, also read by
+//! `frontend/src/shared/runWithAgent/modelPolicyContract.test.ts`. Asserts
+//! the committed file matches `resolve_model_policy`'s real behavior
+//! byte-for-byte; a request override is left out of the fixture because it's
+//! never present when resolving what Auto means, by construction.
 //!
-//! Regenerate with:
-//!
-//! ```sh
-//! UPDATE_MODEL_POLICY_FIXTURE=1 cargo nextest run --workspace -E 'binary(model_policy_contract)'
-//! ```
-//!
-//! The fixture only covers the three tiers an Auto request can resolve
-//! through (agent profile, project, fleet) — a request override is never
-//! present when resolving what Auto means, by construction on both sides,
-//! so it is left out rather than encoded as an input nothing exercises.
+//! Regenerate: `UPDATE_MODEL_POLICY_FIXTURE=1 cargo nextest run --workspace
+//! -E 'binary(model_policy_contract)'`
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};

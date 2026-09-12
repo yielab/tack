@@ -1,71 +1,12 @@
-//! Per-method wire oracle for `DocketAdapter` — the secondary regression
-//! oracle named in
-//! `docs/plans/agnostic-control-plane.md` §6. `docket_tick_contract_test.rs`
-//! is the primary
-//! oracle: it drives a full reconciler tick and would catch a refactor that
-//! changes *which* requests get issued in steady state. This file is
-//! narrower and complementary — for **every one of the current thirteen
-//! `ControlPlane` methods**, drive a real `DocketAdapter` against `wiremock`
-//! and snapshot both what left the process and what the adapter decoded, so
-//! a change to any single method's wire behavior is visible even in
-//! isolation from the reconciler that happens to call it today.
+//! Per-method wire oracle for `DocketAdapter`, secondary to
+//! `docket_tick_contract_test.rs`'s full-tick oracle: for every current
+//! `ControlPlane` method, drives a real `DocketAdapter` against `wiremock`
+//! and snapshots both what left the process and what it decoded. Fixtures
+//! are shared verbatim with `docket_adapter_test.rs` (see
+//! `tests/fixtures/*.json`'s provenance comments).
 //!
-//! Before this file, only 4 of the 37 tests in `docket_adapter_test.rs`
-//! asserted anything about the outgoing request
-//! (`enqueue_task_sends_the_trusted_flag_on_the_wire`,
-//! `decide_approval_grant_sends_channel_tack_and_returns_the_resulting_state`,
-//! `provision_pod_sends_the_full_request_shape_on_the_wire`,
-//! `unauthenticated_routes_never_send_authorization_header`); the other 33
-//! only assert decoding. Those fixtures are reused here verbatim rather than
-//! re-derived — see `tests/fixtures/*.json`'s own provenance comments for
-//! which are live captures vs. constructed.
-//!
-//! # What each golden file records
-//!
-//! One file per method, `tests/golden/wire/<method>.json`, holding:
-//!
-//! - `requests` — the **ordered** list of HTTP requests the call issued
-//!   (method, path, query pairs sorted by key, the *names* of headers
-//!   present, and the canonicalised JSON body). Zero entries for `kind`
-//!   (pure, synchronous, no I/O).
-//! - `result` — the decoded outcome: `{"outcome":"ok","value":...}` with the
-//!   DTO serialized through `serde_json::to_value`, or
-//!   `{"outcome":"err","error":"<Display text>"}` for a method that errors.
-//!
-//! **Header names only, never values** — `grep -rn "Bearer"
-//! tests/golden/wire/` must stay clean. The bearer token used by these tests is a
-//! throwaway fixture constant, never a real credential, but the discipline
-//! is enforced structurally here regardless: [`RequestTranscript`] has no
-//! field a header *value* could land in.
-//!
-//! **Body canonicalisation is free, not bespoke.** `tack-orch` never enables
-//! `serde_json`'s `preserve_order` feature (see `Cargo.toml`), so
-//! `serde_json::Value::Object` is backed by a `BTreeMap` and always
-//! serializes its keys in sorted order — the exact "canonicalised form,
-//! stable field order" property this oracle needs falls out of the existing
-//! workspace configuration.
-//!
-//! # `dispatch`
-//!
-//! `POST /dispatch/{project}`, the same "one request, snapshot both sides"
-//! treatment as every other write method — see `adapters::docket`'s module
-//! doc, "Write methods", for the shape of its response and why a `pre_input`
-//! block is never observable synchronously on this route the way it is on
-//! `enqueue_task`'s.
-//!
-//! # Auth split, preserved in the golden
-//!
-//! Per `adapters::docket`'s own module doc: `/health`, `/status.json`, and
-//! `/metrics` never carry a Bearer token, even with one configured; every
-//! other route does. `health_wire_contract`, `status_wire_contract`, and
-//! `metrics_wire_contract` all use an adapter configured *with* a token
-//! (same as `unauthenticated_routes_never_send_authorization_header` in
-//! `docket_adapter_test.rs`) precisely so their golden's `header_names`
-//! genuinely proves the split, rather than trivially lacking the header
-//! because none was ever configured.
-//!
-//! `UPDATE_GOLDEN=1` regenerates every golden in this file, mirroring
-//! `crates/tack-api/tests/openapi_contract.rs`'s `UPDATE_OPENAPI=1` pattern.
+//! Regenerate: `UPDATE_GOLDEN=1 cargo nextest run --workspace -E
+//! 'binary(docket_wire_contract_test)'`
 
 use std::fs;
 use std::path::PathBuf;
@@ -116,8 +57,10 @@ fn adapter_for(server: &MockServer) -> DocketAdapter {
 // ---------------------------------------------------------------------------
 
 /// One HTTP request as observed by `wiremock`, reduced to exactly what the
-/// oracle needs to be sensitive to — see the module doc for what's
-/// deliberately excluded (header *values*, in particular).
+/// oracle needs to be sensitive to: no field here could ever hold a header
+/// *value* — `grep -rn "Bearer" tests/golden/wire/` must stay clean, even
+/// though the bearer token these tests use is a throwaway fixture constant,
+/// never a real credential.
 #[derive(Debug, Serialize)]
 struct RequestTranscript {
     method: String,
@@ -125,11 +68,12 @@ struct RequestTranscript {
     /// `(key, value)` pairs, sorted by key — query values are never secret
     /// on any docket route this adapter calls, unlike headers.
     query: Vec<(String, String)>,
-    /// Lowercased, sorted, deduplicated header *names*. Never values — see
-    /// the module doc.
+    /// Lowercased, sorted, deduplicated header *names*. Never values.
     header_names: Vec<String>,
-    /// `Null` when no body was sent (every `GET`); otherwise the parsed,
-    /// canonically-key-sorted JSON body.
+    /// `Null` when no body was sent (every `GET`); otherwise the parsed
+    /// body, canonically key-sorted for free — `tack-orch` never enables
+    /// `serde_json`'s `preserve_order` feature, so `Value::Object` is
+    /// backed by a `BTreeMap` and always serializes keys in sorted order.
     body: serde_json::Value,
 }
 
@@ -175,6 +119,11 @@ fn provisioned_pod_to_value(p: &tack_orch::ProvisionedPod) -> serde_json::Value 
     })
 }
 
+/// One `tests/golden/wire/<method>.json` file: `requests` is the ordered
+/// list of HTTP requests the call issued (empty for a pure, synchronous
+/// decode helper with no I/O); `result` is the decoded outcome —
+/// `{"outcome":"ok","value":...}` or `{"outcome":"err","error":"<Display
+/// text>"}`.
 #[derive(Debug, Serialize)]
 struct MethodGolden {
     method: &'static str,
@@ -295,9 +244,12 @@ async fn health_wire_contract() {
         .mount(&server)
         .await;
 
-    // Configured *with* a token, so the golden's absent `authorization`
-    // header genuinely proves the auth split rather than trivially lacking
-    // it because none was ever set — see the module doc.
+    // `/health`, `/status.json` and `/metrics` never carry a Bearer token
+    // even when one is configured (`adapters::docket`'s module doc); this
+    // test and `status_wire_contract`/`metrics_wire_contract` all use an
+    // adapter configured *with* a token, so the golden's absent
+    // `authorization` header genuinely proves the split rather than
+    // trivially lacking it because none was ever set.
     let adapter = adapter_for(&server);
     let result = match adapter.health().await {
         Ok(v) => ok(v),
@@ -540,6 +492,10 @@ async fn enqueue_task_wire_contract() {
     assert_matches_golden("enqueue_task", &golden);
 }
 
+/// `POST /dispatch/{project}` gets the same "one request, snapshot both
+/// sides" treatment as every other write method — see `adapters::docket`'s
+/// module doc, "Write methods", for why a `pre_input` block is never
+/// observable synchronously on this route the way it is on `enqueue_task`'s.
 #[tokio::test]
 async fn dispatch_wire_contract() {
     let server = MockServer::start().await;

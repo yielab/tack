@@ -1,38 +1,12 @@
 //! Opt-in, live capture for `DocketAdapter::dispatch` against a real,
-//! isolated `docket serve` — never runs under a plain `cargo nextest run`,
-//! never required in CI, and never fails just because no `docket` binary is
-//! configured. Matches the shape of `tack-runner`'s own `#[ignore]`-gated
-//! live harness tests: a prerequisite check up front, a graceful `eprintln!`
-//! skip when it's absent, and a real component driven end to end rather
-//! than a hand-built `curl`.
-//!
-//! # Prerequisites
-//!
-//! `TACK_LIVE_DOCKET_BIN` must point at a `docket` launcher script built
-//! from `../rack-cli` (never `~/.local/bin/docket`, which lags the
-//! repository's own tag). One way to build it:
-//!
-//! ```text
-//! cd ../rack-cli && uv build --out-dir /some/scratch/dist
-//! uv venv /some/scratch/venv --python 3.11
-//! uv pip install --python /some/scratch/venv/bin/python \
-//!     /some/scratch/dist/docket-*.whl
-//! export TACK_LIVE_DOCKET_BIN=/some/scratch/venv/bin/docket
-//! ```
-//!
-//! This test spawns that binary itself, pointed at a fresh `DOCKET_HOME`
-//! this test creates and tears down via a `tempfile::TempDir` guard — never
-//! `~/.docket`, which holds the operator's real approvals and audit log.
-//! Neither `ANTHROPIC_API_KEY` nor `OPENAI_API_KEY` (nor any other provider
-//! credential) is forwarded into the spawned process's environment: the
-//! dispatched pod's Lead has no reachable model endpoint, so its one hop
-//! fails locally with "no endpoint configured" before any network call
-//! reaches a real provider — this is the safety property under test, not
-//! an incidental side effect.
-//!
-//! Run with:
-//! `TACK_LIVE_DOCKET_BIN=... cargo nextest run --workspace --run-ignored
-//! ignored-only -E 'test(live_dispatch_against_a_real_docket_server)'`
+//! isolated `docket serve` — skips gracefully when unconfigured.
+//! `TACK_LIVE_DOCKET_BIN` must point at a `docket` launcher built from
+//! `../rack-cli` (never `~/.local/bin/docket`, which lags this repo's tag),
+//! run against a scratch `DOCKET_HOME` (never `~/.docket`) with no provider
+//! credential forwarded — the dispatched pod's Lead must fail locally on "no
+//! endpoint configured" rather than reach a real, paid provider. Run with
+//! `TACK_LIVE_DOCKET_BIN=... cargo nextest run --run-ignored ignored-only -E
+//! 'test(live_dispatch_against_a_real_docket_server)'`
 
 use std::net::TcpListener;
 use std::process::{Child, Command, Stdio};
