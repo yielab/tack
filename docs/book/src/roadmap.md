@@ -3609,6 +3609,14 @@ is `docs/plans/human-maintainability.md`; the dispatch plan is
 `docs/agent-handoffs/part-ix/README.md`. All three were created from the audit this
 section summarises.
 
+**Status correction (2026-09-12):** Waves 27–30 (cards IX-M0 through IX-M5) are done on
+`develop` — the tool and gate, the mechanical moves, `tack-test-support`, all 28 test
+binaries pruned, and the harness core (`LocalProcessHarness<G>`/`HarnessGrammar`)
+extracted with both adapters migrated and cross-adapter test duplication eliminated.
+Waves 31 (IX-M6 comment batches ∥ IX-M7 documentation) and 32 (IX-M8) are still open.
+`TODO.md`'s Part IX table is the authority for current numbers; this page only records
+intent and does not track completion further.
+
 **The code is fine; what surrounds it is not.** Production Rust is 57k lines. Tests are
 74k lines — 1.29 per production line — and 21k of them sit inside production files, so the
 three largest "source" files are 70–90 % test. Comments are 23 % of production, and 149
