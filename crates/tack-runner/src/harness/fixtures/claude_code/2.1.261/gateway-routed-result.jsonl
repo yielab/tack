@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","model":"anthropic/claude-opus-4.6","claude_code_version":"2.1.261"}
+{"is_error":true,"subtype":"success","api_error_status":404,"result":"model not found","type":"result"}
