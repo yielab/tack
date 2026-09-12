@@ -198,7 +198,7 @@ async fn validate_rejects_an_unsupported_model_provider_before_any_process_launc
         Err(HarnessError::Rejected { .. })
     ));
     assert!(
-        adapter.processes.lock().await.is_empty(),
+        adapter.running.lock().await.is_empty(),
         "a pre-spawn rejection must never create process bookkeeping"
     );
     std::fs::remove_dir_all(workspace).expect("cleanup");
@@ -528,7 +528,7 @@ async fn cancel_stops_the_process_and_forgets_its_own_bookkeeping_entry() {
 
     adapter.validate(&spec).await.expect("validate");
     let handle = adapter.start(&spec).await.expect("start");
-    assert_eq!(adapter.processes.lock().await.len(), 1);
+    assert_eq!(adapter.running.lock().await.len(), 1);
 
     let pid: u32 = handle.process_id.parse().expect("numeric pid handle");
     assert!(
@@ -543,7 +543,7 @@ async fn cancel_stops_the_process_and_forgets_its_own_bookkeeping_entry() {
         "process must actually be gone after cancel reports stopped"
     );
     assert!(
-        adapter.processes.lock().await.is_empty(),
+        adapter.running.lock().await.is_empty(),
         "cancel must remove its own bookkeeping entry"
     );
     std::fs::remove_dir_all(workspace).expect("cleanup");
