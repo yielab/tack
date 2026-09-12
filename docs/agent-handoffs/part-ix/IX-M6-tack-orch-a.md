@@ -1,8 +1,8 @@
 # IX-M6-tack-orch-a handoff
 
 - Base SHA / branch / final SHA: `35deddf` (`develop`) / `agent/ix-m6-tack-orch-a` /
-  *(see this branch's tip commit — recorded after this handoff was committed)*
-  (worktree: `/tmp/ix-m6-tack-orch-a`, `CARGO_TARGET_DIR=/tmp/ix-m6-tack-orch-a-target`).
+  `5d48d5d` (worktree: `/tmp/ix-m6-tack-orch-a`,
+  `CARGO_TARGET_DIR=/tmp/ix-m6-tack-orch-a-target`).
 - Files changed (must equal ownership list):
   - `crates/tack-orch/src/adapters/docket.rs`
   - `crates/tack-orch/src/adapters/github_actions.rs`
