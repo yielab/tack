@@ -5,8 +5,8 @@ agent worked a different file set in another worktree/branch at the same time; i
 is not visible here and is not assumed. This sub-card's scope is comments only — no
 production logic, function signature, or behavior changes.
 
-- Base SHA / branch / final SHA: `957ffc3` (`develop`) / `agent/ix-m6-tack-api-b` / see
-  the commit this handoff ships with (worktree: `/tmp/ix-m6-tack-api-b`,
+- Base SHA / branch / final SHA: `957ffc3` (`develop`) / `agent/ix-m6-tack-api-b` /
+  `577b968` (worktree: `/tmp/ix-m6-tack-api-b`,
   `CARGO_TARGET_DIR=/tmp/ix-m6-tack-api-b-target`).
 - Files changed (equals the card's ownership list, verified via `git diff --stat HEAD`):
   - `crates/tack-api/src/handlers/runner_protocol/retention.rs`
