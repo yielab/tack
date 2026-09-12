@@ -1,21 +1,16 @@
 //! Requested-vs-actual model provenance and honest, provenance-separated
-//! usage economics.
+//! usage economics. Two independent pure concerns, neither performing I/O:
 //!
-//! Two independent pure concerns, neither performing I/O:
-//!
-//! - [`compare_model_provenance`]: the request's resolved model (or "no
-//!   model requested", i.e. auto-select) against the attempt's
-//!   `ActualExecution` observation — visible, never silently reconciled.
+//! - [`compare_model_provenance`]: the request's resolved model (or
+//!   auto-select) against the attempt's `ActualExecution` observation —
+//!   visible, never silently reconciled.
 //! - [`build_usage_economics`]: keeps runner-observed wall-clock time cost
-//!   structurally separate from the harness/vendor's own self-reported
+//!   structurally separate from the harness/vendor's self-reported
 //!   token/dollar usage — never summed into one opaque number.
 //!
-//! Every dollar-valued field here is named `*_usd_estimated`, matching this
-//! crate's own module-level convention (`crate::lib`'s "Money is always an
-//! estimate"). Absent usage is `Measurement { value: None, source:
-//! NotMeasured, .. }`, never a fabricated `0`/`0.0` — see this module's
-//! `absent_usage_never_serializes_as_zero` test, which asserts the literal
-//! JSON shape rather than trusting the type alone.
+//! Every dollar field is named `*_usd_estimated` (`crate::lib`'s "money is
+//! always an estimate"). Absent usage is `Measurement { value: None, source:
+//! NotMeasured, .. }`, never a fabricated `0`/`0.0`.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -25,27 +20,24 @@ use crate::execution::{
     RequestedModelId, RequestedModelProvider, Usage,
 };
 
-/// The comparison between what an execution request asked for and what an
-/// attempt actually ran on. All three variants carry the full observed
-/// facts — never coalesced into a bare boolean "matched" flag, so a caller
-/// (the frontend's attempt rendering, in particular) can show *both* sides
-/// of a mismatch rather than just "something changed."
+/// What an execution request asked for vs. what an attempt actually ran on.
+/// All three variants carry the full observed facts — never coalesced into a
+/// bare boolean "matched" flag — so a caller can show both sides of a
+/// mismatch rather than just "something changed."
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ModelProvenance {
     /// The attempt ran on exactly the requested provider/model.
     Matched { provider: String, model_id: String },
-    /// The request allowed auto-selection (no explicit provider/model was
-    /// ever resolved for it) and the attempt observed a concrete choice.
-    /// Distinct from [`Self::Matched`] — nothing was requested to match
-    /// against — and distinct from [`Self::Mismatched`] — nothing was
-    /// contradicted, since nothing specific was asked for.
+    /// No explicit provider/model was ever resolved for the request
+    /// (auto-select) and the attempt observed a concrete choice — distinct
+    /// from both [`Self::Matched`] (nothing to match against) and
+    /// [`Self::Mismatched`] (nothing was contradicted).
     AutoSelectObserved {
         actual_provider: String,
         actual_model_id: String,
     },
-    /// The attempt ran on a provider and/or model different from what was
-    /// explicitly requested. Both sides are carried in full.
+    /// The attempt ran on a different provider and/or model than requested.
     Mismatched {
         requested_provider: String,
         requested_model_id: String,
@@ -54,14 +46,13 @@ pub enum ModelProvenance {
     },
 }
 
-/// Compares a resolved request (`None` for auto-select — the request's
-/// nullable-pair shape) against an attempt's actually-observed model.
-/// Compares via `.as_str()`, never by unwrapping into a shared type — the
-/// *requested* namespace ([`RequestedModelProvider`]/[`RequestedModelId`])
-/// and the *actual* namespace ([`ActualModelProvider`]/[`ActualModelId`])
-/// stay textually distinct types all the way through, exactly as
-/// `crate::scheduler::select::evaluate_candidate` already does for
-/// requested-vs-declared.
+/// Compares a resolved request (`None` for auto-select) against an
+/// attempt's actually-observed model, via `.as_str()` rather than unwrapping
+/// into a shared type — the *requested*
+/// ([`RequestedModelProvider`]/[`RequestedModelId`]) and *actual*
+/// ([`ActualModelProvider`]/[`ActualModelId`]) namespaces stay textually
+/// distinct throughout, as `crate::scheduler::select::evaluate_candidate`
+/// already does for requested-vs-declared.
 pub fn compare_model_provenance(
     requested: Option<(&RequestedModelProvider, &RequestedModelId)>,
     actual_provider: &ActualModelProvider,

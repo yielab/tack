@@ -1,142 +1,12 @@
-//! The tick-level contract oracle — see `docs/plans/agnostic-control-plane.md`
-//! §6 ("How docket is proven not to have regressed") for why this file
-//! exists and exactly what it has to survive.
-//!
-//! # The gap this closes
-//!
-//! Of `ControlPlane`'s thirteen methods, only four of the 37 tests in
-//! `docket_adapter_test.rs` assert what actually LEAVES the process on the
-//! wire — the other 33 assert decoding only (plan §1.10). A trait reshape
-//! could change what docket receives on nine methods and every existing test
-//! would stay green. This file is the primary oracle any such reshape has to
-//! be proved against: it drives one full reconciler tick — the fetch phase
-//! AND the whole persist phase, not `reconcile_once` in isolation — against
-//! a real `wiremock` docket and a real in-memory SQLite, and snapshots two
-//! things golden files must stay byte-identical across:
-//!
-//!   (A) the ORDERED list of HTTP requests the tick issued — method, path,
-//!       sorted query, header NAMES only (never values — see "Never leaks
-//!       the token" below), body canonicalised;
-//!   (B) the resulting rows of `orch_runs`, `orch_approvals`, `orch_events`,
-//!       `orch_metrics`, and `orch_trace_cursors`, deterministically sorted,
-//!       with Tack-generated volatility normalised away (see
-//!       "Normalisation" below).
-//!
-//! # Why a secondary, per-method wire test is not enough on its own
-//!
-//! A per-method golden proves "given this input, `DocketAdapter::traces`
-//! sends this request" — it says nothing about HOW MANY TIMES
-//! `reconcile_once` calls it, or in what order relative to
-//! `list_runs`/`list_approvals`. Three refactors defeat a method-level
-//! golden and are caught only here (plan §6's table, reproduced by this
-//! file's five scenarios):
-//!   - re-scoping the poll loop to iterate active runs instead of linked
-//!     projects — steady state (N linked projects, 0 active runs) then
-//!     issues ZERO trace/run calls where it issued N (see
-//!     `three_linked_projects_issues_three_per_project_calls_each`, and its
-//!     mirror image `zero_linked_projects_issues_no_per_project_calls`,
-//!     which proves the loop legitimately issues nothing when there is
-//!     nothing to poll, so the request COUNT is a real signal and not just
-//!     "zero because empty is the loop's only mode");
-//!   - dropping `persist_events`'s retention-age guard — a rewound cursor
-//!     then resurrects a row already rolled into `orch_events_daily` and
-//!     purged, double-counting it on the next rollup (see
-//!     `rewound_cursor_re_delivers_overlapping_events_without_resurrecting_a_purged_row`);
-//!   - changing `derive_event_id`'s separator/field order/namespace — out of
-//!     THIS file's scope; see the pinned-literal test in `reconciler.rs`.
-//!
-//! # Pattern copied, not invented
-//!
-//! The fetch-plus-persist-through-a-real-`spawn_reconcilers`-loop shape is
-//! `tests/ingestion/runs.rs` and `tests/ingestion/traces.rs`'s, copied
-//! deliberately rather than reinvented. `TestRepoStore` below is the same
-//! mechanical, thin `ControlPlaneStore` impl those two files share via
-//! `ingestion/support.rs` — duplicated here rather than imported from there
-//! (same reasoning as `ingestion/support.rs`'s own module doc: `tack-orch`
-//! must never depend on `tack-api`, so there is no single real
-//! implementation to import, and each test binary stays scoped to its own
-//! concerns).
-//! Unlike those two files, THIS file deliberately never seeds an
-//! `orch_tasks` row or an item to correlate against — correlation
-//! (task_ids/context.taskId/session_id matching) is already covered there;
-//! this file's only job is the wire shape and the five tables' resulting
-//! rows, so every run/approval/event below lands uncorrelated (`item_id:
-//! null`) on purpose. That also means no `<ITEM_ID>` placeholder is needed
-//! in the normalisation scheme below.
-//!
-//! The `UPDATE_GOLDEN=1` / plain-diff harness shape is
-//! `crates/tack-api/tests/openapi_contract.rs`'s `UPDATE_OPENAPI=1` gate,
-//! read and copied deliberately (`assert_matches_golden`, below).
-//!
-//! # Exactly one tick, deterministically
-//!
-//! `spawn_one`'s loop (`reconciler.rs`) fires tick 1 immediately — there is
-//! no up-front sleep — then sleeps `jittered_secs(base, ±20%)` before tick
-//! 2. `run_one_tick` (below) configures `poll_secs` at 100_000, so even with
-//! jitter a second tick cannot start within this test's wait window. It then
-//! waits for the expected request COUNT to land, capped at
-//! [`REQUEST_WAIT_CAP`] — capped, not asserted-and-panicked, so a
-//! deliberately-broken store (see "Proving the oracle is real" below) lets
-//! the test fall through to the golden comparison instead of dying early on
-//! an opaque timeout — before a short grace sleep for the persist phase and
-//! aborting the task.
-//!
-//! # Normalisation — what stays literal, what does not
-//!
-//! Golden determinism requires every value regenerated fresh to collapse to
-//! the same text on every run. Two independent sources of non-determinism
-//! exist here, both normalised, and nothing else is:
-//!   - **Wall-clock timestamps Tack itself writes** (`created_at`,
-//!     `updated_at`, `scraped_at` — all `datetime('now')` at insert time,
-//!     see `tack-db/src/repo/orch.rs`'s upsert functions) collapse to the
-//!     literal `<NOW>`.
-//!   - **IDs Tack mints at runtime, never read from a fixture**:
-//!     `control_planes.id` (`Uuid::new_v4()` in `create_control_plane`,
-//!     freshly generated every test run) collapses to
-//!     `<CONTROL_PLANE_ID>` wherever it appears as a foreign key;
-//!     `orch_events.id` (`derive_event_id` — content-derived, but its input
-//!     INCLUDES that same random `control_plane_id`, so it is exactly as
-//!     volatile across runs even though it is deterministic *within* one)
-//!     and `orch_metrics.id` (`Uuid::new_v4()` at insert, no natural key —
-//!     see `upsert_orch_metrics`'s doc comment) collapse to ordinal
-//!     placeholders (`<EVENT_ID_1>`, `<METRIC_ID_1>`, ...) assigned after
-//!     sorting, so a row's POSITION and every OTHER column still fully
-//!     participate in the diff.
-//!
-//! Everything else — `run_id`/`token` (docket's own ids, echoed verbatim by
-//! the mock), `remote_project`, `state`, `source`, `started_at`/`ended_at`
-//! (parsed from the fixture's `startedAt`/`finishedAt`), `requested_at`
-//! (parsed from the fixture's `created`), `occurred_at` (parsed from the
-//! fixture's `ts`), `payload`/`labels` (fixture content, canonicalised for
-//! key order only), `cursor` (docket's own minted `next`, echoed verbatim)
-//! — comes FROM the fixture and is asserted literally, unnormalised. Only
-//! values Tack itself mints may be normalised; normalising a value that came
-//! off the wire would blind this oracle to the exact class of change it
-//! exists to catch.
-//!
-//! # Never leaks the token
-//!
-//! Every control plane below is created WITH a Bearer token
-//! ([`PLANE_TOKEN`]) specifically so the authenticated/unauthenticated route
-//! split (`docket.rs`'s `get_authed`/`get_unauthed`) has something real to
-//! prove: the header NAME `authorization` appears in the golden for
-//! `/runs`, `/approvals`, `/traces/*` and never for `/health`,
-//! `/status.json`, `/metrics`. [`assert_never_leaks_token`] is a second,
-//! direct check (not just "we only serialise header names, never values")
-//! that the literal token string never reaches either golden file.
-//!
-//! # Proving the oracle is real
-//!
-//! Not automated here (it would defeat its own point — a permanently broken
-//! store would just make this test permanently fail instead of proving
-//! anything about a REGRESSION). Done once, by hand: temporarily make
-//! `three_linked_projects_issues_three_per_project_calls_each` link zero
-//! projects instead of three (comment out the `link_project` call inside
-//! its loop) while leaving its golden-file names pointed at the real
-//! (three-project) goldens, run just that test, confirm it fails with
-//! `assert_eq!` printing the full committed JSON (which names `demo-b`/
-//! `demo-c`'s `/runs`/`/traces` requests) against a shorter actual JSON that
-//! is missing them, then revert.
+//! The tick-level contract oracle for docket reconciliation
+//! (`docs/plans/agnostic-control-plane.md` §6): drives one full reconciler
+//! tick — fetch AND persist, not `reconcile_once` in isolation — against a
+//! real `wiremock` docket and an in-memory SQLite, snapshotting (A) the
+//! ordered HTTP requests issued and (B) the resulting `orch_*` rows.
+//! Complements `docket_wire_contract_test.rs`'s per-method oracle, which
+//! can't see call COUNT or ORDER across a tick — see each scenario below
+//! for the refactor it exists to catch. Regenerate: `UPDATE_GOLDEN=1 cargo
+//! nextest run --workspace -E 'binary(docket_tick_contract_test)'`
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -201,8 +71,13 @@ async fn seed_project(repo: &Repository, workspace_id: Uuid) -> Project {
     .expect("create project")
 }
 
-/// Bearer token every control plane below is configured with — see the
-/// module doc's "Never leaks the token".
+/// Bearer token every control plane below is configured with, so the
+/// authenticated/unauthenticated route split (`docket.rs`'s
+/// `get_authed`/`get_unauthed`) has something real to prove: the header NAME
+/// `authorization` appears in the golden for `/runs`, `/approvals`,
+/// `/traces/*` and never for `/health`, `/status.json`, `/metrics`.
+/// [`assert_never_leaks_token`] checks the literal string never reaches a
+/// golden file, not just that headers serialise as names only.
 const PLANE_TOKEN: &str = "docket-secret-do-not-leak-9f3a";
 
 async fn seed_plane(repo: &Repository, base_url: &str) -> Uuid {
@@ -235,10 +110,16 @@ async fn link_project(repo: &Repository, project_id: Uuid, plane_id: Uuid, remot
 }
 
 /// A [`ControlPlaneStore`] backed directly by a real `Repository` — the
-/// test-only stand-in for `tack-api::orch_store::RepoControlPlaneStore` (see
-/// the module doc for why this can't just import that type, and why it is
-/// duplicated here rather than imported from `ingestion/support.rs`'s copy,
-/// shared there by `ingestion/runs.rs` and `ingestion/traces.rs`).
+/// test-only stand-in for `tack-api::orch_store::RepoControlPlaneStore`
+/// (`tack-orch` must never depend on `tack-api`, so there is no single real
+/// implementation to import). The fetch-plus-persist-through-a-real-
+/// `spawn_reconcilers`-loop shape, and this mechanical thin impl, are
+/// copied from `tests/ingestion/runs.rs`/`traces.rs`'s own
+/// `ingestion/support.rs` copy rather than shared, so each test binary
+/// stays scoped to its own concerns. Unlike those two files, this one never
+/// seeds an `orch_tasks` row to correlate against — every run/approval/event
+/// below lands uncorrelated (`item_id: null`) on purpose, since correlation
+/// is already covered there.
 struct TestRepoStore {
     repo: Repository,
 }
@@ -466,16 +347,21 @@ fn trace_event_json(
 
 /// Base poll interval for every scenario: large enough (even after ±20%
 /// jitter — see `reconciler.rs`'s `jittered_secs`) that a second tick cannot
-/// start inside this test's wait window. See the module doc's "Exactly one
-/// tick, deterministically".
+/// start inside this test's wait window. `spawn_one`'s loop
+/// (`reconciler.rs`) fires tick 1 immediately with no up-front sleep, so
+/// exactly one tick runs deterministically within that window.
 const TICK_POLL_SECS: u64 = 100_000;
 
 /// Upper bound on how long [`run_one_tick`] waits for the expected request
 /// count to land before giving up and snapshotting whatever arrived anyway.
-/// Deliberately a cap, not a hard-panic timeout — see the module doc's
-/// "Proving the oracle is real" for why a deliberately-broken store must be
-/// allowed to reach the golden comparison rather than die on a timeout
-/// assertion first.
+/// Deliberately a cap, not a hard-panic timeout: a deliberately-broken store
+/// must be able to reach the golden comparison and fail there with a full
+/// diff, rather than die on an opaque timeout assertion first. Verified by
+/// hand once: comment out `three_linked_projects_issues_three_per_project_calls_each`'s
+/// `link_project` calls (link zero projects instead of three) while leaving
+/// its golden-file names pointed at the real goldens, run just that test,
+/// confirm `assert_eq!` prints the full committed JSON (naming `demo-b`'s/
+/// `demo-c`'s requests) against a shorter actual JSON missing them, then revert.
 const REQUEST_WAIT_CAP: Duration = Duration::from_millis(1_500);
 
 /// Grace period after the expected request count lands, before snapshotting
@@ -544,7 +430,7 @@ struct GoldenRequest {
     /// never does — see `reconciler.rs`'s `derive_event_id` doc comment).
     query: BTreeMap<String, String>,
     /// Header NAMES only, lower-cased, sorted, deduplicated — never values.
-    /// See the module doc's "Never leaks the token".
+    /// See [`PLANE_TOKEN`]'s doc comment for why that split is load-bearing.
     headers: Vec<String>,
     body: Option<serde_json::Value>,
 }
@@ -620,6 +506,15 @@ fn to_golden_requests(reqs: &[Request]) -> Vec<GoldenRequest> {
 // Golden artifact (B): the resulting rows
 // ---------------------------------------------------------------------------
 
+/// Only two things vary between runs of the same scenario, and only these
+/// are normalised: [`WALL_CLOCK_COLUMNS`] (`datetime('now')` at insert —
+/// `tack-db/src/repo/orch.rs`'s upsert functions) collapse to
+/// [`NOW_PLACEHOLDER`], and `control_planes.id` (freshly minted every test
+/// run) collapses to [`CONTROL_PLANE_PLACEHOLDER`] wherever it appears as a
+/// foreign key. Everything else — `run_id`/`token`, `state`, `payload`,
+/// timestamps parsed from fixture fields — comes FROM the fixture and is
+/// asserted literally: normalising a value that came off the wire would
+/// blind this oracle to the exact class of change it exists to catch.
 const NOW_PLACEHOLDER: &str = "<NOW>";
 const CONTROL_PLANE_PLACEHOLDER: &str = "<CONTROL_PLANE_ID>";
 const WALL_CLOCK_COLUMNS: [&str; 3] = ["created_at", "updated_at", "scraped_at"];
@@ -709,10 +604,13 @@ fn parse_json_field(row: &mut BTreeMap<String, serde_json::Value>, field: &str) 
     }
 }
 
-/// Replaces a Tack-generated id column with an ordinal placeholder — see the
-/// module doc's "Normalisation". `ordinal` is the row's position after
-/// sorting, so two runs of the same scenario always assign the same
-/// placeholder to the same (by every OTHER column) row.
+/// Replaces a Tack-generated id column (`orch_events.id` — content-derived
+/// via `derive_event_id`, but its input includes the random
+/// `control_plane_id` so it's exactly as volatile across runs;
+/// `orch_metrics.id` — `Uuid::new_v4()` at insert, no natural key) with an
+/// ordinal placeholder. `ordinal` is the row's position after sorting, so
+/// two runs of the same scenario always assign the same placeholder to the
+/// same (by every OTHER column) row.
 fn normalize_generated_id(
     row: &mut BTreeMap<String, serde_json::Value>,
     field: &str,
@@ -1179,12 +1077,15 @@ async fn zero_linked_projects_issues_no_per_project_calls() {
 // Scenario 5 — a plane with three linked projects
 // ---------------------------------------------------------------------------
 
-/// The scenario that catches a re-scoped poll loop: with 3 linked projects
-/// and 0 active runs (the steady state), the tick must issue three
-/// `/runs?project=` calls and three `/traces/{project}` calls. A refactor
-/// that iterates active runs instead of linked projects would issue zero of
-/// each — see the module doc's "Why a secondary, per-method wire test is not
-/// enough on its own".
+/// A per-method wire test can't see this: it proves "given this input,
+/// `DocketAdapter::traces` sends this request," not how many times
+/// `reconcile_once` calls it. With 3 linked projects and 0 active runs (the
+/// steady state), the tick must issue three `/runs?project=` calls and three
+/// `/traces/{project}` calls; a refactor that iterates active runs instead
+/// of linked projects would issue zero of each — caught only here. Mirrored
+/// by `zero_linked_projects_issues_no_per_project_calls`, which proves the
+/// loop legitimately issues nothing when there is nothing to poll, so this
+/// scenario's count is a real signal and not just "zero is the only mode."
 #[tokio::test]
 async fn three_linked_projects_issues_three_per_project_calls_each() {
     let repo = setup_repo().await;
