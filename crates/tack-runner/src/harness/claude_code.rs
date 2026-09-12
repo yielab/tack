@@ -1,8 +1,11 @@
-//! Claude Code harness adapter.
+//! Claude Code harness grammar.
 //!
-//! Implements [`super::HarnessAdapter`] (`engine::HarnessAdapter`, see the module docs on
-//! `super` for why it is not redefined here) and [`super::HarnessProbe`] for the `claude`
-//! CLI (Anthropic's Claude Code).
+//! Implements [`crate::harness::local_process::HarnessGrammar`] for
+//! `harness_kind = "claude-code"`; [`ClaudeCodeAdapter`] is
+//! [`crate::harness::local_process::LocalProcessHarness<ClaudeCodeGrammar>`], which
+//! carries the shared local-process lifecycle (`crate::harness::local_process`)
+//! and composes the shared process/redaction/artifact infrastructure
+//! (`crate::harness::{process, redact, artifact}`).
 //!
 //! Vendor findings — what is measured, what is a documented guess, and at what observed
 //! version: `fixtures/claude_code/README.md`, next to the transcripts that prove them.
@@ -14,28 +17,43 @@ use std::{
 };
 
 use async_trait::async_trait;
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 use tack_orch::execution::{
     ActualExecution, ActualModelId, ActualModelProvider, CapabilitySupport, CapabilityValue,
-    FeatureCapabilities, HarnessCapability, HarnessKind as DomainHarnessKind, Measurement,
-    MeasurementSource, Usage as DomainUsage, WorkspaceId as DomainWorkspaceId,
+    FeatureCapabilities, HarnessKind as DomainHarnessKind, Measurement, MeasurementSource,
+    Usage as DomainUsage, WorkspaceId as DomainWorkspaceId,
 };
 
-use super::{
-    AttemptJournal, CancelObservation, CancellationEvidence, ExecutionSpec, HarnessAdapter,
-    HarnessError, HarnessOutcome, HarnessProbe, LocalRunHandle, ModelObservationSource,
+use crate::client::AttemptState;
+use crate::config::ProviderConfig;
+use crate::harness::{
+    CancelObservation, ExecutionSpec, HarnessError, HarnessOutcome, ModelObservationSource,
     RecoveryObservation,
-    process::{CancelOutcome, ProcessExit, ProcessLimits, ProcessResult, ProcessSpec},
+    local_process::{HarnessGrammar, LocalProcessHarness, PreparedRun},
+    process::{
+        CancelOutcome, ProcessError, ProcessExit, ProcessLimits, ProcessResult, ProcessSpec,
+    },
     redact::SecretMaterial,
 };
-// `process_alive` only exists under `#[cfg(unix)]` in `process.rs` (it shells
-// out to `kill(pid, 0)`); every call site below is itself already gated the
-// same way, so the import must match or a non-unix build (e.g. the Windows
-// release target) fails to resolve the name at all, not just at the call.
-#[cfg(unix)]
-use super::process::process_alive;
-use crate::{Clock, SystemClock, client::AttemptState, client::Timestamp};
+use crate::provider::ProviderEndpoint;
+use crate::secrets::SecretStore;
+// Re-exported (unused by this module's own production code) purely so
+// `claude_code::tests` — a child module that relies on `use super::*` for
+// everything else this file already imports — keeps seeing the frozen
+// `HarnessAdapter`/`HarnessProbe` call boundary and its handle/journal
+// types without a second, parallel import list.
+#[cfg(test)]
+pub(crate) use crate::client::Timestamp;
+#[cfg(test)]
+pub(crate) use crate::harness::{AttemptJournal, HarnessAdapter, HarnessProbe, LocalRunHandle};
+// `reconcile`'s own liveness check moved into the shared
+// `local_process::LocalProcessHarness::reconcile` (it calls `process_alive`
+// generically for every grammar before ever asking `reconcile_alive`
+// anything); this grammar's own production code no longer calls it
+// directly, but several tests still probe real process liveness themselves.
+#[cfg(all(test, unix))]
+pub(crate) use crate::harness::process::process_alive;
 
 /// The wire value for this harness, matching
 /// `registry::HarnessKind::ClaudeCode.as_str()`.
@@ -130,65 +148,60 @@ fn discover_installed_binary() -> Result<HarnessBinary, String> {
     })
 }
 
-/// One in-flight (spawned, not yet reaped) attempt process, keyed by its own
-/// pid (as a string) in [`ClaudeCodeAdapter::processes`]. Everything `wait`
-/// needs that only `start` has access to (the original spec has no second
-/// trip through `wait`/`cancel`, which take only an opaque
-/// [`LocalRunHandle`]) is captured here.
-struct RunningEntry {
-    process: super::process::SupervisedProcess,
-    secrets: SecretMaterial,
-    limits: ProcessLimits,
-    requested_provider: Option<String>,
-    started_at: DateTime<Utc>,
-    /// Needed so `wait()` can actually stage the raw
-    /// run log it claims (`artifacts: Advisory`) — `start()` is the only
-    /// place these are known; `wait()` only ever sees the opaque
-    /// `LocalRunHandle`.
+/// Per-run state [`ClaudeCodeGrammar::prepare`] computes and
+/// [`ClaudeCodeGrammar::outcome`] later consumes — everything `wait` needs
+/// that only `prepare` had access to.
+pub struct ClaudeCodeRunState {
+    /// Needed so `outcome` can actually stage the raw run log it claims
+    /// (`artifacts: Advisory`) — `prepare` is the only place these are
+    /// known; `outcome` only ever sees this state.
     workspace_path: PathBuf,
     attempt_id: String,
+    /// Which provider the request named, if any — `outcome`'s parser needs
+    /// this to decide whether a fast `result` line's model claim can be
+    /// trusted as `harness_reported` or must be downgraded to
+    /// `requested_not_confirmed` (a gateway-routed run's `init` line fires
+    /// before any network call reaches the gateway).
+    requested_provider: Option<String>,
 }
 
-/// The Claude Code harness adapter. `C` is the injected [`Clock`] — no
-/// adapter method sleeps or reads `SystemTime::now()` directly; every
-/// timestamp comes from `self.clock` — matching
-/// `RunnerEngine<P, A, W, C = SystemClock>`'s own generic-with-default shape.
-pub struct ClaudeCodeAdapter<C = SystemClock> {
+/// The Claude Code harness grammar: everything genuinely specific to the
+/// `claude` CLI. Time is injected via `C: crate::Clock` on
+/// [`LocalProcessHarness`] itself (never `SystemTime::now()` directly), not
+/// here — this type has no clock of its own.
+pub struct ClaudeCodeGrammar {
     binary: HarnessBinary,
-    clock: C,
     /// Grace period between SIGTERM and SIGKILL in `cancel`. A field (not a
     /// constant) so tests can shrink it; defaults to 5s, matching
-    /// `process.rs::ProcessLimits`'s own default.
+    /// `process.rs::ProcessLimits`'s own default. Folded into
+    /// `PreparedRun::limits.termination_grace` at `prepare()` time, since
+    /// the shared `cancel()` in `local_process.rs` reads the grace period
+    /// from the running attempt's own recorded limits, not from a
+    /// grammar-specific field it has no way to reach.
     cancel_grace: Duration,
-    processes: tokio::sync::Mutex<BTreeMap<String, RunningEntry>>,
-    /// Pids `cancel` explicitly terminated, consulted (and cleared) by
-    /// `wait` if it is ever also called for the same handle — the current
-    /// engine never does this in one `run_claimed` cycle (it calls either
-    /// `cancel` or `wait`, never both, for a given attempt — see
-    /// `engine.rs::run_claimed`), but the trait takes `&self`, not `&mut
-    /// self`, and does not itself document that exclusion, so this adapter
-    /// stays correct defensively rather than assuming a caller convention it
-    /// cannot see from its own trait bound.
-    cancelled: tokio::sync::Mutex<std::collections::BTreeSet<String>>,
-    /// Resolves `secret_reference` environment entries. Shared with every
-    /// other adapter the runner constructed at startup — see
-    /// `crate::secrets::SecretStore`.
-    secrets: crate::secrets::SecretStore,
-    /// Configured provider endpoints (`RunnerConfig::providers`), consulted
-    /// only when a request's `requested_model_provider` names one — see
-    /// `crate::provider::resolve_endpoint`. Empty by default, meaning every
-    /// request spawns against the CLI's own ambient login.
-    providers: std::collections::BTreeMap<String, crate::config::ProviderConfig>,
 }
 
-impl ClaudeCodeAdapter<SystemClock> {
+/// The Claude Code harness adapter/probe:
+/// [`LocalProcessHarness<ClaudeCodeGrammar>`][crate::harness::local_process::LocalProcessHarness]
+/// implements both [`crate::harness::HarnessAdapter`] (the frozen per-attempt
+/// lifecycle) and [`crate::harness::HarnessProbe`] (capability discovery) for
+/// any grammar; this alias is the name every other module (`bootstrap.rs`,
+/// tests) constructs and passes around.
+pub type ClaudeCodeAdapter<C = crate::SystemClock> = LocalProcessHarness<ClaudeCodeGrammar, C>;
+
+impl ClaudeCodeAdapter<crate::SystemClock> {
     /// Discovers the installed `claude` binary via the runner process's own
     /// `PATH` and constructs an adapter around it with the real system
-    /// clock. The primary, non-test constructor.
-    pub fn discover(secrets: crate::secrets::SecretStore) -> Result<Self, String> {
+    /// clock. The primary, non-test constructor. Fallible (unlike
+    /// [`crate::harness::codex::CodexAdapter::discover`]'s infallible,
+    /// late-resolving constructor): this grammar resolves its binary
+    /// eagerly, once, here — a `claude` install that cannot be found fails
+    /// the whole constructor rather than being deferred to the first
+    /// `validate`/`start` call.
+    pub fn discover(secrets: SecretStore) -> Result<Self, String> {
         Ok(Self::with_binary(
             discover_installed_binary()?,
-            SystemClock,
+            crate::SystemClock,
             secrets,
         ))
     }
@@ -202,61 +215,42 @@ impl ClaudeCodeAdapter<SystemClock> {
     pub(crate) fn for_fixture(
         program: PathBuf,
         prefix_args: Vec<String>,
-        secrets: crate::secrets::SecretStore,
+        secrets: SecretStore,
     ) -> Self {
         Self::with_binary(
             HarnessBinary {
                 program,
                 prefix_args,
             },
-            SystemClock,
+            crate::SystemClock,
             secrets,
         )
     }
 }
 
-impl<C: Clock> ClaudeCodeAdapter<C> {
+impl<C: crate::Clock> ClaudeCodeAdapter<C> {
     /// Constructs an adapter around an explicit [`HarnessBinary`] and clock.
     /// Used directly by tests to point at the shared fake harness fixture
     /// (`crate::harness::fixtures::fake_harness_command`) instead of a real
     /// `claude` install.
-    pub fn with_binary(
-        binary: HarnessBinary,
-        clock: C,
-        secrets: crate::secrets::SecretStore,
-    ) -> Self {
-        Self {
+    pub fn with_binary(binary: HarnessBinary, clock: C, secrets: SecretStore) -> Self {
+        let grammar = ClaudeCodeGrammar {
             binary,
-            clock,
             cancel_grace: Duration::from_secs(5),
-            processes: tokio::sync::Mutex::new(BTreeMap::new()),
-            cancelled: tokio::sync::Mutex::new(std::collections::BTreeSet::new()),
-            secrets,
-            providers: std::collections::BTreeMap::new(),
-        }
+        };
+        LocalProcessHarness::new(grammar, clock, secrets)
     }
 
     /// Overrides the SIGTERM→SIGKILL grace period used by `cancel`. Tests
     /// use a small value so a cancellation test never depends on a
     /// multi-second real sleep to pass.
     pub fn with_cancel_grace(mut self, grace: Duration) -> Self {
-        self.cancel_grace = grace;
+        self.grammar.cancel_grace = grace;
         self
     }
+}
 
-    /// Configures the provider endpoints this adapter may point a spawn at
-    /// — see `crate::provider::resolve_endpoint`. Not part of `with_binary`
-    /// itself so every existing call site (fixtures, tests) keeps
-    /// constructing an adapter with no configured endpoint at all, exactly
-    /// today's behavior, without editing each one.
-    pub fn with_providers(
-        mut self,
-        providers: std::collections::BTreeMap<String, crate::config::ProviderConfig>,
-    ) -> Self {
-        self.providers = providers;
-        self
-    }
-
+impl ClaudeCodeGrammar {
     /// Exactly `HOME` and `PATH`, read from the *runner process's own*
     /// environment (never from attempt-supplied data) — not blanket
     /// ambient-environment inheritance (which `process.rs`'s own docs flag
@@ -280,7 +274,7 @@ impl<C: Clock> ClaudeCodeAdapter<C> {
     /// Runs `<binary> --version` from a neutral, non-attempt directory (no
     /// workspace exists yet at probe time) with a bounded timeout, since a
     /// probe must never hang the caller forever on a broken installation.
-    async fn detect_version(&self) -> (String, Option<String>) {
+    async fn detect_version_impl(&self) -> (String, Option<String>) {
         let neutral_dir = std::env::temp_dir();
         let (program, args) = self.binary.command_line(vec!["--version".to_string()]);
         let spec = ProcessSpec {
@@ -371,7 +365,7 @@ impl<C: Clock> ClaudeCodeAdapter<C> {
     /// such root to give it. Best-effort: a staging failure only omits the
     /// `artifact` key from `terminal_reason`, never fails the attempt.
     fn stage_run_log(
-        workspace_path: &std::path::Path,
+        workspace_path: &Path,
         attempt_id: &str,
         stdout: &str,
         stderr: &str,
@@ -408,10 +402,6 @@ impl<C: Clock> ClaudeCodeAdapter<C> {
             }
         }
     }
-}
-
-fn now_rfc3339<C: Clock>(clock: &C) -> String {
-    DateTime::<Utc>::from(clock.now()).to_rfc3339_opts(SecondsFormat::Secs, true)
 }
 
 fn parse_version_text(raw: &str) -> (String, Option<String>) {
@@ -796,61 +786,19 @@ fn feature_capabilities() -> FeatureCapabilities {
 }
 
 #[async_trait]
-impl<C: Clock + Send + Sync> HarnessProbe for ClaudeCodeAdapter<C> {
+impl HarnessGrammar for ClaudeCodeGrammar {
+    type RunState = ClaudeCodeRunState;
+
     fn harness_kind(&self) -> DomainHarnessKind {
         DomainHarnessKind::new(HARNESS_KIND)
     }
 
-    async fn probe(&self) -> HarnessCapability {
-        let probed_at = DateTime::<Utc>::from(self.clock.now());
-        let (installed_version, probe_error) = self.detect_version().await;
-        let mut additional = BTreeMap::new();
-        additional.insert(
-            "model_discovery_note".to_string(),
-            Value::String(
-                "Claude Code's CLI has no list-models command; model availability is only \
-                 observable via a live, billed invocation, so this probe reports zero \
-                 model_combinations rather than an unverified static alias list."
-                    .to_string(),
-            ),
-        );
-        HarnessCapability {
-            harness_kind: DomainHarnessKind::new(HARNESS_KIND),
-            installed_version,
-            probe_error,
-            probed_at,
-            model_combinations: Vec::new(),
-            // A pass-through attestation: a claim about THIS adapter's
-            // invocation contract (`run_arguments` appends `--model
-            // <requested_model_id>` verbatim, asserted by unit test), not
-            // about which models exist — the CLI validates the model itself
-            // at run time and an invalid one fails the attempt with the
-            // CLI's own error envelope (observed live, module docs). This is
-            // what makes claude-code schedulable without inventing a model
-            // list.
-            model_passthrough: Some(CapabilityValue {
-                support: CapabilitySupport::Supported,
-                reason: Some(
-                    "the adapter forwards requested_model_id verbatim via --model; the CLI \
-                     validates it at run time (an invalid model returns is_error:true), so \
-                     operator-specified opaque models are accepted without the probe claiming \
-                     any model list"
-                        .to_string(),
-                ),
-                additional: Default::default(),
-            }),
-            additional,
-        }
-    }
-
-    fn declared_capabilities(&self) -> FeatureCapabilities {
-        feature_capabilities()
-    }
-}
-
-#[async_trait]
-impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
-    async fn validate(&self, spec: &ExecutionSpec) -> Result<(), HarnessError> {
+    /// `harness_kind` self-check, the provider allow-list check, and the
+    /// network self-contradiction check, bundled exactly as `validate` used
+    /// to run them inline — called from both `validate` and `start` so the
+    /// two can never disagree about what counts as an unsupported
+    /// selection.
+    fn validate_selection(&self, spec: &ExecutionSpec) -> Result<(), HarnessError> {
         let request = &spec.work.request;
 
         if request.requested_harness_kind.as_str() != HARNESS_KIND {
@@ -901,53 +849,55 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
             }
         }
 
+        Ok(())
+    }
+
+    fn resolve_binary(&self) -> Result<(PathBuf, Vec<String>), String> {
         if !self.binary.program.exists() {
-            let reason = format!(
+            return Err(format!(
                 "resolved claude binary at {} no longer exists",
                 self.binary.program.display()
-            );
-            tracing::warn!(
-                reason,
-                "claude-code adapter's resolved binary no longer exists"
-            );
-            return Err(HarnessError::Rejected { reason });
+            ));
         }
+        Ok((self.binary.program.clone(), self.binary.prefix_args.clone()))
+    }
 
-        // Every `secret_reference` entry must resolve before the harness
-        // process exists. This discards the resolved values — `start`
-        // resolves again for real — so a rejection here never leaves a
-        // running process behind. The engine has already journaled and
-        // announced the attempt by now, and turns a refusal here into a
-        // reported failure rather than an abandoned lease.
-        super::resolve_environment(&self.secrets, request, &mut SecretMaterial::new())?;
-
-        // Same discard-and-recheck discipline as above, for a configured
-        // provider endpoint: a disabled or misconfigured provider must
-        // reject here, before any process is spawned, not partway through
-        // `start`.
-        if let Err(error) = crate::provider::resolve_endpoint(
-            &self.providers,
-            &self.secrets,
-            request
-                .requested_model_provider
-                .as_ref()
-                .map(|provider| provider.as_str())
-                .unwrap_or(""),
+    fn resolve_provider_endpoint(
+        &self,
+        spec: &ExecutionSpec,
+        secrets: &SecretStore,
+        providers: &BTreeMap<String, ProviderConfig>,
+    ) -> Result<Option<ProviderEndpoint>, HarnessError> {
+        let provider = spec
+            .work
+            .request
+            .requested_model_provider
+            .as_ref()
+            .map(|provider| provider.as_str())
+            .unwrap_or("");
+        crate::provider::resolve_endpoint(
+            providers,
+            secrets,
+            provider,
             crate::provider::Wire::AnthropicMessages,
-        ) {
+        )
+        .map_err(|error| {
             let reason = error.to_string();
             tracing::warn!(
                 reason,
                 "claude-code adapter rejected a request whose provider endpoint could not be \
                  resolved"
             );
-            return Err(HarnessError::Rejected { reason });
-        }
-
-        Ok(())
+            HarnessError::Rejected { reason }
+        })
     }
 
-    async fn start(&self, spec: &ExecutionSpec) -> Result<LocalRunHandle, HarnessError> {
+    async fn prepare(
+        &self,
+        spec: &ExecutionSpec,
+        secrets_store: &SecretStore,
+        providers: &BTreeMap<String, ProviderConfig>,
+    ) -> Result<PreparedRun<ClaudeCodeRunState>, HarnessError> {
         let request = &spec.work.request;
         let workspace_root = spec.workspace.path.clone();
         let working_directory = match request.repository.subdirectory.as_deref() {
@@ -957,45 +907,28 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
 
         let mut secrets = SecretMaterial::new();
         let resolved_environment =
-            super::resolve_environment(&self.secrets, request, &mut secrets)?;
+            super::resolve_environment(secrets_store, request, &mut secrets)?;
         let mut env = self.base_environment();
         env.extend(resolved_environment);
 
         // A configured provider endpoint applies only when this request's
         // provider names one (e.g. a gateway) — a direct-vendor request
         // (the harness's own subscription/login mode) resolves to `None`
-        // and this adapter injects nothing, so the two paths can never be
+        // and this grammar injects nothing, so the two paths can never be
         // confused by a shared environment variable.
-        match crate::provider::resolve_endpoint(
-            &self.providers,
-            &self.secrets,
-            request
-                .requested_model_provider
-                .as_ref()
-                .map(|provider| provider.as_str())
-                .unwrap_or(""),
-            crate::provider::Wire::AnthropicMessages,
-        ) {
-            Ok(Some(endpoint)) => {
-                env.insert("ANTHROPIC_BASE_URL".to_string(), endpoint.base_url);
-                env.insert(
-                    endpoint.credential_env_var,
-                    endpoint.credential.expose().to_string(),
-                );
-                // Measured against the installed CLI (2.1.260): empty,
-                // unset and non-empty all produced byte-identical outgoing
-                // requests, with ANTHROPIC_AUTH_TOKEN winning regardless —
-                // this contradicts the vendor's own documented claim that a
-                // non-empty value wins. Set empty anyway, at zero cost,
-                // rather than trusted to already be absent.
-                env.insert("ANTHROPIC_API_KEY".to_string(), String::new());
-            }
-            Ok(None) => {}
-            Err(error) => {
-                return Err(HarnessError::Rejected {
-                    reason: error.to_string(),
-                });
-            }
+        if let Some(endpoint) = self.resolve_provider_endpoint(spec, secrets_store, providers)? {
+            env.insert("ANTHROPIC_BASE_URL".to_string(), endpoint.base_url);
+            env.insert(
+                endpoint.credential_env_var,
+                endpoint.credential.expose().to_string(),
+            );
+            // Measured against the installed CLI (2.1.260): empty,
+            // unset and non-empty all produced byte-identical outgoing
+            // requests, with ANTHROPIC_AUTH_TOKEN winning regardless —
+            // this contradicts the vendor's own documented claim that a
+            // non-empty value wins. Set empty anyway, at zero cost,
+            // rather than trusted to already be absent.
+            env.insert("ANTHROPIC_API_KEY".to_string(), String::new());
         }
 
         let tools_value = request.permission_policy.tools.join(",");
@@ -1041,65 +974,50 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
             workspace_root,
         };
 
-        let process = process_spec.spawn().await.map_err(|error| {
-            tracing::warn!(
-                ?error,
-                "claude-code adapter failed to spawn the harness process"
-            );
-            HarnessError::Process
-        })?;
-        let pid = process.pid();
-        let process_id = pid.to_string();
-
         let timeout = Duration::from_secs(request.timeout_seconds.clamp(1, MAX_TIMEOUT_SECONDS));
-        let limits = ProcessLimits::new(MAX_STDOUT_BYTES, MAX_STDERR_BYTES, timeout);
+        let limits = ProcessLimits {
+            termination_grace: self.cancel_grace,
+            ..ProcessLimits::new(MAX_STDOUT_BYTES, MAX_STDERR_BYTES, timeout)
+        };
         let requested_provider = request
             .requested_model_provider
             .as_ref()
             .map(|provider| provider.as_str().to_string());
 
-        let entry = RunningEntry {
-            process,
-            secrets,
-            limits,
-            requested_provider,
-            started_at: DateTime::<Utc>::from(self.clock.now()),
+        let state = ClaudeCodeRunState {
             workspace_path: spec.workspace.path.clone(),
             attempt_id: spec.work.lease.attempt_id.as_str().to_owned(),
+            requested_provider,
         };
-        self.processes
-            .lock()
-            .await
-            .insert(process_id.clone(), entry);
 
-        Ok(LocalRunHandle { process_id })
+        Ok(PreparedRun {
+            process_spec,
+            secrets,
+            limits,
+            state,
+        })
     }
 
-    async fn cancel(&self, handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
-        // Takes ownership of the entry rather than signalling by a raw pid
-        // this adapter looks up separately: `SupervisedProcess::cancel`
-        // (`process.rs`) is the only way to *reap* the process as part of
-        // confirming it stopped. A pid-only `kill(pid, 0)` liveness poll
-        // cannot distinguish "still running" from "exited but not yet
-        // reaped" (a zombie still answers `kill(pid, 0)` successfully until
-        // something calls `waitpid` on it) — an earlier version of this
-        // method signalled by pid without ever reaping, and its own test
-        // caught it hanging at `Ambiguous` forever because the killed
-        // process was never actually reaped. Left as a documented lesson,
-        // not silently fixed.
-        let entry = self
-            .processes
-            .lock()
-            .await
-            .remove(&handle.process_id)
-            .ok_or(HarnessError::Process)?;
-        self.cancelled
-            .lock()
-            .await
-            .insert(handle.process_id.clone());
+    fn encode_handle(&self, pid: u32) -> String {
+        pid.to_string()
+    }
 
-        let pid = entry.process.pid();
-        let (observation, process_outcome) = match entry.process.cancel(self.cancel_grace).await {
+    fn decode_handle(&self, process_id: &str) -> Option<u32> {
+        process_id.parse::<u32>().ok()
+    }
+
+    fn cancel_outcome(
+        &self,
+        pid: u32,
+        signal_result: Result<CancelOutcome, ProcessError>,
+    ) -> Result<
+        (
+            CancelObservation,
+            serde_json::Map<String, serde_json::Value>,
+        ),
+        HarnessError,
+    > {
+        let (observation, process_outcome) = match signal_result {
             Ok(CancelOutcome::Stopped) => (CancelObservation::ProcessStopped, "stopped"),
             Ok(CancelOutcome::Killed) => (CancelObservation::ProcessStopped, "killed"),
             Err(error) => {
@@ -1110,57 +1028,65 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
                 (CancelObservation::Ambiguous, "signal_failed")
             }
         };
-
-        Ok(CancellationEvidence {
+        Ok((
             observation,
-            observed_at: Timestamp::new(now_rfc3339(&self.clock)),
-            details: serde_json::Map::from_iter([
+            serde_json::Map::from_iter([
                 ("pid".to_string(), Value::from(pid)),
                 ("process_outcome".to_string(), Value::from(process_outcome)),
             ]),
-        })
+        ))
     }
 
-    async fn wait(&self, handle: &LocalRunHandle) -> Result<HarnessOutcome, HarnessError> {
-        let entry = self
-            .processes
-            .lock()
-            .await
-            .remove(&handle.process_id)
-            .ok_or(HarnessError::Process)?;
-        let was_cancelled = self.cancelled.lock().await.remove(&handle.process_id);
+    fn reconcile_alive(&self, pid: u32) -> RecoveryObservation {
+        match self.process_program_matches(pid) {
+            Some(true) => RecoveryObservation::ProcessRunning,
+            // The pid is alive, but resolves to a different program: the
+            // original attempt process is confirmed gone, its pid has
+            // simply been recycled by the OS to something unrelated.
+            Some(false) => RecoveryObservation::ProcessStopped,
+            // Alive, but identity is unverifiable on this platform
+            // (non-Linux Unix, or `/proc` unreadable): a bare liveness
+            // check alone is not proof this is genuinely the same
+            // attempt, given pid reuse. Honest uncertainty, not a
+            // confident guess either way.
+            None => RecoveryObservation::Ambiguous,
+        }
+    }
 
-        let result = entry
-            .process
-            .wait_with_capture(&entry.limits, &entry.secrets)
-            .await
-            .map_err(|error| {
-                tracing::warn!(
-                    ?error,
-                    "claude-code adapter failed while capturing process output"
-                );
-                HarnessError::Process
-            })?;
+    fn reconcile_unavailable(&self) -> Result<RecoveryObservation, HarnessError> {
+        // No portable liveness primitive at all on this platform (see
+        // `process.rs`'s own non-Unix cancellation fallback for the same
+        // documented limitation). Reconciliation is not genuinely
+        // supported here.
+        Ok(RecoveryObservation::Ambiguous)
+    }
 
-        let parsed = parse_run_output(&result, entry.requested_provider.as_deref());
-        let terminal_state = if was_cancelled {
+    fn outcome(
+        &self,
+        state: ClaudeCodeRunState,
+        started_at: DateTime<Utc>,
+        ended_at: DateTime<Utc>,
+        result: ProcessResult,
+        cancelled: bool,
+    ) -> HarnessOutcome {
+        let parsed = parse_run_output(&result, state.requested_provider.as_deref());
+        let terminal_state = if cancelled {
             AttemptState::Cancelled
         } else if parsed.is_error {
             AttemptState::Failed
         } else {
             AttemptState::Succeeded
         };
-        let ended_at = DateTime::<Utc>::from(self.clock.now());
 
         // `artifacts: Advisory` (downgraded from an
         // unbacked `Supported` — see `feature_capabilities`) is only honest
-        // if `wait()` actually stages something. Best-effort, exactly like
+        // if `outcome` actually stages something. Best-effort, exactly like
         // `codex.rs`'s identical `stage_run_log`: a staging
         // failure only omits the `artifact` key, never fails the attempt.
         let mut terminal_reason = parsed.terminal_reason;
         if let Some(artifact) = Self::stage_run_log(
-            &entry.workspace_path,
-            &entry.attempt_id,
+            &state.workspace_path,
+            &state.attempt_id,
             &result.stdout.text,
             &result.stderr.text,
         ) && let Some(object) = terminal_reason.as_object_mut()
@@ -1168,7 +1094,7 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
             object.insert("artifact".to_string(), artifact);
         }
 
-        Ok(HarnessOutcome {
+        HarnessOutcome {
             terminal_state,
             terminal_reason,
             final_checkpoint: None,
@@ -1178,7 +1104,7 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
                 model_provider: ActualModelProvider::new(parsed.model_provider),
                 model_id: ActualModelId::new(parsed.model_id),
                 model_observation_source: parsed.model_observation_source,
-                capability_snapshot: feature_capabilities(),
+                capability_snapshot: self.feature_capabilities(),
                 // The engine overwrites `workspace_id`/`base_revision` from
                 // the real `Workspace` via `HarnessOutcome::
                 // normalize_workspace_facts` after `wait` returns
@@ -1186,52 +1112,60 @@ impl<C: Clock + Send + Sync> HarnessAdapter for ClaudeCodeAdapter<C> {
                 // onward as-is.
                 workspace_id: DomainWorkspaceId::new(""),
                 base_revision: String::new(),
-                started_at: entry.started_at,
+                started_at,
                 ended_at,
                 additional: Default::default(),
             },
             usage: parsed.usage,
+        }
+    }
+
+    async fn detect_version(
+        &self,
+    ) -> (String, Option<String>, BTreeMap<String, serde_json::Value>) {
+        let (version, error) = self.detect_version_impl().await;
+        // Unconditional, regardless of whether this particular probe
+        // succeeded: the CLI has no list-models command at all, so this
+        // note belongs to every probe outcome, not to a diagnostic branch
+        // of the version scanner itself (which has none — see the module
+        // docs' assumption on `parse_version_text`).
+        let mut additional = BTreeMap::new();
+        additional.insert(
+            "model_discovery_note".to_string(),
+            serde_json::Value::String(
+                "Claude Code's CLI has no list-models command; model availability is only \
+                 observable via a live, billed invocation, so this probe reports zero \
+                 model_combinations rather than an unverified static alias list."
+                    .to_string(),
+            ),
+        );
+        (version, error, additional)
+    }
+
+    fn model_passthrough(&self) -> Option<CapabilityValue> {
+        // A pass-through attestation: a claim about THIS grammar's
+        // invocation contract (`run_arguments` appends `--model
+        // <requested_model_id>` verbatim, asserted by unit test), not
+        // about which models exist — the CLI validates the model itself
+        // at run time and an invalid one fails the attempt with the
+        // CLI's own error envelope (observed live, module docs). This is
+        // what makes claude-code schedulable without inventing a model
+        // list.
+        Some(CapabilityValue {
+            support: CapabilitySupport::Supported,
+            reason: Some(
+                "the adapter forwards requested_model_id verbatim via --model; the CLI \
+                 validates it at run time (an invalid model returns is_error:true), so \
+                 operator-specified opaque models are accepted without the probe claiming \
+                 any model list"
+                    .to_string(),
+            ),
+            additional: Default::default(),
         })
     }
 
-    async fn reconcile(
-        &self,
-        journal: &AttemptJournal,
-    ) -> Result<RecoveryObservation, HarnessError> {
-        let Some(process_id) = &journal.process_id else {
-            return Ok(RecoveryObservation::ProcessStopped);
-        };
-        let Ok(pid) = process_id.parse::<u32>() else {
-            return Err(HarnessError::RecoveryUnavailable);
-        };
-
-        #[cfg(unix)]
-        {
-            if !process_alive(pid) {
-                return Ok(RecoveryObservation::ProcessStopped);
-            }
-            match self.process_program_matches(pid) {
-                Some(true) => Ok(RecoveryObservation::ProcessRunning),
-                // The pid is alive, but resolves to a different program: the
-                // original attempt process is confirmed gone, its pid has
-                // simply been recycled by the OS to something unrelated.
-                Some(false) => Ok(RecoveryObservation::ProcessStopped),
-                // Alive, but identity is unverifiable on this platform
-                // (non-Linux Unix, or `/proc` unreadable): a bare liveness
-                // check alone is not proof this is genuinely the same
-                // attempt, given pid reuse. Honest uncertainty, not a
-                // confident guess either way.
-                None => Ok(RecoveryObservation::Ambiguous),
-            }
-        }
-        #[cfg(not(unix))]
-        {
-            // No portable liveness primitive at all on this platform (see
-            // `process.rs`'s own non-Unix cancellation fallback for the same
-            // documented limitation). Reconciliation is not genuinely
-            // supported here.
-            Ok(RecoveryObservation::Ambiguous)
-        }
+    fn feature_capabilities(&self) -> FeatureCapabilities {
+        feature_capabilities()
     }
 }
 
