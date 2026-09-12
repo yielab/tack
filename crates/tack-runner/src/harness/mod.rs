@@ -12,6 +12,7 @@ pub mod claude_code;
 pub mod codex;
 pub mod event_sink;
 pub mod fixtures;
+pub mod local_process;
 pub mod locate;
 pub mod process;
 pub mod redact;
