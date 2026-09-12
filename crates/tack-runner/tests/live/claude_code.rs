@@ -1,19 +1,14 @@
 //! Opt-in, `#[ignore]`-gated tests against a real installed `claude`
-//! binary — matching `codex.rs`'s own opt-in live tests, moved here per
-//! the harness-maintainability audit's rule that anything running a real
-//! binary lives under `tests/live/`, never inside a `src/` test module
-//! behind an early return. Never required in CI, never fails just
-//! because `claude` is absent, and every one of these additionally
-//! requires `TACK_RUN_LIVE_CLAUDE_CODE_TEST=1` even under `--ignored` —
-//! a real invocation is billed, so that flag alone can never
-//! surprise-spend real money. None of these ever reads, logs, or
-//! forwards a credential itself: whatever the installed CLI or this
-//! machine's own secret store already carries is used exactly as
-//! configured.
+//! binary. Never required in CI, never fails just because `claude` is
+//! absent, and every one of these additionally requires
+//! `TACK_RUN_LIVE_CLAUDE_CODE_TEST=1` even under `--ignored` — a real
+//! invocation is billed, so that flag alone can never surprise-spend
+//! real money. None of these reads, logs, or forwards a credential
+//! itself: whatever the installed CLI or this machine's own secret
+//! store already carries is used exactly as configured.
 //!
-//! Run with:
-//! `TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo nextest run --workspace
-//! --run-ignored ignored-only -E 'binary(live_claude_code)'`
+//! Run with: `TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo nextest run
+//! --workspace --run-ignored ignored-only -E 'binary(live)'`
 
 use std::{collections::BTreeMap, path::PathBuf};
 
