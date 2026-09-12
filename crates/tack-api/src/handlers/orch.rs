@@ -1,11 +1,24 @@
-//! Control-plane link API: register docket
-//! control planes, link a Tack project to one, and read the Fleet view's
-//! aggregate.
+//! Control-plane link API: register docket control planes, link a Tack
+//! project to one, and read the Fleet view's aggregate.
 //!
-//! **Off by default, toggleable from the UI.** Every route in this module is
-//! gated behind the *effective* orchestration setting via
+//! **Off by default, toggleable from the UI.** [`require_orch_enabled`] is
+//! applied once as a layer over the whole sub-router in `router.rs`, using
+//! an `app_meta`-stored flag that falls back to `TACK_ORCH_ENABLE` when the
+//! UI has never set one. A disabled route returns `409 Conflict`
+//! (`error.code: "orchestration_disabled"`), not `404` — a 404 would make
+//! "disabled" indistinguishable from "route doesn't exist" and hide the
+//! feature from its own operator. This changes no security boundary: the
+//! Bearer-token gate and `TACK_ORCH_APPROVAL_TOKEN` are unaffected.
 //!
-//! Design notes: docs/dev-notes/tack-api/handlers/orch.md
+//! **The docket Bearer token is write-only.** [`ControlPlaneResponse`]
+//! never carries it, only `token_set: bool`. A `PATCH` with `token` absent
+//! leaves it untouched; `"token": null` clears it; a string replaces it —
+//! see [`UpdateControlPlaneRequest`] and [`deserialize_some`].
+//!
+//! **A control-plane failure never fails a request here.** Every handler
+//! reads Tack's own database, populated out-of-band by the reconciler — an
+//! outage can only leave `health`/`last_seen_at` stale, never 500 a
+//! request.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -2641,26 +2654,19 @@ pub async fn list_pending_approvals(
 
 /// Granting or denying a docket approval releases whatever an autonomous
 /// agent was paused for — a materially higher-privilege action than the
-/// ordinary `TACK_API_TOKEN`
-/// Bearer gate already covers (which lets a caller move any card on the
-/// board). So it requires the **separate** `TACK_ORCH_APPROVAL_TOKEN` on
-/// top, checked here rather than as a blanket middleware layer (unlike
-/// `require_orch_enabled`) because it applies to exactly one route, not the
-/// whole `orch_routes()` sub-router — reading the inbox (`GET /approvals`)
-/// deliberately does not go through this function.
+/// ordinary `TACK_API_TOKEN` Bearer gate covers. It requires the
+/// **separate** `TACK_ORCH_APPROVAL_TOKEN` on top, checked here rather than
+/// as a blanket middleware layer because it applies to exactly one route,
+/// not the whole `orch_routes()` sub-router — `GET /approvals` deliberately
+/// does not go through this function.
 ///
-/// **The safe default when `TACK_ORCH_APPROVAL_TOKEN` is unset: always
-/// reject.** There is deliberately no "no secret configured, so skip the
-/// check" branch the way `middleware::require_token`'s ordinary Bearer gate
-/// has for an unset `TACK_API_TOKEN` ("pure-local mode, allow everything").
-/// The two gates look similar but their safe defaults point opposite ways
-/// on purpose: an unconfigured `TACK_API_TOKEN` means "no auth configured
-/// for this whole install, trust the network boundary instead" — a
-/// deliberate, instantly-reversible operator choice. An unconfigured
-/// `TACK_ORCH_APPROVAL_TOKEN` must mean "nothing on this server is
-/// configured to release a gated agent action" — not "anyone holding the
-/// ordinary API token can." [`PendingApprovalListResponse::grant_available`]
-/// is how the frontend learns this without ever seeing the secret itself.
+/// **Unset means always reject** — unlike `middleware::require_token`'s
+/// ordinary Bearer gate, which treats an unset `TACK_API_TOKEN` as
+/// deliberate "pure-local mode, trust the network boundary." An unconfigured
+/// `TACK_ORCH_APPROVAL_TOKEN` must mean "nothing on this server can release
+/// a gated agent action," never "anyone holding the ordinary API token
+/// can." [`PendingApprovalListResponse::grant_available`] is how the
+/// frontend learns this without seeing the secret itself.
 fn require_approval_token(state: &AppState, headers: &HeaderMap) -> ApiResult<()> {
     let Some(expected) = &state.config.orch_approval_token else {
         return Err(ApiError::Forbidden(

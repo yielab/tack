@@ -355,58 +355,20 @@ pub(crate) async fn propagate_parent_completion(state: &AppState, item: &Item, o
 }
 
 /// Best-effort: when `orch_links.auto_dispatch` is on and `item` just
-/// entered one of the link's `status_map.dispatch_from` statuses, dispatch
-/// it automatically via `dispatcher::dispatch_item`, passing the
-/// item's own **persisted** trust value (`item.source.is_trusted()` —
-/// `tack_core::models::ItemSource`, migration 029) rather than inferring
-/// anything at dispatch time — inference is the failure mode to avoid
-/// here: a deleted `github_links` row or a
-/// forgotten future import path would silently flip an item back to
-/// trusted.
+/// entered a `status_map.dispatch_from` status, dispatches it via
+/// `dispatcher::dispatch_item`, passing the item's persisted
+/// `item.source.is_trusted()` rather than inferring trust at dispatch time.
+/// Runs off the request path (`tokio::spawn`) so a slow control plane
+/// never turns a card move into a failing PATCH.
 ///
-/// **Fires at most once per status entry, not on every edit.** Runs off the
-/// request path (`tokio::spawn`, the same shape `maybe_sync_github` already
-/// uses) so a slow or unreachable control plane can never turn a card move
-/// into a slow or failing PATCH: a dispatch failure
-/// logs, records an event, and never fails the user's PATCH. Two
-/// independent guards make "don't dispatch on every update" hold:
+/// Fires at most once per status entry: `item.status == old_status`
+/// short-circuits before any DB/HTTP call, and `dispatch_item`'s own
+/// per-item lock + `orch_tasks` in-flight check is the second layer.
 ///
-/// 1. **`item.status == old_status` short-circuits before any DB or HTTP
-///    call.** An item edited while it is already sitting in a
-///    `dispatch_from` status (title tweak, priority change, etc.) never
-///    reaches `dispatch_item` at all, because its status didn't change.
-/// 2. **`dispatch_item`'s own idempotency guard** (a process-wide per-item
-///    lock plus an `orch_tasks` "already in flight" check — see that
-///    module's doc comment) is the second, belt-and-suspenders layer: two
-///    genuine status changes into the same `dispatch_from` status in quick
-///    succession (or a concurrent manual dispatch) still produce exactly
-///    one task, not two.
-///
-/// **Visibility on failure.** A transport/config error (`Err`) or a
-/// `pre_input` policy block (`DispatchOutcome::Blocked`) is not silently
-/// swallowed: both are logged via `tracing::warn!` *and* recorded as an
-/// `orch_events` row (`auto_dispatch_failed` / `auto_dispatch_blocked`) on
-/// the item, the same table `dispatcher::apply_mapped_status` already uses
-/// for `status_map_rejected` — so a failed auto-dispatch shows up wherever
-/// that event history is surfaced (the item's Agent Activity tab),
-/// not just in server logs nobody is watching. Every other outcome
-/// (`NoDispatchPolicy`, `NotEligible`, `AlreadyInFlight`, `Success`) is
-/// expected, uninteresting background behavior and is not separately
-/// recorded here — `Success` already gets its own `orch_tasks` row and, for
-/// `on_running`/`on_waiting_approval`, its own status_map bookkeeping
-/// inside `dispatch_item` itself.
-///
-/// **The enable gate reads the *effective* setting, not the raw env flag**
-/// Before this fix the
-/// check below was `!state.config.orch_enable` — `TACK_ORCH_ENABLE`'s
-/// startup value only — while every HTTP orchestration route gates on
-/// [`crate::handlers::settings::effective_orch_enabled`], which prefers
-/// whatever an operator most recently set via `PUT
-/// /api/settings/orchestration`. An operator who started the server with
-/// `TACK_ORCH_ENABLE=1` and then switched orchestration off in Settings
-/// still got auto-dispatch on every status change: the one write path in
-/// this file that never went through the UI-editable setting at all. This
-/// is a behavior change to a shipped feature — see CHANGELOG.md.
+/// A transport/config error or policy block is logged **and** recorded
+/// as an `orch_events` row (`auto_dispatch_failed`/`_blocked`), visible
+/// on the item's Agent Activity tab, gated on the *effective*
+/// orchestration setting, not the raw `TACK_ORCH_ENABLE` env value.
 pub(crate) async fn maybe_auto_dispatch(state: &AppState, item: &Item, old_status: &str) {
     if !crate::handlers::settings::effective_orch_enabled(state).await {
         return;
