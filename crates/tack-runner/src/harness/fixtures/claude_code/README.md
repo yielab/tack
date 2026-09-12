@@ -1,11 +1,20 @@
 # Claude Code — vendor findings
 
 What `crates/tack-runner/src/harness/claude_code.rs` (`ClaudeCodeAdapter`) is built on.
-No captured transcripts live here yet — this directory gains `<version>/*.jsonl` fixtures
-when the harness core migration (`docs/plans/harness-maintainability-audit.md` §4, card
-IX-M5) lands; until then the adapter's tests drive the shared fake harness
-(`../fake_harness.sh`), and every claim below was checked once, by hand, against a real
-`claude` binary.
+Every claim below was checked once, by hand, against a real `claude` binary; the
+fixtures in `2.1.223/` and `2.1.261/` are the transcripts `claude_code/tests.rs` parses
+to prove `parse_run_output`'s classification, kept here instead of as inline string
+literals so a vendor-shape change is a diff to one file, not a hunt through test bodies.
+
+## Fixture provenance
+
+Each `<version>/*.jsonl` fixture has a sibling `*.jsonl.provenance` text file. Its first
+line is `captured` (this is byte-for-byte, or trimmed only to the fields the parser
+reads, from a real installed binary at the named version) or `constructed` (built by
+hand because no real invocation produces this shape — a truncated stream, a
+gateway-branch case not yet exercised live); everything after is why. A `captured`
+fixture's directory name is the `claude_code_version` the transcript's own `init` line
+reports; a `constructed` fixture is filed under whichever version's shape it imitates.
 
 **Observed on:** `claude` version `2.1.223`, one machine, one point in time. A finding here
 is "this is what that one installed copy actually did", never "this is how Claude Code

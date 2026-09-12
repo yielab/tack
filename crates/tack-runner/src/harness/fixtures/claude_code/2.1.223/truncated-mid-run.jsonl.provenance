@@ -1,0 +1,7 @@
+constructed
+Simulates a stream that starts out perfectly valid (a real system/init line,
+same shape as the other 2.1.223 fixtures) and is then truncated/corrupted
+before any terminal `result` object ever arrives — e.g. a crash mid-run.
+The generic fake harness binary cannot produce this shape (its own output
+is not stream-json at all), so this fixture exists to exercise the
+"some JSON, but no result object" branch directly.

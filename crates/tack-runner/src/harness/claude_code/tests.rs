@@ -155,145 +155,6 @@ fn spec_with(
     }
 }
 
-// ---- validate: pre-spawn rejection ----------------------------------
-
-#[tokio::test]
-async fn validate_accepts_a_well_formed_claude_code_spec() {
-    let (adapter, _scratch) = adapter_with_fake_binary();
-    let workspace_dir = temp_workspace("validate-ok");
-    let workspace = workspace_dir.path();
-    let spec = spec_with(
-        "claude-code",
-        None,
-        &["Read"],
-        true,
-        BTreeMap::new(),
-        workspace.to_path_buf(),
-    );
-    assert!(adapter.validate(&spec).await.is_ok());
-    std::fs::remove_dir_all(workspace).expect("cleanup");
-}
-
-/// Acceptance: an unsupported selection fails pre-spawn, before any
-/// process launches. A model provider this installed CLI has no way to
-/// honor (confirmed absent from the three real provider-switch families
-/// found via `strings` on the binary — see the module docs) is rejected
-/// by `validate` alone; no `SupervisedProcess` bookkeeping entry is ever
-/// created.
-#[tokio::test]
-async fn validate_rejects_an_unsupported_model_provider_before_any_process_launches() {
-    let (adapter, _scratch) = adapter_with_fake_binary();
-    let workspace_dir = temp_workspace("validate-bad-provider");
-    let workspace = workspace_dir.path();
-    let spec = spec_with(
-        "claude-code",
-        Some("openai"),
-        &[],
-        true,
-        BTreeMap::new(),
-        workspace.to_path_buf(),
-    );
-    assert!(matches!(
-        adapter.validate(&spec).await,
-        Err(HarnessError::Rejected { .. })
-    ));
-    assert!(
-        adapter.running.lock().await.is_empty(),
-        "a pre-spawn rejection must never create process bookkeeping"
-    );
-    std::fs::remove_dir_all(workspace).expect("cleanup");
-}
-
-#[tokio::test]
-async fn validate_accepts_every_known_provider_family_case_insensitively() {
-    let (adapter, _scratch) = adapter_with_fake_binary();
-    for provider in ["anthropic", "BEDROCK", "Vertex", "foundry"] {
-        let workspace_dir = temp_workspace("validate-provider-ok");
-        let workspace = workspace_dir.path();
-        let spec = spec_with(
-            "claude-code",
-            Some(provider),
-            &[],
-            true,
-            BTreeMap::new(),
-            workspace.to_path_buf(),
-        );
-        assert!(
-            adapter.validate(&spec).await.is_ok(),
-            "provider {provider} should be accepted"
-        );
-        std::fs::remove_dir_all(workspace).expect("cleanup");
-    }
-}
-
-#[tokio::test]
-async fn validate_rejects_a_spec_requesting_a_different_harness_kind() {
-    let (adapter, _scratch) = adapter_with_fake_binary();
-    let workspace_dir = temp_workspace("validate-wrong-kind");
-    let workspace = workspace_dir.path();
-    let spec = spec_with(
-        "codex",
-        None,
-        &[],
-        true,
-        BTreeMap::new(),
-        workspace.to_path_buf(),
-    );
-    assert!(matches!(
-        adapter.validate(&spec).await,
-        Err(HarnessError::Rejected { .. })
-    ));
-    std::fs::remove_dir_all(workspace).expect("cleanup");
-}
-
-#[tokio::test]
-async fn validate_rejects_a_network_tool_when_network_is_denied() {
-    let (adapter, _scratch) = adapter_with_fake_binary();
-    let workspace_dir = temp_workspace("validate-network-conflict");
-    let workspace = workspace_dir.path();
-    let spec = spec_with(
-        "claude-code",
-        None,
-        &["WebFetch"],
-        false,
-        BTreeMap::new(),
-        workspace.to_path_buf(),
-    );
-    assert!(matches!(
-        adapter.validate(&spec).await,
-        Err(HarnessError::Rejected { .. })
-    ));
-    std::fs::remove_dir_all(workspace).expect("cleanup");
-}
-
-#[tokio::test]
-async fn validate_rejects_when_the_resolved_binary_no_longer_exists() {
-    let missing = HarnessBinary {
-        program: PathBuf::from("/nonexistent/definitely/not/claude"),
-        prefix_args: Vec::new(),
-    };
-    let secrets_dir = temp_workspace("secrets");
-    let adapter =
-        ClaudeCodeAdapter::with_binary(missing, clock(), test_secret_store(secrets_dir.path()));
-    let workspace_dir = temp_workspace("validate-missing-binary");
-    let workspace = workspace_dir.path();
-    let spec = spec_with(
-        "claude-code",
-        None,
-        &[],
-        true,
-        BTreeMap::new(),
-        workspace.to_path_buf(),
-    );
-    assert!(matches!(
-        adapter.validate(&spec).await,
-        Err(HarnessError::Rejected { .. })
-    ));
-    std::fs::remove_dir_all(workspace).expect("cleanup");
-}
-
-// ---- fake-binary-driven lifecycle tests ------------------------------
-
 fn env_entry(value: &str) -> EnvironmentValue {
     EnvironmentValue {
         value: Some(value.to_string()),
@@ -310,19 +171,155 @@ fn secret_reference_entry(reference: &str) -> EnvironmentValue {
     }
 }
 
-/// Acceptance: fake-binary success. Drives the real shared fixture
-/// through `start`/`wait`; since the generic fake binary's `success`
-/// mode is not shaped like Claude Code's real stream-json output (by
-/// design), this proves the honest exit-code
-/// fallback path end to end (spawn, capture, redact, parse), not a
-/// structured-result parse.
+// ---- validate: pre-spawn acceptance/rejection -------------------------
+
+/// One row per spec this grammar's own `validate_selection` must accept:
+/// the baseline well-formed spec, and every known provider family,
+/// case-insensitively.
+fn accept_cases() -> Vec<Option<&'static str>> {
+    vec![
+        None,
+        Some("anthropic"),
+        Some("BEDROCK"),
+        Some("Vertex"),
+        Some("foundry"),
+    ]
+}
+
 #[tokio::test]
-async fn fake_binary_success_mode_is_reported_succeeded_via_the_honest_exit_code_fallback() {
+async fn validate_accepts_well_formed_specs() {
     let (adapter, _scratch) = adapter_with_fake_binary();
-    let workspace_dir = temp_workspace("fake-success");
+    for provider in accept_cases() {
+        let workspace_dir = temp_workspace("validate-ok");
+        let workspace = workspace_dir.path();
+        let tools: &[&str] = if provider.is_none() { &["Read"] } else { &[] };
+        let spec = spec_with(
+            "claude-code",
+            provider,
+            tools,
+            true,
+            BTreeMap::new(),
+            workspace.to_path_buf(),
+        );
+        assert!(
+            adapter.validate(&spec).await.is_ok(),
+            "provider {provider:?} should be accepted"
+        );
+        std::fs::remove_dir_all(workspace).expect("cleanup");
+    }
+}
+
+/// One row per pre-spawn rejection reason this grammar's own
+/// `validate_selection`/`resolve_binary` can produce; each must reject
+/// with a typed `HarnessError::Rejected` and leave no bookkeeping entry
+/// behind. The harness-kind mismatch row also exercises shared
+/// `local_process::validate` plumbing, not just this grammar.
+struct RejectCase {
+    name: &'static str,
+    harness_kind: &'static str,
+    provider: Option<&'static str>,
+    tools: &'static [&'static str],
+    network: bool,
+    binary: Option<HarnessBinary>,
+}
+
+fn reject_cases() -> Vec<RejectCase> {
+    vec![
+        RejectCase {
+            name: "unsupported model provider",
+            harness_kind: "claude-code",
+            provider: Some("openai"),
+            tools: &[],
+            network: true,
+            binary: None,
+        },
+        RejectCase {
+            name: "different harness kind",
+            harness_kind: "codex",
+            provider: None,
+            tools: &[],
+            network: true,
+            binary: None,
+        },
+        RejectCase {
+            name: "network tool while network denied",
+            harness_kind: "claude-code",
+            provider: None,
+            tools: &["WebFetch"],
+            network: false,
+            binary: None,
+        },
+        RejectCase {
+            name: "resolved binary no longer exists",
+            harness_kind: "claude-code",
+            provider: None,
+            tools: &[],
+            network: true,
+            binary: Some(HarnessBinary {
+                program: PathBuf::from("/nonexistent/definitely/not/claude"),
+                prefix_args: Vec::new(),
+            }),
+        },
+    ]
+}
+
+#[tokio::test]
+async fn validate_rejects_invalid_specs() {
+    for case in reject_cases() {
+        let scratch = temp_workspace("secrets");
+        let store = test_secret_store(scratch.path());
+        let adapter =
+            ClaudeCodeAdapter::with_binary(case.binary.unwrap_or_else(fake_binary), clock(), store);
+        let workspace_dir = temp_workspace("validate-rejects");
+        let workspace = workspace_dir.path();
+        let spec = spec_with(
+            case.harness_kind,
+            case.provider,
+            case.tools,
+            case.network,
+            BTreeMap::new(),
+            workspace.to_path_buf(),
+        );
+        assert!(
+            matches!(
+                adapter.validate(&spec).await,
+                Err(HarnessError::Rejected { .. })
+            ),
+            "case {:?} should be rejected",
+            case.name
+        );
+        assert!(
+            adapter.running.lock().await.is_empty(),
+            "case {:?}: a pre-spawn rejection must never create process bookkeeping",
+            case.name
+        );
+        std::fs::remove_dir_all(workspace).expect("cleanup");
+    }
+}
+
+/// Acceptance: a `secret_reference` the store cannot resolve fails at
+/// `validate` with a typed reason naming only the reference, before the
+/// adapter does anything else — proven here at the adapter boundary
+/// (`validate` itself never touches a filesystem path outside checking
+/// its own binary exists).
+#[tokio::test]
+async fn validate_rejects_a_missing_secret_reference_typed_and_touches_nothing() {
+    let workspace_dir = temp_workspace("secret-reference-missing");
     let workspace = workspace_dir.path();
+    std::fs::write(workspace.join("sentinel.txt"), b"before").expect("seed workspace");
+
+    let state_guard = temp_workspace("secret-missing-state");
+    // Deliberately not created: a failed lookup must not bring the file
+    // fallback's directory into existence just by trying.
+    let state_dir = state_guard.path().join("state");
+    let store = crate::secrets::SecretStore::file(state_dir.join("secrets.json"));
+
+    let adapter = adapter_with_fake_binary_and_secrets(store);
     let mut environment = BTreeMap::new();
-    environment.insert("TACK_FAKE_HARNESS_MODE".to_string(), env_entry("success"));
+    environment.insert(
+        "SECRET_VAR".to_string(),
+        secret_reference_entry("does-not-exist"),
+    );
     let spec = spec_with(
         "claude-code",
         None,
@@ -332,21 +329,156 @@ async fn fake_binary_success_mode_is_reported_succeeded_via_the_honest_exit_code
         workspace.to_path_buf(),
     );
 
-    adapter.validate(&spec).await.expect("validate");
-    let handle = adapter.start(&spec).await.expect("start");
-    let outcome = adapter.wait(&handle).await.expect("wait");
+    let error = adapter
+        .validate(&spec)
+        .await
+        .expect_err("a missing secret_reference must fail pre-spawn");
+    assert!(
+        matches!(
+            &error,
+            HarnessError::Rejected { reason }
+                if reason.starts_with("secret_reference_unresolved:")
+                    && reason.contains("does-not-exist")
+        ),
+        "unexpected error: {error:?}"
+    );
 
-    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
-    assert_eq!(
-        outcome.terminal_reason["reason"],
-        "no structured result envelope was produced; inferred success from exit code 0"
+    assert!(
+        !state_dir.exists(),
+        "a rejected validate must not create the secret store's state directory"
     );
-    assert_eq!(outcome.actual_execution.model_id.as_str(), UNOBSERVED_MODEL);
     assert_eq!(
-        outcome.usage.tokens_in.source,
-        MeasurementSource::NotMeasured
+        std::fs::read_to_string(workspace.join("sentinel.txt")).expect("sentinel survives"),
+        "before",
+        "a rejected validate must not modify the workspace it was given"
     );
+    assert_eq!(
+        std::fs::read_dir(workspace)
+            .expect("read workspace")
+            .count(),
+        1,
+        "a rejected validate must not add files to the workspace it was given"
+    );
+
     std::fs::remove_dir_all(workspace).expect("cleanup");
+}
+
+// ---- fake-binary-driven lifecycle tests ------------------------------
+
+/// One row per exit-code-fallback classification this grammar's `outcome`
+/// falls back to when no `stream-json` result envelope was produced —
+/// exercised end to end through the real shared fixture (spawn, capture,
+/// redact, parse), never a structured-result parse.
+struct FallbackCase {
+    name: &'static str,
+    mode: &'static str,
+    exit_code: Option<&'static str>,
+    expected_states: &'static [AttemptState],
+    expected_reason: Option<&'static str>,
+    extra: fn(&HarnessOutcome),
+}
+
+fn fallback_cases() -> Vec<FallbackCase> {
+    vec![
+        FallbackCase {
+            name: "success",
+            mode: "success",
+            exit_code: None,
+            expected_states: &[AttemptState::Succeeded],
+            expected_reason: Some(
+                "no structured result envelope was produced; inferred success from exit code 0",
+            ),
+            extra: |outcome| {
+                assert_eq!(outcome.actual_execution.model_id.as_str(), UNOBSERVED_MODEL);
+                assert_eq!(
+                    outcome.usage.tokens_in.source,
+                    MeasurementSource::NotMeasured
+                );
+            },
+        },
+        FallbackCase {
+            name: "failure",
+            mode: "failure",
+            exit_code: Some("7"),
+            expected_states: &[AttemptState::Failed],
+            expected_reason: Some(
+                "no structured result envelope was produced; inferred failure from a non-zero \
+                 exit code",
+            ),
+            extra: |_outcome| {},
+        },
+        FallbackCase {
+            name: "malformed",
+            mode: "malformed",
+            exit_code: None,
+            // The fixture's `malformed` mode exits 0, landing on the
+            // success side of the fallback (same as plain `success`) —
+            // any non-JSON generic output collapses into one fallback
+            // rather than being distinguished from `success` by content.
+            expected_states: &[AttemptState::Succeeded, AttemptState::Failed],
+            expected_reason: None,
+            extra: |outcome| {
+                assert_eq!(outcome.actual_execution.model_id.as_str(), UNOBSERVED_MODEL);
+                assert_eq!(
+                    outcome.actual_execution.model_observation_source,
+                    "not_observed"
+                );
+                assert_eq!(outcome.usage.tokens_in.value, None);
+                assert_eq!(
+                    outcome.usage.cost_usd.source,
+                    MeasurementSource::NotMeasured
+                );
+            },
+        },
+    ]
+}
+
+/// Acceptance: this proves this never panics and never fabricates a
+/// confident structured result, only the honest, clearly-labeled
+/// exit-code fallback — see the module docs on `parse_run_output` for
+/// why *any* non-JSON generic fake-binary output collapses into that one
+/// fallback rather than being distinguished from `success` by content
+/// alone.
+#[tokio::test]
+async fn fake_binary_exit_code_fallback_reports_honest_terminal_state() {
+    for case in fallback_cases() {
+        let (adapter, _scratch) = adapter_with_fake_binary();
+        let workspace_dir = temp_workspace("fake-fallback");
+        let workspace = workspace_dir.path();
+        let mut environment = BTreeMap::new();
+        environment.insert("TACK_FAKE_HARNESS_MODE".to_string(), env_entry(case.mode));
+        if let Some(code) = case.exit_code {
+            environment.insert("TACK_FAKE_HARNESS_EXIT_CODE".to_string(), env_entry(code));
+        }
+        let spec = spec_with(
+            "claude-code",
+            None,
+            &[],
+            true,
+            environment,
+            workspace.to_path_buf(),
+        );
+
+        adapter.validate(&spec).await.expect("validate");
+        let handle = adapter.start(&spec).await.expect("start");
+        let outcome = adapter.wait(&handle).await.expect("wait");
+
+        assert!(
+            case.expected_states.contains(&outcome.terminal_state),
+            "case {:?}: unexpected terminal_state {:?}",
+            case.name,
+            outcome.terminal_state
+        );
+        if let Some(reason) = case.expected_reason {
+            assert_eq!(
+                outcome.terminal_reason["reason"], reason,
+                "case {:?}",
+                case.name
+            );
+        }
+        (case.extra)(&outcome);
+        std::fs::remove_dir_all(workspace).expect("cleanup");
+    }
 }
 
 /// `artifacts: Supported` once had no backing implementation — `wait()` never
@@ -388,100 +520,16 @@ async fn fake_binary_success_stages_a_real_log_artifact() {
     std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
-/// Acceptance: fake-binary failure.
-#[tokio::test]
-async fn fake_binary_failure_mode_is_reported_failed_via_the_honest_exit_code_fallback() {
-    let (adapter, _scratch) = adapter_with_fake_binary();
-    let workspace_dir = temp_workspace("fake-failure");
-    let workspace = workspace_dir.path();
-    let mut environment = BTreeMap::new();
-    environment.insert("TACK_FAKE_HARNESS_MODE".to_string(), env_entry("failure"));
-    environment.insert("TACK_FAKE_HARNESS_EXIT_CODE".to_string(), env_entry("7"));
-    let spec = spec_with(
-        "claude-code",
-        None,
-        &[],
-        true,
-        environment,
-        workspace.to_path_buf(),
-    );
-
-    adapter.validate(&spec).await.expect("validate");
-    let handle = adapter.start(&spec).await.expect("start");
-    let outcome = adapter.wait(&handle).await.expect("wait");
-
-    assert_eq!(outcome.terminal_state, AttemptState::Failed);
-    assert_eq!(
-        outcome.terminal_reason["reason"],
-        "no structured result envelope was produced; inferred failure from a non-zero exit \
-         code"
-    );
-    std::fs::remove_dir_all(workspace).expect("cleanup");
-}
-
-/// Acceptance: fake-binary malformed output. Exercises the *real*
-/// `malformed` mode byte-for-byte (deliberately unparseable, mixed
-/// garbage), through the full spawn/capture pipeline, proving this
-/// never panics and never fabricates a structured, confident result —
-/// only the honest, clearly-labeled exit-code fallback (this specific
-/// fixture's exit code is 0, so this lands on the "success" side of the
-/// fallback, same as the plain `success` mode; see the module doc on
-/// `parse_run_output` for why *any* non-JSON generic fake-binary output
-/// collapses into that one fallback rather than being distinguished
-/// from `success` by content alone).
-#[tokio::test]
-async fn fake_binary_malformed_mode_never_panics_and_never_fabricates_structured_data() {
-    let (adapter, _scratch) = adapter_with_fake_binary();
-    let workspace_dir = temp_workspace("fake-malformed");
-    let workspace = workspace_dir.path();
-    let mut environment = BTreeMap::new();
-    environment.insert("TACK_FAKE_HARNESS_MODE".to_string(), env_entry("malformed"));
-    let spec = spec_with(
-        "claude-code",
-        None,
-        &[],
-        true,
-        environment,
-        workspace.to_path_buf(),
-    );
-
-    adapter.validate(&spec).await.expect("validate");
-    let handle = adapter.start(&spec).await.expect("start");
-    let outcome = adapter.wait(&handle).await.expect("wait");
-
-    // No panic reaching here is itself part of what this test proves.
-    assert!(matches!(
-        outcome.terminal_state,
-        AttemptState::Succeeded | AttemptState::Failed
-    ));
-    assert_eq!(outcome.actual_execution.model_id.as_str(), UNOBSERVED_MODEL);
-    assert_eq!(
-        outcome.actual_execution.model_observation_source,
-        "not_observed"
-    );
-    assert_eq!(outcome.usage.tokens_in.value, None);
-    assert_eq!(
-        outcome.usage.cost_usd.source,
-        MeasurementSource::NotMeasured
-    );
-    std::fs::remove_dir_all(workspace).expect("cleanup");
-}
-
-/// A more realistic "malformed" case than generic garbage: a stream
-/// that starts out perfectly valid (a real `system`/`init` line) and is
-/// then truncated/corrupted before any terminal `result` object ever
-/// arrives — e.g. a crash mid-run. Pure unit test against the parser
-/// directly (no process spawn needed): proves the "some JSON, but no
-/// result object" branch specifically, which the generic fake binary
-/// cannot exercise (see the two tests above).
+/// A more realistic "malformed" case than generic garbage: a stream that
+/// starts out perfectly valid and is then truncated before any terminal
+/// `result` object arrives — e.g. a crash mid-run (fixture:
+/// `fixtures/claude_code/2.1.223/truncated-mid-run.jsonl`, constructed —
+/// see its `.provenance`). Pure unit test against the parser directly (no
+/// process spawn needed): proves the "some JSON, but no result object"
+/// branch specifically, which the generic fake binary cannot exercise.
 #[test]
-fn a_stream_with_a_valid_init_line_but_no_terminal_result_is_failed_not_a_guessed_success() {
-    let stdout = concat!(
-        r#"{"type":"system","subtype":"init","model":"claude-sonnet-5","claude_code_version":"2.1.223"}"#,
-        "\n",
-        r#"{"type":"assistant","message":{"model":"claude-sonnet-5","content":[]}}"#,
-        "\n",
-    );
+fn truncated_stream_with_no_result_line_is_reported_failed() {
+    let stdout = include_str!("../fixtures/claude_code/2.1.223/truncated-mid-run.jsonl");
     let result = ProcessResult {
         exit: ProcessExit::Exited(0),
         stdout: super::super::process::CapturedOutput {
@@ -572,7 +620,7 @@ async fn cancel_of_an_unknown_handle_is_a_typed_error_not_a_panic() {
 /// exposes it via `Debug` (structural half, inherited unchanged from
 /// `process.rs`).
 #[tokio::test]
-async fn a_planted_canary_in_the_environment_never_survives_into_the_returned_outcome() {
+async fn env_canary_is_redacted() {
     const CANARY: &str = "tack-d2-claude-code-canary-6f31a2";
     let (adapter, _scratch) = adapter_with_fake_binary();
     let workspace_dir = temp_workspace("canary");
@@ -739,86 +787,15 @@ async fn secret_reference_resolves_and_only_its_length_reaches_the_shim() {
     std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
-/// Acceptance: a `secret_reference` the store cannot resolve fails at
-/// `validate` with a typed reason naming only the reference, before the
-/// adapter does anything else — proven here at the adapter boundary
-/// (`validate` itself never touches a filesystem path outside checking
-/// its own binary exists). The engine-level ordering constraint this
-/// interacts with (workspace provisioning and the journal write both
-/// already precede `HarnessAdapter::validate` in
-/// `RunnerEngine::run_claimed`) is out of scope here — this test only
-/// proves the adapter-boundary behavior.
-#[tokio::test]
-async fn validate_rejects_a_missing_secret_reference_typed_and_touches_nothing() {
-    let workspace_dir = temp_workspace("secret-reference-missing");
-    let workspace = workspace_dir.path();
-    std::fs::write(workspace.join("sentinel.txt"), b"before").expect("seed workspace");
-
-    let state_guard = temp_workspace("secret-missing-state");
-    // Deliberately not created: a failed lookup must not bring the file
-    // fallback's directory into existence just by trying.
-    let state_dir = state_guard.path().join("state");
-    let store = crate::secrets::SecretStore::file(state_dir.join("secrets.json"));
-
-    let adapter = adapter_with_fake_binary_and_secrets(store);
-    let mut environment = BTreeMap::new();
-    environment.insert(
-        "SECRET_VAR".to_string(),
-        secret_reference_entry("does-not-exist"),
-    );
-    let spec = spec_with(
-        "claude-code",
-        None,
-        &[],
-        true,
-        environment,
-        workspace.to_path_buf(),
-    );
-
-    let error = adapter
-        .validate(&spec)
-        .await
-        .expect_err("a missing secret_reference must fail pre-spawn");
-    assert!(
-        matches!(
-            &error,
-            HarnessError::Rejected { reason }
-                if reason.starts_with("secret_reference_unresolved:")
-                    && reason.contains("does-not-exist")
-        ),
-        "unexpected error: {error:?}"
-    );
-
-    assert!(
-        !state_dir.exists(),
-        "a rejected validate must not create the secret store's state directory"
-    );
-    assert_eq!(
-        std::fs::read_to_string(workspace.join("sentinel.txt")).expect("sentinel survives"),
-        "before",
-        "a rejected validate must not modify the workspace it was given"
-    );
-    assert_eq!(
-        std::fs::read_dir(workspace)
-            .expect("read workspace")
-            .count(),
-        1,
-        "a rejected validate must not add files to the workspace it was given"
-    );
-
-    std::fs::remove_dir_all(workspace).expect("cleanup");
-}
-
-/// Direct regression guards for both capability corrections
-/// made to this file: `cancel` was already `Advisory` (a correctly
-/// evidenced finding — the registration-time gate
-/// in `harness::mod` relies on it staying that way); `artifacts` is
-/// downgraded from an unbacked `Supported` to `Advisory`
-/// (`wait()` never staged anything before
-/// this — see `fake_binary_success_stages_a_real_log_artifact` above for
-/// the fix itself).
+/// Regression guards for both capability corrections made to this file:
+/// `cancel` was already `Advisory` (a correctly evidenced finding — the
+/// registration-time gate in `harness::mod` relies on it staying that
+/// way); `artifacts` is downgraded from an unbacked `Supported` to
+/// `Advisory` (`wait()` never staged anything before this — see
+/// `fake_binary_success_stages_a_real_log_artifact` above for the fix
+/// itself).
 #[test]
-fn declared_capabilities_match_the_reconciled_iii_d5_values() {
+fn declared_capabilities_report_cancel_and_artifacts_as_advisory() {
     let (adapter, _scratch) = adapter_with_fake_binary();
     let declared = HarnessProbe::declared_capabilities(&adapter);
     assert_eq!(declared.cancel.support, CapabilitySupport::Advisory);
@@ -829,41 +806,67 @@ fn declared_capabilities_match_the_reconciled_iii_d5_values() {
 
 // ---- version parsing (pure unit tests) --------------------------------
 
-#[test]
-fn the_real_observed_claude_code_version_string_is_recognized() {
-    // Byte-for-byte what `claude --version` printed on a real installed
-    // binary: "2.1.223 (Claude Code)\n".
-    let (version, error) = parse_version_text("2.1.223 (Claude Code)\n");
-    assert_eq!(version, "2.1.223");
-    assert_eq!(error, None);
+/// One row per shape `parse_version_text` must recognize or honestly
+/// flag as unrecognized — the real observed `claude --version` line, the
+/// shared fixture's deliberately-unknown format, empty output, and a
+/// prerelease-suffixed token.
+struct VersionCase {
+    name: &'static str,
+    input: &'static str,
+    expected_exact: Option<&'static str>,
+    expected_contains: Option<&'static str>,
+    expect_error: bool,
+}
+
+fn version_cases() -> Vec<VersionCase> {
+    vec![
+        VersionCase {
+            name: "real observed version line",
+            input: "2.1.223 (Claude Code)\n",
+            expected_exact: Some("2.1.223"),
+            expected_contains: None,
+            expect_error: false,
+        },
+        VersionCase {
+            name: "unknown fixture format",
+            input: "harness-cli version 999.999.999-nightly-exotic-format\n",
+            expected_exact: None,
+            expected_contains: Some("harness-cli"),
+            expect_error: true,
+        },
+        VersionCase {
+            name: "empty output",
+            input: "",
+            expected_exact: Some(""),
+            expected_contains: None,
+            expect_error: true,
+        },
+        VersionCase {
+            name: "prerelease suffix",
+            input: "3.0.0-beta.1 (Claude Code)\n",
+            expected_exact: Some("3.0.0-beta.1"),
+            expected_contains: None,
+            expect_error: false,
+        },
+    ]
 }
 
 #[test]
-fn the_fake_binarys_unknown_version_fixture_is_reported_as_explicitly_unrecognized() {
-    let (version, error) =
-        parse_version_text("harness-cli version 999.999.999-nightly-exotic-format\n");
-    assert!(
-        error.is_some(),
-        "an unrecognized shape must set probe_error"
-    );
-    assert!(
-        version.contains("harness-cli"),
-        "the raw observed text must still be preserved, not discarded"
-    );
-}
-
-#[test]
-fn empty_version_output_is_a_probe_error_with_no_fabricated_version() {
-    let (version, error) = parse_version_text("");
-    assert_eq!(version, "");
-    assert!(error.is_some());
-}
-
-#[test]
-fn a_version_token_with_a_prerelease_suffix_is_still_recognized() {
-    let (version, error) = parse_version_text("3.0.0-beta.1 (Claude Code)\n");
-    assert_eq!(version, "3.0.0-beta.1");
-    assert_eq!(error, None);
+fn version_text_parsing_variants() {
+    for case in version_cases() {
+        let (version, error) = parse_version_text(case.input);
+        assert_eq!(error.is_some(), case.expect_error, "case {:?}", case.name);
+        if let Some(expected) = case.expected_exact {
+            assert_eq!(version, expected, "case {:?}", case.name);
+        }
+        if let Some(substring) = case.expected_contains {
+            assert!(
+                version.contains(substring),
+                "case {:?}: {version:?}",
+                case.name
+            );
+        }
+    }
 }
 
 /// The probe declares zero `model_combinations` (the CLI has no
@@ -932,114 +935,85 @@ async fn probe_reports_the_shared_fixtures_unknown_version_output_honestly() {
 
 // ---- result-envelope parsing using real observed shapes ---------------
 
-fn real_success_stdout() -> String {
-    // Reproduces (trimmed to the fields this parser reads) the actual
-    // `--output-format stream-json --verbose` transcript observed for
-    // `claude -p "Print exactly this string..." --model sonnet`, minus
-    // fields irrelevant to parsing.
-    concat!(
-        r#"{"type":"system","subtype":"init","cwd":"/tmp/fixture","session_id":"s1","tools":[],"#,
-        r#""model":"claude-sonnet-5","claude_code_version":"2.1.223"}"#,
-        "\n",
-        r#"{"type":"assistant","message":{"model":"claude-sonnet-5","content":[{"type":"text","text":"ok"}]}}"#,
-        "\n",
-        r#"{"is_error":false,"duration_api_ms":2485,"num_turns":1,"stop_reason":"end_turn","#,
-        r#""session_id":"s1","total_cost_usd":0.0350687,"usage":{"input_tokens":2,"output_tokens":18},"#,
-        r#""terminal_reason":"completed","subtype":"success","result":"ok","type":"result","duration_ms":1916}"#,
-        "\n",
-    )
-    .to_string()
+/// One row per distinct `parse_run_output` classification claim proven
+/// against a captured or constructed transcript (see
+/// `fixtures/claude_code/README.md` for provenance) — the plain success
+/// path, the misleading-`subtype` API-error quirk, and the
+/// budget-exhaustion shape. The gateway-vs-direct differential is its
+/// own test below since it compares two parses of one transcript, not
+/// one parse's fields.
+struct ResultCase {
+    name: &'static str,
+    stdout: &'static str,
+    exit: ProcessExit,
+    requested_provider: Option<&'static str>,
+    check: fn(&ParsedRun),
+}
+
+fn result_cases() -> Vec<ResultCase> {
+    vec![
+        ResultCase {
+            name: "real observed success transcript",
+            stdout: include_str!("../fixtures/claude_code/2.1.223/success-with-usage.jsonl"),
+            exit: ProcessExit::Exited(0),
+            requested_provider: Some("anthropic"),
+            check: |parsed| {
+                assert!(!parsed.is_error);
+                assert_eq!(parsed.model_id, "claude-sonnet-5");
+                assert_eq!(parsed.model_observation_source, "harness_reported");
+                assert_eq!(parsed.harness_version.as_deref(), Some("2.1.223"));
+                assert_eq!(parsed.usage.tokens_in.value, Some(2));
+                assert_eq!(parsed.usage.tokens_out.value, Some(18));
+                assert_eq!(parsed.usage.tokens_in.source, MeasurementSource::Measured);
+                assert_eq!(parsed.usage.cost_usd.value, Some(0.0350687));
+            },
+        },
+        ResultCase {
+            name: "is_error wins over a misleading success subtype",
+            stdout: include_str!(
+                "../fixtures/claude_code/2.1.223/api-error-misleading-subtype.jsonl"
+            ),
+            exit: ProcessExit::Exited(1),
+            requested_provider: None,
+            check: |parsed| {
+                assert!(
+                    parsed.is_error,
+                    "is_error must win over a misleadingly-named subtype of \"success\""
+                );
+                assert_eq!(parsed.terminal_reason["subtype"], "success");
+            },
+        },
+        ResultCase {
+            name: "budget exhaustion is a distinct failed subtype",
+            stdout: include_str!("../fixtures/claude_code/2.1.223/budget-exhausted.jsonl"),
+            exit: ProcessExit::Exited(1),
+            requested_provider: None,
+            check: |parsed| {
+                assert!(parsed.is_error);
+                assert_eq!(parsed.terminal_reason["subtype"], "error_max_budget_usd");
+                assert_eq!(parsed.usage.cost_usd.value, Some(0.013149));
+            },
+        },
+    ]
 }
 
 #[test]
-fn a_real_observed_success_transcript_is_parsed_with_the_session_model_and_usage() {
-    let result = ProcessResult {
-        exit: ProcessExit::Exited(0),
-        stdout: super::super::process::CapturedOutput {
-            text: real_success_stdout(),
-            truncated: false,
-            bytes_dropped: 0,
-            total_bytes_seen: 0,
-        },
-        stderr: Default::default(),
-    };
-
-    let parsed = parse_run_output(&result, Some("anthropic"));
-
-    assert!(!parsed.is_error);
-    assert_eq!(parsed.model_id, "claude-sonnet-5");
-    assert_eq!(parsed.model_observation_source, "harness_reported");
-    assert_eq!(parsed.harness_version.as_deref(), Some("2.1.223"));
-    assert_eq!(parsed.usage.tokens_in.value, Some(2));
-    assert_eq!(parsed.usage.tokens_out.value, Some(18));
-    assert_eq!(parsed.usage.tokens_in.source, MeasurementSource::Measured);
-    assert_eq!(parsed.usage.cost_usd.value, Some(0.0350687));
-}
-
-/// Directly encodes the real, observed CLI quirk this adapter's
-/// success/failure determination depends on: an invalid-model 400/404
-/// API error was returned with `"is_error":true` **and**
-/// `"subtype":"success"` in the same object. A parser keying off
-/// `subtype` instead of `is_error` would misreport this as a success.
-#[test]
-fn an_api_error_result_with_a_misleading_subtype_of_success_is_still_reported_as_failed() {
-    let stdout = concat!(
-        r#"{"type":"system","subtype":"init","model":"claude-3-5-haiku-20241022","claude_code_version":"2.1.223"}"#,
-        "\n",
-        r#"{"is_error":true,"terminal_reason":"api_error","subtype":"success","#,
-        r#""api_error_status":404,"result":"model not found","type":"result"}"#,
-        "\n",
-    )
-    .to_string();
-    let result = ProcessResult {
-        exit: ProcessExit::Exited(1),
-        stdout: super::super::process::CapturedOutput {
-            text: stdout,
-            truncated: false,
-            bytes_dropped: 0,
-            total_bytes_seen: 0,
-        },
-        stderr: Default::default(),
-    };
-
-    let parsed = parse_run_output(&result, None);
-
-    assert!(
-        parsed.is_error,
-        "is_error must win over a misleadingly-named subtype of \"success\""
-    );
-    assert_eq!(parsed.terminal_reason["subtype"], "success");
-}
-
-/// Reproduces the real observed `--max-budget-usd` exhaustion shape
-/// (`subtype: "error_max_budget_usd"`, a genuinely distinct, correctly
-/// non-"success"-looking subtype, unlike the api_error case above).
-#[test]
-fn a_budget_exhausted_result_is_parsed_as_failed() {
-    let stdout = concat!(
-        r#"{"type":"system","subtype":"init","model":"claude-haiku-4-5-20251001","claude_code_version":"2.1.223"}"#,
-        "\n",
-        r#"{"is_error":true,"terminal_reason":"budget_exhausted","subtype":"error_max_budget_usd","#,
-        r#""errors":["Reached maximum budget ($1e-7)"],"total_cost_usd":0.013149,"type":"result"}"#,
-        "\n",
-    )
-    .to_string();
-    let result = ProcessResult {
-        exit: ProcessExit::Exited(1),
-        stdout: super::super::process::CapturedOutput {
-            text: stdout,
-            truncated: false,
-            bytes_dropped: 0,
-            total_bytes_seen: 0,
-        },
-        stderr: Default::default(),
-    };
-
-    let parsed = parse_run_output(&result, None);
-
-    assert!(parsed.is_error);
-    assert_eq!(parsed.terminal_reason["subtype"], "error_max_budget_usd");
-    assert_eq!(parsed.usage.cost_usd.value, Some(0.013149));
+fn result_envelope_parsing_variants() {
+    for case in result_cases() {
+        eprintln!("result envelope case: {}", case.name);
+        let result = ProcessResult {
+            exit: case.exit,
+            stdout: super::super::process::CapturedOutput {
+                text: case.stdout.to_string(),
+                truncated: false,
+                bytes_dropped: 0,
+                total_bytes_seen: 0,
+            },
+            stderr: Default::default(),
+        };
+        let parsed = parse_run_output(&result, case.requested_provider);
+        (case.check)(&parsed);
+    }
 }
 
 /// The gateway-specific half of `parsed_from_result_line`: even a
@@ -1048,19 +1022,12 @@ fn a_budget_exhausted_result_is_parsed_as_failed() {
 /// that claim, because the init line it came from fired before any
 /// network call reached the gateway.
 #[test]
-fn a_gateway_routed_result_is_recorded_as_requested_not_confirmed_even_on_a_fast_result_line() {
-    let stdout = concat!(
-        r#"{"type":"system","subtype":"init","model":"anthropic/claude-opus-4.6","claude_code_version":"2.1.261"}"#,
-        "\n",
-        r#"{"is_error":true,"subtype":"success","api_error_status":404,"#,
-        r#""result":"model not found","type":"result"}"#,
-        "\n",
-    )
-    .to_string();
+fn gateway_routed_result_is_requested_not_confirmed_even_on_a_fast_result_line() {
+    let stdout = include_str!("../fixtures/claude_code/2.1.261/gateway-routed-result.jsonl");
     let result = ProcessResult {
         exit: ProcessExit::Exited(1),
         stdout: super::super::process::CapturedOutput {
-            text: stdout,
+            text: stdout.to_string(),
             truncated: false,
             bytes_dropped: 0,
             total_bytes_seen: 0,
@@ -1091,33 +1058,81 @@ fn a_missing_is_error_field_fails_closed_as_an_error_not_a_silent_success() {
 
 // ---- reconcile ---------------------------------------------------------
 
-#[tokio::test]
-async fn reconcile_with_no_recorded_process_id_needs_no_dispatch() {
-    let (adapter, _scratch) = adapter_with_fake_binary();
-    let journal = journal_with_process(None);
-    let observation = adapter.reconcile(&journal).await.expect("reconcile");
-    assert_eq!(observation, RecoveryObservation::ProcessStopped);
+fn journal_with_process(process_id: Option<&str>) -> AttemptJournal {
+    AttemptJournal {
+        attempt_id: AttemptId::new("att_test"),
+        runner_id: RunnerId::new("runr_test"),
+        fencing_token: FencingToken(1),
+        workspace: crate::client::journal::WorkspaceJournal {
+            workspace_id: ClientWorkspaceId::new("ws_test"),
+            path: PathBuf::from("/tmp/does-not-matter"),
+            base_revision: "revision".to_string(),
+        },
+        state: crate::client::journal::JournalState::ProcessObservedRunning,
+        process_id: process_id.map(str::to_owned),
+        last_event_checkpoint: None,
+        pending_terminal_report: None,
+    }
+}
+
+/// One row per pid this grammar cannot dispatch a real liveness check
+/// for: none recorded at all, a pid astronomically unlikely to exist,
+/// and a process id that does not even parse — the first two both
+/// honestly report `ProcessStopped`, the third is explicitly
+/// `RecoveryUnavailable` since `decode_handle` failed before any
+/// dispatch could happen.
+struct ReconcileCase {
+    name: &'static str,
+    process_id: Option<&'static str>,
+    expect_unavailable: bool,
+    expected_observation: Option<RecoveryObservation>,
+}
+
+fn reconcile_cases() -> Vec<ReconcileCase> {
+    vec![
+        ReconcileCase {
+            name: "no recorded process id",
+            process_id: None,
+            expect_unavailable: false,
+            expected_observation: Some(RecoveryObservation::ProcessStopped),
+        },
+        ReconcileCase {
+            name: "pid that no longer exists",
+            // Astronomically unlikely to be a live process on any
+            // CI/dev machine, without relying on a fixed
+            // platform-specific sentinel like `i32::MAX`.
+            process_id: Some("2000000000"),
+            expect_unavailable: false,
+            expected_observation: Some(RecoveryObservation::ProcessStopped),
+        },
+        ReconcileCase {
+            name: "undecodable process id",
+            process_id: Some("not-a-pid"),
+            expect_unavailable: true,
+            expected_observation: None,
+        },
+    ]
 }
 
 #[tokio::test]
-async fn reconcile_reports_process_stopped_for_a_pid_that_no_longer_exists() {
-    let (adapter, _scratch) = adapter_with_fake_binary();
-    // A pid that is astronomically unlikely to be a live process on any
-    // CI/dev machine, without relying on a fixed platform-specific
-    // sentinel like `i32::MAX`.
-    let journal = journal_with_process(Some("2000000000"));
-    let observation = adapter.reconcile(&journal).await.expect("reconcile");
-    assert_eq!(observation, RecoveryObservation::ProcessStopped);
-}
-
-#[tokio::test]
-async fn reconcile_with_an_undecodable_process_id_is_explicitly_unavailable() {
-    let (adapter, _scratch) = adapter_with_fake_binary();
-    let journal = journal_with_process(Some("not-a-pid"));
-    assert!(matches!(
-        adapter.reconcile(&journal).await,
-        Err(HarnessError::RecoveryUnavailable)
-    ));
+async fn reconcile_reports_honest_observations_for_untrackable_pids() {
+    for case in reconcile_cases() {
+        let (adapter, _scratch) = adapter_with_fake_binary();
+        let journal = journal_with_process(case.process_id);
+        let result = adapter.reconcile(&journal).await;
+        if case.expect_unavailable {
+            assert!(
+                matches!(result, Err(HarnessError::RecoveryUnavailable)),
+                "case {:?}",
+                case.name
+            );
+        } else {
+            let expected = case
+                .expected_observation
+                .expect("non-unavailable case names an expected observation");
+            assert_eq!(result.expect("reconcile"), expected, "case {:?}", case.name);
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -1202,23 +1217,6 @@ async fn reconcile_reports_process_stopped_when_a_live_pid_belongs_to_an_unrelat
     assert_eq!(observation, RecoveryObservation::ProcessStopped);
 }
 
-fn journal_with_process(process_id: Option<&str>) -> AttemptJournal {
-    AttemptJournal {
-        attempt_id: AttemptId::new("att_test"),
-        runner_id: RunnerId::new("runr_test"),
-        fencing_token: FencingToken(1),
-        workspace: crate::client::journal::WorkspaceJournal {
-            workspace_id: ClientWorkspaceId::new("ws_test"),
-            path: PathBuf::from("/tmp/does-not-matter"),
-            base_revision: "revision".to_string(),
-        },
-        state: crate::client::journal::JournalState::ProcessObservedRunning,
-        process_id: process_id.map(str::to_owned),
-        last_event_checkpoint: None,
-        pending_terminal_report: None,
-    }
-}
-
 // -----------------------------------------------------------------
 // Provider endpoint injection: a configured gateway entry reaches a
 // spawned process only when the request actually names it; a direct
@@ -1267,101 +1265,77 @@ fn recorded_env_names(marker: &Path) -> Vec<String> {
         .collect()
 }
 
-/// Acceptance: a request naming a direct model provider (or none at
-/// all) must spawn with neither `ANTHROPIC_BASE_URL` nor
-/// `ANTHROPIC_AUTH_TOKEN` present — even though a gateway entry is
-/// configured and enabled on this same adapter. Proves the two paths
-/// can never be confused by a shared environment variable.
-#[tokio::test]
-async fn a_direct_model_request_spawns_with_no_provider_endpoint_variable_present() {
-    let workspace_dir = temp_workspace("provider-guard-direct");
-    let workspace = workspace_dir.path();
-    let marker = workspace.join("env-names.marker");
-    let binary = env_name_dump_binary(workspace, &marker);
-
-    let secrets_dir = temp_workspace("secrets");
-    let secrets = test_secret_store(secrets_dir.path());
-    secrets
-        .set("demo-secret", "unused-by-a-direct-request")
-        .expect("seed store");
-    let adapter = ClaudeCodeAdapter::with_binary(binary, clock(), secrets)
-        .with_providers(enabled_gateway_providers("demo-secret"));
-
-    let spec = spec_with(
-        "claude-code",
-        None,
-        &[],
-        true,
-        BTreeMap::new(),
-        workspace.to_path_buf(),
-    );
-    adapter
-        .validate(&spec)
-        .await
-        .expect("validate a direct request");
-    let handle = adapter.start(&spec).await.expect("start a direct request");
-    let _ = adapter.wait(&handle).await.expect("wait");
-
-    let names = recorded_env_names(&marker);
-    assert!(
-        !names.iter().any(|name| name == "ANTHROPIC_BASE_URL"),
-        "a direct request must never receive the provider endpoint's base URL: {names:?}"
-    );
-    assert!(
-        !names.iter().any(|name| name == "ANTHROPIC_AUTH_TOKEN"),
-        "a direct request must never receive the provider endpoint's credential: {names:?}"
-    );
-
-    std::fs::remove_dir_all(workspace).expect("cleanup");
+/// One row per request shape: a direct model provider (or none at all)
+/// must spawn with neither `ANTHROPIC_BASE_URL` nor
+/// `ANTHROPIC_AUTH_TOKEN` present, even with a gateway entry configured
+/// and enabled; a request naming that configured provider must receive
+/// both. Proves the two paths can never be confused by a shared
+/// environment variable.
+struct ProviderCase {
+    name: &'static str,
+    requested_provider: Option<&'static str>,
+    expect_present: bool,
 }
 
-/// The positive half of the same proof: a request naming the
-/// configured provider does receive its base URL and credential
-/// variable names.
+fn provider_cases() -> Vec<ProviderCase> {
+    vec![
+        ProviderCase {
+            name: "direct model request",
+            requested_provider: None,
+            expect_present: false,
+        },
+        ProviderCase {
+            name: "configured provider request",
+            requested_provider: Some(crate::config::VERCEL_AI_GATEWAY_PROVIDER),
+            expect_present: true,
+        },
+    ]
+}
+
 #[tokio::test]
-async fn a_configured_provider_request_spawns_with_its_endpoint_variables_present() {
-    let workspace_dir = temp_workspace("provider-guard-configured");
-    let workspace = workspace_dir.path();
-    let marker = workspace.join("env-names.marker");
-    let binary = env_name_dump_binary(workspace, &marker);
+async fn provider_endpoint_variables_present_only_when_configured_and_requested() {
+    for case in provider_cases() {
+        let workspace_dir = temp_workspace("provider-guard");
+        let workspace = workspace_dir.path();
+        let marker = workspace.join("env-names.marker");
+        let binary = env_name_dump_binary(workspace, &marker);
 
-    let secrets_dir = temp_workspace("secrets");
-    let secrets = test_secret_store(secrets_dir.path());
-    secrets
-        .set("demo-secret", "a-resolvable-value")
-        .expect("seed store");
-    let adapter = ClaudeCodeAdapter::with_binary(binary, clock(), secrets)
-        .with_providers(enabled_gateway_providers("demo-secret"));
+        let secrets_dir = temp_workspace("secrets");
+        let secrets = test_secret_store(secrets_dir.path());
+        secrets
+            .set("demo-secret", "a-resolvable-value")
+            .expect("seed store");
+        let adapter = ClaudeCodeAdapter::with_binary(binary, clock(), secrets)
+            .with_providers(enabled_gateway_providers("demo-secret"));
 
-    let spec = spec_with(
-        "claude-code",
-        Some(crate::config::VERCEL_AI_GATEWAY_PROVIDER),
-        &[],
-        true,
-        BTreeMap::new(),
-        workspace.to_path_buf(),
-    );
-    adapter
-        .validate(&spec)
-        .await
-        .expect("validate a configured-provider request");
-    let handle = adapter
-        .start(&spec)
-        .await
-        .expect("start a configured-provider request");
-    let _ = adapter.wait(&handle).await.expect("wait");
+        let spec = spec_with(
+            "claude-code",
+            case.requested_provider,
+            &[],
+            true,
+            BTreeMap::new(),
+            workspace.to_path_buf(),
+        );
+        adapter.validate(&spec).await.expect("validate");
+        let handle = adapter.start(&spec).await.expect("start");
+        let _ = adapter.wait(&handle).await.expect("wait");
 
-    let names = recorded_env_names(&marker);
-    assert!(
-        names.iter().any(|name| name == "ANTHROPIC_BASE_URL"),
-        "a gateway-routed request must receive the provider endpoint's base URL: {names:?}"
-    );
-    assert!(
-        names.iter().any(|name| name == "ANTHROPIC_AUTH_TOKEN"),
-        "a gateway-routed request must receive the provider endpoint's credential: {names:?}"
-    );
+        let names = recorded_env_names(&marker);
+        assert_eq!(
+            names.iter().any(|name| name == "ANTHROPIC_BASE_URL"),
+            case.expect_present,
+            "case {:?}: {names:?}",
+            case.name
+        );
+        assert_eq!(
+            names.iter().any(|name| name == "ANTHROPIC_AUTH_TOKEN"),
+            case.expect_present,
+            "case {:?}: {names:?}",
+            case.name
+        );
 
-    std::fs::remove_dir_all(workspace).expect("cleanup");
+        std::fs::remove_dir_all(workspace).expect("cleanup");
+    }
 }
 
 /// A configured-but-disabled provider must reject the request pre-spawn
@@ -1407,328 +1381,5 @@ async fn a_disabled_provider_rejects_the_request_before_any_process_spawns() {
 // found, non-executable skipped); this file no longer needs a test that
 // mutates the real process `PATH` to reach the same behavior.
 
-// ---- live, opt-in test against the real installed `claude` ----------
-
-/// Opt-in, matching `codex.rs`'s own
-/// `#[ignore]`-gated live tests: never runs under a plain `cargo test`,
-/// never required in CI, and never fails just because `claude` is
-/// absent. Unlike Codex's live test (version probe plus a
-/// purely local artifact stage, no real model call), a real Claude Code
-/// invocation is billed — so this test additionally requires
-/// `TACK_RUN_LIVE_CLAUDE_CODE_TEST=1` even under `--ignored`, so that
-/// flag alone can never surprise-spend real money. Never depends on a
-/// secret being present in this process's own environment: whatever
-/// credential the installed CLI already carries (e.g. an OAuth session
-/// under `HOME`) is used exactly as the real installation already has
-/// it configured — this test never reads, logs, or forwards one itself.
-///
-/// Records the observed version and stages a real produced artifact (a
-/// `README.md` this test asks Claude Code, via its `Write` tool, to
-/// overwrite, inside a disposable fixture git repo this test creates
-/// and deletes itself — never this checkout).
-#[tokio::test]
-#[ignore = "opt-in: requires a real `claude` binary on PATH *and* \
-            TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 (a real invocation is billed, unlike Codex's \
-            free live test); run with TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo nextest \
-            run --workspace --run-ignored ignored-only -E 'test(/claude_code::tests::live_/)'"]
-async fn live_claude_code_records_version_and_a_real_artifact_when_opted_in() {
-    if std::env::var("TACK_RUN_LIVE_CLAUDE_CODE_TEST").as_deref() != Ok("1") {
-        eprintln!(
-            "skipping live claude-code test: set TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 to opt in \
-             (a real invocation is billed)"
-        );
-        return;
-    }
-    let secrets_dir = temp_workspace("secrets");
-    let Ok(adapter) = ClaudeCodeAdapter::discover(test_secret_store(secrets_dir.path())) else {
-        eprintln!("skipping live claude-code test: no `claude` binary discoverable on PATH");
-        return;
-    };
-
-    let capability = adapter.probe().await;
-    assert!(
-        capability.probe_error.is_none(),
-        "expected a healthy probe against a real installed binary: {:?}",
-        capability.probe_error
-    );
-    assert!(!capability.installed_version.is_empty());
-    eprintln!(
-        "live claude-code probe: version={}",
-        capability.installed_version
-    );
-
-    let workspace_dir = temp_workspace("live-fixture-repo");
-    let workspace = workspace_dir.path();
-    let run = |program: &str, args: &[&str]| {
-        std::process::Command::new(program)
-            .args(args)
-            .current_dir(workspace)
-            .output()
-            .expect("git available for the live test's disposable fixture repo")
-    };
-    run("git", &["init", "-q"]);
-    run("git", &["config", "user.email", "probe@example.invalid"]);
-    run("git", &["config", "user.name", "Probe"]);
-    std::fs::write(workspace.join("README.md"), "fixture\n").expect("seed fixture file");
-    run("git", &["add", "README.md"]);
-    run("git", &["commit", "-q", "-m", "seed"]);
-
-    let mut environment = BTreeMap::new();
-    environment.insert(
-        "HOME".to_string(),
-        env_entry(&std::env::var("HOME").unwrap_or_default()),
-    );
-    let mut spec = spec_with(
-        "claude-code",
-        None,
-        &["Write"],
-        false,
-        environment,
-        workspace.to_path_buf(),
-    );
-    // Overrides the shared helper's default "Print exactly: ok" prompt
-    // (used by every other test in this module) with one that actually
-    // exercises the `Write` tool this spec allows, so the artifact
-    // staged below is genuinely something Claude Code produced, not
-    // merely the seed content this test itself wrote.
-    spec.work.request.resolved_agent_profile.instructions =
-        "Using the Write tool, overwrite README.md in the current directory with exactly \
-         this content: tack-d2-live-test-marker"
-            .to_string();
-
-    adapter.validate(&spec).await.expect("validate a live spec");
-    let handle = adapter.start(&spec).await.expect("start a live process");
-    let outcome = adapter
-        .wait(&handle)
-        .await
-        .expect("wait for a live process");
-
-    eprintln!(
-        "live claude-code outcome: terminal_state={:?} model_id={} harness_version={}",
-        outcome.terminal_state,
-        outcome.actual_execution.model_id.as_str(),
-        outcome.actual_execution.harness_version
-    );
-
-    let staged = super::super::artifact::ArtifactStager::new(workspace.join(".artifacts"))
-        .stage_file(
-            "live-test-attempt",
-            workspace,
-            Path::new("README.md"),
-            "log",
-            "text/markdown",
-        )
-        .expect("stage the real artifact Claude Code's Write tool produced");
-    assert!(staged.size_bytes > 0);
-    let staged_content = std::fs::read_to_string(&staged.staged_path).unwrap_or_default();
-    eprintln!("live claude-code staged artifact content: {staged_content:?}");
-    if !staged_content.contains("tack-d2-live-test-marker") {
-        eprintln!(
-            "note: the model did not reproduce the exact requested marker text — this is \
-             model-phrasing variance, not itself a failure of this adapter, so it is only \
-             logged, never asserted on"
-        );
-    }
-    eprintln!(
-        "live claude-code artifact: sha256={} size_bytes={}",
-        staged.sha256, staged.size_bytes
-    );
-
-    std::fs::remove_dir_all(workspace).expect("cleanup disposable fixture repo");
-}
-
-/// Live proof of the provider endpoint path, not the direct one above:
-/// resolves the real runner-local secret store (the platform keychain,
-/// or its owner-only file fallback — whichever this machine actually
-/// has) for a `vercel_ai_gateway` entry, points a real `claude` binary
-/// at it, and records what the CLI reported. Gated identically to
-/// [`live_claude_code_records_version_and_a_real_artifact_when_opted_in`]
-/// (a real invocation is billed), plus a clean skip when no store entry
-/// exists at all — this test never fabricates one.
-#[tokio::test]
-#[ignore = "opt-in: requires a real `claude` binary on PATH, a `vercel_ai_gateway` entry in \
-            this machine's secret store, *and* TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 (a real \
-            invocation is billed); run with TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo nextest \
-            run --workspace --run-ignored ignored-only -E 'test(/claude_code::tests::live_/)'"]
-async fn live_claude_code_through_the_configured_provider_when_opted_in() {
-    if std::env::var("TACK_RUN_LIVE_CLAUDE_CODE_TEST").as_deref() != Ok("1") {
-        eprintln!(
-            "skipping live claude-code gateway test: set TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 to \
-             opt in (a real invocation is billed)"
-        );
-        return;
-    }
-    let state_dir = std::env::var_os("TACK_RUNNER_STATE_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            PathBuf::from(std::env::var("HOME").expect("HOME is set")).join(".tack-runner")
-        });
-    let secrets = crate::secrets::SecretStore::open(&state_dir.join("secrets.json"));
-    let providers = std::collections::BTreeMap::from([(
-        crate::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
-        crate::config::ProviderConfig {
-            enabled: true,
-            secret: crate::config::DEFAULT_VERCEL_AI_GATEWAY_SECRET.to_owned(),
-        },
-    )]);
-
-    let Ok(adapter) = ClaudeCodeAdapter::discover(secrets) else {
-        eprintln!("skipping live claude-code gateway test: no `claude` binary discoverable");
-        return;
-    };
-    let adapter = adapter.with_providers(providers);
-
-    let workspace_dir = temp_workspace("live-gateway");
-    let workspace = workspace_dir.path();
-    std::process::Command::new("git")
-        .args(["init", "-q"])
-        .current_dir(workspace)
-        .status()
-        .expect("git init");
-    let mut spec = spec_with(
-        "claude-code",
-        Some(crate::config::VERCEL_AI_GATEWAY_PROVIDER),
-        &[],
-        true,
-        BTreeMap::new(),
-        workspace.to_path_buf(),
-    );
-    spec.work.request.requested_model_id = Some(tack_orch::execution::RequestedModelId::new(
-        "anthropic/claude-opus-4.6",
-    ));
-    spec.work.request.resolved_agent_profile.instructions = "Say exactly: ok".to_string();
-
-    if let Err(error) = adapter.validate(&spec).await {
-        eprintln!(
-            "skipping live claude-code gateway test: no configured provider entry to \
-             validate against ({error})"
-        );
-        std::fs::remove_dir_all(workspace).expect("cleanup");
-        return;
-    }
-    let handle = adapter
-        .start(&spec)
-        .await
-        .expect("start a live gateway-routed process");
-    let outcome = adapter
-        .wait(&handle)
-        .await
-        .expect("wait for a live gateway-routed process");
-
-    eprintln!(
-        "live claude-code (gateway) outcome: terminal_state={:?} model_provider={} \
-         model_id={} model_observation_source={} terminal_reason={}",
-        outcome.terminal_state,
-        outcome.actual_execution.model_provider.as_str(),
-        outcome.actual_execution.model_id.as_str(),
-        outcome.actual_execution.model_observation_source,
-        outcome.terminal_reason
-    );
-
-    // Holds regardless of whether the configured credential is itself
-    // valid, and regardless of which of two honest outcomes this
-    // specific run hits: a `result` line arriving before the request
-    // timeout (`requested_not_confirmed`, from `parsed_from_result_line`)
-    // or the process being killed mid-retry-storm with no such line
-    // ever seen (`not_observed`, from `malformed_outcome`/
-    // `fallback_from_exit_code`) — a real invalid-key run measured
-    // exponential retry delays that make the latter the far likelier
-    // case within any test-sized timeout. The one claim that must never
-    // hold for a gateway-routed run is `harness_reported`: this line is
-    // emitted before any network call reaches the gateway, so it can
-    // never be treated as confirmation the gateway actually served it.
-    // A successful completion additionally needs a working credential,
-    // which this test does not assert on: that requires a separately
-    // run, deliberately billed proof against a real credential.
-    assert_ne!(
-        outcome.actual_execution.model_observation_source,
-        ModelObservationSource::HarnessReported.as_str(),
-        "a gateway-routed run must never claim harness_reported"
-    );
-
-    std::fs::remove_dir_all(workspace).expect("cleanup disposable fixture repo");
-}
-
-/// The live counterpart to the fake-shim guard tests above: with the
-/// configured provider enabled *and* genuinely working (a real, billed
-/// gateway completion is proven by the test above), a direct-model
-/// request against the same adapter must still never reach the
-/// gateway. Never bills anything itself — a direct request with no
-/// ambient login on this machine fails in milliseconds
-/// ("Not logged in"), which is the point: if it had instead reached
-/// the gateway, it would have succeeded, exactly like the test above.
-#[tokio::test]
-#[ignore = "opt-in: requires a real `claude` binary on PATH *and*                 TACK_RUN_LIVE_CLAUDE_CODE_TEST=1; run with                 TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo nextest run --workspace                 --run-ignored ignored-only -E 'test(/claude_code::tests::live_/)'"]
-async fn live_claude_code_direct_model_never_reaches_the_configured_provider_when_opted_in() {
-    if std::env::var("TACK_RUN_LIVE_CLAUDE_CODE_TEST").as_deref() != Ok("1") {
-        eprintln!(
-            "skipping live claude-code direct-guard test: set TACK_RUN_LIVE_CLAUDE_CODE_TEST=1                  to opt in"
-        );
-        return;
-    }
-    let state_dir = std::env::var_os("TACK_RUNNER_STATE_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            PathBuf::from(std::env::var("HOME").expect("HOME is set")).join(".tack-runner")
-        });
-    let secrets = crate::secrets::SecretStore::open(&state_dir.join("secrets.json"));
-    let providers = std::collections::BTreeMap::from([(
-        crate::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
-        crate::config::ProviderConfig {
-            enabled: true,
-            secret: crate::config::DEFAULT_VERCEL_AI_GATEWAY_SECRET.to_owned(),
-        },
-    )]);
-
-    let Ok(adapter) = ClaudeCodeAdapter::discover(secrets) else {
-        eprintln!("skipping live claude-code direct-guard test: no `claude` binary discoverable");
-        return;
-    };
-    let adapter = adapter.with_providers(providers);
-
-    let workspace_dir = temp_workspace("live-direct-guard");
-    let workspace = workspace_dir.path();
-    std::process::Command::new("git")
-        .args(["init", "-q"])
-        .current_dir(workspace)
-        .status()
-        .expect("git init");
-    // No requested_model_provider at all: the direct/subscription path.
-    let spec = spec_with(
-        "claude-code",
-        None,
-        &[],
-        true,
-        BTreeMap::new(),
-        workspace.to_path_buf(),
-    );
-
-    adapter
-        .validate(&spec)
-        .await
-        .expect("a direct request validates even with the provider configured");
-    let handle = adapter
-        .start(&spec)
-        .await
-        .expect("start a direct-model process");
-    let outcome = adapter
-        .wait(&handle)
-        .await
-        .expect("wait for a direct-model process");
-
-    eprintln!(
-        "live claude-code (direct, provider configured but unused) outcome:              terminal_state={:?} terminal_reason={}",
-        outcome.terminal_state, outcome.terminal_reason
-    );
-
-    // The decisive check: the gateway's own distinctive error shape
-    // ("authentication_failed"/"api_retry") must never appear on a
-    // direct request, proving it never reached ai-gateway.vercel.sh.
-    let serialized = outcome.terminal_reason.to_string();
-    assert!(
-        !serialized.contains("authentication_failed") && !serialized.contains("api_retry"),
-        "a direct request must never show the gateway's own error shape: {serialized}"
-    );
-
-    std::fs::remove_dir_all(workspace).expect("cleanup");
-}
+// Live, opt-in tests against a real installed `claude` binary live under
+// `crates/tack-runner/tests/live/claude_code.rs`, not here.
