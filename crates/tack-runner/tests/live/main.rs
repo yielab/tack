@@ -8,4 +8,5 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+mod claude_code;
 mod codex;
