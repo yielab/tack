@@ -12,24 +12,17 @@ use crate::secrets::SecretValue;
 const CATALOG_URL: &str = "https://ai-gateway.vercel.sh/v1/models";
 
 /// Test-only escape hatch: `scripts/smoke.sh` step 13 is this variable's
-/// only intended setter, documented as such in `docs/CONFIG.md`. **What it
-/// actually does, stated plainly rather than left implicit:** when present,
-/// every URL this provider would otherwise send a request to — including
-/// [`fetch_catalog`]'s `bearer_auth(secret.expose())` call, which carries
-/// whatever credential this runner has stored for this provider — is
-/// rebased under it instead of the real gateway host. This is not a
-/// harmless flag: setting it to an attacker-controlled host redirects a
-/// real stored credential there. It is not a new privilege, though —
-/// whoever can set an environment variable on this process can already
-/// read the same credential straight out of the secret store this process
-/// already has open, so this adds no attack surface beyond "control this
-/// process's environment," which is already full compromise. The loopback
-/// restriction below exists anyway, cheaply, to catch a *mistake* (a
-/// non-loopback value reached this process by accident — a copied env
-/// file, a misconfigured deployment) rather than a deliberate attacker, who
-/// gains nothing from this check that they didn't already have. Unset in
-/// every other path — including every other test in this module — so this
-/// costs one environment lookup and changes nothing for the real gateway.
+/// only intended setter (`docs/CONFIG.md`). When present, every URL this
+/// provider would send a request to — including [`fetch_catalog`]'s
+/// `bearer_auth(secret.expose())` call, which carries this runner's stored
+/// credential — is rebased under it instead of the real gateway host.
+/// Not a new privilege: whoever can set an env var on this process can
+/// already read the same credential from the secret store this process
+/// has open, so this adds no attack surface beyond full process
+/// compromise. The loopback restriction below exists to catch a
+/// *mistake* (a non-loopback value reaching this process by accident),
+/// not a deliberate attacker. Unset in every other path, including every
+/// other test in this module.
 const TEST_BASE_URL_OVERRIDE_VAR: &str = "TACK_RUNNER_VERCEL_AI_GATEWAY_TEST_BASE_URL";
 
 /// Accepts only a loopback base — see the credential-exposure note above.
@@ -185,23 +178,17 @@ struct CatalogResponse {
 }
 
 /// Parses one Vercel AI Gateway catalog body into the common
-/// [`CatalogEntry`] shape. Measured against the real gateway
-/// (`https://ai-gateway.vercel.sh/v1/models`, 373 models at measurement
-/// time): 21 entries publish `"pricing": {}` — an explicitly *empty*
-/// object, not a missing key or a `null` — for a model this vendor does not
-/// price (rerank, some audio); folded into `None` here rather than kept as
-/// `Some({})`, which would print as a literal empty object instead of the
-/// project's own `Not measured` convention. 18 entries omit `context_window`
-/// entirely (non-text models: transcription, text-to-speech); at least one
-/// entry (`bfl/flux-2-flex`, an image model) instead publishes a literal
-/// `0` for it — the vendor's own catalog is not internally consistent about
-/// omission vs. zero for "not applicable," and this parser passes that
-/// value through as published (`Some(0)`) rather than guessing which
-/// non-text model types should be reinterpreted as `None`. Every model in
-/// the same live fetch also carries a `modalities` key; this parser stores
-/// it exactly as published, the same treatment as `pricing`, since the
-/// live fetch was not re-run to confirm every value that key takes across
-/// all 373 models.
+/// [`CatalogEntry`] shape. The vendor catalog publishes `"pricing": {}` —
+/// an explicitly empty object, not a missing key or `null` — for a model
+/// it does not price (rerank, some audio); folded into `None` here rather
+/// than `Some({})`, which would print as a literal empty object instead of
+/// the project's `Not measured` convention. `context_window` is sometimes
+/// omitted (non-text models) and sometimes published as a literal `0` for
+/// the same kind of model — the vendor's own catalog is not internally
+/// consistent about omission vs. zero for "not applicable," so this parser
+/// passes the value through as published rather than guessing which
+/// non-text types should become `None`. `modalities` is stored exactly as
+/// published, the same treatment as `pricing`.
 fn parse_catalog(body: &[u8]) -> Result<Vec<CatalogEntry>, serde_json::Error> {
     let parsed: CatalogResponse = serde_json::from_slice(body)?;
     Ok(parsed

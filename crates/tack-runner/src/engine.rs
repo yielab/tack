@@ -37,21 +37,15 @@ const LEASE_RENEWAL_INTERVAL: std::time::Duration = std::time::Duration::from_se
 
 /// `Rejected` carries a `reason`.
 ///
-/// Two harness adapters independently hit the same gap: `validate`/`start`
-/// have several genuinely
-/// distinct pre-spawn rejection reasons (wrong harness kind, an
-/// auto-selected model this adapter cannot honestly confirm, an unresolvable
-/// binary, an unsupported provider, a provider/model pairing claude-code itself
-/// does not offer, ...) that all collapsed to the same bare `Rejected` at
-/// this trait boundary. Both worked around it with a `tracing::warn!`
-/// immediately before returning the error — which means the reason reached
-/// a log line, never the caller or the operator who actually needs it to
-/// decide what to do next. This is the smallest fix that carries the reason
-/// across the boundary itself: a plain `String`, not a new taxonomy of
-/// typed sub-variants — `HarnessError` is a closed,
-/// deliberately small enum; widening it to a fourth *kind* of error was
-/// evaluated and rejected for the same reason. `Process`/`RecoveryUnavailable`
-/// are untouched: nothing reported an analogous need for them.
+/// Pre-spawn rejections have several genuinely distinct causes (wrong
+/// harness kind, an unconfirmed auto-selected model, an unresolvable
+/// binary, an unsupported provider, an unsupported provider/model
+/// pairing, ...) that all reach this one variant. The reason is carried
+/// across the trait boundary as a plain `String`, not a taxonomy of typed
+/// sub-variants: `HarnessError` is a closed, deliberately small enum, and
+/// widening it to a fourth *kind* of error was evaluated and rejected.
+/// `Process`/`RecoveryUnavailable` are untouched: nothing needs an
+/// analogous reason for them.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum HarnessError {
     #[error("harness rejected this execution: {reason}")]
@@ -561,23 +555,16 @@ where
     /// Runs `self.adapter.wait(handle)` to completion while sending a
     /// heartbeat for `record`'s attempt every [`LEASE_RENEWAL_INTERVAL`].
     ///
-    /// The lease this attempt holds is granted for a bounded window at claim
-    /// time and only extended by a subsequent heartbeat that names the
-    /// attempt (see `heartbeat_request`). A harness run can take up to the
-    /// request's own `timeout_seconds` (bounded at 86,400 by
-    /// `request_timeout_seconds_max`), so waiting on the harness without
-    /// heartbeating meanwhile lets the lease expire long before the process
-    /// exits: the eventual completion report is then rejected as a stale
-    /// lease, and nothing durably retries it during live operation (only a
-    /// runner restart replays a journaled `TerminalReportPending` record,
-    /// and that replay carries the same now-expired fencing token so it
-    /// fails identically) — the attempt is stuck `running` forever from the
-    /// API's point of view. Renewing periodically here, concurrently with
-    /// the wait, keeps the lease alive for the run's real duration. A failed
-    /// renewal is logged and does not interrupt the wait: the harness is
-    /// still running regardless, and the worst case (a renewal never lands
-    /// again before the harness exits) is the same stale-lease outcome this
-    /// loop exists to avoid, not a new failure mode.
+    /// The lease is granted for a bounded window at claim time and only
+    /// extended by a heartbeat naming the attempt. A harness run can take up
+    /// to the request's own `timeout_seconds` (bounded at 86,400), so waiting
+    /// without heartbeating would let the lease expire long before the
+    /// process exits — the completion report is then rejected as a stale
+    /// lease, with nothing durably retrying it (a runner restart replays the
+    /// journaled record with the same now-expired fencing token), leaving the
+    /// attempt stuck `running` forever. A failed renewal is logged and does
+    /// not interrupt the wait: the harness keeps running regardless, and the
+    /// worst case is the same stale-lease outcome this loop exists to avoid.
     async fn wait_with_lease_renewal(
         &self,
         session: &RunnerSession,
@@ -990,22 +977,17 @@ where
     /// announced as `preparing` into a reported failure, through the same
     /// durable outbox every other terminal report goes through.
     ///
-    /// Propagating the rejection as an error instead leaves the server holding
-    /// an attempt in `preparing` under a lease nothing will ever heartbeat or
+    /// Propagating it as an error instead leaves the server holding an
+    /// attempt in `preparing` under a lease nothing will heartbeat or
     /// complete, and the journal holding a `prepared` record with no process
-    /// behind it — a hang only a later restart's recovery scan would resolve,
-    /// with nothing anywhere saying why. The rejection is settled information:
-    /// the adapter looked at the request and refused it before any process
-    /// existed, so the honest report is `failed` with that refusal as the
-    /// reason. Only [`HarnessError::Rejected`] is settled in this sense; a
-    /// process or recovery failure says nothing about the request itself and
-    /// keeps propagating.
+    /// behind it — a hang only a restart's recovery scan resolves. The
+    /// rejection is settled: the adapter refused before any process existed,
+    /// so the report is `failed` with that reason. Only [`HarnessError::Rejected`]
+    /// is settled this way; a process or recovery failure keeps propagating.
     ///
-    /// Nothing ran, and the report says so in the contract's own vocabulary:
-    /// no harness version was observed, the model is the requested one marked
-    /// as never confirmed (or `unknown`/`not_observed` when none was
-    /// requested), every feature capability is `unsupported` because none was
-    /// exercised, and every usage figure is `not_measured`.
+    /// The report says nothing ran, in the contract's own vocabulary: no
+    /// harness version observed, the model marked never confirmed, every
+    /// feature `unsupported`, every usage figure `not_measured`.
     async fn fail_before_spawn(
         &self,
         session: &RunnerSession,
