@@ -4,7 +4,7 @@
 //! Scope is deliberately narrow — this is not a general Prometheus client:
 //! no `# TYPE`/`# HELP` semantics are retained, no histogram/summary
 //! bucket-line reconstruction, no exemplars. It turns each data line into a
-//! flat [`MetricSample`] (`name` + `labels` + `value`) and nothing else,
+//! flat [`MetricSample`](crate::MetricSample) (`name` + `labels` + `value`) and nothing else,
 //! which is all [`crate::ControlPlane::metrics`] promises callers.
 //!
 //! The metrics-ingestion path reuses this module as-is — **do not write a

@@ -10,4 +10,4 @@ git config merge.tack-generated.name "regenerate rather than hand-merge (see .gi
 git config merge.tack-generated.driver "./scripts/git-merge-generated.sh %A %P"
 
 echo "✓ hooks:        .githooks (pre-push gate, post-merge regeneration)"
-echo "✓ merge driver: tack-generated for Cargo.lock, package-lock.json, openapi.json, schema.gen.ts"
+echo "✓ merge driver: tack-generated for Cargo.lock, package-lock.json, openapi.json, schema.gen.ts, api-reference.md"

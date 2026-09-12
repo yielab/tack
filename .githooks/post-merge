@@ -16,6 +16,7 @@ generated=(
   frontend/package-lock.json
   docs/openapi.json
   frontend/src/shared/api/schema.gen.ts
+  docs/book/src/developer/api-reference.md
 )
 
 # Only pay for regeneration when the merge could actually have invalidated one.
