@@ -1,11 +1,28 @@
 //! `DocketAdapter` — the [`ControlPlane`] implementation for docket.
 //!
-//! # Constructor
+//! `new` takes the docket base URL and an optional Bearer token. A `None`
+//! token is legitimate: every unauthenticated route (`/health`,
+//! `/status.json`, `/metrics`) still works, and an authenticated route
+//! called without one degrades to whatever docket itself returns for a
+//! missing `Authorization` header, rather than a client-side short-circuit.
 //!
-//! ```ignore
-//! let adapter = DocketAdapter::new("http://127.0.0.1:7331", Some(token))?;
+//! # Auth split
 //!
-//! Design notes: docs/dev-notes/tack-orch/adapters/docket.md
+//! `/status.json`, `/metrics`, and `/health` never carry a Bearer token,
+//! even if one is configured — every other route does. This is enforced
+//! structurally, by [`DocketAdapter::get_unauthed`] and
+//! [`DocketAdapter::get_authed`] never sharing a code path that attaches
+//! the header, so a future edit can't leak the token onto an
+//! unauthenticated request by adding one branch to a shared function.
+//!
+//! # Write methods
+//!
+//! `enqueue_task`, `decide_approval`, `provision_pod`, and `dispatch` each
+//! build their own request rather than going through `get_authed`/`send`,
+//! since each needs a non-2xx status classified more finely than that
+//! helper's generic branch. See each method's own doc comment for its wire
+//! format; the vendor captures behind them live in
+//! `tests/fixtures/README.md`.
 
 use std::time::Duration;
 
@@ -23,32 +40,26 @@ use crate::{
 };
 
 /// The fixed `channel` docket records against every approval decision made
-/// through Tack's UI (`approval.APPROVAL_CHANNELS` already lists `"tack"`
-/// alongside `cli`/`http`/`mcp`/`telegram`/`timeout` — verified against
-/// `~/Sites/rack-cli/src/docket/core/approval.py`). See
-/// [`ControlPlane::decide_approval`]'s doc comment for why this isn't a
+/// through Tack's UI (`approval.APPROVAL_CHANNELS` already lists `"tack"`).
+/// See [`ControlPlane::decide_approval`]'s doc comment for why this isn't a
 /// parameter.
 const APPROVAL_CHANNEL: &str = "tack";
 
-/// Every request this adapter makes gets this timeout — docket runs on
-/// loopback in every real deployment, so 5s is generous for a
-/// live plane and still fails fast against a hung/unreachable one rather
+/// docket runs on loopback in every real deployment, so 5s is generous for
+/// a live plane and still fails fast against a hung/unreachable one rather
 /// than blocking a reconciler poll tick indefinitely.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How much of a non-2xx response body to fold into an [`OrchError`]
-/// message — enough to be useful in a log line, not enough to dump an
-/// arbitrarily large or (in principle) sensitive body into `tracing` output.
+/// message — enough to be useful in a log line, not enough to risk dumping
+/// an arbitrarily large or sensitive body into `tracing` output.
 const ERROR_BODY_SNIPPET_LEN: usize = 500;
 
 /// Extracts the policy id docket names in a `pre_input` **block** response's
-/// `error` text (`"task rejected by guardrail policy '<id>' at enqueue:
-/// <message>"`) and builds the typed
-/// [`OrchError::PolicyBlocked`]. Falls back to `policy_id: "unknown"` rather
-/// than panicking or discarding the message if docket's wording ever drifts
-/// — this must degrade the same way the `Unknown(String)` remote-enum
-/// variants do (module doc, "Unknown enum values never fail a poll"): a
-/// reworded message still surfaces as a block, just without a parsed id.
+/// `error` text into the typed [`OrchError::PolicyBlocked`]. Falls back to
+/// `policy_id: "unknown"` rather than panicking or discarding the message
+/// if docket's wording ever drifts — a reworded message still surfaces as a
+/// block, just without a parsed id.
 fn parse_policy_block(message: String) -> OrchError {
     let policy_id = message
         .split_once("guardrail policy '")
@@ -70,17 +81,12 @@ pub struct DocketAdapter {
 }
 
 impl DocketAdapter {
-    /// Build an adapter for the docket instance at `base_url`
-    /// (e.g. `"http://127.0.0.1:7331"` — a trailing slash is fine either
-    /// way). `token` is docket's `/approvals` + `/runs` + `/dispatch` Bearer
-    /// token (`DOCKET_SERVE_TOKEN`, or the value `docket serve` prints /
-    /// writes to `--token-file` at startup) — `None` disables every
-    /// authenticated route (see the module doc).
+    /// Build an adapter for the docket instance at `base_url` (a trailing
+    /// slash is fine either way). `token` is docket's Bearer token
+    /// (`DOCKET_SERVE_TOKEN`); `None` disables every authenticated route.
     ///
     /// Returns `Err` only if `reqwest::Client::builder().build()` itself
-    /// fails (e.g. no usable TLS backend at runtime) — building a plain
-    /// HTTP(S) client with just a timeout and a User-Agent essentially never
-    /// fails in practice, but the constructor propagates it rather than
+    /// fails — essentially never in practice, but propagated rather than
     /// panicking so a misconfigured host can never crash the process that
     /// registers a control plane.
     pub fn new(base_url: impl Into<String>, token: Option<String>) -> Result<Self, OrchError> {
@@ -116,11 +122,9 @@ impl DocketAdapter {
     }
 
     /// GET an authenticated route, attaching `Authorization: Bearer <token>`
-    /// when one is configured. With no token configured, the request still
-    /// goes out (without the header) so docket's own 401 — mapped to
-    /// [`OrchError::Auth`] by [`Self::send`] — is what the caller sees,
-    /// rather than a client-side short-circuit that could drift from
-    /// docket's actual auth behavior.
+    /// when one is configured. With none configured, the request still goes
+    /// out without the header, so docket's own 401 is what the caller
+    /// sees, rather than a client-side short-circuit.
     async fn get_authed(&self, path: &str) -> Result<reqwest::Response, OrchError> {
         let url = self.url(path)?;
         let mut req = self.client.get(url);
@@ -132,12 +136,10 @@ impl DocketAdapter {
 
     /// Send a request and classify the response: network failure →
     /// [`OrchError::Http`]; 401/403 → [`OrchError::Auth`]; 404 →
-    /// [`OrchError::NotFound`] (message extracted from a `{"error": "..."}`
-    /// JSON body when present, else the raw response text — docket's
-    /// generic "route doesn't exist" 404 is plain text, not JSON, see the
-    /// module doc); any other non-2xx → [`OrchError::Http`] with a
-    /// truncated body snippet. A 2xx response is returned as-is for the
-    /// caller to decode.
+    /// [`OrchError::NotFound`] (message from a `{"error": "..."}` body when
+    /// present, else the raw text — docket's generic 404 is plain text, not
+    /// JSON); any other non-2xx → [`OrchError::Http`] with a truncated
+    /// snippet. A 2xx response is returned as-is for the caller to decode.
     async fn send(&self, req: reqwest::RequestBuilder) -> Result<reqwest::Response, OrchError> {
         let resp = req
             .send()
@@ -166,10 +168,9 @@ impl DocketAdapter {
         Ok(resp)
     }
 
-    /// Read the full response body and decode it as JSON, mapping both a
-    /// body-read failure and a JSON decode failure to [`OrchError::Decode`]
-    /// — from the caller's perspective both mean "docket sent something
-    /// this adapter can't turn into the DTO it asked for".
+    /// Read the body and decode it as JSON; both a read failure and a
+    /// decode failure map to [`OrchError::Decode`] — either way, docket
+    /// sent something that couldn't become the requested DTO.
     async fn decode_json<T: DeserializeOwned>(resp: reqwest::Response) -> Result<T, OrchError> {
         let text = resp
             .text()
@@ -182,8 +183,7 @@ impl DocketAdapter {
     }
 }
 
-/// docket's generic JSON error body: `{"ok": false, "error": "..."}`
-/// (`serve.py`'s `_send_json_error`). `ok` is intentionally not modeled —
+/// docket's generic JSON error body. `ok` is intentionally not modeled —
 /// only `error` is ever read.
 #[derive(Debug, Deserialize)]
 struct ErrorBody {
@@ -203,55 +203,43 @@ struct ApprovalsResponse {
     pending: Vec<RemoteApproval>,
 }
 
-/// `GET /tasks/{project}` — real wire shape, confirmed by a live HTTP
-/// capture (see the module doc's "Verified live" section). Wrapper key
-/// really is `{"tasks": [...]}`, matching `/runs`/`/approvals`'s own
-/// wrapping convention — `tests/fixtures/tasks_list.json` is a genuine
-/// capture, not a derived projection.
-/// `POST /tasks/{project}`'s success response — real wire shape, confirmed
-/// by a live HTTP capture (see the module doc's
-/// "Write methods" section). Only `task` is modeled: `ok`/`project` are
-/// never read, and `status`/`approvalToken` — real fields, but this
-/// method's frozen return type has nowhere to carry them — are recovered by
-/// the caller via a follow-up [`ControlPlane::list_tasks`] instead (see the
-/// module doc). An unknown/unmodeled JSON key costs nothing; `serde_json`
-/// ignores it.
+/// `POST /tasks/{project}`'s success response. Only `task` is modeled:
+/// `ok`/`project` are never read, and `status`/`approvalToken` — real
+/// fields, but this method's return type has nowhere to carry them — are
+/// recovered by the caller via a follow-up [`ControlPlane::list_tasks`]
+/// instead. An unmodeled JSON key costs nothing; `serde_json` ignores it.
 #[derive(Debug, Deserialize)]
 struct EnqueueTaskResponse {
     task: String,
 }
 
-/// `POST /dispatch/{project}`'s success response —
-/// `{"ok": true, "run": "<id>", "project": "...", "status": "dispatched"}`
-/// (`serve.py`'s `do_POST`, the `/dispatch/` branch). Only `run` is
-/// modeled — `ok`/`project`/`status` are never read, same "unmodeled keys
-/// cost nothing" discipline as [`EnqueueTaskResponse`]. The id lands under
-/// `"run"`, not `"task"`: docket's own vocabulary split between a pod
-/// *task* (`EnqueueTaskResponse`) and a pipeline *run*.
+/// `POST /dispatch/{project}`'s success response. Only `run` is modeled,
+/// same "unmodeled keys cost nothing" discipline as [`EnqueueTaskResponse`].
+/// The id lands under `"run"`, not `"task"`: docket's own vocabulary split
+/// between a pod *task* and a pipeline *run*.
 #[derive(Debug, Deserialize)]
 struct DispatchResponse {
     run: String,
 }
 
-/// `POST /approvals/{token}` request body — `serve.py`'s `do_POST` reads
-/// exactly these two keys. `channel` is optional on the wire (docket
-/// defaults to `"http"` if absent) but this adapter always sends it — see
-/// [`APPROVAL_CHANNEL`].
+/// `POST /approvals/{token}` request body. `channel` is optional on the
+/// wire (docket defaults to `"http"`) but this adapter always sends it —
+/// see [`APPROVAL_CHANNEL`].
 #[derive(Debug, Serialize)]
 struct DecideApprovalRequest<'a> {
     action: &'a str,
     channel: &'a str,
 }
 
-/// `POST /approvals/{token}` success response: `{"ok": true, "token": "...",
-/// "state": "granted"|"denied"}` (live-verified for the grant
-/// case). `ok`/`token` are never read — only `state` is modeled, same
-/// "unmodeled keys cost nothing" discipline as [`EnqueueTaskResponse`].
+/// `POST /approvals/{token}` success response. `ok`/`token` are never
+/// read — only `state` is modeled.
 #[derive(Debug, Deserialize)]
 struct DecideApprovalResponse {
     state: String,
 }
 
+/// `GET /tasks/{project}` — wraps the list in `{"tasks": [...]}`, matching
+/// `/runs`/`/approvals`'s own convention.
 #[derive(Debug, Deserialize)]
 struct TasksResponse {
     tasks: Vec<RemoteTask>,
@@ -284,28 +272,12 @@ impl ControlPlane for DocketAdapter {
     /// do. See `docs/book/src/developer/orchestration.md`.
     fn capabilities(&self) -> Capabilities {
         Capabilities {
-            // "Can this plane accept new work at all?" docket answers yes
-            // two ways: `enqueue_task` (`POST /tasks/{project}`, queues a
-            // task against an existing pod, and what `dispatcher.rs` calls
-            // today) and the trait's own `dispatch` method
-            // (`POST /dispatch/{project}`, triggers a full pipeline run).
-            // Both routes are live and this adapter implements both.
+            // Two routes: `enqueue_task` (queues against an existing pod)
+            // and `dispatch` (triggers a full pipeline run). Both are live.
             dispatch: true,
-            // No cancel route exists anywhere in docket's HTTP surface —
-            // `serve.py`'s full route table (this module's "Verified live"
-            // section, and `docs/book/src/developer/orchestration.md`'s
-            // route inventory) has nothing under `/runs/{id}/cancel` or
-            // equivalent. A queued/running task can only be abandoned by
-            // the pod itself, never revoked over HTTP.
+            // No cancel route exists anywhere in docket's HTTP surface — a
+            // queued/running task can only be abandoned by the pod itself.
             cancel: false,
-            // Checked line by line against `serve.py` (see
-            // `docs/book/src/developer/orchestration.md`'s "What's
-            // genuinely missing" section): neither `/status.json` nor
-            // `/metrics` ever emits a `paused`/`pausedReason` field, and no
-            // HTTP route accepts a pause or resume request in either
-            // direction. The only real remedy is the docket CLI, which is
-            // why the reason names it directly rather than describing the
-            // absence in the abstract.
             pause: Rated::new(
                 Support::Unsupported,
                 "docket exposes no pause endpoint over HTTP in either direction; from the \
@@ -317,50 +289,29 @@ impl ControlPlane for DocketAdapter {
                 "docket exposes no resume endpoint over HTTP in either direction; from the \
                  docket CLI, run `docket profile <pod-id> --resume`",
             ),
-            // `GET /traces/{project}` is scoped by project, and `RemoteEvent`
-            // carries no run id to narrow further — see `persist_events`'s
-            // own doc comment in `reconciler.rs` ("docket's trace payload
-            // carries no run_id, only session_id... left unset rather than
-            // guessing").
             event_scope: Rated::new(
                 EventScope::Project,
                 "docket's trace stream (GET /traces/{project}) is scoped per project; \
                  individual events carry no run id to narrow further",
             ),
-            // No artifact-retrieval route exists on docket's HTTP surface.
             artifacts: false,
-            // `GET /approvals` is read on the reconciler's regular poll
-            // cadence — docket has no webhook or push mechanism for a
-            // pending approval.
             decisions: Rated::new(
                 DecisionSupport::Poll,
                 "pending approvals are read via GET /approvals on the reconciler's poll \
                  cadence; docket has no push/webhook path for a new approval",
             ),
-            // docket's own driver estimates cost/token figures itself (see
-            // the crate doc's "Money is always an estimate" note) and
-            // reports them via /status.json, /metrics, and trace events —
-            // there is no separate metering gateway in front of it.
             usage: Rated::new(
                 UsageSupport::FromProvider,
                 "docket estimates cost/token usage itself and reports it via /status.json, \
                  /metrics, and trace events; there is no metering gateway in front of it",
             ),
-            // docket owns its own model routing per role/blueprint
-            // (`core/dispatch.py`) and has no documented HTTP input that
-            // lets a caller override it per task.
             model_selection: Rated::new(
                 ModelSelection::Unsupported,
                 "docket owns its own model routing per role/blueprint and has no HTTP input \
                  to override it per task; a caller-supplied model would be silently ignored",
             ),
-            // `GET /status.json`'s `agents[]` is exactly this roster — see
-            // `FleetStatus`/`FleetAgent`.
             runtimes: true,
-            // `GET /metrics`, Prometheus text exposition (`adapters::prometheus`).
             plane_metrics: true,
-            // `POST /pods`, live-verified — see this module's
-            // "Verified live" section.
             provisioning: true,
         }
     }

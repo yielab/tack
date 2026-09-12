@@ -68,22 +68,18 @@ impl std::error::Error for RegistryError {}
 /// Build a live [`ControlPlane`] for one `control_planes` row.
 ///
 /// `config`/`secrets` are the JSON blobs migrations 032/033 added to
-/// `control_planes` — threaded through this signature so it never has to be
-/// defined twice, but **not read by any `kind` registered below today**:
-/// `"docket"` only ever needed `base_url` plus the single `token` column
-/// that predates both migrations, so this function's one match arm ignores
-/// them. They exist here for the provider that *does* need them — a GitHub
-/// Actions plane's `{owner, repo, workflow_file, ref, api_base}` config and
-/// its PAT/webhook-secret pair — once `adapters::github_actions` graduates
-/// from the compile-only stub it is today.
+/// `control_planes`, threaded through so this signature never has to be
+/// defined twice — but **not read by any `kind` registered below today**:
+/// `"docket"` only needs `base_url` plus the `token` column that predates
+/// both migrations. They exist for a provider that *does* need them (e.g.
+/// a GitHub Actions plane's config and PAT) once one is wired.
 ///
-/// `"github-actions"` is deliberately **not** a match arm below.
+/// `"github-actions"` is deliberately **not** a match arm below:
 /// [`crate::adapters::github_actions::GithubActionsAdapter`] is a
-/// compile-only stub — every method but `kind`/`capabilities` is
-/// `unimplemented!()` — so registering it here would let an operator create
-/// a control plane that panics the first time the reconciler polls it,
-/// rather than the honest [`RegistryError::UnknownKind`] this function
-/// returns for any other name it doesn't recognise.
+/// compile-only stub whose methods all `unimplemented!()`, so registering
+/// it would let an operator create a plane that panics the first time the
+/// reconciler polls it, rather than the honest
+/// [`RegistryError::UnknownKind`] this function returns instead.
 pub fn build(
     kind: &str,
     base_url: &str,
@@ -157,9 +153,7 @@ mod tests {
     #[test]
     fn github_actions_is_not_registered() {
         // The stub exists so both adapters compile against the trait, not
-        // so an operator can select it — see `build`'s doc comment on why
-        // this is deliberate, not an oversight to fill in later in this
-        // card.
+        // so an operator can select it — see `build`'s doc comment.
         let result = build(
             "github-actions",
             "https://api.github.com",
