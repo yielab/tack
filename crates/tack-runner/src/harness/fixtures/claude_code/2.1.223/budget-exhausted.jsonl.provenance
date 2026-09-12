@@ -1,0 +1,6 @@
+captured
+claude 2.1.223 (Claude Code)
+
+Reproduces the real observed `--max-budget-usd` exhaustion shape
+("subtype":"error_max_budget_usd") — a genuinely distinct, correctly
+non-"success"-looking subtype, unlike the misleading api-error case.
