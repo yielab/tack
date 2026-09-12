@@ -53,22 +53,18 @@ pub async fn stored_session_orphaned(state_dir: &Path, database_url: &str) -> an
 
 /// Stands in for `enrollment_credential` when [`has_stored_session`] is
 /// true, so the caller does not have to touch the config's real credential
-/// (and does not have to self-provision, which would mint an unused token
-/// and a second `pending_enrollment` runner row) just to restart against an
+/// or self-provision (which would mint an unused token and a second
+/// `pending_enrollment` runner row) just to restart against an
 /// already-enrolled `state_dir`.
 ///
-/// This exists to satisfy `tack_runner::bootstrap::build_runtime`, which
-/// requires *some* `enrollment_credential` before it looks at `state_dir` at
-/// all — `build_runtime` itself does not check
-/// for a stored session first. The placeholder is
-/// never transmitted on a normal restart: `establish_session` in
-/// `crates/tack-runner/src/transport.rs` tries the stored session's
-/// `refresh` first and only reads `enrollment_credential` if that refresh is
-/// rejected, at which point failing loudly — the session was invalid and no
-/// real token was supplied — is the correct outcome, not a silent recovery.
-/// [`EnrollmentCredential`]'s `Debug`/`Display` are unconditionally redacted
-/// regardless of content, so this value is exactly as safe to hold as a real
-/// one even though it is never real.
+/// Exists because `tack_runner::bootstrap::build_runtime` requires *some*
+/// `enrollment_credential` before it looks at `state_dir` at all, without
+/// checking for a stored session first. Never transmitted on a normal
+/// restart: `establish_session` (`tack-runner`'s `transport.rs`) tries the
+/// stored session's `refresh` first and only reads `enrollment_credential`
+/// if that refresh is rejected — at which point failing loudly is correct,
+/// not a silent recovery. [`EnrollmentCredential`]'s `Debug`/`Display` are
+/// unconditionally redacted, so this value is as safe to hold as a real one.
 pub(crate) fn stored_session_placeholder() -> EnrollmentCredential {
     EnrollmentCredential::new("stored-session-on-disk-no-token-needed")
 }

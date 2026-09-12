@@ -118,29 +118,21 @@ impl DependencyGraph {
         Ok(())
     }
 
-    /// Topologically sort `nodes` (Kahn's algorithm), considering only edges
+    /// Topologically sorts `nodes` (Kahn's algorithm), considering only edges
     /// whose **both** endpoints are in `nodes` — an edge to a node outside the
-    /// given set contributes nothing to the ordering of the given set (the
-    /// caller — [`crate::dependency`]'s sprint-dispatch consumer, at the time
-    /// of writing — is expected to check readiness against out-of-set
-    /// dependencies separately, since "is my blocker done" and "in what order
-    /// do I sort the nodes I'm about to act on" are different questions).
+    /// set contributes nothing to this ordering; the caller checks readiness
+    /// against out-of-set dependencies separately.
     ///
-    /// **Deterministic**, not just "a" valid order: among nodes that become
-    /// ready to emit at the same time, the one that appears earliest in the
-    /// input `nodes` slice is emitted first. This matters because a caller —
-    /// like a dry-run preview that must match a real run's order exactly —
-    /// calls this twice for the same input and needs the same answer both
-    /// times, and `HashMap`/`HashSet` iteration order is randomized per
-    /// instance in this codebase's default hasher, so it cannot be the
-    /// tie-breaker.
+    /// Deterministic, not just "a" valid order: among nodes ready to emit at
+    /// the same time, the one earliest in the input `nodes` slice emits
+    /// first — needed because a caller (e.g. a dry-run preview) calls this
+    /// twice for the same input and needs the same answer, and this
+    /// codebase's default `HashMap`/`HashSet` order is randomized per instance.
     ///
     /// Returns `Err(CoreError::DependencyCycle(node))` if `nodes` cannot be
-    /// fully ordered. This should be structurally unreachable — every edge is
-    /// validated against [`Self::validate_new_edge`] before insertion — so a
-    /// caller reaching this branch has a real invariant violation and should
-    /// fail loudly (a 500, an assertion) rather than silently truncate the
-    /// order or hang waiting on a dependency that can never be satisfied.
+    /// fully ordered — structurally unreachable since every edge is validated
+    /// via [`Self::validate_new_edge`] before insertion, so reaching this
+    /// branch is a real invariant violation that should fail loudly.
     pub fn topological_order(&self, nodes: &[Uuid]) -> Result<Vec<Uuid>, CoreError> {
         let node_set: HashSet<Uuid> = nodes.iter().copied().collect();
         let node_index: HashMap<Uuid, usize> =

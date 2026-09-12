@@ -2,10 +2,14 @@
 //! seam.
 //!
 //! [`crate::client::engine::HarnessAdapter`] (re-exported as
-//! [`HarnessAdapter`] at this module's root) is the frozen per-attempt
-//! lifecycle interface each concrete harness adapter (`codex.rs`,
+//! [`HarnessAdapter`]) is the frozen per-attempt lifecycle interface each
+//! concrete adapter (`codex.rs`, `claude_code.rs`) implements.
+//! [`HarnessProbe`] handles discovery/capability reporting, which has no
+//! home on that trait; [`AdapterRegistry`] dispatches to whichever adapter
+//! matches a claimed attempt's harness kind. [`process`] and
+//! [`event_sink`] are the primitives the adapters compose.
 //!
-//! Design notes: docs/dev-notes/tack-runner/harness/mod.md
+//! ADR 0066 has the design rationale, including the closed `LocalRunHandle` gap.
 
 pub mod artifact;
 pub mod claude_code;
@@ -35,25 +39,17 @@ pub use crate::client::engine::{
 };
 pub use crate::client::{AttemptJournal, RecoveryObservation};
 
-/// A closed vocabulary for
-/// `ActualExecution.model_observation_source`.
-///
-/// `tack_orch::execution::ActualExecution.model_observation_source` is a
-/// bare `String` on the wire, but the independently
-/// implemented adapters converged on exactly these three
-/// meanings: `codex.rs` introduced
-/// `"requested_not_confirmed"` for "this adapter cannot observe which model
-/// actually ran, so it echoes the request instead of fabricating a value";
-/// `claude_code.rs` independently produced
-/// `"harness_reported"` (the frozen fixture's own exemplar value, used when
-/// a real `stream-json` `system`/`init` event names the model) and
-/// `"not_observed"` (used only when neither an observation nor a request
-/// value exists to report — Claude Code is the one adapter that can honor
-/// true auto-selection at all, so it is the only one that can ever hit this
-/// case). This enum does not change what any adapter reports in what
-/// situation — it centralizes the three literals so a future adapter cannot
-/// silently invent a fourth, incompatible string for one of these same three
-/// situations.
+/// A closed vocabulary for `ActualExecution.model_observation_source`, a
+/// bare `String` on the wire. Two independently implemented adapters
+/// converged on the same three meanings: `codex.rs`'s
+/// `"requested_not_confirmed"` ("cannot observe which model actually ran,
+/// so it echoes the request"); `claude_code.rs`'s `"harness_reported"` (a
+/// real `stream-json` `system`/`init` event named the model) and
+/// `"not_observed"` (neither an observation nor a request value exists —
+/// only reachable by Claude Code, the one adapter that can honor true
+/// auto-selection). This enum changes nothing about what any adapter
+/// reports; it centralizes the three literals so a future adapter cannot
+/// invent an incompatible fourth string for one of these cases.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelObservationSource {
     /// The value was read directly from the harness's own output (e.g.
@@ -77,19 +73,14 @@ impl ModelObservationSource {
     }
 }
 
-/// Resolves `request.environment` into concrete `NAME=value` pairs — the one
-/// mechanism `claude_code.rs` and `codex.rs` each call from
-/// both `validate` (to fail pre-spawn, discarding the map) and `start` (to
-/// build the spawned process's real environment). A literal `value` is used
-/// as-is; a `secret_reference` resolves through `store`. Either way the
-/// value is also registered with `secrets` so it is redacted if it ever
-/// surfaces in captured harness output — exactly like a literal `value`
-/// already was before this existed.
-///
+/// Resolves `request.environment` into concrete `NAME=value` pairs — the
+/// mechanism `claude_code.rs` and `codex.rs` call from both `validate` (to
+/// fail pre-spawn) and `start` (to build the spawned process's real
+/// environment). A literal `value` is used as-is; a `secret_reference`
+/// resolves through `store`; either way the value is registered with
+/// `secrets` so it is redacted if it surfaces in captured harness output.
 /// A `secret_reference` this store cannot resolve fails typed, naming only
-/// the reference — never fabricated as a silently-unset variable. Calling
-/// this from `validate` means that failure happens before any journal
-/// record or workspace exists.
+/// the reference — never a silently-unset variable.
 pub(crate) fn resolve_environment(
     store: &SecretStore,
     request: &ExecutionRequestSnapshot,
@@ -125,18 +116,19 @@ pub(crate) fn resolve_environment(
 }
 
 /// Harness discovery/capability reporting, independent of any specific
-/// claimed attempt. See the module docs for why this is not a sixth
-/// [`HarnessAdapter`] method.
+/// claimed attempt — needed because `engine::HarnessAdapter`'s five methods
+/// all take an `ExecutionSpec` or `LocalRunHandle`, which only exist once a
+/// request is claimed, and capability reporting must run before that (ADR
+/// 0066 has the full rationale).
 ///
 /// Capability honesty is inherited directly from the existing,
 /// already-frozen `tack_orch::execution::capabilities` types this trait
 /// returns: [`HarnessCapability`] carries a nullable `probe_error` (so
 /// "this harness could not be probed, because X" is representable without
-/// treating probe failure as this runner's own bug), and every entry in its
+/// treating probe failure as this runner's own bug), and every entry in
 /// `FeatureCapabilities` is a `CapabilityValue { support, reason }` with
-/// three explicit levels (`supported` / `unsupported` / `advisory`) — never
-/// a bare `bool`, and never silently omitted to mean "no". A
-/// [`HarnessProbe`] implementation must fill in real reasons, not leave them
+/// three explicit levels — never a bare `bool`, never silently omitted to
+/// mean "no". An implementation must fill in real reasons, not leave them
 /// `None` for convenience.
 #[async_trait]
 pub trait HarnessProbe: Send + Sync {
@@ -152,47 +144,34 @@ pub trait HarnessProbe: Send + Sync {
     /// "successful" a probe result as a healthy one, just less capable.
     async fn probe(&self) -> HarnessCapability;
 
-    /// The per-feature support this
-    /// adapter honestly promises, independent of any specific attempt.
+    /// The per-feature support this adapter honestly promises, independent
+    /// of any specific attempt. Each real adapter's `declared_capabilities`
+    /// reuses exactly the same computation `HarnessAdapter::wait` stamps
+    /// onto `ActualExecution.capability_snapshot` after a process runs, so
+    /// there is one source of truth per adapter, not two that could
+    /// diverge.
     ///
-    /// The only place any adapter computed its own
-    /// `FeatureCapabilities` was inside `HarnessAdapter::wait` — *after* a
-    /// process had already run — so nothing in the pre-attempt path could
-    /// ever check a claimed capability before spawning anything. Each real
-    /// adapter's own `declared_capabilities` reuses exactly the same
-    /// computation `wait` already stamps onto
-    /// `ActualExecution.capability_snapshot`, so there is exactly one source
-    /// of truth per adapter, not two that could quietly diverge.
-    ///
-    /// [`AdapterRegistry::register_probe`] calls this once, at registration,
-    /// and refuses to register a probe whose declared `cancel` support
-    /// exceeds [`PROCESS_GROUP_CANCEL_CEILING`] — the honest ceiling for the
-    /// only cancellation primitive this runner implements
+    /// [`AdapterRegistry::register_probe`] calls this once, at
+    /// registration, and refuses a probe whose declared `cancel` support
+    /// exceeds [`PROCESS_GROUP_CANCEL_CEILING`] — the honest ceiling for
+    /// the only cancellation primitive this runner has
     /// (`harness::process::SupervisedProcess::cancel`, a process-group
-    /// SIGTERM/SIGKILL). Checking with `ps` against real Claude Code showed
-    /// that mechanism cannot reliably reach a descendant a harness's own
-    /// shell-tool spawns into a new OS session. The Codex adapter has no
-    /// adapter-specific evidence its own tool execution stays inside the
-    /// process group either. So a capability that lies about cancellation is
-    /// caught once, here, before any attempt is ever started — never only
-    /// discovered when a real cancellation silently fails against a live
-    /// attempt.
+    /// SIGTERM/SIGKILL, which cannot reliably reach a descendant a
+    /// harness's own shell tool spawns into a new OS session). A lying
+    /// capability is caught here, before any attempt starts.
     fn declared_capabilities(&self) -> FeatureCapabilities;
 }
 
 /// The cancellation support ceiling for any [`HarnessProbe`] built on
 /// `harness::process::SupervisedProcess::cancel` — see
 /// [`HarnessProbe::declared_capabilities`]. Not a blanket "cancel can never
-/// be `Supported`" rule: a future adapter with a genuinely different
-/// cancellation mechanism (e.g. one that walks the full descendant tree by
-/// pid rather than relying on OS process-group membership) could justify a
-/// higher ceiling. No adapter in this tree has that mechanism today.
+/// be `Supported`" rule: an adapter with a genuinely different mechanism
+/// (e.g. walking the full descendant tree by pid) could justify a higher one.
 pub const PROCESS_GROUP_CANCEL_CEILING: CapabilitySupport = CapabilitySupport::Advisory;
 
-/// A probe rejected at registration, before it can ever back a
-/// claimed attempt. Kept distinct from [`HarnessError`] (a per-attempt,
-/// per-`HarnessAdapter`-call error) since this is a registration-time,
-/// whole-probe rejection with nothing to do with any single attempt.
+/// A probe rejected at registration, before it can back a claimed attempt.
+/// Kept distinct from [`HarnessError`] (a per-attempt error) since this is
+/// a registration-time, whole-probe rejection.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum HarnessRegistrationError {
     #[error(
@@ -209,16 +188,14 @@ pub enum HarnessRegistrationError {
 }
 
 /// Dispatches the frozen [`HarnessAdapter`] lifecycle across every
-/// registered harness kind, and aggregates [`HarnessProbe`] reports. This
-/// **is** the shared registry wiring: each of the concrete adapters is
-/// registered here — see the module docs on the open "kind-key type
-/// duplication" gap against `registry.rs`'s own `HarnessKind`.
+/// registered harness kind, and aggregates [`HarnessProbe`] reports. Keys
+/// on `tack_orch::execution::HarnessKind`; `registry.rs` separately defines
+/// its own `HarnessKind` enum — the two are not yet unified.
 ///
 /// Implements [`HarnessAdapter`] itself, so `RunnerEngine::new(protocol,
 /// adapter_registry, journal, workspaces)` is a complete, multi-harness
-/// runner with no `engine.rs` changes: `AdapterRegistry` simply **is** the
-/// engine's one concrete adapter type parameter — adding a harness is
-/// registering it here, never a new engine type parameter.
+/// runner with no `engine.rs` changes: adding a harness means registering
+/// it here, never adding a new engine type parameter.
 #[derive(Default)]
 pub struct AdapterRegistry {
     adapters: BTreeMap<String, Box<dyn HarnessAdapter>>,
@@ -268,9 +245,8 @@ impl AdapterRegistry {
         Ok(self)
     }
 
-    /// Harness kinds with a registered adapter, in deterministic sorted
-    /// order (`BTreeMap` iteration order), never insertion order — so which
-    /// adapter registered first can never become accidental dispatch priority.
+    /// Harness kinds with a registered adapter, in deterministic
+    /// `BTreeMap` order — so registration order never becomes dispatch priority.
     pub fn registered_kinds(&self) -> Vec<String> {
         self.adapters.keys().cloned().collect()
     }
@@ -330,9 +306,8 @@ impl HarnessAdapter for AdapterRegistry {
         journal: &AttemptJournal,
     ) -> Result<RecoveryObservation, HarnessError> {
         let Some(process_id) = journal.process_id.as_deref() else {
-            // No process was ever confirmed running for this attempt, for
-            // any harness kind: there is nothing kind-specific left to
-            // check, so this is the one case that needs no dispatch at all.
+            // No process was ever confirmed running, so there is nothing
+            // kind-specific left to check or dispatch.
             return Ok(RecoveryObservation::ProcessStopped);
         };
         let (kind, inner) = decode_handle(process_id).ok_or(HarnessError::RecoveryUnavailable)?;
