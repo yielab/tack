@@ -2,22 +2,12 @@
 //! claim, start, stream, complete, and survive an API/runner restart, with
 //! security, fencing, payload, and OpenAPI drift all passing.
 //!
-//! This file is independent proof, not another handler's own
-//! self-verification: it imports no other test file's infrastructure, and
-//! builds its own clean database, its own
-//! `AppState`/`tack_api::router::build_router` production router, and its
-//! own fixtures from scratch — so a defect specific to any one handler's
-//! own test assumptions cannot hide behind this file agreeing with it.
-//!
-//! Every assertion below reads persisted database state directly, not
-//! merely HTTP status codes. No test sleeps or depends on a fake clock: the
-//! production router hard-codes `SystemExecutionClock`
-//! (`router.rs`'s `operator_execution_routes`/`runner_protocol_routes`,
-//! which construct it internally and take no clock parameter), so nothing
-//! here can inject one — instead, every scenario that needs a state
-//! transition to "just happen" drives it explicitly over HTTP (a
-//! runner-reported recovery observation, a second event batch, a restart)
-//! rather than waiting on wall time.
+//! Imports no other test file's infrastructure — builds its own database,
+//! router, and fixtures from scratch, so a defect in one handler's test
+//! assumptions can't hide behind this file agreeing with it. Every
+//! assertion reads persisted database state directly, never just an HTTP
+//! status code, and no scenario waits on wall time: a state transition that
+//! needs to "just happen" is driven explicitly over HTTP instead.
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};

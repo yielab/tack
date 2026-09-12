@@ -91,27 +91,17 @@ pub async fn sweep_events(
 }
 
 /// One bounded pass over `execution_artifacts` older than
-/// `policy.artifact_retention`. Two-phase by construction (fetch rows with
-/// their `content_reference`, unlink each blob, only then delete the rows) —
-/// see `Repository::list_execution_artifacts_older_than`'s own doc comment
-/// for why the ordering matters.
+/// `policy.artifact_retention`. Two-phase by construction: fetch rows with
+/// their `content_reference`, unlink each blob, only then delete the rows.
 ///
-/// # Split delete, guarding the no-blob-observed branch
-///
-/// The final delete is split into two calls, not one: rows observed with
-/// `Some(reference)` had their blob already unlinked above and are safe to
-/// delete unconditionally by id (`set_execution_artifact_content_reference`'s
-/// own `WHERE content_reference IS NULL` guard means a resolved reference can
-/// never change again, so no race is possible on that branch). Rows observed
-/// with `None` are *not* safe to delete unconditionally — a concurrent
-/// artifact-content upload can resolve one between the read above and this
-/// function returning — so those go through
-/// [`Repository::delete_unresolved_execution_artifacts_by_row_ids`] instead,
-/// which re-checks `content_reference IS NULL` as part of the same atomic
-/// `DELETE`. See that method's own doc comment for the full race analysis
-/// and why a row that loses this race simply survives to be resolved
-/// correctly on the next pass, rather than being redesigned into a single
-/// transaction spanning both this sweep and the independent upload path.
+/// The final delete is split in two: rows observed with `Some(reference)`
+/// already had their blob unlinked and are safe to delete unconditionally by
+/// id. Rows observed with `None` are not — a concurrent artifact-content
+/// upload can resolve one between the read above and this function
+/// returning — so those go through
+/// [`Repository::delete_unresolved_execution_artifacts_by_row_ids`], which
+/// re-checks `content_reference IS NULL` inside the same atomic `DELETE`. A
+/// row that loses that race simply survives to the next pass.
 #[allow(dead_code)] // per-compiled-binary artifact — see SweepOutcome's doc comment above
 pub async fn sweep_artifacts(
     repo: &Repository,
