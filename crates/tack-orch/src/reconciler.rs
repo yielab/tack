@@ -2,10 +2,31 @@
 //! control plane, polling it on an interval and driving the
 //! `healthy` → `degraded` → `unreachable` state machine.
 //!
-//! # The three-phase shape, and why it is not just discipline
+//! # Fetch, decide, persist — never a write held across an HTTP call
 //!
+//! Each poll tick runs in three phases that cannot interleave, by
+//! construction: **fetch** ([`reconcile_once`]) makes every HTTP call the
+//! tick needs and touches no database handle; **decide**
+//! ([`HealthTracker::observe`]) is a pure, synchronous transition over the
+//! fetch result; **persist** ([`spawn_one`]'s `store.record_health(...)`
+//! call) is one short write, strictly after phase 1 has resolved. Adding a
+//! new `poll_*` step means one field on [`FetchOutcome`], one `poll_*`
+//! function, and one line in [`reconcile_once`]; a data-ingestion failure
+//! (runs/approvals/traces/metrics) must never affect the health verdict —
+//! only `/health` and `/status.json` do.
 //!
-//! Design notes: docs/dev-notes/tack-orch/reconciler.md
+//! # Trace cursor and event id
+//!
+//! [`crate::TracesPage::next`] is opaque and forwarded verbatim — never
+//! reconstructed client-side. `orch_events.id` has no natural key, so
+//! [`derive_event_id`] hashes the event's content instead — see that
+//! function's own doc for the collision caveat and the retention interplay.
+//!
+//! # Not wired at boot
+//!
+//! [`spawn_retention_sweep`] is built and tested but has no caller in
+//! `tack-api::server` — fleet-wide orch event/metric retention does not
+//! actually run until something spawns it.
 
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -418,15 +439,10 @@ fn evaluate(outcome: &FetchOutcome) -> PollEvaluation {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Persistence interface
-// ---------------------------------------------------------------------------
-
 /// A control plane the reconciler should be polling, with its live adapter
 /// already constructed. Building this from a `control_planes` DB row (kind
-/// dispatch → concrete adapter, e.g. `DocketAdapter`) is `ControlPlaneStore`
-/// implementors' job, not this module's — see the module doc's persistence
-/// section.
+/// dispatch → concrete adapter) is `ControlPlaneStore` implementors' job,
+/// not this module's.
 #[derive(Clone)]
 pub struct RegisteredPlane {
     pub id: Uuid,
@@ -435,9 +451,8 @@ pub struct RegisteredPlane {
 
 /// What to persist after one poll tick. Field shapes mirror
 /// `tack_db::Repository::update_control_plane_health`'s parameters exactly
-/// (`i64` failure count, `Option<DateTime<Utc>>` with `None` = "don't
-/// touch") so a `ControlPlaneStore` impl backed by the repo is a direct
-/// pass-through.
+/// (`Option<DateTime<Utc>>` with `None` = "don't touch") so a
+/// `ControlPlaneStore` impl backed by the repo is a direct pass-through.
 #[derive(Debug, Clone)]
 pub struct HealthRecord {
     pub health: HealthState,
@@ -446,19 +461,13 @@ pub struct HealthRecord {
     pub api_version: Option<String>,
 }
 
-/// The narrow persistence interface the reconciler needs. Deliberately not
-/// `tack_db::Repository` directly — see the module doc's "Persistence
-/// interface" section for why.
-///
-/// The four methods below `record_health` are each a
-/// thin, mechanical pass-through to a single `tack_db::repo::orch` function
-/// (`list_orch_links_for_plane`, `find_orch_task_by_remote_task_id`,
-/// `upsert_orch_runs`, `upsert_orch_approvals`) — the same shape
-/// `record_health` already has against `update_control_plane_health`. No
-/// correlation or business logic belongs in an implementor of this trait;
+/// The narrow persistence interface the reconciler needs — deliberately not
+/// `tack_db::Repository` directly. Every method below `record_health` is a
+/// thin, mechanical pass-through to a single `tack_db::repo::orch`
+/// function; no correlation or business logic belongs in an implementor —
 /// that lives in [`spawn_one`]'s persistence phase (`persist_runs`/
-/// `persist_approvals`), which is the whole reason this trait stays narrow
-/// rather than growing into `tack_db::Repository` by another name.
+/// `persist_approvals`), which is why this trait stays narrow rather than
+/// growing into `tack_db::Repository` by another name.
 #[async_trait::async_trait]
 pub trait ControlPlaneStore: Send + Sync {
     /// Every control plane currently registered, each with a live adapter
@@ -472,24 +481,20 @@ pub trait ControlPlaneStore: Send + Sync {
         record: &HealthRecord,
     ) -> Result<(), OrchError>;
 
-    /// Distinct `remote_project` names linked to this control plane
-    /// (`orch_links.remote_project`) — what `poll_runs` needs to build its
-    /// per-project `/runs?project=` calls. Order is not significant.
+    /// Distinct `remote_project` names linked to this control plane — what
+    /// `poll_runs` needs for its per-project `/runs?project=` calls.
     async fn list_linked_projects(&self, control_plane_id: Uuid) -> Result<Vec<String>, OrchError>;
 
-    /// Look up the Tack item a docket `remote_task_id` was dispatched for
-    /// (`orch_tasks.remote_task_id` → `orch_tasks.item_id`), if any. `Ok(None)`
-    /// means "no such task is known to Tack" — not an error; a run or
-    /// approval correlating against it stays unattributed for this tick;
-    /// CLI-dispatched work must not error here.
+    /// Look up the Tack item a docket `remote_task_id` was dispatched for,
+    /// if any. `Ok(None)` means "not known to Tack" — not an error; a run
+    /// or approval correlating against it just stays unattributed.
     async fn find_item_for_remote_task(
         &self,
         remote_task_id: &str,
     ) -> Result<Option<Uuid>, OrchError>;
 
-    /// Batch upsert into `orch_runs` (`ON CONFLICT(run_id)`, idempotent —
-    /// see `tack_db::repo::orch::upsert_orch_runs`). A `None` `item_id` on a
-    /// `NewOrchRun` never clobbers a previously-learned attribution; the
+    /// Batch upsert into `orch_runs`, idempotent. A `None` `item_id` on a
+    /// `NewOrchRun` never clobbers a previously-learned attribution — the
     /// repo layer's `COALESCE` guarantees that, not this trait.
     async fn upsert_runs(
         &self,
@@ -497,8 +502,7 @@ pub trait ControlPlaneStore: Send + Sync {
         runs: &[NewOrchRun],
     ) -> Result<(), OrchError>;
 
-    /// Batch upsert into `orch_approvals` (`ON CONFLICT(token)`, idempotent
-    /// — see `tack_db::repo::orch::upsert_orch_approvals`). Same
+    /// Batch upsert into `orch_approvals`, idempotent — same
     /// never-unlearn-an-attribution guarantee as [`Self::upsert_runs`].
     async fn upsert_approvals(
         &self,
@@ -506,39 +510,28 @@ pub trait ControlPlaneStore: Send + Sync {
         approvals: &[NewOrchApproval],
     ) -> Result<(), OrchError>;
 
-    /// Batch insert into `orch_metrics` (append-only — see
-    /// `tack_db::repo::orch::upsert_orch_metrics`'s doc comment for why a
-    /// metric sample has no natural key to conflict on, unlike every other
-    /// method on this trait).
+    /// Batch insert into `orch_metrics` (append-only — a metric sample has
+    /// no natural key to conflict on, unlike every other method here).
     async fn upsert_metrics(
         &self,
         control_plane_id: Uuid,
         metrics: &[NewOrchMetric],
     ) -> Result<(), OrchError>;
 
-    // ── Trace ingestion ──
-    //
-    // Same thin-pass-through discipline as every method above: no cursor
-    // arithmetic (the cursor is opaque — see the module doc's "Trace
-    // cursor" section), no event-id derivation, no retention-age filtering
-    // here — all of that lives in `derive_event_id`/`persist_events` in
-    // this module. An implementor's job is exactly "read/write these
-    // rows", nothing more.
+    // Trace ingestion: same thin pass-through discipline. No cursor
+    // arithmetic, event-id derivation, or retention-age filtering here —
+    // that lives in `derive_event_id`/`persist_events` in this module.
 
     /// Every stored resume cursor for this plane's linked projects, keyed by
-    /// `remote_project` (`tack_db::repo::orch::list_trace_cursors`). A
-    /// project absent from the map has never been polled (or its cursor was
-    /// never advanced) — [`poll_traces`] treats that as `since: None`
-    /// ("from the beginning"), not an error.
+    /// `remote_project`. A project absent from the map has never been
+    /// polled — [`poll_traces`] treats that as `since: None`, not an error.
     async fn list_trace_cursors(
         &self,
         control_plane_id: Uuid,
     ) -> Result<HashMap<String, String>, OrchError>;
 
     /// Persist the resume cursor for one `(control_plane_id, remote_project)`
-    /// pair after a poll (`tack_db::repo::orch::set_trace_cursor`) — see the
-    /// module doc's "Trace cursor" section for why the cursor lives keyed
-    /// this way rather than as a column on `orch_links`.
+    /// pair after a poll.
     async fn set_trace_cursor(
         &self,
         control_plane_id: Uuid,
@@ -546,10 +539,9 @@ pub trait ControlPlaneStore: Send + Sync {
         cursor: &str,
     ) -> Result<(), OrchError>;
 
-    /// Batch upsert into `orch_events` (`ON CONFLICT(id)`, idempotent — see
-    /// `tack_db::repo::orch::upsert_orch_events` and [`derive_event_id`],
+    /// Batch upsert into `orch_events`, idempotent — see [`derive_event_id`],
     /// which is what makes the same source event always produce the same
-    /// `id`).
+    /// `id`.
     async fn upsert_events(
         &self,
         control_plane_id: Uuid,
@@ -557,21 +549,15 @@ pub trait ControlPlaneStore: Send + Sync {
     ) -> Result<(), OrchError>;
 }
 
-// ---------------------------------------------------------------------------
-// Persist phase — runs/approvals ingestion and item correlation
-// ---------------------------------------------------------------------------
-//
-// Everything below is called from spawn_one's persistence phase, strictly
-// after the fetch phase (reconcile_once) has already completed — see the
-// module doc. Correlation itself (mapping a docket-side id to a Tack item)
-// lives here, not in the ControlPlaneStore trait or its implementors: the
-// store's job is mechanical CRUD, this module's job is deciding what to CRUD.
+// Everything below runs from `spawn_one`'s persistence phase, strictly
+// after the fetch phase has completed. Correlation (mapping a docket-side
+// id to a Tack item) lives here, not in `ControlPlaneStore`: the store's
+// job is mechanical CRUD, this module's job is deciding what to CRUD.
 
 /// A run or approval attributes to whichever task id, out of a candidate
 /// list, is the first one Tack actually knows about. `None` means none of
 /// the candidates correlate — the normal, expected state for a
-/// docket-CLI-dispatched run (empty `task_ids`) and must not be treated as
-/// an error.
+/// docket-CLI-dispatched run and must not be treated as an error.
 async fn correlate_remote_task(
     store: &dyn ControlPlaneStore,
     candidates: impl IntoIterator<Item = &str>,
@@ -593,31 +579,25 @@ async fn correlate_remote_task(
     None
 }
 
-/// `RemoteApproval::context`'s one documented shape is
-/// `{"taskId": "...", "pipelineIndex": 0}`, but `context` is
-/// an open dict on docket's side — a missing or non-string `taskId` is an
-/// uncorrelated approval, not a parse error.
+/// `context`'s one documented shape is `{"taskId": "...", "pipelineIndex":
+/// 0}`, but it's an open dict on docket's side — a missing or non-string
+/// `taskId` is an uncorrelated approval, not a parse error.
 fn extract_task_id(context: &serde_json::Value) -> Option<String> {
     context.get("taskId")?.as_str().map(str::to_string)
 }
 
-/// Parses one of docket's two observed ISO 8601 timestamp conventions
-/// (`...+00:00` from `core/runs.py`, `...Z` from `core/approval.py`) into a
-/// `DateTime<Utc>`. `None` in, `None`
-/// out; a malformed string in also degrades to `None` rather than failing
-/// the whole poll — a run/approval with an unparseable timestamp still gets
-/// its other fields mirrored.
+/// Parses one of docket's two observed ISO 8601 conventions (`...+00:00`
+/// from runs, `...Z` from approvals). A malformed string degrades to `None`
+/// rather than failing the whole poll — the record's other fields still
+/// land.
 fn parse_optional_rfc3339(s: Option<&str>) -> Option<DateTime<Utc>> {
     s.and_then(|s| DateTime::parse_from_rfc3339(s).ok())
         .map(|dt| dt.with_timezone(&Utc))
 }
 
-/// Batch-correlates and upserts one tick's runs. `runs` is
-/// `FetchOutcome::runs` verbatim: one `(remote_project, Result<..>)` pair per
-/// linked project polled this tick. A project whose poll failed is logged
-/// and skipped — it does not block the other projects' runs from landing,
-/// and it never touches plane health (only `.health`/`.status` do that; see
-/// `evaluate`).
+/// Batch-correlates and upserts one tick's runs. A project whose poll
+/// failed is logged and skipped without blocking the others, and never
+/// touches plane health (only `.health`/`.status` do; see `evaluate`).
 async fn persist_runs(
     store: &dyn ControlPlaneStore,
     control_plane_id: Uuid,
@@ -634,9 +614,7 @@ async fn persist_runs(
                     new_runs.push(NewOrchRun {
                         run_id: run.id.clone(),
                         item_id,
-                        // `run.project` (docket's own field on the record) rather
-                        // than the queried `project` string — they should always
-                        // agree since we always pass `Some(project)`, but the
+                        // `run.project`, not the queried `project` string — the
                         // record's own field is the more authoritative source.
                         remote_project: run.project.clone(),
                         source: run.source.as_str().to_string(),
@@ -668,11 +646,9 @@ async fn persist_runs(
     }
 }
 
-/// Batch-correlates and upserts one tick's approvals. `approvals` is
-/// `FetchOutcome::approvals` verbatim — a fleet-wide poll, not per-project.
-/// A record whose `created` timestamp doesn't parse is skipped with a
-/// warning (`requested_at` is a required column) rather than aborting the
-/// whole batch; every other approval in the same poll still lands.
+/// Batch-correlates and upserts one tick's approvals — a fleet-wide poll,
+/// not per-project. A record whose `created` timestamp doesn't parse is
+/// skipped with a warning rather than aborting the whole batch.
 async fn persist_approvals(
     store: &dyn ControlPlaneStore,
     control_plane_id: Uuid,
@@ -712,16 +688,13 @@ async fn persist_approvals(
             token: approval.token.clone(),
             item_id,
             remote_task_id: task_id,
-            // `role` is docket's name for who the gate is asking — mapped
-            // onto the `agent` column, which is what the fleet-wide
-            // approvals inbox actually displays.
+            // `role` (who the gate is asking) maps onto the `agent` column,
+            // which the fleet-wide approvals inbox actually displays.
             agent: Some(approval.role.clone()),
             action: Some(approval.action.clone()),
             state: approval.state.as_str().to_string(),
             requested_at,
-            // RemoteApproval carries no decided_at — /approvals only ever
-            // returns the still-`pending` set (see docket_adapter's
-            // `ApprovalsResponse` doc comment).
+            // /approvals only ever returns the still-`pending` set.
             decided_at: None,
         });
     }
@@ -784,58 +757,26 @@ async fn persist_metrics(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Trace ingestion — event-id derivation, cursor
-// reconstruction, and persistence. See the module doc's "Trace cursor"
-// section for the full argument; the functions below are its implementation.
-// ---------------------------------------------------------------------------
-
-/// Fixed namespace for [`derive_event_id`]'s UUIDv5 derivation. The exact
-/// bytes are an arbitrary (but permanently fixed) 16-byte constant — ASCII
-/// spelling "tack-orch-events" is a mnemonic, not a meaningful namespace
-/// URL. Changing these bytes would silently re-mint a different id for
-/// every previously-ingested event, defeating the entire point of a
-/// deterministic id, so this must never change once any real deployment has
-/// ingested a single trace event.
+/// Fixed namespace for [`derive_event_id`]'s UUIDv5 derivation — an
+/// arbitrary but permanently fixed 16-byte constant. Changing it would
+/// silently re-mint a different id for every previously-ingested event, so
+/// it must never change once a real deployment has ingested one.
 const ORCH_EVENT_ID_NAMESPACE: Uuid = Uuid::from_bytes(*b"tack-orch-events");
 
 /// Derives `orch_events.id` as a pure function of the source docket trace
 /// event, so the *same* event ingested on two different polls — an
 /// overlapping cursor window, a rewound/lost cursor, a restart — always
-/// produces the *same* row. `upsert_orch_events`'s `ON CONFLICT(id) DO
-/// UPDATE` then makes re-ingestion a no-op row-count-wise.
+/// produces the *same* row; `upsert_orch_events`'s `ON CONFLICT(id)` then
+/// makes re-ingestion a no-op row-count-wise.
 ///
-/// docket's trace records (`core/trace.py::trace_event`, confirmed by
-/// reading the writer directly, not guessed) carry no monotonic sequence
-/// number or byte offset — every field written is `ts`, `project`,
-/// `session_id`, `agent_role`, `event_type`, `payload`, and two optional
-/// fields (`cost_usd`, `duration_ms`). A monotonic-sequence key
-/// (`(control_plane_id, remote_project, seq)`) is therefore unavailable;
-/// this uses UUIDv5 (namespace + name, deterministic, no randomness)
-/// over `control_plane_id`, `remote_project`, and every field of the event.
-///
-/// `payload` is a `serde_json::Value`; this crate never enables
-/// `serde_json`'s `preserve_order` feature (see `Cargo.toml` — no
-/// `indexmap` in the dependency tree), so `Value::Object` is backed by a
-/// `BTreeMap` and always serializes with its keys in sorted order — a
-/// canonicalised form with stable field order falls out of the
-/// workspace's existing `serde_json` configuration for free, not a bespoke
-/// canonicalizer.
-///
-/// Every field is joined with `\u{1}` (a control character no real docket
-/// field is going to contain) so that, e.g., an empty `session_id` followed
-/// by `"x"` can never hash the same as a non-empty `session_id` of `"x"`
-/// preceded by nothing — naive string concatenation without a delimiter
-/// would not have that property.
-///
-/// **A caveat worth naming, not hiding:** two *genuinely distinct* docket
-/// events that happen to be byte-for-byte identical across every field this
-/// function reads (same second-granularity `ts`, same session, same role,
-/// same type, same payload, same cost/duration) hash to the same id and
-/// collapse into one row. Given a payload usually carries something
-/// turn-specific (a tool command, a token count), this is vanishingly
-/// unlikely in practice — and if it ever happened, the two events were
-/// already indistinguishable to any consumer of this table.
+/// docket's trace records carry no monotonic sequence number or byte
+/// offset, so this hashes every field instead (UUIDv5, deterministic).
+/// `payload` serializes with sorted keys for free (`preserve_order` is
+/// never enabled here); fields are joined with `\u{1}` so an empty one
+/// can't shift into an adjacent one. **Two genuinely distinct events
+/// identical across every hashed field collapse into one row** —
+/// vanishingly unlikely given a real payload, and otherwise already
+/// indistinguishable to any consumer of this table.
 fn derive_event_id(control_plane_id: Uuid, remote_project: &str, event: &RemoteEvent) -> Uuid {
     const SEP: char = '\u{1}';
     let payload = serde_json::to_string(&event.payload).unwrap_or_default();
@@ -871,24 +812,18 @@ fn session_id_task_id(session_id: &str) -> Option<String> {
 }
 
 /// Batch-derives, correlates, and upserts one tick's trace events, then
-/// advances (or leaves untouched) each project's cursor. `traces` is
-/// `FetchOutcome::traces` verbatim. A project whose poll failed is logged
-/// and skipped — same as [`persist_runs`]/[`persist_approvals`] — and never
-/// touches plane health (only `.health`/`.status` do that; see
-/// [`evaluate`]).
+/// advances (or leaves untouched) each project's cursor. A project whose
+/// poll failed is logged and skipped, and never touches plane health (only
+/// `.health`/`.status` do; see [`evaluate`]).
 ///
-/// **Retention composition** (see the module doc's "Trace cursor" section
-/// for the full argument): an event whose `occurred_at` already predates
-/// `now - retention_days` — the same cutoff formula
-/// [`spawn_retention_sweep`] uses — is dropped, not inserted. Without this,
-/// a lost/rewound cursor could resurrect a raw row for an event that was
-/// already rolled into `orch_events_daily` and purged; because
-/// `orch_events.id` is content-derived rather than server-generated, that
-/// resurrection is indistinguishable from a brand-new event to the next
-/// sweep, which would then roll its count in a *second* time. Dropping it
-/// here instead means the only cost is not (re-)counting a handful of
-/// events at the extreme edge of a pathological rewind — never a corrupted
-/// total.
+/// **Retention composition.** An event whose `occurred_at` already predates
+/// `now - retention_days` — the same cutoff [`spawn_retention_sweep`]
+/// uses — is dropped, not inserted. Without this, a lost/rewound cursor
+/// could resurrect a row already rolled into `orch_events_daily` and
+/// purged; since `orch_events.id` is content-derived, that resurrection
+/// would look like a brand-new event and get rolled in a second time.
+/// Dropping it here costs only a handful of uncounted events at the edge
+/// of a pathological rewind, never a corrupted total.
 async fn persist_events(
     store: &dyn ControlPlaneStore,
     control_plane_id: Uuid,
@@ -1004,23 +939,15 @@ async fn persist_events(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Retention sweep — a separate background task,
-// not per-plane. See the module doc's "Retention sweep" section for how this
-// relates to the per-plane poll/persist machinery above.
-// ---------------------------------------------------------------------------
-
-/// Default retention window, matching `AppConfig::orch_event_retention_days`'s
-/// own default (`crates/tack-api/src/config.rs`). Only a fallback for callers
-/// that don't have the configured value handy (e.g. a quick manual sweep) —
-/// [`spawn_retention_sweep`] takes `retention_days` as an explicit parameter
-/// so the real configured value can be threaded in without this crate
-/// depending on `tack-api`'s config type.
+/// Default retention window, matching
+/// `AppConfig::orch_event_retention_days`'s own default. Only a fallback for
+/// callers without the configured value handy — [`spawn_retention_sweep`]
+/// takes `retention_days` explicitly so the real value can be threaded in
+/// without this crate depending on `tack-api`'s config type.
 pub const DEFAULT_RETENTION_DAYS: u32 = 90;
 
-/// Rows processed per sweep transaction — see
-/// `tack_db::Repository::rollup_and_purge_orch_events`'s doc comment for why
-/// this is bounded rather than one transaction for the whole backlog.
+/// Rows processed per sweep transaction — bounded rather than one
+/// transaction for the whole backlog.
 pub const RETENTION_BATCH_SIZE: i64 = 500;
 
 /// Outcome of rolling up and purging one table's stale rows. Mirrors
@@ -1032,27 +959,23 @@ pub struct RollupOutcome {
     pub batches_run: i64,
 }
 
-/// The narrow persistence interface the retention sweep needs. Deliberately
-/// separate from [`ControlPlaneStore`]: retention operates fleet-wide across
-/// `orch_events`/`orch_metrics`, independent of which planes are currently
-/// registered, and needs none of `ControlPlaneStore`'s
-/// adapter-construction/per-plane machinery.
+/// The narrow persistence interface the retention sweep needs, deliberately
+/// separate from [`ControlPlaneStore`]: retention operates fleet-wide,
+/// independent of which planes are currently registered.
 #[async_trait::async_trait]
 pub trait RetentionStore: Send + Sync {
-    /// Roll every `orch_events` row older than `cutoff` into `orch_events_daily`
-    /// and delete the raw rows, batched. See
-    /// `tack_db::Repository::rollup_and_purge_orch_events`'s doc comment for
-    /// the atomicity argument this method's implementors must preserve: the
-    /// aggregate write and the delete for a given batch must commit together,
-    /// not as two independently-committed steps.
+    /// Roll every `orch_events` row older than `cutoff` into
+    /// `orch_events_daily` and delete the raw rows, batched. The aggregate
+    /// write and the delete for a given batch must commit together, not as
+    /// two independently-committed steps.
     async fn rollup_and_purge_events(
         &self,
         cutoff: DateTime<Utc>,
         batch_size: i64,
     ) -> Result<RollupOutcome, OrchError>;
 
-    /// Same contract as [`Self::rollup_and_purge_events`], for `orch_metrics` /
-    /// `orch_metrics_daily`.
+    /// Same contract as [`Self::rollup_and_purge_events`], for `orch_metrics`
+    /// / `orch_metrics_daily`.
     async fn rollup_and_purge_metrics(
         &self,
         cutoff: DateTime<Utc>,
@@ -1061,17 +984,11 @@ pub trait RetentionStore: Send + Sync {
 }
 
 /// Spawn the retention sweep, or don't — the same off-by-default contract as
-/// [`spawn_reconcilers`]: `enabled = false` returns `None`
-/// immediately without calling `store` at all.
-///
-/// **Not yet wired into `server.rs`.** Nothing currently calls this at boot,
-/// so orchestration event/metric retention does not actually run. Wiring it
-/// in mirrors the existing reconciler spawn block there.
-///
+/// [`spawn_reconcilers`]: `enabled = false` returns `None` without calling
+/// `store` at all. **Not yet wired into `server.rs`** — see the module doc.
 /// Runs both tables' sweeps back-to-back on one ticker, `sweep_interval_secs`
-/// apart, starting immediately (no initial delay, same as
-/// [`spawn_one`]'s poll loop). A failure in either sweep is logged and
-/// retried next cycle — it never panics the task or stops the ticker.
+/// apart; a failure in either is logged and retried next cycle rather than
+/// panicking the task.
 pub fn spawn_retention_sweep(
     enabled: bool,
     store: Arc<dyn RetentionStore>,
@@ -1122,18 +1039,12 @@ pub fn spawn_retention_sweep(
     }))
 }
 
-// ---------------------------------------------------------------------------
-// Spawn
-// ---------------------------------------------------------------------------
-
 /// Reconciler configuration. `poll_secs` is the base interval before backoff
-/// and jitter are applied. `event_retention_days` must match
-/// `TACK_ORCH_EVENT_RETENTION_DAYS` — it feeds [`persist_events`]'s
-/// retention-composition guard, which needs the *same* cutoff
-/// [`spawn_retention_sweep`] uses, not an independently-configured one (a
-/// mismatch here would either resurrect purged rows or drop events the
-/// sweep hasn't purged yet). `supervisor_scan_secs` is unrelated
-/// to any single plane's poll cadence — see [`spawn_reconcilers_supervised`].
+/// and jitter are applied. `event_retention_days` must match the same
+/// cutoff [`spawn_retention_sweep`] uses — a mismatch would either
+/// resurrect purged rows or drop events the sweep hasn't purged yet.
+/// `supervisor_scan_secs` is unrelated to any plane's own poll cadence —
+/// see [`spawn_reconcilers_supervised`].
 #[derive(Debug, Clone, Copy)]
 pub struct ReconcilerConfig {
     pub poll_secs: u64,
@@ -1153,26 +1064,18 @@ impl Default for ReconcilerConfig {
 
 /// How often [`spawn_reconcilers_supervised`]'s background loop re-reads
 /// `store.list_registered()` and starts/stops per-plane pollers to match.
-/// Deliberately small and decoupled from `poll_secs` (a plane's own poll
-/// cadence, which can be much larger): the setup wizard's "enable ->
-/// register -> link" flow needs a newly-registered
-/// plane to start showing health within a couple of seconds, not wait for
-/// whatever poll interval an operator configured.
+/// Deliberately small and decoupled from `poll_secs`: the setup wizard's
+/// "enable -> register -> link" flow needs a newly-registered plane to show
+/// health within a couple of seconds, not wait for the configured poll
+/// interval.
 pub const DEFAULT_SUPERVISOR_SCAN_SECS: u64 = 2;
 
 /// Spawn one reconciler task per registered control plane, or none at all.
-///
-/// This is the single gate the "off by default" contract depends on: when
-/// `enabled` is
-/// `false`, this returns immediately with an empty `Vec` **without calling
-/// `store.list_registered()` at all** — not just "spawns nothing", but "does
-/// not even query for what it would have spawned". See the unit test
-/// `disabled_orchestration_spawns_no_tasks_and_never_queries_the_store` for
-/// the assertion.
-///
-/// `enabled` is read from `TACK_ORCH_ENABLE` by the caller (`tack-api`'s
-/// `server.rs`) — this function takes a plain `bool` rather than reading the
-/// environment itself so it stays testable without env-var mutation.
+/// This is the single gate the "off by default" contract depends on: with
+/// `enabled = false`, this returns an empty `Vec` **without calling
+/// `store.list_registered()` at all**. `enabled` is a plain `bool` (read
+/// from `TACK_ORCH_ENABLE` by the caller) rather than read from the
+/// environment here, so this stays testable without env-var mutation.
 pub async fn spawn_reconcilers(
     enabled: bool,
     store: Arc<dyn ControlPlaneStore>,

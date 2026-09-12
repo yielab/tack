@@ -99,24 +99,18 @@ pub struct HarnessCapability {
     #[serde(default)]
     pub model_combinations: Vec<ModelCombination>,
     /// Whether this harness accepts an **operator-specified opaque model**
-    /// forwarded verbatim by its adapter.
+    /// forwarded verbatim by its adapter. `Supported` is a claim about the
+    /// *adapter's own invocation contract* — the model id is handed to the
+    /// harness unmodified, and a bad model fails with the harness's own
+    /// error, never a fabricated one. It says nothing about which models
+    /// exist, so adapters with no model enumeration (claude-code, codex)
+    /// can attest it honestly even with empty `model_combinations`.
     ///
-    /// `Supported` is a claim about the *adapter's own invocation contract*
-    /// — "whatever `model_id` the request carries is handed to the harness
-    /// unmodified; validity is established by the harness at run time, and a
-    /// bad model fails the attempt with the harness's own error, never a
-    /// fabricated one." It says nothing about which models exist, so it can
-    /// be attested honestly by adapters (claude-code, codex) whose harness
-    /// offers no model enumeration — exactly the harnesses whose
-    /// `model_combinations` are deliberately empty.
-    ///
-    /// The scheduler treats only `Supported` as schedulable
-    /// (`crates/tack-orch/src/scheduler/select.rs`): `Advisory` is an
-    /// unverified claim and capability claims are load-bearing, so it is
-    /// rejected identically to `Unsupported`. `None` means the runner did
-    /// not attest either way (an older runner, or the shared fake probe)
-    /// and behaves the same as if this field did not exist: only declared
-    /// `model_combinations` are eligible.
+    /// The scheduler treats only `Supported` as schedulable — `Advisory` is
+    /// an unverified claim and is rejected identically to `Unsupported`.
+    /// `None` means the runner did not attest either way and behaves as if
+    /// the field did not exist: only declared `model_combinations` are
+    /// eligible.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_passthrough: Option<CapabilityValue>,
     #[serde(flatten, default)]
@@ -156,40 +150,18 @@ pub struct RunnerCapabilities {
 
 /// A capability snapshot embedded inside `enrollment.request.json` or
 /// `refresh.request.json`, distinct from a standalone [`RunnerCapabilities`]
-/// report (`capabilities.json`).
+/// report (`capabilities.json`) — a different wire shape, not a loosened
+/// copy, driven by what the two embedding fixtures actually contain.
 ///
-/// This is a different wire shape, not a loosened copy of the standalone
-/// one — each field's strictness follows directly from what the two
-/// embedding fixtures actually contain:
-///
-/// - `runner_version` and `protocol_version` have **no field here at all**.
-///   Both are present only as *siblings* of `capabilities` in the enclosing
-///   enrollment/refresh envelope, never nested inside it, so there is
-///   nothing on the wire to default or make optional — a field for either
-///   would just always be absent. This is why [`RunnerCapabilities`] (whose
-///   `runner_version` is required and has no `serde(default)`, by design —
-///   see its own doc comment) cannot parse this shape, and why widening
-///   that field there was rejected in favor of this additive type.
-/// - `concurrency` and `labels` stay structurally required/typed, matching
-///   what `validate_capability_payload` in
-///   `crates/tack-api/src/handlers/runner_protocol.rs` already enforces by
-///   hand: it errors on a missing or malformed `concurrency`, and rejects a
-///   non-object `labels` or non-string label value. Reusing [`Concurrency`]
-///   here gives that same shape a real type instead of a second hand-rolled
-///   check.
-/// - `harnesses` and `features` stay permissive. `refresh.request.json`'s
-///   example reports `"harnesses": []` and `"features": {}`, while
-///   `enrollment.request.json`'s reports a populated harness list and full
-///   per-feature support statements — so `features` is opaque
-///   `serde_json::Value` rather than [`FeatureCapabilities`] (whose five
-///   support fields are all required, correctly, for the terminal
-///   `capability_snapshot` use at completion) and `harnesses` defaults to
-///   empty rather than requiring the full [`HarnessCapability`] list.
-/// - `reported_at` and `limits` appear, identically shaped, in both
-///   fixtures, so they stay required and reuse [`CapabilityLimits`] rather
-///   than being loosened without evidence.
-/// - Unrecognised keys are preserved via `serde(flatten)`, matching every
-///   other additive type in this module.
+/// `runner_version`/`protocol_version` have no field here: both are only
+/// *siblings* of `capabilities` in the enclosing envelope, never nested.
+/// `concurrency`/`labels` stay required, matching what
+/// `validate_capability_payload` already enforces by hand. `harnesses`/
+/// `features` stay permissive — `refresh.request.json` reports `[]`/`{}`
+/// while `enrollment.request.json` reports populated data — so `features`
+/// is opaque `serde_json::Value` rather than [`FeatureCapabilities`].
+/// `reported_at`/`limits` are identically shaped in both fixtures and stay
+/// required. Unrecognised keys round-trip via `serde(flatten)`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EmbeddedCapabilitySnapshot {
     pub reported_at: DateTime<Utc>,

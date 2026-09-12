@@ -1,11 +1,28 @@
 //! Cancellable retention sweep for the execution domain.
 //!
-//! # Why this is a sibling module, not `execution::retention`
+//! # Why a sibling module, not `execution::retention`
 //!
-//! `crate::execution`'s own module doc says it "deliberately has no
-//! transport, persistence, or vendor adapter dependencies" — it is the pure
+//! `crate::execution`'s own module doc says it deliberately has no
+//! transport, persistence, or vendor adapter dependencies — the pure
+//! runner-v1 protocol domain. This module is the opposite: nothing but
+//! persistence and a spawned background task, so it sits next to
+//! `reconciler.rs` (whose `spawn_retention_sweep`/`RetentionStore` is the
+//! closest analog) rather than inside `execution/`.
 //!
-//! Design notes: docs/dev-notes/tack-orch/execution_retention.md
+//! # What's different from orch's own retention sweep
+//!
+//! `reconciler::spawn_retention_sweep` computes its cutoff from
+//! `Utc::now()` directly and has no cancellation signal — dropping its
+//! `JoinHandle` is the only way to stop it. This module fixes both:
+//! [`RetentionClock`] makes "now" injectable, and
+//! [`spawn_execution_retention_sweep`] races a `stop_rx` against its
+//! inter-sweep sleep.
+//!
+//! # No roll-up table for `execution_events` yet
+//!
+//! Unlike orch (`orch_events` -> `orch_events_daily`), there is no
+//! daily-aggregate table here — this purges terminal-attempt event rows
+//! outright rather than aggregating them first.
 
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -164,21 +181,15 @@ async fn wait_until_stopped(rx: &mut watch::Receiver<bool>) {
 
 /// Spawn the cancellable execution-retention sweep, or don't — the same
 /// off-by-default-when-disabled contract as `reconciler::spawn_retention_sweep`:
-/// `enabled = false` returns `None` immediately without ever calling `store`.
+/// `enabled = false` returns `None` without ever calling `store`.
 ///
-/// Runs immediately (no initial delay), then every
-/// `config.sweep_interval_secs`, until `stop_rx` carries `true` — checked at
-/// the top of every loop iteration and raced against the inter-sweep sleep
-/// via `tokio::select!`. Both are safe points: a purge batch is already a
-/// short, bounded, independently-committed transaction (see
-/// `ExecutionRetentionStore`'s doc comment), so a stop signal is observed
-/// between sweeps, never mid-transaction.
-///
-/// This function only arranges for the task to *notice* the stop signal and
-/// exit; it does not join the returned handle itself. The caller proves
-/// "shutdown joins task" by awaiting the handle after signalling —
-/// `crates/tack-api/src/execution_runtime.rs::ExecutionRuntime::stop` does
-/// exactly that.
+/// Runs immediately, then every `config.sweep_interval_secs`, until
+/// `stop_rx` carries `true` — checked at the top of every loop iteration and
+/// raced against the inter-sweep sleep. Both are safe points: a purge batch
+/// is already a short, independently-committed transaction, so a stop
+/// signal is observed between sweeps, never mid-transaction. This function
+/// only arranges for the task to *notice* the signal; the caller proves
+/// "shutdown joins task" by awaiting the returned handle after signalling.
 pub fn spawn_execution_retention_sweep(
     enabled: bool,
     store: Arc<dyn ExecutionRetentionStore>,
