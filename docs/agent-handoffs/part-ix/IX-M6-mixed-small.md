@@ -1,7 +1,7 @@
 # IX-M6-mixed-small handoff
 
 - Base SHA / branch / final SHA: `8613a05` (`develop`) / `agent/ix-m6-mixed-small` /
-  see the commit this handoff ships in (worktree: `/tmp/ix-m6-mixed-small`,
+  `5940af7` (worktree: `/tmp/ix-m6-mixed-small`,
   `CARGO_TARGET_DIR=/tmp/ix-m6-mixed-small-target`).
 - Files changed (must equal ownership list):
   - `crates/tack-runner/src/bootstrap.rs`
