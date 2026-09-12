@@ -610,7 +610,7 @@ where
     // event per terminal outcome (completion or cancellation), plus a
     // best-effort upload of whatever artifact an adapter already staged
     // locally (`terminal_reason.artifact`, each harness adapter's own
-    // convention — see e.g. `harness::codex::CodexAdapter::stage_run_log`).
+    // convention — see e.g. `harness::codex::CodexGrammar::stage_run_log`).
     //
     // Submission is deliberately best-effort: a transport failure here is
     // logged (ids only) and never turns a real harness result into a failed
