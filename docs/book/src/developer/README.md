@@ -9,6 +9,11 @@
 
 You have read the quick-start and can run the server. This document explains *why* the code is structured the way it is — the reasoning behind each layer, how a request actually travels through the system, and where the interesting domain logic lives.
 
+> This page is a narrative walkthrough, not a reference. For the condensed crate-boundary
+> table, the full API endpoint list, the database schema, and troubleshooting, see
+> [`docs/ARCHITECTURE.md`](../../../ARCHITECTURE.md) — the authority on any fact the two
+> disagree on.
+
 ---
 
 ## 1. The Layering Rule

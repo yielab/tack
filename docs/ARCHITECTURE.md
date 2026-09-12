@@ -1,9 +1,12 @@
 # Architecture & Implementation Notes
 
 Crate responsibilities, design patterns, and implementation details of record.
-This file is the authority — CLAUDE.md keeps only the condensed map. The
-mdBook's crate-tour predates `tack-orch`/`tack-runner` and has not caught up,
-so this file is the more current source on anything the two disagree about.
+This file is the authority for design patterns, implementation notes, and
+troubleshooting — CLAUDE.md keeps only the condensed map. The mdBook's
+[Crate Tour](book/src/developer/crate-tour.md) is a separate, deeper per-file
+walkthrough (code snippets, one section per source file) rather than a copy of
+this page; when the two disagree on a fact rather than depth, this file wins
+and the tour should be corrected to match.
 
 **Project structure:**
 ```
@@ -19,6 +22,10 @@ crates/
 ├── tack-runner/   Pull-based execution runner — its own binary; owns local
 │                  credentials, workspace, journal and the harness subprocess
 └── tack-cli/      The single `tack` binary — runs the server (tack serve) and the CLI client
+
+crates/tack-desktop/   Tauri shell that supervises `tack` as a bundled sidecar; excluded
+                       from this workspace (own Cargo.toml/lockfile) so Tauri's GTK/WebKit
+                       dependency never reaches a plain `cargo build --workspace`
 
 frontend/
 ├── src/

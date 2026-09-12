@@ -1,4 +1,4 @@
-//! One place every caller builds a live [`ControlPlane`] from a
+//! One place every caller builds a live [`ControlPlane`](crate::ControlPlane) from a
 //! `control_planes` row's `kind` — replacing four copy-pasted
 //! `match row.kind.as_str()` sites that had drifted into four
 //! near-identical, hand-maintained match arms:
@@ -16,8 +16,8 @@
 //! doc) and every one of those four callers already depends on `tack-orch`.
 //!
 //! **Callers keep their own failure behaviour.** This module only builds
-//! the adapter and classifies *why* it failed ([`RegistryError::UnknownKind`]
-//! vs. [`RegistryError::Construction`]); it deliberately does not decide
+//! the adapter and classifies *why* it failed ([`RegistryError::UnknownKind`](crate::adapters::registry::RegistryError::UnknownKind)
+//! vs. [`RegistryError::Construction`](crate::adapters::registry::RegistryError::Construction)); it deliberately does not decide
 //! whether that failure aborts a caller's request or is logged and skipped.
 //! `orch_store::RepoControlPlaneStore::list_registered` (a reconciler batch
 //! loop covering every registered plane) and the three request-scoped HTTP

@@ -5,35 +5,41 @@ reading one you did, and it crowds out the file you will need later in the same 
 page exists because this repository has several files that are cheap to open and expensive
 to have opened.
 
-**Measured 2026-08-30; `TODO.md` rows re-measured 2026-09-03 after Part VI was added.** Re-measure with `wc -c <file>` rather than trusting these numbers a
-year from now; the ratios are the point, not the digits.
+**Re-measured 2026-09-12 (IX-M7).** Command behind every row: `wc -l <file>` and
+`wc -c <file>`, tokens estimated as `chars/4`. Re-measure the same way rather than
+trusting these numbers a year from now; the ratios are the point, not the digits. Several
+rows moved a lot since the 2026-08-30/09-03 pass: `TODO.md`'s active-boards section
+roughly doubled (Part VI alone is now ~47k tokens), `docs/agent-handoffs/**` more than
+tripled as Parts VI–IX added handoffs, and `docs/API-REFERENCE.md` shrank by 4x (IX-M7
+moved its endpoint listing to a generated page — see that row).
 
 | Source | Lines | ~Tokens | Read it? |
 |---|---|---|---|
-| `TODO.md` **whole** | 15,000 | **~250k** | **Never.** This is more than a context window for one file that is ~90% closed-cycle history. |
-| `TODO.md` active boards (lines 1–~2400) | ~2,370 | ~39k | Yes, when you need **a** board — one Part, never all. Parts IX, VIII, VII, VI, V and IV live at the top in that order; `grep -n "^# Part" TODO.md` gives the start lines, then `sed -n` the one you need (Part VII is lines 60–430, ~370 lines, ~6k; Part VI is lines 431–1400, ~970 lines, ~16k). |
-| `docs/agent-handoffs/**` **all** | 12,161 | **~221k** | **Never all.** 48 files. Read the one or two your card's `Context` names. |
-| `docs/agent-handoffs/part-iii/III-C2.md` (largest single) | — | ~15k | Only if named. One handoff can cost as much as every active board combined. |
-| `docs/agent-handoffs/part-vi/README.md` (dispatch plan) | 559 | ~8k | **Header + your card's block only** (~2k). It tells you what else to read, with sizes; reading it whole defeats its purpose. `TEMPLATE.md` beside it is ~0.6k and replaces digging the template out of the archive. |
-| `docs/agent-handoffs/part-vii/README.md` (dispatch plan) | 337 | ~5k | **Header + your card's block only** (~2k). Same shape as Part VI's; `TEMPLATE.md` beside it is a pointer plus three sections. |
-| `docs/openapi.json` | 11,829 | **~88k** | **Almost never.** It is generated. To check one path, `python3 -c` or `jq` it. |
-| `docs/book/src/roadmap.md` | 3,592 | ~54k | Rarely whole. It records intent, not state. The `# Next` sections at the end (Phases 60 and 61) are the live part. |
-| `crates/tack-db/src/migrations.rs` | 1,614 | ~19k | Grep it for the table you care about; adding a migration needs the tail, not the file. |
-| `CHANGELOG.md` | 1,250 | ~10k | Never for "what is unreleased" — it holds released sections only; `make changelog` prints the unreleased one from the commits. |
-| `docs/API-REFERENCE.md` | 1,433 | ~7k | Grep for the endpoint. |
-| `docs/ARCHITECTURE.md` | 326 | ~5k | Yes, whole, when you need crate-level design. It is the cheap one. |
-| `docs/plans/human-maintainability.md` | 240 | ~4k | The one section your card cites (§2 tests, §3 comments, §4 docs, §5 cards). |
-| `scripts/maintainability.py` | 440 | ~5k | **Never read it; run it.** `--help` lists the subcommands; `measure`, `check --changed`, `comment-worklist` and `duplicate-tests` produce the file lists a card works from. |
-| `docs/TESTING.md` | 398 | ~3k | Yes, whole, when writing tests. |
-| `docs/CONFIG.md` | 73 | ~1k | Yes, whole. Always cheaper than guessing an env var. |
-| `CLAUDE.md` | 138 | ~1k | **Already in your context.** Do not re-read it, and do not re-derive what it says. |
+| `TODO.md` **whole** | 15,056 | **~263k** | **Never.** This is more than a context window for one file that is ~90% closed-cycle history. |
+| `TODO.md` active boards (lines 1–~4870) | ~4,870 | ~95k | Yes, when you need **a** board — one Part, never all. Parts IX, VIII, VII, VI, V and IV live at the top in that order; `grep -n "^# Part" TODO.md` gives the start lines, then `sed -n` the one you need (Part VII is lines 822–1345, 523 lines, ~10k; Part VI is lines 1346–3821, 2,475 lines, ~47k — by far the largest single Part on the active board). |
+| `docs/agent-handoffs/**` **all** | 46,019 | **~820k** | **Never all.** 263 files. Read the one or two your card's `Context` names. |
+| `docs/agent-handoffs/part-iii/III-C2.md` (largest single) | 783 | ~16k | Only if named. Still the largest single handoff (verified against every file in the tree); one handoff can cost as much as every active board combined. |
+| `docs/agent-handoffs/part-vi/README.md` (dispatch plan) | 936 | ~14k | **Header + your card's block only** (~2k). It tells you what else to read, with sizes; reading it whole defeats its purpose. `TEMPLATE.md` beside it is ~0.6k and replaces digging the template out of the archive. |
+| `docs/agent-handoffs/part-vii/README.md` (dispatch plan) | 489 | ~7k | **Header + your card's block only** (~2k). Same shape as Part VI's; `TEMPLATE.md` beside it is a pointer plus three sections. |
+| `docs/openapi.json` | 12,624 | **~95k** | **Almost never.** It is generated. To check one path, `python3 -c` or `jq` it. |
+| `docs/book/src/roadmap.md` | 3,676 | ~56k | Rarely whole. It records intent, not state. The `# Next` sections at the end are the live part. |
+| `crates/tack-db/src/migrations.rs` | 1,619 | ~20k | Grep it for the table you care about; adding a migration needs the tail, not the file. |
+| `CHANGELOG.md` | 1,250 | ~16k | Never for "what is unreleased" — it holds released sections only; `make changelog` prints the unreleased one from the commits. |
+| `docs/API-REFERENCE.md` | 329 | ~4k | Auth surfaces, WebSocket behavior, worked examples only (IX-M7 shrank it 4x). The endpoint/schema listing lives in the generated page below — don't grep this file for a path any more. |
+| `docs/book/src/developer/api-reference.md` (generated) | 1,829 | ~15k | **Never whole.** Generated by `scripts/gen-api-reference.py` from `docs/openapi.json`. `grep` it for one path/schema name, same as the spec. |
+| `docs/ARCHITECTURE.md` | 346 | ~6k | Yes, whole, when you need crate-level design. It is the cheap one. |
+| `docs/plans/human-maintainability.md` | 246 | ~5k | The one section your card cites (§2 tests, §3 comments, §4 docs, §5 cards). |
+| `scripts/maintainability.py` | 456 | ~6k | **Never read it; run it.** `--help` lists the subcommands; `measure`, `check --changed`, `comment-worklist` and `duplicate-tests` produce the file lists a card works from. |
+| `docs/TESTING.md` | 419 | ~6k | Yes, whole, when writing tests. Also the book's `developer/testing.md` verbatim, via `{{#include}}` (IX-M7) — editing one edits both. |
+| `docs/CONFIG.md` | 203 | ~6k | Yes, whole. Always cheaper than guessing an env var. Grew 3x since it was last measured — still cheap in absolute terms. |
+| `CLAUDE.md` | 219 | ~4k | **Already in your context.** Do not re-read it, and do not re-derive what it says. |
 
 ## Extraction recipes
 
 `TODO.md` — the file that costs the most and is opened the most carelessly:
 
 ```bash
-head -58 TODO.md                      # the header names which Parts are ACTIVE. Trust it over section order.
+head -68 TODO.md                      # the header names which Parts are ACTIVE. Trust it over section order.
 grep -n "^# \|^## " TODO.md           # the map. Cheap. Do this before any sed.
 n=$(grep -n "### V-A2 " TODO.md | cut -d: -f1); sed -n "${n},$((n+60))p" TODO.md   # one card
 ```

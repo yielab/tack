@@ -175,7 +175,7 @@ pull request, and by hand (`workflow_dispatch`).
 
 | Job | What it runs | When |
 |---|---|---|
-| `rust` | `scripts/check-comments.sh` → `scripts/check-test-hygiene.sh` → `cargo fmt --check` → `cargo clippy --workspace --all-targets -- -D warnings` → **`cargo nextest run --workspace --profile ci`** (one run; JUnit uploaded as `junit-rust`) → the OpenAPI and golden regenerate-and-diff gates | every push and PR |
+| `rust` | `scripts/check-comments.sh` → `scripts/check-test-hygiene.sh` → `cargo fmt --check` → `cargo clippy --workspace --all-targets -- -D warnings` → `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links"` → **`cargo nextest run --workspace --profile ci`** (one run; JUnit uploaded as `junit-rust`) → the OpenAPI and golden regenerate-and-diff gates | every push and PR |
 | `frontend` | schema drift, type-check, token lint, build, entry-bundle budget | every push and PR |
 | `docs` | `mdbook build` + link check | every push and PR |
 | `msrv` | `cargo build --workspace --locked` on the pinned dependency floor | every push and PR |

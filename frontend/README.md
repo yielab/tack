@@ -174,7 +174,7 @@ Routes are defined in `App.tsx`:
 
 ## Development
 
-For detailed API documentation and examples, see [docs/API-EXAMPLES.md](../docs/API-EXAMPLES.md)
+For the generated endpoint reference see [docs/book/src/developer/api-reference.md](../docs/book/src/developer/api-reference.md); for auth surfaces, WebSocket behavior and worked examples see [docs/API-REFERENCE.md](../docs/API-REFERENCE.md)
 
 ---
 
