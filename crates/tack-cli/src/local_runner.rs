@@ -97,22 +97,17 @@ fn embedded_default_state_dir(storage_dir: &str) -> PathBuf {
     Path::new(storage_dir).join("runner")
 }
 
-/// One-time, best-effort recovery for an install upgrading from before the
-/// embedded runner's default state directory followed `storage_dir`: if the
-/// crate's bare, cwd-relative default
-/// (`tack_runner::config::DEFAULT_STATE_DIR`) still holds state and the new,
-/// database-scoped directory does not exist yet, moves it there in a single
-/// rename — the alternative is stranding an already-enrolled credential
-/// somewhere this binary will never look again.
-///
-/// Never touches either directory once `new_dir` already exists: that means
-/// either a previous boot already migrated, or a fresh install already
-/// provisioned there, and this must never clobber either. A failed rename
-/// (for example, `new_dir` ending up on a different filesystem than the
-/// legacy default) is reported and the legacy directory is left exactly as
-/// it was — the caller falls through to provisioning a fresh identity at
-/// `new_dir` instead, so this never falls back to silently reusing state it
-/// could not verify moved intact.
+/// Best-effort recovery for an install whose embedded runner state still
+/// sits at the crate's bare, cwd-relative default
+/// (`tack_runner::config::DEFAULT_STATE_DIR`) instead of the new,
+/// database-scoped directory: moves it there in a single rename so an
+/// already-enrolled credential is not stranded somewhere this binary will
+/// never look again. A no-op once `new_dir` already exists — clobbering it
+/// could overwrite state a previous boot or a fresh install already put
+/// there. A failed rename (e.g. `new_dir` on a different filesystem) leaves
+/// the legacy directory untouched and reported; the caller then provisions a
+/// fresh identity at `new_dir` rather than reusing state it could not verify
+/// moved intact.
 fn migrate_legacy_state_dir(new_dir: &Path) {
     if new_dir.exists() {
         return;
@@ -225,40 +220,20 @@ fn ensure_loopback(config: &tack_api::config::AppConfig) -> anyhow::Result<()> {
 }
 
 /// Makes sure `runner_config` carries something the embedded runner can
-/// redeem, in order of preference:
-///
-/// 1. a manually configured `enrollment_credential` — always wins, and is
-///    left untouched;
-/// 2. a durable session already on disk under `state_dir`, *if* its runner
-///    id still resolves against this server's own database
-///    (`local_enrollment::stored_session_orphaned`) — reused as is.
-///    [`crate::local_enrollment::self_provision`] is not called, so a
-///    restart against an already-enrolled `state_dir` never mints a second
-///    one-time token or creates a second pending runner row. The config's
-///    credential is still set, to a placeholder
-///    (`local_enrollment::stored_session_placeholder`) rather than left
-///    empty — `tack_runner::bootstrap::build_runtime` requires *some*
-///    credential before it ever looks at `state_dir` — see that
-///    placeholder's own doc comment for the full explanation and why it is
-///    not transmitted on a normal restart;
-/// 3. otherwise (nothing on disk, or a session whose runner id this
-///    database has no row for — the case where `storage_dir` stayed put but
-///    the database underneath it was deleted and recreated), a one-time
-///    token self-provisioned in-process against the server's own database
-///    (legitimate here specifically because the operator and the runner are
-///    the same person on the same machine — see
-///    `docs/adr/0058-standalone-single-binary-runner.md`). The orphaned
-///    session file itself is left on disk untouched: `establish_session`
-///    (`tack_runner::transport`) still finds it, still tries `refresh`
-///    first, still gets refused by this same database for the same reason,
-///    and falls through to redeeming the fresh credential this branch just
-///    provisioned — the same fallback that already existed, now reached
-///    with a real token instead of the placeholder that used to reach it by
-///    mistake.
-///
-/// Only ever called after [`ensure_loopback`] has already passed, since it
-/// runs after the server has started — self-provisioning inherits that
-/// guard rather than re-deriving it.
+/// redeem: an explicit `enrollment_credential` wins outright; otherwise a
+/// durable session already on disk under `state_dir`, reused as-is if its
+/// runner id still resolves in this database
+/// (`local_enrollment::stored_session_orphaned`) — [`crate::local_enrollment::
+/// self_provision`] is not called, so this never mints a second token, and
+/// the config gets a placeholder credential
+/// (`local_enrollment::stored_session_placeholder`) only because
+/// `bootstrap::build_runtime` requires some credential before it looks at
+/// `state_dir`; otherwise a one-time token self-provisioned in-process,
+/// legitimate because operator and runner are the same person on the same
+/// machine (`docs/adr/0058-standalone-single-binary-runner.md`). An orphaned
+/// session file is left on disk untouched: `establish_session` still tries
+/// `refresh` first, gets refused, and falls through to the fresh token this
+/// branch provisioned. Only called after [`ensure_loopback`] has passed.
 async fn ensure_runner_credential(
     runner_config: &mut RunnerConfig,
     server_config: &tack_api::config::AppConfig,
@@ -700,23 +675,18 @@ impl EmbeddedRunnerControl {
 
 /// Runs the server with an embedded runner always wired in — even a plain
 /// `tack serve` with no flag, on any bind, so `PUT /api/local-runner` can
-/// turn it on later with no restart it didn't already need. A non-loopback
-/// bind never starts the runner and never exposes its routes (ADR 0061
-/// decision 6 is a safety invariant, not merely a startup nicety): this
-/// function refuses to boot at all only when *this boot's own* flag or
-/// environment variable explicitly asked for `--with-runner` on a
-/// non-loopback bind (`ensure_loopback`, unchanged from before this
-/// module could be reached any other way); `tack_api::server::serve_inner`
-/// separately re-checks loopback against the *persisted* preference once
-/// the database is open, before ever calling
-/// [`EmbeddedRunnerControl::start`] — so a stale "enabled" row saved from
-/// an earlier loopback session can never auto-start a runner on a
+/// turn it on later with no restart. A non-loopback bind never starts the
+/// runner and never exposes its routes (ADR 0061 decision 6 is a safety
+/// invariant, not a startup nicety): this function refuses to boot only when
+/// *this boot's own* flag or environment variable explicitly asked for
+/// `--with-runner` on a non-loopback bind ([`ensure_loopback`]);
+/// `tack_api::server::serve_inner` separately re-checks loopback against the
+/// *persisted* preference once the database is open, before calling
+/// [`EmbeddedRunnerControl::start`] — so a stale "enabled" row saved from an
+/// earlier loopback session can never auto-start a runner on a
 /// differently-configured deployment, it is just silently not honored.
 /// `PUT /api/local-runner` reaches the identical `start()`, gated the
-/// identical way by `router::build_router`'s own loopback check on the
-/// route's existence. Replaces the old `serve_with_embedded_runner`, which
-/// only ever existed for `--with-runner` and had no way to turn the runner
-/// on afterward without restarting the whole process.
+/// identical way by `router::build_router`'s own loopback check.
 pub async fn serve() -> anyhow::Result<()> {
     let server_config = tack_api::config::AppConfig::load();
     if server_config.local_runner_enable {

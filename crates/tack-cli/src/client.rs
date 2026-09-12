@@ -83,22 +83,19 @@ impl TackClient {
         extract(resp)
     }
 
-    /// PATCH with an optional `If-Match` precondition. `if_match` is
-    /// normally the ETag `get_with_etag` returned for the same resource a
-    /// moment earlier; passing `None` sends no header at all and behaves
-    /// exactly like plain `patch` — an absent precondition must preserve
-    /// today's unconditional-write behavior, not fail closed, so an older
-    /// server (or any route that doesn't version its rows yet) keeps
-    /// working unchanged.
+    /// PATCH with an optional `If-Match` precondition. `if_match` is normally
+    /// the ETag `get_with_etag` returned for the same resource a moment
+    /// earlier; passing `None` sends no header and behaves exactly like plain
+    /// `patch` — an absent precondition preserves today's unconditional-write
+    /// behavior rather than failing closed, so an older server keeps working
+    /// unchanged.
     ///
-    /// A `412 Precondition Failed` is reported as a distinct, actionable
-    /// error rather than falling through to the generic `{status}:
-    /// {message}` shape `extract` produces for every other status: the
-    /// caller raced a concurrent write to the same row (a human in the UI,
-    /// another agent, or the reconciler) and needs to be told to re-read,
-    /// not handed a message it can't distinguish from "the server broke."
-    /// An MCP tool that can't tell those apart retries blindly and clobbers
-    /// whatever won the race.
+    /// A `412 Precondition Failed` is reported as a distinct, actionable error
+    /// rather than the generic `{status}: {message}` shape `extract` produces
+    /// for every other status: the caller raced a concurrent write to the same
+    /// row and needs to be told to re-read, not handed a message it can't
+    /// distinguish from "the server broke" — an MCP tool that can't tell those
+    /// apart retries blindly and clobbers whatever won the race.
     pub fn patch_if_match<T: Serialize>(
         &self,
         path: &str,
@@ -221,19 +218,16 @@ fn extract(resp: Response) -> anyhow::Result<serde_json::Value> {
 /// `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles`,
 /// `/api/model-profiles`) answer errors with the stable runner-v1 protocol
 /// envelope, `{"error": {"code": "...", "message": "...", "details": {...},
-/// "retryable": bool}}` — `error` is an *object* there, not a string. Every
-/// other route in this API answers with `{"error": "text"}` or
-/// `{"message": "text"}`. Try the plain-string shapes first (unchanged
-/// behavior for every existing command), and only when `error` turns out to
-/// be an object, surface its `code` alongside `message` — e.g.
-/// `"409: idempotency_conflict: The idempotency key was used with a
-/// different request"` instead of the generic "server error" that
-/// `.as_str()` on an object silently produces. This is what makes
-/// `idempotency_conflict`/`invalid_transition`/`stale_lease`/`conflict`
-/// read as distinct, actionable outcomes for `execution`/`fleet`/`runner`/
-/// `*-profile` commands instead of collapsing into one opaque line — the
-/// stable `code` is there for a script to grep on; `message` is the
-/// human-readable half.
+/// "retryable": bool}}` — `error` is an *object* there, not the plain
+/// `{"error": "text"}`/`{"message": "text"}` string every other route uses.
+/// Try the plain-string shapes first (unchanged behavior for every existing
+/// command), and only when `error` is an object, surface its `code`
+/// alongside `message` — e.g. `"409: idempotency_conflict: ..."` instead of
+/// the generic "server error" `.as_str()` on an object silently produces.
+/// This is what makes `idempotency_conflict`/`invalid_transition`/
+/// `stale_lease`/`conflict` read as distinct, actionable outcomes instead
+/// of collapsing into one opaque line — `code` is there for a script to
+/// grep on; `message` is the human-readable half.
 fn error_msg(body: &serde_json::Value) -> String {
     if let Some(s) = body
         .get("error")

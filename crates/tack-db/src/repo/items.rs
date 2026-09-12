@@ -730,38 +730,21 @@ impl Repository {
         Ok(count)
     }
 
-    /// Atomically check `target_status`'s WIP limit (per `workflow`) and,
-    /// only if it isn't exceeded, apply the status transition — all inside
-    /// one `BEGIN IMMEDIATE` SQLite write transaction, so the count read the
-    /// limit check depends on can never be interleaved with another
-    /// writer racing the same column.
+    /// Atomically checks `target_status`'s WIP limit (per `workflow`) and,
+    /// only if it isn't exceeded, applies the status transition inside one
+    /// `BEGIN IMMEDIATE` transaction, so the count read and the write can
+    /// never interleave with another writer racing the same column.
     ///
-    /// Do not reintroduce this as two separate steps —
-    /// [`Repository::count_items_by_status`]
-    /// then a plain [`Repository::update_item`] — with no lock spanning
-    /// them: two concurrent callers moving *different* items into the same
-    /// WIP-limited column could each read "under the limit" before either
-    /// had written, and both would then commit, pushing the column over its
-    /// configured limit. `BEGIN IMMEDIATE` (rather than the plain deferred
-    /// `BEGIN` [`Repository::upsert_orch_tasks`] and friends use, which only
-    /// takes SQLite's write lock on the *first* write inside the
-    /// transaction) acquires the write lock up front, at the count read —
-    /// so a second concurrent caller's own `BEGIN IMMEDIATE` blocks until
-    /// the first transaction commits or rolls back, rather than both
-    /// proceeding as if uncontended and one of them hitting a deferred
-    /// transaction's read-to-write lock upgrade conflict later.
+    /// Do not split this into `count_items_by_status` then a plain
+    /// `update_item` with no lock spanning them: two callers moving different
+    /// items into the same WIP-limited column could each read "under the
+    /// limit" before either wrote, then both commit over it. `BEGIN IMMEDIATE`
+    /// blocks a second concurrent caller until the first commits — the
+    /// board-drag path (`handlers::items::update_item`) hits this same race
+    /// and calls this method too.
     ///
-    /// `handlers::items::update_item` (the board-drag path) calls this too:
-    /// an unguarded two-step `count_items_by_status` + `update_item` there
-    /// is the identical race, on the call site hit far more often than
-    /// dispatch.
-    ///
-    /// Only touches the fields `dispatcher::apply_mapped_status` needs
-    /// (status, and the status-category-derived started_at/completed_at) —
-    /// not the full field set `update_item` handles. If a future caller
-    /// needs more fields updated atomically alongside the WIP check, extend
-    /// this method rather than composing it with `update_item`'s separate,
-    /// unguarded writes.
+    /// Only touches the fields `dispatcher::apply_mapped_status` needs; extend
+    /// this rather than composing it with `update_item`'s unguarded writes.
     #[instrument(skip(self, workflow))]
     pub async fn update_item_status_checked(
         &self,
