@@ -8,7 +8,7 @@ result is not visible here and is not assumed. This sub-card's scope is comments
 production logic, function signature, or behavior changes.
 
 - Base SHA / branch / final SHA: `35deddf` (`develop`) / `agent/ix-m6-tack-orch-b` /
-  recorded at commit time (worktree: `/tmp/ix-m6-tack-orch-b`,
+  `b9564e7` (worktree: `/tmp/ix-m6-tack-orch-b`,
   `CARGO_TARGET_DIR=/tmp/ix-m6-tack-orch-b-target`).
 - Files changed (equals the card's ownership list, verified via `git diff --stat`):
   - `crates/tack-orch/src/scheduler/types.rs`
