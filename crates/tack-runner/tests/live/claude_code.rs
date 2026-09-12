@@ -1,14 +1,12 @@
 //! Opt-in, `#[ignore]`-gated tests against a real installed `claude`
 //! binary. Never required in CI, never fails just because `claude` is
-//! absent, and every one of these additionally requires
-//! `TACK_RUN_LIVE_CLAUDE_CODE_TEST=1` even under `--ignored` — a real
-//! invocation is billed, so that flag alone can never surprise-spend
-//! real money. None of these reads, logs, or forwards a credential
-//! itself: whatever the installed CLI or this machine's own secret
-//! store already carries is used exactly as configured.
+//! absent; also requires `TACK_RUN_LIVE_CLAUDE_CODE_TEST=1` even under
+//! `--ignored`, since a real invocation is billed. None of these reads,
+//! logs, or forwards a credential: whatever the installed CLI or this
+//! machine's own secret store already carries is used as configured.
 //!
-//! Run with: `TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo nextest run
-//! --workspace --run-ignored ignored-only -E 'binary(live)'`
+//! Run: `TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo nextest run --workspace
+//! --run-ignored ignored-only -E 'binary(live)'`
 
 use std::{collections::BTreeMap, path::PathBuf};
 
@@ -34,9 +32,7 @@ use tack_runner::{
     secrets::SecretStore,
 };
 
-#[path = "../common/mod.rs"]
-mod common;
-use common::temp_dir as temp_workspace;
+use crate::common::temp_dir as temp_workspace;
 
 fn opted_in() -> bool {
     std::env::var("TACK_RUN_LIVE_CLAUDE_CODE_TEST").as_deref() == Ok("1")
