@@ -370,7 +370,11 @@ async fn every_documented_fixture_mode_behaves_as_documented() {
     std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
-async fn wait_for_pidfile(path: &Path) -> u32 {
+/// `pub(crate)`: `harness::tests`'s own cross-adapter descendant-tree
+/// cancellation acceptance test polls for the same grandchild pidfile
+/// this module's own primitive-level test does, and shares this exact
+/// polling logic rather than a second copy.
+pub(crate) async fn wait_for_pidfile(path: &Path) -> u32 {
     for _ in 0..200 {
         if let Ok(contents) = std::fs::read_to_string(path)
             && let Ok(pid) = contents.trim().parse::<u32>()
@@ -382,7 +386,9 @@ async fn wait_for_pidfile(path: &Path) -> u32 {
     panic!("grandchild pidfile was never written: {}", path.display());
 }
 
-async fn wait_until_dead(pid: u32, budget: Duration) -> bool {
+/// `pub(crate)`: shared with `harness::tests`'s cross-adapter descendant-tree
+/// cancellation test, for the same reason as [`wait_for_pidfile`] above.
+pub(crate) async fn wait_until_dead(pid: u32, budget: Duration) -> bool {
     let deadline = tokio::time::Instant::now() + budget;
     while tokio::time::Instant::now() < deadline {
         if !process_alive(pid) {

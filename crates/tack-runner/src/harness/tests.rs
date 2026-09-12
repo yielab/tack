@@ -1,6 +1,10 @@
 use super::*;
 use crate::client::journal::{JournalState, WorkspaceJournal};
 use crate::client::{AttemptId, FencingToken, RunnerId, WorkspaceId, engine::HarnessError};
+// `process::tests`'s own (`pub(crate)`) pidfile-poll helpers, reused
+// below by the cross-adapter descendant-tree cancellation test rather
+// than duplicated a third time.
+use crate::harness::process::tests::{wait_for_pidfile, wait_until_dead};
 use std::{
     path::PathBuf,
     sync::{
@@ -532,6 +536,18 @@ fn real_adapter_spec(
     model: &str,
     workspace_path: PathBuf,
 ) -> ExecutionSpec {
+    real_adapter_spec_with_env(kind, provider, model, &[], workspace_path)
+}
+
+/// [`real_adapter_spec`] plus literal environment entries — for driving
+/// the shared fake-harness fixture's own `TACK_FAKE_HARNESS_*` switches.
+fn real_adapter_spec_with_env(
+    kind: &str,
+    provider: &str,
+    model: &str,
+    extra_env: &[(&str, &str)],
+    workspace_path: PathBuf,
+) -> ExecutionSpec {
     let claim: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../docs/contracts/runner-v1/claim.response.json"
     ))
@@ -541,6 +557,16 @@ fn real_adapter_spec(
     request.requested_harness_kind = DomainHarnessKind::new(kind);
     request.requested_model_provider = Some(RequestedModelProvider::new(provider));
     request.requested_model_id = Some(RequestedModelId::new(model));
+    for (key, value) in extra_env {
+        request.environment.insert(
+            (*key).to_owned(),
+            tack_orch::execution::EnvironmentValue {
+                value: Some((*value).to_owned()),
+                secret_reference: None,
+                additional: BTreeMap::new(),
+            },
+        );
+    }
     let attempt: tack_orch::execution::AttemptSnapshot =
         serde_json::from_value(claim["attempt"].clone()).expect("attempt fixture");
     ExecutionSpec {
@@ -768,4 +794,206 @@ async fn registering_both_real_adapters_is_order_independent() {
     let mut kinds: Vec<&str> = reports.iter().map(|r| r.harness_kind.as_str()).collect();
     kinds.sort_unstable();
     assert_eq!(kinds, vec!["claude-code", "codex"]);
+}
+
+// ---- Lifecycle mechanics belonging to `local_process.rs`, not either
+// ---- adapter (audit §5 rule 1) — each used to exist once per adapter file.
+
+/// Both real adapters against one fixture command and secrets directory.
+fn real_adapters_for(
+    program: PathBuf,
+    args: Vec<String>,
+    secrets_dir: &std::path::Path,
+) -> (
+    crate::harness::codex::CodexAdapter,
+    crate::harness::claude_code::ClaudeCodeAdapter,
+    tempfile::TempDir,
+) {
+    let staging_dir = cross_adapter_temp_dir("codex-artifacts");
+    let codex = crate::harness::codex::CodexAdapter::for_fixture(
+        program.clone(),
+        args.clone(),
+        staging_dir.path().to_path_buf(),
+        cross_adapter_secret_store(secrets_dir),
+    );
+    let claude = crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
+        program,
+        args,
+        cross_adapter_secret_store(secrets_dir),
+    );
+    (codex, claude, staging_dir)
+}
+
+/// A disabled provider rejects at `validate`, pre-spawn, for both real
+/// adapters — `provider::resolve_endpoint`'s own check, surfaced by the
+/// shared `validate`. Replaces each adapter's own `*_disabled_provider_*` test.
+#[tokio::test]
+async fn disabled_provider_rejects_both_real_adapters_before_any_process_spawns() {
+    let secrets_dir = cross_adapter_temp_dir("disabled-provider-secrets");
+    let (program, args, _script_dir) = cross_adapter_fixture_command();
+    let (codex, claude, _staging) = real_adapters_for(program, args, secrets_dir.path());
+    let disabled_providers = BTreeMap::from([(
+        crate::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
+        crate::config::ProviderConfig {
+            enabled: false,
+            secret: "demo-secret".to_owned(),
+        },
+    )]);
+    let codex = codex.with_providers(disabled_providers.clone());
+    let claude = claude.with_providers(disabled_providers);
+
+    let adapters: [(&str, &dyn HarnessAdapter); 2] = [("codex", &codex), ("claude-code", &claude)];
+    for (label, adapter) in adapters {
+        let workspace_dir = cross_adapter_temp_dir("disabled-provider-ws");
+        let spec = real_adapter_spec(
+            label,
+            crate::config::VERCEL_AI_GATEWAY_PROVIDER,
+            "opaque/model-alpha",
+            workspace_dir.path().to_path_buf(),
+        );
+        let error = adapter
+            .validate(&spec)
+            .await
+            .expect_err("must reject a disabled provider pre-spawn");
+        assert!(matches!(error, HarnessError::Rejected { .. }), "{label}");
+    }
+}
+
+/// A cancel/wait on a handle never produced by that adapter is a typed
+/// rejection, never a panic — `take_running`'s own shared bookkeeping.
+#[tokio::test]
+async fn cancel_and_wait_on_an_untracked_handle_are_typed_rejections_for_both_real_adapters() {
+    let secrets_dir = cross_adapter_temp_dir("untracked-handle-secrets");
+    let (program, args, _script_dir) = cross_adapter_fixture_command();
+    let (codex, claude, _staging) = real_adapters_for(program, args, secrets_dir.path());
+    let adapters: [&dyn HarnessAdapter; 2] = [&codex, &claude];
+    let handles = [
+        LocalRunHandle {
+            process_id: "codex:999999:0".to_owned(),
+        },
+        LocalRunHandle {
+            process_id: "999999".to_owned(),
+        },
+    ];
+
+    for adapter in adapters {
+        for handle in &handles {
+            assert!(matches!(
+                adapter.cancel(handle).await,
+                Err(HarnessError::Process)
+            ));
+            assert!(matches!(
+                adapter.wait(handle).await,
+                Err(HarnessError::Process)
+            ));
+        }
+    }
+}
+
+/// Cancel kills the whole descendant tree, through both real adapters'
+/// `start`/`cancel` (the primitive-level proof stays `process/tests.rs`'s
+/// own) — entirely shared `cancel()` plus `process.rs`'s process-group
+/// signal. Replaces codex's own copy; claude-code never had one.
+#[tokio::test]
+async fn cancel_kills_the_whole_descendant_tree_via_both_real_adapters() {
+    let secrets_dir = cross_adapter_temp_dir("descendant-tree-secrets");
+    let (fake_program, fake_args) = crate::harness::fixtures::fake_harness_command();
+    let (codex, claude, _staging) = real_adapters_for(fake_program, fake_args, secrets_dir.path());
+
+    let cases: [(&str, &dyn HarnessAdapter, &str, &str); 2] = [
+        ("codex", &codex, "openai", "opaque/model-alpha"),
+        ("claude-code", &claude, "anthropic", "claude-fixture-model"),
+    ];
+    for (kind, adapter, provider, model) in cases {
+        let workspace_dir = cross_adapter_temp_dir("descendant-ws");
+        let workspace = workspace_dir.path();
+        let pidfile = workspace.join("grandchild.pid");
+        let extra_env = [
+            ("TACK_FAKE_HARNESS_MODE", "spawn_child"),
+            (
+                "TACK_FAKE_HARNESS_PIDFILE",
+                pidfile.to_str().expect("utf8 pidfile path"),
+            ),
+            ("TACK_FAKE_HARNESS_SLEEP_SECONDS", "3600"),
+        ];
+        let spec =
+            real_adapter_spec_with_env(kind, provider, model, &extra_env, workspace.to_path_buf());
+
+        adapter.validate(&spec).await.expect("validate");
+        let handle = adapter.start(&spec).await.expect("start");
+        let grandchild_pid = wait_for_pidfile(&pidfile).await;
+        assert!(
+            crate::harness::process::process_alive(grandchild_pid),
+            "{kind}: grandchild must be observed running before cancellation"
+        );
+
+        let evidence = adapter.cancel(&handle).await.expect("cancel");
+        assert_eq!(
+            evidence.observation,
+            CancelObservation::ProcessStopped,
+            "{kind}"
+        );
+        assert!(
+            wait_until_dead(grandchild_pid, std::time::Duration::from_secs(5)).await,
+            "{kind}: grandchild must be gone after the adapter cancels its parent"
+        );
+    }
+}
+
+/// Shared `reconcile()` handles three pid-independent cases identically
+/// for both real adapters, before either grammar's own `reconcile_alive`/
+/// `reconcile_unavailable` runs: no recorded process id, an undecodable
+/// handle, and a decodable handle whose process already exited. A
+/// still-*alive* pid is genuinely per-adapter and stays in each adapter's
+/// own file (`reconcile_trusts_a_live_pid_unconditionally` for codex; two
+/// Linux-only tests for claude-code).
+#[cfg(unix)]
+#[tokio::test]
+async fn reconcile_reports_shared_pid_plumbing_identically_for_both_real_adapters() {
+    let secrets_dir = cross_adapter_temp_dir("reconcile-secrets");
+    let (program, args, _script_dir) = cross_adapter_fixture_command();
+    let (codex, claude, _staging) = real_adapters_for(program, args, secrets_dir.path());
+
+    fn codex_handle(pid: u32) -> String {
+        format!("codex:{pid}:0")
+    }
+    fn claude_handle(pid: u32) -> String {
+        pid.to_string()
+    }
+    type ReconcileCase<'a> = (&'a str, &'a dyn HarnessAdapter, fn(u32) -> String);
+    let cases: [ReconcileCase; 2] = [
+        ("codex", &codex, codex_handle),
+        ("claude-code", &claude, claude_handle),
+    ];
+    for (label, adapter, encode) in cases {
+        // No pid at all, and an undecodable one, both need no liveness
+        // dispatch — shared plumbing, before `decode_handle` even runs.
+        assert_eq!(
+            adapter.reconcile(&journal_with_process(None)).await,
+            Ok(RecoveryObservation::ProcessStopped),
+            "{label}: no recorded process id"
+        );
+        assert_eq!(
+            adapter
+                .reconcile(&journal_with_process(Some("not-a-pid-at-all")))
+                .await,
+            Err(HarnessError::RecoveryUnavailable),
+            "{label}: undecodable process id"
+        );
+
+        // Decodable, but the process has already exited: spawn and reap a
+        // real one so the pid is definitely dead, not a guessed sentinel.
+        let mut dead = std::process::Command::new("true")
+            .spawn()
+            .expect("spawn true");
+        let dead_pid = dead.id();
+        let _ = dead.wait();
+        assert_eq!(
+            adapter
+                .reconcile(&journal_with_process(Some(&encode(dead_pid))))
+                .await,
+            Ok(RecoveryObservation::ProcessStopped),
+            "{label}: decodable but already-dead pid"
+        );
+    }
 }

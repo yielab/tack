@@ -29,7 +29,6 @@ use crate::client::AttemptState;
 use crate::config::ProviderConfig;
 use crate::harness::{
     CancelObservation, ExecutionSpec, HarnessError, HarnessOutcome, RecoveryObservation,
-    artifact::ArtifactStager,
     local_process::{HarnessGrammar, LocalProcessHarness, PreparedRun, not_measured},
     process::{
         CancelOutcome, CapturedOutput, ProcessError, ProcessExit, ProcessLimits, ProcessResult,
@@ -47,7 +46,7 @@ use crate::secrets::SecretStore;
 #[cfg(test)]
 pub(crate) use crate::client::Timestamp;
 #[cfg(test)]
-pub(crate) use crate::harness::{AttemptJournal, HarnessAdapter, HarnessProbe, LocalRunHandle};
+pub(crate) use crate::harness::{AttemptJournal, HarnessAdapter, HarnessProbe};
 
 const CODEX_HARNESS_KIND: &str = "codex";
 const CODEX_PROGRAM_NAME: &str = "codex";
@@ -265,7 +264,8 @@ impl CodexAdapter<crate::SystemClock> {
     /// Production constructor: resolves `codex` from the current process's
     /// `PATH` (snapshotted once, here) rather than a hardcoded path.
     /// `artifact_staging_root` is required explicitly, matching
-    /// [`ArtifactStager::new`]'s own no-hidden-default style.
+    /// [`crate::harness::artifact::ArtifactStager::new`]'s own
+    /// no-hidden-default style.
     pub fn discover(
         process_limits: ProcessLimits,
         artifact_staging_root: PathBuf,
@@ -439,10 +439,8 @@ impl CodexGrammar {
     }
 
     /// Stages the (already-scrubbed) combined stdout/stderr as a `log`
-    /// artifact inside the attempt's own workspace, via
-    /// [`ArtifactStager`]. Best-effort: staging failure never fails the
-    /// attempt itself, matching the "auto-status propagation" best-effort
-    /// pattern already established elsewhere in this codebase — it only
+    /// artifact, via the shared [`super::local_process::stage_run_log`].
+    /// Best-effort: staging failure never fails the attempt itself, only
     /// omits the `artifact` key from `terminal_reason`.
     fn stage_run_log(
         &self,
@@ -451,37 +449,15 @@ impl CodexGrammar {
         stdout: &CapturedOutput,
         stderr: &CapturedOutput,
     ) -> Option<serde_json::Value> {
-        let relative = PathBuf::from(".tack-runner").join("codex-run.log");
-        let absolute = workspace_path.join(&relative);
-        if let Some(parent) = absolute.parent()
-            && std::fs::create_dir_all(parent).is_err()
-        {
-            return None;
-        }
-        let mut combined = String::new();
-        combined.push_str("=== stdout ===\n");
-        combined.push_str(&stdout.text);
-        combined.push_str("\n=== stderr ===\n");
-        combined.push_str(&stderr.text);
-        if std::fs::write(&absolute, combined.as_bytes()).is_err() {
-            return None;
-        }
-
-        let stager = ArtifactStager::new(&self.artifact_staging_root);
-        match stager.stage_file(attempt_id, workspace_path, &relative, "log", "text/plain") {
-            Ok(staged) => Some(serde_json::json!({
-                "kind": staged.kind,
-                "name": staged.name,
-                "media_type": staged.media_type,
-                "size_bytes": staged.size_bytes,
-                "sha256": staged.sha256,
-                "staged_path": staged.staged_path.display().to_string(),
-            })),
-            Err(error) => {
-                tracing::warn!(?error, "codex wait: artifact staging failed");
-                None
-            }
-        }
+        super::local_process::stage_run_log(
+            &self.artifact_staging_root,
+            workspace_path,
+            attempt_id,
+            "codex-run.log",
+            &stdout.text,
+            &stderr.text,
+            CODEX_HARNESS_KIND,
+        )
     }
 }
 
@@ -540,20 +516,13 @@ impl HarnessGrammar for CodexGrammar {
             .as_ref()
             .expect("validate_selection rejects a missing model provider before this point")
             .as_str();
-        crate::provider::resolve_endpoint(
-            providers,
-            secrets,
+        super::local_process::resolve_provider_endpoint(
             provider,
+            secrets,
+            providers,
             crate::provider::Wire::OpenAiResponses,
+            CODEX_HARNESS_KIND,
         )
-        .map_err(|error| {
-            let reason = error.to_string();
-            tracing::warn!(
-                reason,
-                "codex: rejecting a request whose provider endpoint could not be resolved"
-            );
-            HarnessError::Rejected { reason }
-        })
     }
 
     async fn prepare(

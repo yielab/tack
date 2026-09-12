@@ -468,3 +468,79 @@ pub fn not_measured<T>() -> Measurement<T> {
         additional: BTreeMap::new(),
     }
 }
+
+/// The resolve-and-reject-typed shape both existing grammars' own
+/// `resolve_provider_endpoint` wrap identically around
+/// `provider::resolve_endpoint` — only the provider name (required for
+/// codex, optional for claude-code) and the `Wire` variant are genuinely
+/// per-grammar, extracted by the caller before this runs.
+pub(crate) fn resolve_provider_endpoint(
+    provider: &str,
+    secrets: &SecretStore,
+    providers: &BTreeMap<String, ProviderConfig>,
+    wire: crate::provider::Wire,
+    harness_kind: &str,
+) -> Result<Option<ProviderEndpoint>, HarnessError> {
+    crate::provider::resolve_endpoint(providers, secrets, provider, wire).map_err(|error| {
+        let reason = error.to_string();
+        tracing::warn!(
+            reason,
+            harness = harness_kind,
+            "rejecting a request whose provider endpoint could not be resolved"
+        );
+        HarnessError::Rejected { reason }
+    })
+}
+
+/// Stages the (already-scrubbed) combined stdout/stderr as a `log`
+/// artifact under `staging_root`, via [`crate::harness::artifact::ArtifactStager`]
+/// — the one piece of `outcome()` genuinely identical between every
+/// existing grammar; only the staging root and the log's own filename
+/// differ. Best-effort: a staging failure returns `None`, never a hard
+/// error — each grammar's own `outcome()` treats that as "no `artifact`
+/// key," never as a failed attempt.
+pub(crate) fn stage_run_log(
+    staging_root: &std::path::Path,
+    workspace_path: &std::path::Path,
+    attempt_id: &str,
+    log_filename: &str,
+    stdout: &str,
+    stderr: &str,
+    harness_kind: &str,
+) -> Option<serde_json::Value> {
+    let relative = PathBuf::from(".tack-runner").join(log_filename);
+    let absolute = workspace_path.join(&relative);
+    if let Some(parent) = absolute.parent()
+        && std::fs::create_dir_all(parent).is_err()
+    {
+        return None;
+    }
+    let mut combined = String::new();
+    combined.push_str("=== stdout ===\n");
+    combined.push_str(stdout);
+    combined.push_str("\n=== stderr ===\n");
+    combined.push_str(stderr);
+    if std::fs::write(&absolute, combined.as_bytes()).is_err() {
+        return None;
+    }
+
+    let stager = crate::harness::artifact::ArtifactStager::new(staging_root);
+    match stager.stage_file(attempt_id, workspace_path, &relative, "log", "text/plain") {
+        Ok(staged) => Some(serde_json::json!({
+            "kind": staged.kind,
+            "name": staged.name,
+            "media_type": staged.media_type,
+            "size_bytes": staged.size_bytes,
+            "sha256": staged.sha256,
+            "staged_path": staged.staged_path.display().to_string(),
+        })),
+        Err(error) => {
+            tracing::warn!(
+                ?error,
+                harness = harness_kind,
+                "wait: artifact staging failed"
+            );
+            None
+        }
+    }
+}

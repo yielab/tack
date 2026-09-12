@@ -405,4 +405,4 @@ mod unix {
 
 #[cfg(test)]
 #[path = "process/tests.rs"]
-mod tests;
+pub(crate) mod tests;
