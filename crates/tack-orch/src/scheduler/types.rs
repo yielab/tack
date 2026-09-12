@@ -1,12 +1,10 @@
 //! Pure input/output types for the deterministic fleet scheduler.
 //!
-//! Every type here is plain data: no I/O, no database handle, no clock
-//! access baked in (callers pass `now` explicitly — see [`super::select`]).
-//! The scheduler's job is to turn a [`SchedulingRequest`] plus a candidate
-//! [`RunnerCandidate`] slice into a [`SelectionOutcome`] and nothing else —
-//! it never grants the authoritative lease; that stays the repository/API's
-//! job, reading and writing the real `agent_runners`/`agent_fleet_members`
-//! tables (see `crates/tack-db/src/migrations.rs` migrations 039–041).
+//! Plain data only: no I/O, no clock access (callers pass `now` — see
+//! [`super::select`]). Turns a [`SchedulingRequest`] plus a candidate
+//! [`RunnerCandidate`] slice into a [`SelectionOutcome`] — it never grants
+//! the lease itself; that stays the repository's job against the real
+//! `agent_runners`/`agent_fleet_members` tables (migrations 039–041).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -17,13 +15,9 @@ use crate::execution::{
     RunnerId, RunnerSelector,
 };
 
-/// A runner's enrollment lifecycle state, mirroring `agent_runners.state`
-/// (`crates/tack-db/src/migrations.rs`, migration 040: `'pending_enrollment'`
-/// | `'active'` | `'revoked'`, enforced today only by hand-written SQL
-/// literals in `crates/tack-db/src/repo/execution.rs`, not a typed enum
-/// there). Only [`RunnerState::Active`] is ever schedulable — a pending
-/// runner has no live credential yet and a revoked one must never be handed
-/// new work, no matter how fresh its last heartbeat looked before revocation.
+/// Mirrors `agent_runners.state` (migration 040). Only [`RunnerState::Active`]
+/// is schedulable — pending has no live credential yet, and revoked must
+/// never get new work no matter how fresh its last heartbeat looked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RunnerState {
     PendingEnrollment,
@@ -32,14 +26,9 @@ pub enum RunnerState {
 }
 
 /// Caller-supplied scheduling priority. No `execution_requests` column
-/// carries a priority value today (see migration 044 in
-/// `crates/tack-db/src/migrations.rs` — `state`, `selector_kind`,
-/// `requested_harness_kind`, etc., but no `priority`), so this type is a
-/// typed stand-in for that gap: [`crate::scheduler::batch::schedule`] orders
-/// by it, and a caller must supply a real value (from a future column, or a
-/// policy read out of `execution_requests.metadata`) rather than inventing
-/// one ad hoc. `Normal` is the explicit default so an unset priority never
-/// silently sorts as the *most* urgent request in a batch.
+/// carries one yet, so this is a typed stand-in, read today from
+/// `execution_requests.metadata`. `Normal` is the default so an unset
+/// priority never sorts as the most urgent request in a batch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum Priority {
     Low,
@@ -48,21 +37,11 @@ pub enum Priority {
     High,
 }
 
-/// The requested model, or an explicit request for the runner/harness to
-/// auto-select one. Uses [`RequestedModelProvider`]/[`RequestedModelId`] —
-/// not the bare `ModelProvider`/`ModelId` a runner uses to *declare*
-/// support — because requested and declared/actual are treated as different
-/// namespaces even though both wrap an opaque string; [`super::select`]
-/// compares across the two via `.as_str()` rather than conflating the
-/// types.
-///
-/// Deliberately makes the "one of provider/model set, the other absent"
-/// shape unrepresentable: `execution::ExecutionRequestSnapshot` carries
-/// `requested_model_provider`/`requested_model_id` as two independently
-/// nullable fields, so a caller building a [`SchedulingRequest`] from that
-/// snapshot must reconcile them through [`ModelSelector::from_parts`],
-/// which surfaces the partial case as a typed
-/// [`super::select::SchedulingError`] instead of silently guessing.
+/// The requested model, or an explicit request to auto-select. Uses
+/// [`RequestedModelProvider`]/[`RequestedModelId`], distinct from the
+/// runner's declared `ModelProvider`/`ModelId`; [`super::select`] compares
+/// them via `.as_str()`. [`ModelSelector::from_parts`] makes "one of
+/// provider/model set, the other absent" unrepresentable.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModelSelector {
     Explicit {
@@ -73,12 +52,9 @@ pub enum ModelSelector {
 }
 
 impl ModelSelector {
-    /// Reconciles the two independently-nullable wire fields into a
-    /// [`ModelSelector`]. `Ok(AutoSelect)` only when *both* are absent;
-    /// exactly one present is a caller/data error, not a runner-eligibility
-    /// question, so it is reported once here rather than repeated as an
-    /// identical [`super::select::IneligibleReason`] against every
-    /// candidate.
+    /// `Ok(AutoSelect)` only when both wire fields are absent; exactly one
+    /// present is a caller/data error, reported once here rather than
+    /// repeated per candidate as an [`super::select::IneligibleReason`].
     pub fn from_parts(
         provider: Option<RequestedModelProvider>,
         model_id: Option<RequestedModelId>,
@@ -93,118 +69,90 @@ impl ModelSelector {
     }
 }
 
-/// A request awaiting runner assignment. Pure data — no reference to any
-/// database row or HTTP payload — built by whatever caller wires this
-/// module to the real `execution_requests` table.
+/// A request awaiting runner assignment. Pure data, built by whatever caller
+/// wires this module to the real `execution_requests` table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchedulingRequest {
     pub request_id: ExecutionRequestId,
-    /// Exact runner, fleet, or `Any` — `execution::RunnerSelector` verbatim,
-    /// not a re-declared copy.
     pub selector: RunnerSelector,
     pub priority: Priority,
     pub requested_harness_kind: HarnessKind,
     pub requested_model: ModelSelector,
-    /// Every key/value here must match the candidate's own `labels`
-    /// (case-sensitive, exact value match) for the candidate to be eligible.
-    /// An empty map imposes no label constraint.
+    /// Every key/value must match the candidate's own `labels` exactly. An
+    /// empty map imposes no constraint.
     pub required_labels: BTreeMap<String, String>,
-    /// When this request entered the queue — the batch scheduler's fairness
-    /// tie-break (oldest first within the same [`Priority`]). Mirrors
-    /// `execution_requests.created_at`.
+    /// Fairness tie-break for the batch scheduler: oldest first within the
+    /// same [`Priority`]. Mirrors `execution_requests.created_at`.
     pub created_at: DateTime<Utc>,
 }
 
-/// One schedulable runner's current state, as the caller resolved it from
-/// `agent_runners` + `agent_fleet_members` (migrations 039–041). Capacity and
-/// heartbeat freshness come from `agent_runners`' own live columns
-/// (`available_capacity`, `last_heartbeat_at`), not from the runner's
-/// self-reported `capability_snapshot` — that JSON blob is refreshed only on
-/// enroll/refresh and can be stale relative to the DB's live
-/// capacity ledger, which every claim/heartbeat/completion call updates
-/// directly (`crates/tack-db/src/repo/execution.rs`). `harnesses` is the one
-/// piece of the capability snapshot the scheduler does read: whichever
-/// harness/model combinations the runner most recently reported.
+/// One schedulable runner's current state. Capacity and heartbeat come from
+/// `agent_runners`' live columns, not the self-reported `capability_snapshot`
+/// (can be stale). `harnesses` is the one piece of that snapshot read.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunnerCandidate {
     pub runner_id: RunnerId,
     pub state: RunnerState,
-    /// Every fleet id (`agent_fleets.id`) this runner is currently a member
-    /// of, via `agent_fleet_members`. Empty for a runner enrolled but not
-    /// yet placed in any fleet.
     pub fleet_memberships: BTreeSet<String>,
     pub labels: BTreeMap<String, String>,
     pub total_capacity: u32,
     pub available_capacity: u32,
     pub last_heartbeat_at: Option<DateTime<Utc>>,
-    /// The runner's most recently reported harness/model support
-    /// (`execution::HarnessCapability`, from `agent_runners.capability_snapshot`
-    /// verbatim) — read, never assumed. A harness absent from this list, or
-    /// present with a non-`None` `probe_error`, is not eligible for this
-    /// runner.
+    /// A harness absent here, or with a non-`None` `probe_error`, is not
+    /// eligible for this runner.
     pub harnesses: Vec<HarnessCapability>,
 }
 
-/// Why one candidate was rejected. Every variant names the exact fact that
-/// disqualified it — unsupported is typed, unknown is explicit, and invalid
-/// combinations name reasons rather than collapsing to a bare boolean.
+/// Why one candidate was rejected. Every variant names the disqualifying
+/// fact — unsupported is typed, unknown is explicit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IneligibleReason {
-    /// `selector` was `ExactRunner { runner_id }` and this candidate is not
-    /// that runner.
     NotRequestedRunner,
-    /// `selector` was `Fleet { fleet_id }` and this candidate's
-    /// `fleet_memberships` does not contain it.
-    NotFleetMember { fleet_id: String },
-    /// Only [`RunnerState::Active`] is schedulable.
-    RunnerNotActive { state: RunnerState },
-    /// `last_heartbeat_at` is missing, or older than the policy's
-    /// `max_heartbeat_age` as of `now`: the scheduler reads freshness, it
-    /// does not assume a runner is alive.
+    NotFleetMember {
+        fleet_id: String,
+    },
+    RunnerNotActive {
+        state: RunnerState,
+    },
+    /// Missing, or older than `max_heartbeat_age` as of `now` — freshness is
+    /// read, never assumed.
     HeartbeatStale {
         last_heartbeat_at: Option<DateTime<Utc>>,
         max_age: Duration,
     },
-    /// `available_capacity` is zero.
-    NoAvailableCapacity { total: u32 },
-    /// A key from `required_labels` is missing, or present with a different
-    /// value, on this candidate.
+    NoAvailableCapacity {
+        total: u32,
+    },
     MissingLabel {
         key: String,
         expected: String,
         actual: Option<String>,
     },
-    /// The requested harness does not appear in this candidate's most
-    /// recently reported `harnesses` at all.
-    HarnessNotDeclared { harness: HarnessKind },
-    /// The requested harness was declared, but its last probe recorded an
-    /// error — not currently usable, whatever it worked before.
-    HarnessProbeError { harness: HarnessKind, error: String },
-    /// [`ModelSelector::Explicit`] named a provider/model this candidate's
-    /// declared `model_combinations` for the matched harness does not list,
-    /// and the harness did not attest `model_passthrough: supported`
-    /// — with that attestation the adapter forwards the operator's
-    /// opaque model verbatim and the pairing is eligible without being
-    /// declared.
+    HarnessNotDeclared {
+        harness: HarnessKind,
+    },
+    HarnessProbeError {
+        harness: HarnessKind,
+        error: String,
+    },
+    /// Not in this candidate's declared combinations, and the harness didn't
+    /// attest `model_passthrough: supported` (which would make it eligible
+    /// without being declared).
     ModelCombinationNotDeclared {
         harness: HarnessKind,
         provider: String,
         model_id: String,
     },
-    /// [`ModelSelector::AutoSelect`] was requested. No capability field in
-    /// runner-v1 v1 (`docs/contracts/runner-v1/capabilities.json`) records
-    /// whether a harness safely accepts an unspecified model — one of the two
-    /// real adapters (Codex) rejects auto-select pre-spawn rather
-    /// than fabricate a selection. Until a capability snapshot can attest to
-    /// this, every candidate is reported ineligible for an auto-select
-    /// request with this named reason rather than silently narrowing to
-    /// whichever harness the scheduler happens to guess is safe.
-    AutoSelectNotVerified { harness: HarnessKind },
+    /// No runner-v1 capability field records whether a harness safely
+    /// accepts an unspecified model, so auto-select is ineligible everywhere
+    /// rather than guessed safe.
+    AutoSelectNotVerified {
+        harness: HarnessKind,
+    },
 }
 
-/// A successful, advisory placement: this runner is the scheduler's pick,
-/// not yet a granted lease. Only the repository's fenced claim can make a
-/// lease valid — see this module's top doc comment.
+/// An advisory placement: the scheduler's pick, not yet a granted lease.
+/// Only the repository's fenced claim makes a lease valid.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Selection {
     pub runner_id: RunnerId,
@@ -216,16 +164,13 @@ pub struct Selection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectionOutcome {
     Selected(Selection),
-    /// No candidate qualified. `reasons` names every candidate that was
-    /// actually considered and why it was rejected — empty only when
-    /// `candidates` itself was empty (an empty fleet, or no runners at all).
+    /// `reasons` names every candidate actually considered — empty only
+    /// when `candidates` itself was empty.
     NoEligibleRunner {
         reasons: Vec<(RunnerId, IneligibleReason)>,
     },
-    /// `selector` was `ExactRunner { runner_id }` and no candidate with that
-    /// id was present at all — distinct from `NoEligibleRunner` (which means
-    /// the runner was present but disqualified) because "doesn't exist" and
-    /// "exists but unhealthy" call for different operator responses.
+    /// No candidate with the requested exact id was present at all —
+    /// distinct from `NoEligibleRunner` (present but disqualified).
     UnknownRunner {
         runner_id: RunnerId,
     },
