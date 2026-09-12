@@ -5,22 +5,22 @@ reading one you did, and it crowds out the file you will need later in the same 
 page exists because this repository has several files that are cheap to open and expensive
 to have opened.
 
-**Re-measured 2026-09-12 (IX-M7).** Command behind every row: `wc -l <file>` and
-`wc -c <file>`, tokens estimated as `chars/4`. Re-measure the same way rather than
-trusting these numbers a year from now; the ratios are the point, not the digits. Several
-rows moved a lot since the 2026-08-30/09-03 pass: `TODO.md`'s active-boards section
-roughly doubled (Part VI alone is now ~47k tokens), `docs/agent-handoffs/**` more than
-tripled as Parts VI–IX added handoffs, and `docs/API-REFERENCE.md` shrank by 4x (IX-M7
-moved its endpoint listing to a generated page — see that row).
+**Re-measured 2026-09-12 (IX-M7, after the archival move).** Command behind every row:
+`wc -l <file>` and `wc -c <file>`, tokens estimated as `chars/4`. Re-measure the same way
+rather than trusting these numbers a year from now; the ratios are the point, not the
+digits. This pass moved Parts I–III's board sections (10,190 lines) out of `TODO.md` to
+`docs/closed-cycles/boards/`, and Parts III–VII's handoffs (210 files) out of
+`docs/agent-handoffs/` to `docs/closed-cycles/handoffs/` — both directories are archived,
+not read for context, and not listed below. `TODO.md` dropped from ~263k tokens to ~89k;
+`docs/agent-handoffs/**` dropped from ~820k tokens to ~212k.
 
 | Source | Lines | ~Tokens | Read it? |
 |---|---|---|---|
-| `TODO.md` **whole** | 15,056 | **~263k** | **Never.** This is more than a context window for one file that is ~90% closed-cycle history. |
-| `TODO.md` active boards (lines 1–~4870) | ~4,870 | ~95k | Yes, when you need **a** board — one Part, never all. Parts IX, VIII, VII, VI, V and IV live at the top in that order; `grep -n "^# Part" TODO.md` gives the start lines, then `sed -n` the one you need (Part VII is lines 822–1345, 523 lines, ~10k; Part VI is lines 1346–3821, 2,475 lines, ~47k — by far the largest single Part on the active board). |
-| `docs/agent-handoffs/**` **all** | 46,019 | **~820k** | **Never all.** 263 files. Read the one or two your card's `Context` names. |
-| `docs/agent-handoffs/part-iii/III-C2.md` (largest single) | 783 | ~16k | Only if named. Still the largest single handoff (verified against every file in the tree); one handoff can cost as much as every active board combined. |
-| `docs/agent-handoffs/part-vi/README.md` (dispatch plan) | 936 | ~14k | **Header + your card's block only** (~2k). It tells you what else to read, with sizes; reading it whole defeats its purpose. `TEMPLATE.md` beside it is ~0.6k and replaces digging the template out of the archive. |
-| `docs/agent-handoffs/part-vii/README.md` (dispatch plan) | 489 | ~7k | **Header + your card's block only** (~2k). Same shape as Part VI's; `TEMPLATE.md` beside it is a pointer plus three sections. |
+| `TODO.md` **whole** | 4,849 | ~89k | Grep first, but a whole Part is usually cheaper than guessing — the file is entirely active or recently-closed boards now (Parts I–III's history moved out; see `docs/closed-cycles/`). `grep -n "^# Part" TODO.md` gives the start lines, then `sed -n` the one you need (Part VII is lines 810–1333, 524 lines, ~10k; Part VI is lines 1334–3809, 2,476 lines, ~47k — by far the largest single Part). |
+| `docs/agent-handoffs/**` **all** | 12,548 | **~212k** | **Never all.** 55 files. Read the one or two your card's `Context` names. |
+| `docs/agent-handoffs/part-ix/IX-M4-tack-api-orchestration.md` (largest single) | 539 | ~9k | Only if named. Largest remaining handoff after Part III's moved to `docs/closed-cycles/handoffs/part-3/`. |
+| `docs/closed-cycles/handoffs/part-6/README.md` (Part VI dispatch plan, archived) | 936 | ~14k | Part VI is closed; read only when a `docs/closed-cycles/` pointer names it. **Header + the one card's block**, never whole — `TEMPLATE.md` beside it is ~0.6k. |
+| `docs/closed-cycles/handoffs/part-7/README.md` (Part VII dispatch plan, archived) | 489 | ~7k | Same shape as Part VI's, same rule: closed, read only when named. |
 | `docs/openapi.json` | 12,624 | **~95k** | **Almost never.** It is generated. To check one path, `python3 -c` or `jq` it. |
 | `docs/book/src/roadmap.md` | 3,676 | ~56k | Rarely whole. It records intent, not state. The `# Next` sections at the end are the live part. |
 | `crates/tack-db/src/migrations.rs` | 1,619 | ~20k | Grep it for the table you care about; adding a migration needs the tail, not the file. |
@@ -39,7 +39,7 @@ moved its endpoint listing to a generated page — see that row).
 `TODO.md` — the file that costs the most and is opened the most carelessly:
 
 ```bash
-head -68 TODO.md                      # the header names which Parts are ACTIVE. Trust it over section order.
+head -58 TODO.md                      # the header names which Parts are ACTIVE. Trust it over section order.
 grep -n "^# \|^## " TODO.md           # the map. Cheap. Do this before any sed.
 n=$(grep -n "### V-A2 " TODO.md | cut -d: -f1); sed -n "${n},$((n+60))p" TODO.md   # one card
 ```
