@@ -3154,37 +3154,18 @@ impl Repository {
     /// Conditional counterpart to
     /// [`Repository::delete_execution_artifacts_by_row_ids`], scoped to rows
     /// whose `content_reference` is *still* `NULL` — i.e. rows the caller
-    /// observed at list-time (`list_execution_artifacts_older_than`) as
-    /// having no blob to unlink.
+    /// observed as having no blob to unlink.
     ///
-    /// # Why this exists: the race the plain by-id delete cannot see
-    ///
-    /// `set_execution_artifact_content_reference`'s own `UPDATE` is guarded
-    /// `WHERE content_reference IS NULL`, so once a row's reference is set it
-    /// can never change again — a row observed with `Some(reference)` at
-    /// list-time is safe to delete unconditionally by id (this crate's
-    /// existing method already does that correctly). But a row observed with
-    /// `None` can race: a runner's real content upload
-    /// (`put_artifact_content` → `store_streaming` then this same
-    /// `set_execution_artifact_content_reference` call) can land *between*
-    /// the sweep's read and its delete, writing a real blob to disk and
-    /// setting `content_reference` — and an unconditional
-    /// `delete_execution_artifacts_by_row_ids` would still delete that row
-    /// despite the fresh blob, permanently orphaning it (nothing will ever
-    /// reference it again once the row is gone). This method closes that
-    /// window to the width of one atomic SQL statement (no separate read
-    /// step here to race against) by re-checking `content_reference IS NULL`
-    /// as part of the same `DELETE`: a row that raced past `NULL` in the
-    /// meantime simply is not matched and survives this pass, to be picked
-    /// up correctly (blob removed, then deleted) on the next one, once its
-    /// `content_reference` is visible as `Some` to a fresh
-    /// `list_execution_artifacts_older_than` read.
-    ///
-    /// See `handlers/runner_protocol/retention.rs::sweep_artifacts` (the
-    /// only caller) for how the two delete methods are split across a listed
-    /// batch, and `crates/tack-db/tests/repository/event_artifact_retention.rs`
-    /// for the deterministic proof of both this guard's effect and what the
-    /// unconditional method would have done to the same racing row.
+    /// A row observed with `None` can race: a runner's real content upload
+    /// (`put_artifact_content` → `store_streaming` then
+    /// `set_execution_artifact_content_reference`) can land between the
+    /// sweep's read and its delete, writing a real blob and setting
+    /// `content_reference` — an unconditional delete would still remove
+    /// that row, permanently orphaning the fresh blob. Re-checking
+    /// `content_reference IS NULL` inside this same `DELETE` closes that
+    /// window to one atomic statement: a row that raced past `NULL`
+    /// survives this pass and is picked up correctly on the next. See
+    /// `tests/repository/event_artifact_retention.rs` for proof.
     #[instrument(skip(self, ids))]
     pub async fn delete_unresolved_execution_artifacts_by_row_ids(
         &self,
@@ -3301,36 +3282,17 @@ impl Repository {
     // ─── Runtime retention and observability ───────────────────────────────
 
     /// Deletes stale rows from the six idempotency/replay bookkeeping tables
-    /// (`execution_claim_replays`, `execution_heartbeat_replays`,
-    /// `execution_cancellation_replays`, `execution_event_batch_replays`,
-    /// `execution_completion_replays`, `execution_recovery_audits`), batched
-    /// at up to `batch_size` rows per table per transaction, looping per
-    /// table until nothing older than `cutoff` remains.
+    /// (`execution_claim_replays`, `execution_heartbeat_replays`, `execution_cancellation_replays`,
+    /// `execution_event_batch_replays`, `execution_completion_replays`, `execution_recovery_audits`),
+    /// batched at up to `batch_size` rows per table, looping until nothing older than `cutoff` remains.
     ///
-    /// **Purge, not roll-up.** Every row in these six tables exists solely
-    /// to answer "have I already processed this exact retried write?" for a
-    /// fencing/lease/heartbeat replay window measured in seconds to low
-    /// minutes. Once `cutoff` (typically 90 days out) has passed,
-    /// there is no future question these rows could ever answer — unlike
-    /// `execution_events` (see [`Self::purge_stale_terminal_execution_events`]),
-    /// there is no meaningful aggregate to preserve first, so plain deletion
-    /// loses nothing of value. Read "purge" here literally, not as a
-    /// synonym for "roll up."
+    /// Purge, not roll-up: each row only answers "have I already processed this retried write?" for
+    /// a replay window of seconds to minutes, so once `cutoff` passes nothing is worth preserving —
+    /// unlike `execution_events` ([`Self::purge_stale_terminal_execution_events`]).
     ///
-    /// **`BEGIN IMMEDIATE`, not a deferred transaction:** every one of these
-    /// tables is also written concurrently by live runner-protocol traffic
-    /// (claim/heartbeat/event-batch/completion/cancellation/recovery each
-    /// insert into one of these six tables on every call). A deferred
-    /// transaction that `SELECT`s candidate rows and only later `DELETE`s
-    /// them is exactly the read-then-write shape CLAUDE.md calls out: two
-    /// concurrent deferred transactions can both acquire a shared read lock
-    /// and then race to upgrade to a write lock, and SQLite returns
-    /// `SQLITE_LOCKED` rather than queuing one behind the other.
-    /// `BEGIN IMMEDIATE` takes the write lock up front instead, serializing
-    /// this sweep against every other writer to these tables rather than
-    /// deadlocking against them. Proved load-bearing (reverted, watched the
-    /// concurrency test fail, restored) in
-    /// `crates/tack-db/tests/repository/execution_retention.rs`.
+    /// Uses `BEGIN IMMEDIATE`: these tables take live concurrent writes, and a deferred
+    /// SELECT-then-DELETE can `SQLITE_LOCKED` against a concurrent writer instead of queuing
+    /// behind it. Proved load-bearing in `tests/repository/execution_retention.rs`.
     #[instrument(skip(self))]
     pub async fn purge_stale_execution_replays(
         &self,
@@ -3391,30 +3353,19 @@ impl Repository {
 
     /// Deletes `execution_events` rows once both (a) `occurred_at < cutoff`
     /// and (b) the owning attempt has reached a genuinely terminal state
-    /// (`succeeded`/`failed`/`cancelled` — the same three states
-    /// `tack_orch::execution::ExecutionState::is_terminal()` names).
-    /// Deliberately excludes `lost`/`needs_operator`: both remain
-    /// actionable/ambiguous and are themselves
-    /// observability targets ([`Self::execution_fleet_snapshot`]) — an
-    /// attempt an operator might still requeue or investigate must never
-    /// have its event history silently swept out from under it.
+    /// (`succeeded`/`failed`/`cancelled`, matching
+    /// `ExecutionState::is_terminal()`). Excludes `lost`/`needs_operator`:
+    /// both remain actionable and are themselves observability targets
+    /// ([`Self::execution_fleet_snapshot`]), so their event history must
+    /// never be swept out from under an operator who might still act on it.
     ///
-    /// **Purge only — not a roll-up.** No `execution_events_daily` (or
-    /// equivalent) aggregate table exists in this schema today. Adding one
-    /// would mirror
-    /// `orch_events`/`orch_events_daily`
-    /// (`crates/tack-db/src/repo/orch.rs::rollup_and_purge_orch_events`).
-    /// Until that migration lands, this purges raw rows outright — no
-    /// day/kind/count aggregate survives; that information is only
-    /// recoverable by adding the rollup table before this method ever runs
-    /// against a given row. This is an explicit, documented trade, not a
-    /// silent one — no structural zero, no fake success:
-    /// this repo's `Repository` API has exactly one method for this table
-    /// and its own doc comment says exactly what it does.
+    /// Purge only, not a roll-up: no `execution_events_daily` aggregate
+    /// exists in this schema (unlike `orch_events`/`orch_events_daily` in
+    /// `orch.rs::rollup_and_purge_orch_events`), so this deletes raw rows
+    /// outright with no day/kind/count aggregate surviving.
     ///
     /// Same `BEGIN IMMEDIATE` batching rationale as
-    /// [`Self::purge_stale_execution_replays`] — `execution_events` receives
-    /// live inserts from every in-flight attempt's event-batch reports.
+    /// [`Self::purge_stale_execution_replays`].
     #[instrument(skip(self))]
     pub async fn purge_stale_terminal_execution_events(
         &self,

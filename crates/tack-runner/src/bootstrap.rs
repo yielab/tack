@@ -245,28 +245,20 @@ fn build_adapter_registry(
 }
 
 /// Builds the capability snapshot sent at enrollment and on every refresh.
-///
 /// Every feature statement here is deliberately conservative, because a
-/// capability claim is load-bearing: the scheduler and the operator UI both
-/// offer only what a runner says it can do.
+/// capability claim is load-bearing: the scheduler and the operator UI
+/// both offer only what a runner says it can do.
 ///
-/// - `cancel` reports [`PROCESS_GROUP_CANCEL_CEILING`] (advisory), the honest
-///   ceiling of a process-group signal, which cannot reliably reach a
-///   descendant a harness spawns into a new OS session.
-/// - `artifacts` reports **advisory**: `engine.rs` has a real call site
-///   (`RunnerEngine::submit_terminal_evidence`), so a completed attempt
-///   with a staged artifact genuinely uploads it — but only when an
-///   adapter happens to stage one (`terminal_reason.artifact`), and only
-///   best-effort (a transport failure is logged, never retried or replayed
-///   on restart, and never blocks the attempt's own completion). That
-///   conditionality is exactly what `advisory` is for; `supported` would
-///   overclaim an upload this runner cannot yet guarantee.
-/// - `decisions` still reports **unsupported**. `AttemptDataProtocol::
-///   create_decision`/`poll_decisions` are implemented and reachable from
-///   `engine.rs`, but no harness adapter in this tree ever asks a question a
-///   decision could answer — there is still no call site that would ever
-///   open one. Claiming support for a path nothing calls is exactly the kind
-///   of lie the "capability claims are load-bearing" rule forbids.
+/// - `cancel` reports [`PROCESS_GROUP_CANCEL_CEILING`] (advisory): a
+///   process-group signal cannot reliably reach a descendant a harness
+///   spawns into a new OS session.
+/// - `artifacts` reports advisory: `RunnerEngine::submit_terminal_evidence`
+///   uploads a staged artifact, but only when an adapter stages one and
+///   only best-effort (a transport failure is logged, never retried).
+/// - `decisions` reports unsupported: the protocol path is implemented and
+///   reachable, but no harness adapter ever asks a question a decision
+///   could answer — claiming support for a path nothing calls would be
+///   exactly the lie this rule forbids.
 async fn report_capabilities<C: Clock>(
     adapters: &AdapterRegistry,
     clock: &C,
