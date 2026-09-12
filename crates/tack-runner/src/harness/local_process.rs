@@ -2,7 +2,7 @@
 //!
 //! [`LocalProcessHarness<G>`] owns everything about running a harness CLI as a
 //! local child process that does not depend on which vendor it is: process
-//! bookkeeping (one in-flight [`SupervisedProcess`] per opaque
+//! bookkeeping (one in-flight [`SupervisedProcess`](crate::harness::process::SupervisedProcess) per opaque
 //! [`LocalRunHandle`]), taking ownership of that bookkeeping on
 //! `cancel`/`wait`, reconciling a recorded pid across a restart, and the
 //! shared `secrets`/`providers` an attempt's environment resolves against.

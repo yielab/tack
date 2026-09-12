@@ -35,4 +35,10 @@ if [ -d frontend/node_modules ]; then
   fi
 fi
 
+python3 scripts/gen-api-reference.py >/dev/null
+if ! git diff --quiet -- docs/book/src/developer/api-reference.md; then
+  echo "  developer/api-reference.md was stale — it has just been regenerated; commit the result" >&2
+  exit 1
+fi
+
 echo "✓ pre-push checks passed"

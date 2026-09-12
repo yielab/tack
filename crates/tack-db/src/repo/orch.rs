@@ -1218,7 +1218,7 @@ impl Repository {
     }
 
     /// Writes back docket's real decision once
-    /// [`tack_orch::ControlPlane::decide_approval`] has actually resumed or
+    /// `tack_orch::ControlPlane::decide_approval` has actually resumed or
     /// killed the gated task on docket's side — this is a **local mirror
     /// update only**, called after that HTTP call already succeeded, never
     /// instead of it (the decision is real the moment docket accepts it;
