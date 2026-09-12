@@ -19,30 +19,19 @@ use crate::execution::{ExecutionRequestId, RunnerId};
 
 /// Schedules every request in `requests` against the shared `candidates`
 /// pool, honoring [`super::types::Priority`] and FIFO fairness within a
-/// priority tier.
-///
-/// # Ordering
-///
-/// Requests are considered highest [`super::types::Priority`] first; within
-/// the same priority, oldest `created_at` first (FIFO — a request does not
-/// get pushed back behind a same-priority request that arrived later); any
-/// remaining tie (identical priority and `created_at`) is broken by
-/// `request_id`, purely so the processing order — and therefore which
-/// request wins a contested runner — never depends on `requests`' input
+/// priority tier. Requests are processed highest priority first; within a
+/// priority, oldest `created_at` first; any remaining tie is broken by
+/// `request_id`, so processing order never depends on `requests`' input
 /// slice order.
 ///
-/// # Capacity is consumed within the batch
-///
-/// A runner [`select_runner`] selects for an earlier request in this pass
-/// has its `available_capacity` reduced by one for every later request in
-/// the *same* call — this is what makes "fairness" mean something beyond a
-/// single request: two same-priority requests that both fit a single-slot
-/// runner do not both get told "yes, this runner." This adjustment is
-/// entirely local to one `schedule` call; the real, authoritative capacity
-/// ledger is `agent_runners.available_capacity`, decremented only by the
-/// repository's fenced claim — the caller must re-derive
-/// `candidates` from fresh state before a later `schedule` call, not reuse
-/// this function's internal bookkeeping.
+/// **Capacity is consumed within the batch, but only here.** A runner
+/// [`select_runner`] selects for an earlier request has its
+/// `available_capacity` reduced by one for every later request in the same
+/// call, so two same-priority requests never both get told "yes" for a
+/// single-slot runner. This bookkeeping is local to one `schedule` call —
+/// the authoritative ledger is `agent_runners.available_capacity`,
+/// decremented only by the repository's fenced claim; re-derive
+/// `candidates` from fresh state before the next call.
 pub fn schedule(
     requests: &[SchedulingRequest],
     candidates: &[RunnerCandidate],
