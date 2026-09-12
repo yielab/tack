@@ -46,7 +46,7 @@ use crate::secrets::SecretStore;
 #[cfg(test)]
 pub(crate) use crate::client::Timestamp;
 #[cfg(test)]
-pub(crate) use crate::harness::{AttemptJournal, HarnessAdapter, HarnessProbe, LocalRunHandle};
+pub(crate) use crate::harness::{AttemptJournal, HarnessAdapter, HarnessProbe};
 // `reconcile`'s own liveness check moved into the shared
 // `local_process::LocalProcessHarness::reconcile` (it calls `process_alive`
 // generically for every grammar before ever asking `reconcile_alive`
@@ -355,52 +355,27 @@ impl ClaudeCodeGrammar {
     }
 
     /// Stages the (already-scrubbed) combined stdout/stderr as a `log`
-    /// artifact inside the attempt's own workspace, via
-    /// [`super::artifact::ArtifactStager`] — the exact pattern
-    /// `codex.rs` already proves out. `artifacts: Supported`
-    /// once had no backing implementation: `wait()` never called this before.
-    /// Stages under the workspace's own `.artifacts` directory, matching
-    /// this adapter's live test's own choice (`ArtifactStager::new(workspace.join(".artifacts"))`)
-    /// rather than a separate external staging root — `discover()` has no
-    /// such root to give it. Best-effort: a staging failure only omits the
-    /// `artifact` key from `terminal_reason`, never fails the attempt.
+    /// artifact, via the shared [`super::local_process::stage_run_log`].
+    /// Stages under the workspace's own `.artifacts` directory (unlike
+    /// codex, which has a separate external staging root — `discover()`
+    /// has no such root to give it). Best-effort: a staging failure only
+    /// omits the `artifact` key from `terminal_reason`, never fails the
+    /// attempt.
     fn stage_run_log(
         workspace_path: &Path,
         attempt_id: &str,
         stdout: &str,
         stderr: &str,
     ) -> Option<Value> {
-        let relative = PathBuf::from(".tack-runner").join("claude-code-run.log");
-        let absolute = workspace_path.join(&relative);
-        if let Some(parent) = absolute.parent()
-            && std::fs::create_dir_all(parent).is_err()
-        {
-            return None;
-        }
-        let mut combined = String::new();
-        combined.push_str("=== stdout ===\n");
-        combined.push_str(stdout);
-        combined.push_str("\n=== stderr ===\n");
-        combined.push_str(stderr);
-        if std::fs::write(&absolute, combined.as_bytes()).is_err() {
-            return None;
-        }
-
-        let stager = super::artifact::ArtifactStager::new(workspace_path.join(".artifacts"));
-        match stager.stage_file(attempt_id, workspace_path, &relative, "log", "text/plain") {
-            Ok(staged) => Some(serde_json::json!({
-                "kind": staged.kind,
-                "name": staged.name,
-                "media_type": staged.media_type,
-                "size_bytes": staged.size_bytes,
-                "sha256": staged.sha256,
-                "staged_path": staged.staged_path.display().to_string(),
-            })),
-            Err(error) => {
-                tracing::warn!(?error, "claude-code wait: artifact staging failed");
-                None
-            }
-        }
+        super::local_process::stage_run_log(
+            &workspace_path.join(".artifacts"),
+            workspace_path,
+            attempt_id,
+            "claude-code-run.log",
+            stdout,
+            stderr,
+            HARNESS_KIND,
+        )
     }
 }
 
@@ -875,21 +850,13 @@ impl HarnessGrammar for ClaudeCodeGrammar {
             .as_ref()
             .map(|provider| provider.as_str())
             .unwrap_or("");
-        crate::provider::resolve_endpoint(
-            providers,
-            secrets,
+        super::local_process::resolve_provider_endpoint(
             provider,
+            secrets,
+            providers,
             crate::provider::Wire::AnthropicMessages,
+            HARNESS_KIND,
         )
-        .map_err(|error| {
-            let reason = error.to_string();
-            tracing::warn!(
-                reason,
-                "claude-code adapter rejected a request whose provider endpoint could not be \
-                 resolved"
-            );
-            HarnessError::Rejected { reason }
-        })
     }
 
     async fn prepare(

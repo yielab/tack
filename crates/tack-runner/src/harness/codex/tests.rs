@@ -432,61 +432,16 @@ async fn wait_classifies_terminal_state_from_the_exit_code_alone() {
     }
 }
 
-/// Acceptance: cancel kills descendants, proved through the adapter's
-/// own `start`/`cancel`, not raw `ProcessSpec` (that is `process.rs`'s
-/// own test).
-#[tokio::test]
-async fn cancel_kills_the_whole_descendant_tree_via_the_adapter() {
-    let (adapter, _scratch) = adapter();
-    let workspace_dir = deterministic_fixture_repo("exec-cancel");
-    let workspace = workspace_dir.path();
-    let pidfile = workspace.join("grandchild.pid");
-    let spec = spec_with(
-        workspace.to_path_buf(),
-        Some(("openai", "opaque/model-alpha")),
-        &[
-            ("TACK_FAKE_HARNESS_MODE", "spawn_child"),
-            (
-                "TACK_FAKE_HARNESS_PIDFILE",
-                pidfile.to_str().expect("utf8 pidfile path"),
-            ),
-            ("TACK_FAKE_HARNESS_SLEEP_SECONDS", "3600"),
-        ],
-    );
+// Cancel killing the whole descendant tree through a real adapter's own
+// `start`/`cancel` (not raw `ProcessSpec`, which is `process.rs`'s own
+// test) is now `harness::tests::cancel_kills_the_whole_descendant_tree_via_both_real_adapters`
+// — that shared-core test drives both real adapters against the same
+// fake-harness fixture, so it no longer needs a codex-only copy here.
 
-    let handle = adapter.start(&spec).await.expect("start");
-    let grandchild_pid = wait_for_pidfile(&pidfile).await;
-    assert!(
-        crate::harness::process::process_alive(grandchild_pid),
-        "grandchild must be observed running before cancellation"
-    );
-
-    let evidence = adapter.cancel(&handle).await.expect("cancel");
-    assert_eq!(evidence.observation, CancelObservation::ProcessStopped);
-
-    assert!(
-        wait_until_dead(grandchild_pid, Duration::from_secs(5)).await,
-        "grandchild must be gone after the adapter cancels its parent"
-    );
-}
-
-/// A cancel/wait on a handle this adapter instance never produced (e.g.
-/// stale after a restart) is a typed rejection, never a silent success.
-#[tokio::test]
-async fn cancel_and_wait_on_an_untracked_handle_are_typed_rejections() {
-    let (adapter, _scratch) = adapter();
-    let handle = LocalRunHandle {
-        process_id: "codex:999999:0".to_owned(),
-    };
-    assert!(matches!(
-        adapter.cancel(&handle).await,
-        Err(HarnessError::Process)
-    ));
-    assert!(matches!(
-        adapter.wait(&handle).await,
-        Err(HarnessError::Process)
-    ));
-}
+// A cancel/wait on a handle this adapter instance never produced is now
+// `harness::tests::cancel_and_wait_on_an_untracked_handle_are_typed_rejections_for_both_real_adapters`
+// — `take_running`'s rejection is `local_process.rs`'s own shared
+// bookkeeping, not codex-specific.
 
 // ---- redaction (rule 12) -------------------------------------------
 
@@ -761,34 +716,20 @@ fn journal_with_process(process_id: Option<&str>) -> AttemptJournal {
     }
 }
 
-/// Acceptance: a missing process id needs no liveness dispatch at all
-/// (reported `ProcessStopped` directly); an unrecognized handle encoding
-/// is explicitly `RecoveryUnavailable` rather than a guessed observation.
-#[tokio::test]
-async fn reconcile_handles_a_missing_or_unrecognized_process_id() {
-    let (adapter, _scratch) = adapter();
-
-    let observation = adapter
-        .reconcile(&journal_with_process(None))
-        .await
-        .expect("reconcile with no recorded process id");
-    assert_eq!(observation, RecoveryObservation::ProcessStopped);
-
-    assert!(matches!(
-        adapter
-            .reconcile(&journal_with_process(Some("not-a-codex-handle")))
-            .await,
-        Err(HarnessError::RecoveryUnavailable)
-    ));
-}
+// A missing process id needing no liveness dispatch, an unrecognized
+// handle encoding being explicitly `RecoveryUnavailable`, and a
+// decodable-but-already-dead pid reporting `ProcessStopped` are all
+// `local_process.rs`'s own shared `reconcile()` plumbing — proved once,
+// against both real adapters, by
+// `harness::tests::reconcile_reports_shared_pid_plumbing_identically_for_both_real_adapters`.
 
 /// Acceptance: `reconcile_alive` trusts a live pid unconditionally (module
-/// docs, asymmetry 3) — proved against two real, independently-controlled
-/// processes, one still running and one already reaped, rather than a
-/// simulated liveness check.
+/// docs, asymmetry 3) — the one part of `reconcile` that is genuinely
+/// codex's own, proved against a real, independently-controlled process
+/// rather than a simulated liveness check.
 #[cfg(unix)]
 #[tokio::test]
-async fn reconcile_reports_real_process_liveness_by_pid() {
+async fn reconcile_trusts_a_live_pid_unconditionally() {
     let (adapter, _scratch) = adapter();
 
     let mut alive = std::process::Command::new("sleep")
@@ -802,42 +743,6 @@ async fn reconcile_reports_real_process_liveness_by_pid() {
     );
     let _ = alive.kill();
     let _ = alive.wait();
-
-    let mut dead = std::process::Command::new("true")
-        .spawn()
-        .expect("spawn true");
-    let dead_pid = dead.id();
-    let _ = dead.wait(); // reaped: pid is now dead (short-lived `true`)
-    let dead_journal = journal_with_process(Some(&encode_handle(dead_pid, 0)));
-    assert_eq!(
-        adapter.reconcile(&dead_journal).await.expect("reconcile"),
-        RecoveryObservation::ProcessStopped
-    );
-}
-
-// ---- helpers -----------------------------------------------------
-
-async fn wait_for_pidfile(path: &std::path::Path) -> u32 {
-    for _ in 0..200 {
-        if let Ok(contents) = std::fs::read_to_string(path)
-            && let Ok(pid) = contents.trim().parse::<u32>()
-        {
-            return pid;
-        }
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
-    panic!("grandchild pidfile was never written: {}", path.display());
-}
-
-async fn wait_until_dead(pid: u32, budget: Duration) -> bool {
-    let deadline = tokio::time::Instant::now() + budget;
-    while tokio::time::Instant::now() < deadline {
-        if !crate::harness::process::process_alive(pid) {
-            return true;
-        }
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
-    !crate::harness::process::process_alive(pid)
 }
 
 // -----------------------------------------------------------------
@@ -967,38 +872,12 @@ async fn provider_endpoint_credential_reaches_the_process_only_when_the_request_
     }
 }
 
-/// A configured-but-disabled provider must reject the request
-/// pre-spawn with a typed reason, not silently fall back to Codex's
-/// own built-in provider.
-#[tokio::test]
-async fn disabled_provider_rejects_the_request_before_any_process_spawns() {
-    let scratch = temp_dir("secrets");
-    let secrets = test_secret_store(scratch.path());
-    secrets
-        .set("demo-secret", "irrelevant")
-        .expect("seed store");
-    let providers = BTreeMap::from([(
-        crate::config::VERCEL_AI_GATEWAY_CONFIG_KEY.to_owned(),
-        crate::config::ProviderConfig {
-            enabled: false,
-            secret: "demo-secret".to_owned(),
-        },
-    )]);
-    let (adapter, _scratch) = adapter_with_env(BTreeMap::new());
-    let adapter = adapter.with_providers(providers);
-    let workspace_dir = deterministic_fixture_repo("provider-guard-disabled");
-    let spec = spec_with(
-        workspace_dir.path().to_path_buf(),
-        Some((crate::config::VERCEL_AI_GATEWAY_PROVIDER, "openai/gpt-5.1")),
-        &[],
-    );
-
-    let error = adapter
-        .validate(&spec)
-        .await
-        .expect_err("a disabled provider must reject at validate, before any spawn");
-    assert!(matches!(error, HarnessError::Rejected { .. }));
-}
+// A configured-but-disabled provider rejecting pre-spawn is now
+// `harness::tests::disabled_provider_rejects_both_real_adapters_before_any_process_spawns`
+// — `resolve_provider_endpoint`'s discard-and-recheck plumbing lives in
+// `local_process.rs`'s shared `validate`, and the actual "disabled ->
+// reject" check is `provider::resolve_endpoint`'s own, called
+// identically by every grammar.
 
 // Live tests against a real `codex` binary moved to
 // `crates/tack-runner/tests/live/codex.rs` (audit §5 rule 4).
