@@ -759,23 +759,18 @@ pub enum ProvisionLocalRunnerError {
 
 /// Self-provisions a single local runner by calling
 /// [`provision_pending_runner`] in-process against `database_url` — the same
-/// URL `tack_api::server`'s own boot sequence opens — instead of over HTTP.
-/// Exists for `tack serve --with-runner`'s zero-touch local case: the
-/// operator and the runner are the same person on the same machine, so
-/// creating the pending runner and minting its one-time token is an
-/// admin/bootstrap concern, not the runner protocol. The returned token
-/// still has to be *redeemed* over real runner-v1 HTTP by the runner role —
-/// nothing about that path changes or is bypassed here. The runner name is
-/// suffixed with a fresh UUID so repeated self-provisioning (e.g. a retry
-/// after a crash between provisioning and storing the resulting session)
-/// cannot collide with a still-pending runner from an earlier attempt.
+/// URL `tack_api::server`'s boot sequence opens — instead of over HTTP.
+/// Exists for `tack serve --with-runner`'s zero-touch local case: creating
+/// the pending runner and minting its one-time token is an admin/bootstrap
+/// concern here, not the runner protocol — the returned token is still
+/// *redeemed* over real runner-v1 HTTP, unchanged. The runner name is
+/// suffixed with a fresh UUID so a retry (e.g. after a crash between
+/// provisioning and storing the session) can't collide with an earlier
+/// pending runner.
 ///
-/// Opens and drops its own connection pool rather than reusing the server's:
-/// `tack_api::serve_with_ready` does not hand its `Repository` back to the
-/// caller, and SQLite's WAL mode (which `tack_db::init_pool` enables) makes a
-/// second, short-lived pool against the same file safe — it is one more
-/// connection to the database, not a competing writer racing the server's
-/// own pool.
+/// Opens and drops its own connection pool rather than reusing the
+/// server's: SQLite's WAL mode makes a second, short-lived pool against the
+/// same file safe — one more connection, not a competing writer.
 pub async fn provision_local_runner(
     database_url: &str,
 ) -> Result<CreatePendingRunnerResponse, ProvisionLocalRunnerError> {

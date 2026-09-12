@@ -1,11 +1,24 @@
-//! Operator decision-resolution repository/service/handler
-//! module. Registered in `handlers.rs` and merged into the operator router
-//! in `router.rs`'s `operator_execution_routes` — **before** the
-//! `require_token` layer is applied and **with** `inject_operator_principal`
-//! layered directly on top, exactly like every other route that function
-//! merges.
+//! Operator decision-resolution repository/service/handler module.
+//! Registered in `handlers.rs` and merged into the operator router in
+//! `router.rs`'s `operator_execution_routes` — **before** `require_token`
+//! is applied and **with** `inject_operator_principal` layered directly on
+//! top, exactly like every other route that function merges.
 //!
-//! Design notes: docs/dev-notes/tack-api/handlers/decisions.md
+//! **Security boundary: runner may raise/read, never resolve.** This
+//! module reads exactly one identity signal, the `x-tack-principal` header
+//! (see [`principal`]) — never `Authorization`, so no runner bearer
+//! credential can authenticate here even if presented. A runner may raise
+//! and read its own attempt's decision (`handlers/runner_protocol.rs`),
+//! but resolution lives on this structurally separate route family, mounted
+//! behind `require_token` — proven in `tests/runner_protocol/decisions.rs`'s
+//! `self_resolution_via_a_valid_runner_bearer_credential_is_denied_and_writes_nothing`.
+//!
+//! **No item-status mapping.** `execution_requests.status_map_policy_id`
+//! (migration 044) is threaded through every layer but read back nowhere —
+//! nothing defines what a policy id resolves to. No function in this file
+//! writes `items.status`, directly or indirectly: `resolve` never touches
+//! the `items` table. Wiring a real mapping needs a policy schema decision
+//! from whoever owns that column's contract first.
 
 use axum::{
     Json, Router,
@@ -132,25 +145,15 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 
 /// Resolving a decision releases whatever the harness/runner is blocked on
 /// — a materially higher-privilege action than the ordinary operator
-/// `x-tack-principal` gate already covers (which only proves "this caller
-/// cleared `require_token`"), exactly the same argument
-/// `handlers::orch::require_approval_token`'s doc comment makes for granting
-/// a docket approval. This function mirrors that one's implementation and
-/// rationale exactly, including the safe-default direction:
+/// `x-tack-principal` gate covers. Mirrors
+/// `handlers::orch::require_approval_token` exactly, including the safe
+/// default: an unconfigured `TACK_EXECUTION_DECISION_TOKEN` always
+/// rejects, never "anyone holding the ordinary API token can."
 ///
-/// **The safe default when `TACK_EXECUTION_DECISION_TOKEN` is unset: always
-/// reject.** There is deliberately no "no secret configured, so skip the
-/// check" branch the way `middleware::require_token`'s ordinary Bearer gate
-/// has for an unset `TACK_API_TOKEN` ("pure-local mode, allow everything").
-/// An unconfigured `TACK_EXECUTION_DECISION_TOKEN` must mean "nothing on
-/// this server is configured to resolve a decision" — never "anyone holding
-/// the ordinary API token can."
-///
-/// The error details carry `required_scope: "operator:decisions"`, matching
-/// `docs/contracts/runner-v1/errors/forbidden.json`'s frozen example
-/// byte-for-byte in shape — this is the real, separately-scoped credential
-/// that fixture's wording calls for (see the module doc comment's
-/// `TACK_EXECUTION_DECISION_TOKEN` section).
+/// The error details carry `required_scope: "operator:decisions"`,
+/// matching `docs/contracts/runner-v1/errors/forbidden.json`'s frozen
+/// example — the real, separately-scoped credential that fixture's wording
+/// calls for (see this file's module doc comment).
 fn require_decision_token(
     state: &DecisionOperatorState,
     headers: &HeaderMap,
