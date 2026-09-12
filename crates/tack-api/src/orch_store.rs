@@ -1,33 +1,18 @@
 //! Wires the orchestration reconciler (`tack-orch::reconciler`) to real
-//! persistence (`tack-db::Repository`'s `repo/orch.rs`) and to a
-//! live per-plane adapter, built via `tack_orch::adapters::registry::build`
-//! — today the registry only ever hands back a
-//! `tack_orch::adapters::docket::DocketAdapter`, but this module no longer
-//! needs to know that.
+//! persistence (`tack-db::Repository`'s `repo/orch.rs`) and to a live
+//! per-plane adapter, built via `tack_orch::adapters::registry::build`.
 //!
-//! This is the glue `reconciler.rs`'s module doc
-//! deliberately scoped out of `tack-orch` itself: `ControlPlaneStore` is a
-//! narrow trait rather than `tack_db::Repository` directly because turning a
-//! `control_planes` row into a live `Arc<dyn ControlPlane>` needs both the
-//! adapter and the repo at once, and `tack-orch` has no reason to
-//! depend on `tack-db`'s concrete `Repository` type beyond what it already
-//! imports for the trait's own signatures. `tack-api` is the only crate that
-//! already depends on both, so the wiring lives here.
+//! `ControlPlaneStore` is a narrow trait rather than `tack_db::Repository`
+//! directly because turning a `control_planes` row into a live
+//! `Arc<dyn ControlPlane>` needs both the adapter and the repo at once, and
+//! `tack-orch` has no reason to depend on `tack-db`'s concrete `Repository`
+//! type. `tack-api` is the only crate that already depends on both, so the
+//! wiring lives here rather than in `tack-orch` itself.
 //!
-//! Kept out of `server.rs`/`router.rs`/`config.rs`/`handlers/orch.rs` on
-//! purpose — this module has exactly one
-//! reason to change (a new control-plane `kind` needs a new adapter, or the
-//! persistence mapping shifts), not entangled with request routing or config
-//! parsing.
-//!
-//! **`registry::build`'s `config`/`secrets` parameters are placeholders
-//! here** (`&serde_json::json!({})` and `None`) — `tack_db::repo::orch::
-//! ControlPlane`, the read struct `list_registered` loops over below, does
-//! not yet surface the `config`/`secrets` columns migrations 032/033 added.
-//! Harmless today: the only registered `kind`,
-//! `"docket"`, ignores both parameters (see `registry::build`'s own doc
-//! comment). Whoever gives those columns a typed field in the repo layer
-//! should thread the real values through here instead of the placeholders.
+//! `registry::build`'s `config`/`secrets` parameters are placeholders here
+//! (`&serde_json::json!({})` and `None`): `tack_db::repo::orch::ControlPlane`
+//! does not yet surface the columns migrations 032/033 added, and the only
+//! registered `kind`, `"docket"`, ignores both parameters.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -67,21 +52,15 @@ use crate::webhook::WebhookClient;
 #[derive(Clone)]
 pub struct RepoControlPlaneStore {
     repo: Repository,
-    /// The same channel
-    /// `AppState` hands every WebSocket subscriber. Threaded in here — rather
-    /// than into `tack-orch::reconciler` — so `tack-orch` never grows a
-    /// websocket dependency; see the module doc above for the full reasoning.
+    /// The same channel `AppState` hands every WebSocket subscriber,
+    /// threaded in here rather than into `tack-orch::reconciler` so that
+    /// crate never grows a websocket dependency.
     broadcast_tx: broadcast::Sender<BoardEvent>,
-    /// Everything
-    /// else a full `AppState` carries. `dispatcher::apply_mapped_status`
-    /// takes `&AppState`, not a narrower type, so applying
-    /// `status_map`'s `on_succeeded`/`on_failed`/`on_cancelled` from inside
-    /// `upsert_runs` needs one. `None` by default — every pre-existing call
-    /// site (built via `new()` alone) keeps
-    /// compiling and behaving identically; only `server.rs`'s production
-    /// wiring and this module's own tests call [`with_app_context`] to opt in.
-    /// See `upsert_runs`'s doc comment for exactly what runs when this is
-    /// `None`.
+    /// Everything else a full `AppState` carries, needed because
+    /// `dispatcher::apply_mapped_status` takes `&AppState`. `None` for every
+    /// store built via plain `new()`; only `server.rs`'s production wiring
+    /// and this module's tests call [`with_app_context`] to opt in — with it
+    /// `None`, `reconcile_terminal_status_map` below is inert.
     ///
     /// [`with_app_context`]: RepoControlPlaneStore::with_app_context
     app_context: Option<AppContext>,
@@ -147,17 +126,11 @@ impl RepoControlPlaneStore {
     /// optional [`AppContext`] — `None` when [`with_app_context`] was never
     /// called.
     ///
-    /// `orch_runtime` is a **fresh, inert** [`OrchRuntime`], not
-    /// the live one `server.rs`/the settings handlers share — this
-    /// reconstructed `AppState` only ever reaches
-    /// `dispatcher::apply_mapped_status` (a workflow-engine status
-    /// transition), which never starts or stops the reconciler. Wiring the
-    /// real handle through here would need threading it into
-    /// [`with_app_context`] for no caller that needs it. `local_runner` is
-    /// `None` for the identical reason — nothing this reconstructed state
-    /// reaches ever controls the embedded runner.
-    ///
-    /// [`with_app_context`]: RepoControlPlaneStore::with_app_context
+    /// `orch_runtime` is a **fresh, inert** [`OrchRuntime`], not the live one
+    /// `server.rs` shares: this reconstructed state only ever reaches
+    /// `dispatcher::apply_mapped_status`, which never starts or stops the
+    /// reconciler. `local_runner` is `None` for the same reason — nothing
+    /// reached from here controls the embedded runner.
     fn as_app_state(&self) -> Option<AppState> {
         self.app_context.as_ref().map(|ctx| AppState {
             repo: self.repo.clone(),
@@ -179,31 +152,21 @@ impl RepoControlPlaneStore {
         let _ = self.broadcast_tx.send(event);
     }
 
-    /// Record `health = "unconfigured"` for a plane
-    /// `list_registered` could not even build an adapter for this cycle
-    /// (unknown `kind`, or a known `kind`'s own constructor failing).
+    /// Record `health = "unconfigured"` for a plane `list_registered` could
+    /// not even build an adapter for (unknown `kind`, or a known `kind`'s
+    /// constructor failing). Without this the plane never enters the
+    /// reconciler's `healthy`/`degraded`/`unreachable` machine — that only
+    /// runs against a plane whose adapter *did* construct — and would sit at
+    /// the pre-poll `"unknown"` default forever with nothing but a log line.
+    /// Motivating case: a restored backup nulls `secrets`
+    /// (`remote_backup::scrub_snapshot_secrets`), harmless for docket (its
+    /// token is optional) but fatal for a future plane that needs
+    /// credentials to construct a client at all.
     ///
-    /// Without this, such a plane is silently invisible to the operator:
-    /// it never enters the reconciler's `healthy`/`degraded`/`unreachable`
-    /// state machine at all — that machine only runs against a plane whose
-    /// adapter *did* construct — so it would sit at the pre-poll
-    /// `"unknown"` column default forever, with nothing but a `warn!` log
-    /// line marking the problem. The motivating case: a restored backup has
-    /// `secrets IS NULL` (`remote_backup::scrub_snapshot_secrets` nulls it
-    /// deliberately), which is harmless for docket today (its token is
-    /// optional — `DocketAdapter::new` degrades to whatever docket's own
-    /// 401 says) but would be silent and fatal for any future plane whose
-    /// credentials are required to even construct a client.
-    ///
-    /// Best-effort: a failure to persist this is logged, not propagated —
-    /// this already runs from inside a `continue`-then-skip branch of a
-    /// batch loop that must never abort polling for every other plane over
-    /// one row's problem (see this trait impl's own doc comment).
-    /// `consecutive_failures` is passed through unchanged rather than reset
-    /// or bumped — `"unconfigured"` isn't a point on the reachability
-    /// failure count's scale, it's an orthogonal "this plane cannot even be
-    /// tried" signal, the same way the column's pre-poll `"unknown"`
-    /// default isn't either.
+    /// Best-effort (a failed persist is logged, not propagated) and passes
+    /// `consecutive_failures` through unchanged — `"unconfigured"` is an
+    /// orthogonal "cannot even be tried" signal, not a point on the
+    /// reachability failure count.
     async fn mark_unconfigured(&self, control_plane_id: Uuid, consecutive_failures: i64) {
         if let Err(e) = self
             .repo
@@ -306,14 +269,9 @@ impl ControlPlaneStore for RepoControlPlaneStore {
             })
     }
 
-    // ── Runs + approvals ingestion ──
-    //
-    // Every method below is a one-line pass-through to `repo/orch.rs`
-    // — no correlation or business logic lives here, same as
-    // `record_health` above. Correlation (which item a run/approval
-    // attributes to) happens in `tack-orch::reconciler`'s persistence phase,
-    // not in this store; this impl only needs to expose the raw reads/writes
-    // that phase calls.
+    // Pass-throughs to `repo/orch.rs`; correlation (which item a run or
+    // approval attributes to) happens in `tack-orch::reconciler`'s
+    // persistence phase, not here.
 
     async fn list_linked_projects(&self, control_plane_id: Uuid) -> Result<Vec<String>, OrchError> {
         let links = self
@@ -336,50 +294,22 @@ impl ControlPlaneStore for RepoControlPlaneStore {
         Ok(task.map(|t| t.item_id))
     }
 
-    // ── Broadcast on real change ──
+    // `upsert_runs`/`upsert_approvals` broadcast a `BoardEvent` only when the
+    // write actually changed something — the reconciler polls forever, so a
+    // naive "broadcast on every upsert" would resend the same event every
+    // tick and eventually lag the broadcast channel's fixed capacity for a
+    // slow subscriber. Both snapshot the row's state before the batch
+    // upsert, run the upsert, then diff. `r.item_id.or(old_item_id)` mirrors
+    // `repo/orch.rs`'s `COALESCE(excluded.item_id, orch_runs.item_id)`,
+    // since a poll can carry `item_id: None` while the stored row already
+    // carries a learned attribution from an earlier poll.
     //
-    // `upsert_runs`/`upsert_approvals` below broadcast a `BoardEvent` when —
-    // and only when — the write actually changed something. The reconciler
-    // polls every `TACK_ORCH_POLL_SECS` (default 10s) forever; a naive
-    // "broadcast on every upsert" would resend the same event to every
-    // connected client every tick, and eventually start lagging the
-    // broadcast channel's 100-message capacity for a slow subscriber. Both
-    // methods use the same shape: snapshot the row's state *before* the
-    // batch upsert (one extra read per row — batches are per-project,
-    // per-poll, small; not worth a repo-layer return-value redesign for
-    // this), run the real upsert exactly as before, then diff.
-    //
-    // Neither method's diff needs to guard against `repo/orch.rs`'s
-    // `COALESCE(excluded.item_id, orch_runs.item_id)` clearing a known
-    // attribution — it can't (that's the whole point of the COALESCE) — but
-    // it does need to compute the *same* effective item_id the SQL just
-    // computed, since a poll can carry `item_id: None` (still uncorrelated)
-    // while the stored row already carries a *learned* attribution from an
-    // earlier poll. `r.item_id.or(old_item_id)` mirrors
-    // `COALESCE(new, old)` exactly.
-    //
-    // ── Terminal status_map application ──
-    //
-    // `upsert_runs` is also where the *other* half of `status_map` lands:
-    // once a run reaches a terminal `RunState` (`succeeded`/`failed`/
-    // `cancelled`), `reconcile_terminal_status_map` (below) applies
-    // `status_map.on_succeeded`/`on_failed`/`on_cancelled` through the
-    // workflow engine, mirroring the dispatch-time `on_running`/
-    // `on_waiting_approval` application. It deliberately reuses this
-    // method's own `is_new`/`state_changed`/`newly_attributed` determination
-    // — the `continue` above already guarantees the call site below only
-    // runs on a genuine transition, never a same-state re-poll — rather than
-    // computing a second, subtly different notion of "did anything change."
-    //
-    // **Human wins.** If the item's current status has drifted from where
-    // our own automation last parked it (a human dragged the card, or
-    // anything else changed it) since the last dispatch-time trigger fired,
-    // the terminal `status_map` transition is skipped and recorded as a
-    // `status_map_skipped_human_override` `orch_events` row instead of being
-    // silently applied — see `reconcile_terminal_status_map`'s doc comment
-    // for the exact check. Docket's own state is never lost (it's already mirrored in
-    // `orch_runs` regardless), only the *board-visible status* is left
-    // alone when a human has taken it over.
+    // `upsert_runs` also applies the terminal half of `status_map`: once a
+    // run reaches `succeeded`/`failed`/`cancelled`,
+    // `reconcile_terminal_status_map` below applies
+    // `on_succeeded`/`on_failed`/`on_cancelled`, reusing this method's own
+    // `is_new`/`state_changed`/`newly_attributed` determination so it only
+    // fires on a genuine transition.
 
     async fn upsert_runs(
         &self,
@@ -411,14 +341,11 @@ impl ControlPlaneStore for RepoControlPlaneStore {
                 continue; // byte-identical re-poll: nothing changed, nothing to broadcast
             }
 
-            // A run with no Tack item has no project to filter a `BoardEvent`
-            // into — `event_matches_project` (handlers/websocket.rs) filters
-            // every event by `project_id` before it reaches a subscriber, and
-            // an uncorrelated run (e.g. dispatched from docket's own CLI —
-            // a normal state, not an error) can't
-            // be attributed to any board. The run is still fully persisted
-            // above regardless; it will broadcast retroactively the first
-            // poll that *does* learn its attribution, via `newly_attributed`.
+            // An uncorrelated run (e.g. dispatched from docket's own CLI, a
+            // normal state) has no project to filter a `BoardEvent` into and
+            // is skipped here; it is still persisted above and will
+            // broadcast retroactively once a later poll learns its
+            // attribution, via `newly_attributed`.
             let Some(item_id) = effective_item_id else {
                 continue;
             };
@@ -460,14 +387,10 @@ impl ControlPlaneStore for RepoControlPlaneStore {
             })?;
 
         for a in approvals {
-            // `ApprovalPending` is deliberately narrower than `AgentRunUpdated`:
-            // it only fires on a transition *into* `pending`, never on a
-            // grant/deny decision or a re-poll of an already-pending approval.
-            // In practice every approval this ingestion path sees already
-            // arrives `pending` (docket's `/approvals` only ever returns the
-            // still-pending set) — this guard exists so a
-            // future control plane, or a write-back path, can't turn this
-            // into a noisy "approval updated" firehose by accident.
+            // `ApprovalPending` only fires on a transition *into* `pending`,
+            // never on a grant/deny or a re-poll of one already pending —
+            // guards against a future control plane or write-back path
+            // turning this into a noisy "approval updated" firehose.
             if a.state != "pending" {
                 continue;
             }
@@ -484,10 +407,7 @@ impl ControlPlaneStore for RepoControlPlaneStore {
                 continue; // already known and still pending, no new attribution: no-op
             }
 
-            // Same "no project, no broadcast" rule as upsert_runs above — an
-            // uncorrelated approval is a normal state (the fleet-wide inbox
-            // still surfaces it independent of any board), it just has
-            // nowhere to be delivered as a per-project `BoardEvent`.
+            // Same "no project, no broadcast" rule as upsert_runs above.
             let Some(item_id) = effective_item_id else {
                 continue;
             };
@@ -506,12 +426,7 @@ impl ControlPlaneStore for RepoControlPlaneStore {
         Ok(())
     }
 
-    // ── Metrics ingestion ──
-    //
-    // Same mechanical-pass-through shape as record_health/upsert_runs above —
-    // no aggregation or business logic here, just a thin wrapper over
-    // repo/orch.rs.
-
+    // Thin wrapper over repo/orch.rs; no aggregation here.
     async fn upsert_metrics(
         &self,
         control_plane_id: Uuid,
@@ -523,18 +438,11 @@ impl ControlPlaneStore for RepoControlPlaneStore {
             .map_err(|e| OrchError::Unavailable(format!("failed to persist mirrored metrics: {e}")))
     }
 
-    // ── Trace ingestion ──
-    //
-    // Thin pass-throughs to repo/orch.rs, same shape as upsert_metrics above.
-    // Deliberately **no**
-    // broadcast here, unlike upsert_runs/upsert_approvals: there is no
-    // trace-event `BoardEvent` variant to fire.
-    // Worth flagging for whoever picks that up
-    // later: a naive "broadcast on every upsert_events call" would be far
-    // noisier than upsert_runs/upsert_approvals ever are — a single poll
-    // tick can carry many trace events per project, not one state
-    // transition — so it would need its own rate-limiting/aggregation
-    // design, not a copy of this file's existing diff-and-broadcast shape.
+    // Thin pass-throughs to repo/orch.rs. No broadcast here — there is no
+    // trace-event `BoardEvent` variant, and a naive "broadcast on every
+    // upsert_events call" would be far noisier than upsert_runs/
+    // upsert_approvals: a single poll tick can carry many trace events per
+    // project, not one state transition.
 
     async fn list_trace_cursors(
         &self,
@@ -585,46 +493,19 @@ impl ControlPlaneStore for RepoControlPlaneStore {
 // only from `upsert_runs`, only on a genuine transition into a terminal
 // `RunState`, and only for a correlated run.
 impl RepoControlPlaneStore {
-    /// If `run` just reached a terminal `RunState` (`succeeded` / `failed` /
-    /// `cancelled` — `queued`/`running` have no reconciler-driven trigger of
-    /// their own; `on_running`/`on_waiting_approval` are applied once,
-    /// synchronously, at dispatch time, since the reconciler
-    /// never polls docket's `/tasks` endpoint) and `status_map` names a
-    /// target status for it, applies that status through
-    /// `dispatcher::apply_mapped_status` — **unless a human has moved the
-    /// card since dispatch**, in which case the human's decision wins: this
-    /// records a `status_map_skipped_human_override` event and leaves the
-    /// item untouched instead.
+    /// If `run` just reached a terminal `RunState` (`succeeded`/`failed`/
+    /// `cancelled`; `on_running`/`on_waiting_approval` apply separately, at
+    /// dispatch time) and `status_map` names a target status, applies it via
+    /// `dispatcher::apply_mapped_status` — unless a human has moved the card
+    /// since dispatch, in which case the human wins: this records a
+    /// `status_map_skipped_human_override` event and leaves the item alone.
+    /// Docket's state is mirrored into `orch_runs` either way; only the
+    /// board-visible status is protected.
     ///
-    /// # Why "human wins"
-    ///
-    /// An agent finishing its work is a real, useful signal — but a human
-    /// who deliberately dragged a card to e.g. "Blocked" made an explicit
-    /// decision, and having it silently reverted the moment a run happens to
-    /// succeed is the kind of thing that makes people stop trusting the
-    /// board. Docket's own state is never lost either way — it's mirrored
-    /// into `orch_runs` regardless of this method — only the item's
-    /// board-visible status is left alone. The audit trail
-    /// (`status_map_skipped_human_override`) makes the "docket says done,
-    /// board says something else" gap visible rather than silent.
-    ///
-    /// # How "has a human moved it" is determined without a schema change
-    ///
-    /// There is no persisted "who/what last set this item's status" marker,
-    /// and neither a new migration nor a behavioural change to `dispatcher.rs`
-    /// is wanted here. So the check is a value
-    /// comparison against the *one* `status_map` key the item's own latest
-    /// dispatch attempt actually used — see [`card_has_diverged`] below for
-    /// exactly which one, and why it has to be exactly one key, not a union
-    /// of every key that might mean "still in flight" (a union produces a
-    /// false "unchanged" reading whenever two `status_map` values happen to
-    /// coincide, e.g. when
-    /// `on_waiting_approval` and `on_failed` are both `"Blocked"`).
-    ///
-    /// This cannot detect a human re-choosing the *exact* status the
-    /// automation already believed the item was in (there is no way for any
-    /// value-based check to, without a change-log) — that's a real, accepted
-    /// limit, not an oversight.
+    /// "Has a human moved it" is a value comparison against the single
+    /// `status_map` key the item's latest dispatch attempt used (see
+    /// [`card_has_diverged`]), not a persisted marker, so it cannot detect a
+    /// human re-choosing the exact status automation already believed.
     ///
     /// [`card_has_diverged`]: RepoControlPlaneStore::card_has_diverged
     async fn reconcile_terminal_status_map(
@@ -754,16 +635,10 @@ impl RepoControlPlaneStore {
     }
 }
 
-// ── Retention sweep ──
-//
-// A second, independent trait impl on the same struct — retention is
-// fleet-wide, not per-plane, and doesn't belong on `ControlPlaneStore` (see
-// `tack-orch::reconciler`'s module doc, "Retention sweep" section, for why
-// this is a separate trait rather than two more methods bolted onto
-// `ControlPlaneStore`). Both rollup methods are thin pass-throughs to
-// `tack_db::Repository::rollup_and_purge_orch_events`/
-// `rollup_and_purge_orch_metrics` — the atomicity/batching logic lives there,
-// not here.
+// A second, independent trait impl on the same struct: retention is
+// fleet-wide, not per-plane, so it doesn't belong on `ControlPlaneStore`.
+// Both methods are thin pass-throughs to `tack_db::Repository` — the
+// atomicity/batching logic lives there, not here.
 #[async_trait::async_trait]
 impl RetentionStore for RepoControlPlaneStore {
     async fn rollup_and_purge_events(
