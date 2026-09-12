@@ -24,6 +24,10 @@ never attempts them.
   version with a program-name token rather than printing it bare, so detection scans for a
   strict `X.Y[.Z]` numeric token anywhere in the output rather than requiring the whole line
   to be one (`CodexAdapter::detect_version`/`find_strict_version_token`).
+- On the installed binary (0.149.1), `model_providers.<key>.wire_api="responses"` is
+  already the effective default for a per-invocation `-c` provider override — the adapter
+  sets it explicitly anyway, defensively, matching the vendor's own documented shape
+  (`CodexGrammar::prepare`).
 
 ## Unverified — documented guesses, not facts
 
