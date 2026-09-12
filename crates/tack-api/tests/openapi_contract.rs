@@ -1,14 +1,8 @@
-//! OpenAPI contract tests.
-//!
-//! 1. **Drift gate** — the committed `docs/openapi.json` must byte-for-byte equal
-//!    the spec generated from the annotated handlers + DTOs. Regenerate with:
-//!
-//!    ```sh
-//!    UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary(openapi_contract)'
-//!    ```
-//!
-//! 2. **Served endpoint** — `GET /api/openapi.json` returns a valid, non-empty
-//!    OpenAPI document, and is reachable without an API token.
+//! OpenAPI contract tests: the committed `docs/openapi.json` must
+//! byte-for-byte equal the spec generated from the annotated handlers/DTOs
+//! (regenerate with `UPDATE_OPENAPI=1 cargo nextest run --workspace -E
+//! 'binary(openapi_contract)'`), and `GET /api/openapi.json` must return a
+//! valid, non-empty document reachable without an API token.
 
 mod common;
 

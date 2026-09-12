@@ -174,52 +174,21 @@ fn local_runner_routes() -> Router<AppState> {
         )
 }
 
-/// The operator execution/fleet routes — `/api/executions`,
+/// Mounts the operator execution/fleet API (`/api/executions`,
 /// `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles`,
-/// `/api/model-profiles` (`crate::handlers::executions`,
-/// `crate::handlers::runner_admin`) — plus two additions mounted the
-/// same way: decision resolution (`crate::handlers::decisions`) and
-/// operator artifact download
-/// (`crate::handlers::runner_protocol::artifact_download`), both of which
-/// shipped as deliberately unwired card-local modules with a suggested
-/// integration snippet in their own doc comments — this function is
-/// what performs that integration. Every card-local
-/// router already calls `with_state` internally (per its own `pub fn
-/// routes(state) -> Router` signature), producing a fully-resolved
-/// `Router<()>`; this re-labels that "no state missing" router's phantom
-/// type parameter to `AppState` via a second `with_state` call — the
-/// officially documented pattern for merging routers whose state types
-/// differ (see `axum::Router::merge`'s own doc example) — so it can be
-/// flat-`merge`d into `api` below at the same level as every other `/api/*`
-/// route, rather than nested under an extra path segment neither card
-/// chose.
+/// `/api/model-profiles`) plus decision resolution and operator artifact
+/// download, merged into `api` *before* `require_token` — so they share
+/// operator authentication, never the runner router's bearer-credential
+/// check. `inject_operator_principal` runs on this whole sub-router,
+/// stripping any client-supplied `x-tack-principal` and replacing it with a
+/// value derived from the authenticated context; every handler here trusts
+/// that header completely for idempotency/audit scoping.
 ///
-/// Merged into `api` *before* `require_token` is layered on, so these
-/// routes share the same operator authentication as the rest of `/api/*`
-/// (`operator_session_or_api_token` per
-/// `docs/contracts/runner-v1/protocol.json`) — never the runner router's
-/// distinct bearer-credential check. `inject_operator_principal`
-/// (`middleware.rs`) is layered directly on this sub-router so it runs for
-/// every request these handlers see, strips any client-supplied
-/// `x-tack-principal`, and replaces it with a value derived from the
-/// request's own authenticated context — the operator execution/fleet
-/// handlers, and the decision-resolve and artifact-download handlers
-/// alongside them, trust that header completely for idempotency/
-/// audit scoping, so an external caller must never be able to set it.
-///
-/// **The decision-resolve route carries a second, independent gate on top**
-/// (`TACK_EXECUTION_DECISION_TOKEN`, checked inside
-/// `decisions::require_decision_token` — see that function's doc comment):
-/// a deliberate security boundary, since decision resolution is
-/// contractually a `"separately_scoped_operator_credential"`
-/// (`docs/contracts/runner-v1/protocol.json`), distinct from the plain
-/// operator gate every other route here uses. Mirrors
-/// `handlers::orch::require_approval_token`/`TACK_ORCH_APPROVAL_TOKEN`
-/// exactly, including its fail-closed-when-unset default.
-///
-/// The artifact-download route points at the same operator-configured
-/// `TACK_STORAGE_DIR`-derived storage root as `runner_protocol_routes`'s own
-/// artifact storage below, for consistency.
+/// Decision-resolve carries a second, independent gate
+/// (`TACK_EXECUTION_DECISION_TOKEN` via
+/// `decisions::require_decision_token`, fail-closed when unset) — a
+/// `"separately_scoped_operator_credential"` per `protocol.json`. Artifact
+/// download shares `runner_protocol_routes`'s storage root.
 fn operator_execution_routes(state: &AppState) -> Router<AppState> {
     let clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
     // Closes over the startup env default so `create_execution`'s dual-scheduling
@@ -265,42 +234,21 @@ fn operator_execution_routes(state: &AppState) -> Router<AppState> {
         .with_state::<AppState>(())
 }
 
-/// The runner-protocol v1 router
-/// (`crate::handlers::runner_protocol`), mounted at
-/// `docs/contracts/runner-v1/protocol.json`'s `base_path`
-/// (`/api/runner/v1`). Nested as its own top-level branch in `build_router`
-/// — a sibling of the `/api` nest, not a sub-path merged into it — so it
-/// sits structurally **outside** the `require_token` layer applied to
-/// `api`. That is the whole security property this function exists to
-/// preserve: an operator Bearer token can never reach these routes, and a
-/// runner credential can never reach the operator routes above, because the
-/// two route families do not share a single gate that either could satisfy
-/// — every runner-protocol write authenticates independently, per request,
-/// against a hashed runner bearer credential
-/// (`runner_protocol::runner_auth::authenticate`), matching
-/// `protocol.json`'s `credentials_are_not_substitutable: true`. It still
-/// inherits every layer applied to `outer` in `build_router` (CORS,
-/// security headers, tracing) — only the operator-token check is skipped.
+/// The runner-protocol v1 router, mounted at `/api/runner/v1`
+/// (`docs/contracts/runner-v1/protocol.json`'s `base_path`) as a sibling
+/// nest of `/api`, not merged into it, so it sits **outside** the
+/// `require_token` layer. Every write authenticates independently against a
+/// hashed runner bearer credential
+/// (`runner_protocol::runner_auth::authenticate`): an operator token can
+/// never reach these routes and a runner credential can never reach the
+/// operator routes, matching `protocol.json`'s
+/// `credentials_are_not_substitutable: true`. It still inherits `outer`'s
+/// CORS/security/tracing layers — only the operator-token check is skipped.
 ///
-/// The global body limit is a partial exception: this router
-/// carries its own, more-specific `DefaultBodyLimit` layer (a fixed 4 MiB
-/// protocol ceiling), and axum always applies whichever `DefaultBodyLimit`
-/// is closest to the handler — so the plain global layer on `outer` alone
-/// would never actually bind here. `state.config.max_body_size_bytes` is
-/// threaded into `runner_protocol::routes` so its own layer enforces
-/// `min(configured, 4 MiB)` instead: an operator who tightens the global
-/// limit below 4 MiB gets a genuinely smaller runner-v1 surface, while a
-/// loose or unset global limit can never widen it past the protocol
-/// ceiling. Re-labelled to `Router<AppState>` via the same `with_state`
-/// trick as `operator_execution_routes`, so it can be `nest`ed alongside
-/// `api` without an extra `Service`-erasure layer.
-///
-/// Artifact content storage is rooted at the operator-configured
-/// `TACK_STORAGE_DIR` (`state.config.storage_dir`), one level deeper than
-/// attachments (`<storage_dir>/execution-artifacts`) so the two never
-/// collide; without this,
-/// `RunnerProtocolState::new` alone would fall back to a hardcoded,
-/// process-CWD-relative default (see its own doc comment).
+/// Carries its own `DefaultBodyLimit` enforcing
+/// `min(state.config.max_body_size_bytes, 4 MiB)` — axum applies whichever
+/// limit is closest to the handler, so `outer`'s global layer never binds
+/// here. Artifact storage sits one level under `TACK_STORAGE_DIR`.
 fn runner_protocol_routes(state: &AppState) -> Router<AppState> {
     let clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
     let runner_state = runner_protocol::RunnerProtocolState::new(state.repo.clone(), clock)
