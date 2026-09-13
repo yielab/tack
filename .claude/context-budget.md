@@ -22,7 +22,7 @@ not read for context, and not listed below. `TODO.md` dropped from ~263k tokens 
 | `docs/closed-cycles/handoffs/part-6/README.md` (Part VI dispatch plan, archived) | 936 | ~14k | Part VI is closed; read only when a `docs/closed-cycles/` pointer names it. **Header + the one card's block**, never whole — `TEMPLATE.md` beside it is ~0.6k. |
 | `docs/closed-cycles/handoffs/part-7/README.md` (Part VII dispatch plan, archived) | 489 | ~7k | Same shape as Part VI's, same rule: closed, read only when named. |
 | `docs/openapi.json` | 12,624 | **~95k** | **Almost never.** It is generated. To check one path, `python3 -c` or `jq` it. |
-| `docs/book/src/roadmap.md` | 3,676 | ~56k | Rarely whole. It records intent, not state. The `# Next` sections at the end are the live part. |
+| `docs/book/src/roadmap.md` | 948 | ~15k | Phases 0–57 archived to `docs/closed-cycles/boards/roadmap-phases-0-57.md` (IX-M7-roadmap); what's left is Phase 58 onward plus a `## Planned` section still holding Phases 21–22 — small enough to read whole now, no longer "rarely whole." |
 | `crates/tack-db/src/migrations.rs` | 1,619 | ~20k | Grep it for the table you care about; adding a migration needs the tail, not the file. |
 | `CHANGELOG.md` | 1,250 | ~16k | Never for "what is unreleased" — it holds released sections only; `make changelog` prints the unreleased one from the commits. |
 | `docs/API-REFERENCE.md` | 329 | ~4k | Auth surfaces, WebSocket behavior, worked examples only (IX-M7 shrank it 4x). The endpoint/schema listing lives in the generated page below — don't grep this file for a path any more. |

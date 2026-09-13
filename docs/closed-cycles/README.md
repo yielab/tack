@@ -7,6 +7,11 @@ is live" table at the top says the state of every Part today.
   `TODO.md` entirely (today: Parts I, II, III), moved verbatim with a one-line notice
   prepended. Numbering inside each file (`§0`…`§6` for Part I, `§II.*`, `§III.*`) is
   unchanged from when it lived in `TODO.md`.
+- `boards/roadmap-phases-0-57.md` — the Phases 0–57 (Parts I–III) sections of
+  `docs/book/src/roadmap.md` (the audit-driven status board, `Completed`, four shipped
+  phases from `Planned`, three "Next" cycles, and the Harness-Agnostic Runner Fleet
+  chapter), moved verbatim with the same one-line notice; `roadmap.md` keeps only what
+  is ahead.
 - `handoffs/part-<n>/` — the per-card handoffs for a closed Part, moved out of
   `docs/agent-handoffs/part-<roman>/`.
 
