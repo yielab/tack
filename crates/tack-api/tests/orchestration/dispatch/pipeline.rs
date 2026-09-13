@@ -194,7 +194,7 @@ async fn mock_dispatch_allow(server: &MockServer, project: &str, run_id: &str) {
 // ─── Off by default / actionable refusal ───────────────────────────────────
 
 #[tokio::test]
-async fn dispatch_409s_when_orch_disabled() {
+async fn pipeline_route_short_circuits_without_orch_enabled() {
     let (app, _) = common::test_app().await; // orch_enable defaults to false
     let res = dispatch_pipeline(&app, Uuid::new_v4(), Some("whatever"), None).await;
     assert_eq!(res.status(), StatusCode::CONFLICT);
@@ -259,14 +259,14 @@ async fn dispatch_403s_when_token_unset_wrong_or_missing() {
 // ─── Project resolution: no second way to name a docket project ───────────
 
 #[tokio::test]
-async fn dispatch_404s_for_unknown_project() {
+async fn pipeline_dispatch_404s_for_a_project_that_does_not_exist() {
     let (app, _) = app_with_state(orch_config_with_dispatch_token("tok")).await;
     let res = dispatch_pipeline(&app, Uuid::new_v4(), Some("tok"), None).await;
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
-async fn dispatch_404s_when_project_not_linked() {
+async fn unlinked_project_makes_pipeline_dispatch_404_not_409() {
     let (app, _) = app_with_state(orch_config_with_dispatch_token("tok")).await;
     let project_id =
         common::create_project(&app, "Pipeline Dispatch Test Project", "software").await;

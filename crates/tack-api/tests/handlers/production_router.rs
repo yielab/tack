@@ -560,7 +560,7 @@ async fn x_tack_principal_from_client_is_stripped_and_overridden() {
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn operator_and_runner_credentials_are_not_substitutable() {
+async fn production_router_rejects_substituted_credentials() {
     let config = AppConfig {
         api_token: Some(OPERATOR_TOKEN.into()),
         ..AppConfig::default()
@@ -933,7 +933,7 @@ async fn post_oversized_claim(
 }
 
 #[tokio::test]
-async fn runner_v1_body_limit_is_lesser_of_configured_and_ceiling() {
+async fn runner_v1_router_enforces_configured_body_limit() {
     // Two directions on the same claim, "the runner-v1 body limit is
     // min(configured, 4 MiB ceiling)": a configured limit *below* the
     // ceiling is genuinely enforced (before this fix, the router's own

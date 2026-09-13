@@ -177,7 +177,7 @@ async fn mock_list_tasks(server: &MockServer, task_id: &str) {
 /// ("Backlog") to "In Progress" without construction-workflow-style gating
 /// getting in the way of the race this test is trying to trigger.
 #[tokio::test(flavor = "multi_thread", worker_threads = 16)]
-async fn concurrent_dispatch_into_one_wip_column_stays_under_limit() {
+async fn concurrent_dispatch_stays_within_the_configured_wip_limit() {
     const N: usize = 12;
     const WIP_LIMIT: i64 = 5;
 

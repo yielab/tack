@@ -973,7 +973,7 @@ async fn oversized_artifact_rejected_per_item_and_cumulative_caps() {
 //    structural claim, not a re-statement of it.)
 // =======================================================================
 #[tokio::test]
-async fn path_traversal_artifact_ids_never_escape_storage_root() {
+async fn traversal_id_encodings_battery_never_escapes_storage_root() {
     let storage_dir_guard = distinctive_temp_dir("traversal");
     let storage_dir = storage_dir_guard.path();
     let (app, _pool) = app_in_memory(storage_dir).await;

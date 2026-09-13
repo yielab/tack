@@ -102,7 +102,7 @@ async fn create_plane(state: &AppState) -> Uuid {
 // ─── Off by default ─────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn run_readback_409s_when_orch_disabled() {
+async fn remote_run_lookup_needs_orch_enabled() {
     let (app, _) = common::test_app().await; // orch_enable defaults to false
     let res = get_run(&app, "run-whatever").await;
     assert_eq!(res.status(), StatusCode::CONFLICT);

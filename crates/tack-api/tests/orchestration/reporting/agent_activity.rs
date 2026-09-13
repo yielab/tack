@@ -126,7 +126,7 @@ fn new_task(
 // ─── Disabled-orchestration discipline ─────────────────────────────────────
 
 #[tokio::test]
-async fn both_routes_409_when_orch_disabled() {
+async fn agent_activity_route_needs_orch_enable_first() {
     let (app, _) = common::test_app().await; // orch_enable defaults to false
     let fake = Uuid::new_v4();
 

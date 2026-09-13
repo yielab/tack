@@ -592,7 +592,7 @@ async fn artifact_content_round_trips_through_upload_and_download() {
 /// Reverted, and it passes again. Two cases isolate the checksum check from
 /// the size check: mismatched length, and same length with wrong bytes.
 #[tokio::test]
-async fn checksum_mismatch_stages_nothing() {
+async fn artifact_content_put_stages_nothing_on_checksum_mismatch() {
     // `same_length`: true isolates the checksum check from the size check
     // (a mismatched-length wrong body could conflict on either).
     for (label, artifact_id, declared, wrong, same_length) in [
@@ -664,7 +664,7 @@ async fn checksum_mismatch_stages_nothing() {
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn oversize_upload_is_rejected_and_stages_nothing() {
+async fn oversize_artifact_body_yields_413_and_stages_nothing() {
     let (app, repo, clock, item_id, storage_root_dir) = setup().await;
     let storage_root = storage_root_dir.path();
     let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "oversize").await;
@@ -710,7 +710,7 @@ async fn oversize_upload_is_rejected_and_stages_nothing() {
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn crafted_traversal_artifact_id_stays_inside_storage_root() {
+async fn single_crafted_traversal_id_stays_inside_storage_root() {
     let (app, repo, clock, item_id, storage_root_dir) = setup().await;
     let storage_root = storage_root_dir.path();
     let attempt = ready_running_attempt(&app, &repo, &clock, &item_id, "traversal").await;
@@ -961,7 +961,7 @@ async fn download_without_an_operator_principal_is_unauthorized() {
 }
 
 #[tokio::test]
-async fn download_of_an_unknown_artifact_is_not_found() {
+async fn artifact_download_subrouter_404s_for_unknown_artifact() {
     let (_app, repo, _clock, _item_id, storage_root_dir) = setup().await;
     let storage_root = storage_root_dir.path();
     let download_state = runner_protocol::artifact_download::ArtifactDownloadState {

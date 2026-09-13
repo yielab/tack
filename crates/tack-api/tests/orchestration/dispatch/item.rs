@@ -176,7 +176,7 @@ async fn mock_list_tasks(server: &MockServer, task_id: &str, status: &str, token
 // ─── Off by default / actionable refusal ───────────────────────────────────
 
 #[tokio::test]
-async fn dispatch_409s_when_orch_disabled() {
+async fn single_item_dispatch_requires_the_orch_enable_flag() {
     let (app, _) = common::test_app().await; // orch_enable defaults to false
     let res = dispatch(&app, Uuid::new_v4()).await;
     assert_eq!(res.status(), StatusCode::CONFLICT);
@@ -185,14 +185,14 @@ async fn dispatch_409s_when_orch_disabled() {
 }
 
 #[tokio::test]
-async fn dispatch_404s_for_unknown_item() {
+async fn unknown_item_id_dispatch_returns_not_found() {
     let (app, _) = app_with_state(orch_config()).await;
     let res = dispatch(&app, Uuid::new_v4()).await;
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
-async fn dispatch_409s_when_project_not_linked() {
+async fn item_dispatch_conflicts_while_unlinked_to_a_project() {
     let (app, _) = app_with_state(orch_config()).await;
     let project_id = common::create_project(&app, "Dispatch Test Project", "software").await;
     let (item_id, _) = create_item(&app, project_id, "Unlinked").await;

@@ -353,7 +353,7 @@ async fn start_then_stop_leaves_no_live_task() {
 }
 
 #[tokio::test]
-async fn start_is_idempotent_while_already_running() {
+async fn orch_runtime_ignores_a_start_while_already_running() {
     let store: Arc<dyn ControlPlaneStore> = Arc::new(OneRunFakeStore {
         plane_id: Uuid::new_v4(),
         list_calls: AtomicUsize::new(0),
@@ -384,7 +384,7 @@ async fn stop_without_a_prior_start_is_a_harmless_no_op() {
 }
 
 #[tokio::test]
-async fn repeated_toggles_never_leave_more_than_one_task_alive() {
+async fn orch_runtime_repeated_toggle_cycles_leave_no_extra_task() {
     let store: Arc<dyn ControlPlaneStore> = Arc::new(OneRunFakeStore {
         plane_id: Uuid::new_v4(),
         list_calls: AtomicUsize::new(0),

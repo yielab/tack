@@ -132,7 +132,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn redirect_does_not_leak_github_token_to_private_destination() {
+    async fn push_issue_redirect_never_forwards_token() {
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 

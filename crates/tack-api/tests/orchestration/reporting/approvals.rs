@@ -176,7 +176,7 @@ async fn seed_pending_approval(state: &AppState, control_plane_id: Uuid, token: 
 // ─── Off by default / actionable refusal ───────────────────────────────────
 
 #[tokio::test]
-async fn list_approvals_409s_when_orch_disabled() {
+async fn listing_orch_approvals_needs_the_enable_flag() {
     let (app, _) = common::test_app().await; // orch_enable defaults to false
     let res = list_approvals(&app).await;
     assert_eq!(res.status(), StatusCode::CONFLICT);
@@ -185,7 +185,7 @@ async fn list_approvals_409s_when_orch_disabled() {
 }
 
 #[tokio::test]
-async fn decide_approval_409s_when_orch_disabled() {
+async fn deciding_an_orch_approval_needs_the_enable_flag() {
     let (app, _) = common::test_app().await;
     let res = decide(&app, "apr-1", "grant", Some("whatever")).await;
     assert_eq!(res.status(), StatusCode::CONFLICT);

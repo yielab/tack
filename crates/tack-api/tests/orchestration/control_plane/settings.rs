@@ -253,7 +253,7 @@ async fn put_false_stops_the_reconciler_without_a_restart() {
 }
 
 #[tokio::test]
-async fn repeated_toggles_never_leave_more_than_one_task_per_plane() {
+async fn settings_put_repeated_toggle_leaves_one_task_per_plane() {
     let (app, state, _) = app_with_state(AppConfig::default()).await;
     state
         .repo
