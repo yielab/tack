@@ -156,7 +156,7 @@ fn parses_priced_context_windowed_empty_pricing_and_absent_context_window_entrie
 }
 
 #[test]
-fn a_malformed_body_is_a_parse_error_not_a_panic() {
+fn vercel_ai_gateway_catalog_parse_rejects_malformed_body() {
     assert!(parse_catalog(b"not json").is_err());
 }
 

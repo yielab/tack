@@ -62,7 +62,7 @@ async fn wait_for(mut condition: impl FnMut() -> bool) {
 }
 
 #[tokio::test]
-async fn disabled_sweep_spawns_nothing_and_never_touches_the_store() {
+async fn execution_retention_sweep_is_a_noop_when_disabled() {
     let store = Arc::new(FakeStore::default());
     let clock: Arc<dyn RetentionClock> = Arc::new(FakeClock::new(Utc::now()));
     let (_tx, rx) = watch::channel(false);
@@ -120,7 +120,7 @@ async fn enabled_sweep_calls_both_purges_with_the_configured_cutoff_and_batch_si
 }
 
 #[tokio::test]
-async fn shutdown_joins_the_task_and_no_further_purge_happens_after() {
+async fn retention_sweep_shutdown_joins_task_with_no_purge_after() {
     // A 1s interval means a second tick would fire if the stop signal
     // were not observed — this is what makes "no further writes after
     // shutdown" a real assertion instead of a vacuous one (the sweep

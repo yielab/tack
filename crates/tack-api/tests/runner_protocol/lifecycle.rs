@@ -782,7 +782,7 @@ async fn duplicate_self_reported_runner_name_enrolls_both_runners() {
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn operator_and_runner_auth_do_not_substitute() {
+async fn scoped_routers_reject_substituted_operator_and_runner_auth() {
     let (runner_app, repo, clock, item_id) = setup().await;
 
     // An operator-style principal header alone does not authenticate a

@@ -129,7 +129,7 @@ async fn wait_for(mut condition: impl FnMut() -> bool) {
 }
 
 #[tokio::test]
-async fn disabled_watch_spawns_nothing_and_never_touches_the_store() {
+async fn disabled_health_watch_never_queries_the_store() {
     let store = Arc::new(FakeStore::default());
     let clock: Arc<dyn ObservabilityClock> = Arc::new(FakeClock::new(Utc::now()));
     let (_tx, rx) = watch::channel(false);
@@ -148,7 +148,7 @@ async fn disabled_watch_spawns_nothing_and_never_touches_the_store() {
 }
 
 #[tokio::test]
-async fn shutdown_joins_the_task_and_no_further_snapshot_after() {
+async fn health_watch_shutdown_joins_task_with_no_snapshot_after() {
     let store = Arc::new(FakeStore::default());
     let clock: Arc<dyn ObservabilityClock> = Arc::new(FakeClock::new(Utc::now()));
     let (tx, rx) = watch::channel(false);

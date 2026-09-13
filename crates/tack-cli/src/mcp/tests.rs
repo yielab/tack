@@ -364,7 +364,7 @@ fn create_execution_min_args() -> Value {
 }
 
 #[test]
-fn create_execution_requires_agent_profile_snapshot_before_any_network_call() {
+fn mcp_create_execution_rejects_missing_profile_snapshot() {
     let mut args = create_execution_min_args();
     args.as_object_mut()
         .unwrap()

@@ -392,7 +392,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn start_is_idempotent_while_already_running() {
+    async fn second_start_call_on_execution_runtime_is_a_noop() {
         let runtime = ExecutionRuntime::new();
         let repo = test_repo().await;
         let config = ExecutionRuntimeConfig {

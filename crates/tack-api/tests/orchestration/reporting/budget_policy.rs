@@ -169,7 +169,7 @@ fn metric(name: &str, labels: &[(&str, &str)], value: f64) -> NewOrchMetric {
 // ─── Off by default ────────────────────────────────────
 
 #[tokio::test]
-async fn both_new_routes_409_when_orch_disabled() {
+async fn project_budget_and_policy_need_orch_enabled() {
     let (app, _) = common::test_app().await; // orch_enable defaults to false
     let fake = Uuid::new_v4();
 
@@ -225,7 +225,7 @@ async fn orch_budget_unlinked_reports_linked_false_null_cost() {
 }
 
 #[tokio::test]
-async fn orch_budget_reports_zero_cost_distinctly_from_unreachable() {
+async fn project_budget_lookup_reports_a_true_zero_cost_value() {
     let (app, state) = app_with_state(orch_config()).await;
     let project_id =
         common::create_project(&app, "Orch Budget/Policy Test Project", "software").await;

@@ -433,7 +433,7 @@ async fn attempt_list_is_returned_oldest_first() {
 }
 
 #[tokio::test]
-async fn attempt_list_unknown_attempt_number_is_404() {
+async fn artifact_and_decision_lists_404_for_an_unknown_attempt() {
     for kind in [ResourceKind::Artifact, ResourceKind::Decision] {
         let (app, _repo, item_id) = setup().await;
         let label = format!("{}-unknown-n", kind.route_segment());
@@ -468,7 +468,7 @@ async fn attempt_list_unknown_attempt_number_is_404() {
 }
 
 #[tokio::test]
-async fn attempt_list_from_a_different_execution_is_404() {
+async fn artifact_and_decision_lists_404_for_a_foreign_execution() {
     for kind in [ResourceKind::Artifact, ResourceKind::Decision] {
         let (app, repo, item_id) = setup().await;
         // Execution X claims attempt 1 and writes a real row against it.

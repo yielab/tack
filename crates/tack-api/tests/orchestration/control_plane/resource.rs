@@ -469,7 +469,7 @@ async fn fleet_is_empty_with_no_links() {
 }
 
 #[tokio::test]
-async fn fleet_reports_zero_cost_distinctly_from_unreachable() {
+async fn fleet_listing_reports_a_real_zero_not_an_unreachable_gap() {
     let (app, state, _) = app_with_state(orch_config()).await;
     let project_id = common::create_project(&app, "Orch Test Project", "software").await;
     let plane = create_control_plane(&app, None).await;
