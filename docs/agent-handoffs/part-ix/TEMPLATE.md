@@ -1,6 +1,6 @@
 # IX-<card> handoff
 
-Use **`docs/agent-handoffs/part-vi/TEMPLATE.md`** as the body — *Claim → evidence*,
+Use **`docs/closed-cycles/handoffs/part-6/TEMPLATE.md`** as the body — *Claim → evidence*,
 *Measured numbers*, *What a stranger still cannot do*, *Context spent*, *Amendments* all
 apply. Skip Part VI's *Surface-map delta*, *Secret-path proof* and *Vocabulary check*: this
 Part changes no surface and no secret path.
