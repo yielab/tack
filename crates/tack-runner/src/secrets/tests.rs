@@ -158,7 +158,11 @@ fn bounded_times_out_promptly_when_the_work_never_answers() {
     let started = std::time::Instant::now();
 
     let result: Result<(), String> = SecretStore::bounded(bound, || {
-        std::thread::sleep(Duration::from_secs(5));
+        // Blocks forever rather than sleeping a fixed duration: `bounded`
+        // abandons this thread on timeout, so nothing here ever needs to
+        // finish, only to never answer before `bound` elapses.
+        let (_never_tx, never_rx) = mpsc::channel::<()>();
+        let _ = never_rx.recv();
         Ok(())
     });
 
