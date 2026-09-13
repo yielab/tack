@@ -96,7 +96,7 @@ async fn seed_item(pool: &sqlx::SqlitePool) -> (Uuid, Uuid) {
 // ─── Fresh install ─────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn fresh_db_migrates_all_orch_tables() {
+async fn fresh_db_applies_orch_migrations_019_to_024() {
     let repo = setup_test_db().await;
 
     for table in NEW_TABLES {
@@ -127,7 +127,7 @@ async fn fresh_db_migrates_all_orch_tables() {
 // ─── Upgrade-in-place from an existing 18-migration database ──────────────
 
 #[tokio::test]
-async fn upgrade_from_018_applies_new_orch_migrations_in_place() {
+async fn upgrade_from_018_adds_orch_tables_019_to_024() {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
 
     // Simulate an installed tack.db that has only ever seen migrations 001-018.
@@ -173,7 +173,7 @@ async fn upgrade_from_018_applies_new_orch_migrations_in_place() {
 // ─── FK enforcement on the new tables ──────────────────────────────────────
 
 #[tokio::test]
-async fn orphan_fk_insert_is_rejected() {
+async fn orphan_fk_insert_rejected_on_orch_link_and_task_tables() {
     let repo = setup_test_db().await;
     let plane_id = insert_control_plane(repo.pool()).await;
     let bogus = Uuid::new_v4();
