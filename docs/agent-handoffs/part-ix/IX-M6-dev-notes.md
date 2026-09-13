@@ -1,6 +1,6 @@
 # IX-M6-dev-notes handoff
 
-- Base SHA / branch / final SHA: `fd8c9011636e2a2ffb8f71cd56d6bb2238653827` / `agent/ix-m6-dev-notes` / (set at commit)
+- Base SHA / branch / final SHA: `fd8c9011636e2a2ffb8f71cd56d6bb2238653827` / `agent/ix-m6-dev-notes` / `b172b36eb636eef73f08ea1eaa5f5e1744e741f3`
 - Files changed (must equal ownership list): the 12 files under `docs/dev-notes/` (deleted) and
   the `//!` preamble of each origin module (`crates/tack-api/src/handlers/economics.rs`,
   `handlers/provisioning.rs`, `handlers/runner_protocol/artifact_download.rs`,
