@@ -128,7 +128,7 @@ fn create_execution_rejects_invalid_json_in_a_named_field() {
 }
 
 #[test]
-fn create_execution_requires_agent_profile_snapshot_and_permission_policy() {
+fn create_execution_args_require_profile_snapshot_and_policy() {
     // Neither has a safe empty default (both fail the deeper snapshot
     // types), so this module requires them rather than silently sending
     // `{}` and letting the server 400 one step later.
