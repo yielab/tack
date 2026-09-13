@@ -152,7 +152,7 @@ async fn provision_rejects_an_existing_attempt_path_symlink() {
 }
 
 #[tokio::test]
-async fn cleanup_refuses_a_marker_that_does_not_match_the_workspace_identity() {
+async fn cleanup_refuses_a_marker_mismatched_to_workspace_identity() {
     let root_dir = root();
     let root = root_dir.path();
     let manager = WorkspaceManager::new(root, FakeProvisioner);
@@ -259,7 +259,7 @@ async fn cleanup_refuses_a_dot_dot_traversal_outside_the_root() {
 /// `canonicalize` + `starts_with(root)` check, not the symlink check.
 #[cfg(unix)]
 #[tokio::test]
-async fn cleanup_refuses_traversal_through_a_symlinked_intermediate_directory() {
+async fn cleanup_refuses_traversal_through_a_symlinked_directory() {
     use std::os::unix::fs::symlink;
 
     let root_dir = root();

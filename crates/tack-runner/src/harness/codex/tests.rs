@@ -98,6 +98,16 @@ fn adapter() -> (CodexAdapter<FixedClock>, tempfile::TempDir) {
     adapter_with_env(BTreeMap::new())
 }
 
+/// `start()` then `wait()` on the resulting handle, shared by every test
+/// that only cares about the terminal outcome, not the spawn mechanics.
+async fn start_and_wait(
+    adapter: &CodexAdapter<FixedClock>,
+    spec: &ExecutionSpec,
+) -> HarnessOutcome {
+    let handle = adapter.start(spec).await.expect("start");
+    adapter.wait(&handle).await.expect("wait")
+}
+
 fn env_map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
         .iter()
@@ -260,8 +270,7 @@ async fn validate_rejects_pre_spawn_selection_problems() {
 /// test would hang (bounded here by an explicit timeout that turns that
 /// hang into a fast, loud failure rather than a stuck CI job).
 #[tokio::test]
-async fn unsupported_selection_fails_pre_spawn_even_when_the_process_would_otherwise_hang_forever()
-{
+async fn unsupported_selection_fails_pre_spawn_not_a_hanging_process() {
     let (adapter, _scratch) = adapter();
     let workspace_dir = deterministic_fixture_repo("pre-spawn-hang-guard");
     let spec = spec_with(
@@ -290,20 +299,26 @@ async fn unsupported_selection_fails_pre_spawn_even_when_the_process_would_other
 
 // ---- fake-binary exec-path tests ----------------------------------
 
-#[tokio::test]
-async fn fake_binary_success_completes_succeeded_with_normalized_output_and_a_staged_artifact() {
-    let (adapter, _scratch) = adapter();
+/// Runs the fake harness's `success` mode to completion — the shape both
+/// the outcome/model/usage claim and the artifact-staging claim below check.
+/// Returns the scratch guard too: the staged artifact lives under it, so a
+/// caller that reads the file back must keep the guard alive until then.
+async fn run_fake_binary_success() -> (HarnessOutcome, tempfile::TempDir) {
+    let (adapter, scratch) = adapter();
     let workspace_dir = deterministic_fixture_repo("exec-success");
     let spec = spec_with(
         workspace_dir.path().to_path_buf(),
         Some(("openai", "opaque/model-alpha")),
         &[("TACK_FAKE_HARNESS_MODE", "success")],
     );
-
     adapter.validate(&spec).await.expect("validate");
-    let handle = adapter.start(&spec).await.expect("start");
-    let outcome = adapter.wait(&handle).await.expect("wait");
+    let outcome = start_and_wait(&adapter, &spec).await;
+    (outcome, scratch)
+}
 
+#[tokio::test]
+async fn fake_binary_success_reports_model_and_usage() {
+    let (outcome, _scratch) = run_fake_binary_success().await;
     assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
     assert_eq!(outcome.terminal_reason["code"], "completed");
     assert!(
@@ -331,7 +346,11 @@ async fn fake_binary_success_completes_succeeded_with_normalized_output_and_a_st
         MeasurementSource::NotMeasured
     );
     assert!(outcome.usage.tokens_in.value.is_none());
+}
 
+#[tokio::test]
+async fn a_successful_codex_exec_stages_its_output_artifact() {
+    let (outcome, _scratch) = run_fake_binary_success().await;
     let artifact = &outcome.terminal_reason["artifact"];
     assert_eq!(artifact["kind"], "log");
     let staged_path = artifact["staged_path"].as_str().expect("staged_path");
@@ -400,35 +419,38 @@ async fn wait_classifies_terminal_state_from_the_exit_code_alone() {
             &env,
         );
 
-        let handle = adapter.start(&spec).await.expect("start");
-        let outcome = adapter.wait(&handle).await.expect("wait");
+        let outcome = start_and_wait(&adapter, &spec).await;
+        assert_exec_case_outcome(&case, &outcome);
+    }
+}
 
-        assert_eq!(
-            outcome.terminal_state, case.expect_state,
-            "case {}",
-            case.name
-        );
-        assert_eq!(
-            outcome.terminal_reason["code"], case.expect_code,
-            "case {}",
-            case.name
-        );
-        if let Some(needle) = case.message_contains {
-            assert!(
-                outcome.terminal_reason["message"]
-                    .as_str()
-                    .unwrap()
-                    .contains(needle),
-                "case {}",
-                case.name
-            );
-        }
-        if case.expect_nonempty_stdout_preview {
-            let preview = outcome.terminal_reason["stdout"]["text_preview"]
+/// Checks one [`ExecCase`]'s expectations against the outcome it produced.
+fn assert_exec_case_outcome(case: &ExecCase, outcome: &HarnessOutcome) {
+    assert_eq!(
+        outcome.terminal_state, case.expect_state,
+        "case {}",
+        case.name
+    );
+    assert_eq!(
+        outcome.terminal_reason["code"], case.expect_code,
+        "case {}",
+        case.name
+    );
+    if let Some(needle) = case.message_contains {
+        assert!(
+            outcome.terminal_reason["message"]
                 .as_str()
-                .expect("stdout preview is present and well-formed JSON");
-            assert!(!preview.is_empty(), "case {}", case.name);
-        }
+                .unwrap()
+                .contains(needle),
+            "case {}",
+            case.name
+        );
+    }
+    if case.expect_nonempty_stdout_preview {
+        let preview = outcome.terminal_reason["stdout"]["text_preview"]
+            .as_str()
+            .expect("stdout preview is present and well-formed JSON");
+        assert!(!preview.is_empty(), "case {}", case.name);
     }
 }
 
@@ -453,7 +475,7 @@ async fn wait_classifies_terminal_state_from_the_exit_code_alone() {
 /// the adapter's own output surface (`HarnessOutcome.terminal_reason`)
 /// nor in the staged log artifact.
 #[tokio::test]
-async fn secret_canaries_never_survive_into_terminal_reason_or_the_staged_artifact() {
+async fn secret_canaries_never_survive_into_reason_or_staged_artifact() {
     const CANARY_ENV: &str = "tack-test-codex-canary-env-58d1";
     let (adapter, _scratch) = adapter();
     let workspace_dir = deterministic_fixture_repo("redaction");
@@ -474,8 +496,7 @@ async fn secret_canaries_never_survive_into_terminal_reason_or_the_staged_artifa
         "do the tack-test-codex-canary-stdin-a341 thing".to_owned();
     const CANARY_STDIN: &str = "tack-test-codex-canary-stdin-a341";
 
-    let handle = adapter.start(&spec).await.expect("start");
-    let outcome = adapter.wait(&handle).await.expect("wait");
+    let outcome = start_and_wait(&adapter, &spec).await;
 
     let serialized = outcome.terminal_reason.to_string();
     assert!(
@@ -565,7 +586,7 @@ fn probe_cases() -> Vec<ProbeCase> {
 }
 
 #[tokio::test]
-async fn probe_reports_version_or_an_explicit_error_never_a_fake_success() {
+async fn probe_reports_version_or_an_explicit_error_not_fake_success() {
     for case in probe_cases() {
         let (adapter, _scratch) = adapter_with_env(env_map(case.env));
         let capability = adapter.probe().await;
@@ -602,7 +623,7 @@ async fn probe_reports_version_or_an_explicit_error_never_a_fake_success() {
 /// pass-through attestation alone — it must be `Supported` and carry a
 /// reason, distinct from the version-parsing claim above.
 #[tokio::test]
-async fn probe_attests_model_passthrough_when_no_models_are_enumerable() {
+async fn probe_attests_model_passthrough_when_no_models_enumerable() {
     let (adapter, _scratch) = adapter_with_env(env_map(&[
         ("TACK_FAKE_HARNESS_MODE", "version"),
         ("TACK_FAKE_HARNESS_VERSION", "9.9.9"),
@@ -619,7 +640,7 @@ async fn probe_attests_model_passthrough_when_no_models_are_enumerable() {
 }
 
 #[tokio::test]
-async fn probe_reports_an_absent_binary_as_an_explicit_probe_error_never_a_fake_success() {
+async fn probe_reports_an_absent_binary_as_an_error_not_fake_success() {
     let empty_dir_dir = temp_dir("probe-empty-path");
     let empty_dir = empty_dir_dir.path();
     let scratch = temp_dir("artifacts-absent");
@@ -831,38 +852,9 @@ fn provider_env_cases() -> Vec<ProviderEnvCase> {
 /// provider — a direct-vendor request must spawn with neither the `-c
 /// model_provider` flag nor the credential variable present.
 #[tokio::test]
-async fn provider_endpoint_credential_reaches_the_process_only_when_the_request_names_it() {
+async fn provider_endpoint_credential_reaches_process_only_when_named() {
     for case in provider_env_cases() {
-        let workspace_dir = deterministic_fixture_repo(case.name);
-        let workspace = workspace_dir.path();
-        let marker = workspace.join("env-names.marker");
-        let secrets_scratch = temp_dir("secrets");
-        let secrets = test_secret_store(secrets_scratch.path());
-        secrets
-            .set("demo-secret", "a-resolvable-value")
-            .expect("seed store");
-        let artifacts_scratch = temp_dir("artifacts");
-        let adapter = CodexAdapter::with_clock(
-            env_name_dump_locator(workspace, &marker),
-            generous_limits(),
-            Duration::from_secs(5),
-            BTreeMap::new(),
-            artifacts_scratch.path().to_path_buf(),
-            clock_at("2026-08-09T12:00:00Z"),
-            secrets,
-        )
-        .with_providers(enabled_gateway_providers("demo-secret"));
-
-        let spec = spec_with(
-            workspace.to_path_buf(),
-            Some((case.provider, case.model_id)),
-            &[],
-        );
-        adapter.validate(&spec).await.expect("validate");
-        let handle = adapter.start(&spec).await.expect("start");
-        let _ = adapter.wait(&handle).await.expect("wait");
-
-        let names = recorded_env_names(&marker);
+        let names = run_provider_env_case(&case).await;
         let present = names.iter().any(|name| name == "AI_GATEWAY_API_KEY");
         assert_eq!(
             present, case.expect_credential_present,
@@ -870,6 +862,39 @@ async fn provider_endpoint_credential_reaches_the_process_only_when_the_request_
             case.name
         );
     }
+}
+
+/// Runs one [`ProviderEnvCase`] through a real adapter and returns the
+/// environment variable names the fake harness recorded.
+async fn run_provider_env_case(case: &ProviderEnvCase) -> Vec<String> {
+    let workspace_dir = deterministic_fixture_repo(case.name);
+    let workspace = workspace_dir.path();
+    let marker = workspace.join("env-names.marker");
+    let secrets_scratch = temp_dir("secrets");
+    let secrets = test_secret_store(secrets_scratch.path());
+    secrets
+        .set("demo-secret", "a-resolvable-value")
+        .expect("seed store");
+    let artifacts_scratch = temp_dir("artifacts");
+    let adapter = CodexAdapter::with_clock(
+        env_name_dump_locator(workspace, &marker),
+        generous_limits(),
+        Duration::from_secs(5),
+        BTreeMap::new(),
+        artifacts_scratch.path().to_path_buf(),
+        clock_at("2026-08-09T12:00:00Z"),
+        secrets,
+    )
+    .with_providers(enabled_gateway_providers("demo-secret"));
+
+    let spec = spec_with(
+        workspace.to_path_buf(),
+        Some((case.provider, case.model_id)),
+        &[],
+    );
+    adapter.validate(&spec).await.expect("validate");
+    let _ = start_and_wait(&adapter, &spec).await;
+    recorded_env_names(&marker)
 }
 
 // A configured-but-disabled provider rejecting pre-spawn is now

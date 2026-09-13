@@ -205,7 +205,6 @@ async fn validate_accepts_well_formed_specs() {
             adapter.validate(&spec).await.is_ok(),
             "provider {provider:?} should be accepted"
         );
-        std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 }
 
@@ -293,7 +292,6 @@ async fn validate_rejects_invalid_specs() {
             "case {:?}: a pre-spawn rejection must never create process bookkeeping",
             case.name
         );
-        std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 }
 
@@ -301,11 +299,19 @@ async fn validate_rejects_invalid_specs() {
 /// `validate` with a typed reason naming only the reference, before the
 /// adapter does anything else — proven here at the adapter boundary
 /// (`validate` itself never touches a filesystem path outside checking
-/// its own binary exists).
-#[tokio::test]
-async fn validate_rejects_a_missing_secret_reference_typed_and_touches_nothing() {
+/// its own binary exists). Shared by the typed-reason claim and the
+/// leaves-nothing-touched claim below.
+struct MissingSecretAttempt {
+    _workspace_dir: tempfile::TempDir,
+    _state_guard: tempfile::TempDir,
+    workspace: PathBuf,
+    state_dir: PathBuf,
+    error: HarnessError,
+}
+
+async fn attempt_validate_with_missing_secret_reference() -> MissingSecretAttempt {
     let workspace_dir = temp_workspace("secret-reference-missing");
-    let workspace = workspace_dir.path();
+    let workspace = workspace_dir.path().to_path_buf();
     std::fs::write(workspace.join("sentinel.txt"), b"before").expect("seed workspace");
 
     let state_guard = temp_workspace("secret-missing-state");
@@ -326,41 +332,56 @@ async fn validate_rejects_a_missing_secret_reference_typed_and_touches_nothing()
         &[],
         true,
         environment,
-        workspace.to_path_buf(),
+        workspace.clone(),
     );
 
     let error = adapter
         .validate(&spec)
         .await
         .expect_err("a missing secret_reference must fail pre-spawn");
+    MissingSecretAttempt {
+        _workspace_dir: workspace_dir,
+        _state_guard: state_guard,
+        workspace,
+        state_dir,
+        error,
+    }
+}
+
+#[tokio::test]
+async fn validate_fails_with_a_typed_reason_for_a_missing_secret() {
+    let attempt = attempt_validate_with_missing_secret_reference().await;
     assert!(
         matches!(
-            &error,
+            &attempt.error,
             HarnessError::Rejected { reason }
                 if reason.starts_with("secret_reference_unresolved:")
                     && reason.contains("does-not-exist")
         ),
-        "unexpected error: {error:?}"
+        "unexpected error: {:?}",
+        attempt.error
     );
+}
 
+#[tokio::test]
+async fn a_rejected_validate_touches_neither_workspace_nor_store() {
+    let attempt = attempt_validate_with_missing_secret_reference().await;
     assert!(
-        !state_dir.exists(),
+        !attempt.state_dir.exists(),
         "a rejected validate must not create the secret store's state directory"
     );
     assert_eq!(
-        std::fs::read_to_string(workspace.join("sentinel.txt")).expect("sentinel survives"),
+        std::fs::read_to_string(attempt.workspace.join("sentinel.txt")).expect("sentinel survives"),
         "before",
         "a rejected validate must not modify the workspace it was given"
     );
     assert_eq!(
-        std::fs::read_dir(workspace)
+        std::fs::read_dir(&attempt.workspace)
             .expect("read workspace")
             .count(),
         1,
         "a rejected validate must not add files to the workspace it was given"
     );
-
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
 // ---- fake-binary-driven lifecycle tests ------------------------------
@@ -477,7 +498,6 @@ async fn fake_binary_exit_code_fallback_reports_honest_terminal_state() {
             );
         }
         (case.extra)(&outcome);
-        std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 }
 
@@ -516,8 +536,6 @@ async fn fake_binary_success_stages_a_real_log_artifact() {
         artifact["sha256"].as_str().unwrap(),
         crate::harness::sha256::sha256_hex(&staged_bytes)
     );
-
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
 /// A more realistic "malformed" case than generic garbage: a stream that
@@ -555,7 +573,7 @@ fn truncated_stream_with_no_result_line_is_reported_failed() {
 /// cleaning up its own bookkeeping — grandchild-tree coverage itself is
 /// `process::tests::cancel_kills_the_whole_descendant_tree_...`.
 #[tokio::test]
-async fn cancel_stops_the_process_and_forgets_its_own_bookkeeping_entry() {
+async fn cancel_stops_the_process_and_forgets_its_bookkeeping_entry() {
     let (adapter, _scratch) = adapter_with_fake_binary();
     let workspace_dir = temp_workspace("cancel");
     let workspace = workspace_dir.path();
@@ -594,7 +612,6 @@ async fn cancel_stops_the_process_and_forgets_its_own_bookkeeping_entry() {
         adapter.running.lock().await.is_empty(),
         "cancel must remove its own bookkeeping entry"
     );
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
 // A cancel/wait on a handle this adapter instance never produced is now
@@ -651,7 +668,6 @@ async fn env_canary_is_redacted() {
         "the leak must actually have been scrubbed, \
         not merely absent because nothing echoed it"
     );
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
 // -----------------------------------------------------------------
@@ -709,14 +725,46 @@ fn install_secret_log_capture() -> tracing::dispatcher::DefaultGuard {
     tracing::dispatcher::set_default(&tracing::Dispatch::new(subscriber))
 }
 
-/// Acceptance: a live attempt with a `secret_reference` environment
-/// entry reaches the spawned process with the resolved value set — the
-/// shim here proves it by writing the value's *byte length* to a marker
-/// file it controls, never the value itself. Captured `tracing` output
-/// for the same run names the entry (positive control: asserted
-/// present) and never contains the value.
-#[tokio::test]
-async fn secret_reference_resolves_and_only_its_length_reaches_the_shim() {
+/// A shim that writes only the *byte length* of `$SECRET_VAR` to `marker`
+/// — never the value itself — so a test can prove a resolved secret
+/// reached the spawned process without ever holding the value.
+fn secret_length_dump_binary(workspace: &Path, marker: &Path) -> HarnessBinary {
+    let script = format!(
+        "#!/bin/sh\nprintf '%s' \"$SECRET_VAR\" | wc -c > {}\nexit 0\n",
+        marker.display()
+    );
+    let script_path = workspace.join("shim.sh");
+    std::fs::write(&script_path, script).expect("write shim script");
+    HarnessBinary {
+        program: PathBuf::from("/bin/sh"),
+        prefix_args: vec![script_path.display().to_string()],
+    }
+}
+
+/// The byte count `secret_length_dump_binary`'s shim wrote to `marker`.
+fn recorded_length(marker: &Path) -> usize {
+    std::fs::read_to_string(marker)
+        .expect("shim wrote the length marker")
+        .trim()
+        .parse()
+        .expect("marker holds a byte count")
+}
+
+/// Result of one live attempt whose `secret_reference` environment entry
+/// resolves — shared by the shim-only-sees-the-length claim and the
+/// logged-by-name-never-by-value claim below.
+struct SecretReferenceRun {
+    recorded_length: usize,
+    secret_value: &'static str,
+    captured_log: String,
+}
+
+/// Acceptance: a live attempt with a `secret_reference` environment entry
+/// reaches the spawned process with the resolved value set — proven by a
+/// shim that writes the value's *byte length* to a marker file it
+/// controls, never the value itself. Captured `tracing` output for the
+/// same run is asserted by the caller.
+async fn run_with_resolved_secret_reference() -> SecretReferenceRun {
     let _log_capture = install_secret_log_capture();
     let workspace_dir = temp_workspace("secret-reference-length");
     let workspace = workspace_dir.path();
@@ -726,17 +774,7 @@ async fn secret_reference_resolves_and_only_its_length_reaches_the_shim() {
     store.set("demo", secret_value).expect("seed the store");
 
     let marker = workspace.join("secret-length.marker");
-    let script = format!(
-        "#!/bin/sh\nprintf '%s' \"$SECRET_VAR\" | wc -c > {}\nexit 0\n",
-        marker.display()
-    );
-    let script_path = workspace.join("shim.sh");
-    std::fs::write(&script_path, script).expect("write shim script");
-    let binary = HarnessBinary {
-        program: PathBuf::from("/bin/sh"),
-        prefix_args: vec![script_path.display().to_string()],
-    };
-
+    let binary = secret_length_dump_binary(workspace, &marker);
     let adapter = ClaudeCodeAdapter::with_binary(binary, clock(), store);
     let mut environment = BTreeMap::new();
     environment.insert("SECRET_VAR".to_string(), secret_reference_entry("demo"));
@@ -757,27 +795,39 @@ async fn secret_reference_resolves_and_only_its_length_reaches_the_shim() {
     let outcome = adapter.wait(&handle).await.expect("wait");
     assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
 
-    let recorded = std::fs::read_to_string(&marker).expect("shim wrote the length marker");
-    let recorded_length: usize = recorded.trim().parse().expect("marker holds a byte count");
-    assert_eq!(
-        recorded_length,
-        secret_value.len(),
-        "the shim must have received the resolved value, not something else"
-    );
-
-    let captured = SECRET_LOG_CAPTURE
+    let captured_log = SECRET_LOG_CAPTURE
         .with(|captured| String::from_utf8(captured.borrow().clone()))
         .expect("utf-8");
-    assert!(
-        captured.contains("demo") || captured.contains("SECRET_VAR"),
-        "the test is only load-bearing if resolution actually logged the entry: {captured:?}"
-    );
-    assert!(
-        !captured.contains(secret_value),
-        "the resolved secret value reached a log line: {captured}"
-    );
+    SecretReferenceRun {
+        recorded_length: recorded_length(&marker),
+        secret_value,
+        captured_log,
+    }
+}
 
-    std::fs::remove_dir_all(workspace).expect("cleanup");
+#[tokio::test]
+async fn secret_reference_resolves_and_only_length_reaches_the_shim() {
+    let run = run_with_resolved_secret_reference().await;
+    assert_eq!(
+        run.recorded_length,
+        run.secret_value.len(),
+        "the shim must have received the resolved value, not something else"
+    );
+}
+
+#[tokio::test]
+async fn secret_resolution_is_logged_by_name_never_by_value() {
+    let run = run_with_resolved_secret_reference().await;
+    assert!(
+        run.captured_log.contains("demo") || run.captured_log.contains("SECRET_VAR"),
+        "the test is only load-bearing if resolution actually logged the entry: {:?}",
+        run.captured_log
+    );
+    assert!(
+        !run.captured_log.contains(run.secret_value),
+        "the resolved secret value reached a log line: {}",
+        run.captured_log
+    );
 }
 
 /// Regression guards for both capability corrections made to this file:
@@ -788,7 +838,7 @@ async fn secret_reference_resolves_and_only_its_length_reaches_the_shim() {
 /// `fake_binary_success_stages_a_real_log_artifact` above for the fix
 /// itself).
 #[test]
-fn declared_capabilities_report_cancel_and_artifacts_as_advisory() {
+fn declared_capabilities_report_cancel_and_artifacts_advisory() {
     let (adapter, _scratch) = adapter_with_fake_binary();
     let declared = HarnessProbe::declared_capabilities(&adapter);
     assert_eq!(declared.cancel.support, CapabilitySupport::Advisory);
@@ -869,7 +919,7 @@ fn version_text_parsing_variants() {
 /// reason, and coexist with the empty combination list rather than
 /// replace its honesty note.
 #[tokio::test]
-async fn probe_attests_model_passthrough_instead_of_inventing_a_model_list() {
+async fn probe_attests_model_passthrough_instead_of_inventing_a_list() {
     let (adapter, _scratch) = adapter_with_fake_binary();
     let capability = adapter.probe().await;
 
@@ -886,7 +936,7 @@ async fn probe_attests_model_passthrough_instead_of_inventing_a_model_list() {
 /// spawn path (not only the pure-function tests above), using the
 /// shared fixture's dedicated `unknown_version` mode.
 #[tokio::test]
-async fn probe_reports_the_shared_fixtures_unknown_version_output_honestly() {
+async fn probe_reports_the_fixtures_unknown_version_output_honestly() {
     let (adapter, _scratch) = adapter_with_fake_binary();
     // `detect_version` always invokes `--version` with no env override,
     // so this test instead exercises the same parsing path `probe`
@@ -1015,7 +1065,7 @@ fn result_envelope_parsing_variants() {
 /// that claim, because the init line it came from fired before any
 /// network call reached the gateway.
 #[test]
-fn gateway_routed_result_is_requested_not_confirmed_even_on_a_fast_result_line() {
+fn gateway_result_is_requested_not_confirmed_even_when_fast() {
     let stdout = include_str!("../fixtures/claude_code/2.1.261/gateway-routed-result.jsonl");
     let result = ProcessResult {
         exit: ProcessExit::Exited(1),
@@ -1043,7 +1093,7 @@ fn gateway_routed_result_is_requested_not_confirmed_even_on_a_fast_result_line()
 }
 
 #[test]
-fn a_missing_is_error_field_fails_closed_as_an_error_not_a_silent_success() {
+fn a_missing_is_error_field_fails_closed_not_a_silent_success() {
     let value = serde_json::json!({"type": "result", "result": "no is_error field here"});
     let parsed = parsed_from_result_line(&value, None, None, None);
     assert!(parsed.is_error);
@@ -1079,23 +1129,28 @@ fn journal_with_process(process_id: Option<&str>) -> AttemptJournal {
 // (`process_program_matches`, genuinely different from codex's
 // unconditional trust) stays below, in the two Linux-only tests.
 
+/// Deliberately drives `spawn_child` mode, not `hang`: `hang` execs into
+/// `sleep`, replacing the process image so `/proc/<pid>/cmdline` becomes
+/// `sleep ...` moments after spawn — behavior specific to that one fixture
+/// mode, not representative of what `process_program_matches` must identify
+/// against a real `claude` process, which never re-execs over its own
+/// lifetime. `spawn_child`'s own process (distinct from the grandchild
+/// `sleep` it backgrounds) never execs, keeping a stable, checkable
+/// `/bin/sh <script>` cmdline throughout — which is what lets the bounded
+/// poll below converge instead of being structurally unable to: reading
+/// `/proc/<pid>/cmdline` immediately after spawn can transiently return
+/// `None` (the kernel has not necessarily finished populating it yet),
+/// which `reconcile` itself already reports honestly as `Ambiguous` rather
+/// than guessing, so the loop exists only to make the assertion insensitive
+/// to that one-time startup window, not because `reconcile` is retried in
+/// production.
 #[cfg(target_os = "linux")]
 #[tokio::test]
-async fn reconcile_reports_process_running_for_a_genuinely_still_running_fake_harness() {
+async fn reconcile_reports_running_for_a_still_running_harness() {
     let (adapter, _scratch) = adapter_with_fake_binary();
     let workspace_dir = temp_workspace("reconcile-running");
     let workspace = workspace_dir.path();
     let mut environment = BTreeMap::new();
-    // Deliberately `spawn_child`, not `hang`: `hang` mode `exec`s into
-    // `sleep` (see `fake_harness.sh`'s own doc comment), which replaces
-    // the process image, so `/proc/<pid>/cmdline` permanently becomes
-    // `sleep ...` rather than `/bin/sh <script>` moments after spawn —
-    // a real `claude` process never re-execs into something else over
-    // its own lifetime, so that behavior is specific to this one fixture
-    // mode, not representative of what `process_program_matches` needs
-    // to identify in production. `spawn_child` mode's own process
-    // (distinct from the grandchild `sleep` it backgrounds) never execs,
-    // keeping a stable, checkable `/bin/sh <script>` cmdline throughout.
     environment.insert(
         "TACK_FAKE_HARNESS_MODE".to_string(),
         env_entry("spawn_child"),
@@ -1117,17 +1172,6 @@ async fn reconcile_reports_process_running_for_a_genuinely_still_running_fake_ha
     let pid: u32 = handle.process_id.parse().expect("numeric pid");
 
     let journal = journal_with_process(Some(&handle.process_id));
-    // Bounded poll, not a fixed sleep. `spawn_child` mode's own
-    // process never execs (see the comment above), so unlike the
-    // earlier `hang`-mode attempt this converges rather than being
-    // structurally unable to: under heavy parallel test load, reading
-    // `/proc/<pid>/cmdline` immediately after spawn can transiently
-    // fail (`process_program_matches` returning `None`, since the
-    // kernel has not necessarily finished populating it), which is a
-    // real, if rare, possibility `reconcile` itself already reports
-    // honestly as `Ambiguous` rather than guessing — this loop exists
-    // only so the test's assertion is not sensitive to that one-time
-    // startup window, not because `reconcile` is retried in production.
     let mut observation = None;
     for _ in 0..80 {
         let latest = adapter.reconcile(&journal).await.expect("reconcile");
@@ -1139,18 +1183,16 @@ async fn reconcile_reports_process_running_for_a_genuinely_still_running_fake_ha
     }
     assert_eq!(observation, Some(RecoveryObservation::ProcessRunning));
 
-    // Cleanup: this adapter's own `cancel` both stops the process (and
-    // its backgrounded grandchild, via `process.rs`'s own process-group
-    // signalling) and forgets the bookkeeping entry `reconcile` never
-    // touched.
+    // This adapter's own `cancel` stops the process (and its backgrounded
+    // grandchild, via `process.rs`'s process-group signalling) and forgets
+    // the bookkeeping entry `reconcile` never touched.
     adapter.cancel(&handle).await.expect("cancel");
     assert!(!process_alive(pid));
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
 #[cfg(target_os = "linux")]
 #[tokio::test]
-async fn reconcile_reports_process_stopped_when_a_live_pid_belongs_to_an_unrelated_program() {
+async fn reconcile_reports_stopped_for_a_pid_of_an_unrelated_program() {
     // A real, currently-alive pid that this adapter did *not* spawn and
     // that does not resolve to `self.binary.program` at all: this
     // adapter's own test-runner process itself.
@@ -1237,34 +1279,9 @@ fn provider_cases() -> Vec<ProviderCase> {
 }
 
 #[tokio::test]
-async fn provider_endpoint_variables_present_only_when_configured_and_requested() {
+async fn provider_endpoint_variables_present_only_when_configured() {
     for case in provider_cases() {
-        let workspace_dir = temp_workspace("provider-guard");
-        let workspace = workspace_dir.path();
-        let marker = workspace.join("env-names.marker");
-        let binary = env_name_dump_binary(workspace, &marker);
-
-        let secrets_dir = temp_workspace("secrets");
-        let secrets = test_secret_store(secrets_dir.path());
-        secrets
-            .set("demo-secret", "a-resolvable-value")
-            .expect("seed store");
-        let adapter = ClaudeCodeAdapter::with_binary(binary, clock(), secrets)
-            .with_providers(enabled_gateway_providers("demo-secret"));
-
-        let spec = spec_with(
-            "claude-code",
-            case.requested_provider,
-            &[],
-            true,
-            BTreeMap::new(),
-            workspace.to_path_buf(),
-        );
-        adapter.validate(&spec).await.expect("validate");
-        let handle = adapter.start(&spec).await.expect("start");
-        let _ = adapter.wait(&handle).await.expect("wait");
-
-        let names = recorded_env_names(&marker);
+        let names = run_provider_case(&case).await;
         assert_eq!(
             names.iter().any(|name| name == "ANTHROPIC_BASE_URL"),
             case.expect_present,
@@ -1277,9 +1294,37 @@ async fn provider_endpoint_variables_present_only_when_configured_and_requested(
             "case {:?}: {names:?}",
             case.name
         );
-
-        std::fs::remove_dir_all(workspace).expect("cleanup");
     }
+}
+
+/// Runs one [`ProviderCase`] through a real adapter and returns the
+/// environment variable names the fake harness recorded.
+async fn run_provider_case(case: &ProviderCase) -> Vec<String> {
+    let workspace_dir = temp_workspace("provider-guard");
+    let workspace = workspace_dir.path();
+    let marker = workspace.join("env-names.marker");
+    let binary = env_name_dump_binary(workspace, &marker);
+
+    let secrets_dir = temp_workspace("secrets");
+    let secrets = test_secret_store(secrets_dir.path());
+    secrets
+        .set("demo-secret", "a-resolvable-value")
+        .expect("seed store");
+    let adapter = ClaudeCodeAdapter::with_binary(binary, clock(), secrets)
+        .with_providers(enabled_gateway_providers("demo-secret"));
+
+    let spec = spec_with(
+        "claude-code",
+        case.requested_provider,
+        &[],
+        true,
+        BTreeMap::new(),
+        workspace.to_path_buf(),
+    );
+    adapter.validate(&spec).await.expect("validate");
+    let handle = adapter.start(&spec).await.expect("start");
+    let _ = adapter.wait(&handle).await.expect("wait");
+    recorded_env_names(&marker)
 }
 
 // A configured-but-disabled provider rejecting pre-spawn is now

@@ -502,6 +502,40 @@ fn assert_quarantine_recorded(root: &Path, journal: &OwnerOnlyJournal) {
     );
 }
 
+/// The setup shared by every scenario where the harness process was
+/// observed starting but its start acknowledgment never reached the server —
+/// the shape both `failed_ambiguity_report_retries_once_then_quarantines`
+/// and `reoffered_quarantined_attempt_rejected_before_second_spawn` restart
+/// from.
+fn ambiguous_ack_scenario(
+    label: &str,
+) -> (
+    tempfile::TempDir,
+    FakeProtocol,
+    FakeAdapter,
+    OwnerOnlyJournal,
+) {
+    let root_dir = root(label);
+    let protocol = FakeProtocol::new(work(), FailurePoint::ProcessStartAck, false);
+    let adapter = FakeAdapter::new(RecoveryObservation::Ambiguous);
+    let journal = OwnerOnlyJournal::new(root_dir.path());
+    (root_dir, protocol, adapter, journal)
+}
+
+/// A single `run_once` against a fresh engine wired to `worktree: succeeds`
+/// — the first-attempt shape shared by every test whose crash happens after
+/// the worktree provisions cleanly.
+async fn attempt_run_once(
+    protocol: &FakeProtocol,
+    adapter: &FakeAdapter,
+    journal: &OwnerOnlyJournal,
+    root: &Path,
+) -> Result<RunCycle, EngineError> {
+    engine(protocol, adapter, journal, root, FakeWorktree::succeeds())
+        .run_once(&session(), claim())
+        .await
+}
+
 /// Restarts against the same journal and asserts the restart's only outcome
 /// is a quarantine — the shape shared by every crash this file restarts from.
 async fn recover_and_expect_quarantine(
@@ -559,21 +593,10 @@ async fn before_spawn_worktree_crash_recovers_without_respawn() {
 
 #[tokio::test]
 async fn spawn_ack_loss_quarantines_as_ambiguous_without_retry() {
-    let root_dir = root("spawn-before-ack");
+    let (root_dir, protocol, adapter, journal) = ambiguous_ack_scenario("spawn-before-ack");
     let root = root_dir.path();
-    let protocol = FakeProtocol::new(work(), FailurePoint::ProcessStartAck, false);
-    let adapter = FakeAdapter::new(RecoveryObservation::Ambiguous);
-    let journal = OwnerOnlyJournal::new(root);
-    let runner = engine(
-        &protocol,
-        &adapter,
-        &journal,
-        root,
-        FakeWorktree::succeeds(),
-    );
 
-    let result = runner
-        .run_once(&session(), claim())
+    let result = attempt_run_once(&protocol, &adapter, &journal, root)
         .await
         .expect("quarantine result");
     assert!(matches!(result, RunCycle::Quarantined { .. }));
@@ -675,23 +698,12 @@ async fn terminal_report_loss_keeps_attempt_pending_without_resend() {
 
 #[tokio::test]
 async fn failed_ambiguity_report_retries_once_then_quarantines() {
-    let root_dir = root("ambiguity-report-retry");
+    let (root_dir, protocol, adapter, journal) = ambiguous_ack_scenario("ambiguity-report-retry");
     let root = root_dir.path();
-    let protocol = FakeProtocol::new(work(), FailurePoint::ProcessStartAck, false);
     protocol.fail_recovery_reports(1);
-    let adapter = FakeAdapter::new(RecoveryObservation::Ambiguous);
-    let journal = OwnerOnlyJournal::new(root);
-    let crashed = engine(
-        &protocol,
-        &adapter,
-        &journal,
-        root,
-        FakeWorktree::succeeds(),
-    );
 
     assert!(matches!(
-        crashed
-            .run_once(&session(), claim())
+        attempt_run_once(&protocol, &adapter, &journal, root)
             .await
             .expect("pending result"),
         RunCycle::RecoveryPending { .. }
@@ -768,36 +780,18 @@ async fn running_process_recovery_quarantines_without_respawn() {
 
 #[tokio::test]
 async fn reoffered_quarantined_attempt_rejected_before_second_spawn() {
-    let root_dir = root("quarantined-reoffer");
+    let (root_dir, protocol, adapter, journal) = ambiguous_ack_scenario("quarantined-reoffer");
     let root = root_dir.path();
-    let protocol = FakeProtocol::new(work(), FailurePoint::ProcessStartAck, false);
-    let adapter = FakeAdapter::new(RecoveryObservation::Ambiguous);
-    let journal = OwnerOnlyJournal::new(root);
-    let first = engine(
-        &protocol,
-        &adapter,
-        &journal,
-        root,
-        FakeWorktree::succeeds(),
-    );
     assert!(matches!(
-        first
-            .run_once(&session(), claim())
+        attempt_run_once(&protocol, &adapter, &journal, root)
             .await
             .expect("first quarantine"),
         RunCycle::Quarantined { .. }
     ));
 
     *protocol.work.lock().expect("claim lock") = Some(work());
-    let reoffered = engine(
-        &protocol,
-        &adapter,
-        &journal,
-        root,
-        FakeWorktree::succeeds(),
-    );
     assert!(matches!(
-        reoffered.run_once(&session(), claim()).await,
+        attempt_run_once(&protocol, &adapter, &journal, root).await,
         Err(EngineError::Journal(JournalError::AlreadyExists))
     ));
 

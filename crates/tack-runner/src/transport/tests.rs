@@ -205,11 +205,11 @@ fn capabilities() -> RunnerCapabilities {
 // hand-written JSON.
 // -----------------------------------------------------------------
 
-#[tokio::test]
-async fn enrollment_parses_the_frozen_response_and_carries_the_token_only_in_the_body() {
+/// Enrolls once against the frozen fixture and returns the recorded request
+/// so both claims below can check it without a second exchange.
+async fn enroll_against_frozen_fixture() -> (EnrollmentResponse, RecordedRequest) {
     let server = spawn_mock(vec![(200, fixture("enrollment.response.json"))]);
-    let protocol = client(&server.base_url);
-    let response = protocol
+    let response = client(&server.base_url)
         .enroll(
             &EnrollmentCredential::new(SECRET_ENROLLMENT),
             EnrollmentRequest {
@@ -220,7 +220,14 @@ async fn enrollment_parses_the_frozen_response_and_carries_the_token_only_in_the
         )
         .await
         .expect("enrollment succeeds");
+    let recorded = server.requests.lock().expect("requests").clone();
+    assert_eq!(recorded.len(), 1);
+    (response, recorded[0].clone())
+}
 
+#[tokio::test]
+async fn enrollment_parses_the_frozen_response() {
+    let (response, recorded) = enroll_against_frozen_fixture().await;
     assert_eq!(
         response.session.runner_id.as_str(),
         "runr_01J00000000000000000000001"
@@ -231,27 +238,29 @@ async fn enrollment_parses_the_frozen_response_and_carries_the_token_only_in_the
     );
     assert_eq!(response.heartbeat_interval, Duration::from_secs(15));
     assert_eq!(response.lease_duration, Duration::from_secs(60));
-
-    let recorded = server.requests.lock().expect("requests").clone();
-    assert_eq!(recorded.len(), 1);
-    assert_eq!(recorded[0].path, "/api/runner/v1/enroll");
-    assert_eq!(recorded[0].body["enrollment_token"], SECRET_ENROLLMENT);
-    assert_eq!(recorded[0].body["protocol_version"], 1);
-    // The enrollment token is body-only; `protocol.json` names the
-    // enrollment authentication `single_use_enrollment_token_in_request_body`,
-    // and a bearer header here would be a second, unspecified channel.
-    assert!(recorded[0].authorization.is_none());
-    // `runner_version` is a sibling of `capabilities`, never nested in it.
-    assert!(
-        recorded[0].body["capabilities"]
-            .get("runner_version")
-            .is_none()
-    );
-    assert_eq!(recorded[0].body["runner_version"], "0.1.0");
+    assert_eq!(recorded.path, "/api/runner/v1/enroll");
 }
 
 #[tokio::test]
-async fn claim_builds_the_lease_from_both_halves_of_the_frozen_response() {
+async fn enrollment_token_travels_only_in_the_body() {
+    let (_, recorded) = enroll_against_frozen_fixture().await;
+    assert_eq!(recorded.body["enrollment_token"], SECRET_ENROLLMENT);
+    assert_eq!(recorded.body["protocol_version"], 1);
+    // `protocol.json` names the enrollment authentication
+    // `single_use_enrollment_token_in_request_body`; a bearer header here
+    // would be a second, unspecified channel.
+    assert!(recorded.authorization.is_none());
+    // `runner_version` is a sibling of `capabilities`, never nested in it.
+    assert!(
+        recorded.body["capabilities"]
+            .get("runner_version")
+            .is_none()
+    );
+    assert_eq!(recorded.body["runner_version"], "0.1.0");
+}
+
+#[tokio::test]
+async fn claim_builds_the_lease_from_both_halves_of_the_response() {
     let server = spawn_mock(vec![(200, fixture("claim.response.json"))]);
     let protocol = client(&server.base_url);
     let result = protocol
@@ -293,9 +302,12 @@ async fn claim_builds_the_lease_from_both_halves_of_the_frozen_response() {
 }
 
 #[tokio::test]
-async fn claim_no_work_is_not_an_error() {
+async fn claim_no_work_parses_and_clamps_the_next_waits_ms() {
+    // One mock, two claim() calls: the no-work shape on the first, the
+    // contract-max clamp on the second's outgoing `wait_ms`.
     let server = spawn_mock(vec![(200, fixture("claim.no-work.response.json"))]);
-    let result = client(&server.base_url)
+    let protocol = client(&server.base_url);
+    let result = protocol
         .claim(
             &session(),
             ClaimRequest {
@@ -311,12 +323,8 @@ async fn claim_no_work_is_not_an_error() {
         ClaimResult::NoWork { retry_after, ref reason }
             if retry_after == Duration::from_millis(5_000) && reason == "no_eligible_work"
     ));
-}
 
-#[tokio::test]
-async fn claim_wait_is_clamped_to_the_contract_maximum() {
-    let server = spawn_mock(vec![(200, fixture("claim.no-work.response.json"))]);
-    client(&server.base_url)
+    protocol
         .claim(
             &session(),
             ClaimRequest {
@@ -328,7 +336,7 @@ async fn claim_wait_is_clamped_to_the_contract_maximum() {
         .await
         .expect("claim succeeds");
     let recorded = server.requests.lock().expect("requests").clone();
-    assert_eq!(recorded[0].body["wait_ms"], CLAIM_WAIT_MS_MAX);
+    assert_eq!(recorded[1].body["wait_ms"], CLAIM_WAIT_MS_MAX);
 }
 
 #[tokio::test]
@@ -350,6 +358,21 @@ async fn heartbeat_round_trips_the_frozen_request_and_response() {
     assert_eq!(recorded[0].body, frozen, "the request must be the fixture");
 }
 
+/// A `StartReport` for `attempt`, varying only by the two fields the
+/// accept/start rows exercise: `phase` and whether a process id is known.
+fn start_report(attempt: &AttemptId, phase: StartPhase, process_id: Option<String>) -> StartReport {
+    StartReport {
+        attempt_id: attempt.clone(),
+        fencing_token: FencingToken(7),
+        phase,
+        workspace_id: Some(crate::client::WorkspaceId::new(
+            "ws_01J0000000000000000000000001",
+        )),
+        base_revision: Some("0123456789abcdef0123456789abcdef01234567".into()),
+        process_id,
+    }
+}
+
 #[tokio::test]
 async fn accept_and_start_use_the_two_attempt_scoped_routes() {
     let server = spawn_mock(vec![
@@ -358,91 +381,55 @@ async fn accept_and_start_use_the_two_attempt_scoped_routes() {
     ]);
     let protocol = client(&server.base_url);
     let attempt = AttemptId::new("att_01J00000000000000000000001");
-    protocol
-        .report_start(
-            &session(),
-            StartReport {
-                attempt_id: attempt.clone(),
-                fencing_token: FencingToken(7),
-                phase: StartPhase::Preparing,
-                workspace_id: Some(crate::client::WorkspaceId::new(
-                    "ws_01J0000000000000000000000001",
-                )),
-                base_revision: Some("0123456789abcdef0123456789abcdef01234567".into()),
-                process_id: None,
-            },
-        )
-        .await
-        .expect("accept succeeds");
-    protocol
-        .report_start(
-            &session(),
-            StartReport {
-                attempt_id: attempt.clone(),
-                fencing_token: FencingToken(7),
-                phase: StartPhase::ProcessObservedRunning,
-                workspace_id: Some(crate::client::WorkspaceId::new(
-                    "ws_01J0000000000000000000000001",
-                )),
-                base_revision: Some("0123456789abcdef0123456789abcdef01234567".into()),
-                process_id: Some("40213".into()),
-            },
-        )
-        .await
-        .expect("start succeeds");
+    // Two rows, one route each: `accept` (preparing) and `start` (running).
+    for (phase, process_id) in [
+        (StartPhase::Preparing, None),
+        (StartPhase::ProcessObservedRunning, Some("40213".into())),
+    ] {
+        protocol
+            .report_start(&session(), start_report(&attempt, phase, process_id))
+            .await
+            .expect("report_start succeeds");
+    }
 
     let recorded = server.requests.lock().expect("requests").clone();
+    let paths: Vec<&str> = recorded.iter().map(|entry| entry.path.as_str()).collect();
     assert_eq!(
-        recorded[0].path,
-        "/api/runner/v1/attempts/att_01J00000000000000000000001/accept"
+        paths,
+        vec![
+            "/api/runner/v1/attempts/att_01J00000000000000000000001/accept",
+            "/api/runner/v1/attempts/att_01J00000000000000000000001/start",
+        ]
     );
     assert_eq!(
-        recorded[1].path,
-        "/api/runner/v1/attempts/att_01J00000000000000000000001/start"
+        recorded[0].body,
+        serde_json::from_str::<Value>(&fixture("accept.request.json")).expect("frozen accept")
     );
-    let accept_fixture: Value =
-        serde_json::from_str(&fixture("accept.request.json")).expect("frozen accept");
-    assert_eq!(recorded[0].body, accept_fixture);
-    let start_fixture: Value =
-        serde_json::from_str(&fixture("start.request.json")).expect("frozen start");
-    assert_eq!(recorded[1].body, start_fixture);
+    assert_eq!(
+        recorded[1].body,
+        serde_json::from_str::<Value>(&fixture("start.request.json")).expect("frozen start")
+    );
 }
 
 #[tokio::test]
 async fn reporting_running_without_a_process_id_is_typed_not_sent() {
     let server = spawn_mock(vec![(200, fixture("start.response.json"))]);
+    let attempt = AttemptId::new("att_1");
     let error = client(&server.base_url)
         .report_start(
             &session(),
-            StartReport {
-                attempt_id: AttemptId::new("att_1"),
-                fencing_token: FencingToken(7),
-                phase: StartPhase::ProcessObservedRunning,
-                workspace_id: Some(crate::client::WorkspaceId::new("ws_1")),
-                base_revision: Some("rev".into()),
-                process_id: None,
-            },
+            start_report(&attempt, StartPhase::ProcessObservedRunning, None),
         )
         .await
         .expect_err("a running report without a process id is invalid");
-    assert_eq!(
-        error,
-        ProtocolClientError::Protocol {
-            code: StableErrorCode::InvalidRequest
-        }
-    );
+    assert_eq!(error, protocol(StableErrorCode::InvalidRequest));
     // Proving the absence directly: nothing reached the server at all.
     assert!(server.requests.lock().expect("requests").is_empty());
 }
 
-#[tokio::test]
-async fn completion_and_cancellation_and_recovery_parse_their_frozen_responses() {
-    let server = spawn_mock(vec![
-        (200, fixture("completion.response.json")),
-        (200, fixture("cancellation.response.json")),
-        (200, fixture("recovery-observation.response.json")),
-    ]);
-    let protocol = client(&server.base_url);
+/// Round-trips the frozen completion, cancellation and recovery fixtures
+/// through `protocol`, asserting each typed response in turn.
+async fn run_completion_cancellation_and_recovery(protocol: &impl PullProtocol) {
     let completion: CompletionReport =
         serde_json::from_str(&fixture("completion.request.json")).expect("frozen completion");
     let response = protocol
@@ -468,6 +455,17 @@ async fn completion_and_cancellation_and_recovery_parse_their_frozen_responses()
         .await
         .expect("recovery succeeds");
     assert!(!response.replayed);
+}
+
+#[tokio::test]
+async fn completion_cancellation_and_recovery_parse_frozen_responses() {
+    let server = spawn_mock(vec![
+        (200, fixture("completion.response.json")),
+        (200, fixture("cancellation.response.json")),
+        (200, fixture("recovery-observation.response.json")),
+    ]);
+    let protocol = client(&server.base_url);
+    run_completion_cancellation_and_recovery(&protocol).await;
 
     let recorded = server.requests.lock().expect("requests").clone();
     assert_eq!(
@@ -484,17 +482,13 @@ async fn completion_and_cancellation_and_recovery_parse_their_frozen_responses()
     );
 }
 
-#[tokio::test]
-async fn events_decisions_and_artifacts_use_their_routes_and_frozen_shapes() {
-    let server = spawn_mock(vec![
-        (200, fixture("event-batch.response.json")),
-        (200, fixture("decision.create.response.json")),
-        (200, fixture("decision.poll.response.json")),
-        (200, fixture("artifact.response.json")),
-    ]);
-    let protocol = client(&server.base_url);
-    let attempt = AttemptId::new("att_01J00000000000000000000001");
-
+/// Runs the events/decisions/artifacts exchange against the frozen fixtures
+/// and asserts each typed response; returns the two frozen request bodies
+/// the caller checks against what actually went on the wire.
+async fn run_events_decisions_and_artifacts_exchange(
+    protocol: &impl AttemptDataProtocol,
+    attempt: &AttemptId,
+) -> (Value, Value) {
     let frozen_events: Value =
         serde_json::from_str(&fixture("event-batch.request.json")).expect("frozen events");
     let events: Vec<ProtocolEvent> =
@@ -562,6 +556,20 @@ async fn events_decisions_and_artifacts_use_their_routes_and_frozen_shapes() {
         Some("allow_once")
     );
 
+    let (frozen_manifest, grants) = submit_frozen_artifact_manifest(protocol, attempt).await;
+    assert_eq!(grants.len(), 1);
+    assert_eq!(grants[0].state, "manifest_accepted");
+    assert_eq!(grants[0].method, "PUT");
+
+    (frozen_events, frozen_manifest)
+}
+
+/// Submits the frozen artifact manifest and returns both the frozen request
+/// body (for a wire-shape check) and the typed grants the server returned.
+async fn submit_frozen_artifact_manifest(
+    protocol: &impl AttemptDataProtocol,
+    attempt: &AttemptId,
+) -> (Value, Vec<ArtifactUploadGrant>) {
     let frozen_manifest: Value =
         serde_json::from_str(&fixture("artifact.request.json")).expect("frozen manifest");
     let grants = protocol
@@ -576,9 +584,22 @@ async fn events_decisions_and_artifacts_use_their_routes_and_frozen_shapes() {
         )
         .await
         .expect("manifest succeeds");
-    assert_eq!(grants.len(), 1);
-    assert_eq!(grants[0].state, "manifest_accepted");
-    assert_eq!(grants[0].method, "PUT");
+    (frozen_manifest, grants)
+}
+
+#[tokio::test]
+async fn events_decisions_and_artifacts_use_their_routes_and_shapes() {
+    let server = spawn_mock(vec![
+        (200, fixture("event-batch.response.json")),
+        (200, fixture("decision.create.response.json")),
+        (200, fixture("decision.poll.response.json")),
+        (200, fixture("artifact.response.json")),
+    ]);
+    let protocol = client(&server.base_url);
+    let attempt = AttemptId::new("att_01J00000000000000000000001");
+
+    let (frozen_events, frozen_manifest) =
+        run_events_decisions_and_artifacts_exchange(&protocol, &attempt).await;
 
     let recorded = server.requests.lock().expect("requests").clone();
     let paths: Vec<&str> = recorded.iter().map(|entry| entry.path.as_str()).collect();
@@ -596,26 +617,14 @@ async fn events_decisions_and_artifacts_use_their_routes_and_frozen_shapes() {
 }
 
 #[tokio::test]
-async fn artifact_content_follows_the_server_grant_and_carries_the_fence_header() {
+async fn artifact_content_follows_the_server_grant_and_fence_header() {
     let server = spawn_mock(vec![
         (200, fixture("artifact.response.json")),
         (204, String::new()),
     ]);
     let protocol = client(&server.base_url);
-    let frozen_manifest: Value =
-        serde_json::from_str(&fixture("artifact.request.json")).expect("frozen manifest");
-    let grants = protocol
-        .submit_artifact_manifest(
-            &session(),
-            ArtifactManifestReport {
-                attempt_id: AttemptId::new("att_01J00000000000000000000001"),
-                fencing_token: FencingToken(7),
-                artifacts: serde_json::from_value(frozen_manifest["artifacts"].clone())
-                    .expect("frozen artifact list"),
-            },
-        )
-        .await
-        .expect("manifest succeeds");
+    let attempt = AttemptId::new("att_01J00000000000000000000001");
+    let (_, grants) = submit_frozen_artifact_manifest(&protocol, &attempt).await;
     protocol
         .put_artifact_content(
             &session(),
@@ -646,107 +655,56 @@ async fn artifact_content_follows_the_server_grant_and_carries_the_fence_header(
 // Error mapping — asserted against errors/*.json, not hand-written JSON.
 // -----------------------------------------------------------------
 
-#[tokio::test]
-async fn every_frozen_error_fixture_maps_to_its_typed_variant() {
-    let expectations: Vec<(&str, u16, ProtocolClientError)> = vec![
+/// Shorthand for the common `Protocol` error-mapping case, so each row of
+/// the table below fits on one line instead of rustfmt exploding the
+/// struct literal across three.
+fn protocol(code: StableErrorCode) -> ProtocolClientError {
+    ProtocolClientError::Protocol { code }
+}
+
+/// Every stable code in `protocol.json`'s fixture, and the typed variant it
+/// must map to — kept as its own function, not a literal inside the test,
+/// so the counted test body is just the loop.
+fn frozen_error_fixture_expectations() -> Vec<(&'static str, u16, ProtocolClientError)> {
+    use StableErrorCode::*;
+    vec![
         ("stale-lease.json", 409, ProtocolClientError::StaleLease),
         (
             "runner-revoked.json",
             403,
             ProtocolClientError::RunnerRevoked,
         ),
-        (
-            "conflict.json",
-            409,
-            ProtocolClientError::Protocol {
-                code: StableErrorCode::Conflict,
-            },
-        ),
+        ("conflict.json", 409, protocol(Conflict)),
         (
             "idempotency-conflict.json",
             409,
-            ProtocolClientError::Protocol {
-                code: StableErrorCode::IdempotencyConflict,
-            },
+            protocol(IdempotencyConflict),
         ),
-        (
-            "unauthorized.json",
-            401,
-            ProtocolClientError::Protocol {
-                code: StableErrorCode::Unauthorized,
-            },
-        ),
-        (
-            "forbidden.json",
-            403,
-            ProtocolClientError::Protocol {
-                code: StableErrorCode::Forbidden,
-            },
-        ),
-        (
-            "not-found.json",
-            404,
-            ProtocolClientError::Protocol {
-                code: StableErrorCode::NotFound,
-            },
-        ),
-        (
-            "invalid-request.json",
-            400,
-            ProtocolClientError::Protocol {
-                code: StableErrorCode::InvalidRequest,
-            },
-        ),
-        (
-            "invalid-transition.json",
-            409,
-            ProtocolClientError::Protocol {
-                code: StableErrorCode::InvalidTransition,
-            },
-        ),
-        (
-            "decision-expired.json",
-            409,
-            ProtocolClientError::Protocol {
-                code: StableErrorCode::DecisionExpired,
-            },
-        ),
+        ("unauthorized.json", 401, protocol(Unauthorized)),
+        ("forbidden.json", 403, protocol(Forbidden)),
+        ("not-found.json", 404, protocol(NotFound)),
+        ("invalid-request.json", 400, protocol(InvalidRequest)),
+        ("invalid-transition.json", 409, protocol(InvalidTransition)),
+        ("decision-expired.json", 409, protocol(DecisionExpired)),
         (
             "artifact-checksum-mismatch.json",
             422,
-            ProtocolClientError::Protocol {
-                code: StableErrorCode::ArtifactChecksumMismatch,
-            },
+            protocol(ArtifactChecksumMismatch),
         ),
-        (
-            "payload-too-large.json",
-            413,
-            ProtocolClientError::Protocol {
-                code: StableErrorCode::PayloadTooLarge,
-            },
-        ),
-        (
-            "rate-limited.json",
-            429,
-            ProtocolClientError::Protocol {
-                code: StableErrorCode::RateLimited,
-            },
-        ),
+        ("payload-too-large.json", 413, protocol(PayloadTooLarge)),
+        ("rate-limited.json", 429, protocol(RateLimited)),
         (
             "unsupported-protocol.json",
             400,
-            ProtocolClientError::Protocol {
-                code: StableErrorCode::UnsupportedProtocol,
-            },
+            protocol(UnsupportedProtocol),
         ),
-        (
-            "internal-error.json",
-            500,
-            ProtocolClientError::Protocol {
-                code: StableErrorCode::InternalError,
-            },
-        ),
-    ];
+        ("internal-error.json", 500, protocol(InternalError)),
+    ]
+}
+
+#[tokio::test]
+async fn every_frozen_error_fixture_maps_to_its_typed_variant() {
+    let expectations = frozen_error_fixture_expectations();
     // Every stable code in `protocol.json` must be covered, so a code
     // added later cannot silently go unmapped.
     assert_eq!(expectations.len(), 15);
@@ -767,27 +725,16 @@ async fn a_stale_lease_never_arrives_as_a_generic_conflict() {
     // HTTP 409. Branching on the status line would collapse them; the
     // body's stable code is what keeps them distinct.
     let server = spawn_mock(vec![(409, fixture("errors/stale-lease.json"))]);
+    let attempt = AttemptId::new("att_01J00000000000000000000001");
     let error = client(&server.base_url)
         .report_start(
             &session(),
-            StartReport {
-                attempt_id: AttemptId::new("att_01J00000000000000000000001"),
-                fencing_token: FencingToken(7),
-                phase: StartPhase::Preparing,
-                workspace_id: Some(crate::client::WorkspaceId::new("ws_1")),
-                base_revision: Some("rev".into()),
-                process_id: None,
-            },
+            start_report(&attempt, StartPhase::Preparing, None),
         )
         .await
         .expect_err("a stale fence is refused");
     assert_eq!(error, ProtocolClientError::StaleLease);
-    assert_ne!(
-        error,
-        ProtocolClientError::Protocol {
-            code: StableErrorCode::Conflict
-        }
-    );
+    assert_ne!(error, protocol(StableErrorCode::Conflict));
 }
 
 #[tokio::test]
@@ -821,12 +768,7 @@ async fn a_retryable_code_is_resent_only_up_to_the_bound() {
         )
         .await
         .expect_err("internal_error exhausts the bound");
-    assert_eq!(
-        error,
-        ProtocolClientError::Protocol {
-            code: StableErrorCode::InternalError
-        }
-    );
+    assert_eq!(error, protocol(StableErrorCode::InternalError));
     // max_attempts = 3 means three sends, never an unbounded loop.
     assert_eq!(server.requests.lock().expect("requests").len(), 3);
 }
@@ -846,7 +788,7 @@ async fn a_non_retryable_code_is_sent_exactly_once() {
 }
 
 #[tokio::test]
-async fn enrollment_is_never_resent_even_when_the_failure_is_retryable() {
+async fn enrollment_is_never_resent_even_on_a_retryable_failure() {
     // The token is redeemed exactly once server-side: a lost response is
     // ambiguous, and resending would burn a second token without being
     // able to recover the credential. `internal_error` is retryable by
@@ -863,12 +805,7 @@ async fn enrollment_is_never_resent_even_when_the_failure_is_retryable() {
         )
         .await
         .expect_err("enrollment fails");
-    assert_eq!(
-        error,
-        ProtocolClientError::Protocol {
-            code: StableErrorCode::InternalError
-        }
-    );
+    assert_eq!(error, protocol(StableErrorCode::InternalError));
     assert_eq!(
         server.requests.lock().expect("requests").len(),
         1,
@@ -897,9 +834,7 @@ fn secrets_never_appear_in_logs_or_errors() {
         ProtocolClientError::RunnerRevoked,
         ProtocolClientError::Rejected,
         ProtocolClientError::Transport,
-        ProtocolClientError::Protocol {
-            code: StableErrorCode::Unauthorized,
-        },
+        protocol(StableErrorCode::Unauthorized),
     ] {
         let rendered = format!("{error}");
         assert!(!rendered.contains(SECRET_CREDENTIAL));
@@ -970,7 +905,7 @@ fn a_missing_session_file_is_absent_not_an_error() {
 }
 
 #[test]
-fn persisted_session_runner_id_reads_the_id_without_a_full_session() {
+fn persisted_session_runner_id_reads_without_a_full_session() {
     let guard = tempfile::tempdir().expect("temporary directory");
     let directory = guard.path();
     let session = session();
@@ -983,7 +918,7 @@ fn persisted_session_runner_id_reads_the_id_without_a_full_session() {
 }
 
 #[test]
-fn persisted_session_runner_id_is_none_for_a_missing_or_unparseable_session() {
+fn persisted_runner_id_is_none_for_missing_or_bad_session() {
     let guard = tempfile::tempdir().expect("temporary directory");
     let missing = guard.path().join("absent");
     assert!(persisted_session_runner_id(&missing).is_none());
