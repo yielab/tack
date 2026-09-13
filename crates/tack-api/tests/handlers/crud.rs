@@ -5,6 +5,7 @@
 //! dependencies, search, export, item provenance, and the GitHub push sync.
 
 use crate::common;
+use axum::Router;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use serde_json::{Value, json};
@@ -969,35 +970,11 @@ async fn export_csv_starts_with_header_row() {
     );
 }
 
-#[tokio::test]
-async fn export_yaml_round_trips_through_import() {
-    let (app, _) = common::test_app().await;
-    let pid = common::create_project(&app, "P", "software").await;
-    make_item(&app, pid).await;
-
-    // Export as YAML.
-    let (status, _, yaml) = common::send_with_raw(
-        &app,
-        "GET",
-        &format!("/api/projects/{pid}/export?format=yaml"),
-        Value::Null,
-        &[],
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    // It must be YAML (block mappings), not JSON braces.
-    assert!(
-        yaml.contains("project:") && yaml.contains("items:"),
-        "got: {yaml}"
-    );
-    let parsed: Value = serde_yaml::from_str(&yaml).unwrap();
-    assert_eq!(parsed["items"].as_array().unwrap().len(), 1);
-    assert_eq!(
-        parsed["items"][0]["source"], "manual",
-        "an ordinarily-created item's provenance marker must round-trip through export"
-    );
-
-    // Import the same YAML back: a new project is created with the item.
+/// POSTs a YAML export body to `/api/projects/import`, which only accepts
+/// this format via a real `Content-Type: application/x-yaml` header — no
+/// `common::send*` helper sets that content type, so this stays a direct
+/// request build. Returns the parsed JSON response body.
+async fn import_yaml(app: &Router, yaml: String) -> Value {
     let res = app
         .clone()
         .oneshot(
@@ -1012,20 +989,40 @@ async fn export_yaml_round_trips_through_import() {
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let bytes = axum::body::to_bytes(res.into_body(), 131072).await.unwrap();
-    let out: Value = serde_json::from_slice(&bytes).unwrap();
+    serde_json::from_slice(&bytes).unwrap()
+}
+
+#[tokio::test]
+async fn export_yaml_round_trips_through_import() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "P", "software").await;
+    make_item(&app, pid).await;
+
+    // Export as YAML.
+    let export_uri = format!("/api/projects/{pid}/export?format=yaml");
+    let (status, _, yaml) = common::send_with_raw(&app, "GET", &export_uri, Value::Null, &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    // It must be YAML (block mappings), not JSON braces.
+    assert!(
+        yaml.contains("project:") && yaml.contains("items:"),
+        "got: {yaml}"
+    );
+    let parsed: Value = serde_yaml::from_str(&yaml).unwrap();
+    assert_eq!(parsed["items"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        parsed["items"][0]["source"], "manual",
+        "an ordinarily-created item's provenance marker must round-trip through export"
+    );
+
+    // Import the same YAML back: a new project is created with the item.
+    let out = import_yaml(&app, yaml).await;
     assert_eq!(out["success"], true, "import response: {out}");
     let new_pid = out["project"]["id"].as_str().unwrap();
     assert_ne!(new_pid, pid.to_string(), "import must create a new project");
 
     // The imported project has the round-tripped item.
-    let (_, items) = common::send(
-        &app,
-        "GET",
-        &format!("/api/projects/{new_pid}/items"),
-        Value::Null,
-        &[],
-    )
-    .await;
+    let items_uri = format!("/api/projects/{new_pid}/items");
+    let (_, items) = common::send(&app, "GET", &items_uri, Value::Null, &[]).await;
     assert_eq!(
         items["data"].as_array().unwrap().len(),
         1,
@@ -1056,23 +1053,15 @@ async fn mount_single_issue(gh: &wiremock::MockServer, number: u32, title: &str)
         .await;
 }
 
-/// An item imported
-/// from GitHub is marked untrusted at creation time, and that marker
-/// survives an export → import round trip rather than resetting to
-/// trusted. (The wire-level "docket sees trusted:false" assertion lives in
-/// `crates/tack-api/tests/orchestration/auto_dispatch/hook.rs` and
-/// `orchestration/dispatch/item.rs`
-/// — this test covers the provenance marker itself, end to end through the
-/// real HTTP import/export/import path.)
-#[tokio::test]
-async fn github_import_source_untrusted_survives_export_reimport() {
-    use wiremock::MockServer;
-
-    let gh = MockServer::start().await;
-    mount_single_issue(&gh, 7, "Untrusted issue").await;
-
+/// Starts a fresh app against `gh`, imports the one mounted issue into a
+/// new project, and returns the app, project id and that project's items.
+async fn import_single_issue(
+    gh: &wiremock::MockServer,
+    github_token: Option<&str>,
+) -> (Router, Uuid, Value) {
     let config = AppConfig {
         github_api_base: gh.uri(),
+        github_token: github_token.map(String::from),
         ..AppConfig::default()
     };
     let (app, _) = common::test_app_with_config(config).await;
@@ -1096,36 +1085,42 @@ async fn github_import_source_untrusted_survives_export_reimport() {
         &[],
     )
     .await;
+    (app, pid, items)
+}
+
+/// An item imported
+/// from GitHub is marked untrusted at creation time, and that marker
+/// survives an export → import round trip rather than resetting to
+/// trusted. (The wire-level "docket sees trusted:false" assertion lives in
+/// `crates/tack-api/tests/orchestration/auto_dispatch/hook.rs` and
+/// `orchestration/dispatch/item.rs`
+/// — this test covers the provenance marker itself, end to end through the
+/// real HTTP import/export/import path.)
+#[tokio::test]
+async fn github_import_source_untrusted_survives_export_reimport() {
+    use wiremock::MockServer;
+
+    let gh = MockServer::start().await;
+    mount_single_issue(&gh, 7, "Untrusted issue").await;
+    let (app, pid, items) = import_single_issue(&gh, None).await;
     assert_eq!(
         items["data"][0]["source"], "github",
-        "an item imported from GitHub must be recorded with source: github"
+        "a GitHub import must record source: github"
     );
 
     // Export the linked project, then re-import that snapshot into a fresh
     // project — the item's `source` must survive, not reset to `manual`.
-    let (_, _, export_raw) = common::send_with_raw(
-        &app,
-        "GET",
-        &format!("/api/projects/{pid}/export?format=json"),
-        Value::Null,
-        &[],
-    )
-    .await;
-
+    let export_uri = format!("/api/projects/{pid}/export?format=json");
+    let (_, _, export_raw) =
+        common::send_with_raw(&app, "GET", &export_uri, Value::Null, &[]).await;
     let (status, out) =
         common::send_str_strict(&app, "POST", "/api/projects/import", export_raw, &[]).await;
     assert_eq!(status, StatusCode::OK);
     let new_pid = out["project"]["id"].as_str().unwrap();
     assert_ne!(new_pid, pid.to_string());
 
-    let (_, reimported) = common::send(
-        &app,
-        "GET",
-        &format!("/api/projects/{new_pid}/items"),
-        Value::Null,
-        &[],
-    )
-    .await;
+    let items_uri = format!("/api/projects/{new_pid}/items");
+    let (_, reimported) = common::send(&app, "GET", &items_uri, Value::Null, &[]).await;
     assert_eq!(
         reimported["data"][0]["source"], "github",
         "the trust marker must survive an export -> import round trip, never reset to trusted"
@@ -1154,16 +1149,9 @@ async fn github_import_redirect_never_leaks_user_token() {
     };
     let (app, _) = common::test_app_with_config(config).await;
     let pid = common::create_project(&app, "P", "software").await;
-
-    let (status, _) = common::send(
-        &app,
-        "POST",
-        &format!("/api/projects/{pid}/import-github"),
-        json!({"repo":"acme/widgets","token":"user-pat"}),
-        &[],
-    )
-    .await;
-
+    let import_uri = format!("/api/projects/{pid}/import-github");
+    let body = json!({"repo":"acme/widgets","token":"user-pat"});
+    let (status, _) = common::send(&app, "POST", &import_uri, body, &[]).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert!(
         private_destination
@@ -1227,67 +1215,32 @@ async fn completing_github_item_pushes_issue_close() {
         .mount(&gh)
         .await;
 
-    let config = AppConfig {
-        github_token: Some("tok".into()),
-        github_api_base: gh.uri(),
-        ..AppConfig::default()
-    };
-    let (app, _) = common::test_app_with_config(config).await;
-    let pid = common::create_project(&app, "P", "software").await;
-
     // Import → creates one item linked to issue #42.
-    let (status, _) = common::send(
-        &app,
-        "POST",
-        &format!("/api/projects/{pid}/import-github"),
-        json!({"repo":"acme/widgets"}),
-        &[],
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-
-    // Grab the imported item.
-    let (_, items) = common::send(
-        &app,
-        "GET",
-        &format!("/api/projects/{pid}/items"),
-        Value::Null,
-        &[],
-    )
-    .await;
-    let item_id = items["data"].as_array().unwrap()[0]["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let (app, _pid, items) = import_single_issue(&gh, Some("tok")).await;
+    let item_id = items["data"][0]["id"].as_str().unwrap();
 
     // Move it to Done → fires a best-effort close to GitHub.
-    let (status, _) = common::send(
-        &app,
-        "PATCH",
-        &format!("/api/items/{item_id}"),
-        json!({"status":"Done"}),
-        &[],
-    )
-    .await;
+    let item_uri = format!("/api/items/{item_id}");
+    let (status, _) = common::send(&app, "PATCH", &item_uri, json!({"status":"Done"}), &[]).await;
     assert_eq!(status, StatusCode::OK);
 
-    // The push is fire-and-forget; poll the mock, bounded by wall-clock time
-    // rather than a fixed per-iteration sleep.
+    assert!(
+        wait_for_gh_request(&gh, "/repos/acme/widgets/issues/42").await,
+        "expected a PATCH closing GitHub issue #42 after completion"
+    );
+}
+
+/// Polls a mock GitHub server's received requests, bounded by wall-clock
+/// time rather than a fixed per-iteration sleep, for a fire-and-forget push
+/// that already reached the given path.
+async fn wait_for_gh_request(gh: &wiremock::MockServer, path: &str) -> bool {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-    let mut closed = false;
     while std::time::Instant::now() < deadline {
         let reqs = gh.received_requests().await.unwrap_or_default();
-        if reqs
-            .iter()
-            .any(|r| r.url.path() == "/repos/acme/widgets/issues/42")
-        {
-            closed = true;
-            break;
+        if reqs.iter().any(|r| r.url.path() == path) {
+            return true;
         }
         tokio::task::yield_now().await;
     }
-    assert!(
-        closed,
-        "expected a PATCH closing GitHub issue #42 after completion"
-    );
+    false
 }
