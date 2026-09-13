@@ -430,12 +430,13 @@ pub(crate) async fn run_one_tick(
     );
 
     let start = tokio::time::Instant::now();
+    let mut ticker = tokio::time::interval(Duration::from_millis(20));
     loop {
         let seen = server.received_requests().await.unwrap_or_default().len();
         if seen >= expected_requests || start.elapsed() >= REQUEST_WAIT_CAP {
             break;
         }
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        ticker.tick().await;
     }
     settle_orch_rows(&query_repo).await;
 
@@ -464,9 +465,10 @@ async fn settle_orch_rows(repo: &Repository) {
     };
 
     let start = tokio::time::Instant::now();
+    let mut ticker = tokio::time::interval(Duration::from_millis(20));
     let mut previous = to_golden_json(&snapshot_rows(repo.pool(), control_plane_id).await);
     loop {
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        ticker.tick().await;
         let current = to_golden_json(&snapshot_rows(repo.pool(), control_plane_id).await);
         if current == previous || start.elapsed() >= ROWS_SETTLE_CAP {
             return;
