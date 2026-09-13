@@ -34,7 +34,7 @@ fn ok_stream(chunks: Vec<&'static [u8]>) -> impl Stream<Item = Result<Bytes, std
 /// `encode_id` to hex-encode every byte of `value` again makes this test
 /// fail with `Err(Io)`.
 #[tokio::test]
-async fn a_realistic_long_runner_generated_artifact_id_does_not_overflow_a_filename() {
+async fn long_runner_generated_artifact_id_does_not_overflow_filename() {
     let root_dir = temp_root("long-id");
     let root = root_dir.path();
     let storage = ArtifactStorage::new(root);
@@ -190,7 +190,7 @@ async fn undersize_stream_is_a_size_mismatch_not_a_silent_success() {
 /// under 5 seconds before the test harness killed it). Restored the
 /// guard and confirmed the test passes again, promptly.
 #[tokio::test]
-async fn an_oversized_or_unbounded_stream_is_rejected_before_it_could_exhaust_memory() {
+async fn oversized_or_unbounded_stream_rejected_before_exhausting_mem() {
     let root_dir = temp_root("bomb");
     let root = root_dir.path();
     let storage = ArtifactStorage::new(root);

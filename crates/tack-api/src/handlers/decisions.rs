@@ -688,7 +688,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_answer_rejects_missing_and_empty_option_id_and_bad_text() {
+    fn validate_answer_rejects_missing_empty_option_id_and_bad_text() {
         assert!(validate_answer(&json!({})).is_err());
         assert!(validate_answer(&json!({"answer": "not-an-object"})).is_err());
         assert!(validate_answer(&json!({"answer": {"option_id": ""}})).is_err());
