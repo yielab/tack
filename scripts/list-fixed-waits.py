@@ -14,7 +14,11 @@ SLEEP = re.compile(r'sleep\(([^)]*(?:\([^)]*\))?[^)]*)\)')
 rows = []
 for f in files:
     src = open(f).read().split("\n")
-    if "/tests/" in f:
+    # Test code is anything under tests/, a `<module>/tests.rs` unit module, or the
+    # `#[cfg(test)] mod tests` tail of a production file. The second form was missed
+    # until 2026-09-12: after the inline modules moved out, every wait in them
+    # silently dropped off this inventory.
+    if "/tests/" in f or f.endswith("/tests.rs"):
         start = 0
     else:
         start = None
