@@ -52,6 +52,42 @@ async fn claim_replay_count(repo: &Repository) -> i64 {
         .unwrap()
 }
 
+/// Expires `attempt_id`'s lease without changing its (non-terminal) state —
+/// the "recovery service hasn't caught up yet" scenario.
+async fn expire_lease(repo: &Repository, attempt_id: &str, now: DateTime<Utc>) {
+    sqlx::query("UPDATE execution_attempts SET lease_expires_at = ? WHERE id = ?")
+        .bind(rfc(now - Duration::minutes(5)))
+        .bind(attempt_id)
+        .execute(repo.pool())
+        .await
+        .unwrap();
+}
+
+async fn insert_needs_operator_request(repo: &Repository, id: &str, created_at: DateTime<Utc>) {
+    sqlx::query(
+        "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key, \
+         request_fingerprint, state, selector_kind, selector_id, agent_profile_snapshot, \
+         repository_snapshot, permission_policy, created_at, updated_at) \
+         VALUES (?, 'item-a', 'item', ?, 'fp', 'needs_operator', 'exact_runner', 'runner-a', \
+         '{}', '{}', '{}', ?, ?)",
+    )
+    .bind(id)
+    .bind(id)
+    .bind(rfc(created_at))
+    .bind(rfc(created_at))
+    .execute(repo.pool())
+    .await
+    .unwrap();
+}
+
+fn fast_retention_config() -> ExecutionRetentionConfig {
+    ExecutionRetentionConfig {
+        retention_days: 90,
+        batch_size: 500,
+        sweep_interval_secs: 3600,
+    }
+}
+
 async fn insert_claim_replay(
     repo: &Repository,
     claim_id: &str,
@@ -212,40 +248,29 @@ async fn spawned_retention_sweep_purges_stale_rows_and_joins_on_stop() {
     let store = Arc::new(RepoExecutionRetentionStore(repo.clone()));
     let clock: Arc<dyn RetentionClock> = Arc::new(FixedClock(now));
     let (stop_tx, stop_rx) = watch::channel(false);
-    let config = ExecutionRetentionConfig {
-        retention_days: 90,
-        batch_size: 500,
-        sweep_interval_secs: 3600,
-    };
+    let handle =
+        spawn_execution_retention_sweep(true, store, clock, fast_retention_config(), stop_rx)
+            .expect("enabled sweep spawns a task");
 
-    let handle = spawn_execution_retention_sweep(true, store, clock, config, stop_rx)
-        .expect("enabled sweep spawns a task");
-
-    // Real task, real tokio scheduler, real database — wait for the first
-    // immediate tick to purge the real row.
     let purged = poll_until(StdDuration::from_secs(3), || async {
         claim_replay_count(&repo).await == 0
     })
     .await;
     assert!(
         purged,
-        "the real spawned task purged the real stale row through the real store within 3s"
+        "the real spawned task purged the stale row within 3s"
     );
 
     let _ = stop_tx.send(true);
-    handle
-        .await
-        .expect("shutdown joins the task: the JoinHandle actually completes");
+    handle.await.expect("shutdown joins the task");
 
-    // Insert a fresh stale row *after* the task has been joined. `handle`
-    // already resolved above, so no wait is needed here: a `JoinHandle`
-    // only resolves once its task has fully stopped, and a stopped task
-    // cannot run a later tick no matter how long this test waits.
+    // `handle` resolving already proves the task is fully gone, so a row
+    // inserted now proves the negative with no further wait.
     insert_claim_replay(&repo, "claim-old-2", &attempt_id, old).await;
     assert_eq!(
         claim_replay_count(&repo).await,
         1,
-        "no purge happens after the join handle completed — the task is truly gone"
+        "no purge after the join handle completed"
     );
 }
 
@@ -284,28 +309,8 @@ impl ExecutionObservabilityStore for SpyObservabilityStore {
 async fn spawned_health_watch_reports_stale_lease_and_needs_operator() {
     let now = now_fixed();
     let (repo, attempt_id, _db_dir) = seed_real_db(now).await;
-
-    // Expire this attempt's lease without changing its (non-terminal) state
-    // — exactly the "recovery service hasn't caught up yet" scenario.
-    sqlx::query("UPDATE execution_attempts SET lease_expires_at = ? WHERE id = ?")
-        .bind(rfc(now - Duration::minutes(5)))
-        .bind(&attempt_id)
-        .execute(repo.pool())
-        .await
-        .unwrap();
-
-    sqlx::query(
-        "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key, \
-         request_fingerprint, state, selector_kind, selector_id, agent_profile_snapshot, \
-         repository_snapshot, permission_policy, created_at, updated_at) \
-         VALUES ('request-needs-operator', 'item-a', 'item', 'key-b', 'fp', 'needs_operator', \
-         'exact_runner', 'runner-a', '{}', '{}', '{}', ?, ?)",
-    )
-    .bind(rfc(now - Duration::hours(1)))
-    .bind(rfc(now - Duration::hours(1)))
-    .execute(repo.pool())
-    .await
-    .unwrap();
+    expire_lease(&repo, &attempt_id, now).await;
+    insert_needs_operator_request(&repo, "request-needs-operator", now - Duration::hours(1)).await;
 
     let spy = Arc::new(SpyObservabilityStore {
         inner: RepoExecutionObservabilityStore(repo.clone()),
@@ -317,7 +322,6 @@ async fn spawned_health_watch_reports_stale_lease_and_needs_operator() {
         check_interval_secs: 3600,
         event_window_secs: 3600,
     };
-
     let handle = spawn_execution_health_watch(true, spy.clone(), clock, config, stop_rx)
         .expect("enabled watch spawns a task");
 
@@ -326,14 +330,13 @@ async fn spawned_health_watch_reports_stale_lease_and_needs_operator() {
     })
     .await
     .expect("the real spawned task captured a snapshot within 3s");
-
     assert_eq!(
         snapshot.stale_lease_count, 1,
-        "the real spawned task observed the real expired, non-terminal lease"
+        "must observe the expired, non-terminal lease"
     );
     assert_eq!(
         snapshot.needs_operator_count, 1,
-        "the real spawned task observed the real needs_operator request"
+        "must observe the needs_operator request"
     );
 
     let _ = stop_tx.send(true);

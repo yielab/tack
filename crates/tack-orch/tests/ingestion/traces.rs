@@ -35,6 +35,19 @@ async fn daily_events(repo: &Repository, control_plane_id: Uuid) -> Vec<OrchEven
         .expect("list daily aggregate")
 }
 
+async fn assert_daily_event_count(
+    repo: &Repository,
+    control_plane_id: Uuid,
+    expected: i64,
+    msg: &str,
+) {
+    assert_eq!(
+        daily_events(repo, control_plane_id).await[0].event_count,
+        expected,
+        "{msg}"
+    );
+}
+
 /// Fetches the events attributed to `item_id`, asserting there's exactly
 /// one, and returns its `event_type` — every caller here goes on to check
 /// that type, and this is the only test asserting correlation narrows to a
@@ -98,6 +111,28 @@ fn trace_event_json(session_id: &str, ts: &str, event_type: &str) -> serde_json:
     })
 }
 
+/// Mounts two events (a correlated `tool_call`, an uncorrelated
+/// `session_start`) at `/traces/demo`. Ignores `since` entirely, so a
+/// rewound cursor re-fetches this exact same overlapping window.
+async fn mount_overlapping_trace_events(server: &MockServer) {
+    let events = vec![
+        trace_event_json("agent:demo:task-1", "2026-08-04T19:52:27Z", "tool_call"),
+        trace_event_json(
+            "agent:demo:dispatch",
+            "2026-08-04T19:52:40Z",
+            "session_start",
+        ),
+    ];
+    Mock::given(method("GET"))
+        .and(path("/traces/demo"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(traces_body(&events, "2026-08-04T19:52:40Z:1")),
+        )
+        .mount(server)
+        .await;
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -109,24 +144,7 @@ async fn overlapping_polls_correlate_once_and_never_duplicate() {
 
     let server = MockServer::start().await;
     mount_common(&server).await;
-    let events = vec![
-        trace_event_json("agent:demo:task-1", "2026-08-04T19:52:27Z", "tool_call"),
-        trace_event_json(
-            "agent:demo:dispatch",
-            "2026-08-04T19:52:40Z",
-            "session_start",
-        ),
-    ];
-    // Ignores `since` entirely, so the rewound cursor below re-fetches the
-    // identical overlapping window.
-    Mock::given(method("GET"))
-        .and(path("/traces/demo"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(traces_body(&events, "2026-08-04T19:52:40Z:1")),
-        )
-        .mount(&server)
-        .await;
+    mount_overlapping_trace_events(&server).await;
 
     let control_plane_id =
         seed_control_plane_and_link(&repo, fixture.project.id, &server.uri()).await;
@@ -138,30 +156,43 @@ async fn overlapping_polls_correlate_once_and_never_duplicate() {
     .await;
     let landed_at = last_seen_at(&repo, control_plane_id).await;
     wait_and_stop(&repo, control_plane_id, landed_at, handles).await;
-
     assert_eq!(
         orch_event_count(&repo).await,
         2,
-        "repeated overlapping polls must not duplicate orch_events rows"
+        "overlapping polls duplicated rows"
     );
     assert_eq!(
         expect_one_event_type(&repo, fixture.item.id).await,
         "tool_call"
     );
 
-    // Deliberately rewind the cursor and re-poll.
     repo.set_trace_cursor(control_plane_id, "demo", "")
         .await
         .expect("rewind cursor");
     let before_repoll = last_seen_at(&repo, control_plane_id).await;
     run_one_more_tick(&repo, control_plane_id, before_repoll, config).await;
-
     assert_eq!(
         orch_event_count(&repo).await,
         2,
         "a rewound cursor re-ingesting an overlapping window must add zero rows"
     );
     assert_eq!(plane_health(&repo, control_plane_id).await, "healthy");
+}
+
+/// Mounts one fixture event dated `2020-01-01` — deliberately ancient,
+/// standing in for what a badly-rewound cursor would re-deliver long after
+/// a retention sweep already rolled it up and purged it.
+async fn mount_ancient_trace_event(server: &MockServer) {
+    let stale_ts = "2020-01-01T00:00:05Z";
+    let events = vec![trace_event_json("agent:demo:task-1", stale_ts, "tool_call")];
+    Mock::given(method("GET"))
+        .and(path("/traces/demo"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(traces_body(&events, &format!("{stale_ts}:1"))),
+        )
+        .mount(server)
+        .await;
 }
 
 #[tokio::test]
@@ -171,56 +202,29 @@ async fn purged_trace_events_are_never_resurrected_or_recounted() {
 
     let server = MockServer::start().await;
     mount_common(&server).await;
-    // Deliberately ancient: what a badly-rewound cursor would re-deliver
-    // long after a retention sweep already rolled it up and purged it.
-    let stale_ts = "2020-01-01T00:00:05Z";
-    let events = vec![trace_event_json("agent:demo:task-1", stale_ts, "tool_call")];
-    Mock::given(method("GET"))
-        .and(path("/traces/demo"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(traces_body(&events, &format!("{stale_ts}:1"))),
-        )
-        .mount(&server)
-        .await;
+    mount_ancient_trace_event(&server).await;
 
     let control_plane_id =
         seed_control_plane_and_link(&repo, fixture.project.id, &server.uri()).await;
 
-    // Phase 1: ingest with a retention window wide enough that the 2020
-    // timestamp isn't filtered at ingest time.
+    // 1: ingest with a wide-enough retention window that 2020 isn't filtered
+    // at ingest time. 2: roll up and purge it, as a retention sweep would.
     let handles = spawn_reconciler(&repo, fast_poll_config(36_500)).await;
     poll_until("the stale event lands", || async {
         orch_event_count(&repo).await == 1
     })
     .await;
     stop_reconciler(handles).await;
-
-    // Phase 2: roll it up and purge it, simulating a retention sweep that
-    // already ran past this event's age.
     assert_eq!(rollup_and_purge(&repo).await.rows_purged, 1);
     assert_eq!(orch_event_count(&repo).await, 0);
-    let daily = daily_events(&repo, control_plane_id).await;
-    assert_eq!(daily[0].event_count, 1, "rolled up exactly once");
+    assert_daily_event_count(&repo, control_plane_id, 1, "rolled up exactly once").await;
 
-    // Phase 3: re-poll with a realistic retention window. The mock ignores
-    // `since`, standing in for a rewound/lost cursor; the same stale event
-    // comes back and must not be resurrected as a raw row.
-    repo.set_trace_cursor(control_plane_id, "demo", "")
-        .await
-        .expect("rewind cursor");
+    // 3: re-poll with a realistic window; the mock ignores `since`, standing
+    // in for a rewound/lost cursor delivering the same stale event again.
+    let _ = repo.set_trace_cursor(control_plane_id, "demo", "").await;
     let since = last_seen_at(&repo, control_plane_id).await;
     run_one_more_tick(&repo, control_plane_id, since, fast_poll_config(90)).await;
-
-    assert_eq!(
-        orch_event_count(&repo).await,
-        0,
-        "an already-purged, now-stale event must not be resurrected"
-    );
+    assert_eq!(orch_event_count(&repo).await, 0, "must not be resurrected");
     assert_eq!(rollup_and_purge(&repo).await.rows_purged, 0);
-    let daily_after = daily_events(&repo, control_plane_id).await;
-    assert_eq!(
-        daily_after[0].event_count, 1,
-        "re-ingesting a purged event must never double-count its daily aggregate"
-    );
+    assert_daily_event_count(&repo, control_plane_id, 1, "never double-counts").await;
 }
