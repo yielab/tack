@@ -24,7 +24,8 @@ to edit.
 | 29 | IX-M4-<crate>-<binary>, 28 sub-cards | two at a time | Wave 28 integrated | Wave 28 integration SHA, then the latest integration SHA for each pair |
 | 30 | IX-M5 | no | Wave 29's `tack-runner` sub-cards | that integration SHA |
 | 31 | IX-M6 batches · IX-M7 | yes, on files no open Wave 29/30 card owns | Wave 27 integrated | latest integration SHA |
-| 32 | IX-M8 | no | everything | latest integration SHA |
+| 32 | IX-M8-dedup, then IX-M8-<crate> per crate | dedup first, then crates in parallel (largest ratio first: orch, runner, api, db) | Wave 29 integrated | latest integration SHA |
+| 33 | IX-M9 (was IX-M8) | no | Wave 32 integrated, everything else | latest integration SHA |
 
 ## Read list per card, with sizes
 
@@ -41,7 +42,9 @@ Every card: `TODO.md` §IX.0–§IX.1 (~2.5k tokens, `sed -n` the range from
 | IX-M5 | harness audit §4–§6 | Wave 29's `tack-runner` handoffs | this plan beyond §5 row M5 |
 | IX-M6 batch | §3, §5 row M6 | the batch's `comment-worklist --json` lines; `.claude/scope-discipline.md` "Comments" (~80 lines) | files outside the batch |
 | IX-M7 | §4, §5 row M7 | `docs/book/book.toml`, `docs/book/src/SUMMARY.md`, `.gitattributes`, `scripts/regen-generated.sh` | the handoffs it moves to `docs/closed-cycles/` |
-| IX-M8 | §1 table, §5 row M8 | the script's `BUDGETS` | anything else |
+| IX-M8-dedup | §5 row M8, TODO.md's IX-M8 card text | `duplicate-tests --json` output, workspace-wide | any file not named in a pair |
+| IX-M8-<crate> | §2.2, §5 row M8, TODO.md's IX-M8 card text (named exclusions) | its crate's `measure` rows, `0064-fixed-waits.txt` lines in that crate | other crates; the named-exclusion files |
+| IX-M9 | §1 table, §5 row M9 | the script's `BUDGETS`, IX-M8's handoff(s) for the achieved ratio | anything else |
 
 ## The gate, per card
 
@@ -54,7 +57,9 @@ Every card: `TODO.md` §IX.0–§IX.1 (~2.5k tokens, `sed -n` the range from
 | M4-<crate>-<binary> | `cargo nextest run --workspace -E 'binary(<binary>)' && python3 scripts/maintainability.py check --changed`; the coverage job at integration | other binaries |
 | M5 | harness audit §6 exit criteria + `-E 'package(tack-runner)'` | — |
 | M7 | `mdbook build docs/book && ./scripts/regen-generated.sh && git diff --exit-code` | cargo tests |
-| M8 | `python3 scripts/maintainability.py check` (hard mode) | — |
+| M8-dedup | `cargo nextest run --workspace && python3 scripts/maintainability.py duplicate-tests` (0 pairs) | — |
+| M8-<crate> | `cargo nextest run --workspace -E 'package(<crate>)' && python3 scripts/maintainability.py check --changed`; the coverage job at integration | other crates |
+| M9 | `python3 scripts/maintainability.py check` (hard mode) | — |
 
 The full suite runs once per wave, by the integrator, on the integrated tree.
 
