@@ -86,7 +86,7 @@ async fn insert_raw_metric(
 // ─── Fresh install / upgrade-in-place ──────────────────────────────────────
 
 #[tokio::test]
-async fn fresh_db_migrates_all_metrics_tables() {
+async fn a_fresh_install_has_migrations_025_026_and_027_applied() {
     let repo = setup_test_db().await;
 
     for table in NEW_TABLES {
@@ -131,7 +131,7 @@ async fn fresh_db_migrates_all_metrics_tables() {
 }
 
 #[tokio::test]
-async fn upgrade_from_024_applies_metrics_migrations_in_place() {
+async fn upgrading_a_pre_025_db_adds_the_metrics_migrations() {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
 
     // Simulate an installed tack.db that only ever saw migrations 001-024
@@ -186,7 +186,7 @@ async fn upgrade_from_024_applies_metrics_migrations_in_place() {
 // ─── FK enforcement ─────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn orphan_fk_insert_is_rejected() {
+async fn metrics_and_events_daily_reject_an_orphan_control_plane_fk() {
     let repo = setup_test_db().await;
     let bogus_plane = Uuid::new_v4();
 

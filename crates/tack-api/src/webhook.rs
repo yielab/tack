@@ -100,7 +100,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
-    async fn redirect_does_not_retarget_signed_webhook_to_private_destination() {
+    async fn webhook_redirect_never_delivers_signed_payload() {
         let origin = MockServer::start().await;
         let private_destination = MockServer::start().await;
         let redirect_target = format!("{}/instance-metadata", private_destination.uri());

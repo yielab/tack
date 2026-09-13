@@ -2268,7 +2268,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn effective_body_limit_bytes_is_the_lesser_of_configured_and_ceiling() {
+    fn effective_body_limit_clamps_to_protocol_ceiling() {
         // Direction 1: a tighter operator-configured limit wins.
         assert_eq!(effective_body_limit_bytes(2 * 1024), 2 * 1024);
         // Direction 2: a looser (or default 2 MiB, or a very large) configured

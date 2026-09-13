@@ -185,7 +185,7 @@ mod tests {
     }
 
     #[test]
-    fn a_malformed_body_is_a_parse_error_not_a_panic() {
+    fn anthropic_model_catalog_rejects_a_non_json_body() {
         assert!(parse_catalog(b"not json").is_err());
     }
 

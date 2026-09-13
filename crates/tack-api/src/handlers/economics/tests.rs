@@ -176,7 +176,7 @@ fn cost_per_item_withheld_below_min_sample_shown_at_or_above() {
 }
 
 #[test]
-fn rework_rate_excludes_stale_attempts_from_the_denominator() {
+fn rework_denominator_excludes_stale_attempts() {
     let cutoff = Utc::now() - Duration::days(30);
     // 5 fresh items (within retention), 2 with a rework signal.
     let mut rows = Vec::new();

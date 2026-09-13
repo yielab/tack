@@ -18,7 +18,7 @@ fn assert_versioned_fixture_round_trip(raw: &str) {
 }
 
 #[test]
-fn requested_and_actual_model_values_have_distinct_types() {
+fn model_id_types_are_distinct_so_swaps_fail_to_compile() {
     fn takes_requested(_model: Option<RequestedModelId>) {}
     fn takes_actual(_model: ActualModelId) {}
 

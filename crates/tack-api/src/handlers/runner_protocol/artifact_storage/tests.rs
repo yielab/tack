@@ -127,7 +127,7 @@ async fn splits_across_many_chunks_and_still_matches() {
 /// (`content_reference: "...attempt-3-hex/artifact-3-hex-....blob"`).
 /// Restored the check and confirmed the test passes again.
 #[tokio::test]
-async fn checksum_mismatch_stages_nothing() {
+async fn checksum_mismatch_aborts_store_streaming_before_commit() {
     let root_dir = temp_root("checksum-mismatch");
     let root = root_dir.path();
     let storage = ArtifactStorage::new(root);
