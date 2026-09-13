@@ -534,8 +534,8 @@ something wrong with your setup.
   write-only-over-the-API discipline. The docket Bearer token is now scrubbed from
   every `GET /api/backup` snapshot (nulled in place, row otherwise intact) — the same
   gap the S3 secret key had before its own exclusion shipped, now closed.
-- [Roadmap](../roadmap.md) — the full Agent-Factory Control Center plan (phases
-  33–38) and the multi-agent dispatch history behind it.
+- [Roadmap → Agent-Factory Control Center](../../../closed-cycles/boards/roadmap-phases-0-57.md#next--agent-factory-control-center-phases-3338-august-2026) —
+  the full plan (phases 33–38, archived) and the multi-agent dispatch history behind it.
 - For the internals — the reconciler, the `ControlPlane` trait, the dispatcher, and
   how to add a new control-plane backend — see the
   [developer guide](../developer/orchestration.md).
