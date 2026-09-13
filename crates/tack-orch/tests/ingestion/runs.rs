@@ -57,6 +57,27 @@ async fn mount_runs_and_approvals(server: &MockServer) {
         .await;
 }
 
+/// `run-1`/`apr-1` correlate via `task-1`; `run-cli-only`/`apr-uncorrelated`
+/// have no matching task and must still mirror, unattributed.
+async fn assert_initial_correlation(repo: &tack_db::Repository) {
+    assert_eq!(
+        expect_run(repo, "run-cli-only").await.item_id,
+        None,
+        "an empty task_ids run must land unattributed, not be dropped or error"
+    );
+    assert_eq!(
+        expect_approval(repo, "apr-1")
+            .await
+            .remote_task_id
+            .as_deref(),
+        Some("task-1")
+    );
+    assert_eq!(
+        expect_approval(repo, "apr-uncorrelated").await.item_id,
+        None
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -79,33 +100,22 @@ async fn runs_and_approvals_correlate_and_repoll_idempotently() {
     })
     .await;
 
-    let run_cli = expect_run(&repo, "run-cli-only").await;
-    assert_eq!(
-        run_cli.item_id, None,
-        "an empty task_ids run must land unattributed, not be dropped or error"
-    );
-    let apr1 = expect_approval(&repo, "apr-1").await;
-    assert_eq!(apr1.remote_task_id.as_deref(), Some("task-1"));
-    let apr_uncorrelated = expect_approval(&repo, "apr-uncorrelated").await;
-    assert_eq!(apr_uncorrelated.item_id, None);
+    assert_initial_correlation(&repo).await;
 
-    // Confirm re-polling the exact same docket state is idempotent: wait
-    // for at least one more tick, then check for duplicate rows.
+    // At least one more tick of the exact same docket state must not
+    // duplicate rows, and must leave health persistence unaffected.
     let since = last_seen_at(&repo, control_plane_id).await;
     wait_and_stop(&repo, control_plane_id, since, handles).await;
-
     assert_eq!(
         orch_run_count(&repo).await,
         2,
-        "re-polling must not duplicate orch_runs rows"
+        "re-polling duplicated orch_runs"
     );
     assert_eq!(
         orch_approval_count(&repo).await,
         2,
-        "re-polling must not duplicate orch_approvals rows"
+        "re-polling duplicated orch_approvals"
     );
-    // Also proves the ingestion machinery didn't interfere with the health
-    // persistence path.
     assert_eq!(plane_health(&repo, control_plane_id).await, "healthy");
 }
 
@@ -132,6 +142,35 @@ impl Respond for SequentialBody {
     }
 }
 
+/// First poll: `task_ids` known, correlates. Every poll after: `task_ids`
+/// empty again — simulating a poll that "forgot" the attribution. The
+/// repo's `ON CONFLICT ... COALESCE(excluded.item_id, item_id)` must keep
+/// the first poll's attribution regardless.
+async fn mount_run_that_forgets_its_attribution(server: &MockServer) {
+    Mock::given(method("GET"))
+        .and(path("/runs"))
+        .and(query_param("project", "demo"))
+        .respond_with(SequentialBody {
+            bodies: vec![format!(
+                r#"{{"runs":[{}]}}"#,
+                run_json("run-1", r#"["task-1"]"#)
+            )],
+            calls: AtomicUsize::new(0),
+        })
+        .up_to_n_times(1)
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/runs"))
+        .and(query_param("project", "demo"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(format!(r#"{{"runs":[{}]}}"#, run_json("run-1", "[]"))),
+        )
+        .mount(server)
+        .await;
+}
+
 #[tokio::test]
 async fn later_polls_never_erase_earlier_run_attribution() {
     let repo = setup_test_db().await;
@@ -144,33 +183,7 @@ async fn later_polls_never_erase_earlier_run_attribution() {
         .respond_with(ResponseTemplate::new(200).set_body_string(EMPTY_APPROVALS_BODY))
         .mount(&server)
         .await;
-
-    // First poll: task_ids known, correlates. Every poll after: task_ids
-    // empty again — simulating a poll that "forgot" the attribution. The
-    // repo's ON CONFLICT ... COALESCE(excluded.item_id, item_id) must keep
-    // the first poll's attribution regardless.
-    Mock::given(method("GET"))
-        .and(path("/runs"))
-        .and(query_param("project", "demo"))
-        .respond_with(SequentialBody {
-            bodies: vec![format!(
-                r#"{{"runs":[{}]}}"#,
-                run_json("run-1", r#"["task-1"]"#)
-            )],
-            calls: AtomicUsize::new(0),
-        })
-        .up_to_n_times(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/runs"))
-        .and(query_param("project", "demo"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(format!(r#"{{"runs":[{}]}}"#, run_json("run-1", "[]"))),
-        )
-        .mount(&server)
-        .await;
+    mount_run_that_forgets_its_attribution(&server).await;
 
     let control_plane_id =
         seed_control_plane_and_link(&repo, fixture.project.id, &server.uri()).await;

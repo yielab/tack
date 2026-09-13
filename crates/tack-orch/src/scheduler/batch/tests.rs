@@ -105,7 +105,7 @@ fn same_priority_requests_are_served_fifo_by_created_at() {
 }
 
 #[test]
-fn capacity_is_consumed_across_the_batch_not_reevaluated_per_request() {
+fn capacity_is_consumed_across_the_batch_not_per_request() {
     let candidates = [candidate("runner-a", 2)];
     let requests = [
         request("req-1", Priority::Normal, now()),

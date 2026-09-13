@@ -229,7 +229,7 @@ fn traces_page_next_defaults_to_none_when_absent() {
 // ── Capabilities ──────────────────────────────────────────
 
 #[test]
-fn support_serializes_to_the_wire_strings_the_openapi_contract_promises() {
+fn support_wire_strings_match_the_openapi_contract() {
     // `docs/plans/agnostic-control-plane.md`'s acceptance check reads
     // this back with `jq '.capabilities.pause'` and expects exactly
     // `"unsupported"` — pin the wire form here, not just at the API
@@ -260,76 +260,83 @@ fn rated_serializes_level_and_reason_together() {
     assert_eq!(json["reason"], "scoped per project");
 }
 
-#[test]
-fn docket_capabilities_match_the_verified_facts() {
-    // Field-by-field against the verified facts —
-    // a docket instance with no token configured is enough, since
-    // `capabilities()` does no I/O and never reads the stored
-    // credential.
-    let adapter = crate::adapters::docket::DocketAdapter::new("http://127.0.0.1:7331", None)
-        .expect("adapter must construct");
-    let caps = adapter.capabilities();
+/// Shared shape behind every `caps.<x>.level == <expected>` assertion below:
+/// one line instead of four, `level`'s `Debug` folded into the message.
+fn assert_level<T: std::fmt::Debug + PartialEq>(level: T, expected: T, msg: &str) {
+    assert_eq!(level, expected, "{msg}, got: {level:?}");
+}
 
+/// A docket instance with no token configured is enough for both tests
+/// below, since `capabilities()` does no I/O and never reads the stored
+/// credential.
+fn docket_capabilities() -> Capabilities {
+    crate::adapters::docket::DocketAdapter::new("http://127.0.0.1:7331", None)
+        .expect("adapter must construct")
+        .capabilities()
+}
+
+#[test]
+fn docket_route_capabilities_match_the_verified_facts() {
+    let caps = docket_capabilities();
     assert!(
         caps.dispatch,
         "docket accepts new work via enqueue_task (POST /tasks/{{project}})"
     );
     assert!(!caps.cancel, "docket exposes no cancel route over HTTP");
-    assert_eq!(
+    assert!(
+        !caps.artifacts,
+        "docket exposes no artifact-retrieval route"
+    );
+    assert!(caps.runtimes, "docket's /status.json agents[] is a roster");
+    assert!(caps.plane_metrics, "docket exposes GET /metrics");
+    assert!(caps.provisioning, "docket exposes POST /pods");
+    assert_level(
         caps.pause.level,
         Support::Unsupported,
-        "pause's level must be Unsupported (docket exposes no HTTP pause route), got: {:?}",
-        caps.pause.level
+        "pause's level must be Unsupported (docket exposes no HTTP pause route)",
     );
     assert!(
         caps.pause.reason.contains("docket profile"),
         "pause's reason must name the docket CLI remedy, got: {:?}",
         caps.pause.reason
     );
-    assert_eq!(
+    assert_level(
         caps.resume.level,
         Support::Unsupported,
-        "resume's level must be Unsupported (docket exposes no HTTP resume route), got: {:?}",
-        caps.resume.level
+        "resume's level must be Unsupported (docket exposes no HTTP resume route)",
     );
     assert!(
         caps.resume.reason.contains("docket profile"),
         "resume's reason must name the docket CLI remedy, got: {:?}",
         caps.resume.reason
     );
-    assert_eq!(
+}
+
+#[test]
+fn docket_support_level_capabilities_match_the_verified_facts() {
+    let caps = docket_capabilities();
+    assert_level(
         caps.event_scope.level,
         EventScope::Project,
-        "event_scope's level must be Project (docket's /status.json scopes events per \
-         project, not per run), got: {:?}",
-        caps.event_scope.level
+        "event_scope's level must be Project (docket's /status.json scopes events \
+         per project, not per run)",
     );
-    assert!(
-        !caps.artifacts,
-        "docket exposes no artifact-retrieval route"
-    );
-    assert_eq!(
+    assert_level(
         caps.decisions.level,
         DecisionSupport::Poll,
         "decisions' level must be Poll (docket's approvals are discovered by polling \
-         GET /approvals, not pushed), got: {:?}",
-        caps.decisions.level
+         GET /approvals, not pushed)",
     );
-    assert_eq!(
+    assert_level(
         caps.usage.level,
         UsageSupport::FromProvider,
         "usage's level must be FromProvider (docket's own driver reports its usage \
-         estimate, not a separate metering gateway), got: {:?}",
-        caps.usage.level
+         estimate, not a separate metering gateway)",
     );
-    assert_eq!(
+    assert_level(
         caps.model_selection.level,
         ModelSelection::Unsupported,
-        "model_selection's level must be Unsupported (docket owns its own model routing \
-         and may ignore an externally supplied model), got: {:?}",
-        caps.model_selection.level
+        "model_selection's level must be Unsupported (docket owns its own model \
+         routing and may ignore an externally supplied model)",
     );
-    assert!(caps.runtimes, "docket's /status.json agents[] is a roster");
-    assert!(caps.plane_metrics, "docket exposes GET /metrics");
-    assert!(caps.provisioning, "docket exposes POST /pods");
 }

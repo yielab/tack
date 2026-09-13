@@ -34,7 +34,7 @@ fn opaque_model_ids_and_additive_fields_round_trip() {
 /// re-serialization — `skip_serializing_if` is what keeps this payload
 /// byte-identical to what an older runner actually sent.
 #[test]
-fn model_metadata_absent_on_an_older_runner_defaults_and_round_trips() {
+fn model_metadata_absent_on_an_older_runner_still_round_trips() {
     let raw = serde_json::json!({
         "model_provider": "openai",
         "model_ids": ["opaque/model-alpha"],
@@ -57,9 +57,15 @@ fn model_metadata_absent_on_an_older_runner_defaults_and_round_trips() {
 /// proves price, context window and modality all round-trip per model,
 /// and that a model the catalog said nothing about stays absent from
 /// the map rather than appearing with zeroed fields.
-#[test]
-fn model_metadata_round_trips_price_context_window_and_modality_per_model() {
-    let raw = serde_json::json!({
+fn model_metadata_entry<'a>(parsed: &'a ModelCombination, id: &str) -> &'a ModelMetadata {
+    parsed
+        .model_metadata
+        .get(&ModelId::new(id))
+        .unwrap_or_else(|| panic!("missing metadata for {id}"))
+}
+
+fn multi_model_metadata_fixture() -> serde_json::Value {
+    serde_json::json!({
         "model_provider": "vercel-ai-gateway",
         "model_ids": ["openai/gpt-5.6-sol", "anthropic/claude-opus-5"],
         "discovery": "catalog_reported",
@@ -73,36 +79,35 @@ fn model_metadata_round_trips_price_context_window_and_modality_per_model() {
                 "context_window": 500000
             }
         }
-    });
+    })
+}
+
+#[test]
+fn model_metadata_round_trips_price_window_and_modality() {
+    let raw = multi_model_metadata_fixture();
     let parsed: ModelCombination =
         serde_json::from_value(raw.clone()).expect("populated per-model metadata must parse");
     assert_eq!(
         parsed.model_metadata.len(),
         2,
-        "one entry named in the catalog was left out of the map"
+        "an entry was left out of the map"
     );
 
-    let sol = parsed
-        .model_metadata
-        .get(&ModelId::new("openai/gpt-5.6-sol"))
-        .expect("first model's metadata");
+    let sol = model_metadata_entry(&parsed, "openai/gpt-5.6-sol");
     assert_eq!(sol.context_window, Some(400_000));
     assert!(sol.price.is_some());
     assert!(sol.modality.is_some());
 
-    let opus = parsed
-        .model_metadata
-        .get(&ModelId::new("anthropic/claude-opus-5"))
-        .expect("second model's metadata");
+    let opus = model_metadata_entry(&parsed, "anthropic/claude-opus-5");
     assert_eq!(opus.context_window, Some(500_000));
     assert!(
         opus.price.is_none(),
         "a model the catalog quoted no price for stays unmeasured, never zero"
     );
 
-    let round_trip = serde_json::to_value(&parsed).expect("serialize");
     assert_eq!(
-        round_trip, raw,
+        serde_json::to_value(&parsed).expect("serialize"),
+        raw,
         "populated per-model metadata must round-trip exactly"
     );
 }
@@ -114,26 +119,34 @@ fn model_metadata_round_trips_price_context_window_and_modality_per_model() {
 /// this test proves it parses enrollment's full example and refresh's
 /// sparse one (`"harnesses": []`, `"features": {}`) unchanged, and that
 /// unknown keys still survive a round trip.
+/// Neither fixture parses as `RunnerCapabilities` (both omit
+/// `runner_version`, a sibling field in the enclosing envelope) but both
+/// parse as, and round-trip exactly through, `EmbeddedCapabilitySnapshot`.
+/// Returns the parsed value so the caller can check fixture-specific shape.
+fn assert_embedded_snapshot_round_trips(
+    capabilities: &serde_json::Value,
+) -> EmbeddedCapabilitySnapshot {
+    assert!(
+        serde_json::from_value::<RunnerCapabilities>(capabilities.clone()).is_err(),
+        "an embedded snapshot omitting runner_version must not parse as RunnerCapabilities"
+    );
+    let parsed: EmbeddedCapabilitySnapshot =
+        serde_json::from_value(capabilities.clone()).expect("embedded capabilities");
+    assert_eq!(
+        serde_json::to_value(&parsed).expect("serialize embedded capabilities"),
+        *capabilities,
+        "an embedded snapshot must round-trip exactly"
+    );
+    parsed
+}
+
 #[test]
 fn embedded_capability_snapshot_parses_full_and_sparse_fixtures() {
     let enrollment: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../../docs/contracts/runner-v1/enrollment.request.json"
     ))
     .expect("enrollment fixture JSON");
-    let enrollment_capabilities = enrollment["capabilities"].clone();
-    assert!(
-        serde_json::from_value::<RunnerCapabilities>(enrollment_capabilities.clone()).is_err(),
-        "enrollment's embedded snapshot omits runner_version and must not parse as \
-         RunnerCapabilities"
-    );
-    let parsed_enrollment: EmbeddedCapabilitySnapshot =
-        serde_json::from_value(enrollment_capabilities.clone())
-            .expect("enrollment embedded capabilities");
-    assert_eq!(
-        serde_json::to_value(&parsed_enrollment).expect("serialize enrollment capabilities"),
-        enrollment_capabilities,
-        "enrollment's full embedded snapshot must round-trip exactly"
-    );
+    let parsed_enrollment = assert_embedded_snapshot_round_trips(&enrollment["capabilities"]);
     assert_eq!(parsed_enrollment.harnesses.len(), 1);
     assert_eq!(parsed_enrollment.features["cancel"]["support"], "supported");
 
@@ -141,24 +154,11 @@ fn embedded_capability_snapshot_parses_full_and_sparse_fixtures() {
         "../../../../../docs/contracts/runner-v1/refresh.request.json"
     ))
     .expect("refresh fixture JSON");
-    let refresh_capabilities = refresh["capabilities"].clone();
-    assert!(
-        serde_json::from_value::<RunnerCapabilities>(refresh_capabilities.clone()).is_err(),
-        "refresh's embedded snapshot omits runner_version and must not parse as \
-         RunnerCapabilities"
-    );
-    let parsed_refresh: EmbeddedCapabilitySnapshot =
-        serde_json::from_value(refresh_capabilities.clone())
-            .expect("refresh embedded capabilities");
-    assert_eq!(
-        serde_json::to_value(&parsed_refresh).expect("serialize refresh capabilities"),
-        refresh_capabilities,
-        "refresh's sparse embedded snapshot must round-trip exactly"
-    );
+    let parsed_refresh = assert_embedded_snapshot_round_trips(&refresh["capabilities"]);
     assert!(parsed_refresh.harnesses.is_empty());
     assert_eq!(parsed_refresh.features, serde_json::json!({}));
 
-    let mut with_future_field = enrollment_capabilities.clone();
+    let mut with_future_field = enrollment["capabilities"].clone();
     with_future_field["future_capability_field"] = serde_json::json!({"nested": true});
     let parsed_additive: EmbeddedCapabilitySnapshot =
         serde_json::from_value(with_future_field.clone()).expect("parse additive field");
