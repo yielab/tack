@@ -201,17 +201,11 @@ async fn project_budget_lookup_reports_a_true_zero_cost_value() {
         common::create_project(&app, "Orch Budget/Policy Test Project", "software").await;
     let plane_id = create_control_plane(&app, "docket-1").await;
     link_project(&app, project_id, plane_id, Some(50.0)).await;
+    let uri = format!("/api/projects/{project_id}/orch-budget");
 
     // Freshly registered plane: health defaults to "unknown" (not yet
     // polled), which is reachable-enough to report a real, current zero.
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/projects/{project_id}/orch-budget"),
-        None,
-    )
-    .await;
-    let v = body_json(res).await;
+    let v = body_json(req(&app, Method::GET, &uri, None).await).await;
     assert_eq!(v["linked"], true);
     assert_eq!(v["health"], "unknown");
     assert_eq!(v["budget_usd"], json!(50.0));
@@ -230,14 +224,7 @@ async fn project_budget_lookup_reports_a_true_zero_cost_value() {
         .await
         .expect("record health");
 
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/projects/{project_id}/orch-budget"),
-        None,
-    )
-    .await;
-    let v = body_json(res).await;
+    let v = body_json(req(&app, Method::GET, &uri, None).await).await;
     assert_eq!(v["health"], "unreachable");
     assert!(
         v["cost_usd_estimated"].is_null(),
@@ -316,39 +303,21 @@ async fn orch_policy_scopes_metrics_to_the_linked_control_plane_only() {
     let other_plane = create_control_plane(&app, "other-plane").await;
     link_project(&app, project_id, my_plane, None).await;
 
+    let allow_metric = metric("docket_tool_calls_total", &[("decision", "allow")], 7.0);
     state
         .repo
-        .upsert_orch_metrics(
-            my_plane,
-            &[metric(
-                "docket_tool_calls_total",
-                &[("decision", "allow")],
-                7.0,
-            )],
-        )
+        .upsert_orch_metrics(my_plane, &[allow_metric])
         .await
         .expect("seed my plane's metrics");
+    let deny_metric = metric("docket_tool_calls_total", &[("decision", "deny")], 99.0);
     state
         .repo
-        .upsert_orch_metrics(
-            other_plane,
-            &[metric(
-                "docket_tool_calls_total",
-                &[("decision", "deny")],
-                99.0,
-            )],
-        )
+        .upsert_orch_metrics(other_plane, &[deny_metric])
         .await
         .expect("seed other plane's metrics");
 
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/projects/{project_id}/orch-policy"),
-        None,
-    )
-    .await;
-    let v = body_json(res).await;
+    let uri = format!("/api/projects/{project_id}/orch-policy");
+    let v = body_json(req(&app, Method::GET, &uri, None).await).await;
     assert_eq!(v["linked"], true);
     assert_eq!(v["control_plane_id"], my_plane.to_string());
     let tool_calls = v["tool_calls"].as_array().unwrap();
@@ -406,31 +375,20 @@ async fn orch_policy_denial_rate_is_none_with_no_tool_call_data() {
     link_project(&app, project_id, plane_id, None).await;
 
     // Only policy-hit data, no tool-call samples at all.
+    let labels = [
+        ("policy_id", "no-prod-secrets"),
+        ("hook", "pre_tool_call"),
+        ("action", "deny"),
+    ];
+    let policy_hit = metric("docket_policy_hits_total", &labels, 3.0);
     state
         .repo
-        .upsert_orch_metrics(
-            plane_id,
-            &[metric(
-                "docket_policy_hits_total",
-                &[
-                    ("policy_id", "no-prod-secrets"),
-                    ("hook", "pre_tool_call"),
-                    ("action", "deny"),
-                ],
-                3.0,
-            )],
-        )
+        .upsert_orch_metrics(plane_id, &[policy_hit])
         .await
         .expect("seed metrics");
 
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/projects/{project_id}/orch-policy"),
-        None,
-    )
-    .await;
-    let v = body_json(res).await;
+    let uri = format!("/api/projects/{project_id}/orch-policy");
+    let v = body_json(req(&app, Method::GET, &uri, None).await).await;
     assert!(
         v["denial_rate"].is_null(),
         "no tool-call data observed at all must be None, never a fabricated 0.0: {v:?}"
@@ -451,34 +409,24 @@ async fn orch_policy_groups_approvals_by_channel_and_outcome() {
     let plane_id = create_control_plane(&app, "docket-1").await;
     link_project(&app, project_id, plane_id, None).await;
 
+    let granted = metric(
+        "docket_approvals_total",
+        &[("channel", "tack"), ("outcome", "granted")],
+        4.0,
+    );
+    let denied = metric(
+        "docket_approvals_total",
+        &[("channel", "timeout"), ("outcome", "denied")],
+        1.0,
+    );
     state
         .repo
-        .upsert_orch_metrics(
-            plane_id,
-            &[
-                metric(
-                    "docket_approvals_total",
-                    &[("channel", "tack"), ("outcome", "granted")],
-                    4.0,
-                ),
-                metric(
-                    "docket_approvals_total",
-                    &[("channel", "timeout"), ("outcome", "denied")],
-                    1.0,
-                ),
-            ],
-        )
+        .upsert_orch_metrics(plane_id, &[granted, denied])
         .await
         .expect("seed metrics");
 
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/projects/{project_id}/orch-policy"),
-        None,
-    )
-    .await;
-    let v = body_json(res).await;
+    let uri = format!("/api/projects/{project_id}/orch-policy");
+    let v = body_json(req(&app, Method::GET, &uri, None).await).await;
     let approvals = v["approvals_by_channel"].as_array().unwrap();
     assert_eq!(approvals.len(), 2);
     assert!(
