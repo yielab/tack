@@ -21,6 +21,11 @@ credentials are headers and never appear in a JSON payload, except the one-time 
 exchange and the one-time credential response. Every credential-like fixture value begins
 with `example_` and is intentionally invalid.
 
+`artifact.response.json` records the upload grant (`upload.path`/`upload.method`) as data
+rather than a value a client derives. A client follows that grant verbatim instead of
+reconstructing an upload path itself — it is the one place a response body carries
+information no other fixture fixes.
+
 Stable failures use one envelope:
 
 ```json

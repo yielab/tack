@@ -44,7 +44,16 @@ between the two releases, so nothing below was assumed to still hold).
   "role", "model"}]}`; a second call for the same `project` returns `409
   {"ok": false, "error": "'<project>' already exists"}`; an unknown
   blueprint, a missing `project`, or an invalid `pod` value each return
-  `400`; a request with no `Authorization` header returns `401`.
+  `400`; a request with no `Authorization` header returns `401`. **The `500`
+  case is verified by reading source, not by live capture**: `serve.py`'s
+  `_handle_post_pods` and `core/pod_provisioning.py` show `PodProvisionError`
+  is raised only after `provision_members` has already torn down every
+  member (and any pod-level port range or scratch dir) created during that
+  failing call — so a non-2xx response from this route guarantees nothing
+  was left behind on docket's side, the `409` "already exists" case being
+  ordinary idempotence rather than a rollback. Docket also has no route to
+  delete or un-provision a pod at all — confirmed by reading every
+  `do_GET`/`do_POST` branch in `serve.py`.
 - **`POST /dispatch/{project}` — verified live for the first time.** Runs
   the compiled `DocketAdapter::dispatch` (and `get_run` to observe the
   outcome) against the isolated server: the response returns the id under
