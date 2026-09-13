@@ -61,21 +61,26 @@ fn adapter_for(server: &MockServer) -> DocketAdapter {
 
 /// Mounts one `GET route` returning `status`/`body` with no extra request
 /// matcher, for tests that only care about the response shape — the
-/// boilerplate every such test otherwise repeats verbatim.
-async fn mounted_get(route: &str, status: u16, body: String) -> DocketAdapter {
+/// boilerplate every such test otherwise repeats verbatim. Returns the
+/// `MockServer` alongside the adapter: it shuts down (and releases its
+/// port) as soon as it's dropped, so a caller that discarded it here would
+/// have the server gone before ever sending a request — the caller must
+/// hold it for as long as it holds the adapter.
+async fn mounted_get(route: &str, status: u16, body: String) -> (MockServer, DocketAdapter) {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path(route))
         .respond_with(ResponseTemplate::new(status).set_body_string(body))
         .mount(&server)
         .await;
-    adapter_for(&server)
+    let adapter = adapter_for(&server);
+    (server, adapter)
 }
 
 /// Same as [`mounted_get`], but the mock matches only a request carrying
 /// [`TOKEN`]'s bearer header — this is what proves each such read route
 /// forwards it, not a separate assertion afterward.
-async fn mounted_get_auth(route: &str, status: u16, body: String) -> DocketAdapter {
+async fn mounted_get_auth(route: &str, status: u16, body: String) -> (MockServer, DocketAdapter) {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path(route))
@@ -83,7 +88,8 @@ async fn mounted_get_auth(route: &str, status: u16, body: String) -> DocketAdapt
         .respond_with(ResponseTemplate::new(status).set_body_string(body))
         .mount(&server)
         .await;
-    adapter_for(&server)
+    let adapter = adapter_for(&server);
+    (server, adapter)
 }
 
 /// A `NewRemoteTask` with no priority — every `enqueue_task` test's request
@@ -102,7 +108,7 @@ fn new_task(description: &str, trusted: bool) -> tack_orch::NewRemoteTask {
 
 #[tokio::test]
 async fn health_happy_path() {
-    let adapter = mounted_get("/health", 200, load_json_fixture("health.json")).await;
+    let (_server, adapter) = mounted_get("/health", 200, load_json_fixture("health.json")).await;
     let health = adapter.health().await.expect("health must succeed");
     assert_eq!(health.status, "ok");
     assert_eq!(health.gateway, 0);
@@ -111,7 +117,7 @@ async fn health_happy_path() {
 #[tokio::test]
 async fn status_happy_path() {
     let body = load_json_fixture("status_with_agent.json");
-    let adapter = mounted_get("/status.json", 200, body).await;
+    let (_server, adapter) = mounted_get("/status.json", 200, body).await;
     let status = adapter.status().await.expect("status must succeed");
     assert_eq!(status.api_version, "2");
     assert_eq!(status.agents.len(), 1);
@@ -121,7 +127,8 @@ async fn status_happy_path() {
 
 #[tokio::test]
 async fn metrics_happy_path() {
-    let adapter = mounted_get("/metrics", 200, load_text_fixture("metrics_with_agent.txt")).await;
+    let (_server, adapter) =
+        mounted_get("/metrics", 200, load_text_fixture("metrics_with_agent.txt")).await;
     let samples = adapter.metrics().await.expect("metrics must succeed");
     let names: Vec<&str> = samples.iter().map(|s| s.name.as_str()).collect();
     assert!(names.contains(&"docket_agents_total"));
@@ -135,7 +142,8 @@ async fn metrics_happy_path() {
 
 #[tokio::test]
 async fn list_runs_happy_path_and_sends_bearer_token() {
-    let adapter = mounted_get_auth("/runs", 200, load_json_fixture("runs_list.json")).await;
+    let (_server, adapter) =
+        mounted_get_auth("/runs", 200, load_json_fixture("runs_list.json")).await;
     let runs = adapter
         .list_runs(None)
         .await
@@ -169,7 +177,8 @@ async fn list_runs_filters_by_project_query_param() {
 #[tokio::test]
 async fn get_run_happy_path() {
     let route = format!("/runs/{RUN_ID}");
-    let adapter = mounted_get_auth(&route, 200, load_json_fixture("run_single.json")).await;
+    let (_server, adapter) =
+        mounted_get_auth(&route, 200, load_json_fixture("run_single.json")).await;
     let run = adapter.get_run(RUN_ID).await.expect("get_run must succeed");
     assert_eq!(run.state, RunState::Succeeded);
     assert_eq!(
@@ -181,7 +190,7 @@ async fn get_run_happy_path() {
 #[tokio::test]
 async fn list_approvals_happy_path() {
     let body = load_json_fixture("approvals_pending.json");
-    let adapter = mounted_get_auth("/approvals", 200, body).await;
+    let (_server, adapter) = mounted_get_auth("/approvals", 200, body).await;
     let approvals = adapter
         .list_approvals()
         .await
@@ -197,7 +206,8 @@ async fn list_tasks_happy_path_against_a_live_captured_shape() {
     // at the wrapper key and field shape — confirms the `{"tasks":
     // [...]}` wrapper and `RemoteTask`'s field shape both match the real
     // endpoint exactly, no adapter changes needed.
-    let adapter = mounted_get_auth("/tasks/demo", 200, load_json_fixture("tasks_list.json")).await;
+    let (_server, adapter) =
+        mounted_get_auth("/tasks/demo", 200, load_json_fixture("tasks_list.json")).await;
     let tasks = adapter
         .list_tasks("demo")
         .await
@@ -341,7 +351,7 @@ async fn traces_happy_path_decodes_the_double_encoded_events_array() {
     // JSON *strings* over the wire, each requiring a second decode. This
     // test would fail loudly (a `Decode` error) if `DocketAdapter::traces`
     // stopped performing that second decode.
-    let adapter =
+    let (_server, adapter) =
         mounted_get_auth("/traces/demo", 200, load_json_fixture("traces_list.json")).await;
     let page = adapter
         .traces("demo", None)
@@ -392,14 +402,14 @@ async fn traces_since_query_param_is_sent() {
 async fn unmapped_route_404_maps_to_not_found_capability_absent() {
     let not_found_body = load_raw_body_fixture("not_found_route.txt");
 
-    let adapter = mounted_get("/tasks/demo", 404, not_found_body.clone()).await;
+    let (_server, adapter) = mounted_get("/tasks/demo", 404, not_found_body.clone()).await;
     let err = adapter
         .list_tasks("demo")
         .await
         .expect_err("404 must surface as an error");
     assert!(matches!(err, OrchError::NotFound(_)));
 
-    let adapter = mounted_get("/traces/demo", 404, not_found_body).await;
+    let (_server, adapter) = mounted_get("/traces/demo", 404, not_found_body).await;
     let err = adapter
         .traces("demo", None)
         .await
@@ -410,7 +420,7 @@ async fn unmapped_route_404_maps_to_not_found_capability_absent() {
 #[tokio::test]
 async fn get_run_404_extracts_dockets_json_error_message() {
     let body = load_json_fixture("run_not_found.json");
-    let adapter = mounted_get("/runs/run-does-not-exist", 404, body).await;
+    let (_server, adapter) = mounted_get("/runs/run-does-not-exist", 404, body).await;
     let err = adapter
         .get_run("run-does-not-exist")
         .await
@@ -473,7 +483,7 @@ async fn unauthorized_401_maps_to_auth_error_distinct_from_http() {
 #[tokio::test]
 async fn malformed_json_maps_to_decode_error_not_panic() {
     let body = load_json_fixture("status_malformed.json");
-    let adapter = mounted_get("/status.json", 200, body).await;
+    let (_server, adapter) = mounted_get("/status.json", 200, body).await;
     let err = adapter
         .status()
         .await
@@ -483,7 +493,8 @@ async fn malformed_json_maps_to_decode_error_not_panic() {
 
 #[tokio::test]
 async fn malformed_prometheus_body_never_panics_returns_partial() {
-    let adapter = mounted_get("/metrics", 200, load_text_fixture("metrics_malformed.txt")).await;
+    let (_server, adapter) =
+        mounted_get("/metrics", 200, load_text_fixture("metrics_malformed.txt")).await;
     // The whole point: this must not panic, and must still surface the
     // well-formed lines the malformed fixture also contains.
     let samples = adapter
@@ -501,7 +512,8 @@ async fn malformed_prometheus_body_never_panics_returns_partial() {
 #[tokio::test]
 async fn unknown_run_state_deserializes_to_unknown_variant() {
     let route = format!("/runs/{RUN_ID}");
-    let adapter = mounted_get(&route, 200, load_json_fixture("run_unknown_state.json")).await;
+    let (_server, adapter) =
+        mounted_get(&route, 200, load_json_fixture("run_unknown_state.json")).await;
     let run = adapter
         .get_run(RUN_ID)
         .await
