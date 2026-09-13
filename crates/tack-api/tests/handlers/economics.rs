@@ -184,6 +184,24 @@ async fn seed_rework_event(
         .expect("seed orch_events");
 }
 
+/// Creates and agent-completes an item with the cheap 10-token task shape
+/// several rework/correlation/staleness tests only need one distinctive id
+/// and dispatch time for.
+#[allow(clippy::too_many_arguments)]
+async fn seed_cheap_agent_task(
+    state: &AppState,
+    app: &Router,
+    project_id: Uuid,
+    title: &str,
+    item_type: &str,
+    task_id: &str,
+    dispatched_at: chrono::DateTime<Utc>,
+) -> Uuid {
+    let item = create_item(app, project_id, title, item_type).await;
+    complete_as_agent(state, app, item, task_id, 10, 10, 0.01, dispatched_at).await;
+    item
+}
+
 async fn create_control_plane(app: &Router, name: &str) -> Uuid {
     let res = req(
         app,
@@ -265,19 +283,12 @@ async fn summary_splits_agent_and_human_with_token_and_cost_sums() {
     let cost = v["overall"]["cost_usd_estimated"].as_f64().unwrap();
     assert!((cost - 0.25).abs() < 1e-9);
     // 1 agent sample, 1 human sample — both below MIN_SAMPLE_SIZE (5): raw, not avg.
-    assert_eq!(
-        v["overall"]["agent_lead_time"]["below_min_sample"],
-        json!(true)
-    );
-    assert_eq!(
-        v["overall"]["human_lead_time"]["below_min_sample"],
-        json!(true)
-    );
+    for kind in ["agent_lead_time", "human_lead_time"] {
+        assert_eq!(v["overall"][kind]["below_min_sample"], json!(true));
+    }
     // Selection-bias caveat travels with the comparison, not just in a doc.
-    let note = v["overall"]["lead_time_selection_bias_note"]
-        .as_str()
-        .unwrap();
-    assert!(note.contains("not a random sample"));
+    let note = &v["overall"]["lead_time_selection_bias_note"];
+    assert!(note.as_str().unwrap().contains("not a random sample"));
 }
 
 #[tokio::test]
@@ -285,16 +296,9 @@ async fn summary_slices_by_project_type_and_item_type() {
     let (app, state) = app_with_state(orch_config()).await;
 
     let sw_project = common::create_project(&app, "Software Line", "software").await;
-    let sw_item = create_item(&app, sw_project, "Bug fix", "bug").await;
-    complete_as_agent(
-        &state,
-        &app,
-        sw_item,
-        "task-sw",
-        100,
-        50,
-        0.01,
-        Utc::now() - Duration::hours(1),
+    let hour_ago = Utc::now() - Duration::hours(1);
+    seed_cheap_agent_task(
+        &state, &app, sw_project, "Bug fix", "bug", "task-sw", hour_ago,
     )
     .await;
 
@@ -313,28 +317,38 @@ async fn summary_slices_by_project_type_and_item_type() {
     let v = body_json(res).await;
 
     let by_project_type = v["by_project_type"].as_array().unwrap();
-    let keys: Vec<&str> = by_project_type
-        .iter()
-        .map(|s| s["key"].as_str().unwrap())
-        .collect();
-    assert!(keys.contains(&"software"));
-    assert!(keys.contains(&"construction"));
-
-    let software_slice = by_project_type
-        .iter()
-        .find(|s| s["key"] == "software")
-        .unwrap();
-    assert_eq!(software_slice["agent_completed_count"], json!(1));
-
-    let construction_slice = by_project_type
-        .iter()
-        .find(|s| s["key"] == "construction")
-        .unwrap();
-    assert_eq!(construction_slice["human_completed_count"], json!(1));
+    assert_eq!(
+        slice_by_key(by_project_type, "software")["agent_completed_count"],
+        json!(1)
+    );
+    assert_eq!(
+        slice_by_key(by_project_type, "construction")["human_completed_count"],
+        json!(1)
+    );
 
     let by_item_type = v["by_item_type"].as_array().unwrap();
-    let bug_slice = by_item_type.iter().find(|s| s["key"] == "bug").unwrap();
-    assert_eq!(bug_slice["completed_item_count"], json!(1));
+    assert_eq!(
+        slice_by_key(by_item_type, "bug")["completed_item_count"],
+        json!(1)
+    );
+}
+
+/// Finds the one row in `/api/economics/items`'s `rows` array for `item_id`
+/// — panics (with the id in the message) if none does.
+fn row_for_item(rows: &[Value], item_id: Uuid) -> &Value {
+    rows.iter()
+        .find(|r| r["item_id"] == json!(item_id))
+        .unwrap_or_else(|| panic!("no economics row for item {item_id}"))
+}
+
+/// Finds the one slice in a `by_project_type`/`by_item_type` array whose
+/// `key` matches — panics (with the array in the message) if none does,
+/// which is itself the assertion that the slice exists at all.
+fn slice_by_key<'a>(slices: &'a [Value], key: &str) -> &'a Value {
+    slices
+        .iter()
+        .find(|s| s["key"] == key)
+        .unwrap_or_else(|| panic!("no slice with key {key:?} in {slices:?}"))
 }
 
 #[tokio::test]
@@ -343,32 +357,14 @@ async fn summary_rework_correlates_by_item_id_and_names_definition() {
     let project_id = common::create_project(&app, "Rework Project", "software").await;
     let plane_id = create_control_plane(&app, "docket-rework").await;
 
-    let reworked_item = create_item(&app, project_id, "Needed rework", "task").await;
-    complete_as_agent(
-        &state,
-        &app,
-        reworked_item,
-        "task-r1",
-        10,
-        10,
-        0.01,
-        Utc::now() - Duration::hours(1),
-    )
-    .await;
-    seed_rework_event(&state, plane_id, reworked_item, "verification_failed").await;
-
-    let clean_item = create_item(&app, project_id, "Clean run", "task").await;
-    complete_as_agent(
-        &state,
-        &app,
-        clean_item,
-        "task-r2",
-        10,
-        10,
-        0.01,
-        Utc::now() - Duration::hours(1),
-    )
-    .await;
+    let hour_ago = Utc::now() - Duration::hours(1);
+    let mut items = vec![];
+    for (title, task_id) in [("Needed rework", "task-r1"), ("Clean run", "task-r2")] {
+        items.push(
+            seed_cheap_agent_task(&state, &app, project_id, title, "task", task_id, hour_ago).await,
+        );
+    }
+    seed_rework_event(&state, plane_id, items[0], "verification_failed").await;
 
     let res = req(&app, Method::GET, "/api/economics/summary", None).await;
     let v = body_json(res).await;
@@ -382,9 +378,13 @@ async fn summary_rework_correlates_by_item_id_and_names_definition() {
     assert_eq!(rework["below_min_sample"], json!(true));
     assert_eq!(rework["rate"], Value::Null);
     let definition = rework["definition"].as_str().unwrap();
-    assert!(definition.contains("rework_started"));
-    assert!(definition.contains("verification_failed"));
-    assert!(definition.contains("tester_verdict_failed"));
+    for term in [
+        "rework_started",
+        "verification_failed",
+        "tester_verdict_failed",
+    ] {
+        assert!(definition.contains(term), "{definition}");
+    }
 }
 
 #[tokio::test]
@@ -397,32 +397,24 @@ async fn get_economics_summary_excludes_stale_rework_attempts() {
     let (app, state) = app_with_state(config).await;
 
     let project_id = common::create_project(&app, "Stale Rework Project", "software").await;
-
-    let fresh_item = create_item(&app, project_id, "Fresh dispatch", "task").await;
-    complete_as_agent(
-        &state,
-        &app,
-        fresh_item,
-        "task-fresh",
-        10,
-        10,
-        0.01,
-        Utc::now() - Duration::hours(1),
-    )
-    .await;
-
-    let stale_item = create_item(&app, project_id, "Stale dispatch", "task").await;
-    complete_as_agent(
-        &state,
-        &app,
-        stale_item,
-        "task-stale",
-        10,
-        10,
-        0.01,
-        Utc::now() - Duration::days(30),
-    )
-    .await;
+    let hour_ago = Utc::now() - Duration::hours(1);
+    let month_ago = Utc::now() - Duration::days(30);
+    let cases = [
+        ("Fresh dispatch", "task-fresh", hour_ago),
+        ("Stale dispatch", "task-stale", month_ago),
+    ];
+    for (title, task_id, dispatched_at) in cases {
+        seed_cheap_agent_task(
+            &state,
+            &app,
+            project_id,
+            title,
+            "task",
+            task_id,
+            dispatched_at,
+        )
+        .await;
+    }
 
     let res = req(&app, Method::GET, "/api/economics/summary", None).await;
     let v = body_json(res).await;
@@ -441,17 +433,8 @@ async fn items_endpoint_lists_by_population_and_project_type_filter() {
     let (app, state) = app_with_state(orch_config()).await;
     let sw_project = common::create_project(&app, "SW", "software").await;
     let sw_item = create_item(&app, sw_project, "SW item", "task").await;
-    complete_as_agent(
-        &state,
-        &app,
-        sw_item,
-        "task-x",
-        42,
-        24,
-        0.02,
-        Utc::now() - Duration::hours(1),
-    )
-    .await;
+    let hour_ago = Utc::now() - Duration::hours(1);
+    complete_as_agent(&state, &app, sw_item, "task-x", 42, 24, 0.02, hour_ago).await;
 
     let personal_project = common::create_project(&app, "Personal", "personal").await;
     let personal_item = create_item(&app, personal_project, "Personal item", "task").await;
@@ -461,17 +444,13 @@ async fn items_endpoint_lists_by_population_and_project_type_filter() {
     let v = body_json(res).await;
     assert_eq!(v["total"], json!(2));
     let rows = v["rows"].as_array().unwrap();
-    let sw_row = rows
-        .iter()
-        .find(|r| r["item_id"] == json!(sw_item))
-        .unwrap();
+    let sw_row = row_for_item(rows, sw_item);
     assert_eq!(sw_row["population"], json!("agent"));
     assert_eq!(sw_row["tokens_in"], json!(42));
-    let personal_row = rows
-        .iter()
-        .find(|r| r["item_id"] == json!(personal_item))
-        .unwrap();
-    assert_eq!(personal_row["population"], json!("human"));
+    assert_eq!(
+        row_for_item(rows, personal_item)["population"],
+        json!("human")
+    );
 
     let res = req(
         &app,
@@ -489,28 +468,15 @@ async fn items_endpoint_lists_by_population_and_project_type_filter() {
 async fn items_endpoint_paginates_without_truncating_total() {
     let (app, state) = app_with_state(orch_config()).await;
     let project_id = common::create_project(&app, "Pagination Project", "software").await;
+    let hour_ago = Utc::now() - Duration::hours(1);
     for i in 0..7 {
-        let item_id = create_item(&app, project_id, &format!("Item {i}"), "task").await;
-        complete_as_agent(
-            &state,
-            &app,
-            item_id,
-            &format!("task-{i}"),
-            1,
-            1,
-            0.001,
-            Utc::now() - Duration::hours(1),
-        )
-        .await;
+        let title = format!("Item {i}");
+        let task_id = format!("task-{i}");
+        seed_cheap_agent_task(&state, &app, project_id, &title, "task", &task_id, hour_ago).await;
     }
 
-    let res = req(
-        &app,
-        Method::GET,
-        "/api/economics/items?limit=3&offset=0",
-        None,
-    )
-    .await;
+    let page1 = "/api/economics/items?limit=3&offset=0";
+    let res = req(&app, Method::GET, page1, None).await;
     let v = body_json(res).await;
     assert_eq!(
         v["total"],
@@ -519,13 +485,8 @@ async fn items_endpoint_paginates_without_truncating_total() {
     );
     assert_eq!(v["rows"].as_array().unwrap().len(), 3);
 
-    let res = req(
-        &app,
-        Method::GET,
-        "/api/economics/items?limit=3&offset=6",
-        None,
-    )
-    .await;
+    let page2 = "/api/economics/items?limit=3&offset=6";
+    let res = req(&app, Method::GET, page2, None).await;
     let v = body_json(res).await;
     assert_eq!(v["rows"].as_array().unwrap().len(), 1);
 }
