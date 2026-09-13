@@ -909,19 +909,15 @@ async fn both_adapters_route_cancel_to_kill_the_whole_descendant_tree() {
     ];
     for (kind, adapter, provider, model) in cases {
         let workspace_dir = cross_adapter_temp_dir("descendant-ws");
-        let workspace = workspace_dir.path();
-        let pidfile = workspace.join("grandchild.pid");
+        let pidfile = workspace_dir.path().join("grandchild.pid");
+        let pidfile_str = pidfile.to_str().expect("utf8 pidfile path");
         let extra_env = [
             ("TACK_FAKE_HARNESS_MODE", "spawn_child"),
-            (
-                "TACK_FAKE_HARNESS_PIDFILE",
-                pidfile.to_str().expect("utf8 pidfile path"),
-            ),
+            ("TACK_FAKE_HARNESS_PIDFILE", pidfile_str),
             ("TACK_FAKE_HARNESS_SLEEP_SECONDS", "3600"),
         ];
-        let spec =
-            real_adapter_spec_with_env(kind, provider, model, &extra_env, workspace.to_path_buf());
-
+        let workspace = workspace_dir.path().to_path_buf();
+        let spec = real_adapter_spec_with_env(kind, provider, model, &extra_env, workspace);
         adapter.validate(&spec).await.expect("validate");
         let handle = adapter.start(&spec).await.expect("start");
         let grandchild_pid = wait_for_pidfile(&pidfile).await;
@@ -929,7 +925,6 @@ async fn both_adapters_route_cancel_to_kill_the_whole_descendant_tree() {
             crate::harness::process::process_alive(grandchild_pid),
             "{kind}: grandchild must be observed running before cancellation"
         );
-
         let evidence = adapter.cancel(&handle).await.expect("cancel");
         assert_eq!(
             evidence.observation,
@@ -943,6 +938,24 @@ async fn both_adapters_route_cancel_to_kill_the_whole_descendant_tree() {
     }
 }
 
+/// The two of `reconcile`'s three shared pid cases that need no live
+/// process: no recorded id, and an undecodable one — shared plumbing,
+/// before `decode_handle` even runs.
+async fn assert_reconcile_pidless_cases(label: &str, adapter: &dyn HarnessAdapter) {
+    assert_eq!(
+        adapter.reconcile(&journal_with_process(None)).await,
+        Ok(RecoveryObservation::ProcessStopped),
+        "{label}: no recorded process id"
+    );
+    assert_eq!(
+        adapter
+            .reconcile(&journal_with_process(Some("not-a-pid-at-all")))
+            .await,
+        Err(HarnessError::RecoveryUnavailable),
+        "{label}: undecodable process id"
+    );
+}
+
 /// Shared `reconcile()` handles three pid-independent cases identically for
 /// both real adapters: no recorded process id, an undecodable handle, and
 /// a decodable handle whose process already exited. A still-*alive* pid is
@@ -954,32 +967,12 @@ async fn reconcile_reports_shared_pid_plumbing_identically_for_both() {
     let (program, args, _script_dir) = cross_adapter_fixture_command();
     let (codex, claude, _staging) = real_adapters_for(program, args, secrets_dir.path());
 
-    fn codex_handle(pid: u32) -> String {
-        format!("codex:{pid}:0")
-    }
-    fn claude_handle(pid: u32) -> String {
-        pid.to_string()
-    }
-    type ReconcileCase<'a> = (&'a str, &'a dyn HarnessAdapter, fn(u32) -> String);
-    let cases: [ReconcileCase; 2] = [
-        ("codex", &codex, codex_handle),
-        ("claude-code", &claude, claude_handle),
+    let cases: [(&str, &dyn HarnessAdapter, fn(u32) -> String); 2] = [
+        ("codex", &codex, |pid| format!("codex:{pid}:0")),
+        ("claude-code", &claude, |pid| pid.to_string()),
     ];
     for (label, adapter, encode) in cases {
-        // No pid at all, and an undecodable one, both need no liveness
-        // dispatch — shared plumbing, before `decode_handle` even runs.
-        assert_eq!(
-            adapter.reconcile(&journal_with_process(None)).await,
-            Ok(RecoveryObservation::ProcessStopped),
-            "{label}: no recorded process id"
-        );
-        assert_eq!(
-            adapter
-                .reconcile(&journal_with_process(Some("not-a-pid-at-all")))
-                .await,
-            Err(HarnessError::RecoveryUnavailable),
-            "{label}: undecodable process id"
-        );
+        assert_reconcile_pidless_cases(label, adapter).await;
 
         // Decodable, but the process has already exited: spawn and reap a
         // real one so the pid is definitely dead, not a guessed sentinel.

@@ -669,12 +669,16 @@ fn adapter(expected_journal: PathBuf) -> FakeAdapter {
         recovery_observation: RecoveryObservation::ProcessStopped,
         reconcile_fails: false,
         completion_actual_execution: actual_execution(),
-        completion_terminal_reason: serde_json::json!({
-            "code": "completed",
-            "message": "Harness exited successfully"
-        }),
+        completion_terminal_reason: default_completion_terminal_reason(),
         wait_delay: std::time::Duration::ZERO,
     }
+}
+
+fn default_completion_terminal_reason() -> serde_json::Value {
+    serde_json::json!({
+        "code": "completed",
+        "message": "Harness exited successfully"
+    })
 }
 
 fn runner_engine<A: HarnessAdapter>(
@@ -778,6 +782,23 @@ fn prepared_record(lease: &AttemptLease, root: &Path) -> AttemptJournal {
     )
 }
 
+/// A prepared, persisted journal record with a fake checkout directory
+/// (holding `evidence.txt`) already on disk — the setup recovery tests
+/// share to prove a checkout survives (or doesn't) whatever recovery does
+/// with the record.
+fn journal_with_fake_checkout(root: &Path, journal: &OwnerOnlyJournal) -> PathBuf {
+    let lease = work().lease;
+    let workspace_path = root.join("workspaces/attempt");
+    let record = prepared_record(&lease, root);
+    journal
+        .persist_before_spawn(&record)
+        .expect("prior journal");
+    std::fs::create_dir_all(&workspace_path).expect("fake checkout");
+    std::fs::write(workspace_path.join("evidence.txt"), b"operator evidence")
+        .expect("fake checkout file");
+    workspace_path
+}
+
 fn claimed_record(lease: &AttemptLease, root: &Path) -> AttemptJournal {
     AttemptJournal::prepared(
         lease,
@@ -787,6 +808,17 @@ fn claimed_record(lease: &AttemptLease, root: &Path) -> AttemptJournal {
             base_revision: "revision".into(),
         },
     )
+}
+
+/// A prepared, persisted journal record for the fixture attempt — the
+/// pre-spawn recovery-journal state most recovery tests start from.
+fn persisted_prepared_record(root: &Path, journal: &OwnerOnlyJournal) -> AttemptJournal {
+    let lease = work().lease;
+    let record = prepared_record(&lease, root);
+    journal
+        .persist_before_spawn(&record)
+        .expect("prior journal");
+    record
 }
 
 #[test]
@@ -836,13 +868,7 @@ fn completion_report_round_trips_the_frozen_payload_shape() {
         serde_json::from_value(fixture.clone()).expect("typed completion fixture");
     assert_eq!(report.protocol_version.as_u16(), 1);
     assert_eq!(report.runner_id.as_str(), "runr_01J00000000000000000000001");
-    assert_eq!(
-        report.terminal_reason,
-        serde_json::json!({
-            "code": "completed",
-            "message": "Harness exited successfully"
-        })
-    );
+    assert_eq!(report.terminal_reason, default_completion_terminal_reason());
     assert_eq!(
         serde_json::to_value(report).expect("serialize completion fixture"),
         fixture,
@@ -1215,6 +1241,22 @@ fn assert_cancellation_report_matches_evidence_fixture(report: &CancellationRepo
     assert_eq!(report.details["signal"], serde_json::json!("SIGTERM"));
 }
 
+/// The single heartbeat a run sends matches the fixed fields
+/// `FakeProtocol::heartbeat` always returns.
+fn assert_single_heartbeat_matches_fixture(protocol: &FakeProtocol) {
+    let heartbeats = protocol
+        .reported_heartbeats
+        .lock()
+        .expect("fake protocol lock");
+    assert_eq!(heartbeats.len(), 1);
+    assert!(heartbeats[0].heartbeat_id.starts_with("hb_"));
+    assert_eq!(heartbeats[0].accepted_at.as_str(), "2026-08-06T12:20:16Z");
+    assert_eq!(
+        heartbeats[0].lease_results[0].lease_expires_at.as_str(),
+        "2026-08-06T12:21:16Z"
+    );
+}
+
 #[tokio::test]
 async fn cancellation_is_coordinated_after_journal_precedes_spawn() {
     let (root_dir, journal) = fresh_journal("cancel");
@@ -1244,17 +1286,7 @@ async fn cancellation_is_coordinated_after_journal_precedes_spawn() {
     assert_start_reports_carry_journaled_workspace_facts(
         &protocol.reported_starts.lock().expect("fake protocol lock"),
     );
-    let heartbeats = protocol
-        .reported_heartbeats
-        .lock()
-        .expect("fake protocol lock");
-    assert_eq!(heartbeats.len(), 1);
-    assert!(heartbeats[0].heartbeat_id.starts_with("hb_"));
-    assert_eq!(heartbeats[0].accepted_at.as_str(), "2026-08-06T12:20:16Z");
-    assert_eq!(
-        heartbeats[0].lease_results[0].lease_expires_at.as_str(),
-        "2026-08-06T12:21:16Z"
-    );
+    assert_single_heartbeat_matches_fixture(&protocol);
     assert_eq!(cancellations.load(Ordering::SeqCst), 1);
     assert_eq!(protocol.cancellation_reports.load(Ordering::SeqCst), 1);
     let cancellation_reports = protocol
@@ -1393,12 +1425,7 @@ async fn a_rejection_at_validate_is_reported_failed_and_never_spawns() {
         0,
         "no process may be started for a request the adapter refused"
     );
-    let completions = protocol
-        .reported_completions
-        .lock()
-        .expect("fake protocol lock");
-    assert_eq!(completions.len(), 1);
-    let report = &completions[0];
+    let report = single_completion_report(&protocol);
     assert_eq!(report.terminal_state, AttemptState::Failed);
     assert_eq!(report.terminal_reason["code"], "harness_rejected");
     assert_eq!(
@@ -1411,6 +1438,16 @@ async fn a_rejection_at_validate_is_reported_failed_and_never_spawns() {
         journal.unresolved().expect("scanned journal").is_empty(),
         "the record must be settled now, not left for a restart's recovery scan"
     );
+}
+
+/// The one `CompletionReport` a run sent, asserting exactly one was sent.
+fn single_completion_report(protocol: &FakeProtocol) -> CompletionReport {
+    let completions = protocol
+        .reported_completions
+        .lock()
+        .expect("fake protocol lock");
+    assert_eq!(completions.len(), 1);
+    completions[0].clone()
 }
 
 /// A rejection at `validate` never spawns a process, so the reported
@@ -1444,26 +1481,19 @@ async fn completion_transport_loss_stays_in_terminal_outbox() {
         1,
         "no retry after stale fence"
     );
-    let completions = protocol
-        .reported_completions
-        .lock()
-        .expect("fake protocol lock");
-    assert_eq!(completions.len(), 1);
+    let completion = single_completion_report(&protocol);
     assert_eq!(
-        completions[0].actual_execution.workspace_id.as_str(),
+        completion.actual_execution.workspace_id.as_str(),
         "ws_617474656d7074"
     );
-    assert_eq!(completions[0].actual_execution.base_revision, "revision");
-    assert_eq!(completions[0].usage.duration_ms.value, Some(3));
-    assert_eq!(completions[0].terminal_state, AttemptState::Succeeded);
+    assert_eq!(completion.actual_execution.base_revision, "revision");
+    assert_eq!(completion.usage.duration_ms.value, Some(3));
+    assert_eq!(completion.terminal_state, AttemptState::Succeeded);
     assert_eq!(
-        completions[0].terminal_reason,
-        serde_json::json!({
-            "code": "completed",
-            "message": "Harness exited successfully"
-        })
+        completion.terminal_reason,
+        default_completion_terminal_reason()
     );
-    assert_eq!(completions[0].final_event_checkpoint, None);
+    assert_eq!(completion.final_event_checkpoint, None);
     assert_eq!(cancellations.load(Ordering::SeqCst), 0);
     assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 0);
     let pending = journal.load(&AttemptId::new("attempt")).expect("journal");
@@ -1719,15 +1749,31 @@ async fn completion_ack_then_journal_failure_replays_pending_payload() {
     assert_ack_then_journal_failure_replays_pending_payload(TerminalKind::Completion).await;
 }
 
+/// A `RecoveryObservationRequest` describing the fixture attempt in its
+/// pre-spawn, not-yet-observed-running state.
+fn assert_prepared_recovery_observation(recovery: &RecoveryObservationRequest) {
+    assert_eq!(
+        recovery.recovery_key.as_str(),
+        "recovery:attempt:7:process_stopped"
+    );
+    assert_eq!(recovery.protocol_version.as_u16(), 1);
+    assert_eq!(recovery.runner_id.as_str(), "runner");
+    assert_eq!(recovery.attempt_id.as_str(), "attempt");
+    assert_eq!(recovery.fencing_token.0, 7);
+    assert_eq!(
+        recovery.details.journal_state,
+        RecoveryJournalState::Prepared
+    );
+    assert!(!recovery.details.process_observed);
+    assert!(recovery.additional.is_empty());
+    assert!(recovery.details.additional.is_empty());
+}
+
 #[tokio::test]
 async fn restart_reports_unresolved_observation_without_respawn() {
     let (root_dir, journal) = fresh_journal("recovery");
     let root = root_dir.path();
-    let lease = work().lease;
-    let record = prepared_record(&lease, root);
-    journal
-        .persist_before_spawn(&record)
-        .expect("persist prior journal");
+    persisted_prepared_record(root, &journal);
     let protocol = protocol(work(), false, false);
     let first_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
     let engine = runner_engine(protocol.clone(), first_adapter, journal.clone(), root);
@@ -1740,21 +1786,7 @@ async fn restart_reports_unresolved_observation_without_respawn() {
         .lock()
         .expect("fake protocol lock");
     assert_eq!(recoveries.len(), 1);
-    assert_eq!(
-        recoveries[0].recovery_key.as_str(),
-        "recovery:attempt:7:process_stopped"
-    );
-    assert_eq!(recoveries[0].protocol_version.as_u16(), 1);
-    assert_eq!(recoveries[0].runner_id.as_str(), "runner");
-    assert_eq!(recoveries[0].attempt_id.as_str(), "attempt");
-    assert_eq!(recoveries[0].fencing_token.0, 7);
-    assert_eq!(
-        recoveries[0].details.journal_state,
-        RecoveryJournalState::Prepared
-    );
-    assert!(!recoveries[0].details.process_observed);
-    assert!(recoveries[0].additional.is_empty());
-    assert!(recoveries[0].details.additional.is_empty());
+    assert_prepared_recovery_observation(&recoveries[0]);
     assert_eq!(
         journal
             .load(&AttemptId::new("attempt"))
@@ -1769,11 +1801,7 @@ async fn restart_reports_unresolved_observation_without_respawn() {
 async fn operator_response_durably_quarantines_pre_spawn_recovery() {
     let (root_dir, journal) = fresh_journal("needs-operator-recovery");
     let root = root_dir.path();
-    let lease = work().lease;
-    let record = prepared_record(&lease, root);
-    journal
-        .persist_before_spawn(&record)
-        .expect("prior journal");
+    persisted_prepared_record(root, &journal);
     let protocol = protocol(work(), false, false);
     protocol
         .recovery_response
@@ -1799,21 +1827,31 @@ async fn operator_response_durably_quarantines_pre_spawn_recovery() {
     std::fs::remove_dir_all(root).expect("remove temporary root");
 }
 
+/// One restart's recovery pass stays pending rather than settling —
+/// distinct from `[RunCycle::Quarantined]`, which a stale-lease response
+/// (not a bare transport failure) is the only thing allowed to produce.
+async fn assert_recovery_stays_pending(
+    engine: &RunnerEngine<FakeProtocol, FakeAdapter, FakeWorktree>,
+    attempt_number: u32,
+) {
+    assert!(
+        matches!(
+            engine
+                .recover(&session())
+                .await
+                .expect("recovery")
+                .as_slice(),
+            [RunCycle::RecoveryPending { .. }]
+        ),
+        "restart {attempt_number} must stay pending, never quarantined, on a bare transport failure"
+    );
+}
+
 #[tokio::test]
 async fn stale_lease_on_recovery_retires_the_record_keeps_checkout() {
     let (root_dir, journal) = fresh_journal("stale-lease-recovery");
     let root = root_dir.path();
-    let lease = work().lease;
-    let workspace_path = root.join("workspaces/attempt");
-    let record = prepared_record(&lease, root);
-    journal
-        .persist_before_spawn(&record)
-        .expect("prior journal");
-    // Stands in for the checkout a real harness would have left behind;
-    // nothing in this path is supposed to touch it.
-    std::fs::create_dir_all(&workspace_path).expect("fake checkout");
-    std::fs::write(workspace_path.join("evidence.txt"), b"operator evidence")
-        .expect("fake checkout file");
+    let workspace_path = journal_with_fake_checkout(root, &journal);
     let protocol = protocol(work(), false, false);
     *protocol.recovery_error.lock().expect("fake protocol lock") =
         Some(ProtocolClientError::StaleLease);
@@ -1851,18 +1889,10 @@ async fn stale_lease_on_recovery_retires_the_record_keeps_checkout() {
 async fn unreachable_server_on_recovery_never_retires_the_record() {
     let (root_dir, journal) = fresh_journal("unreachable-recovery");
     let root = root_dir.path();
-    let lease = work().lease;
-    let workspace_path = root.join("workspaces/attempt");
-    let record = prepared_record(&lease, root);
-    journal
-        .persist_before_spawn(&record)
-        .expect("prior journal");
-    std::fs::create_dir_all(&workspace_path).expect("fake checkout");
-    std::fs::write(workspace_path.join("evidence.txt"), b"operator evidence")
-        .expect("fake checkout file");
+    let workspace_path = journal_with_fake_checkout(root, &journal);
     let protocol = protocol(work(), false, false);
-    // Unlike `StaleLease`, a transport failure never reached the server and
-    // must never settle anything; proven across two restarts so a fluke
+    // A transport failure never reached the server, unlike `StaleLease`, and
+    // must never settle anything — proven across two restarts so a fluke
     // single-boot pass can't hide a "quarantine after N tries" regression.
     *protocol.recovery_error.lock().expect("fake protocol lock") =
         Some(ProtocolClientError::Transport);
@@ -1874,17 +1904,7 @@ async fn unreachable_server_on_recovery_never_retires_the_record() {
             journal.clone(),
             root,
         );
-        assert!(
-            matches!(
-                engine
-                    .recover(&session())
-                    .await
-                    .expect("recovery")
-                    .as_slice(),
-                [RunCycle::RecoveryPending { .. }]
-            ),
-            "restart {attempt_number} must stay pending, never quarantined, on a bare transport failure"
-        );
+        assert_recovery_stays_pending(&engine, attempt_number).await;
     }
     assert_eq!(
         journal.unresolved().expect("scanned journal").len(),
@@ -1906,11 +1926,7 @@ async fn unreachable_server_on_recovery_never_retires_the_record() {
 async fn replayed_terminal_response_settles_only_stopped_evidence() {
     let (root_dir, journal) = fresh_journal("terminal-replay-recovery");
     let root = root_dir.path();
-    let lease = work().lease;
-    let record = prepared_record(&lease, root);
-    journal
-        .persist_before_spawn(&record)
-        .expect("prior journal");
+    persisted_prepared_record(root, &journal);
     let protocol = protocol(work(), false, false);
     {
         let mut response = protocol
@@ -1953,11 +1969,7 @@ async fn already_terminal_response_quarantines_running_or_ambiguous() {
     ] {
         let (root_dir, journal) = fresh_journal(label);
         let root = root_dir.path();
-        let lease = work().lease;
-        let record = prepared_record(&lease, root);
-        journal
-            .persist_before_spawn(&record)
-            .expect("prior journal");
+        persisted_prepared_record(root, &journal);
         let protocol = protocol(work(), false, false);
         protocol
             .recovery_response
@@ -2073,11 +2085,7 @@ async fn cancellation_ack_journal_failure_replays_pending_payload() {
 async fn failed_ambiguity_delivery_retries_on_restart_without_respawn() {
     let (root_dir, journal) = fresh_journal("retry-recovery");
     let root = root_dir.path();
-    let lease = work().lease;
-    let record = prepared_record(&lease, root);
-    journal
-        .persist_before_spawn(&record)
-        .expect("prior journal");
+    persisted_prepared_record(root, &journal);
     let protocol = protocol(work(), false, false);
     protocol
         .recovery_failures_remaining
@@ -2115,11 +2123,7 @@ async fn failed_ambiguity_delivery_retries_on_restart_without_respawn() {
 async fn running_recovery_observation_is_quarantined_not_completed() {
     let (root_dir, journal) = fresh_journal("running-recovery");
     let root = root_dir.path();
-    let lease = work().lease;
-    let record = prepared_record(&lease, root);
-    journal
-        .persist_before_spawn(&record)
-        .expect("prior journal");
+    persisted_prepared_record(root, &journal);
     let protocol = protocol(work(), false, false);
     let mut adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
     adapter.recovery_observation = RecoveryObservation::ProcessRunning;
@@ -2142,11 +2146,7 @@ async fn running_recovery_observation_is_quarantined_not_completed() {
 async fn duplicate_claim_for_quarantined_attempt_cannot_start_again() {
     let (root_dir, journal) = fresh_journal("duplicate-quarantine");
     let root = root_dir.path();
-    let lease = work().lease;
-    let record = prepared_record(&lease, root);
-    journal
-        .persist_before_spawn(&record)
-        .expect("prior journal");
+    let record = persisted_prepared_record(root, &journal);
     journal.quarantine(&record).expect("quarantine");
     let protocol = protocol(work(), false, false);
     let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
