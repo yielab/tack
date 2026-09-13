@@ -45,7 +45,7 @@ next Part.
 | Test bodies over 60 / over 40 lines; names over 60 chars; files over 1 000 lines | — | — | **135** / 353; **207**; **17** | 0 outside M8's exclusions | `measure --json` |
 | Comment lines in production | 13 374 (23 %) | ≈ 12 300 (25 preambles moved) | 10 993 (**19.8 %**) | ≤ 20 %, no file > 35 % | `measure` |
 | Comment blocks over budget | 149 in 104 files | 124 | **0** | 0 | `comment-worklist` |
-| `docs/dev-notes/` notes | 0 | 25 | **12** (762 lines) | 0 | `find docs/dev-notes -type f` |
+| `docs/dev-notes/` notes | 0 | 25 | **0** (directory deleted by IX-M6-dev-notes) | 0 | `find docs/dev-notes -type f` |
 | Near-identical test names across files | 72 pairs | 72 | **49** | 0 | `duplicate-tests` |
 | Fixed waits in test code | 74 `sleep(` (25 ≥ 200 ms) | 74 | 38 `sleep(` (**11** ≥ 200 ms, 11.8 s) | 0 | `measure --totals`; `scripts/list-fixed-waits.py` |
 | Live tests hiding in unit modules | 1 | 0 | 0 | 0 | `measure --json` |

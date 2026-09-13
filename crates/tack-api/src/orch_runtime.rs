@@ -1,11 +1,11 @@
-//! Runtime start/stop control for the orchestration reconciler.
+//! Runtime start/stop control for the orchestration reconciler: makes the enable flag
+//! a runtime setting (`PUT /api/settings/orchestration`) instead of boot-time-only.
 //!
-//! This module makes the reconciler's enable flag a runtime setting, rather
-//! than a boot-time-only decision (`server.rs` spawning it once, gated on
-//! `TACK_ORCH_ENABLE`, with no other way to turn it on or off) — mirroring
-//! the Cloud Backup precedent in `handlers/settings.rs`: stored
-//!
-//! Design notes: docs/dev-notes/tack-api/orch_runtime.md
+//! [`OrchRuntime::stop`] signals every task via a `tokio::sync::watch`; a task
+//! mid-fetch finishes that tick and exits at its next safe point, never mid-HTTP-call
+//! or mid-transaction. It holds at most one running generation, so a `start()` racing
+//! a `stop()` can never observe "half stopped" state — see `tack_orch::reconciler`
+//! for the per-plane lifecycle, which this module no longer owns.
 
 use std::sync::Arc;
 
@@ -76,8 +76,8 @@ impl OrchRuntime {
     /// happens to be for an in-flight poll. Signalling `stop_tx` stops both
     /// the supervisor loop itself (so it starts polling no *new* planes)
     /// and, via the supervisor's own shutdown path, every per-plane poller
-    /// it was tracking at that moment — see the module doc's start/stop
-    /// design section and `reconciler::supervisor_loop`'s doc comment.
+    /// it was tracking at that moment — see the module doc and
+    /// `reconciler::supervisor_loop`'s doc comment.
     pub async fn stop(&self) {
         let mut guard = self.inner.lock().await;
         if let Some(running) = guard.take() {

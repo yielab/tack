@@ -1,11 +1,27 @@
 //! Bounded, backpressured, redacted harness event streaming.
 //!
 //! `process.rs` bounds raw stdout/stderr *bytes*; this module bounds the
-//! *structured* event stream an adapter derives from a harness's output
-//! (one JSON object per line, a parsed tool-call, a progress update — the
-//! `docs/contracts/runner-v1/event-batch.request.json` `events[]` shape).
+//! *structured* event stream an adapter derives from a harness's output (one JSON
+//! object per line, a parsed tool-call, a progress update — the
+//! `docs/contracts/runner-v1/event-batch.request.json` `events[]` shape). Wiring that
+//! shape onto the wire is future work (`PullProtocol` has no event-batch method
+//! yet); this module is the local, always-available half.
 //!
-//! Design notes: docs/dev-notes/tack-runner/harness/event_sink.md
+//! Two independent bounds guard against the two ways "memory bounded" can fail:
+//! per-payload size ([`EventSinkLimits::max_payload_bytes`], aligned with
+//! `limits.json`'s `event_payload_bytes_max`) replaces an oversized payload with an
+//! explicit truncation marker rather than silently shortening it
+//! ([`EventSinkReport::payloads_truncated`]); backpressure
+//! ([`EventSinkLimits::channel_capacity`]) delivers events over a bounded
+//! `tokio::sync::mpsc` channel, and [`EventSink::push`] genuinely waits for the
+//! consumer once it is full rather than growing an internal buffer.
+//!
+//! A third bound, [`EventSinkLimits::max_events`], exists because backpressure alone
+//! only bounds the *instantaneous* buffer, not the total events a run could ever
+//! produce — without it a sink with nobody consuming it would block the producer
+//! forever instead of giving a deterministic, testable outcome. Once the lifetime
+//! cap is reached, further events are counted in
+//! [`EventSinkReport::dropped_after_limit`] and never buffered at all.
 
 use tokio::sync::mpsc;
 

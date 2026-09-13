@@ -1,11 +1,33 @@
-//! Provisioning flow: the end-to-end path from "I want a new product" to a
-//! Tack project wired to a live docket pod.
+//! Provisioning flow: the end-to-end path from "I want a new product" to a Tack
+//! project wired to a live docket pod.
 //!
-//! `POST /api/templates/{id}/provision` — deliberately a **separate route**
-//! from the plain `POST /api/projects/from-template/{id}` rather
-//! than an extension of it, even though `router.rs`'s original placeholder
+//! `POST /api/templates/{id}/provision` is a separate route from the plain
+//! `POST /api/projects/from-template/{id}`: the plain endpoint's response shape is
+//! depended on as-is by `features/templates/Templates.tsx`, and this route lives
+//! inside `orch_routes()` so `require_orch_enabled` gates it for free. Project creation
+//! is not duplicated — this module calls the same `build_project_from_template` the
+//! plain endpoint calls.
 //!
-//! Design notes: docs/dev-notes/tack-api/handlers/provisioning.md
+//! # Rollback design
+//!
+//! Per docket's own contract (`crates/tack-orch/tests/fixtures/README.md`), a
+//! successful `POST /pods` is the one irreversible step in this flow — docket has no
+//! route to un-provision a pod, and every failure response leaves nothing created on
+//! its side. That fixes the ordering: create the Tack project first (cheap,
+//! reversible); validate everything provisioning needs; call `POST /pods`, rolling
+//! the project back on any failure; then write `orch_links`. A failure at that last
+//! step is **not** a request failure and the project is **never** rolled back —
+//! deleting it would strip the only record that the pod exists, since docket cannot
+//! be asked to remove it. The handler instead returns `200` with
+//! [`ProvisioningOutcome::PodCreatedLinkFailed`], naming the control plane and remote
+//! project so the operator can finish the link manually — never a retried write or an
+//! "adopted" 409, both needing state Tack has nowhere reliable to keep.
+//!
+//! Provisioning is gated by the ordinary `TACK_API_TOKEN` + `TACK_ORCH_ENABLE` pair,
+//! not `TACK_ORCH_APPROVAL_TOKEN`, which exists to override a guardrail policy's
+//! deliberate block, a narrower privilege than "use the orchestration API." This is
+//! ordinary use of that same class, like manual and sprint-wide dispatch;
+//! confirmation lives on the frontend (`ProvisioningWizard.tsx`).
 
 use axum::Json;
 use axum::extract::{Path, State};
