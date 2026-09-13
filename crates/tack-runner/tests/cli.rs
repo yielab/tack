@@ -14,7 +14,7 @@ fn help_is_available_without_configuration() {
 }
 
 #[test]
-fn missing_enrollment_credential_fails_without_echoing_configuration() {
+fn missing_enrollment_credential_fails_without_echoing_config() {
     let output = runner()
         .env_remove("TACK_RUNNER_ENROLLMENT_TOKEN")
         .output()

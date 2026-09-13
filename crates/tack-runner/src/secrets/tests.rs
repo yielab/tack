@@ -179,7 +179,7 @@ fn bounded_times_out_promptly_when_the_work_never_answers() {
 }
 
 #[test]
-fn bounded_returns_the_work_s_own_result_when_it_answers_in_time() {
+fn bounded_returns_the_work_s_result_when_it_answers_in_time() {
     let ok: Result<i32, String> = SecretStore::bounded(Duration::from_secs(1), || Ok(42));
     assert_eq!(ok, Ok(42));
 

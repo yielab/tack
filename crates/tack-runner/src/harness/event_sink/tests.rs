@@ -23,7 +23,7 @@ fn generous_limits() -> EventSinkLimits {
 }
 
 #[tokio::test]
-async fn accepted_events_are_sequenced_and_carry_the_injected_clock_time() {
+async fn accepted_events_are_sequenced_and_carry_the_injected_time() {
     let (mut sink, mut receiver) =
         EventSink::new(generous_limits(), SecretMaterial::new(), clock());
 
@@ -61,7 +61,7 @@ async fn accepted_events_are_sequenced_and_carry_the_injected_clock_time() {
 /// with a typed marker (never a silently shortened value), and the
 /// report counts it.
 #[tokio::test]
-async fn oversized_payloads_are_explicitly_truncated_not_silently_shortened() {
+async fn oversized_payloads_are_explicitly_truncated_not_silently_cut() {
     let limits = EventSinkLimits {
         channel_capacity: 4,
         max_payload_bytes: 32,
@@ -93,7 +93,7 @@ async fn oversized_payloads_are_explicitly_truncated_not_silently_shortened() {
 /// total lifetime footprint is bounded independent of how long a run
 /// keeps producing events or whether anything ever drains them.
 #[tokio::test]
-async fn events_beyond_the_lifetime_cap_are_dropped_and_counted_not_buffered() {
+async fn events_beyond_the_lifetime_cap_are_dropped_and_counted() {
     let limits = EventSinkLimits {
         channel_capacity: 100,
         max_payload_bytes: 1024,
@@ -128,7 +128,7 @@ async fn events_beyond_the_lifetime_cap_are_dropped_and_counted_not_buffered() {
 /// capacity 1, a second push while the first event is still unconsumed
 /// must not resolve until the consumer drains it.
 #[tokio::test]
-async fn push_backpressure_blocks_the_producer_until_the_consumer_drains() {
+async fn push_backpressure_blocks_producer_until_consumer_drains() {
     let limits = EventSinkLimits {
         channel_capacity: 1,
         max_payload_bytes: 1024,

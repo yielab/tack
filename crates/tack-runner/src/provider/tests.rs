@@ -40,7 +40,7 @@ fn a_disabled_provider_is_a_typed_not_configured_error() {
 }
 
 #[test]
-fn an_enabled_provider_with_no_such_secret_is_a_typed_secret_error() {
+fn an_enabled_provider_with_no_such_secret_is_a_typed_error() {
     let dir = tempfile::tempdir().expect("temporary directory");
     let secrets = SecretStore::file(dir.path().join("secrets.json"));
     let result = resolve_endpoint(
@@ -108,7 +108,7 @@ fn credential_is_never_visible_through_debug() {
 }
 
 #[test]
-fn the_registry_carries_both_providers_and_anthropic_serves_only_the_anthropic_messages_wire() {
+fn the_registry_carries_both_providers_each_on_its_own_wire() {
     let names: Vec<&'static str> = registry().iter().map(|p| p.wire_name()).collect();
     assert!(names.contains(&"vercel-ai-gateway"));
     assert!(names.contains(&"anthropic-direct"));
@@ -259,7 +259,7 @@ fn empty_capabilities() -> RunnerCapabilities {
 }
 
 #[tokio::test]
-async fn one_providers_unresolvable_secret_never_suppresses_the_others_catalog() {
+async fn one_providers_unresolvable_secret_never_suppresses_others() {
     let dir = tempfile::tempdir().expect("temporary directory");
     let secrets = SecretStore::file(dir.path().join("secrets.json"));
     secrets.set("working-secret", "token").expect("seed secret");

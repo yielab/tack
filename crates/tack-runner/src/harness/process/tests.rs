@@ -103,7 +103,7 @@ async fn spawn_refuses_a_working_directory_outside_its_workspace_root() {
 /// declared root before spawn, is what actually stops a *misconfigured*
 /// adapter from pointing at the wrong workspace in the first place.)
 #[tokio::test]
-async fn each_workspace_confined_process_only_ever_sees_its_own_canary_file() {
+async fn each_confined_process_only_ever_sees_its_own_canary_file() {
     let workspace_a_dir = temp_workspace("isolation-a");
     let workspace_a = workspace_a_dir.path();
     let workspace_b_dir = temp_workspace("isolation-b");
@@ -155,7 +155,7 @@ async fn each_workspace_confined_process_only_ever_sees_its_own_canary_file() {
 /// process still exits cleanly (proving the drain-past-cap loop does not
 /// deadlock the child on a full pipe).
 #[tokio::test]
-async fn high_volume_output_is_memory_bounded_and_explicitly_truncated() {
+async fn high_volume_output_is_memory_bounded_and_truncated() {
     let workspace_dir = temp_workspace("high-volume");
     let workspace = workspace_dir.path();
     const VOLUME_BYTES: usize = 8 * 1024 * 1024;
@@ -198,7 +198,7 @@ async fn high_volume_output_is_memory_bounded_and_explicitly_truncated() {
 /// a file before waiting on it. Cancelling the direct child must also
 /// reap that grandchild, not merely the shell that spawned it.
 #[tokio::test]
-async fn cancel_kills_the_whole_descendant_tree_not_only_the_direct_child() {
+async fn cancel_kills_the_whole_descendant_tree_not_just_the_child() {
     let workspace_dir = temp_workspace("cancel-tree");
     let workspace = workspace_dir.path();
     let pidfile = workspace.join("grandchild.pid");
@@ -247,7 +247,7 @@ async fn cancel_kills_the_whole_descendant_tree_not_only_the_direct_child() {
 /// timeout is killed and reported as `TimedOut` rather than hanging the
 /// caller or being reported as any other terminal shape.
 #[tokio::test]
-async fn a_process_exceeding_its_timeout_is_killed_and_reported_as_timed_out() {
+async fn a_process_exceeding_timeout_is_killed_and_reported_timed_out() {
     let workspace_dir = temp_workspace("timeout");
     let workspace = workspace_dir.path();
     let mut env = env_with_mode("hang");
@@ -275,7 +275,7 @@ async fn a_process_exceeding_its_timeout_is_killed_and_reported_as_timed_out() {
 /// not contain it once `SecretMaterial` has been told about it, and the
 /// `ProcessSpec`'s own `Debug` output must never contain it either.
 #[tokio::test]
-async fn secret_canaries_never_survive_into_captured_output_or_spec_debug() {
+async fn secret_canaries_never_survive_into_output_or_spec_debug() {
     let workspace_dir = temp_workspace("canary");
     let workspace = workspace_dir.path();
     const CANARY_ENV: &str = "tack-test-canary-env-73f1";
