@@ -48,7 +48,7 @@ fn health_recovers_immediately_on_a_single_success() {
 }
 
 #[test]
-fn last_seen_at_is_none_on_a_failed_poll_so_the_store_leaves_it_untouched() {
+fn last_seen_at_is_none_on_a_failed_poll_untouched() {
     let mut t = HealthTracker::new();
     let tr = t.observe(false, false, Utc::now());
     assert_eq!(tr.last_seen_at, None);
@@ -87,7 +87,7 @@ fn backoff_is_capped_at_five_minutes() {
 }
 
 #[test]
-fn backoff_grows_with_consecutive_failures_and_resets_when_healthy() {
+fn backoff_grows_with_failures_and_resets_when_healthy() {
     let a = backoff_secs(1, 10);
     let b = backoff_secs(2, 10);
     let c = backoff_secs(3, 10);
@@ -145,19 +145,32 @@ fn sample_status(api_version: &str) -> FleetStatus {
     }
 }
 
-#[test]
-fn evaluate_is_reachable_and_matched_when_health_and_status_succeed() {
-    let outcome = FetchOutcome {
-        health: Ok(Health {
-            status: "ok".into(),
-            gateway: 1,
-        }),
-        status: Ok(sample_status(EXPECTED_API_VERSION)),
+/// A `FetchOutcome` varying only `health`/`status` — every `evaluate()`
+/// test below cares about nothing else.
+fn outcome_with(
+    health: Result<Health, OrchError>,
+    status: Result<FleetStatus, OrchError>,
+) -> FetchOutcome {
+    FetchOutcome {
+        health,
+        status,
         runs: Vec::new(),
         approvals: Ok(Vec::new()),
         metrics: Ok(Vec::new()),
         traces: Vec::new(),
-    };
+    }
+}
+
+fn ok_health() -> Result<Health, OrchError> {
+    Ok(Health {
+        status: "ok".into(),
+        gateway: 1,
+    })
+}
+
+#[test]
+fn evaluate_is_reachable_and_matched_on_success() {
+    let outcome = outcome_with(ok_health(), Ok(sample_status(EXPECTED_API_VERSION)));
     let eval = evaluate(&outcome);
     assert!(eval.reachable);
     assert!(!eval.version_mismatch);
@@ -169,30 +182,16 @@ fn evaluate_is_reachable_and_matched_when_health_and_status_succeed() {
 
 #[test]
 fn evaluate_is_unreachable_when_health_call_fails() {
-    let outcome = FetchOutcome {
-        health: Err(OrchError::Unavailable("connection refused".into())),
-        status: Ok(sample_status(EXPECTED_API_VERSION)),
-        runs: Vec::new(),
-        approvals: Ok(Vec::new()),
-        metrics: Ok(Vec::new()),
-        traces: Vec::new(),
-    };
+    let outcome = outcome_with(
+        Err(OrchError::Unavailable("connection refused".into())),
+        Ok(sample_status(EXPECTED_API_VERSION)),
+    );
     assert!(!evaluate(&outcome).reachable);
 }
 
 #[test]
 fn evaluate_is_unreachable_when_status_call_fails() {
-    let outcome = FetchOutcome {
-        health: Ok(Health {
-            status: "ok".into(),
-            gateway: 1,
-        }),
-        status: Err(OrchError::Decode("malformed json".into())),
-        runs: Vec::new(),
-        approvals: Ok(Vec::new()),
-        metrics: Ok(Vec::new()),
-        traces: Vec::new(),
-    };
+    let outcome = outcome_with(ok_health(), Err(OrchError::Decode("malformed json".into())));
     let eval = evaluate(&outcome);
     assert!(!eval.reachable);
     assert!(
@@ -201,46 +200,29 @@ fn evaluate_is_unreachable_when_status_call_fails() {
     );
 }
 
+/// A major difference ("3" vs expected `EXPECTED_API_VERSION`) is a real
+/// mismatch that still leaves the plane reachable; a minor difference
+/// ("2.1" vs "2") is not a mismatch at all — see `major_version`'s doc
+/// comment for why only the leading component is compared.
 #[test]
-fn evaluate_flags_a_major_api_version_mismatch_but_stays_reachable() {
-    let outcome = FetchOutcome {
-        health: Ok(Health {
-            status: "ok".into(),
-            gateway: 1,
-        }),
-        status: Ok(sample_status("3")),
-        runs: Vec::new(),
-        approvals: Ok(Vec::new()),
-        metrics: Ok(Vec::new()),
-        traces: Vec::new(),
-    };
-    let eval = evaluate(&outcome);
-    assert!(eval.reachable, "the HTTP calls themselves succeeded");
-    assert!(eval.version_mismatch);
-    assert_eq!(eval.observed_api_version.as_deref(), Some("3"));
-    assert!(eval.detail.contains("apiVersion mismatch"));
+fn evaluate_version_mismatch_is_by_major_component_only() {
+    for (observed, expect_mismatch) in [("3", true), ("2.1", false)] {
+        let outcome = outcome_with(ok_health(), Ok(sample_status(observed)));
+        let eval = evaluate(&outcome);
+        assert!(eval.reachable, "the HTTP calls themselves succeeded");
+        assert_eq!(
+            eval.version_mismatch, expect_mismatch,
+            "observed={observed}"
+        );
+        if expect_mismatch {
+            assert_eq!(eval.observed_api_version.as_deref(), Some(observed));
+            assert!(eval.detail.contains("apiVersion mismatch"));
+        }
+    }
 }
 
 #[test]
-fn evaluate_ignores_a_minor_version_difference() {
-    // "2.1" vs expected "2" (or a future "2.0"): same major, not a
-    // mismatch — see major_version's doc comment.
-    let outcome = FetchOutcome {
-        health: Ok(Health {
-            status: "ok".into(),
-            gateway: 1,
-        }),
-        status: Ok(sample_status("2.1")),
-        runs: Vec::new(),
-        approvals: Ok(Vec::new()),
-        metrics: Ok(Vec::new()),
-        traces: Vec::new(),
-    };
-    assert!(!evaluate(&outcome).version_mismatch);
-}
-
-#[test]
-fn version_mismatch_forces_at_least_degraded_even_while_reachability_is_healthy() {
+fn version_mismatch_forces_at_least_degraded_while_reachable() {
     let mut t = HealthTracker::new();
     let tr = t.observe(true, true, Utc::now());
     assert_eq!(tr.state, HealthState::Degraded);
@@ -248,7 +230,7 @@ fn version_mismatch_forces_at_least_degraded_even_while_reachability_is_healthy(
 }
 
 #[test]
-fn version_mismatch_does_not_downgrade_an_already_unreachable_plane() {
+fn version_mismatch_does_not_downgrade_an_unreachable_plane() {
     let mut t = HealthTracker::new();
     let now = Utc::now();
     for _ in 0..10 {
@@ -694,7 +676,7 @@ fn healthy_plane(id: Uuid) -> RegisteredPlane {
 }
 
 #[tokio::test]
-async fn disabled_orchestration_spawns_no_tasks_and_never_queries_the_store() {
+async fn disabled_orchestration_spawns_no_tasks_never_queries_store() {
     let store = Arc::new(FakeStore::new(vec![healthy_plane(Uuid::new_v4())]));
     let handles = spawn_reconcilers(false, store.clone(), ReconcilerConfig::default()).await;
     assert!(handles.is_empty());
@@ -839,17 +821,18 @@ fn fast_scan_config() -> ReconcilerConfig {
 /// don't hang forever when it doesn't.
 async fn wait_until(deadline: Duration, msg: &str, mut f: impl FnMut() -> bool) {
     let start = tokio::time::Instant::now();
+    let mut ticker = tokio::time::interval(Duration::from_millis(20));
     loop {
         if f() {
             return;
         }
         assert!(tokio::time::Instant::now() - start < deadline, "{msg}");
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        ticker.tick().await;
     }
 }
 
 #[tokio::test]
-async fn supervised_spawn_starts_one_task_per_already_registered_plane() {
+async fn supervised_spawn_starts_one_task_per_registered_plane() {
     let store = Arc::new(FakeStore::new(vec![
         healthy_plane(Uuid::new_v4()),
         healthy_plane(Uuid::new_v4()),
@@ -866,7 +849,7 @@ async fn supervised_spawn_starts_one_task_per_already_registered_plane() {
 }
 
 #[tokio::test]
-async fn supervised_spawn_stops_every_task_after_the_global_stop_signal() {
+async fn supervised_spawn_stops_every_task_on_global_stop() {
     let id = Uuid::new_v4();
     let store = Arc::new(FakeStore::new(vec![healthy_plane(id)]));
     let (stop_tx, stop_rx) = watch::channel(false);
@@ -985,7 +968,7 @@ async fn a_plane_registered_after_the_supervisor_starts_gets_polled() {
 /// fake doesn't distinguish) must have its poller stopped on the very
 /// next scan, with no global stop signal involved at all.
 #[tokio::test]
-async fn a_deleted_plane_stops_being_polled_without_a_global_stop_signal() {
+async fn a_deleted_plane_stops_being_polled_with_no_global_stop() {
     let plane_id = Uuid::new_v4();
     let store = Arc::new(MutableStore::new(vec![healthy_plane(plane_id)]));
     let (_stop_tx, stop_rx) = watch::channel(false);
@@ -1064,11 +1047,10 @@ async fn a_running_plane_task_persists_health_after_its_first_tick() {
     .await;
     assert_eq!(handles.len(), 1);
 
-    // The loop polls immediately on start (no artificial initial
-    // delay — deliberately different from the due-soon/backup
-    // schedulers), so a short real-time wait
-    // is enough to observe the first persisted record.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // The loop polls immediately on start (no artificial initial delay —
+    // deliberately different from the due-soon/backup schedulers), so
+    // waiting for the first record to appear never waits for a full tick.
+    wait_for_first_tick(&store).await;
     for h in handles {
         h.abort();
     }
@@ -1083,74 +1065,78 @@ async fn a_running_plane_task_persists_health_after_its_first_tick() {
 
 #[tokio::test]
 async fn store_error_listing_planes_yields_no_tasks_not_a_panic() {
-    struct FailingStore;
-    #[async_trait::async_trait]
-    impl ControlPlaneStore for FailingStore {
-        async fn list_registered(&self) -> Result<Vec<RegisteredPlane>, OrchError> {
-            Err(OrchError::Unavailable("db unreachable".into()))
-        }
-        async fn record_health(&self, _id: Uuid, _record: &HealthRecord) -> Result<(), OrchError> {
-            Ok(())
-        }
-        async fn list_linked_projects(
-            &self,
-            _control_plane_id: Uuid,
-        ) -> Result<Vec<String>, OrchError> {
-            Ok(Vec::new())
-        }
-        async fn find_item_for_remote_task(
-            &self,
-            _remote_task_id: &str,
-        ) -> Result<Option<Uuid>, OrchError> {
-            Ok(None)
-        }
-        async fn upsert_runs(
-            &self,
-            _control_plane_id: Uuid,
-            _runs: &[NewOrchRun],
-        ) -> Result<(), OrchError> {
-            Ok(())
-        }
-        async fn upsert_approvals(
-            &self,
-            _control_plane_id: Uuid,
-            _approvals: &[NewOrchApproval],
-        ) -> Result<(), OrchError> {
-            Ok(())
-        }
-        async fn upsert_metrics(
-            &self,
-            _control_plane_id: Uuid,
-            _metrics: &[NewOrchMetric],
-        ) -> Result<(), OrchError> {
-            Ok(())
-        }
-        async fn list_trace_cursors(
-            &self,
-            _control_plane_id: Uuid,
-        ) -> Result<HashMap<String, String>, OrchError> {
-            Ok(HashMap::new())
-        }
-        async fn set_trace_cursor(
-            &self,
-            _control_plane_id: Uuid,
-            _remote_project: &str,
-            _cursor: &str,
-        ) -> Result<(), OrchError> {
-            Ok(())
-        }
-        async fn upsert_events(
-            &self,
-            _control_plane_id: Uuid,
-            _events: &[NewOrchEvent],
-        ) -> Result<(), OrchError> {
-            Ok(())
-        }
-    }
-
     let handles =
         spawn_reconcilers(true, Arc::new(FailingStore), ReconcilerConfig::default()).await;
     assert!(handles.is_empty());
+}
+
+/// A `ControlPlaneStore` whose `list_registered` always errors — every
+/// other method is unreachable in that case, so each is a trivial no-op,
+/// existing only so the trait is satisfied.
+struct FailingStore;
+
+#[async_trait::async_trait]
+impl ControlPlaneStore for FailingStore {
+    async fn list_registered(&self) -> Result<Vec<RegisteredPlane>, OrchError> {
+        Err(OrchError::Unavailable("db unreachable".into()))
+    }
+    async fn record_health(&self, _id: Uuid, _record: &HealthRecord) -> Result<(), OrchError> {
+        Ok(())
+    }
+    async fn list_linked_projects(
+        &self,
+        _control_plane_id: Uuid,
+    ) -> Result<Vec<String>, OrchError> {
+        Ok(Vec::new())
+    }
+    async fn find_item_for_remote_task(
+        &self,
+        _remote_task_id: &str,
+    ) -> Result<Option<Uuid>, OrchError> {
+        Ok(None)
+    }
+    async fn upsert_runs(
+        &self,
+        _control_plane_id: Uuid,
+        _runs: &[NewOrchRun],
+    ) -> Result<(), OrchError> {
+        Ok(())
+    }
+    async fn upsert_approvals(
+        &self,
+        _control_plane_id: Uuid,
+        _approvals: &[NewOrchApproval],
+    ) -> Result<(), OrchError> {
+        Ok(())
+    }
+    async fn upsert_metrics(
+        &self,
+        _control_plane_id: Uuid,
+        _metrics: &[NewOrchMetric],
+    ) -> Result<(), OrchError> {
+        Ok(())
+    }
+    async fn list_trace_cursors(
+        &self,
+        _control_plane_id: Uuid,
+    ) -> Result<HashMap<String, String>, OrchError> {
+        Ok(HashMap::new())
+    }
+    async fn set_trace_cursor(
+        &self,
+        _control_plane_id: Uuid,
+        _remote_project: &str,
+        _cursor: &str,
+    ) -> Result<(), OrchError> {
+        Ok(())
+    }
+    async fn upsert_events(
+        &self,
+        _control_plane_id: Uuid,
+        _events: &[NewOrchEvent],
+    ) -> Result<(), OrchError> {
+        Ok(())
+    }
 }
 
 // -- Runs + approvals ingestion -----------------------------------------
@@ -1183,6 +1169,19 @@ fn sample_approval(token: &str, context: serde_json::Value) -> RemoteApproval {
     }
 }
 
+/// Waits for `record_health`, the tick's first persist call (see
+/// `spawn_one`'s module doc, "three-phase shape") — strictly before
+/// `persist_runs`/`approvals`/`metrics`/`events`, so waiting for it waits
+/// for the whole tick rather than guessing how long one takes.
+async fn wait_for_first_tick(store: &FakeStore) {
+    wait_until(
+        Duration::from_secs(5),
+        "the first tick never persisted a health record",
+        || !store.health_records.lock().unwrap().is_empty(),
+    )
+    .await;
+}
+
 /// Runs `spawn_one`'s loop (via `spawn_reconcilers`) for one tick against
 /// a `FakeStore` (whose plane list is set via [`FakeStore::new`]), then
 /// aborts the task and returns the store for assertions. Every test
@@ -1200,30 +1199,67 @@ async fn run_one_tick(store: Arc<FakeStore>) -> Arc<FakeStore> {
     )
     .await;
     assert_eq!(handles.len(), 1, "expected exactly one plane registered");
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    wait_for_first_tick(&store).await;
     for h in handles {
         h.abort();
     }
     store
 }
 
-#[tokio::test]
-async fn approvals_poll_failure_leaves_plane_health_untouched() {
-    let id = Uuid::new_v4();
-    let plane = RegisteredPlane {
-        id,
-        control_plane: Arc::new(FakeControlPlane::healthy_with_failing_approvals()),
-    };
-    let store = Arc::new(FakeStore::new(vec![plane]));
-    let store = run_one_tick(store).await;
+/// `/metrics`' and `/traces`' upserted tables must both stay empty after
+/// their own failure; `/approvals` has no table of its own to check.
+fn assert_nothing_persisted(store: &FakeStore, endpoint: &str) {
+    match endpoint {
+        "/metrics" => assert!(
+            store
+                .upserted_metrics
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|(_, m)| m.is_empty()),
+            "a failed metrics poll must not persist anything"
+        ),
+        "/traces" => assert!(
+            store
+                .upserted_events
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|(_, e)| e.is_empty()),
+            "a failed traces poll must not persist anything"
+        ),
+        _ => {}
+    }
+}
 
-    let records = store.health_records.lock().unwrap();
-    assert!(
-        records
-            .iter()
-            .any(|(rid, r)| *rid == id && r.health == HealthState::Healthy),
-        "a /approvals failure must not degrade plane health: {records:?}"
-    );
+/// One poll failure per endpoint: `/traces` alone needs a linked project
+/// (it's polled per-project; an unlinked plane never calls it).
+#[tokio::test]
+async fn a_poll_failure_leaves_health_untouched_persists_nothing() {
+    for endpoint in ["/approvals", "/metrics", "/traces"] {
+        let id = Uuid::new_v4();
+        let control_plane: Arc<dyn ControlPlane> = match endpoint {
+            "/approvals" => Arc::new(FakeControlPlane::healthy_with_failing_approvals()),
+            "/metrics" => Arc::new(FakeControlPlane::healthy_with_failing_metrics()),
+            _ => Arc::new(FakeControlPlane::healthy_with_failing_traces()),
+        };
+        let plane = RegisteredPlane { id, control_plane };
+        let mut store = FakeStore::new(vec![plane]);
+        if endpoint == "/traces" {
+            store = store.with_linked_projects(vec!["demo".to_string()]);
+        }
+        let store = run_one_tick(Arc::new(store)).await;
+
+        let records = store.health_records.lock().unwrap();
+        assert!(
+            records
+                .iter()
+                .any(|(rid, r)| *rid == id && r.health == HealthState::Healthy),
+            "a {endpoint} failure must not degrade plane health: {records:?}"
+        );
+        drop(records);
+        assert_nothing_persisted(&store, endpoint);
+    }
 }
 
 #[tokio::test]
@@ -1255,7 +1291,7 @@ async fn a_correlated_run_lands_with_the_right_item_id() {
 }
 
 #[tokio::test]
-async fn an_uncorrelated_run_lands_with_item_id_none_and_does_not_error() {
+async fn an_uncorrelated_run_lands_with_item_id_none() {
     let id = Uuid::new_v4();
     // Empty task_ids: the normal shape of a run dispatched from
     // docket's own CLI, not through Tack. Must not error.
@@ -1319,7 +1355,7 @@ async fn a_correlated_approval_lands_with_the_right_item_id() {
 }
 
 #[tokio::test]
-async fn an_uncorrelated_approval_lands_with_item_id_none_and_still_surfaces() {
+async fn an_uncorrelated_approval_lands_with_item_id_none() {
     let id = Uuid::new_v4();
     // No "taskId" in context at all — an approval Tack cannot attribute
     // to any item. This must still persist (item_id: NULL),
@@ -1362,7 +1398,7 @@ fn extract_task_id_handles_missing_and_non_string_taskid() {
 }
 
 #[test]
-fn parse_optional_rfc3339_accepts_both_docket_timestamp_conventions() {
+fn parse_optional_rfc3339_accepts_both_timestamp_conventions() {
     // core/runs.py's `+00:00` offset form.
     assert!(parse_optional_rfc3339(Some("2026-08-04T19:50:43.129083+00:00")).is_some());
     // core/approval.py's `Z` form.
@@ -1412,31 +1448,6 @@ async fn metrics_land_via_upsert_metrics_on_a_successful_poll() {
         metrics
             .iter()
             .any(|m| m.name == "docket_agent_cost_usd" && m.value == 1.5)
-    );
-}
-
-#[tokio::test]
-async fn metrics_poll_failure_leaves_plane_health_untouched_and_persists_nothing() {
-    let id = Uuid::new_v4();
-    let plane = RegisteredPlane {
-        id,
-        control_plane: Arc::new(FakeControlPlane::healthy_with_failing_metrics()),
-    };
-    let store = Arc::new(FakeStore::new(vec![plane]));
-    let store = run_one_tick(store).await;
-
-    let records = store.health_records.lock().unwrap();
-    assert!(
-        records
-            .iter()
-            .any(|(rid, r)| *rid == id && r.health == HealthState::Healthy),
-        "a /metrics failure must not degrade plane health: {records:?}"
-    );
-
-    let upserted = store.upserted_metrics.lock().unwrap();
-    assert!(
-        upserted.iter().all(|(_, m)| m.is_empty()),
-        "a failed metrics poll must not persist anything: {upserted:?}"
     );
 }
 
@@ -1560,7 +1571,7 @@ fn derive_event_id_matches_the_pinned_literal() {
 }
 
 #[test]
-fn session_id_task_id_parses_the_agent_project_suffix_convention() {
+fn session_id_task_id_parses_the_agent_suffix_convention() {
     assert_eq!(
         session_id_task_id("agent:demo:task-90e465a8"),
         Some("task-90e465a8".to_string())
@@ -1604,7 +1615,7 @@ async fn a_correlated_trace_event_lands_with_the_right_item_id() {
 }
 
 #[tokio::test]
-async fn an_uncorrelated_trace_event_lands_with_item_id_none_and_does_not_error() {
+async fn an_uncorrelated_trace_lands_with_item_id_none() {
     let id = Uuid::new_v4();
     // "dispatch" is docket's own non-task session suffix (see
     // session_id_task_id's doc) — never correlates to any orch_tasks
@@ -1659,32 +1670,6 @@ async fn an_unrecognised_event_type_is_stored_verbatim() {
         .find(|(cp_id, events)| *cp_id == id && !events.is_empty())
         .expect("expected the event to still be mirrored");
     assert_eq!(events[0].event_type, "some_future_event_type_v3");
-}
-
-#[tokio::test]
-async fn traces_poll_failure_leaves_plane_health_untouched_and_persists_nothing() {
-    let id = Uuid::new_v4();
-    let plane = RegisteredPlane {
-        id,
-        control_plane: Arc::new(FakeControlPlane::healthy_with_failing_traces()),
-    };
-    let store =
-        Arc::new(FakeStore::new(vec![plane]).with_linked_projects(vec!["demo".to_string()]));
-    let store = run_one_tick(store).await;
-
-    let records = store.health_records.lock().unwrap();
-    assert!(
-        records
-            .iter()
-            .any(|(rid, r)| *rid == id && r.health == HealthState::Healthy),
-        "a /traces failure must not degrade plane health: {records:?}"
-    );
-
-    let upserted = store.upserted_events.lock().unwrap();
-    assert!(
-        upserted.iter().all(|(_, e)| e.is_empty()),
-        "a failed traces poll must not persist anything: {upserted:?}"
-    );
 }
 
 #[tokio::test]
@@ -1783,7 +1768,7 @@ async fn an_event_older_than_the_retention_cutoff_is_not_persisted() {
         },
     )
     .await;
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    wait_for_first_tick(&store).await;
     for h in handles {
         h.abort();
     }
@@ -1843,35 +1828,39 @@ impl RetentionStore for FakeRetentionStore {
 async fn disabled_rollup_retention_sweep_never_calls_the_store() {
     let store = Arc::new(FakeRetentionStore::new());
     let handle = spawn_retention_sweep(false, store.clone(), 90, 1);
+    // `handle.is_none()` already proves no task was spawned at all (the
+    // `!enabled` branch returns before ever calling `tokio::spawn`) — no
+    // wait afterward could surface a call from a task that doesn't exist.
     assert!(handle.is_none());
-
-    // Give a would-be sweep a chance to run, if it wrongly had.
-    tokio::time::sleep(Duration::from_millis(50)).await;
     assert!(store.events_calls.lock().unwrap().is_empty());
     assert!(store.metrics_calls.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
-async fn enabled_retention_sweep_calls_both_rollups_with_a_cutoff_derived_from_retention_days() {
+async fn reconciler_retention_sweep_rolls_up_both_tables_by_cutoff() {
     let store = Arc::new(FakeRetentionStore::new());
     let retention_days = 90u32;
     let before_spawn = Utc::now();
     let handle = spawn_retention_sweep(true, store.clone(), retention_days, 1);
     assert!(handle.is_some());
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // The sweep loop runs its first rollups before ever sleeping — wait
+    // for both rather than guessing how long that takes.
+    wait_until(
+        Duration::from_secs(5),
+        "sweep never called both rollups",
+        || {
+            !store.events_calls.lock().unwrap().is_empty()
+                && !store.metrics_calls.lock().unwrap().is_empty()
+        },
+    )
+    .await;
     handle.unwrap().abort();
 
+    // `wait_until` above already proves both lists are non-empty — its
+    // condition is exactly that.
     let events_calls = store.events_calls.lock().unwrap();
     let metrics_calls = store.metrics_calls.lock().unwrap();
-    assert!(
-        !events_calls.is_empty(),
-        "expected at least one events rollup call"
-    );
-    assert!(
-        !metrics_calls.is_empty(),
-        "expected at least one metrics rollup call"
-    );
 
     // The cutoff passed must be ~ (now - retention_days), not some other
     // arbitrary value — bounds-check against the window this test ran in.
@@ -1885,42 +1874,47 @@ async fn enabled_retention_sweep_calls_both_rollups_with_a_cutoff_derived_from_r
     }
 }
 
+/// A `RetentionStore` whose events rollup always errors (and counts its own
+/// calls); its metrics rollup always errors too but isn't itself counted —
+/// only the events side is asserted on.
+struct AlwaysFailingRetentionStore {
+    calls: Mutex<usize>,
+}
+
+#[async_trait::async_trait]
+impl RetentionStore for AlwaysFailingRetentionStore {
+    async fn rollup_and_purge_events(
+        &self,
+        _cutoff: DateTime<Utc>,
+        _batch_size: i64,
+    ) -> Result<RollupOutcome, OrchError> {
+        *self.calls.lock().unwrap() += 1;
+        Err(OrchError::Unavailable("db unreachable".into()))
+    }
+
+    async fn rollup_and_purge_metrics(
+        &self,
+        _cutoff: DateTime<Utc>,
+        _batch_size: i64,
+    ) -> Result<RollupOutcome, OrchError> {
+        Err(OrchError::Unavailable("db unreachable".into()))
+    }
+}
+
 #[tokio::test]
-async fn a_rollup_failure_is_logged_and_does_not_stop_the_sweep_ticker() {
-    struct AlwaysFailingRetentionStore {
-        calls: Mutex<usize>,
-    }
-
-    #[async_trait::async_trait]
-    impl RetentionStore for AlwaysFailingRetentionStore {
-        async fn rollup_and_purge_events(
-            &self,
-            _cutoff: DateTime<Utc>,
-            _batch_size: i64,
-        ) -> Result<RollupOutcome, OrchError> {
-            *self.calls.lock().unwrap() += 1;
-            Err(OrchError::Unavailable("db unreachable".into()))
-        }
-
-        async fn rollup_and_purge_metrics(
-            &self,
-            _cutoff: DateTime<Utc>,
-            _batch_size: i64,
-        ) -> Result<RollupOutcome, OrchError> {
-            Err(OrchError::Unavailable("db unreachable".into()))
-        }
-    }
-
+async fn a_rollup_failure_is_retried_and_does_not_stop_the_ticker() {
     let store = Arc::new(AlwaysFailingRetentionStore {
         calls: Mutex::new(0),
     });
-    // A short sweep interval so several ticks happen inside the test's wait.
+    // The interval is a real `tokio::time::sleep` inside the sweep loop, so
+    // proving a *second* tick happened needs that real second to pass; poll
+    // instead of guessing how many would fit in a fixed window.
     let handle = spawn_retention_sweep(true, store.clone(), 90, 1).unwrap();
-    tokio::time::sleep(Duration::from_millis(2_500)).await;
+    wait_until(
+        Duration::from_secs(5),
+        "the ticker must keep retrying after a failed sweep, not stop",
+        || *store.calls.lock().unwrap() >= 2,
+    )
+    .await;
     handle.abort();
-
-    assert!(
-        *store.calls.lock().unwrap() >= 2,
-        "the ticker must keep retrying after a failed sweep, not stop"
-    );
 }
