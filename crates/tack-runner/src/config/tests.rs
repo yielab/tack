@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn configuration_precedence_is_defaults_file_environment_then_cli() {
+fn config_precedence_is_defaults_file_environment_then_cli() {
     let config = RunnerConfig::from_sources(RunnerConfigSources {
         file_toml: Some(
             r#"
@@ -81,7 +81,7 @@ fn provider_defaults_to_disabled_with_the_expected_secret_name() {
 /// Mirrors the test above for the second known provider — both are
 /// seeded disabled, independently of each other.
 #[test]
-fn the_anthropic_provider_also_defaults_to_disabled_with_the_expected_secret_name() {
+fn anthropic_provider_defaults_to_disabled_with_expected_secret() {
     let config = RunnerConfig::defaults();
     let provider = config
         .providers
@@ -96,7 +96,7 @@ fn the_anthropic_provider_also_defaults_to_disabled_with_the_expected_secret_nam
 /// providers' config overrides are independent, keyed maps rather than
 /// one override clobbering the whole `providers` map.
 #[test]
-fn enabling_one_known_provider_does_not_affect_the_others_default() {
+fn enabling_one_provider_does_not_affect_others_default() {
     let config = RunnerConfig::from_sources(RunnerConfigSources {
         environment: ConfigOverrides {
             providers: BTreeMap::from([(
@@ -132,7 +132,7 @@ fn enabling_one_known_provider_does_not_affect_the_others_default() {
 /// (environment overrides only `secret`, `enabled` still comes from the
 /// file) rather than one override replacing the whole entry.
 #[test]
-fn provider_config_precedence_is_defaults_file_environment_then_cli() {
+fn provider_precedence_is_defaults_file_environment_then_cli() {
     let config = RunnerConfig::from_sources(RunnerConfigSources {
         file_toml: Some(
             r#"
@@ -189,7 +189,7 @@ fn unknown_field_inside_a_provider_table_is_rejected() {
 /// configuration loading — it simply sits unused, and the real
 /// `vercel_ai_gateway` entry stays at its (disabled) default.
 #[test]
-fn an_unrecognized_provider_name_does_not_fail_loading_or_affect_the_known_one() {
+fn an_unrecognized_provider_name_does_not_affect_the_known_ones() {
     let config = RunnerConfig::from_sources(RunnerConfigSources {
         file_toml: Some(
             r#"

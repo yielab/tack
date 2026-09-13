@@ -162,7 +162,7 @@ mod tests {
     }"#;
 
     #[test]
-    fn parses_context_window_and_leaves_price_unset_since_the_vendor_publishes_none() {
+    fn context_window_parses_price_stays_unset_with_no_vendor_price() {
         let entries = parse_catalog(SAMPLE_BODY.as_bytes()).expect("valid catalog body");
         assert_eq!(entries.len(), 2);
 

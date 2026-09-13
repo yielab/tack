@@ -66,7 +66,7 @@ fn pre_spawn_journal_is_atomic_owner_only_and_recoverable() {
 }
 
 #[test]
-fn legacy_journal_without_pending_terminal_report_remains_readable() {
+fn legacy_journal_without_a_pending_report_remains_readable() {
     let record = record();
     let encoded = toml::to_string(&record).expect("encode journal");
     let legacy = encoded
@@ -80,7 +80,7 @@ fn legacy_journal_without_pending_terminal_report_remains_readable() {
 }
 
 #[test]
-fn load_and_recovery_reject_a_filename_that_disagrees_with_the_record_attempt() {
+fn load_and_recovery_reject_a_filename_disagreeing_with_record() {
     let root_dir = temporary_root();
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
