@@ -264,6 +264,39 @@ async fn request_and_claim(app: &axum::Router, item_id: &str, label: &str) -> Cl
     }
 }
 
+/// Reports one event batch of a single event as the attempt's owning
+/// runner; returns the response status and raw body text.
+async fn post_event(
+    app: &axum::Router,
+    claim: &ClaimedAttempt,
+    event_id: &str,
+) -> (StatusCode, String) {
+    let (status, _, raw) = common::send_with_raw(
+        app,
+        "POST",
+        &format!("/api/runner/v1/attempts/{}/events", claim.attempt_id),
+        json!({
+            "protocol_version": 1,
+            "runner_id": claim.runner_id,
+            "attempt_id": claim.attempt_id,
+            "fencing_token": claim.fencing_token,
+            "checkpoint": "cp-1",
+            "previous_checkpoint": Value::Null,
+            "events": [{
+                "event_id": event_id,
+                "sequence": 1,
+                "source": "runner",
+                "kind": "log",
+                "payload": {"message": format!("{event_id}-payload")},
+                "occurred_at": chrono::Utc::now().to_rfc3339(),
+            }],
+        }),
+        &headers_ref(&claim.auth),
+    )
+    .await;
+    (status, raw)
+}
+
 /// Creates an execution request but never claims it, so its
 /// `execution_attempts` table stays empty for it — the "another execution
 /// exists, but this one never claimed an attempt" half of every
@@ -407,30 +440,7 @@ async fn attempt_events_from_a_different_execution_is_404() {
     // it, carrying a payload distinctive enough to prove it never reached an
     // unrelated response.
     let owner = request_and_claim(&app, &item_id, "events-cross-owner").await;
-    let owner_auth = headers_ref(&owner.auth);
-    let (status, batch, _) = common::send_with_raw(
-        &app,
-        "POST",
-        &format!("/api/runner/v1/attempts/{}/events", owner.attempt_id),
-        json!({
-            "protocol_version": 1,
-            "runner_id": owner.runner_id,
-            "attempt_id": owner.attempt_id,
-            "fencing_token": owner.fencing_token,
-            "checkpoint": "cp-1",
-            "previous_checkpoint": Value::Null,
-            "events": [{
-                "event_id": "cross-execution-event",
-                "sequence": 1,
-                "source": "runner",
-                "kind": "log",
-                "payload": {"message": "cross-execution-event-payload"},
-                "occurred_at": chrono::Utc::now().to_rfc3339(),
-            }],
-        }),
-        &owner_auth,
-    )
-    .await;
+    let (status, batch) = post_event(&app, &owner, "cross-execution-event").await;
     assert_eq!(status, StatusCode::OK, "{batch}");
 
     // Execution Y is real but never claimed anything — it has no attempt 1
@@ -497,27 +507,15 @@ async fn attempt_artifact_download_from_a_different_execution_is_404() {
     // of its own, and therefore no artifact "shared-artifact" either.
     let request_id = request_without_claiming(&app, &item_id, "download-cross-caller").await;
 
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri(format!(
-                    "/api/executions/{request_id}/attempts/1/artifacts/shared-artifact/content"
-                ))
-                .header("authorization", "Bearer c8-attempt-scoping-operator-token")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let status = response.status();
-    let bytes = to_bytes(response.into_body(), 8 * 1024 * 1024)
-        .await
-        .unwrap();
-    let raw = String::from_utf8_lossy(&bytes).into_owned();
+    let (status, body, raw) = common::send_with_raw(
+        &app,
+        "GET",
+        &format!("/api/executions/{request_id}/attempts/1/artifacts/shared-artifact/content"),
+        Value::Null,
+        &operator_headers(),
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_FOUND, "{raw}");
-    let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     assert_eq!(body["error"]["details"]["artifact_id"], "shared-artifact");
     // A status code alone would not catch a query that scopes only by
     // attempt_number and forgets request_id: assert X's real artifact bytes
