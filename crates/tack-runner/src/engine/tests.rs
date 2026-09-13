@@ -744,7 +744,7 @@ fn claimed_record(lease: &AttemptLease, root: &Path) -> AttemptJournal {
 }
 
 #[test]
-fn fixture_shaped_claim_preserves_snapshots_and_rejects_divergent_workspace_facts() {
+fn claimed_work_preserves_snapshots_and_rejects_divergent_facts() {
     let work = work();
     assert_eq!(
         work.request
@@ -781,7 +781,7 @@ fn fixture_shaped_claim_preserves_snapshots_and_rejects_divergent_workspace_fact
 }
 
 #[test]
-fn completion_report_round_trips_the_frozen_terminal_payload_shape() {
+fn completion_report_round_trips_the_frozen_payload_shape() {
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../docs/contracts/runner-v1/completion.request.json"
     ))
@@ -805,7 +805,7 @@ fn completion_report_round_trips_the_frozen_terminal_payload_shape() {
 }
 
 #[test]
-fn cancellation_report_round_trips_the_frozen_terminal_payload_shape() {
+fn cancellation_report_round_trips_the_frozen_payload_shape() {
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../docs/contracts/runner-v1/cancellation.request.json"
     ))
@@ -822,7 +822,7 @@ fn cancellation_report_round_trips_the_frozen_terminal_payload_shape() {
 }
 
 #[test]
-fn heartbeat_dtos_round_trip_the_frozen_v1_payloads_and_reject_other_versions() {
+fn heartbeat_dtos_round_trip_v1_and_reject_other_versions() {
     let request_fixture: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../docs/contracts/runner-v1/heartbeat.request.json"
     ))
@@ -851,7 +851,7 @@ fn heartbeat_dtos_round_trip_the_frozen_v1_payloads_and_reject_other_versions() 
 }
 
 #[test]
-fn heartbeat_retries_keep_a_canonical_payload_for_the_same_clock_instant() {
+fn heartbeat_retries_keep_a_canonical_payload_per_clock_instant() {
     let root_dir = temporary_root("heartbeat-canonical-retry");
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
@@ -953,7 +953,7 @@ async fn heartbeat_sent_at_comes_from_the_injected_clock() {
 /// renewal sleep race on the same virtual clock, so the assertion is
 /// exercising the real `tokio::select!` loop, not a mocked timer.
 #[tokio::test(start_paused = true)]
-async fn wait_periodically_renews_the_lease_while_the_harness_still_runs() {
+async fn wait_periodically_renews_the_lease_while_still_running() {
     let root_dir = temporary_root("lease-renewal");
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
@@ -1004,7 +1004,7 @@ async fn wait_periodically_renews_the_lease_while_the_harness_still_runs() {
 }
 
 #[tokio::test]
-async fn mismatched_heartbeat_echo_quarantines_before_applying_lease_facts() {
+async fn mismatched_heartbeat_echo_quarantines_before_lease_facts() {
     let root_dir = temporary_root("heartbeat-echo-mismatch");
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
@@ -1109,7 +1109,7 @@ async fn assert_tampered_binding_rejected(tamper: &str) {
 }
 
 #[tokio::test]
-async fn tampered_terminal_outbox_bindings_are_rejected_before_replay_transport() {
+async fn tampered_outbox_bindings_are_rejected_before_replay() {
     for tamper in [
         "journal_runner",
         "runner",
@@ -1329,7 +1329,7 @@ async fn mismatched_cancellation_ack_stays_in_terminal_outbox() {
 }
 
 #[tokio::test]
-async fn non_stopped_cancellation_evidence_skips_cancellation_transport() {
+async fn non_stopped_cancellation_evidence_skips_transport() {
     for (label, observation) in [
         (
             "cancel-already-terminal",
@@ -1598,7 +1598,7 @@ async fn assert_outbox_replays_exact_payload_after_response_loss(kind: TerminalK
 }
 
 #[tokio::test]
-async fn completion_outbox_replays_exact_payload_after_response_loss_without_respawn() {
+async fn completion_outbox_replays_exact_payload_without_respawn() {
     assert_outbox_replays_exact_payload_after_response_loss(TerminalKind::Completion).await;
 }
 
@@ -1721,7 +1721,7 @@ async fn completion_ack_then_journal_failure_replays_pending_payload() {
 }
 
 #[tokio::test]
-async fn restart_reports_unresolved_journal_observation_without_respawn() {
+async fn restart_reports_unresolved_observation_without_respawn() {
     let root_dir = temporary_root("recovery");
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
@@ -1768,7 +1768,7 @@ async fn restart_reports_unresolved_journal_observation_without_respawn() {
 }
 
 #[tokio::test]
-async fn needs_operator_response_durably_quarantines_stopped_pre_spawn_recovery() {
+async fn operator_response_durably_quarantines_pre_spawn_recovery() {
     let root_dir = temporary_root("needs-operator-recovery");
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
@@ -1803,7 +1803,7 @@ async fn needs_operator_response_durably_quarantines_stopped_pre_spawn_recovery(
 }
 
 #[tokio::test]
-async fn stale_lease_on_recovery_retires_the_record_and_keeps_the_checkout() {
+async fn stale_lease_on_recovery_retires_the_record_keeps_checkout() {
     let root_dir = temporary_root("stale-lease-recovery");
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
@@ -1908,7 +1908,7 @@ async fn unreachable_server_on_recovery_never_retires_the_record() {
 }
 
 #[tokio::test]
-async fn replayed_already_terminal_response_settles_only_stopped_evidence() {
+async fn replayed_terminal_response_settles_only_stopped_evidence() {
     let root_dir = temporary_root("terminal-replay-recovery");
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
@@ -1952,7 +1952,7 @@ async fn replayed_already_terminal_response_settles_only_stopped_evidence() {
 }
 
 #[tokio::test]
-async fn already_terminal_response_quarantines_running_or_ambiguous_evidence() {
+async fn already_terminal_response_quarantines_running_or_ambiguous() {
     for (label, running, reconcile_fails) in [
         ("terminal-running-recovery", true, false),
         ("terminal-ambiguous-recovery", false, true),
@@ -1992,7 +1992,7 @@ async fn already_terminal_response_quarantines_running_or_ambiguous_evidence() {
 }
 
 #[tokio::test]
-async fn safe_requeue_response_never_settles_post_spawn_stopped_evidence() {
+async fn safe_requeue_never_settles_post_spawn_stopped_evidence() {
     let root_dir = temporary_root("safe-post-spawn-recovery");
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
@@ -2020,7 +2020,7 @@ async fn safe_requeue_response_never_settles_post_spawn_stopped_evidence() {
 }
 
 #[tokio::test]
-async fn post_spawn_start_ack_failure_reports_ambiguity_and_quarantines() {
+async fn post_spawn_start_ack_failure_reports_ambiguity_quarantines() {
     let root_dir = temporary_root("start-ack");
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
@@ -2070,17 +2070,17 @@ async fn cancellation_transport_loss_stays_in_terminal_outbox() {
 }
 
 #[tokio::test]
-async fn cancellation_outbox_replays_exact_payload_after_response_loss_without_respawn() {
+async fn cancellation_outbox_replays_exact_payload_without_respawn() {
     assert_outbox_replays_exact_payload_after_response_loss(TerminalKind::Cancellation).await;
 }
 
 #[tokio::test]
-async fn cancellation_ack_then_journal_failure_replays_pending_payload() {
+async fn cancellation_ack_journal_failure_replays_pending_payload() {
     assert_ack_then_journal_failure_replays_pending_payload(TerminalKind::Cancellation).await;
 }
 
 #[tokio::test]
-async fn failed_ambiguity_delivery_is_retried_on_restart_without_respawn() {
+async fn failed_ambiguity_delivery_retries_on_restart_without_respawn() {
     let root_dir = temporary_root("retry-recovery");
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
@@ -2178,7 +2178,7 @@ async fn duplicate_claim_for_quarantined_attempt_cannot_start_again() {
 }
 
 #[tokio::test]
-async fn post_spawn_journal_update_failure_reports_ambiguity_and_cancels() {
+async fn post_spawn_journal_update_failure_reports_ambiguity_cancels() {
     let root_dir = temporary_root("journal-update");
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
@@ -2416,8 +2416,7 @@ fn assert_single_artifact_uploaded(
 }
 
 #[tokio::test]
-async fn run_once_with_a_data_protocol_submits_the_terminal_event_and_uploads_the_staged_artifact()
-{
+async fn run_once_submits_terminal_event_and_uploads_staged_artifact() {
     let root_dir = temporary_root("data-protocol-terminal");
     let root = root_dir.path();
     std::fs::create_dir_all(root).expect("test root");
@@ -2495,7 +2494,7 @@ async fn run_once_with_a_data_protocol_submits_a_cancellation_event() {
 /// without the seam at all — the attempt still completes, and nothing about
 /// the lifecycle depends on the new seam being present.
 #[tokio::test]
-async fn without_a_data_protocol_the_attempt_still_completes_and_nothing_is_submitted() {
+async fn without_data_protocol_attempt_completes_nothing_submitted() {
     let root_dir = temporary_root("data-protocol-absent");
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
@@ -2521,7 +2520,7 @@ async fn without_a_data_protocol_the_attempt_still_completes_and_nothing_is_subm
 /// report — the harness genuinely succeeded, and that fact must still
 /// reach the server even if this best-effort evidence upload could not.
 #[tokio::test]
-async fn data_protocol_transport_failure_does_not_block_the_attempts_own_completion() {
+async fn data_protocol_transport_failure_does_not_block_completion() {
     let root_dir = temporary_root("data-protocol-failure");
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
