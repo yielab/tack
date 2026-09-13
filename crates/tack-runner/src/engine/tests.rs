@@ -669,6 +669,25 @@ fn adapter(expected_journal: PathBuf) -> FakeAdapter {
     }
 }
 
+fn runner_engine<A: HarnessAdapter>(
+    protocol: FakeProtocol,
+    adapter: A,
+    journal: OwnerOnlyJournal,
+    root: &Path,
+) -> RunnerEngine<FakeProtocol, A, FakeWorktree> {
+    RunnerEngine::new(protocol, adapter, journal, workspace_manager(root))
+}
+
+fn runner_engine_with_clock<A: HarnessAdapter, C: crate::Clock>(
+    protocol: FakeProtocol,
+    adapter: A,
+    journal: OwnerOnlyJournal,
+    root: &Path,
+    clock: C,
+) -> RunnerEngine<FakeProtocol, A, FakeWorktree, C> {
+    RunnerEngine::with_clock(protocol, adapter, journal, workspace_manager(root), clock)
+}
+
 fn workspace_manager(root: &Path) -> WorkspaceManager<FakeWorktree> {
     WorkspaceManager::new(
         root.join("workspaces"),
@@ -830,11 +849,11 @@ fn heartbeat_retries_keep_a_canonical_payload_for_the_same_clock_instant() {
     let fixed_at: SystemTime = chrono::DateTime::parse_from_rfc3339("2026-08-06T12:20:15Z")
         .expect("timestamp")
         .into();
-    let engine = RunnerEngine::with_clock(
+    let engine = runner_engine_with_clock(
         protocol(work(), false, false),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal,
-        workspace_manager(root),
+        root,
         FixedClock(fixed_at),
     );
     let claimed = work();
@@ -857,11 +876,11 @@ async fn periodic_heartbeats_advance_ids_without_replay_conflicts() {
     let base: SystemTime = chrono::DateTime::parse_from_rfc3339("2026-08-06T12:20:15Z")
         .expect("timestamp")
         .into();
-    let engine = RunnerEngine::with_clock(
+    let engine = runner_engine_with_clock(
         protocol.clone(),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal,
-        workspace_manager(root),
+        root,
         AdvancingClock {
             base,
             calls: Arc::new(AtomicUsize::new(0)),
@@ -893,11 +912,11 @@ async fn heartbeat_sent_at_comes_from_the_injected_clock() {
     let fixed_at: SystemTime = chrono::DateTime::parse_from_rfc3339("2026-08-06T12:20:15Z")
         .expect("timestamp")
         .into();
-    let engine = RunnerEngine::with_clock(
+    let engine = runner_engine_with_clock(
         protocol.clone(),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal,
-        workspace_manager(root),
+        root,
         FixedClock(fixed_at),
     );
     assert!(matches!(
@@ -942,11 +961,11 @@ async fn wait_periodically_renews_the_lease_while_the_harness_still_runs() {
     let base: SystemTime = chrono::DateTime::parse_from_rfc3339("2026-08-06T12:20:15Z")
         .expect("timestamp")
         .into();
-    let engine = RunnerEngine::with_clock(
+    let engine = runner_engine_with_clock(
         protocol.clone(),
         long_running_adapter,
         journal.clone(),
-        workspace_manager(root),
+        root,
         AdvancingClock {
             base,
             calls: Arc::new(AtomicUsize::new(0)),
@@ -987,12 +1006,7 @@ async fn mismatched_heartbeat_echo_quarantines_before_applying_lease_facts() {
     let cancellations = Arc::new(AtomicUsize::new(0));
     let mut fake_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
     fake_adapter.cancel_calls = Arc::clone(&cancellations);
-    let engine = RunnerEngine::new(
-        protocol.clone(),
-        fake_adapter,
-        journal,
-        workspace_manager(root),
-    );
+    let engine = runner_engine(protocol.clone(), fake_adapter, journal, root);
     assert!(matches!(
         engine
             .run_once(&session(), claim_request())
@@ -1074,11 +1088,11 @@ async fn tampered_terminal_outbox_bindings_are_rejected_before_replay_transport(
             .persist_before_spawn(&record)
             .expect("tampered pending journal");
         let protocol = protocol(work(), false, false);
-        let engine = RunnerEngine::new(
+        let engine = runner_engine(
             protocol.clone(),
             adapter(journal.journal_path(&AttemptId::new("attempt"))),
             journal,
-            workspace_manager(root),
+            root,
         );
         assert!(matches!(
             engine.recover(&session()).await,
@@ -1104,11 +1118,11 @@ async fn refresh_carries_capabilities_and_returns_expiring_session() {
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
     let protocol = protocol(work(), false, false);
-    let engine = RunnerEngine::new(
+    let engine = runner_engine(
         protocol.clone(),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal,
-        workspace_manager(root),
+        root,
     );
     let response = engine
         .refresh(
@@ -1229,12 +1243,7 @@ async fn replayed_cancellation_ack_settles_stopped_evidence() {
         .expect("fake protocol lock")
         .replayed = true;
     let first_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-    let engine = RunnerEngine::new(
-        protocol.clone(),
-        first_adapter,
-        journal.clone(),
-        workspace_manager(root),
-    );
+    let engine = runner_engine(protocol.clone(), first_adapter, journal.clone(), root);
 
     assert!(matches!(
         engine
@@ -1272,12 +1281,7 @@ async fn mismatched_cancellation_ack_stays_in_terminal_outbox() {
             .expect("fake protocol lock")
             .mismatch = mismatch;
         let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-        let engine = RunnerEngine::new(
-            protocol.clone(),
-            adapter,
-            journal.clone(),
-            workspace_manager(root),
-        );
+        let engine = runner_engine(protocol.clone(), adapter, journal.clone(), root);
 
         assert!(matches!(
             engine
@@ -1310,12 +1314,7 @@ async fn non_stopped_cancellation_evidence_skips_cancellation_transport() {
         let protocol = protocol(work(), true, false);
         let mut adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
         adapter.cancellation_evidence.observation = observation;
-        let engine = RunnerEngine::new(
-            protocol.clone(),
-            adapter,
-            journal.clone(),
-            workspace_manager(root),
-        );
+        let engine = runner_engine(protocol.clone(), adapter, journal.clone(), root);
 
         assert!(matches!(
             engine
@@ -1349,12 +1348,7 @@ async fn a_rejection_at_validate_is_reported_failed_and_never_spawns() {
         reason: "provider endpoint could not be resolved".into(),
     });
     let start_calls = Arc::clone(&adapter.start_calls);
-    let engine = RunnerEngine::new(
-        protocol.clone(),
-        adapter,
-        journal.clone(),
-        workspace_manager(root),
-    );
+    let engine = runner_engine(protocol.clone(), adapter, journal.clone(), root);
 
     let cycle = engine
         .run_once(&session(), claim_request())
@@ -1409,12 +1403,7 @@ async fn completion_transport_loss_stays_in_terminal_outbox() {
     let mut adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
     adapter.completion_actual_execution = mismatched_actual_execution();
     let cancellations = Arc::clone(&adapter.cancel_calls);
-    let engine = RunnerEngine::new(
-        protocol.clone(),
-        adapter,
-        journal.clone(),
-        workspace_manager(root),
-    );
+    let engine = runner_engine(protocol.clone(), adapter, journal.clone(), root);
 
     let result = engine
         .run_once(&session(), claim_request())
@@ -1465,12 +1454,7 @@ async fn completion_outbox_replays_exact_payload_after_response_loss_without_res
         .lock()
         .expect("fake protocol lock") = Some(journal.clone());
     let first_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-    let engine = RunnerEngine::new(
-        protocol.clone(),
-        first_adapter,
-        journal.clone(),
-        workspace_manager(root),
-    );
+    let engine = runner_engine(protocol.clone(), first_adapter, journal.clone(), root);
 
     assert!(matches!(
         engine
@@ -1503,12 +1487,7 @@ async fn completion_outbox_replays_exact_payload_after_response_loss_without_res
         .replayed = true;
     let restarted_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
     let never_respawned = Arc::clone(&restarted_adapter.start_after_journal);
-    let restarted = RunnerEngine::new(
-        protocol.clone(),
-        restarted_adapter,
-        journal.clone(),
-        workspace_manager(root),
-    );
+    let restarted = runner_engine(protocol.clone(), restarted_adapter, journal.clone(), root);
 
     assert!(matches!(
         restarted
@@ -1565,12 +1544,7 @@ async fn completion_bad_ack_stays_in_terminal_outbox() {
             .expect("fake protocol lock")
             .mismatch = mismatch;
         let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-        let engine = RunnerEngine::new(
-            protocol.clone(),
-            adapter,
-            journal.clone(),
-            workspace_manager(root),
-        );
+        let engine = runner_engine(protocol.clone(), adapter, journal.clone(), root);
 
         assert!(matches!(
             engine
@@ -1597,12 +1571,7 @@ async fn completion_ack_then_journal_failure_replays_pending_payload() {
         .lock()
         .expect("fake protocol lock") = Some(journal.clone());
     let first_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-    let engine = RunnerEngine::new(
-        protocol.clone(),
-        first_adapter,
-        journal.clone(),
-        workspace_manager(root),
-    );
+    let engine = runner_engine(protocol.clone(), first_adapter, journal.clone(), root);
 
     assert!(matches!(
         engine
@@ -1624,11 +1593,11 @@ async fn completion_ack_then_journal_failure_replays_pending_payload() {
             .state,
         JournalState::TerminalReportPending
     );
-    let restarted = RunnerEngine::new(
+    let restarted = runner_engine(
         protocol.clone(),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal.clone(),
-        workspace_manager(root),
+        root,
     );
     assert!(matches!(
         restarted
@@ -1658,12 +1627,7 @@ async fn restart_reports_unresolved_journal_observation_without_respawn() {
         .expect("persist prior journal");
     let protocol = protocol(work(), false, false);
     let first_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-    let engine = RunnerEngine::new(
-        protocol.clone(),
-        first_adapter,
-        journal.clone(),
-        workspace_manager(root),
-    );
+    let engine = runner_engine(protocol.clone(), first_adapter, journal.clone(), root);
 
     let outcomes = engine.recover(&session()).await.expect("recover");
     assert!(matches!(outcomes.as_slice(), [RunCycle::Completed { .. }]));
@@ -1715,12 +1679,7 @@ async fn needs_operator_response_durably_quarantines_stopped_pre_spawn_recovery(
         .expect("fake protocol lock")
         .disposition = RecoveryDisposition::NeedsOperator;
     let first_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-    let engine = RunnerEngine::new(
-        protocol.clone(),
-        first_adapter,
-        journal.clone(),
-        workspace_manager(root),
-    );
+    let engine = runner_engine(protocol.clone(), first_adapter, journal.clone(), root);
 
     assert!(matches!(
         engine
@@ -1761,11 +1720,11 @@ async fn stale_lease_on_recovery_retires_the_record_and_keeps_the_checkout() {
     let protocol = protocol(work(), false, false);
     *protocol.recovery_error.lock().expect("fake protocol lock") =
         Some(ProtocolClientError::StaleLease);
-    let engine = RunnerEngine::new(
+    let engine = runner_engine(
         protocol.clone(),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal.clone(),
-        workspace_manager(root),
+        root,
     );
 
     assert!(matches!(
@@ -1819,11 +1778,11 @@ async fn unreachable_server_on_recovery_never_retires_the_record() {
         Some(ProtocolClientError::Transport);
 
     for attempt_number in 0..2 {
-        let engine = RunnerEngine::new(
+        let engine = runner_engine(
             protocol.clone(),
             adapter(journal.journal_path(&AttemptId::new("attempt"))),
             journal.clone(),
-            workspace_manager(root),
+            root,
         );
         assert!(
             matches!(
@@ -1882,12 +1841,7 @@ async fn replayed_already_terminal_response_settles_only_stopped_evidence() {
             .insert("future_response_field".into(), serde_json::json!(42));
     }
     let first_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-    let engine = RunnerEngine::new(
-        protocol.clone(),
-        first_adapter,
-        journal.clone(),
-        workspace_manager(root),
-    );
+    let engine = runner_engine(protocol.clone(), first_adapter, journal.clone(), root);
 
     assert!(matches!(
         engine
@@ -1933,7 +1887,7 @@ async fn already_terminal_response_quarantines_running_or_ambiguous_evidence() {
         if running {
             adapter.recovery_observation = RecoveryObservation::ProcessRunning;
         }
-        let engine = RunnerEngine::new(protocol, adapter, journal.clone(), workspace_manager(root));
+        let engine = runner_engine(protocol, adapter, journal.clone(), root);
 
         assert!(matches!(
             engine
@@ -1962,7 +1916,7 @@ async fn safe_requeue_response_never_settles_post_spawn_stopped_evidence() {
         .expect("prior journal");
     let protocol = protocol(work(), false, false);
     let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-    let engine = RunnerEngine::new(protocol, adapter, journal.clone(), workspace_manager(root));
+    let engine = runner_engine(protocol, adapter, journal.clone(), root);
 
     assert!(matches!(
         engine
@@ -1984,12 +1938,7 @@ async fn post_spawn_start_ack_failure_reports_ambiguity_and_quarantines() {
     let mut protocol = protocol(work(), false, false);
     protocol.fail_running_start = true;
     let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-    let engine = RunnerEngine::new(
-        protocol.clone(),
-        adapter,
-        journal.clone(),
-        workspace_manager(root),
-    );
+    let engine = runner_engine(protocol.clone(), adapter, journal.clone(), root);
 
     assert!(matches!(
         engine
@@ -2014,12 +1963,7 @@ async fn cancellation_transport_loss_stays_in_terminal_outbox() {
         .fail_cancellation_report
         .store(true, Ordering::SeqCst);
     let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-    let engine = RunnerEngine::new(
-        protocol.clone(),
-        adapter,
-        journal.clone(),
-        workspace_manager(root),
-    );
+    let engine = runner_engine(protocol.clone(), adapter, journal.clone(), root);
 
     assert!(matches!(
         engine
@@ -2050,12 +1994,7 @@ async fn cancellation_outbox_replays_exact_payload_after_response_loss_without_r
         .lock()
         .expect("fake protocol lock") = Some(journal.clone());
     let first_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-    let engine = RunnerEngine::new(
-        protocol.clone(),
-        first_adapter,
-        journal.clone(),
-        workspace_manager(root),
-    );
+    let engine = runner_engine(protocol.clone(), first_adapter, journal.clone(), root);
 
     assert!(matches!(
         engine
@@ -2086,12 +2025,7 @@ async fn cancellation_outbox_replays_exact_payload_after_response_loss_without_r
         .replayed = true;
     let restarted_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
     let never_respawned = Arc::clone(&restarted_adapter.start_after_journal);
-    let restarted = RunnerEngine::new(
-        protocol.clone(),
-        restarted_adapter,
-        journal.clone(),
-        workspace_manager(root),
-    );
+    let restarted = runner_engine(protocol.clone(), restarted_adapter, journal.clone(), root);
 
     assert!(matches!(
         restarted
@@ -2139,12 +2073,7 @@ async fn cancellation_ack_then_journal_failure_replays_pending_payload() {
         .lock()
         .expect("fake protocol lock") = Some(journal.clone());
     let first_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-    let engine = RunnerEngine::new(
-        protocol.clone(),
-        first_adapter,
-        journal.clone(),
-        workspace_manager(root),
-    );
+    let engine = runner_engine(protocol.clone(), first_adapter, journal.clone(), root);
 
     assert!(matches!(
         engine
@@ -2166,11 +2095,11 @@ async fn cancellation_ack_then_journal_failure_replays_pending_payload() {
         workspace_path.exists(),
         "ack write failure retains the workspace"
     );
-    let restarted = RunnerEngine::new(
+    let restarted = runner_engine(
         protocol.clone(),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal.clone(),
-        workspace_manager(root),
+        root,
     );
     assert!(matches!(
         restarted
@@ -2204,12 +2133,7 @@ async fn failed_ambiguity_delivery_is_retried_on_restart_without_respawn() {
         .store(1, Ordering::SeqCst);
     let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
     let never_started = Arc::clone(&adapter.start_after_journal);
-    let engine = RunnerEngine::new(
-        protocol.clone(),
-        adapter,
-        journal.clone(),
-        workspace_manager(root),
-    );
+    let engine = runner_engine(protocol.clone(), adapter, journal.clone(), root);
 
     assert!(matches!(
         engine
@@ -2249,12 +2173,7 @@ async fn running_recovery_observation_is_quarantined_not_completed() {
     let protocol = protocol(work(), false, false);
     let mut adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
     adapter.recovery_observation = RecoveryObservation::ProcessRunning;
-    let engine = RunnerEngine::new(
-        protocol.clone(),
-        adapter,
-        journal.clone(),
-        workspace_manager(root),
-    );
+    let engine = runner_engine(protocol.clone(), adapter, journal.clone(), root);
 
     assert!(matches!(
         engine
@@ -2283,7 +2202,7 @@ async fn duplicate_claim_for_quarantined_attempt_cannot_start_again() {
     let protocol = protocol(work(), false, false);
     let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
     let started = Arc::clone(&adapter.start_after_journal);
-    let engine = RunnerEngine::new(protocol, adapter, journal, workspace_manager(root));
+    let engine = runner_engine(protocol, adapter, journal, root);
 
     assert!(matches!(
         engine.run_once(&session(), claim_request()).await,
@@ -2305,7 +2224,7 @@ async fn post_spawn_journal_update_failure_reports_ambiguity_and_cancels() {
     let protocol = protocol(work(), false, false);
     let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
     let cancellations = Arc::clone(&adapter.cancel_calls);
-    let engine = RunnerEngine::new(protocol.clone(), adapter, journal, workspace_manager(root));
+    let engine = runner_engine(protocol.clone(), adapter, journal, root);
 
     assert!(matches!(
         engine
@@ -2559,11 +2478,11 @@ async fn run_once_with_a_data_protocol_submits_a_cancellation_event() {
     std::fs::create_dir_all(root).expect("test root");
     let journal = OwnerOnlyJournal::new(root);
     let data_protocol = FakeDataProtocol::new();
-    let engine = RunnerEngine::new(
+    let engine = runner_engine(
         protocol(work(), true, false),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal,
-        workspace_manager(root),
+        root,
     )
     .with_data_protocol(Arc::new(data_protocol.clone()));
 
@@ -2593,11 +2512,11 @@ async fn without_a_data_protocol_the_attempt_still_completes_and_nothing_is_subm
     let root_dir = temporary_root("data-protocol-absent");
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
-    let engine = RunnerEngine::new(
+    let engine = runner_engine(
         protocol(work(), false, false),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal,
-        workspace_manager(root),
+        root,
     );
     assert!(matches!(
         engine
@@ -2621,11 +2540,11 @@ async fn data_protocol_transport_failure_does_not_block_the_attempts_own_complet
     let journal = OwnerOnlyJournal::new(root);
     let data_protocol = FakeDataProtocol::new();
     data_protocol.events_fail.store(true, Ordering::SeqCst);
-    let engine = RunnerEngine::new(
+    let engine = runner_engine(
         protocol(work(), false, false),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal,
-        workspace_manager(root),
+        root,
     )
     .with_data_protocol(Arc::new(data_protocol.clone()));
 
@@ -2661,11 +2580,11 @@ async fn resubmitting_the_same_terminal_event_is_idempotent() {
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
     let data_protocol = FakeDataProtocol::new();
-    let engine = RunnerEngine::new(
+    let engine = runner_engine(
         protocol(work(), false, false),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal.clone(),
-        workspace_manager(root),
+        root,
     )
     .with_data_protocol(Arc::new(data_protocol.clone()));
 
