@@ -290,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_runner_state_maps_to_the_conservative_revoked_reading() {
+    fn unknown_runner_state_maps_to_the_conservative_revoked_state() {
         assert_eq!(runner_state_from_str("active"), RunnerState::Active);
         assert_eq!(
             runner_state_from_str("pending_enrollment"),
@@ -301,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn build_scheduling_request_skips_a_partial_model_selector_row_instead_of_panicking() {
+    fn partial_model_selector_row_is_skipped_not_panicked() {
         let row = QueuedRequestForScheduling {
             id: "req-1".into(),
             selector_kind: "exact_runner".into(),

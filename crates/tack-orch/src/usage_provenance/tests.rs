@@ -8,6 +8,20 @@ fn actual_model(provider: &str, model_id: &str) -> (ActualModelProvider, ActualM
     )
 }
 
+fn measured<T>(value: T) -> Measurement<T> {
+    Measurement {
+        value: Some(value),
+        source: MeasurementSource::Measured,
+        additional: BTreeMap::new(),
+    }
+}
+
+fn rfc3339(ts: &str) -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339(ts)
+        .unwrap()
+        .with_timezone(&Utc)
+}
+
 #[test]
 fn matched_when_requested_equals_actual() {
     let requested = (
@@ -142,26 +156,10 @@ fn present_usage_and_timestamps_produce_real_values() {
         .unwrap()
         .with_timezone(&Utc);
     let usage = Usage {
-        tokens_in: Measurement {
-            value: Some(1234),
-            source: MeasurementSource::Measured,
-            additional: BTreeMap::new(),
-        },
-        tokens_out: Measurement {
-            value: Some(456),
-            source: MeasurementSource::Measured,
-            additional: BTreeMap::new(),
-        },
-        duration_ms: Measurement {
-            value: Some(1_800_000),
-            source: MeasurementSource::Measured,
-            additional: BTreeMap::new(),
-        },
-        cost_usd: Measurement {
-            value: Some(0.42),
-            source: MeasurementSource::Measured,
-            additional: BTreeMap::new(),
-        },
+        tokens_in: measured(1234),
+        tokens_out: measured(456),
+        duration_ms: measured(1_800_000),
+        cost_usd: measured(0.42),
         additional: BTreeMap::new(),
     };
     let economics = build_usage_economics(Some(&usage), Some(started), Some(ended), Some(3.0));
@@ -208,7 +206,7 @@ fn wall_clock_is_known_even_without_a_configured_rate() {
 }
 
 #[test]
-fn derive_attempt_facts_treats_malformed_json_as_not_yet_reported() {
+fn derive_attempt_facts_treats_malformed_json_as_unreported() {
     let facts = derive_attempt_facts(
         Some("openai"),
         Some("opaque/model-alpha"),
@@ -226,7 +224,7 @@ fn derive_attempt_facts_treats_malformed_json_as_not_yet_reported() {
 }
 
 #[test]
-fn derive_attempt_facts_end_to_end_with_a_real_completion_fixture() {
+fn derive_attempt_facts_end_to_end_from_a_real_fixture() {
     let actual_execution_json =
         include_str!("../../../../docs/contracts/runner-v1/completion.request.json");
     let completion: serde_json::Value =
@@ -238,16 +236,8 @@ fn derive_attempt_facts_end_to_end_with_a_real_completion_fixture() {
         Some("opaque/model-alpha"),
         Some(&actual),
         Some(&usage),
-        Some(
-            DateTime::parse_from_rfc3339("2026-08-06T12:20:05Z")
-                .unwrap()
-                .with_timezone(&Utc),
-        ),
-        Some(
-            DateTime::parse_from_rfc3339("2026-08-06T12:25:00Z")
-                .unwrap()
-                .with_timezone(&Utc),
-        ),
+        Some(rfc3339("2026-08-06T12:20:05Z")),
+        Some(rfc3339("2026-08-06T12:25:00Z")),
         None,
     );
     assert_eq!(

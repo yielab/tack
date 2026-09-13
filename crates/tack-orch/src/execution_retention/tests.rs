@@ -85,7 +85,7 @@ async fn execution_retention_sweep_is_a_noop_when_disabled() {
 }
 
 #[tokio::test]
-async fn enabled_sweep_calls_both_purges_with_the_configured_cutoff_and_batch_size() {
+async fn enabled_sweep_calls_both_purges_with_the_configured_cutoff() {
     let now = DateTime::parse_from_rfc3339("2026-08-12T00:00:00Z")
         .unwrap()
         .with_timezone(&Utc);
@@ -144,13 +144,9 @@ async fn retention_sweep_shutdown_joins_task_with_no_purge_after() {
     // just a signal-and-return. If the task never actually observed the
     // stop signal (e.g. the `tokio::select!` were wired wrong), this
     // line would hang until the test harness times out rather than
-    // silently "passing."
+    // silently "passing." And once it resolves, the task is provably
+    // gone — no further wait can change whether it purges again.
     handle.await.expect("task joins cleanly after stop signal");
-
-    // Wait out more than one full interval past shutdown and confirm
-    // no new call landed — proves the task is truly gone, not merely
-    // slow to notice.
-    tokio::time::sleep(StdDuration::from_millis(1_300)).await;
     let calls_after_wait = store.replay_calls.lock().unwrap().len();
     assert_eq!(
         calls_before_stop, calls_after_wait,
@@ -159,7 +155,7 @@ async fn retention_sweep_shutdown_joins_task_with_no_purge_after() {
 }
 
 #[tokio::test]
-async fn a_failing_purge_is_logged_and_retried_next_cycle_not_panicked() {
+async fn a_failing_purge_is_retried_next_cycle_not_panicked() {
     let store = Arc::new(FakeStore::default());
     *store.fail_replays.lock().unwrap() = true;
     let clock: Arc<dyn RetentionClock> = Arc::new(FakeClock::new(Utc::now()));
