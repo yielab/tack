@@ -1,4 +1,4 @@
-> Archived, no-longer-current roadmap content — Phases 0–57 (Parts I–III). The live roadmap is [`docs/book/src/roadmap.md`](docs/book/src/roadmap.md).
+> Archived, no-longer-current roadmap content — Phases 0–57 (Parts I–III). The live roadmap is `docs/book/src/roadmap.md`.
 
 # Roadmap — Phases 0–57 (archived)
 
