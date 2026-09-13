@@ -1,11 +1,31 @@
-//! Unit economics: tokens, estimated cost, agent-vs-human lead time, and
-//! rework rate, sliced by `project_type` and `item_type`. Read-only
-//! aggregate endpoints over `Repository::
-//! list_completed_item_economics`/`list_item_ids_with_rework_signal`
-//! (`tack_db::repo::economics`) — no live docket call, so a plane outage can
-//! never turn into a 500 here, the same discipline `handlers::orch`'s
+//! Unit economics: tokens, estimated cost, agent-vs-human lead time, and rework rate,
+//! sliced by `project_type` and `item_type`. Read-only aggregate endpoints over
+//! `tack_db::repo::economics` — no live docket call, so a plane outage never turns
+//! into a 500 here.
 //!
-//! Design notes: docs/dev-notes/tack-api/handlers/economics.md
+//! Gated behind `TACK_ORCH_ENABLE`: [`economics_routes`] is merged into
+//! `orch_routes()`, which 404s the whole sub-router when the flag is unset, rather
+//! than returning 200-with-empty-data.
+//!
+//! Money is honestly represented: token counts are always present and rendered
+//! first; every dollar figure is `cost_usd_estimated` (never "cost") and travels
+//! with `pricing_snapshot_at`, honestly `None` today — no pricing-snapshot mechanism
+//! exists yet. [`EconomicsPopulation`] splits a row into "dispatched at least once"
+//! (`Agent`) vs. "never dispatched" (`Human`).
+//!
+//! This module never computes a single "agents are Nx faster" ratio
+//! ([`LEAD_TIME_SELECTION_BIAS_NOTE`]): items reach an agent via auto-dispatch or a
+//! human handoff, neither a random sample, so both populations' stats are reported
+//! side by side and left for the reader to compare.
+//!
+//! `orch_tasks` (tokens, cost, dispatch timestamps) is never purged — only
+//! `orch_events`/`orch_metrics` are, by the retention sweep. So token, cost and
+//! lead-time figures are never truncated; only the rework signal
+//! (`orch_events`-derived) can go stale. An item whose only dispatch attempt predates
+//! `TACK_ORCH_EVENT_RETENTION_DAYS` is excluded from the rework-rate denominator
+//! entirely ([`ReworkStat::attempts_excluded_stale`]), never counted as "no rework
+//! happened" — see `tack_db::repo::economics` for the retention cutoff this follows
+//! from.
 
 use axum::Json;
 use axum::extract::{Query, State};

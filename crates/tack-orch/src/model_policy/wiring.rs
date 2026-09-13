@@ -1,11 +1,18 @@
 //! Live wiring between the pure [`super::resolve_model_policy`] and real
 //! `agent_profiles.limits` / `agent_fleets.default_policy` rows.
 //!
-//! # Where each tier's data actually lives today
+//! A request override reads straight from `execution_requests.requested_model_provider`/
+//! `requested_model_id` — nothing to fetch. An agent-profile or fleet default is
+//! [`parse_model_default_convention`]'s optional `{"default_model": {...}}` key out of
+//! an already operator-settable JSON blob, mirroring `crate::scheduler::wiring`'s own
+//! convention over an unenforced column. A project default differs: `projects.
+//! default_model` is a typed `ProjectModelDefault` enum, so
+//! [`parse_project_default_model`] treats a decode failure as a real error rather than
+//! folding it into "no opinion" the way the convention-based parser does.
 //!
-//! - **Request override**: `execution_requests.requested_model_provider`/
-//!
-//! Design notes: docs/dev-notes/tack-orch/model_policy/wiring.md
+//! This module never checks a resolved model against a runner's declared capability —
+//! that already happens, unmodified, in `crate::scheduler::select::select_runner` once
+//! the policy's selector is persisted on the request row.
 
 use tack_core::models::ProjectModelDefault;
 use tack_db::Repository;
@@ -14,8 +21,8 @@ use super::{ModelPolicySources, ResolvedModelPolicy, resolve_model_policy};
 use crate::execution::{RequestedModelId, RequestedModelProvider};
 use crate::scheduler::types::ModelSelector;
 
-/// The JSON key this module reads a tier's default model from. See this
-/// module's doc comment for the exact shapes accepted.
+/// The JSON key this module reads a tier's default model from. See
+/// [`parse_model_default_convention`] for the exact shapes accepted.
 pub const DEFAULT_MODEL_KEY: &str = "default_model";
 
 /// Parses the `{"default_model": ...}` convention out of a raw JSON blob

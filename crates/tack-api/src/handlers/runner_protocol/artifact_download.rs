@@ -1,11 +1,26 @@
 //! Operator-facing verified-artifact content download.
 //!
-//! This handler is **not** part of `runner_protocol`'s own `routes()` — that
-//! router is deliberately runner-credential-only and sits structurally
-//! outside `require_token` (see `router.rs#runner_protocol_routes`'s own doc
-//! comment). An operator download instead lives under the operator `/api`
+//! Not part of `runner_protocol`'s own `routes()` — that router is
+//! runner-credential-only and sits outside `require_token`. An operator download
+//! instead lives under the operator `/api` surface:
+//! `router.rs#operator_execution_routes` mounts [`routes`] as `GET
+//! /api/executions/{request_id}/attempts/{attempt_number}/artifacts/{artifact_id}/content`,
+//! sharing the `TACK_STORAGE_DIR`-derived artifact root with
+//! `runner_protocol_routes`. `crates/tack-api/tests/wiring/artifact.rs` proves the
+//! mount through the real `build_router`. `principal()` below reads
+//! `x-tack-principal`, the *operator* auth header, never a runner bearer credential.
 //!
-//! Design notes: docs/dev-notes/tack-api/handlers/runner_protocol/artifact_download.md
+//! Nested under `runner_protocol/` only so it is reachable without touching
+//! `handlers/mod.rs`; it is not part of the runner protocol itself. Streams the file
+//! back chunk-by-chunk (`futures::stream::unfold` over a `tokio::fs::File`, no
+//! whole-file read into memory) — the read-side half of the streaming design
+//! `artifact_storage.rs` uses on the write side.
+//!
+//! The module-level `dead_code` allow exists because
+//! `runner_protocol/artifact_events.rs` and `runner_protocol/lifecycle.rs` each load
+//! an independent copy of this file's tree via their own `#[path]` (see each file's
+//! `#[allow(clippy::duplicate_mod)]`), and `lifecycle`'s copy never calls into this
+//! module — so it alone would otherwise flag every item here as unused.
 #![allow(dead_code)]
 
 use std::sync::Arc;

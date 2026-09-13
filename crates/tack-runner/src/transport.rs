@@ -1,11 +1,33 @@
 //! The real HTTP transport for runner protocol v1.
 //!
-//! Without this module, [`crate::UnavailableProtocolClient`] is the only
-//! production [`RunnerProtocolClient`] in the tree and `reqwest` is not
-//! a dependency of this crate — so a packaged `tack-runner` binary could not
-//! enroll, claim, heartbeat or report against a live server.
+//! Without this module, [`crate::UnavailableProtocolClient`] is the only production
+//! [`RunnerProtocolClient`] in the tree and `reqwest` is not a dependency of this
+//! crate — so a packaged `tack-runner` binary could not enroll, claim, heartbeat or
+//! report against a live server.
 //!
-//! Design notes: docs/dev-notes/tack-runner/transport.md
+//! [`HttpPullProtocol`] implements [`PullProtocol`] (the eight engine-facing
+//! operations) and [`AttemptDataProtocol`] (events, decisions, decision polling,
+//! artifact manifests, artifact content) — together the fourteen `/api/runner/v1`
+//! routes. [`HttpRunnerClient`] implements [`RunnerProtocolClient`]: the daemon loop
+//! that enrolls (or resumes a persisted session), replays unresolved journal records,
+//! then claims and heartbeats until shutdown. `docs/contracts/runner-v1/` is the
+//! authority for every payload here; where a response body and a fixture disagree,
+//! this module follows the fixture.
+//!
+//! Two conditions must both hold before anything is resent: the failure is retryable
+//! ([`ProtocolClientError::is_retryable`], derived from `StableErrorCode::retryable`),
+//! and the operation is replayable by construction — its payload carries an
+//! idempotency key or it is a pure read. [`Idempotency::SingleUse`] marks the one
+//! operation that fails both tests:
+//! enrollment. Its token is redeemed exactly once server-side, so a response lost in
+//! transit leaves an ambiguous state a resend cannot recover — reported as a typed
+//! transport failure instead of retried.
+//!
+//! The enrollment token travels only in the enrollment request body; the runner
+//! credential only in an `Authorization: Bearer` header. Neither is ever logged, put
+//! in an error, or rendered via `Debug` — [`RunnerCredential`] and
+//! [`crate::EnrollmentCredential`] redact structurally, and this module never calls
+//! `expose()` outside the exact place the byte is written onto the wire.
 
 use std::{
     fs,
