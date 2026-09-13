@@ -24,7 +24,7 @@ to edit.
 | 29 | IX-M4-<crate>-<binary>, 28 sub-cards | two at a time | Wave 28 integrated | Wave 28 integration SHA, then the latest integration SHA for each pair |
 | 30 | IX-M5 | no | Wave 29's `tack-runner` sub-cards | that integration SHA |
 | 31 | IX-M6 batches · IX-M7 | yes, on files no open Wave 29/30 card owns | Wave 27 integrated | latest integration SHA |
-| 32 | IX-M8-dedup, then IX-M8-<crate> per crate | dedup first, then crates in parallel (largest ratio first: orch, runner, api, db) | Wave 29 integrated | latest integration SHA |
+| 32 | IX-M8-dedup, then IX-M8-<crate> ×5 · IX-M6-dev-notes · IX-M7-roadmap | dedup first; then two at a time, largest ratio first (orch, runner, api, db, cli); dev-notes and roadmap touch no test file and can pair with any of them | Wave 31 integrated | latest integration SHA, then the latest integration SHA for each pair |
 | 33 | IX-M9 (was IX-M8) | no | Wave 32 integrated, everything else | latest integration SHA |
 
 ## Read list per card, with sizes
@@ -43,8 +43,10 @@ Every card: `TODO.md` §IX.0–§IX.1 (~2.5k tokens, `sed -n` the range from
 | IX-M6 batch | §3, §5 row M6 | the batch's `comment-worklist --json` lines; `.claude/scope-discipline.md` "Comments" (~80 lines) | files outside the batch |
 | IX-M7 | §4, §5 row M7 | `docs/book/book.toml`, `docs/book/src/SUMMARY.md`, `.gitattributes`, `scripts/regen-generated.sh` | the handoffs it moves to `docs/closed-cycles/` |
 | IX-M8-dedup | §5 row M8, TODO.md's IX-M8 card text | `duplicate-tests --json` output, workspace-wide | any file not named in a pair |
-| IX-M8-<crate> | §2.2, §5 row M8, TODO.md's IX-M8 card text (named exclusions) | its crate's `measure` rows, `0064-fixed-waits.txt` lines in that crate | other crates; the named-exclusion files |
-| IX-M9 | §1 table, §5 row M9 | the script's `BUDGETS`, IX-M8's handoff(s) for the achieved ratio | anything else |
+| IX-M8-<crate> | §2.2, §5 row M8, TODO.md's IX-M8 card text (named exclusions) | its crate's `measure --json` rows for both `tests/**` and `src/**/tests.rs`, its `duplicate-tests` pairs, its lines of `0064-fixed-waits.txt`, its IX-M4 handoffs' *What was removed* | other crates; the named-exclusion files; production code beyond what a test calls |
+| IX-M6-dev-notes | §3, TODO.md's card text | the 12 files under `docs/dev-notes/` and the `//!` block of each module they name; `.claude/scope-discipline.md` "Comments" | anything else |
+| IX-M7-roadmap | §4 (the roadmap bullet), TODO.md's card text | `docs/book/src/roadmap.md`'s `grep -n "^# "` map, `docs/closed-cycles/README.md` | the roadmap's archived sections themselves beyond finding their boundaries |
+| IX-M9 | §1 table, §2.3, §5 row M9 | the script's `BUDGETS` and `check`, every IX-M8 handoff's *Budget check* and exclusion list | anything else |
 
 ## The gate, per card
 
@@ -58,7 +60,9 @@ Every card: `TODO.md` §IX.0–§IX.1 (~2.5k tokens, `sed -n` the range from
 | M5 | harness audit §6 exit criteria + `-E 'package(tack-runner)'` | — |
 | M7 | `mdbook build docs/book && ./scripts/regen-generated.sh && git diff --exit-code` | cargo tests |
 | M8-dedup | `cargo nextest run --workspace && python3 scripts/maintainability.py duplicate-tests` (0 pairs) | — |
-| M8-<crate> | `cargo nextest run --workspace -E 'package(<crate>)' && python3 scripts/maintainability.py check --changed`; the coverage job at integration | other crates |
+| M8-<crate> | `cargo nextest run --workspace -E 'package(<crate>)' && cargo llvm-cov -p <crate> --fail-under-lines <floor> && python3 scripts/maintainability.py check --changed && python3 scripts/maintainability.py measure --json crates/<crate>` (no body > 40 outside exclusions, no name > 60, no file > 1 000, 0 sleeps ≥ 200 ms) | other crates; `cargo test` |
+| M6-dev-notes | `cargo check --workspace && ./scripts/check-comments.sh && python3 scripts/maintainability.py check --changed` | the suite |
+| M7-roadmap | `mdbook build docs/book && grep -rn "roadmap.md#" docs/ README.md` (every anchor resolves) | cargo tests |
 | M9 | `python3 scripts/maintainability.py check` (hard mode) | — |
 
 The full suite runs once per wave, by the integrator, on the integrated tree.

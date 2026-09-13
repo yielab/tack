@@ -75,33 +75,66 @@ block only.
 | 29 — Prune per binary | IX-M4-<crate>-<binary>, 28 sub-cards, largest first | 63 | done — all sub-cards integrated (renames, table-driving, sleep→poll), 1439/1439 tests hold (8 skipped), budgets hold |
 | 30 — Harness core | IX-M5 (= T0 of `docs/plans/harness-maintainability-audit.md`) | 63 | done — `LocalProcessHarness<G>`/`HarnessGrammar` extracted, both adapters migrated, cross-adapter test dedup landed, 1413/1413 tests hold; 3 of 4 audit exit criteria met, per-adapter 400-line budget still open (codex 671, claude_code 816) — a follow-on card, not a further pass of this one |
 | 31 — Comments and docs | IX-M6 batches ∥ IX-M7 | 63 | done — 5 IX-M6 batches (44 files) integrated, 0 comment-worklist violations remain; IX-M7 landed in two halves (generated docs: book includes, `scripts/gen-api-reference.py`, `cargo doc` CI gate; archival: Parts I-III + closed-Part handoffs moved to `docs/closed-cycles/`, live table trimmed to ≤300 chars/row); 1413/1413 tests hold, budgets hold, `pre-push` green |
-| 32 — Close the test-volume gap | IX-M8 | 63 | open; after 29, 30; new 2026-09-12 (see below) |
+| 32 — Close the test-volume gap | IX-M8-dedup, then IX-M8-<crate> ×5 ∥ IX-M6-dev-notes ∥ IX-M7-roadmap | 63 | open; after 29, 30; added 2026-09-12 by the audit note below |
 | 33 — Ratchet down | IX-M9 (was IX-M8) | 63 | open; after 32; last |
 
 **Audit note, 2026-09-12 — Wave 32 was not ready as originally scoped.** Before dispatching
-Wave 32, `measure --totals` was re-run rather than trusted from the plan.
-It found the workspace test:production ratio at **1.284** (55 448 prod / 71 211 test) — barely
-moved from IX-M0's own baseline of **1.316**, and nowhere near the plan's §5 table, which
-priced IX-M4 alone at an expected **−25 000 lines, ≈ −400 tests**. IX-M4's actual, measured
-result across its 28 integrated sub-cards was **≈ −2 600 test lines and −90 tests** — every
-sub-card's own scoped gate (`nextest -E 'binary(<name>)'`, `check --changed`, coverage floors)
-passed, and Wave 29 is correctly marked done against the rules it was actually held to
-(renames, table-driving, sleep→poll, per-binary budgets) — but the plan's separate, larger
-volume expectation was never a stated acceptance criterion for those sub-cards, so nothing
-caught the gap between "the rules pass" and "the tree is 25k lines smaller." The original
-IX-M8 (`check` switched to hard-fail at ratio ≤ 0.8) would have either broken immediately or
-required quietly loosening the target to match reality — neither is this board's convention.
-Also found stale while auditing: `docs/adr/0064-fixed-waits.txt` (IX-M4's own inventory,
-supposed to reach zero) still listed 25 entries from before Wave 29 ran; regenerating it
-(`python3 scripts/list-fixed-waits.py`) shows the real current count is **2**, not 25 — the
-file simply was never re-run after the waits were actually fixed. Regenerated in this change.
+Wave 32 every number in the plan was re-measured instead of trusted (commands in §IX.0's
+second table). What the audit found, in order of weight:
 
-**Fix:** split the old IX-M8 into **IX-M8** (close the measured volume gap, realistically
-scoped against what remains after the plan's own named exclusions) and **IX-M9** (the
-original ratchet-lock, now sequenced to run only once IX-M8 reports its achieved numbers).
-See both cards' full text below. This is not a re-opening of Wave 29's sub-cards — they
-stay merged and correctly closed against their own rules — it is a new, additional pass the
-plan under-scoped the first time.
+1. **The volume never moved.** Workspace test:production ratio is **1.284** (44 455 code +
+   10 993 comment lines of production, 71 211 test lines) against IX-M0's baseline of
+   **1.316**; tests 1 498 → 1 413. The plan's §5 priced IX-M4 alone at **−25 000 lines,
+   ≈ −400 tests**. The 13 IX-M4 handoffs that recorded totals sum to **41 704 → 40 511 test
+   lines (−2.9 %)**, three binaries grew, and the largest sub-card (`tack-db-repository`)
+   went 8 805 → 8 620 with `execution_repo.rs` at 4 323 → 4 308 lines, 27 bodies still over
+   the 60-line cap and a 174-line maximum. Every sub-card's scoped gate passed because the
+   gate is a ratchet ("not worse"), and the volume number was never an acceptance criterion.
+2. **IX-M4's own acceptance is not met, though Wave 29 is marked done.** Today: 135 test
+   bodies over the 60-line hard cap (110 of them in the binaries IX-M4 owned), 207 test
+   names over 60 characters, 17 test files over 1 000 lines. 13 of the 17 handoffs say so
+   in their own words ("not worsened", "remains over the hard cap") and were integrated on
+   that basis. The plan said 28 sub-cards; 29 top-level test binaries exist and 17 handoffs
+   were written, so ten binaries had no card at all — `wave2_gate`, `openapi_contract` and
+   the `tack-orch` contract/live binaries (deliberately exempt), but also
+   `docket_tick_contract_test` (1 156 lines), `runner_contract` (967), `cli_test` (317),
+   `perf_test`, `runner/cli`. The coverage-floor guard IX-M4 relied on never ran: that CI
+   job is gated to pull requests and pushes to `main`, and every wave here was integrated
+   by a local merge to `develop`.
+3. **A third of the test corpus was in no card's scope.** `src/<module>/tests.rs` unit
+   modules — 74 files, **23 070 lines, 747 tests** — belong to no IX-M4 binary. `engine/
+   tests.rs` alone is 3 032 lines with a 102-line test; `reconciler/tests.rs` 1 927.
+4. **`docs/adr/0064-fixed-waits.txt` was wrong twice.** The committed file listed 25 stale
+   entries. An earlier pass of this same audit regenerated it to **2** and wrote that here —
+   also wrong: `scripts/list-fixed-waits.py` only recognised `tests/` and inline `mod tests`
+   tails, so after IX-M1 moved unit modules to `<module>/tests.rs` their waits vanished from
+   the inventory. Script fixed the same day; the true count is **11 waits, 11.8 s**, nine of
+   them in unit modules (a 5 s `thread::sleep` in `secrets/tests.rs`, 2.5 s in
+   `reconciler/tests.rs`). `measure --totals` separately counts 38 `sleep(` calls, most of
+   them bounded polls — the two numbers measure different things and both are cited below.
+5. **`docs/dev-notes/` was never emptied.** 12 files, 762 lines remain. IX-M6's batches
+   were cut from `comment-worklist`, which lists only files *currently* over budget; a
+   module whose preamble IX-M2 had already parked is under budget, so nine of the twelve
+   notes never appeared in any batch. No card owns them now.
+6. **Smaller gaps.** `roadmap.md` (3 683 lines) was to keep only its forward-looking
+   sections — never carded, IX-M7's text omitted it. `crates/tack-desktop/src/supervisor.rs`
+   still carries a 482-line inline test module (budget 150): IX-M1 ran on the workspace and
+   `tack-desktop` is outside it. Plan §2.3's per-card budget (≤ 15 new tests, ≤ 600 new
+   test lines) is prose only — `check` does not implement it. A hard-mode `check` today
+   would fail **96 of 292 files** at the current budgets and **129** at the 40-line target.
+7. **What did land.** Comment share 23 % → **19.8 %**, 0 blocks and 0 preambles over
+   budget; near-identical test pairs 72 → 49; `engine.rs` 4 295 → 1 242 lines; `tests/common`
+   in five crates with one stray `project()` left; documentation in the read path (`.md`,
+   excluding `docs/closed-cycles/` and generated pages) **29 878 lines** against the ≈ 30 000
+   target; IX-M5 three of four exit criteria.
+
+**Fix:** the old IX-M8 (hard-lock at ratio ≤ 0.8) would have failed on 96 files the moment it
+ran. It is split into **IX-M8** — a real volume pass over *everything* the first pass missed:
+unit modules, the ten uncarded binaries, the 135/207/17 acceptance leftovers, the 11 waits,
+the 49 pairs — and **IX-M9**, the ratchet-lock, which now also has to implement the per-card
+budget and lock the ratio at the number IX-M8 measures. Two small orphaned items get their own
+sub-cards in the same wave: **IX-M6-dev-notes** and **IX-M7-roadmap**. Wave 29's sub-cards
+stay merged; their handoffs already say what they left.
 
 ## §IX.0 Cold-start context capsule
 
@@ -113,6 +146,26 @@ tokens): §2 the test layout and the nine rules, §3 the comment budgets, §4 th
 rules, §5 the cards, §6 the decisions still open. Read the section your card cites, not the
 plan whole. The harness adapters have their own audit,
 `docs/plans/harness-maintainability-audit.md`; IX-M5 is its card T0.
+
+### Re-measured 2026-09-12, after Waves 27–31 (`git log --oneline f95fbc2..HEAD | wc -l` = 159)
+
+| Fact | 2026-09-11 | 2026-09-12 | Target | Command |
+|---|---|---|---|---|
+| Production code / comment lines | 44 079 / 13 374 (23 %) | 44 455 / 10 993 (**19.8 %**) | ≤ 20 % | `measure --totals` |
+| Test lines, ratio | 74 014, 1.29 | **71 211, 1.284** | ≤ 0.8 (≈ 35 500 at today's code) | `measure --totals` |
+| Tests | 1 498 | 1 413 (+ 8 ignored) | ≈ 1 000 | `cargo nextest run --workspace` |
+| Unit-test lines in `src/**/tests.rs` (no card owned them) | — | 23 070 in 74 files, 747 tests | in IX-M8 | `measure --json`, filter `/src/` |
+| Test bodies over 60 lines / over 40 | — | **135** / 353 | 0 / 0 outside exclusions | parser in the Wave 32 audit, or `measure --json` `max` |
+| Test names over 60 characters | — | **207** | 0 | same |
+| Test files over 1 000 lines | — | **17** | 0 outside exclusions | `measure --json` |
+| Files a hard-mode `check` would fail | — | **96** (129 at the 40-line cap) | the exclusion list's length | `measure --json` against `BUDGETS` |
+| Fixed waits ≥ 200 ms (`sleep(` calls of any length) | 25 recorded, stale (74) | **11**, 11.8 s (38) | 0 | `scripts/list-fixed-waits.py` (`measure --totals`) |
+| Near-identical test names across files | 72 | **49** | 0 | `duplicate-tests` |
+| Comment blocks / preambles over budget | 149 / 25 | **0 / 0** | 0 | `comment-worklist`; `extract-module-docs` |
+| `docs/dev-notes/` | 25 created by IX-M2 | **12 files, 762 lines** | empty | `find docs/dev-notes -type f \| xargs wc -l` |
+| Docs `.md` in the read path (no `closed-cycles/`, no generated) | ≈ 91 000 | **29 878** | ≈ 30 000 | `git ls-files 'docs/**/*.md' \| grep -v closed-cycles \| grep -v api-reference \| xargs cat \| wc -l` |
+| `docs/closed-cycles/` | — | 66 302 lines, 214 files | archived, not read | same, inverted |
+| Inline test module over 150 lines | 40 | **1** (`tack-desktop/src/supervisor.rs`, 482) | 0 | `extract-tests` (dry run) |
 
 ### Evidence base, measured 2026-09-11 (`scripts/maintainability.py`, dry runs only)
 
@@ -176,7 +229,9 @@ to this Part:
 | `crates/*/tests/**` | IX-M3 per crate, then IX-M4 per binary, then IX-M8 (same per-binary boundary, largest-first again) | a binary belongs to exactly one open sub-card at a time |
 | `crates/tack-test-support/` | IX-M3-db creates; the other M3 sub-cards add | — |
 | `docs/dev-notes/**` | IX-M2 creates, IX-M6 empties | — |
-| `docs/adr/0064-fixed-waits.txt` | IX-M4 fixed the waits but never regenerated the file (it stayed at 25 stale entries; 2 real ones found and the file corrected 2026-09-12); IX-M8 empties it | regenerate with `scripts/list-fixed-waits.py`, never hand-edit |
+| `docs/adr/0064-fixed-waits.txt`, `scripts/list-fixed-waits.py` | the generator was blind to `<module>/tests.rs` until 2026-09-12 (fixed); 11 waits remain, IX-M8-<crate> empties its crate's lines | regenerate with the script, never hand-edit |
+| `docs/dev-notes/**` (the 12 notes left) | IX-M6-dev-notes | — |
+| `docs/book/src/roadmap.md` | IX-M7-roadmap | — |
 | `docs/TESTING.md`, `CONTRIBUTING.md`, `CLAUDE.md`, `.claude/**`, the skills | rules written 2026-09-11; IX-M0 and IX-M9 adjust the numbers only | — |
 | `docs/book/**`, `docs/API-REFERENCE.md`, `.gitattributes`, `scripts/regen-generated.sh` | IX-M7 | — |
 | `TODO.md` Parts I–III, closed Parts' handoffs, `docs/closed-cycles/**` (new) | IX-M7 | — |
@@ -328,61 +383,104 @@ Parts' handoffs, and `docs/closed-cycles/**` (new).
 
 ### IX-M8 — close the test-volume gap
 
-Added 2026-09-12 (see the Wave 32 audit note above). IX-M4 pruned every binary to the
-nine rules but, measured, only removed ≈ 2 600 of the ≈ 25 000 test lines the plan
-expected. This card is the second, honest pass at that same volume, not a reopening of
-M4's sub-cards — it runs after them and owns the same files under a fresh sizing pass.
+Added 2026-09-12 by the Wave 32 audit note. The first pass (IX-M4) covered 19 of 29
+integration binaries, none of the 74 unit-test modules, and left its own acceptance open
+(135 bodies over 60 lines, 207 names over 60 characters, 17 files over 1 000 lines, 11 fixed
+waits). This is the second pass, over everything, held to the acceptance below with no
+ratchet excuse — a file that is over budget when the sub-card ends is a finding, not "not
+worsened".
 
-**Owns:** `crates/*/tests/**` and any inline `<module>/tests.rs`, workspace-wide, entered
-per crate (sub-cards `IX-M8-<crate>`, largest ratio first: `tack-orch` (ratio 3.16),
-`tack-runner` (1.75), `tack-api` (1.66), `tack-db` (1.29); `tack-cli`/`tack-core`/
-`tack-desktop` are already ≤ 1.0 and out of scope unless a sub-card finds an easy win in
-passing). One workspace-wide sub-card, `IX-M8-dedup`, owns the 49 `duplicate-tests` pairs
-(39 `tack-api`, 5 `tack-orch`, 3 `tack-db`, 1 `tack-cli`, 1 `tack-runner`) and runs first
-since merging a pair can shrink whatever a crate sub-card would otherwise touch.
+**Owns:** per crate, **both** `crates/<crate>/tests/**` and `crates/<crate>/src/**/tests.rs`
+(plus any inline `mod tests`). Sub-cards `IX-M8-<crate>`, dispatched largest ratio first:
+`tack-orch` (test:code 3.16 — `reconciler/tests.rs` 1 927, `docket_tick_contract_test.rs`
+1 156, `docket_adapter_test.rs` 1 099, `runner_contract` 967), `tack-runner` (1.75 —
+`engine/tests.rs` 3 032, `harness/claude_code/tests.rs` 1 299, `transport/tests.rs` 1 030,
+`harness/tests.rs` 1 000), `tack-api` (1.66 — `runner_protocol/lifecycle.rs` 1 821,
+`handlers/crud.rs` 1 294, `security/chaos_recovery.rs` 1 243, `remote_backup/tests.rs` 837),
+`tack-db` (1.29 — `repository/execution_repo.rs` 4 308, `integration.rs` 1 285,
+`migrations/orch_migrations.rs` 1 182), `tack-cli` (0.97, small; also takes
+`crates/tack-desktop/src/supervisor.rs`'s 482-line inline module out to `supervisor/tests.rs`
+with `extract-tests --apply`, since `tack-desktop` is outside the workspace IX-M1 ran on).
+Re-measure before trusting any number here. One workspace-wide sub-card, **`IX-M8-dedup`**,
+runs first and owns the 49 `duplicate-tests` pairs (39 `tack-api`, 5 `tack-orch`, 3
+`tack-db`, 1 `tack-cli`, 1 `tack-runner`): merging a pair shrinks what a crate card then
+reads.
 
-**Named exclusions, carried from plan §7 and §IX.5 — do not cut these for volume:**
-`wave2_gate.rs`; anything under `docs/contracts/runner-v1/` or a crate's `tests/contract/`
-(byte-pinned wire fixtures); `tests/live/` (opt-in, already minimal); any test a CI coverage
-floor (core 85, db 70, api 70, orch 70, runner 85) would drop under if removed — check the
-coverage job before deleting, not after. A file mostly made of the above may legitimately
-stay large; say so in the handoff rather than cutting into a fixture to hit a line count.
+**Named exclusions, carried from plan §7 — do not cut these for volume:** `wave2_gate.rs`;
+`docs/contracts/runner-v1/` and every `tests/contract/` or `*_contract*` binary that
+byte-pins a wire shape (`openapi_contract`, `runner_contract`, `docket_wire_contract_test`,
+`model_policy_contract`; `docket_tick_contract_test` pins timing *behaviour*, not a shape,
+and is **not** exempt); `tests/live/` and `docket_live_test`; any test whose removal would
+drop a crate under its CI floor (core 85, db 70, api 70, orch 70, runner 85) — and because
+that CI job runs only on pull requests and `main`, the sub-card **runs `cargo llvm-cov -p
+<crate> --fail-under-lines <floor>` itself** before and after and records both numbers. A
+file mostly made of exempt fixtures may stay large; the handoff says which exclusion
+applies, per file.
 
-**Input per sub-card:** its crate's `measure` rows (largest files first — today `tack-orch`'s
-`reconciler/tests.rs` at 1 927 lines and `docket_tick_contract_test.rs`/`docket_adapter_test.rs`
-at 1 156/1 099 are worth a first look, `tack-api`'s `runner_protocol/lifecycle.rs` (1 821),
-`handlers/crud.rs` (1 294) and `security/chaos_recovery.rs` (1 243) after it — re-measure
-before trusting these, they will have moved), its `duplicate-tests --json` pairs, and plan
-§2.2's rules (rows for variants, ≤ 40-line bodies now — not the 60-line interim cap — an
-invariant pinned in at most two layers).
+**Input per sub-card:** its crate's `measure` rows and `measure --json` per-file budgets,
+its `duplicate-tests --json` pairs, its lines of `0064-fixed-waits.txt`, and plan §2.2's
+rules: rows for variants, ≤ 40-line bodies (the 60-line cap is the interim gate, 40 is the
+acceptance here), ≤ 60-character names, an invariant pinned in at most two layers (`stale`
+is still pinned in eight crate/layer combinations, `replay` in seven — Appendix A's loop
+lists them).
 
-**Acceptance:**
-- `duplicate-tests` returns 0 pairs workspace-wide.
-- `docs/adr/0064-fixed-waits.txt` is empty (`scripts/list-fixed-waits.py`); today it holds 2
-  entries, both in `tack-orch`.
-- Every test body outside the named exclusions is ≤ 40 lines.
-- No claim in the named-exclusion list was cut; the handoff names, per file that stayed
-  large, which exclusion applies.
-- CI coverage floors hold; full `nextest --workspace` green; `check --changed` green.
-- `measure --totals` recorded before and after in the handoff, **as an honest number, not a
-  promise of 0.8** — if the achieved ratio is still above 0.8 once the exclusions are
-  respected, say so and say why; IX-M9 locks the gate at whatever this card actually
-  measures.
+**Acceptance, per sub-card, measured by `measure --json` on its crate, no ratchet:**
+- No test body over 40 lines outside the named exclusions; none over 60 anywhere.
+- No test name over 60 characters.
+- No test file over 1 000 lines outside the named exclusions.
+- Its lines of `0064-fixed-waits.txt` are gone (regenerate the file; do not hand-edit).
+- `duplicate-tests` for the crate returns 0 pairs (`IX-M8-dedup` gets the workspace to 0
+  first; a crate card keeps it there).
+- `cargo llvm-cov -p <crate> --fail-under-lines <floor>` green after, number recorded.
+- Scoped `nextest -E 'package(<crate>)'` green; `check --changed` green.
+- `measure --totals` before and after in the handoff, **as a number, not a promise**: the
+  achieved workspace ratio after the last sub-card is what IX-M9 locks. If it is still above
+  0.8 once the exclusions are honoured, the handoff says which exempt files carry the gap.
+
+### IX-M6-dev-notes — empty `docs/dev-notes/`
+
+Added 2026-09-12. IX-M6's batches came from `comment-worklist`, which only lists files
+currently over budget; the twelve notes IX-M2 parked belong to modules that are *under*
+budget precisely because their preamble was moved out, so nine of them were never in any
+batch. **Owns:** the 12 files under `docs/dev-notes/` (762 lines) and the `//!` preamble of
+each module they came from. **Acceptance (plan §3):** each note has become an ADR section,
+a fixture README paragraph, a ≤ 30-line preamble that carries what was load-bearing, or
+nothing — and the handoff says which, per note; `docs/dev-notes/` is deleted;
+`cargo check --workspace`, `check-comments.sh`, `check --changed` green. Same gate as an
+IX-M6 batch; no test run.
+
+### IX-M7-roadmap — the roadmap keeps only what is ahead
+
+Added 2026-09-12. Plan §4 said `roadmap.md` "keeps only its forward-looking sections; the
+rest archives with the Parts it records"; IX-M7's card text never carried it. **Owns:**
+`docs/book/src/roadmap.md` (3 683 lines) and `docs/closed-cycles/boards/`. **Acceptance:**
+the sections recording Phases 0–57 (Parts I–III) move verbatim to
+`docs/closed-cycles/boards/roadmap-phases-0-57.md` with the same one-line archived notice
+the board files carry; what stays is the status board, the Part IV–IX sections and every
+section that names a phase not yet shipped; every link into the moved text is repointed
+(`grep -rn "roadmap.md#" docs/ README.md` lists them); `mdbook build docs/book` green with
+no dead anchor; `.claude/context-budget.md`'s row re-measured.
 
 ### IX-M9 — ratchet to the targets
 
-Was IX-M8 before the 2026-09-12 split; unchanged in kind, changed in what it locks.
+Was IX-M8 before the 2026-09-12 split; unchanged in kind, changed in what it locks and in
+what the tool has to grow first.
 
-**Owns:** `BUDGETS` in `scripts/maintainability.py`, the baseline, the numbers in
-`docs/TESTING.md` and `CLAUDE.md`.
-**Acceptance:** budgets set to the plan's per-file targets (40-line bodies, 30 % comment
-share — already met, ≈ 20 % measured 2026-09-12) as **hard** limits outside IX-M8's named
-exclusions; the workspace ratio ceiling is set to **IX-M8's measured, achieved ratio**
-(recorded in its handoff), not blindly to the plan's original 0.8 — if a gap to 0.8 remains
-after IX-M8, `docs/TESTING.md` names it and the reason (contract/fixture test volume in
-`tack-orch`/`tack-api`); `check` switched from ratchet-only to hard failure on any file over
-budget; green on the tree; `measure --totals` recorded in the handoff and in the plan's §1
-table.
+**Owns:** `BUDGETS` and `check` in `scripts/maintainability.py`, the baseline, the numbers
+in `docs/TESTING.md` and `CLAUDE.md`.
+**Acceptance:**
+- `check` gains the per-card budget plan §2.3 promised and never had: with `--changed`, more
+  than 15 new tests or 600 new test lines against the baseline is a failure (today it is
+  prose only).
+- `BUDGETS` set to the targets — 40-line bodies, 30 % comment share (met: 19.8 % on
+  2026-09-12), test files ≤ 1 000 lines — and `check` switched from "over budget *and*
+  worse than baseline" to "over budget", with an explicit exclusion list in the script for
+  the files IX-M8's handoffs named (each entry carries the file and the reason). Today that
+  switch would fail 96 files at the old budgets and 129 at these; after IX-M8 the number
+  must be the exclusion list's length, and the handoff shows it.
+- The workspace ratio ceiling is **IX-M8's measured, achieved ratio**, not the plan's
+  original 0.8; if a gap to 0.8 remains, `docs/TESTING.md` names it and the reason.
+- Green on the tree; `measure --totals` recorded in the handoff and in the plan's §1 table.
 
 ## §IX.5 Definition of done, and deliberate exclusions
 
