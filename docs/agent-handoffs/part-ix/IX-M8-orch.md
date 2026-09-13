@@ -353,4 +353,150 @@ of the inherited body/name/fixed-wait fixes.
 
 *(Appended by later readers, dated. The original text above is never rewritten.)*
 
-None yet.
+### 2026-09-13 — two defects found in independent verification, both fixed
+
+The original handoff above was written before independent verification. Two defects were
+found, on the same branch, and are fixed as of commit `b6d227d`:
+
+**Defect 1 — the full ratchet was red.** `python3 scripts/maintainability.py check` (no
+`--changed`) failed:
+`crates/tack-orch/tests/docket_tick_contract_test/support.rs: test_sleeps=2 (budget 0,
+baseline new file)`. `check --changed` only sees uncommitted diffs, so once the file was
+committed the two `tokio::time::sleep` calls in `run_one_tick`'s request-count wait and
+`settle_orch_rows`'s row-settle wait (both already present when that file was written,
+missed because only `list-fixed-waits.py`'s ≥ 200 ms inventory was checked, not the bare
+`check`) went unseen by every gate command actually run before handoff. Fixed by the same
+rule-8 treatment already used for `tests/ingestion` and this crate's other `wait_until`:
+both became `tokio::time::interval` ticks. No behavior change (same 20 ms cadence, same
+caps). Commit `79e9551`. **From now on this session runs the bare `check` (no
+`--changed`) as its gate, in addition to `--changed` after each individual edit** — this is
+the corrected practice going forward, not only for this one file.
+
+**Defect 2 — `reconciler/tests.rs`'s split violated the card's own named exclusion.** The
+prior handoff's file-size fix for `reconciler/tests.rs` was "1965 → 18 lines by moving all 52
+tests, bodies unchanged, into five sibling files" — this is exactly what the card text
+forbids ("never by splitting one file into two of the same content"), and it inflated the
+crate's test-line total (`measure --totals` on base vs. that HEAD: 71 211 → 71 322) on a card
+whose purpose is to shrink it. The `docket_tick_contract_test.rs` split is unaffected by this
+finding and stands as before: it moved fixture/golden-harness code with zero test bodies
+into `support.rs`, the same shape as the pre-existing `tests/ingestion.rs` +
+`tests/ingestion/support.rs` split, not "the same content" split in two.
+
+Fix: reverted commit `9a55f6f` in full (`git revert 9a55f6f`, commit `a8cda96` — a plain
+revert, no history rewrite), restoring `reconciler/tests.rs` to one file, then brought it
+down the way the card specifies:
+
+- **Rule 1 (variants → rows).** The three `<endpoint>_poll_failure_leaves_plane_health_
+  untouched[...]` tests (approvals/metrics/traces — identical policy, different failing
+  mock and which upserted table must stay empty) became one loop test,
+  `a_poll_failure_leaves_plane_health_untouched_and_persists_nothing`. The major-vs-minor
+  apiVersion mismatch pair became one 2-case loop,
+  `evaluate_version_mismatch_is_by_major_component_only`. 52 → 49 tests. (A first attempt
+  at the poll-failure merge used a verbose `struct PollFailureCase` with function-pointer
+  fields and *grew* the file by more than the two removed tests' combined size — replaced
+  with a plain `match` over three string literals once the struct version was measured and
+  found counterproductive; recorded here so the mistake isn't quietly repeated.)
+- **Rule 8 (fixed waits), redone from scratch.** Reverting `9a55f6f` also reverted its
+  fixed-wait fixes, since they were bundled into the same commit as the (rejected) split.
+  All 7 `sleep()` calls in the restored file are gone again: `wait_until`'s own delay is a
+  `tokio::time::interval` tick; `run_one_tick` and two standalone tests that slept a guessed
+  duration for a tick to land now share a new `wait_for_first_tick(&FakeStore)` helper
+  polling `health_records` non-empty; the two retention-sweep waits poll for both rollup
+  call lists / the retry count instead of guessing 200 ms / 2 500 ms; the disabled-sweep
+  test's 50 ms wait is removed outright since `handle.is_none()` already proves
+  `spawn_retention_sweep`'s `!enabled` branch returned before ever calling `tokio::spawn`.
+  Two assertions that became redundant once their preceding `wait_until` condition already
+  proved them were dropped, not kept as dead weight (same reasoning IX-M4-tack-orch-
+  ingestion used for its own `retention.rs`).
+- **Rule 3 (body).** `FailingStore` and `AlwaysFailingRetentionStore`, each previously
+  declared *inside* its one test, moved to module scope — this is what took their host
+  tests from 68 and 43 lines to under the 40-line cap without changing what either proves.
+- **Rule 2 (name).** 19 names over 60 characters (up to 84) shortened. One rename
+  (`enabled_sweep_calls_both_rollups_with_correct_cutoff`) collided under
+  `duplicate-tests`' similarity check with an unrelated, pre-existing name in
+  `execution_retention/tests.rs` (`enabled_sweep_calls_both_purges_with_the_configured_
+  cutoff`) and was renamed again, to `reconciler_retention_sweep_rolls_up_both_tables_by_
+  cutoff`, to stay distinct; `duplicate-tests crates/tack-orch` is back to 0 pairs.
+- **Rule 5 (third-layer pinning) — investigated, no removal made.** Read, in full, every
+  candidate this crate's fake-store tests might redundantly re-pin: `tack-db/tests/
+  repository/orch_repo.rs`'s `orch_runs_upsert_idempotent_keeps_unattributed_runs`,
+  `orch_run_attribution_is_never_unlearned`, and `uncorrelated_approvals_still_appear_in_
+  pending_inbox`; `tack-api/tests/orchestration/reconciler/wiring.rs`'s
+  `spawn_reconcilers_polls_docket_persists_health_via_store` and
+  `disabled_orch_enable_spawns_no_tasks_with_registered_plane`. None of them pins the same
+  claim: the `tack-db` tests construct `NewOrchRun`/`NewOrchApproval` directly with
+  `item_id` already set by the test author and prove the *database's* behavior (upsert
+  idempotency, that a known attribution is never cleared back to `NULL` by a later poll that
+  omits it, pending-inbox ordering) — a storage/idempotency claim. The `tack-api` test
+  proves the *real* `ControlPlaneStore` implementation and `spawn_reconcilers` wiring work
+  end-to-end against a real repo and a real (wiremocked) adapter for *health* specifically,
+  not runs/approvals/traces correlation. Only this crate's tests prove `reconcile_once`'s
+  own correlation *computation* — given a raw remote run/approval/event and a scripted
+  `find_item_for_remote_task` answer, which `item_id` gets attached before the upsert is
+  even called — which is not exercised at either other layer. No test removed under this
+  rule. Recorded here so a later reader does not have to re-run this search from nothing.
+- **Shared fakes to `tack-test-support`: not moved, and why.** `FakeControlPlane`/
+  `FakeStore` implement `tack-orch`'s own `ControlPlane`/`ControlPlaneStore` traits.
+  `docs/plans/human-maintainability.md` §2.1 states, by deliberate design, that
+  `tack-test-support` depends on `tack-core` and `tack-db` only, specifically because "a
+  crate whose dev-dependency depends on it is built twice by Cargo" — moving these fakes
+  there would require `tack-test-support` to depend on `tack-orch` (to name its traits),
+  reversing that documented decision for a card that owns no such change. They stay in
+  `reconciler/tests.rs`, matching the plan's own fallback ("otherwise they stay").
+
+**Result:** `crates/tack-orch/src/reconciler/tests.rs` is 1965 → 1921 lines, 52 → 49 tests.
+Every acceptance line this file owns except file size is now met: `measure --json`
+reports `test_fn_max_lines: 40`, `test_name_max_chars: 58`, `test_sleeps: 0`,
+`duplicate-tests crates/tack-orch` is 0 pairs. **File size remains unmet, reported as
+such, not as "not worsened":** 1921 lines against the 1000-line budget, 921 over. Of the
+1921 lines, roughly 410 are `FakeControlPlane`/`FakeStore` (the shared fixture that cannot
+move per the note above) and the remaining ~1500 are 49 tests, most proving genuinely
+distinct mechanisms rather than variants of one claim eligible for rule 1 — 11 separate
+properties of the supervised-spawn state machine (registration, global stop, already-
+stopped, dynamic register, dynamic delete, repeated cycles of each, health persistence,
+store-error handling), 4 separate properties of `derive_event_id` (determinism, field
+sensitivity, boundary insensitivity, a pinned literal), and per-table correlation proofs
+for runs/approvals/trace-events that were deliberately left unmerged (each proves a
+structurally different persisted shape — `run.source`/`state` vs. `approval.agent`/`state`
+— and an earlier merge attempt elsewhere in this session, the poll-failure case above,
+already showed that forcing structurally different cases into one table can grow a file
+instead of shrinking it). No further consolidation was attempted beyond what is recorded
+above; a later card that wants to close more of this gap should start from this file's
+current 49 tests, not the original 52.
+
+**Corrected numbers** (the workspace-wide `measure --totals` before/after quoted in the
+original *Measured numbers* section above no longer reflects the current tree — both
+defect fixes changed it):
+
+- `measure --totals`, base `c90bbcc`: `prod=55599 (comments 11144) test=71211 ratio=1.281
+  tests=1408 sleeps_in_tests=38 env_gated=0`
+- `measure --totals`, current `HEAD` (`b6d227d`): `prod=55599 (comments 11144) test=71210
+  ratio=1.281 tests=1407 sleeps_in_tests=27 env_gated=0`. Test lines are now **71210, one
+  line below base** — the defect this amendment fixes (71211 → 71322 under the reverted
+  split) is gone; the crate's own contribution to the workspace total is flat-to-slightly-
+  down, not grown.
+- `measure --json crates/tack-orch` totals, base: `files=54 prod_lines=5458
+  test_lines=11837 tests=277 ratio=2.169 test_sleeps=18`
+- Same, current `HEAD`: `files=55 prod_lines=5458 test_lines=11836 tests=276
+  ratio=2.169 test_sleeps=7`. One new file (`docket_tick_contract_test/support.rs`) net;
+  `reconciler/tests.rs`'s five would-be siblings are gone. Test lines and ratio essentially
+  unchanged from base, not grown.
+- `cargo llvm-cov -p tack-orch --summary-only -- --test-threads=1`: unchanged from the
+  original handoff, **91.10 %** (2179 lines, 194 missed — still identical missed-line count
+  to the 91.17 % base's 194). `reconciler.rs`'s own coverage row is byte-identical before
+  and after all of this amendment's reconciler work (858 regions/85 missed, 610
+  lines/70 missed) — the table-driving and fixed-wait rewrites exercise exactly the same
+  production code paths as the 52 original tests did, so this file's rework did not change
+  the coverage gap recorded in the original handoff.
+- `python3 scripts/maintainability.py check` (bare, no `--changed`), on the committed
+  tree: `✓ maintainability budgets hold (293 files checked)`.
+- `python3 scripts/maintainability.py check --changed`: not meaningful now (nothing
+  uncommitted).
+- `cargo nextest run --workspace -E 'package(tack-orch)'`: `276 tests run: 276 passed, 1
+  skipped`.
+- `cargo clippy --workspace --all-targets -- -D warnings`, `./scripts/check-comments.sh`,
+  `./scripts/check-test-hygiene.sh`: all green, re-run after both fixes.
+- `git diff --stat c90bbcc...HEAD`: 19 files, +2214/−1860 (18 code files matching the
+  card's ownership list plus this handoff) — no unowned file touched.
+- Final commits on top of the original handoff: `79e9551` (defect 1),
+  `a8cda96` (revert of `9a55f6f`), `b6d227d` (defect 2's real fix).
