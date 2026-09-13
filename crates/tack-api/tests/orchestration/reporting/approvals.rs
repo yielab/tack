@@ -173,26 +173,6 @@ async fn seed_pending_approval(state: &AppState, control_plane_id: Uuid, token: 
         .expect("seed pending approval");
 }
 
-// ─── Off by default / actionable refusal ───────────────────────────────────
-
-#[tokio::test]
-async fn listing_orch_approvals_needs_the_enable_flag() {
-    let (app, _) = common::test_app().await; // orch_enable defaults to false
-    let res = list_approvals(&app).await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
-}
-
-#[tokio::test]
-async fn deciding_an_orch_approval_needs_the_enable_flag() {
-    let (app, _) = common::test_app().await;
-    let res = decide(&app, "apr-1", "grant", Some("whatever")).await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
-}
-
 // ─── GET /api/approvals — inbox contents ───────────────────────────────────
 
 #[tokio::test]

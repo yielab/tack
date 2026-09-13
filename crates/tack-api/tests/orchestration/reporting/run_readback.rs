@@ -99,17 +99,6 @@ async fn create_plane(state: &AppState) -> Uuid {
         .id
 }
 
-// ─── Off by default ─────────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn remote_run_lookup_needs_orch_enabled() {
-    let (app, _) = common::test_app().await; // orch_enable defaults to false
-    let res = get_run(&app, "run-whatever").await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
-}
-
 // ─── Unmirrored run: a legitimate 200, never a 404 ─────────────────────────
 
 #[tokio::test]

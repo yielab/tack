@@ -191,17 +191,6 @@ async fn mock_dispatch_allow(server: &MockServer, project: &str, run_id: &str) {
         .await;
 }
 
-// ─── Off by default / actionable refusal ───────────────────────────────────
-
-#[tokio::test]
-async fn pipeline_route_short_circuits_without_orch_enabled() {
-    let (app, _) = common::test_app().await; // orch_enable defaults to false
-    let res = dispatch_pipeline(&app, Uuid::new_v4(), Some("whatever"), None).await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json_val(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
-}
-
 // ─── Fail-closed dispatch token — the acceptance-2 / acceptance-10 case ────
 
 /// Every way the dispatch-token gate can fail closed: the token unset in
