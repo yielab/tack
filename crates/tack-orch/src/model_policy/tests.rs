@@ -13,7 +13,7 @@ fn sentinel(tag: &str) -> ModelSelector {
 /// with the precedence order pinned. Each tier gets a distinct sentinel
 /// value so a wrong winner is caught, not just "some value came back."
 #[test]
-fn every_presence_combination_resolves_to_the_pinned_precedence_order() {
+fn every_presence_combination_resolves_to_the_pinned_precedence() {
     for mask in 0u8..16 {
         let request_present = mask & 0b0001 != 0;
         let profile_present = mask & 0b0010 != 0;
@@ -59,7 +59,7 @@ fn all_tiers_absent_resolves_to_auto_select_with_no_source() {
 }
 
 #[test]
-fn a_tier_explicitly_configured_as_auto_select_stops_the_walk_there() {
+fn a_tier_configured_as_auto_select_stops_the_walk_there() {
     // Distinct from "absent": the agent profile tier here has a real
     // opinion (auto-select), so a fleet default underneath it must
     // never be consulted, even though AutoSelect and "nothing

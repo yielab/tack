@@ -71,7 +71,7 @@ fn request() -> SchedulingRequest {
 }
 
 #[test]
-fn empty_candidate_list_yields_no_eligible_runner_with_no_reasons() {
+fn empty_candidate_list_yields_no_eligible_runner_no_reasons() {
     let outcome = select_runner(&request(), &[], now(), &SchedulingPolicy::default());
     assert_eq!(
         outcome,
@@ -247,7 +247,7 @@ fn exact_runner_selector_names_unknown_runner_distinctly() {
 }
 
 #[test]
-fn exact_runner_present_but_ineligible_is_no_eligible_runner_not_unknown() {
+fn exact_runner_ineligible_is_no_eligible_runner_not_unknown() {
     let mut req = request();
     req.selector = RunnerSelector::ExactRunner {
         runner_id: RunnerId::new("runner-target"),
@@ -389,7 +389,7 @@ fn undeclared_model_combination_is_named_not_a_bare_bool() {
 }
 
 #[test]
-fn auto_select_is_rejected_with_a_named_reason_not_an_empty_list() {
+fn auto_select_is_rejected_with_a_named_reason_not_empty() {
     let mut req = request();
     req.requested_model = ModelSelector::AutoSelect;
     let outcome = select_runner(

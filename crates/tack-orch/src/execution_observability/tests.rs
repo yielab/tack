@@ -163,9 +163,10 @@ async fn health_watch_shutdown_joins_task_with_no_snapshot_after() {
     let calls_before_stop = store.calls.lock().unwrap().len();
 
     let _ = tx.send(true);
+    // Awaiting the handle already proves the task has fully stopped — no
+    // wait afterward can change whether it queries again, so there is
+    // nothing to poll or sleep for here.
     handle.await.expect("task joins cleanly after stop signal");
-
-    tokio::time::sleep(StdDuration::from_millis(1_300)).await;
     assert_eq!(
         calls_before_stop,
         store.calls.lock().unwrap().len(),
