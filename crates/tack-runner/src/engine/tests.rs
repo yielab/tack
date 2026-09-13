@@ -669,6 +669,52 @@ fn adapter(expected_journal: PathBuf) -> FakeAdapter {
     }
 }
 
+fn workspace_manager(root: &Path) -> WorkspaceManager<FakeWorktree> {
+    WorkspaceManager::new(
+        root.join("workspaces"),
+        FakeWorktree {
+            expected_journal: OwnerOnlyJournal::new(root).journal_path(&AttemptId::new("attempt")),
+            provision_after_journal: Arc::new(AtomicBool::new(false)),
+        },
+    )
+}
+
+/// Same as [`workspace_manager`], but hands back the flag `FakeWorktree` flips
+/// once it provisions after the journal — for tests asserting on that timing.
+fn tracked_workspace_manager(root: &Path) -> (WorkspaceManager<FakeWorktree>, Arc<AtomicBool>) {
+    let provisioned = Arc::new(AtomicBool::new(false));
+    let manager = WorkspaceManager::new(
+        root.join("workspaces"),
+        FakeWorktree {
+            expected_journal: OwnerOnlyJournal::new(root).journal_path(&AttemptId::new("attempt")),
+            provision_after_journal: Arc::clone(&provisioned),
+        },
+    );
+    (manager, provisioned)
+}
+
+fn prepared_record(lease: &AttemptLease, root: &Path) -> AttemptJournal {
+    AttemptJournal::prepared(
+        lease,
+        super::super::journal::WorkspaceJournal {
+            workspace_id: super::super::WorkspaceId::new("ws"),
+            path: root.join("workspaces/attempt"),
+            base_revision: "revision".into(),
+        },
+    )
+}
+
+fn claimed_record(lease: &AttemptLease, root: &Path) -> AttemptJournal {
+    AttemptJournal::prepared(
+        lease,
+        super::super::WorkspaceJournal {
+            workspace_id: super::super::WorkspaceId::new("ws_617474656d7074"),
+            path: root.join("workspaces/617474656d7074"),
+            base_revision: "revision".into(),
+        },
+    )
+}
+
 #[test]
 fn fixture_shaped_claim_preserves_snapshots_and_rejects_divergent_workspace_facts() {
     let work = work();
@@ -788,25 +834,11 @@ fn heartbeat_retries_keep_a_canonical_payload_for_the_same_clock_instant() {
         protocol(work(), false, false),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal,
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: OwnerOnlyJournal::new(root)
-                    .journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
         FixedClock(fixed_at),
     );
     let claimed = work();
-    let record = AttemptJournal::prepared(
-        &claimed.lease,
-        super::super::WorkspaceJournal {
-            workspace_id: super::super::WorkspaceId::new("ws_617474656d7074"),
-            path: root.join("workspaces/617474656d7074"),
-            base_revision: "revision".into(),
-        },
-    );
+    let record = claimed_record(&claimed.lease, root);
     let first = engine.heartbeat_request(&session(), &record);
     let retry = engine.heartbeat_request(&session(), &record);
     assert_eq!(
@@ -829,28 +861,14 @@ async fn periodic_heartbeats_advance_ids_without_replay_conflicts() {
         protocol.clone(),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal,
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: OwnerOnlyJournal::new(root)
-                    .journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
         AdvancingClock {
             base,
             calls: Arc::new(AtomicUsize::new(0)),
         },
     );
     let claimed = work();
-    let record = AttemptJournal::prepared(
-        &claimed.lease,
-        super::super::WorkspaceJournal {
-            workspace_id: super::super::WorkspaceId::new("ws_617474656d7074"),
-            path: root.join("workspaces/617474656d7074"),
-            base_revision: "revision".into(),
-        },
-    );
+    let record = claimed_record(&claimed.lease, root);
     let first = engine.heartbeat_request(&session(), &record);
     let second = engine.heartbeat_request(&session(), &record);
 
@@ -879,14 +897,7 @@ async fn heartbeat_sent_at_comes_from_the_injected_clock() {
         protocol.clone(),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal,
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: OwnerOnlyJournal::new(root)
-                    .journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
         FixedClock(fixed_at),
     );
     assert!(matches!(
@@ -935,13 +946,7 @@ async fn wait_periodically_renews_the_lease_while_the_harness_still_runs() {
         protocol.clone(),
         long_running_adapter,
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
         AdvancingClock {
             base,
             calls: Arc::new(AtomicUsize::new(0)),
@@ -986,14 +991,7 @@ async fn mismatched_heartbeat_echo_quarantines_before_applying_lease_facts() {
         protocol.clone(),
         fake_adapter,
         journal,
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: OwnerOnlyJournal::new(root)
-                    .journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
     assert!(matches!(
         engine
@@ -1021,14 +1019,7 @@ async fn tampered_terminal_outbox_bindings_are_rejected_before_replay_transport(
         let root = root_dir.path();
         let journal = OwnerOnlyJournal::new(root);
         let lease = work().lease;
-        let mut record = AttemptJournal::prepared(
-            &lease,
-            super::super::WorkspaceJournal {
-                workspace_id: super::super::WorkspaceId::new("ws_617474656d7074"),
-                path: root.join("workspaces/617474656d7074"),
-                base_revision: "revision".into(),
-            },
-        );
+        let mut record = claimed_record(&lease, root);
         record.state = JournalState::TerminalReportPending;
         if tamper == "journal_runner" {
             record.runner_id = RunnerId::new("other-runner");
@@ -1087,14 +1078,7 @@ async fn tampered_terminal_outbox_bindings_are_rejected_before_replay_transport(
             protocol.clone(),
             adapter(journal.journal_path(&AttemptId::new("attempt"))),
             journal,
-            WorkspaceManager::new(
-                root.join("workspaces"),
-                FakeWorktree {
-                    expected_journal: OwnerOnlyJournal::new(root)
-                        .journal_path(&AttemptId::new("attempt")),
-                    provision_after_journal: Arc::new(AtomicBool::new(false)),
-                },
-            ),
+            workspace_manager(root),
         );
         assert!(matches!(
             engine.recover(&session()).await,
@@ -1124,14 +1108,7 @@ async fn refresh_carries_capabilities_and_returns_expiring_session() {
         protocol.clone(),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal,
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: OwnerOnlyJournal::new(root)
-                    .journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
     let response = engine
         .refresh(
@@ -1170,20 +1147,8 @@ async fn cancellation_is_coordinated_after_journal_precedes_spawn() {
     let adapter = adapter(expected);
     let started = Arc::clone(&adapter.start_after_journal);
     let cancellations = Arc::clone(&adapter.cancel_calls);
-    let provisioned = Arc::new(AtomicBool::new(false));
-    let engine = RunnerEngine::new(
-        protocol.clone(),
-        adapter,
-        journal,
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: OwnerOnlyJournal::new(root)
-                    .journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::clone(&provisioned),
-            },
-        ),
-    );
+    let (manager, provisioned) = tracked_workspace_manager(root);
+    let engine = RunnerEngine::new(protocol.clone(), adapter, journal, manager);
 
     let result = engine
         .run_once(&session(), claim_request())
@@ -1268,13 +1233,7 @@ async fn replayed_cancellation_ack_settles_stopped_evidence() {
         protocol.clone(),
         first_adapter,
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
 
     assert!(matches!(
@@ -1317,13 +1276,7 @@ async fn mismatched_cancellation_ack_stays_in_terminal_outbox() {
             protocol.clone(),
             adapter,
             journal.clone(),
-            WorkspaceManager::new(
-                root.join("workspaces"),
-                FakeWorktree {
-                    expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                    provision_after_journal: Arc::new(AtomicBool::new(false)),
-                },
-            ),
+            workspace_manager(root),
         );
 
         assert!(matches!(
@@ -1361,13 +1314,7 @@ async fn non_stopped_cancellation_evidence_skips_cancellation_transport() {
             protocol.clone(),
             adapter,
             journal.clone(),
-            WorkspaceManager::new(
-                root.join("workspaces"),
-                FakeWorktree {
-                    expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                    provision_after_journal: Arc::new(AtomicBool::new(false)),
-                },
-            ),
+            workspace_manager(root),
         );
 
         assert!(matches!(
@@ -1406,13 +1353,7 @@ async fn a_rejection_at_validate_is_reported_failed_and_never_spawns() {
         protocol.clone(),
         adapter,
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
 
     let cycle = engine
@@ -1468,18 +1409,11 @@ async fn completion_transport_loss_stays_in_terminal_outbox() {
     let mut adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
     adapter.completion_actual_execution = mismatched_actual_execution();
     let cancellations = Arc::clone(&adapter.cancel_calls);
-    let provisioned = Arc::new(AtomicBool::new(false));
     let engine = RunnerEngine::new(
         protocol.clone(),
         adapter,
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: provisioned,
-            },
-        ),
+        workspace_manager(root),
     );
 
     let result = engine
@@ -1535,13 +1469,7 @@ async fn completion_outbox_replays_exact_payload_after_response_loss_without_res
         protocol.clone(),
         first_adapter,
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
 
     assert!(matches!(
@@ -1579,13 +1507,7 @@ async fn completion_outbox_replays_exact_payload_after_response_loss_without_res
         protocol.clone(),
         restarted_adapter,
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
 
     assert!(matches!(
@@ -1647,13 +1569,7 @@ async fn completion_bad_ack_stays_in_terminal_outbox() {
             protocol.clone(),
             adapter,
             journal.clone(),
-            WorkspaceManager::new(
-                root.join("workspaces"),
-                FakeWorktree {
-                    expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                    provision_after_journal: Arc::new(AtomicBool::new(false)),
-                },
-            ),
+            workspace_manager(root),
         );
 
         assert!(matches!(
@@ -1685,13 +1601,7 @@ async fn completion_ack_then_journal_failure_replays_pending_payload() {
         protocol.clone(),
         first_adapter,
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
 
     assert!(matches!(
@@ -1718,13 +1628,7 @@ async fn completion_ack_then_journal_failure_replays_pending_payload() {
         protocol.clone(),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
     assert!(matches!(
         restarted
@@ -1748,14 +1652,7 @@ async fn restart_reports_unresolved_journal_observation_without_respawn() {
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
-    let record = AttemptJournal::prepared(
-        &lease,
-        super::super::journal::WorkspaceJournal {
-            workspace_id: super::super::WorkspaceId::new("ws"),
-            path: root.join("workspaces/attempt"),
-            base_revision: "revision".into(),
-        },
-    );
+    let record = prepared_record(&lease, root);
     journal
         .persist_before_spawn(&record)
         .expect("persist prior journal");
@@ -1765,13 +1662,7 @@ async fn restart_reports_unresolved_journal_observation_without_respawn() {
         protocol.clone(),
         first_adapter,
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
 
     let outcomes = engine.recover(&session()).await.expect("recover");
@@ -1813,14 +1704,7 @@ async fn needs_operator_response_durably_quarantines_stopped_pre_spawn_recovery(
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
-    let record = AttemptJournal::prepared(
-        &lease,
-        super::super::journal::WorkspaceJournal {
-            workspace_id: super::super::WorkspaceId::new("ws"),
-            path: root.join("workspaces/attempt"),
-            base_revision: "revision".into(),
-        },
-    );
+    let record = prepared_record(&lease, root);
     journal
         .persist_before_spawn(&record)
         .expect("prior journal");
@@ -1835,13 +1719,7 @@ async fn needs_operator_response_durably_quarantines_stopped_pre_spawn_recovery(
         protocol.clone(),
         first_adapter,
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
 
     assert!(matches!(
@@ -1871,14 +1749,7 @@ async fn stale_lease_on_recovery_retires_the_record_and_keeps_the_checkout() {
     let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
     let workspace_path = root.join("workspaces/attempt");
-    let record = AttemptJournal::prepared(
-        &lease,
-        super::super::journal::WorkspaceJournal {
-            workspace_id: super::super::WorkspaceId::new("ws"),
-            path: workspace_path.clone(),
-            base_revision: "revision".into(),
-        },
-    );
+    let record = prepared_record(&lease, root);
     journal
         .persist_before_spawn(&record)
         .expect("prior journal");
@@ -1894,13 +1765,7 @@ async fn stale_lease_on_recovery_retires_the_record_and_keeps_the_checkout() {
         protocol.clone(),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
 
     assert!(matches!(
@@ -1937,14 +1802,7 @@ async fn unreachable_server_on_recovery_never_retires_the_record() {
     let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
     let workspace_path = root.join("workspaces/attempt");
-    let record = AttemptJournal::prepared(
-        &lease,
-        super::super::journal::WorkspaceJournal {
-            workspace_id: super::super::WorkspaceId::new("ws"),
-            path: workspace_path.clone(),
-            base_revision: "revision".into(),
-        },
-    );
+    let record = prepared_record(&lease, root);
     journal
         .persist_before_spawn(&record)
         .expect("prior journal");
@@ -1965,13 +1823,7 @@ async fn unreachable_server_on_recovery_never_retires_the_record() {
             protocol.clone(),
             adapter(journal.journal_path(&AttemptId::new("attempt"))),
             journal.clone(),
-            WorkspaceManager::new(
-                root.join("workspaces"),
-                FakeWorktree {
-                    expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                    provision_after_journal: Arc::new(AtomicBool::new(false)),
-                },
-            ),
+            workspace_manager(root),
         );
         assert!(
             matches!(
@@ -2013,14 +1865,7 @@ async fn replayed_already_terminal_response_settles_only_stopped_evidence() {
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
-    let record = AttemptJournal::prepared(
-        &lease,
-        super::super::journal::WorkspaceJournal {
-            workspace_id: super::super::WorkspaceId::new("ws"),
-            path: root.join("workspaces/attempt"),
-            base_revision: "revision".into(),
-        },
-    );
+    let record = prepared_record(&lease, root);
     journal
         .persist_before_spawn(&record)
         .expect("prior journal");
@@ -2041,13 +1886,7 @@ async fn replayed_already_terminal_response_settles_only_stopped_evidence() {
         protocol.clone(),
         first_adapter,
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
 
     assert!(matches!(
@@ -2079,14 +1918,7 @@ async fn already_terminal_response_quarantines_running_or_ambiguous_evidence() {
         let root = root_dir.path();
         let journal = OwnerOnlyJournal::new(root);
         let lease = work().lease;
-        let record = AttemptJournal::prepared(
-            &lease,
-            super::super::journal::WorkspaceJournal {
-                workspace_id: super::super::WorkspaceId::new("ws"),
-                path: root.join("workspaces/attempt"),
-                base_revision: "revision".into(),
-            },
-        );
+        let record = prepared_record(&lease, root);
         journal
             .persist_before_spawn(&record)
             .expect("prior journal");
@@ -2101,18 +1933,7 @@ async fn already_terminal_response_quarantines_running_or_ambiguous_evidence() {
         if running {
             adapter.recovery_observation = RecoveryObservation::ProcessRunning;
         }
-        let engine = RunnerEngine::new(
-            protocol,
-            adapter,
-            journal.clone(),
-            WorkspaceManager::new(
-                root.join("workspaces"),
-                FakeWorktree {
-                    expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                    provision_after_journal: Arc::new(AtomicBool::new(false)),
-                },
-            ),
-        );
+        let engine = RunnerEngine::new(protocol, adapter, journal.clone(), workspace_manager(root));
 
         assert!(matches!(
             engine
@@ -2133,14 +1954,7 @@ async fn safe_requeue_response_never_settles_post_spawn_stopped_evidence() {
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
-    let mut record = AttemptJournal::prepared(
-        &lease,
-        super::super::journal::WorkspaceJournal {
-            workspace_id: super::super::WorkspaceId::new("ws"),
-            path: root.join("workspaces/attempt"),
-            base_revision: "revision".into(),
-        },
-    );
+    let mut record = prepared_record(&lease, root);
     record.state = JournalState::ProcessObservedRunning;
     record.process_id = Some("former-process".into());
     journal
@@ -2148,18 +1962,7 @@ async fn safe_requeue_response_never_settles_post_spawn_stopped_evidence() {
         .expect("prior journal");
     let protocol = protocol(work(), false, false);
     let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-    let engine = RunnerEngine::new(
-        protocol,
-        adapter,
-        journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
-    );
+    let engine = RunnerEngine::new(protocol, adapter, journal.clone(), workspace_manager(root));
 
     assert!(matches!(
         engine
@@ -2185,13 +1988,7 @@ async fn post_spawn_start_ack_failure_reports_ambiguity_and_quarantines() {
         protocol.clone(),
         adapter,
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
 
     assert!(matches!(
@@ -2221,14 +2018,7 @@ async fn cancellation_transport_loss_stays_in_terminal_outbox() {
         protocol.clone(),
         adapter,
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: OwnerOnlyJournal::new(root)
-                    .journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
 
     assert!(matches!(
@@ -2264,13 +2054,7 @@ async fn cancellation_outbox_replays_exact_payload_after_response_loss_without_r
         protocol.clone(),
         first_adapter,
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
 
     assert!(matches!(
@@ -2306,13 +2090,7 @@ async fn cancellation_outbox_replays_exact_payload_after_response_loss_without_r
         protocol.clone(),
         restarted_adapter,
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
 
     assert!(matches!(
@@ -2365,13 +2143,7 @@ async fn cancellation_ack_then_journal_failure_replays_pending_payload() {
         protocol.clone(),
         first_adapter,
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
 
     assert!(matches!(
@@ -2398,13 +2170,7 @@ async fn cancellation_ack_then_journal_failure_replays_pending_payload() {
         protocol.clone(),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
     assert!(matches!(
         restarted
@@ -2428,14 +2194,7 @@ async fn failed_ambiguity_delivery_is_retried_on_restart_without_respawn() {
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
-    let record = AttemptJournal::prepared(
-        &lease,
-        super::super::journal::WorkspaceJournal {
-            workspace_id: super::super::WorkspaceId::new("ws"),
-            path: root.join("workspaces/attempt"),
-            base_revision: "revision".into(),
-        },
-    );
+    let record = prepared_record(&lease, root);
     journal
         .persist_before_spawn(&record)
         .expect("prior journal");
@@ -2449,13 +2208,7 @@ async fn failed_ambiguity_delivery_is_retried_on_restart_without_respawn() {
         protocol.clone(),
         adapter,
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
 
     assert!(matches!(
@@ -2489,14 +2242,7 @@ async fn running_recovery_observation_is_quarantined_not_completed() {
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
-    let record = AttemptJournal::prepared(
-        &lease,
-        super::super::journal::WorkspaceJournal {
-            workspace_id: super::super::WorkspaceId::new("ws"),
-            path: root.join("workspaces/attempt"),
-            base_revision: "revision".into(),
-        },
-    );
+    let record = prepared_record(&lease, root);
     journal
         .persist_before_spawn(&record)
         .expect("prior journal");
@@ -2507,13 +2253,7 @@ async fn running_recovery_observation_is_quarantined_not_completed() {
         protocol.clone(),
         adapter,
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: journal.journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
 
     assert!(matches!(
@@ -2535,14 +2275,7 @@ async fn duplicate_claim_for_quarantined_attempt_cannot_start_again() {
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
-    let record = AttemptJournal::prepared(
-        &lease,
-        super::super::journal::WorkspaceJournal {
-            workspace_id: super::super::WorkspaceId::new("ws"),
-            path: root.join("workspaces/attempt"),
-            base_revision: "revision".into(),
-        },
-    );
+    let record = prepared_record(&lease, root);
     journal
         .persist_before_spawn(&record)
         .expect("prior journal");
@@ -2550,19 +2283,7 @@ async fn duplicate_claim_for_quarantined_attempt_cannot_start_again() {
     let protocol = protocol(work(), false, false);
     let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
     let started = Arc::clone(&adapter.start_after_journal);
-    let engine = RunnerEngine::new(
-        protocol,
-        adapter,
-        journal,
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: OwnerOnlyJournal::new(root)
-                    .journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
-    );
+    let engine = RunnerEngine::new(protocol, adapter, journal, workspace_manager(root));
 
     assert!(matches!(
         engine.run_once(&session(), claim_request()).await,
@@ -2584,19 +2305,7 @@ async fn post_spawn_journal_update_failure_reports_ambiguity_and_cancels() {
     let protocol = protocol(work(), false, false);
     let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
     let cancellations = Arc::clone(&adapter.cancel_calls);
-    let engine = RunnerEngine::new(
-        protocol.clone(),
-        adapter,
-        journal,
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: OwnerOnlyJournal::new(root)
-                    .journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
-    );
+    let engine = RunnerEngine::new(protocol.clone(), adapter, journal, workspace_manager(root));
 
     assert!(matches!(
         engine
@@ -2768,14 +2477,7 @@ fn engine_with_data_protocol(
             ..adapter(journal.journal_path(&AttemptId::new("attempt")))
         },
         journal,
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: OwnerOnlyJournal::new(root)
-                    .journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     )
     .with_data_protocol(Arc::new(data_protocol))
 }
@@ -2861,14 +2563,7 @@ async fn run_once_with_a_data_protocol_submits_a_cancellation_event() {
         protocol(work(), true, false),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal,
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: OwnerOnlyJournal::new(root)
-                    .journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     )
     .with_data_protocol(Arc::new(data_protocol.clone()));
 
@@ -2902,14 +2597,7 @@ async fn without_a_data_protocol_the_attempt_still_completes_and_nothing_is_subm
         protocol(work(), false, false),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal,
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: OwnerOnlyJournal::new(root)
-                    .journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     );
     assert!(matches!(
         engine
@@ -2937,14 +2625,7 @@ async fn data_protocol_transport_failure_does_not_block_the_attempts_own_complet
         protocol(work(), false, false),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal,
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: OwnerOnlyJournal::new(root)
-                    .journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     )
     .with_data_protocol(Arc::new(data_protocol.clone()));
 
@@ -2984,26 +2665,12 @@ async fn resubmitting_the_same_terminal_event_is_idempotent() {
         protocol(work(), false, false),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal.clone(),
-        WorkspaceManager::new(
-            root.join("workspaces"),
-            FakeWorktree {
-                expected_journal: OwnerOnlyJournal::new(root)
-                    .journal_path(&AttemptId::new("attempt")),
-                provision_after_journal: Arc::new(AtomicBool::new(false)),
-            },
-        ),
+        workspace_manager(root),
     )
     .with_data_protocol(Arc::new(data_protocol.clone()));
 
     let claimed = work();
-    let mut record = AttemptJournal::prepared(
-        &claimed.lease,
-        super::super::WorkspaceJournal {
-            workspace_id: super::super::WorkspaceId::new("ws_617474656d7074"),
-            path: root.join("workspaces/617474656d7074"),
-            base_revision: "revision".into(),
-        },
-    );
+    let mut record = claimed_record(&claimed.lease, root);
 
     let first_payload = serde_json::json!({"code": "completed"});
     engine
