@@ -166,37 +166,7 @@ fn metric(name: &str, labels: &[(&str, &str)], value: f64) -> NewOrchMetric {
     }
 }
 
-// ─── Off by default ────────────────────────────────────
-
-#[tokio::test]
-async fn project_budget_and_policy_need_orch_enabled() {
-    let (app, _) = common::test_app().await; // orch_enable defaults to false
-    let fake = Uuid::new_v4();
-
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/projects/{fake}/orch-budget"),
-        None,
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
-
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/projects/{fake}/orch-policy"),
-        None,
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
-}
-
-// ─── Budget ─────────────────────────────────────────────────────────────────
+// ─── Budget ─────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn orch_budget_unlinked_reports_linked_false_null_cost() {

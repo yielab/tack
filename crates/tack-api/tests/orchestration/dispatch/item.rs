@@ -173,16 +173,7 @@ async fn mock_list_tasks(server: &MockServer, task_id: &str, status: &str, token
         .await;
 }
 
-// ─── Off by default / actionable refusal ───────────────────────────────────
-
-#[tokio::test]
-async fn single_item_dispatch_requires_the_orch_enable_flag() {
-    let (app, _) = common::test_app().await; // orch_enable defaults to false
-    let res = dispatch(&app, Uuid::new_v4()).await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
-}
+// ─── Actionable refusal ─────────────────────────────────────────────────
 
 #[tokio::test]
 async fn unknown_item_id_dispatch_returns_not_found() {

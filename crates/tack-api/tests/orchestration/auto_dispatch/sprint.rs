@@ -253,33 +253,7 @@ fn item_by_title<'a>(items: &'a [Value], title: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no item named {title:?} in response: {items:?}"))
 }
 
-// ─── Off by default / not found / not linked ───────────────────────────────
-
-#[tokio::test]
-async fn sprint_dispatch_and_preview_need_orchestration_on() {
-    let (app, _) = common::test_app().await; // orch_enable defaults to false
-    let res = req(
-        &app,
-        Method::POST,
-        &format!("/api/sprints/{}/dispatch", Uuid::new_v4()),
-        None,
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
-
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/sprints/{}/dispatch/dry-run", Uuid::new_v4()),
-        None,
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
-}
+// ─── Not found / not linked ─────────────────────────────────────────────
 
 #[tokio::test]
 async fn dispatching_a_ghost_sprint_id_yields_404() {

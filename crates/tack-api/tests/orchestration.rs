@@ -13,6 +13,8 @@ mod control_plane;
 mod dispatch;
 #[path = "orchestration/fleet_templates.rs"]
 mod fleet_templates;
+#[path = "orchestration/off_by_default.rs"]
+mod off_by_default;
 #[path = "orchestration/reconciler.rs"]
 mod reconciler;
 #[path = "orchestration/reporting.rs"]
