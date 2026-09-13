@@ -205,7 +205,6 @@ async fn validate_accepts_well_formed_specs() {
             adapter.validate(&spec).await.is_ok(),
             "provider {provider:?} should be accepted"
         );
-        std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 }
 
@@ -293,7 +292,6 @@ async fn validate_rejects_invalid_specs() {
             "case {:?}: a pre-spawn rejection must never create process bookkeeping",
             case.name
         );
-        std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 }
 
@@ -301,11 +299,19 @@ async fn validate_rejects_invalid_specs() {
 /// `validate` with a typed reason naming only the reference, before the
 /// adapter does anything else — proven here at the adapter boundary
 /// (`validate` itself never touches a filesystem path outside checking
-/// its own binary exists).
-#[tokio::test]
-async fn validate_rejects_a_missing_secret_reference_untouched() {
+/// its own binary exists). Shared by the typed-reason claim and the
+/// leaves-nothing-touched claim below.
+struct MissingSecretAttempt {
+    _workspace_dir: tempfile::TempDir,
+    _state_guard: tempfile::TempDir,
+    workspace: PathBuf,
+    state_dir: PathBuf,
+    error: HarnessError,
+}
+
+async fn attempt_validate_with_missing_secret_reference() -> MissingSecretAttempt {
     let workspace_dir = temp_workspace("secret-reference-missing");
-    let workspace = workspace_dir.path();
+    let workspace = workspace_dir.path().to_path_buf();
     std::fs::write(workspace.join("sentinel.txt"), b"before").expect("seed workspace");
 
     let state_guard = temp_workspace("secret-missing-state");
@@ -326,41 +332,56 @@ async fn validate_rejects_a_missing_secret_reference_untouched() {
         &[],
         true,
         environment,
-        workspace.to_path_buf(),
+        workspace.clone(),
     );
 
     let error = adapter
         .validate(&spec)
         .await
         .expect_err("a missing secret_reference must fail pre-spawn");
+    MissingSecretAttempt {
+        _workspace_dir: workspace_dir,
+        _state_guard: state_guard,
+        workspace,
+        state_dir,
+        error,
+    }
+}
+
+#[tokio::test]
+async fn validate_fails_with_a_typed_reason_for_a_missing_secret() {
+    let attempt = attempt_validate_with_missing_secret_reference().await;
     assert!(
         matches!(
-            &error,
+            &attempt.error,
             HarnessError::Rejected { reason }
                 if reason.starts_with("secret_reference_unresolved:")
                     && reason.contains("does-not-exist")
         ),
-        "unexpected error: {error:?}"
+        "unexpected error: {:?}",
+        attempt.error
     );
+}
 
+#[tokio::test]
+async fn a_rejected_validate_touches_neither_workspace_nor_store() {
+    let attempt = attempt_validate_with_missing_secret_reference().await;
     assert!(
-        !state_dir.exists(),
+        !attempt.state_dir.exists(),
         "a rejected validate must not create the secret store's state directory"
     );
     assert_eq!(
-        std::fs::read_to_string(workspace.join("sentinel.txt")).expect("sentinel survives"),
+        std::fs::read_to_string(attempt.workspace.join("sentinel.txt")).expect("sentinel survives"),
         "before",
         "a rejected validate must not modify the workspace it was given"
     );
     assert_eq!(
-        std::fs::read_dir(workspace)
+        std::fs::read_dir(&attempt.workspace)
             .expect("read workspace")
             .count(),
         1,
         "a rejected validate must not add files to the workspace it was given"
     );
-
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
 // ---- fake-binary-driven lifecycle tests ------------------------------
@@ -477,7 +498,6 @@ async fn fake_binary_exit_code_fallback_reports_honest_terminal_state() {
             );
         }
         (case.extra)(&outcome);
-        std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 }
 
@@ -516,8 +536,6 @@ async fn fake_binary_success_stages_a_real_log_artifact() {
         artifact["sha256"].as_str().unwrap(),
         crate::harness::sha256::sha256_hex(&staged_bytes)
     );
-
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
 /// A more realistic "malformed" case than generic garbage: a stream that
@@ -594,7 +612,6 @@ async fn cancel_stops_the_process_and_forgets_its_bookkeeping_entry() {
         adapter.running.lock().await.is_empty(),
         "cancel must remove its own bookkeeping entry"
     );
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
 // A cancel/wait on a handle this adapter instance never produced is now
@@ -651,7 +668,6 @@ async fn env_canary_is_redacted() {
         "the leak must actually have been scrubbed, \
         not merely absent because nothing echoed it"
     );
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
 // -----------------------------------------------------------------
@@ -734,14 +750,21 @@ fn recorded_length(marker: &Path) -> usize {
         .expect("marker holds a byte count")
 }
 
-/// Acceptance: a live attempt with a `secret_reference` environment
-/// entry reaches the spawned process with the resolved value set — the
-/// shim here proves it by writing the value's *byte length* to a marker
-/// file it controls, never the value itself. Captured `tracing` output
-/// for the same run names the entry (positive control: asserted
-/// present) and never contains the value.
-#[tokio::test]
-async fn secret_reference_resolves_and_only_length_reaches_the_shim() {
+/// Result of one live attempt whose `secret_reference` environment entry
+/// resolves — shared by the shim-only-sees-the-length claim and the
+/// logged-by-name-never-by-value claim below.
+struct SecretReferenceRun {
+    recorded_length: usize,
+    secret_value: &'static str,
+    captured_log: String,
+}
+
+/// Acceptance: a live attempt with a `secret_reference` environment entry
+/// reaches the spawned process with the resolved value set — proven by a
+/// shim that writes the value's *byte length* to a marker file it
+/// controls, never the value itself. Captured `tracing` output for the
+/// same run is asserted by the caller.
+async fn run_with_resolved_secret_reference() -> SecretReferenceRun {
     let _log_capture = install_secret_log_capture();
     let workspace_dir = temp_workspace("secret-reference-length");
     let workspace = workspace_dir.path();
@@ -771,25 +794,40 @@ async fn secret_reference_resolves_and_only_length_reaches_the_shim() {
     let handle = adapter.start(&spec).await.expect("start");
     let outcome = adapter.wait(&handle).await.expect("wait");
     assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
-    assert_eq!(
-        recorded_length(&marker),
-        secret_value.len(),
-        "the shim must have received the resolved value, not something else"
-    );
 
-    let captured = SECRET_LOG_CAPTURE
+    let captured_log = SECRET_LOG_CAPTURE
         .with(|captured| String::from_utf8(captured.borrow().clone()))
         .expect("utf-8");
-    assert!(
-        captured.contains("demo") || captured.contains("SECRET_VAR"),
-        "the test is only load-bearing if resolution actually logged the entry: {captured:?}"
-    );
-    assert!(
-        !captured.contains(secret_value),
-        "the resolved secret value reached a log line: {captured}"
-    );
+    SecretReferenceRun {
+        recorded_length: recorded_length(&marker),
+        secret_value,
+        captured_log,
+    }
+}
 
-    std::fs::remove_dir_all(workspace).expect("cleanup");
+#[tokio::test]
+async fn secret_reference_resolves_and_only_length_reaches_the_shim() {
+    let run = run_with_resolved_secret_reference().await;
+    assert_eq!(
+        run.recorded_length,
+        run.secret_value.len(),
+        "the shim must have received the resolved value, not something else"
+    );
+}
+
+#[tokio::test]
+async fn secret_resolution_is_logged_by_name_never_by_value() {
+    let run = run_with_resolved_secret_reference().await;
+    assert!(
+        run.captured_log.contains("demo") || run.captured_log.contains("SECRET_VAR"),
+        "the test is only load-bearing if resolution actually logged the entry: {:?}",
+        run.captured_log
+    );
+    assert!(
+        !run.captured_log.contains(run.secret_value),
+        "the resolved secret value reached a log line: {}",
+        run.captured_log
+    );
 }
 
 /// Regression guards for both capability corrections made to this file:
@@ -1150,7 +1188,6 @@ async fn reconcile_reports_running_for_a_still_running_harness() {
     // the bookkeeping entry `reconcile` never touched.
     adapter.cancel(&handle).await.expect("cancel");
     assert!(!process_alive(pid));
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
 #[cfg(target_os = "linux")]
@@ -1244,32 +1281,7 @@ fn provider_cases() -> Vec<ProviderCase> {
 #[tokio::test]
 async fn provider_endpoint_variables_present_only_when_configured() {
     for case in provider_cases() {
-        let workspace_dir = temp_workspace("provider-guard");
-        let workspace = workspace_dir.path();
-        let marker = workspace.join("env-names.marker");
-        let binary = env_name_dump_binary(workspace, &marker);
-
-        let secrets_dir = temp_workspace("secrets");
-        let secrets = test_secret_store(secrets_dir.path());
-        secrets
-            .set("demo-secret", "a-resolvable-value")
-            .expect("seed store");
-        let adapter = ClaudeCodeAdapter::with_binary(binary, clock(), secrets)
-            .with_providers(enabled_gateway_providers("demo-secret"));
-
-        let spec = spec_with(
-            "claude-code",
-            case.requested_provider,
-            &[],
-            true,
-            BTreeMap::new(),
-            workspace.to_path_buf(),
-        );
-        adapter.validate(&spec).await.expect("validate");
-        let handle = adapter.start(&spec).await.expect("start");
-        let _ = adapter.wait(&handle).await.expect("wait");
-
-        let names = recorded_env_names(&marker);
+        let names = run_provider_case(&case).await;
         assert_eq!(
             names.iter().any(|name| name == "ANTHROPIC_BASE_URL"),
             case.expect_present,
@@ -1282,9 +1294,37 @@ async fn provider_endpoint_variables_present_only_when_configured() {
             "case {:?}: {names:?}",
             case.name
         );
-
-        std::fs::remove_dir_all(workspace).expect("cleanup");
     }
+}
+
+/// Runs one [`ProviderCase`] through a real adapter and returns the
+/// environment variable names the fake harness recorded.
+async fn run_provider_case(case: &ProviderCase) -> Vec<String> {
+    let workspace_dir = temp_workspace("provider-guard");
+    let workspace = workspace_dir.path();
+    let marker = workspace.join("env-names.marker");
+    let binary = env_name_dump_binary(workspace, &marker);
+
+    let secrets_dir = temp_workspace("secrets");
+    let secrets = test_secret_store(secrets_dir.path());
+    secrets
+        .set("demo-secret", "a-resolvable-value")
+        .expect("seed store");
+    let adapter = ClaudeCodeAdapter::with_binary(binary, clock(), secrets)
+        .with_providers(enabled_gateway_providers("demo-secret"));
+
+    let spec = spec_with(
+        "claude-code",
+        case.requested_provider,
+        &[],
+        true,
+        BTreeMap::new(),
+        workspace.to_path_buf(),
+    );
+    adapter.validate(&spec).await.expect("validate");
+    let handle = adapter.start(&spec).await.expect("start");
+    let _ = adapter.wait(&handle).await.expect("wait");
+    recorded_env_names(&marker)
 }
 
 // A configured-but-disabled provider rejecting pre-spawn is now

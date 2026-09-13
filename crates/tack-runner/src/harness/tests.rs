@@ -967,7 +967,8 @@ async fn reconcile_reports_shared_pid_plumbing_identically_for_both() {
     let (program, args, _script_dir) = cross_adapter_fixture_command();
     let (codex, claude, _staging) = real_adapters_for(program, args, secrets_dir.path());
 
-    let cases: [(&str, &dyn HarnessAdapter, fn(u32) -> String); 2] = [
+    type ReconcileCase<'a> = (&'a str, &'a dyn HarnessAdapter, fn(u32) -> String);
+    let cases: [ReconcileCase; 2] = [
         ("codex", &codex, |pid| format!("codex:{pid}:0")),
         ("claude-code", &claude, |pid| pid.to_string()),
     ];
