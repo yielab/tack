@@ -635,7 +635,7 @@ mod tests {
     }
 
     #[test]
-    fn a_loopback_host_is_an_address_or_localhost_never_a_name_that_starts_like_one() {
+    fn loopback_host_is_address_or_localhost_never_a_lookalike_name() {
         for host in [
             "127.0.0.1",
             "127.9.9.9",
