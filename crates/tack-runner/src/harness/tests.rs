@@ -522,6 +522,129 @@ exit 0
     )
 }
 
+/// A real `CodexAdapter` driven by the shared fixture script.
+fn fixture_codex_adapter(
+    codex_program: &std::path::Path,
+    codex_args: &[String],
+    staging_root: &std::path::Path,
+    secrets: &std::path::Path,
+) -> crate::harness::codex::CodexAdapter {
+    crate::harness::codex::CodexAdapter::for_fixture(
+        codex_program.to_path_buf(),
+        codex_args.to_vec(),
+        staging_root.to_path_buf(),
+        cross_adapter_secret_store(secrets),
+    )
+}
+
+/// A real `ClaudeCodeAdapter`: the installed binary if `discover` finds
+/// one, else the shared no-op fixture script — either way, a real adapter,
+/// never a trait-level fake.
+fn fixture_claude_code_adapter(
+    secrets: &std::path::Path,
+) -> crate::harness::claude_code::ClaudeCodeAdapter {
+    crate::harness::claude_code::ClaudeCodeAdapter::discover(cross_adapter_secret_store(secrets))
+        .unwrap_or_else(|_| {
+            crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
+                PathBuf::from("/bin/sh"),
+                vec!["-c".to_owned(), "exit 0".to_owned()],
+                cross_adapter_secret_store(secrets),
+            )
+        })
+}
+
+/// Dispatch itself, not only the registered-kind set, is order
+/// independent. The fixture's requested model (provider "openai", id
+/// "opaque/model-alpha") is unsupported by claude-code (unknown provider
+/// family), so it rejects it pre-spawn regardless of registry order.
+/// codex is a pass-through harness: it cannot independently verify a
+/// model's identity, so it accepts any *explicit* provider/id pre-spawn
+/// and defers the real check to the harness at run time — an accepted
+/// dispatch, not a rejection, for any locator that resolves, which the
+/// fixture command always does.
+async fn assert_dispatch_is_order_independent(
+    forward: &AdapterRegistry,
+    backward: &AdapterRegistry,
+) {
+    for kind in ["codex", "claude-code"] {
+        let spec = spec_requesting(kind);
+        let forward_result = forward.validate(&spec).await;
+        let backward_result = backward.validate(&spec).await;
+        let expect_ok = kind == "codex";
+        assert_eq!(
+            forward_result.is_ok(),
+            expect_ok,
+            "kind {kind}: forward registry"
+        );
+        assert_eq!(
+            backward_result.is_ok(),
+            expect_ok,
+            "kind {kind}: backward registry"
+        );
+    }
+}
+
+/// A fresh registry with both real adapters registered in `order` —
+/// `BTreeMap`-keyed storage, so only dispatch (proven separately) could
+/// possibly depend on registration order, never the registered-kind set.
+fn adapter_registry_in_order(
+    order: [&str; 2],
+    codex_program: &std::path::Path,
+    codex_args: &[String],
+    staging_root: &std::path::Path,
+    secrets: &std::path::Path,
+) -> AdapterRegistry {
+    let mut registry = AdapterRegistry::new();
+    for kind in order {
+        match kind {
+            "codex" => registry.register_adapter(
+                DomainHarnessKind::new("codex"),
+                Box::new(fixture_codex_adapter(
+                    codex_program,
+                    codex_args,
+                    staging_root,
+                    secrets,
+                )),
+            ),
+            "claude-code" => registry.register_adapter(
+                DomainHarnessKind::new("claude-code"),
+                Box::new(fixture_claude_code_adapter(secrets)),
+            ),
+            other => unreachable!("test fixture only knows codex/claude-code, got {other}"),
+        };
+    }
+    registry
+}
+
+/// Both real adapters register as probes cleanly (registration itself
+/// rejects an overclaiming probe, proven elsewhere) and both report
+/// capabilities.
+async fn assert_both_probes_register_and_report(
+    codex_program: &std::path::Path,
+    codex_args: &[String],
+    staging_root: &std::path::Path,
+    secrets: &std::path::Path,
+) {
+    let mut probe_registry = AdapterRegistry::new();
+    probe_registry
+        .register_probe(Box::new(fixture_codex_adapter(
+            codex_program,
+            codex_args,
+            staging_root,
+            secrets,
+        )))
+        .expect("codex probe registers cleanly");
+    probe_registry
+        .register_probe(Box::new(fixture_claude_code_adapter(secrets)))
+        .expect("claude-code probe registers cleanly");
+
+    let reports = probe_registry.capabilities().await;
+    assert_eq!(reports.len(), 2, "both real probes registered");
+    let mut kinds: Vec<&str> = reports.iter().map(|r| r.harness_kind.as_str()).collect();
+    kinds.sort_unstable();
+    assert_eq!(kinds, vec!["claude-code", "codex"]);
+}
+
 /// Builds a real `ExecutionSpec` for `kind`, reusing `claim.response.json`
 /// exactly as `spec_requesting` above does, but with a real (existing)
 /// workspace directory — the real adapters actually spawn a process
@@ -590,213 +713,97 @@ fn real_adapter_spec_with_env(
     }
 }
 
-/// Acceptance: "the same fixture completes through both fake
-/// adapters — one deterministic fixture, two adapters, same
-/// observable outcome." Drives the real `CodexAdapter` and `ClaudeCodeAdapter`
-/// — through the frozen `HarnessAdapter` trait only,
-/// exactly as `AdapterRegistry` would dispatch to them — against the one
-/// fixture script above, and asserts both reach
-/// `AttemptState::Succeeded` from the identical input.
+/// Runs `adapter` through validate/start/wait against the shared fixture
+/// script and asserts it reaches `Succeeded` — the one lifecycle sequence
+/// both real adapters below are proven against, identically.
+async fn assert_adapter_completes_fixture(
+    kind: &str,
+    adapter: &dyn HarnessAdapter,
+    provider: &str,
+    model_id: &str,
+    workspace: &std::path::Path,
+) {
+    let spec = real_adapter_spec(kind, provider, model_id, workspace.to_path_buf());
+    adapter.validate(&spec).await.expect("validate");
+    let handle = adapter.start(&spec).await.expect("start");
+    let outcome = adapter.wait(&handle).await.expect("wait");
+    assert_eq!(
+        outcome.terminal_state,
+        crate::client::AttemptState::Succeeded
+    );
+}
+
 #[tokio::test]
 async fn the_same_fixture_completes_through_both_real_adapters() {
     let secrets_dir = cross_adapter_temp_dir("secrets");
-    let secrets = secrets_dir.path();
     let (program, args, _script_dir) = cross_adapter_fixture_command();
-    let staging_root_dir = cross_adapter_temp_dir("artifacts");
-    let staging_root = staging_root_dir.path();
+    let (codex, claude, _staging) = real_adapters_for(program, args, secrets_dir.path());
 
     let codex_workspace_dir = cross_adapter_temp_dir("codex-ws");
-    let codex_workspace = codex_workspace_dir.path();
-    let codex = crate::harness::codex::CodexAdapter::for_fixture(
-        program.clone(),
-        args.clone(),
-        staging_root.to_path_buf(),
-        cross_adapter_secret_store(secrets),
-    );
-    let codex_spec = real_adapter_spec(
+    assert_adapter_completes_fixture(
         "codex",
+        &codex,
         "openai",
         "opaque/model-alpha",
-        codex_workspace.to_path_buf(),
-    );
-    codex.validate(&codex_spec).await.expect("codex validate");
-    let codex_handle = codex.start(&codex_spec).await.expect("codex start");
-    let codex_outcome = codex.wait(&codex_handle).await.expect("codex wait");
-    assert_eq!(
-        codex_outcome.terminal_state,
-        crate::client::AttemptState::Succeeded
-    );
+        codex_workspace_dir.path(),
+    )
+    .await;
 
     let claude_workspace_dir = cross_adapter_temp_dir("claude-ws");
-    let claude_workspace = claude_workspace_dir.path();
-    let claude = crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
-        program.clone(),
-        args.clone(),
-        cross_adapter_secret_store(secrets),
-    );
-    let claude_spec = real_adapter_spec(
+    assert_adapter_completes_fixture(
         "claude-code",
+        &claude,
         "anthropic",
         "claude-fixture-model",
-        claude_workspace.to_path_buf(),
-    );
-    claude
-        .validate(&claude_spec)
-        .await
-        .expect("claude-code validate");
-    let claude_handle = claude.start(&claude_spec).await.expect("claude-code start");
-    let claude_outcome = claude.wait(&claude_handle).await.expect("claude-code wait");
-    assert_eq!(
-        claude_outcome.terminal_state,
-        crate::client::AttemptState::Succeeded
-    );
+        claude_workspace_dir.path(),
+    )
+    .await;
 
-    for workspace in [codex_workspace, claude_workspace] {
+    for workspace in [codex_workspace_dir.path(), claude_workspace_dir.path()] {
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 }
 
-/// Acceptance: "register both adapters without introducing
-/// ordering-dependent behavior." Registers the two real adapters (and
-/// their probes) into two separate `AdapterRegistry` instances in
-/// opposite orders and proves both the registered-kind set and dispatch
-/// itself are identical either way — `BTreeMap`-keyed registration
-/// structurally cannot let "who registered first" become dispatch
-/// priority, and this proves it empirically, not just by code
-/// inspection. Also proves each real probe's declared cancellation
-/// capability (both now `Advisory`) passes
-/// the registration-time ceiling check.
+/// Registers the two real adapters, and their probes, into two registries
+/// in opposite orders: `BTreeMap`-keyed registration cannot let "who
+/// registered first" become dispatch priority, proven empirically here for
+/// both the registered-kind set and dispatch itself, plus each probe's
+/// declared cancellation capability passing the registration-time ceiling.
 #[tokio::test]
 async fn registering_both_real_adapters_is_order_independent() {
     let secrets_dir = cross_adapter_temp_dir("order-secrets");
     let secrets = secrets_dir.path();
     let staging_root_dir = cross_adapter_temp_dir("order-artifacts");
     let staging_root = staging_root_dir.path();
-    // codex has no fallible `discover()` to `unwrap_or_else` around like
-    // claude-code below, so it needs an explicit fixture: a real `codex`
-    // binary is a local-dev-only assumption (CI runners don't install
-    // it), and `for_fixture` resolves unconditionally, which is exactly
-    // what the assertions below need — see the doc comment further down.
     let (codex_program, codex_args, _codex_script_dir) = cross_adapter_fixture_command();
 
-    let mut forward = AdapterRegistry::new();
-    forward.register_adapter(
-        DomainHarnessKind::new("codex"),
-        Box::new(crate::harness::codex::CodexAdapter::for_fixture(
-            codex_program.clone(),
-            codex_args.clone(),
-            staging_root.to_path_buf(),
-            cross_adapter_secret_store(secrets),
-        )),
+    let forward = adapter_registry_in_order(
+        ["codex", "claude-code"],
+        &codex_program,
+        &codex_args,
+        staging_root,
+        secrets,
     );
-    forward.register_adapter(
-        DomainHarnessKind::new("claude-code"),
-        Box::new(
-            crate::harness::claude_code::ClaudeCodeAdapter::discover(cross_adapter_secret_store(
-                secrets,
-            ))
-            .unwrap_or_else(|_| {
-                crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
-                    PathBuf::from("/bin/sh"),
-                    vec!["-c".to_owned(), "exit 0".to_owned()],
-                    cross_adapter_secret_store(secrets),
-                )
-            }),
-        ),
+    let backward = adapter_registry_in_order(
+        ["claude-code", "codex"],
+        &codex_program,
+        &codex_args,
+        staging_root,
+        secrets,
     );
-
-    let mut backward = AdapterRegistry::new();
-    backward.register_adapter(
-        DomainHarnessKind::new("claude-code"),
-        Box::new(
-            crate::harness::claude_code::ClaudeCodeAdapter::discover(cross_adapter_secret_store(
-                secrets,
-            ))
-            .unwrap_or_else(|_| {
-                crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
-                    PathBuf::from("/bin/sh"),
-                    vec!["-c".to_owned(), "exit 0".to_owned()],
-                    cross_adapter_secret_store(secrets),
-                )
-            }),
-        ),
-    );
-    backward.register_adapter(
-        DomainHarnessKind::new("codex"),
-        Box::new(crate::harness::codex::CodexAdapter::for_fixture(
-            codex_program.clone(),
-            codex_args.clone(),
-            staging_root.to_path_buf(),
-            cross_adapter_secret_store(secrets),
-        )),
-    );
-
     assert_eq!(forward.registered_kinds(), backward.registered_kinds());
     assert_eq!(forward.registered_kinds(), vec!["claude-code", "codex"]);
-
-    // Dispatch itself, not only the registered-kind set, is order
-    // independent. The fixture's requested model (provider "openai",
-    // id "opaque/model-alpha") is unsupported by claude-code (unknown
-    // provider family), so it rejects it pre-spawn regardless of
-    // registry order. codex is a pass-through harness: it cannot
-    // independently verify a model's identity, so it accepts any
-    // *explicit* provider/id pre-spawn and defers the real check to the
-    // harness at run time — an accepted dispatch, not a rejection, for
-    // any locator that resolves, which the fixture above always does.
-    for kind in ["codex", "claude-code"] {
-        let spec = spec_requesting(kind);
-        let forward_result = forward.validate(&spec).await;
-        let backward_result = backward.validate(&spec).await;
-        let expect_ok = kind == "codex";
-        assert_eq!(
-            forward_result.is_ok(),
-            expect_ok,
-            "kind {kind}: forward registry"
-        );
-        assert_eq!(
-            backward_result.is_ok(),
-            expect_ok,
-            "kind {kind}: backward registry"
-        );
-    }
+    assert_dispatch_is_order_independent(&forward, &backward).await;
 
     // The registration-time gate: both real, now-reconciled probes
     // register cleanly (neither still claims `cancel: Supported`).
-    let mut probe_registry = AdapterRegistry::new();
-    probe_registry
-        .register_probe(Box::new(crate::harness::codex::CodexAdapter::for_fixture(
-            codex_program.clone(),
-            codex_args.clone(),
-            staging_root.to_path_buf(),
-            cross_adapter_secret_store(secrets),
-        )))
-        .expect("codex probe registers cleanly");
-    probe_registry
-        .register_probe(Box::new(
-            crate::harness::claude_code::ClaudeCodeAdapter::discover(cross_adapter_secret_store(
-                secrets,
-            ))
-            .unwrap_or_else(|_| {
-                crate::harness::claude_code::ClaudeCodeAdapter::for_fixture(
-                    PathBuf::from("/bin/sh"),
-                    vec!["-c".to_owned(), "exit 0".to_owned()],
-                    cross_adapter_secret_store(secrets),
-                )
-            }),
-        ))
-        .expect("claude-code probe registers cleanly");
-
-    let reports = probe_registry.capabilities().await;
-    assert_eq!(reports.len(), 2, "both real probes registered");
-    let mut kinds: Vec<&str> = reports.iter().map(|r| r.harness_kind.as_str()).collect();
-    kinds.sort_unstable();
-    assert_eq!(kinds, vec!["claude-code", "codex"]);
+    assert_both_probes_register_and_report(&codex_program, &codex_args, staging_root, secrets)
+        .await;
 }
 
-// ---- Lifecycle mechanics belonging to `local_process.rs`, not either
-// ---- adapter (audit §5 rule 1) — each used to exist once per adapter file.
-
-/// Both real adapters against one fixture command and secrets directory.
+/// Both real adapters against one fixture command and secrets directory —
+/// lifecycle mechanics belonging to `local_process.rs`, not either adapter
+/// (audit §5 rule 1), each used to exist once per adapter file.
 fn real_adapters_for(
     program: PathBuf,
     args: Vec<String>,
@@ -887,10 +894,9 @@ async fn cancel_and_wait_on_an_untracked_handle_are_typed_rejections() {
     }
 }
 
-/// Cancel kills the whole descendant tree, through both real adapters'
-/// `start`/`cancel` (the primitive-level proof stays `process/tests.rs`'s
-/// own) — entirely shared `cancel()` plus `process.rs`'s process-group
-/// signal. Replaces codex's own copy; claude-code never had one.
+/// Cancel kills the whole descendant tree through both real adapters'
+/// `start`/`cancel` — entirely shared `cancel()` plus `process.rs`'s
+/// process-group signal (the primitive-level proof stays `process/tests.rs`'s).
 #[tokio::test]
 async fn both_adapters_route_cancel_to_kill_the_whole_descendant_tree() {
     let secrets_dir = cross_adapter_temp_dir("descendant-tree-secrets");
@@ -937,13 +943,10 @@ async fn both_adapters_route_cancel_to_kill_the_whole_descendant_tree() {
     }
 }
 
-/// Shared `reconcile()` handles three pid-independent cases identically
-/// for both real adapters, before either grammar's own `reconcile_alive`/
-/// `reconcile_unavailable` runs: no recorded process id, an undecodable
-/// handle, and a decodable handle whose process already exited. A
-/// still-*alive* pid is genuinely per-adapter and stays in each adapter's
-/// own file (`reconcile_trusts_a_live_pid_unconditionally` for codex; two
-/// Linux-only tests for claude-code).
+/// Shared `reconcile()` handles three pid-independent cases identically for
+/// both real adapters: no recorded process id, an undecodable handle, and
+/// a decodable handle whose process already exited. A still-*alive* pid is
+/// genuinely per-adapter and stays in each adapter's own file.
 #[cfg(unix)]
 #[tokio::test]
 async fn reconcile_reports_shared_pid_plumbing_identically_for_both() {

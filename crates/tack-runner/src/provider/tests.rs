@@ -258,12 +258,9 @@ fn empty_capabilities() -> RunnerCapabilities {
     }
 }
 
-#[tokio::test]
-async fn one_providers_unresolvable_secret_never_suppresses_others() {
-    let dir = tempfile::tempdir().expect("temporary directory");
-    let secrets = SecretStore::file(dir.path().join("secrets.json"));
-    secrets.set("working-secret", "token").expect("seed secret");
-
+/// One provider whose secret never resolves, one that fetches a single
+/// priced, context-windowed, text-modality model.
+fn broken_and_working_registry() -> (BTreeMap<String, ProviderConfig>, Vec<Box<dyn Provider>>) {
     let providers = BTreeMap::from([
         (
             "broken".to_owned(),
@@ -297,6 +294,39 @@ async fn one_providers_unresolvable_secret_never_suppresses_others() {
             }]),
         }),
     ];
+    (providers, registry)
+}
+
+/// The working vendor's one fetched model reached the claude-code harness's
+/// model combinations, carrying context window, price and modality.
+fn assert_working_vendor_model_attached(capabilities: &RunnerCapabilities) {
+    let claude_code = capabilities
+        .harnesses
+        .iter()
+        .find(|h| h.harness_kind.as_str() == "claude-code")
+        .expect("claude-code harness present");
+    assert_eq!(claude_code.model_combinations.len(), 1);
+    assert_eq!(
+        claude_code.model_combinations[0].model_provider.as_str(),
+        "working-vendor"
+    );
+    let metadata = claude_code.model_combinations[0]
+        .model_metadata
+        .get(&tack_orch::execution::ModelId::new(
+            "working-vendor/model-1",
+        ))
+        .expect("the one fetched model's metadata must be attached to the combination");
+    assert_eq!(metadata.context_window, Some(128_000));
+    assert!(metadata.price.is_some());
+    assert!(metadata.modality.is_some());
+}
+
+#[tokio::test]
+async fn one_providers_unresolvable_secret_never_suppresses_others() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let secrets = SecretStore::file(dir.path().join("secrets.json"));
+    secrets.set("working-secret", "token").expect("seed secret");
+    let (providers, registry) = broken_and_working_registry();
 
     let mut capabilities = empty_capabilities();
     let statuses = attach_catalog_to(
@@ -325,24 +355,5 @@ async fn one_providers_unresolvable_secret_never_suppresses_others() {
         }
         other => panic!("expected the working provider's catalog to arrive, got {other:?}"),
     }
-
-    let claude_code = capabilities
-        .harnesses
-        .iter()
-        .find(|h| h.harness_kind.as_str() == "claude-code")
-        .expect("claude-code harness present");
-    assert_eq!(claude_code.model_combinations.len(), 1);
-    assert_eq!(
-        claude_code.model_combinations[0].model_provider.as_str(),
-        "working-vendor"
-    );
-    let metadata = claude_code.model_combinations[0]
-        .model_metadata
-        .get(&tack_orch::execution::ModelId::new(
-            "working-vendor/model-1",
-        ))
-        .expect("the one fetched model's metadata must be attached to the combination");
-    assert_eq!(metadata.context_window, Some(128_000));
-    assert!(metadata.price.is_some());
-    assert!(metadata.modality.is_some());
+    assert_working_vendor_model_attached(&capabilities);
 }
