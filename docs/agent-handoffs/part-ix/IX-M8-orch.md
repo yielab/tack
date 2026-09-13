@@ -500,3 +500,91 @@ defect fixes changed it):
   card's ownership list plus this handoff) — no unowned file touched.
 - Final commits on top of the original handoff: `79e9551` (defect 1),
   `a8cda96` (revert of `9a55f6f`), `b6d227d` (defect 2's real fix).
+
+### 2026-09-13 — a third defect, introduced by this branch and misattributed above
+
+**Correction to the "Budget check" section's `cargo llvm-cov`/`cargo test` paragraph**
+(the one starting "`cargo llvm-cov`'s underlying `cargo test` run is flaky..." and ending
+"...for a reliable read"): that paragraph is wrong. The flake is **not pre-existing** and
+**is** caused by this branch's own `mounted_get`/`mounted_get_auth` helpers in
+`docket_adapter_test.rs`. The original text above is left as written — this is the
+correction, not a rewrite of it.
+
+**What was actually wrong:** both helpers did `let server = MockServer::start().await; ...
+mount a Mock on it ...; adapter_for(&server)` and returned only the `DocketAdapter`. The
+`MockServer` value (`server`) went out of scope and was dropped the instant the helper
+returned — before the caller ever sent a request through the adapter. Dropping a
+`wiremock::MockServer` shuts it down and releases its bound port immediately. Under
+`nextest` (one OS process per test) the freed port is rarely reclaimed by another test
+before the request goes out, which is why this session's own gate (always run under
+`nextest`, per this repo's own rule to never use plain `cargo test`) read green throughout.
+Under any threaded runner — plain `cargo test`'s default multi-threaded harness, and
+`cargo-llvm-cov`'s own instrumented run, which is *also* plain `cargo test` under the
+hood — a different test's freshly started `MockServer`, running concurrently on another
+thread, can and did take the just-freed port before the first test's request landed,
+sending that request into a mock set that was never built for it (`wiremock`'s "no mock
+matched" `NotFound("")` response, or a fixture body from the wrong test). This is exactly
+the class of bug `CLAUDE.md` warns about for a helper that returns only a temp-path guard's
+inner path and drops the guard on return — here the "guard" is the `MockServer` itself, not
+a `tempfile` handle, but the shape (a resource with a lifetime bound to a value the helper
+discards) and the failure mode (silent, environment-dependent, invisible to the type
+system) are identical.
+
+**Why the original claim was wrong, specifically:** the earlier text asserted the flake
+"reproduces identically on the untouched base commit (`c90bbcc`) with the *unmodified*
+file." It does not. Independent verification rebuilt `c90bbcc` in a separate worktree and
+ran `cargo test -p tack-orch --test docket_adapter_test` 13 times with default threads: 13
+passes, 0 failures. The base file's inline tests each call `MockServer::start()` directly
+inside their own test body and use `&server` without ever handing ownership to a helper
+that returns before the request is sent — no drop-early window exists there. The flake
+started when this session's own docket_adapter_test.rs rewrite (commit `7dc54d9`)
+introduced `mounted_get`/`mounted_get_auth` with exactly that window. The verification that
+should have caught this — running the affected binary under plain `cargo test`, not just
+`nextest` — was never done before the original handoff was written; that is the actual gap,
+not "the card's gate list omits a thread-count qualifier."
+
+**Fix** (commit `475cd87`): both helpers now return `(MockServer, DocketAdapter)`; all 16
+call sites bind and hold the server for the rest of the test (`let (_server, adapter) =
+mounted_get(...).await;`). No test body, assertion, mock, or fixture changed. Checked every
+other helper introduced or touched by this card for the same shape
+(`docket_tick_contract_test.rs`/`support.rs`'s `mount_*` helpers take `&MockServer` and
+never own one; `MockServer::start()` is always called directly in the test body there;
+`reconciler/tests.rs`'s fakes are not `wiremock` servers at all; `new_task` in
+`docket_adapter_test.rs` returns a plain `NewRemoteTask` value, not a server-backed
+resource) — none had the same defect.
+
+**Not fixed by, and why**: not `--test-threads=1` (masks the bug rather than removing it,
+and the CI coverage command runs with default threads), not a retry (same reason, plus it
+would hide a real race instead of proving it gone), not a sleep (the request can still race
+a differently-timed server on a differently-loaded machine; the fix removes the race
+entirely rather than narrowing its window).
+
+**Verified:**
+
+- `for i in $(seq 1 10); do cargo test -p tack-orch --test docket_adapter_test; done | grep
+  'test result' | sort | uniq -c` (default threads):
+  ```
+        3 test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+        5 test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+        2 test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+  ```
+  10/10 green (32 passed, 0 failed, every run) — previously 2 of 3 runs failed, a different
+  subset of tests each time.
+- `cargo llvm-cov -p tack-orch --summary-only` (default threads, the literal CI-style
+  command, no thread-count qualifier): now completes (previously exit 101) and reads
+  **91.10 %** LINES, **2179** lines, **194** missed — run three times, identical every time,
+  and identical to the single-threaded reading already recorded in the *Budget check*
+  section above. The coverage number and the missed-line count in this handoff were never
+  wrong; only the claim that the flake was pre-existing and harmless to ignore was.
+- Full gate re-run on the committed tree: `cargo fmt --all -- --check` clean;
+  `cargo nextest run --workspace -E 'package(tack-orch)'` → `276 tests run: 276 passed, 1
+  skipped`; `python3 scripts/maintainability.py check` (bare) → `✓ maintainability budgets
+  hold (293 files checked)`; `duplicate-tests crates/tack-orch` → 0 pairs;
+  `list-fixed-waits.py` → only the exempt `docket_live_test.rs:145`; `check-comments.sh`
+  and `check-test-hygiene.sh` clean; `cargo clippy --workspace --all-targets -- -D
+  warnings` clean. `docket_adapter_test.rs` re-measured: 999 lines (987 before this fix's
+  own +12 net line cost of holding the server binding at each call site; still under
+  1000), body max 37, name max 59 — unchanged
+  acceptance status. `dispatch_404_maps_to_not_found` (VIII-C3) reconfirmed byte-identical
+  to `develop`.
+- Final commit on top of the second amendment: `475cd87`.
