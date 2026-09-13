@@ -349,7 +349,7 @@ async fn fake_binary_success_reports_model_and_usage() {
 }
 
 #[tokio::test]
-async fn fake_binary_success_stages_the_output_artifact() {
+async fn a_successful_codex_exec_stages_its_output_artifact() {
     let (outcome, _scratch) = run_fake_binary_success().await;
     let artifact = &outcome.terminal_reason["artifact"];
     assert_eq!(artifact["kind"], "log");
