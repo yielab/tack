@@ -18,6 +18,24 @@ use tack_runner::client::{
 mod common;
 use common::temp_dir as temporary_root;
 
+/// A fresh temp-dir-backed journal for one test, plus the guard that deletes
+/// the directory (including on an assertion panic) once the test scope ends.
+fn fresh_journal(label: &str) -> (tempfile::TempDir, OwnerOnlyJournal) {
+    let root_dir = temporary_root(label);
+    let journal = OwnerOnlyJournal::new(root_dir.path());
+    (root_dir, journal)
+}
+
+/// Persists every given record, failing fast with which one if persistence
+/// itself (not the corruption under test) is what went wrong.
+fn persist_all(journal: &OwnerOnlyJournal, records: &[&AttemptJournal]) {
+    for record in records {
+        journal
+            .persist_before_spawn(record)
+            .unwrap_or_else(|e| panic!("persist {:?}: {e:?}", record.attempt_id));
+    }
+}
+
 fn record(attempt_id: &str, fencing_token: u64) -> AttemptJournal {
     let lease = AttemptLease {
         attempt_id: AttemptId::new(attempt_id),
@@ -42,19 +60,14 @@ fn record(attempt_id: &str, fencing_token: u64) -> AttemptJournal {
 // 1. A single bit-rotted journal file degrades to a typed `Malformed`
 //    error, not a panic, when loaded directly by id.
 // =======================================================================
+/// Corruption here is written directly to disk, outside any journal API —
+/// the scenario a real bit-rot or partial-write-after-crash event produces.
 #[test]
 fn a_bit_rotted_journal_file_is_malformed_not_a_panic() {
-    let root_dir = temporary_root("bitrot-single");
-    let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
+    let (_root_dir, journal) = fresh_journal("bitrot-single");
     let good = record("attempt-g2-good", 1);
-    journal
-        .persist_before_spawn(&good)
-        .expect("persist healthy journal");
+    persist_all(&journal, &[&good]);
 
-    // Simulate corruption written directly to disk, outside any journal
-    // API — the scenario a real bit-rot or partial-write-after-crash event
-    // produces.
     std::fs::write(
         journal.journal_path(&good.attempt_id),
         b"this is not valid TOML {{{ \x00\x01\x02 garbage",
@@ -66,8 +79,6 @@ fn a_bit_rotted_journal_file_is_malformed_not_a_panic() {
         matches!(loaded, Err(JournalError::Malformed)),
         "expected a typed Malformed error, got {loaded:?}"
     );
-
-    let _ = std::fs::remove_dir_all(root);
 }
 
 // =======================================================================
@@ -80,26 +91,20 @@ fn a_bit_rotted_journal_file_is_malformed_not_a_panic() {
 //    blind respawn, no silent data loss) but flags it as an audit finding:
 //    a single corrupted attempt's journal can currently deny recovery to
 //    every other, healthy, unresolved attempt on the same runner restart.
-//    Not fixed here — this file's scope is tests/audit only.
+//    Not fixed here — this file's scope is tests/audit only. The two
+//    healthy records stay loadable throughout, proving the *data* survives
+//    even though the *scan* currently cannot see past the corrupted entry —
+//    a future fix that makes `unresolved()` skip-and-report per file rather
+//    than abort-on-first would find this data intact and recoverable.
 // =======================================================================
 #[test]
 fn a_corrupted_journal_file_blocks_recovery_of_other_attempts() {
-    let root_dir = temporary_root("bitrot-batch");
-    let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
+    let (_root_dir, journal) = fresh_journal("bitrot-batch");
 
     let healthy_a = record("attempt-g2-healthy-a", 1);
     let healthy_b = record("attempt-g2-healthy-b", 1);
     let corrupted = record("attempt-g2-corrupted", 1);
-    journal
-        .persist_before_spawn(&healthy_a)
-        .expect("persist healthy a");
-    journal
-        .persist_before_spawn(&healthy_b)
-        .expect("persist healthy b");
-    journal
-        .persist_before_spawn(&corrupted)
-        .expect("persist the attempt that will be corrupted");
+    persist_all(&journal, &[&healthy_a, &healthy_b, &corrupted]);
 
     // Before corruption: all three are correctly recoverable.
     let before = journal
@@ -113,19 +118,14 @@ fn a_corrupted_journal_file_blocks_recovery_of_other_attempts() {
     )
     .expect("corrupt one journal file");
 
+    // Documented, safe (non-panicking, non-fabricating) but noteworthy: the
+    // whole scan fails, not just the corrupted entry.
     let after = journal.unresolved();
-    // Documented, safe (non-panicking, non-fabricating) but noteworthy:
-    // the whole scan fails, not just the corrupted entry.
     assert!(
         matches!(after, Err(JournalError::Malformed)),
         "expected the batch scan to surface a typed error, got {after:?}"
     );
 
-    // The two healthy journal files are themselves completely untouched by
-    // this — proving the *data* survives even though the *scan* currently
-    // cannot see past the corrupted entry. A future fix that makes
-    // `unresolved()` skip-and-report per-file rather than abort-on-first
-    // would find this data intact and recoverable.
     let still_readable_a = journal.load(&healthy_a.attempt_id);
     let still_readable_b = journal.load(&healthy_b.attempt_id);
     assert_eq!(still_readable_a.as_ref(), Ok(&healthy_a));
@@ -135,8 +135,6 @@ fn a_corrupted_journal_file_blocks_recovery_of_other_attempts() {
         JournalState::Prepared,
         "the healthy record's own state is untouched by its sibling's corruption"
     );
-
-    let _ = std::fs::remove_dir_all(root);
 }
 
 // =======================================================================
@@ -148,13 +146,9 @@ fn a_corrupted_journal_file_blocks_recovery_of_other_attempts() {
 // =======================================================================
 #[test]
 fn a_truncated_journal_file_is_malformed_not_missing() {
-    let root_dir = temporary_root("truncated");
-    let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
+    let (_root_dir, journal) = fresh_journal("truncated");
     let record = record("attempt-g2-truncated", 1);
-    journal
-        .persist_before_spawn(&record)
-        .expect("persist journal");
+    persist_all(&journal, &[&record]);
 
     std::fs::write(journal.journal_path(&record.attempt_id), b"").expect("truncate to zero bytes");
 
@@ -163,6 +157,4 @@ fn a_truncated_journal_file_is_malformed_not_missing() {
         matches!(loaded, Err(JournalError::Malformed)),
         "a truncated journal must not be confused with `Missing` (which would wrongly permit a second spawn): got {loaded:?}"
     );
-
-    let _ = std::fs::remove_dir_all(root);
 }

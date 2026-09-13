@@ -29,6 +29,36 @@ fn only_a_whole_loopback_host_is_accepted_as_a_base() {
     }
 }
 
+/// Shared by the override test below: checks the catalog URL and the
+/// Claude endpoint's base URL together, tagging failures with `label` so
+/// a broken phase is identifiable without repeating the assertions.
+fn assert_catalog_and_claude_base(label: &str, expected_catalog: &str, expected_claude_base: &str) {
+    assert_eq!(catalog_url(), expected_catalog, "{label}: catalog_url");
+    let claude = VercelAiGateway
+        .endpoint(Wire::AnthropicMessages)
+        .expect("endpoint present");
+    assert_eq!(
+        claude.base_url, expected_claude_base,
+        "{label}: claude base_url"
+    );
+}
+
+/// Checks the full wiring picture when the override is honored: both
+/// endpoints and both credential variables, not just the catalog+claude
+/// pair the other phases share.
+fn assert_full_override_wiring(claude_base: &str, codex_base: &str) {
+    let claude = VercelAiGateway
+        .endpoint(Wire::AnthropicMessages)
+        .expect("endpoint present");
+    assert_eq!(claude.base_url, claude_base);
+    assert_eq!(claude.credential_env_var, "ANTHROPIC_AUTH_TOKEN");
+    let codex = VercelAiGateway
+        .endpoint(Wire::OpenAiResponses)
+        .expect("endpoint present");
+    assert_eq!(codex.base_url, codex_base);
+    assert_eq!(codex.credential_env_var, "AI_GATEWAY_API_KEY");
+}
+
 /// Proves the smoke-only override actually rebases every URL this
 /// provider would otherwise hit, and that its absence changes nothing —
 /// the property `scripts/smoke.sh` step 13 depends on. Mutates a
@@ -37,34 +67,25 @@ fn only_a_whole_loopback_host_is_accepted_as_a_base() {
 /// others in this module in the same process.
 #[test]
 fn the_test_only_base_url_override_rebases_catalog_and_wires() {
-    assert_eq!(
-        catalog_url(),
-        CATALOG_URL,
-        "unset: the real host, unchanged"
-    );
-    let claude = VercelAiGateway
-        .endpoint(Wire::AnthropicMessages)
-        .expect("endpoint present");
-    assert_eq!(claude.base_url, "https://ai-gateway.vercel.sh/claude-code");
+    const REAL_CLAUDE_BASE: &str = "https://ai-gateway.vercel.sh/claude-code";
+    assert_catalog_and_claude_base("unset", CATALOG_URL, REAL_CLAUDE_BASE);
 
     unsafe {
         std::env::set_var(TEST_BASE_URL_OVERRIDE_VAR, "http://127.0.0.1:9/smoke-gw");
     }
-    assert_eq!(catalog_url(), "http://127.0.0.1:9/smoke-gw/v1/models");
-    let claude = VercelAiGateway
-        .endpoint(Wire::AnthropicMessages)
-        .expect("endpoint present");
-    assert_eq!(claude.base_url, "http://127.0.0.1:9/smoke-gw/claude-code");
-    assert_eq!(claude.credential_env_var, "ANTHROPIC_AUTH_TOKEN");
-    let codex = VercelAiGateway
-        .endpoint(Wire::OpenAiResponses)
-        .expect("endpoint present");
-    assert_eq!(codex.base_url, "http://127.0.0.1:9/smoke-gw/codex/v1");
-    assert_eq!(codex.credential_env_var, "AI_GATEWAY_API_KEY");
+    assert_catalog_and_claude_base(
+        "loopback override",
+        "http://127.0.0.1:9/smoke-gw/v1/models",
+        "http://127.0.0.1:9/smoke-gw/claude-code",
+    );
+    assert_full_override_wiring(
+        "http://127.0.0.1:9/smoke-gw/claude-code",
+        "http://127.0.0.1:9/smoke-gw/codex/v1",
+    );
     unsafe {
         std::env::remove_var(TEST_BASE_URL_OVERRIDE_VAR);
     }
-    assert_eq!(catalog_url(), CATALOG_URL, "removed: back to the real host");
+    assert_catalog_and_claude_base("removed", CATALOG_URL, REAL_CLAUDE_BASE);
 
     // A non-loopback value is a mistake, not a valid override target —
     // treated exactly like unset, never honored, so a credential can
@@ -73,17 +94,10 @@ fn the_test_only_base_url_override_rebases_catalog_and_wires() {
     unsafe {
         std::env::set_var(TEST_BASE_URL_OVERRIDE_VAR, "http://example.invalid");
     }
-    assert_eq!(
-        catalog_url(),
+    assert_catalog_and_claude_base(
+        "non-loopback override ignored",
         CATALOG_URL,
-        "a non-loopback override is ignored, not honored"
-    );
-    let claude = VercelAiGateway
-        .endpoint(Wire::AnthropicMessages)
-        .expect("endpoint present");
-    assert_eq!(
-        claude.base_url, "https://ai-gateway.vercel.sh/claude-code",
-        "a non-loopback override must never reach the endpoint either"
+        REAL_CLAUDE_BASE,
     );
     unsafe {
         std::env::remove_var(TEST_BASE_URL_OVERRIDE_VAR);
