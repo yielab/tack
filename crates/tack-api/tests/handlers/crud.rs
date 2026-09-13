@@ -119,28 +119,16 @@ async fn oversized_body_rejected() {
 #[tokio::test]
 async fn create_project_empty_name_rejected() {
     let (app, _) = common::test_app().await;
-    let (status, _) = common::send(
-        &app,
-        "POST",
-        "/api/projects",
-        json!({"name":"","project_type":"software"}),
-        &[],
-    )
-    .await;
+    let body = json!({"name":"","project_type":"software"});
+    let (status, _) = common::send(&app, "POST", "/api/projects", body, &[]).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
 async fn create_project_valid_accepted() {
     let (app, _) = common::test_app().await;
-    let (status, _) = common::send(
-        &app,
-        "POST",
-        "/api/projects",
-        json!({"name":"My Project","project_type":"software"}),
-        &[],
-    )
-    .await;
+    let body = json!({"name":"My Project","project_type":"software"});
+    let (status, _) = common::send(&app, "POST", "/api/projects", body, &[]).await;
     assert_eq!(status, StatusCode::OK);
 }
 
@@ -148,14 +136,8 @@ async fn create_project_valid_accepted() {
 async fn create_item_empty_title_rejected() {
     let (app, _) = common::test_app().await;
     let pid = common::create_project(&app, "P", "software").await;
-    let (status, _) = common::send(
-        &app,
-        "POST",
-        &format!("/api/projects/{pid}/items"),
-        json!({"title":""}),
-        &[],
-    )
-    .await;
+    let uri = format!("/api/projects/{pid}/items");
+    let (status, _) = common::send(&app, "POST", &uri, json!({"title":""}), &[]).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
@@ -299,14 +281,8 @@ async fn raw_bytes(
 #[tokio::test]
 async fn backup_settings_invalid_returns_422_envelope() {
     let (app, _) = common::test_app().await;
-    let (status, body) = common::send(
-        &app,
-        "PUT",
-        "/api/settings/backup",
-        json!({"retention":0}),
-        &[],
-    )
-    .await;
+    let req_body = json!({"retention": 0});
+    let (status, body) = common::send(&app, "PUT", "/api/settings/backup", req_body, &[]).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["error"]["status"], 422);
     assert!(body["error"]["message"].is_string());
@@ -368,27 +344,16 @@ async fn api_routes_take_priority_over_spa_fallback() {
 
 /// Helper: create a custom field and return its id string.
 async fn make_custom_field(app: &axum::Router, project_id: Uuid, body: &str) -> String {
-    let (_, f) = common::send(
-        app,
-        "POST",
-        &format!("/api/projects/{project_id}/custom-fields"),
-        serde_json::from_str(body).unwrap(),
-        &[],
-    )
-    .await;
+    let uri = format!("/api/projects/{project_id}/custom-fields");
+    let (_, f) = common::send(app, "POST", &uri, serde_json::from_str(body).unwrap(), &[]).await;
     f["id"].as_str().unwrap().to_owned()
 }
 
 /// Helper: create a default item and return its id string.
 async fn make_item(app: &axum::Router, project_id: Uuid) -> String {
-    let (_, i) = common::send(
-        app,
-        "POST",
-        &format!("/api/projects/{project_id}/items"),
-        json!({"title":"Item","item_type":"task"}),
-        &[],
-    )
-    .await;
+    let uri = format!("/api/projects/{project_id}/items");
+    let body = json!({"title":"Item","item_type":"task"});
+    let (_, i) = common::send(app, "POST", &uri, body, &[]).await;
     i["id"].as_str().unwrap().to_owned()
 }
 
