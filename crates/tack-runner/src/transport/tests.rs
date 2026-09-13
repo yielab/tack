@@ -206,7 +206,7 @@ fn capabilities() -> RunnerCapabilities {
 // -----------------------------------------------------------------
 
 #[tokio::test]
-async fn enrollment_parses_the_frozen_response_and_carries_the_token_only_in_the_body() {
+async fn enrollment_parses_the_frozen_response_token_only_in_the_body() {
     let server = spawn_mock(vec![(200, fixture("enrollment.response.json"))]);
     let protocol = client(&server.base_url);
     let response = protocol
@@ -251,7 +251,7 @@ async fn enrollment_parses_the_frozen_response_and_carries_the_token_only_in_the
 }
 
 #[tokio::test]
-async fn claim_builds_the_lease_from_both_halves_of_the_frozen_response() {
+async fn claim_builds_the_lease_from_both_halves_of_the_response() {
     let server = spawn_mock(vec![(200, fixture("claim.response.json"))]);
     let protocol = client(&server.base_url);
     let result = protocol
@@ -436,7 +436,7 @@ async fn reporting_running_without_a_process_id_is_typed_not_sent() {
 }
 
 #[tokio::test]
-async fn completion_and_cancellation_and_recovery_parse_their_frozen_responses() {
+async fn completion_cancellation_and_recovery_parse_frozen_responses() {
     let server = spawn_mock(vec![
         (200, fixture("completion.response.json")),
         (200, fixture("cancellation.response.json")),
@@ -485,7 +485,7 @@ async fn completion_and_cancellation_and_recovery_parse_their_frozen_responses()
 }
 
 #[tokio::test]
-async fn events_decisions_and_artifacts_use_their_routes_and_frozen_shapes() {
+async fn events_decisions_and_artifacts_use_their_routes_and_shapes() {
     let server = spawn_mock(vec![
         (200, fixture("event-batch.response.json")),
         (200, fixture("decision.create.response.json")),
@@ -596,7 +596,7 @@ async fn events_decisions_and_artifacts_use_their_routes_and_frozen_shapes() {
 }
 
 #[tokio::test]
-async fn artifact_content_follows_the_server_grant_and_carries_the_fence_header() {
+async fn artifact_content_follows_the_server_grant_and_fence_header() {
     let server = spawn_mock(vec![
         (200, fixture("artifact.response.json")),
         (204, String::new()),
@@ -846,7 +846,7 @@ async fn a_non_retryable_code_is_sent_exactly_once() {
 }
 
 #[tokio::test]
-async fn enrollment_is_never_resent_even_when_the_failure_is_retryable() {
+async fn enrollment_is_never_resent_even_on_a_retryable_failure() {
     // The token is redeemed exactly once server-side: a lost response is
     // ambiguous, and resending would burn a second token without being
     // able to recover the credential. `internal_error` is retryable by
@@ -970,7 +970,7 @@ fn a_missing_session_file_is_absent_not_an_error() {
 }
 
 #[test]
-fn persisted_session_runner_id_reads_the_id_without_a_full_session() {
+fn persisted_session_runner_id_reads_without_a_full_session() {
     let guard = tempfile::tempdir().expect("temporary directory");
     let directory = guard.path();
     let session = session();
@@ -983,7 +983,7 @@ fn persisted_session_runner_id_reads_the_id_without_a_full_session() {
 }
 
 #[test]
-fn persisted_session_runner_id_is_none_for_a_missing_or_unparseable_session() {
+fn persisted_runner_id_is_none_for_missing_or_bad_session() {
     let guard = tempfile::tempdir().expect("temporary directory");
     let missing = guard.path().join("absent");
     assert!(persisted_session_runner_id(&missing).is_none());

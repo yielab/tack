@@ -251,7 +251,7 @@ async fn the_attempt_checkout_stays_owner_only() {
 /// same state a killed runner leaves behind. The restart must then produce
 /// a correct checkout rather than inheriting the wreckage.
 #[tokio::test]
-async fn a_runner_killed_mid_provision_leaves_nothing_a_restart_inherits() {
+async fn a_runner_killed_mid_provision_leaves_nothing_to_inherit() {
     let source = SourceRepository::create();
     let root_dir = temp_dir("root");
     let root = root_dir.path();
@@ -286,7 +286,7 @@ async fn a_runner_killed_mid_provision_leaves_nothing_a_restart_inherits() {
 }
 
 #[tokio::test]
-async fn a_partial_checkout_without_a_sentinel_is_discarded_not_reused() {
+async fn a_partial_checkout_without_a_sentinel_is_discarded() {
     let source = SourceRepository::create();
     let root_dir = temp_dir("root");
     let root = root_dir.path();
@@ -342,7 +342,7 @@ async fn a_sentinel_that_disagrees_with_head_is_not_trusted() {
 }
 
 #[tokio::test]
-async fn a_completed_checkout_is_reused_on_restart_instead_of_refetched() {
+async fn a_completed_checkout_is_reused_on_restart_not_refetched() {
     let source = SourceRepository::create();
     let root_dir = temp_dir("root");
     let root = root_dir.path();
@@ -392,7 +392,7 @@ async fn a_checkout_of_a_different_revision_is_never_reused() {
 // -----------------------------------------------------------------
 
 #[tokio::test]
-async fn a_revision_that_does_not_exist_is_typed_and_writes_no_sentinel() {
+async fn an_unknown_revision_is_typed_and_writes_no_sentinel() {
     let source = SourceRepository::create();
     let root_dir = temp_dir("root");
     let root = root_dir.path();
@@ -516,7 +516,7 @@ async fn a_hanging_git_is_killed_and_reported_as_a_timeout() {
 // -----------------------------------------------------------------
 
 #[tokio::test]
-async fn a_directory_marked_for_another_attempt_is_refused_and_untouched() {
+async fn a_directory_marked_for_another_attempt_is_refused() {
     let source = SourceRepository::create();
     let root_dir = temp_dir("root");
     let root = root_dir.path();
@@ -575,7 +575,7 @@ async fn a_directory_with_no_marker_is_refused_and_untouched() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn a_symlinked_attempt_path_is_refused_before_anything_is_written() {
+async fn a_symlinked_attempt_path_is_refused_before_writing() {
     use std::os::unix::fs::symlink;
 
     let source = SourceRepository::create();

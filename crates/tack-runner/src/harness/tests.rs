@@ -203,7 +203,7 @@ async fn validate_and_start_dispatch_to_the_requested_kind_only() {
 /// missing `LocalRunHandle.harness_kind` field (documented above) would
 /// otherwise risk.
 #[tokio::test]
-async fn cancel_and_wait_route_the_start_generated_handle_back_to_its_own_adapter() {
+async fn cancel_and_wait_route_the_start_handle_to_its_adapter() {
     let (registry, codex_calls, claude_calls) = registry_with_two_kinds();
 
     let handle = registry
@@ -278,8 +278,7 @@ async fn reconcile_decodes_the_kind_and_routes_to_the_right_adapter() {
 }
 
 #[tokio::test]
-async fn reconcile_with_an_undecodable_process_id_is_explicitly_unavailable_not_ambiguous_success()
-{
+async fn an_undecodable_process_id_reconciles_as_unavailable() {
     let (registry, _, _) = registry_with_two_kinds();
     let journal = journal_with_process(Some("not-an-encoded-handle-at-all"));
 
@@ -290,7 +289,7 @@ async fn reconcile_with_an_undecodable_process_id_is_explicitly_unavailable_not_
 }
 
 #[tokio::test]
-async fn registered_kinds_and_capabilities_are_in_deterministic_sorted_order() {
+async fn registered_kinds_and_capabilities_sort_deterministically() {
     let (registry, _, _) = registry_with_two_kinds();
     assert_eq!(registry.registered_kinds(), vec!["claude-code", "codex"]);
 }
@@ -371,8 +370,7 @@ impl HarnessProbe for FakeProbe {
 }
 
 #[tokio::test]
-async fn capabilities_reports_an_honest_probe_error_for_an_uninstalled_harness_never_a_fake_success()
- {
+async fn capabilities_reports_an_honest_probe_error_not_fake_success() {
     let mut registry = AdapterRegistry::new();
     registry
         .register_probe(Box::new(FakeProbe::honest("codex", true)))
@@ -407,8 +405,7 @@ async fn capabilities_reports_an_honest_probe_error_for_an_uninstalled_harness_n
 /// cancellation against a live attempt fails to reach a detached
 /// descendant.
 #[tokio::test]
-async fn registering_a_probe_that_overclaims_cancel_support_is_rejected_before_any_attempt_exists()
-{
+async fn registering_a_probe_overclaiming_cancel_support_is_rejected() {
     let mut registry = AdapterRegistry::new();
     let lying = FakeProbe {
         kind: "lying-harness",
@@ -434,7 +431,7 @@ async fn registering_a_probe_that_overclaims_cancel_support_is_rejected_before_a
 }
 
 #[test]
-fn handle_encoding_round_trips_kinds_and_process_ids_containing_colons() {
+fn handle_encoding_round_trips_kinds_and_ids_containing_colons() {
     let encoded = encode_handle("open:code", "pid:123:extra");
     let (kind, inner) = decode_handle(&encoded).expect("decode");
     assert_eq!(kind, "open:code");
@@ -828,7 +825,7 @@ fn real_adapters_for(
 /// adapters — `provider::resolve_endpoint`'s own check, surfaced by the
 /// shared `validate`. Replaces each adapter's own `*_disabled_provider_*` test.
 #[tokio::test]
-async fn disabled_provider_rejects_both_real_adapters_before_any_process_spawns() {
+async fn disabled_provider_rejects_both_real_adapters_before_spawning() {
     let secrets_dir = cross_adapter_temp_dir("disabled-provider-secrets");
     let (program, args, _script_dir) = cross_adapter_fixture_command();
     let (codex, claude, _staging) = real_adapters_for(program, args, secrets_dir.path());
@@ -862,7 +859,7 @@ async fn disabled_provider_rejects_both_real_adapters_before_any_process_spawns(
 /// A cancel/wait on a handle never produced by that adapter is a typed
 /// rejection, never a panic — `take_running`'s own shared bookkeeping.
 #[tokio::test]
-async fn cancel_and_wait_on_an_untracked_handle_are_typed_rejections_for_both_real_adapters() {
+async fn cancel_and_wait_on_an_untracked_handle_are_typed_rejections() {
     let secrets_dir = cross_adapter_temp_dir("untracked-handle-secrets");
     let (program, args, _script_dir) = cross_adapter_fixture_command();
     let (codex, claude, _staging) = real_adapters_for(program, args, secrets_dir.path());
@@ -895,7 +892,7 @@ async fn cancel_and_wait_on_an_untracked_handle_are_typed_rejections_for_both_re
 /// own) — entirely shared `cancel()` plus `process.rs`'s process-group
 /// signal. Replaces codex's own copy; claude-code never had one.
 #[tokio::test]
-async fn cancel_kills_the_whole_descendant_tree_via_both_real_adapters() {
+async fn both_adapters_route_cancel_to_kill_the_whole_descendant_tree() {
     let secrets_dir = cross_adapter_temp_dir("descendant-tree-secrets");
     let (fake_program, fake_args) = crate::harness::fixtures::fake_harness_command();
     let (codex, claude, _staging) = real_adapters_for(fake_program, fake_args, secrets_dir.path());
@@ -949,7 +946,7 @@ async fn cancel_kills_the_whole_descendant_tree_via_both_real_adapters() {
 /// Linux-only tests for claude-code).
 #[cfg(unix)]
 #[tokio::test]
-async fn reconcile_reports_shared_pid_plumbing_identically_for_both_real_adapters() {
+async fn reconcile_reports_shared_pid_plumbing_identically_for_both() {
     let secrets_dir = cross_adapter_temp_dir("reconcile-secrets");
     let (program, args, _script_dir) = cross_adapter_fixture_command();
     let (codex, claude, _staging) = real_adapters_for(program, args, secrets_dir.path());

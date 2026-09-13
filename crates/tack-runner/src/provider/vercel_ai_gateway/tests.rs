@@ -36,7 +36,7 @@ fn only_a_whole_loopback_host_is_accepted_as_a_base() {
 /// test); do not run this test under a bare `cargo test` alongside
 /// others in this module in the same process.
 #[test]
-fn the_test_only_base_url_override_rebases_catalog_and_both_wires_and_is_a_no_op_when_unset() {
+fn the_test_only_base_url_override_rebases_catalog_and_wires() {
     assert_eq!(
         catalog_url(),
         CATALOG_URL,
@@ -121,7 +121,7 @@ const SAMPLE_BODY: &str = r#"{
 }"#;
 
 #[test]
-fn parses_priced_context_windowed_empty_pricing_and_absent_context_window_entries() {
+fn parses_priced_windowed_empty_and_absent_window_entries() {
     let entries = parse_catalog(SAMPLE_BODY.as_bytes()).expect("valid catalog body");
     assert_eq!(entries.len(), 3);
 
@@ -165,7 +165,7 @@ fn vercel_ai_gateway_catalog_parse_rejects_malformed_body() {
 /// key through opaquely, exactly as it does for `pricing`, whatever
 /// shape it holds — not that this is the vendor's actual shape for it.
 #[test]
-fn modality_passes_through_opaquely_when_the_catalog_publishes_it() {
+fn modality_passes_through_opaquely_when_catalog_publishes_it() {
     const BODY_WITH_MODALITY: &str = r#"{
         "object": "list",
         "data": [

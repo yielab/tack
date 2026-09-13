@@ -303,7 +303,7 @@ async fn validate_rejects_invalid_specs() {
 /// (`validate` itself never touches a filesystem path outside checking
 /// its own binary exists).
 #[tokio::test]
-async fn validate_rejects_a_missing_secret_reference_typed_and_touches_nothing() {
+async fn validate_rejects_a_missing_secret_reference_untouched() {
     let workspace_dir = temp_workspace("secret-reference-missing");
     let workspace = workspace_dir.path();
     std::fs::write(workspace.join("sentinel.txt"), b"before").expect("seed workspace");
@@ -555,7 +555,7 @@ fn truncated_stream_with_no_result_line_is_reported_failed() {
 /// cleaning up its own bookkeeping — grandchild-tree coverage itself is
 /// `process::tests::cancel_kills_the_whole_descendant_tree_...`.
 #[tokio::test]
-async fn cancel_stops_the_process_and_forgets_its_own_bookkeeping_entry() {
+async fn cancel_stops_the_process_and_forgets_its_bookkeeping_entry() {
     let (adapter, _scratch) = adapter_with_fake_binary();
     let workspace_dir = temp_workspace("cancel");
     let workspace = workspace_dir.path();
@@ -716,7 +716,7 @@ fn install_secret_log_capture() -> tracing::dispatcher::DefaultGuard {
 /// for the same run names the entry (positive control: asserted
 /// present) and never contains the value.
 #[tokio::test]
-async fn secret_reference_resolves_and_only_its_length_reaches_the_shim() {
+async fn secret_reference_resolves_and_only_length_reaches_the_shim() {
     let _log_capture = install_secret_log_capture();
     let workspace_dir = temp_workspace("secret-reference-length");
     let workspace = workspace_dir.path();
@@ -788,7 +788,7 @@ async fn secret_reference_resolves_and_only_its_length_reaches_the_shim() {
 /// `fake_binary_success_stages_a_real_log_artifact` above for the fix
 /// itself).
 #[test]
-fn declared_capabilities_report_cancel_and_artifacts_as_advisory() {
+fn declared_capabilities_report_cancel_and_artifacts_advisory() {
     let (adapter, _scratch) = adapter_with_fake_binary();
     let declared = HarnessProbe::declared_capabilities(&adapter);
     assert_eq!(declared.cancel.support, CapabilitySupport::Advisory);
@@ -869,7 +869,7 @@ fn version_text_parsing_variants() {
 /// reason, and coexist with the empty combination list rather than
 /// replace its honesty note.
 #[tokio::test]
-async fn probe_attests_model_passthrough_instead_of_inventing_a_model_list() {
+async fn probe_attests_model_passthrough_instead_of_inventing_a_list() {
     let (adapter, _scratch) = adapter_with_fake_binary();
     let capability = adapter.probe().await;
 
@@ -886,7 +886,7 @@ async fn probe_attests_model_passthrough_instead_of_inventing_a_model_list() {
 /// spawn path (not only the pure-function tests above), using the
 /// shared fixture's dedicated `unknown_version` mode.
 #[tokio::test]
-async fn probe_reports_the_shared_fixtures_unknown_version_output_honestly() {
+async fn probe_reports_the_fixtures_unknown_version_output_honestly() {
     let (adapter, _scratch) = adapter_with_fake_binary();
     // `detect_version` always invokes `--version` with no env override,
     // so this test instead exercises the same parsing path `probe`
@@ -1015,7 +1015,7 @@ fn result_envelope_parsing_variants() {
 /// that claim, because the init line it came from fired before any
 /// network call reached the gateway.
 #[test]
-fn gateway_routed_result_is_requested_not_confirmed_even_on_a_fast_result_line() {
+fn gateway_result_is_requested_not_confirmed_even_when_fast() {
     let stdout = include_str!("../fixtures/claude_code/2.1.261/gateway-routed-result.jsonl");
     let result = ProcessResult {
         exit: ProcessExit::Exited(1),
@@ -1043,7 +1043,7 @@ fn gateway_routed_result_is_requested_not_confirmed_even_on_a_fast_result_line()
 }
 
 #[test]
-fn a_missing_is_error_field_fails_closed_as_an_error_not_a_silent_success() {
+fn a_missing_is_error_field_fails_closed_not_a_silent_success() {
     let value = serde_json::json!({"type": "result", "result": "no is_error field here"});
     let parsed = parsed_from_result_line(&value, None, None, None);
     assert!(parsed.is_error);
@@ -1081,7 +1081,7 @@ fn journal_with_process(process_id: Option<&str>) -> AttemptJournal {
 
 #[cfg(target_os = "linux")]
 #[tokio::test]
-async fn reconcile_reports_process_running_for_a_genuinely_still_running_fake_harness() {
+async fn reconcile_reports_running_for_a_still_running_harness() {
     let (adapter, _scratch) = adapter_with_fake_binary();
     let workspace_dir = temp_workspace("reconcile-running");
     let workspace = workspace_dir.path();
@@ -1150,7 +1150,7 @@ async fn reconcile_reports_process_running_for_a_genuinely_still_running_fake_ha
 
 #[cfg(target_os = "linux")]
 #[tokio::test]
-async fn reconcile_reports_process_stopped_when_a_live_pid_belongs_to_an_unrelated_program() {
+async fn reconcile_reports_stopped_for_a_pid_of_an_unrelated_program() {
     // A real, currently-alive pid that this adapter did *not* spawn and
     // that does not resolve to `self.binary.program` at all: this
     // adapter's own test-runner process itself.
@@ -1237,7 +1237,7 @@ fn provider_cases() -> Vec<ProviderCase> {
 }
 
 #[tokio::test]
-async fn provider_endpoint_variables_present_only_when_configured_and_requested() {
+async fn provider_endpoint_variables_present_only_when_configured() {
     for case in provider_cases() {
         let workspace_dir = temp_workspace("provider-guard");
         let workspace = workspace_dir.path();

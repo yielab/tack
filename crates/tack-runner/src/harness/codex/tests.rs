@@ -260,8 +260,7 @@ async fn validate_rejects_pre_spawn_selection_problems() {
 /// test would hang (bounded here by an explicit timeout that turns that
 /// hang into a fast, loud failure rather than a stuck CI job).
 #[tokio::test]
-async fn unsupported_selection_fails_pre_spawn_even_when_the_process_would_otherwise_hang_forever()
-{
+async fn unsupported_selection_fails_pre_spawn_not_a_hanging_process() {
     let (adapter, _scratch) = adapter();
     let workspace_dir = deterministic_fixture_repo("pre-spawn-hang-guard");
     let spec = spec_with(
@@ -291,7 +290,7 @@ async fn unsupported_selection_fails_pre_spawn_even_when_the_process_would_other
 // ---- fake-binary exec-path tests ----------------------------------
 
 #[tokio::test]
-async fn fake_binary_success_completes_succeeded_with_normalized_output_and_a_staged_artifact() {
+async fn fake_binary_success_completes_with_output_and_artifact() {
     let (adapter, _scratch) = adapter();
     let workspace_dir = deterministic_fixture_repo("exec-success");
     let spec = spec_with(
@@ -453,7 +452,7 @@ async fn wait_classifies_terminal_state_from_the_exit_code_alone() {
 /// the adapter's own output surface (`HarnessOutcome.terminal_reason`)
 /// nor in the staged log artifact.
 #[tokio::test]
-async fn secret_canaries_never_survive_into_terminal_reason_or_the_staged_artifact() {
+async fn secret_canaries_never_survive_into_reason_or_staged_artifact() {
     const CANARY_ENV: &str = "tack-test-codex-canary-env-58d1";
     let (adapter, _scratch) = adapter();
     let workspace_dir = deterministic_fixture_repo("redaction");
@@ -565,7 +564,7 @@ fn probe_cases() -> Vec<ProbeCase> {
 }
 
 #[tokio::test]
-async fn probe_reports_version_or_an_explicit_error_never_a_fake_success() {
+async fn probe_reports_version_or_an_explicit_error_not_fake_success() {
     for case in probe_cases() {
         let (adapter, _scratch) = adapter_with_env(env_map(case.env));
         let capability = adapter.probe().await;
@@ -602,7 +601,7 @@ async fn probe_reports_version_or_an_explicit_error_never_a_fake_success() {
 /// pass-through attestation alone — it must be `Supported` and carry a
 /// reason, distinct from the version-parsing claim above.
 #[tokio::test]
-async fn probe_attests_model_passthrough_when_no_models_are_enumerable() {
+async fn probe_attests_model_passthrough_when_no_models_enumerable() {
     let (adapter, _scratch) = adapter_with_env(env_map(&[
         ("TACK_FAKE_HARNESS_MODE", "version"),
         ("TACK_FAKE_HARNESS_VERSION", "9.9.9"),
@@ -619,7 +618,7 @@ async fn probe_attests_model_passthrough_when_no_models_are_enumerable() {
 }
 
 #[tokio::test]
-async fn probe_reports_an_absent_binary_as_an_explicit_probe_error_never_a_fake_success() {
+async fn probe_reports_an_absent_binary_as_an_error_not_fake_success() {
     let empty_dir_dir = temp_dir("probe-empty-path");
     let empty_dir = empty_dir_dir.path();
     let scratch = temp_dir("artifacts-absent");
@@ -831,7 +830,7 @@ fn provider_env_cases() -> Vec<ProviderEnvCase> {
 /// provider — a direct-vendor request must spawn with neither the `-c
 /// model_provider` flag nor the credential variable present.
 #[tokio::test]
-async fn provider_endpoint_credential_reaches_the_process_only_when_the_request_names_it() {
+async fn provider_endpoint_credential_reaches_process_only_when_named() {
     for case in provider_env_cases() {
         let workspace_dir = deterministic_fixture_repo(case.name);
         let workspace = workspace_dir.path();
