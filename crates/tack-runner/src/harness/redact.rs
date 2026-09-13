@@ -265,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn redact_query_strips_query_and_fragment_but_keeps_bare_urls_unchanged() {
+    fn redact_query_strips_query_fragment_keeps_bare_urls_unchanged() {
         assert_eq!(
             redact_query("https://example.invalid/v1/models?api_key=canary-xyz"),
             "https://example.invalid/v1/models"
