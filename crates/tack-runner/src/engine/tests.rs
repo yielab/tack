@@ -712,6 +712,15 @@ fn tracked_workspace_manager(root: &Path) -> (WorkspaceManager<FakeWorktree>, Ar
     (manager, provisioned)
 }
 
+/// Whether the quarantine directory exists and holds at least one retired
+/// record — never panics on an absent directory, since "never quarantined"
+/// is itself a claim some tests make.
+fn quarantine_dir_has_entries(root: &Path) -> bool {
+    root.join("quarantine")
+        .read_dir()
+        .is_ok_and(|mut entries| entries.next().is_some())
+}
+
 fn prepared_record(lease: &AttemptLease, root: &Path) -> AttemptJournal {
     AttemptJournal::prepared(
         lease,
@@ -1020,6 +1029,85 @@ async fn mismatched_heartbeat_echo_quarantines_before_applying_lease_facts() {
     std::fs::remove_dir_all(root).expect("remove temporary root");
 }
 
+/// One `tampered_terminal_outbox_bindings` case: builds a pending terminal
+/// report whose binding to the journal record disagrees with it in the way
+/// `tamper` names, then asserts recovery rejects it as malformed rather than
+/// replaying it.
+async fn assert_tampered_binding_rejected(tamper: &str) {
+    let root_dir = temporary_root(tamper);
+    let root = root_dir.path();
+    let journal = OwnerOnlyJournal::new(root);
+    let lease = work().lease;
+    let mut record = claimed_record(&lease, root);
+    record.state = JournalState::TerminalReportPending;
+    if tamper == "journal_runner" {
+        record.runner_id = RunnerId::new("other-runner");
+    }
+    record.pending_terminal_report = Some(match tamper {
+        "cancellation_id" => {
+            let report = CancellationReport {
+                protocol_version: ProtocolVersion::v1(),
+                runner_id: session().runner_id,
+                cancellation_request_id: CancellationRequestId::new("wrong-cancel"),
+                attempt_id: record.attempt_id.clone(),
+                fencing_token: record.fencing_token,
+                observation: CancelObservation::ProcessStopped,
+                observed_at: Timestamp::new("2026-08-06T12:24:00Z"),
+                details: serde_json::Map::new(),
+            };
+            PendingTerminalReport {
+                kind: PendingTerminalReportKind::Cancellation,
+                canonical_json: serde_json::to_string(&report).expect("cancel payload"),
+            }
+        }
+        _ => {
+            let mut report = CompletionReport {
+                protocol_version: ProtocolVersion::v1(),
+                runner_id: session().runner_id,
+                completion_id: CompletionId::new("completion:attempt:7"),
+                attempt_id: record.attempt_id.clone(),
+                fencing_token: record.fencing_token,
+                terminal_state: AttemptState::Succeeded,
+                terminal_reason: serde_json::json!({"code":"completed"}),
+                final_event_checkpoint: None,
+                actual_execution: actual_execution(),
+                usage: usage(),
+            };
+            match tamper {
+                "journal_runner" => {}
+                "runner" => report.runner_id = RunnerId::new("other-runner"),
+                "completion_id" => report.completion_id = CompletionId::new("wrong"),
+                "workspace" => {
+                    report.actual_execution.workspace_id =
+                        tack_orch::execution::WorkspaceId::new("ws_wrong")
+                }
+                _ => unreachable!(),
+            }
+            PendingTerminalReport {
+                kind: PendingTerminalReportKind::Completion,
+                canonical_json: serde_json::to_string(&report).expect("completion payload"),
+            }
+        }
+    });
+    journal
+        .persist_before_spawn(&record)
+        .expect("tampered pending journal");
+    let protocol = protocol(work(), false, false);
+    let engine = runner_engine(
+        protocol.clone(),
+        adapter(journal.journal_path(&AttemptId::new("attempt"))),
+        journal,
+        root,
+    );
+    assert!(matches!(
+        engine.recover(&session()).await,
+        Err(EngineError::Journal(JournalError::Malformed))
+    ));
+    assert_eq!(protocol.completion_reports.load(Ordering::SeqCst), 0);
+    assert_eq!(protocol.cancellation_reports.load(Ordering::SeqCst), 0);
+    std::fs::remove_dir_all(root).expect("remove temporary root");
+}
+
 #[tokio::test]
 async fn tampered_terminal_outbox_bindings_are_rejected_before_replay_transport() {
     for tamper in [
@@ -1029,78 +1117,7 @@ async fn tampered_terminal_outbox_bindings_are_rejected_before_replay_transport(
         "workspace",
         "cancellation_id",
     ] {
-        let root_dir = temporary_root(tamper);
-        let root = root_dir.path();
-        let journal = OwnerOnlyJournal::new(root);
-        let lease = work().lease;
-        let mut record = claimed_record(&lease, root);
-        record.state = JournalState::TerminalReportPending;
-        if tamper == "journal_runner" {
-            record.runner_id = RunnerId::new("other-runner");
-        }
-        record.pending_terminal_report = Some(match tamper {
-            "cancellation_id" => {
-                let report = CancellationReport {
-                    protocol_version: ProtocolVersion::v1(),
-                    runner_id: session().runner_id,
-                    cancellation_request_id: CancellationRequestId::new("wrong-cancel"),
-                    attempt_id: record.attempt_id.clone(),
-                    fencing_token: record.fencing_token,
-                    observation: CancelObservation::ProcessStopped,
-                    observed_at: Timestamp::new("2026-08-06T12:24:00Z"),
-                    details: serde_json::Map::new(),
-                };
-                PendingTerminalReport {
-                    kind: PendingTerminalReportKind::Cancellation,
-                    canonical_json: serde_json::to_string(&report).expect("cancel payload"),
-                }
-            }
-            _ => {
-                let mut report = CompletionReport {
-                    protocol_version: ProtocolVersion::v1(),
-                    runner_id: session().runner_id,
-                    completion_id: CompletionId::new("completion:attempt:7"),
-                    attempt_id: record.attempt_id.clone(),
-                    fencing_token: record.fencing_token,
-                    terminal_state: AttemptState::Succeeded,
-                    terminal_reason: serde_json::json!({"code":"completed"}),
-                    final_event_checkpoint: None,
-                    actual_execution: actual_execution(),
-                    usage: usage(),
-                };
-                match tamper {
-                    "journal_runner" => {}
-                    "runner" => report.runner_id = RunnerId::new("other-runner"),
-                    "completion_id" => report.completion_id = CompletionId::new("wrong"),
-                    "workspace" => {
-                        report.actual_execution.workspace_id =
-                            tack_orch::execution::WorkspaceId::new("ws_wrong")
-                    }
-                    _ => unreachable!(),
-                }
-                PendingTerminalReport {
-                    kind: PendingTerminalReportKind::Completion,
-                    canonical_json: serde_json::to_string(&report).expect("completion payload"),
-                }
-            }
-        });
-        journal
-            .persist_before_spawn(&record)
-            .expect("tampered pending journal");
-        let protocol = protocol(work(), false, false);
-        let engine = runner_engine(
-            protocol.clone(),
-            adapter(journal.journal_path(&AttemptId::new("attempt"))),
-            journal,
-            root,
-        );
-        assert!(matches!(
-            engine.recover(&session()).await,
-            Err(EngineError::Journal(JournalError::Malformed))
-        ));
-        assert_eq!(protocol.completion_reports.load(Ordering::SeqCst), 0);
-        assert_eq!(protocol.cancellation_reports.load(Ordering::SeqCst), 0);
-        std::fs::remove_dir_all(root).expect("remove temporary root");
+        assert_tampered_binding_rejected(tamper).await;
     }
 }
 
@@ -1151,6 +1168,45 @@ async fn refresh_carries_capabilities_and_returns_expiring_session() {
     assert_eq!(refreshes[0].capabilities.runner_version, "test-runner");
 }
 
+/// The two `StartReport`s a spawn sends carry the workspace facts the
+/// engine journaled before spawning, not a value the adapter invented.
+fn assert_start_reports_carry_journaled_workspace_facts(reports: &[StartReport]) {
+    let preparing = reports
+        .iter()
+        .find(|report| report.phase == StartPhase::Preparing)
+        .expect("preparing report");
+    assert_eq!(
+        preparing.workspace_id.as_ref().map(|id| id.as_str()),
+        Some("ws_617474656d7074")
+    );
+    assert_eq!(preparing.base_revision.as_deref(), Some("revision"));
+    assert_eq!(preparing.process_id, None);
+    let running = reports
+        .iter()
+        .find(|report| report.phase == StartPhase::ProcessObservedRunning)
+        .expect("running report");
+    assert_eq!(
+        running.workspace_id.as_ref().map(|id| id.as_str()),
+        Some("ws_617474656d7074")
+    );
+    assert_eq!(running.base_revision.as_deref(), Some("revision"));
+    assert_eq!(running.process_id.as_deref(), Some("fake-process"));
+}
+
+/// The cancellation report sent to the server round-trips every field the
+/// adapter's `CancellationEvidence` fixture carries, unaltered.
+fn assert_cancellation_report_matches_evidence_fixture(report: &CancellationReport) {
+    assert_eq!(report.protocol_version.as_u16(), 1);
+    assert_eq!(report.runner_id.as_str(), "runner");
+    assert_eq!(report.attempt_id.as_str(), "attempt");
+    assert_eq!(report.fencing_token.0, 7);
+    assert_eq!(report.cancellation_request_id.as_str(), "cancel:attempt:7");
+    assert_eq!(report.observation, CancelObservation::ProcessStopped);
+    assert_eq!(report.observed_at.as_str(), "2026-08-06T12:24:00Z");
+    assert_eq!(report.details["exit_code"], serde_json::json!(130));
+    assert_eq!(report.details["signal"], serde_json::json!("SIGTERM"));
+}
+
 #[tokio::test]
 async fn cancellation_is_coordinated_after_journal_precedes_spawn() {
     let root_dir = temporary_root("cancel");
@@ -1178,27 +1234,9 @@ async fn cancellation_is_coordinated_after_journal_precedes_spawn() {
         "journal existed before worktree provision"
     );
     assert_eq!(protocol.start_reports.load(Ordering::SeqCst), 2);
-    let start_reports = protocol.reported_starts.lock().expect("fake protocol lock");
-    let preparing = start_reports
-        .iter()
-        .find(|report| report.phase == StartPhase::Preparing)
-        .expect("preparing report");
-    assert_eq!(
-        preparing.workspace_id.as_ref().map(|id| id.as_str()),
-        Some("ws_617474656d7074")
+    assert_start_reports_carry_journaled_workspace_facts(
+        &protocol.reported_starts.lock().expect("fake protocol lock"),
     );
-    assert_eq!(preparing.base_revision.as_deref(), Some("revision"));
-    assert_eq!(preparing.process_id, None);
-    let running = start_reports
-        .iter()
-        .find(|report| report.phase == StartPhase::ProcessObservedRunning)
-        .expect("running report");
-    assert_eq!(
-        running.workspace_id.as_ref().map(|id| id.as_str()),
-        Some("ws_617474656d7074")
-    );
-    assert_eq!(running.base_revision.as_deref(), Some("revision"));
-    assert_eq!(running.process_id.as_deref(), Some("fake-process"));
     let heartbeats = protocol
         .reported_heartbeats
         .lock()
@@ -1217,16 +1255,7 @@ async fn cancellation_is_coordinated_after_journal_precedes_spawn() {
         .lock()
         .expect("fake protocol lock");
     assert_eq!(cancellation_reports.len(), 1);
-    let report = &cancellation_reports[0];
-    assert_eq!(report.protocol_version.as_u16(), 1);
-    assert_eq!(report.runner_id.as_str(), "runner");
-    assert_eq!(report.attempt_id.as_str(), "attempt");
-    assert_eq!(report.fencing_token.0, 7);
-    assert_eq!(report.cancellation_request_id.as_str(), "cancel:attempt:7");
-    assert_eq!(report.observation, CancelObservation::ProcessStopped);
-    assert_eq!(report.observed_at.as_str(), "2026-08-06T12:24:00Z");
-    assert_eq!(report.details["exit_code"], serde_json::json!(130));
-    assert_eq!(report.details["signal"], serde_json::json!("SIGTERM"));
+    assert_cancellation_report_matches_evidence_fixture(&cancellation_reports[0]);
     assert_eq!(protocol.completion_reports.load(Ordering::SeqCst), 0);
     std::fs::remove_dir_all(root).expect("remove temporary root");
 }
@@ -1373,25 +1402,23 @@ async fn a_rejection_at_validate_is_reported_failed_and_never_spawns() {
         report.terminal_reason["message"],
         "provider endpoint could not be resolved"
     );
-    assert_eq!(report.actual_execution.harness_version, "");
-    assert_eq!(report.actual_execution.model_provider.as_str(), "openai");
-    assert_eq!(
-        report.actual_execution.model_id.as_str(),
-        "opaque/model-alpha"
-    );
-    assert_eq!(
-        report.actual_execution.model_observation_source,
-        "requested_not_confirmed"
-    );
-    assert_eq!(
-        report.actual_execution.workspace_id.as_str(),
-        "ws_617474656d7074"
-    );
+    assert_pre_spawn_rejection_actual_execution(&report.actual_execution);
     assert_eq!(report.usage.tokens_in.value, None);
     assert!(
         journal.unresolved().expect("scanned journal").is_empty(),
         "the record must be settled now, not left for a restart's recovery scan"
     );
+}
+
+/// A rejection at `validate` never spawns a process, so the reported
+/// `ActualExecution` carries only what the *request* asked for
+/// (attested, never confirmed) and no harness-observed fact.
+fn assert_pre_spawn_rejection_actual_execution(actual: &tack_orch::execution::ActualExecution) {
+    assert_eq!(actual.harness_version, "");
+    assert_eq!(actual.model_provider.as_str(), "openai");
+    assert_eq!(actual.model_id.as_str(), "opaque/model-alpha");
+    assert_eq!(actual.model_observation_source, "requested_not_confirmed");
+    assert_eq!(actual.workspace_id.as_str(), "ws_617474656d7074");
 }
 
 #[tokio::test]
@@ -1443,12 +1470,30 @@ async fn completion_transport_loss_stays_in_terminal_outbox() {
     std::fs::remove_dir_all(root).expect("remove temporary root");
 }
 
-#[tokio::test]
-async fn completion_outbox_replays_exact_payload_after_response_loss_without_respawn() {
-    let root_dir = temporary_root("completion-outbox-replay");
+#[derive(Clone, Copy)]
+enum TerminalKind {
+    Completion,
+    Cancellation,
+}
+
+/// Shared body for `completion_outbox_replays_...`/`cancellation_outbox_replays_...`:
+/// the first delivery is lost after being journaled durably, and a restart
+/// must replay the identical journaled payload rather than respawn the
+/// harness or re-derive a new one.
+async fn assert_outbox_replays_exact_payload_after_response_loss(kind: TerminalKind) {
+    let (label, cancellation_requested, stale_completion) = match kind {
+        TerminalKind::Completion => ("completion-outbox-replay", false, true),
+        TerminalKind::Cancellation => ("cancellation-outbox-replay", true, false),
+    };
+    let root_dir = temporary_root(label);
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
-    let protocol = protocol(work(), false, true);
+    let protocol = protocol(work(), cancellation_requested, stale_completion);
+    if matches!(kind, TerminalKind::Cancellation) {
+        protocol
+            .fail_cancellation_report
+            .store(true, Ordering::SeqCst);
+    }
     *protocol
         .terminal_journal_at_send
         .lock()
@@ -1476,40 +1521,68 @@ async fn completion_outbox_replays_exact_payload_after_response_loss_without_res
         .load(&AttemptId::new("attempt"))
         .expect("pending journal")
         .pending_terminal_report
-        .expect("pending completion")
+        .expect("pending report")
         .canonical_json;
-    assert!(!first_payload.contains("never-log"));
-    protocol.stale_completion.store(false, Ordering::SeqCst);
-    protocol
-        .completion_response
-        .lock()
-        .expect("fake protocol lock")
-        .replayed = true;
+    if matches!(kind, TerminalKind::Completion) {
+        assert!(!first_payload.contains("never-log"));
+    }
+    match kind {
+        TerminalKind::Completion => {
+            protocol.stale_completion.store(false, Ordering::SeqCst);
+            protocol
+                .completion_response
+                .lock()
+                .expect("fake protocol lock")
+                .replayed = true;
+        }
+        TerminalKind::Cancellation => {
+            protocol
+                .fail_cancellation_report
+                .store(false, Ordering::SeqCst);
+            protocol
+                .cancellation_response
+                .lock()
+                .expect("fake protocol lock")
+                .replayed = true;
+        }
+    }
     let restarted_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
     let never_respawned = Arc::clone(&restarted_adapter.start_after_journal);
     let restarted = runner_engine(protocol.clone(), restarted_adapter, journal.clone(), root);
-
-    assert!(matches!(
-        restarted
-            .recover(&session())
-            .await
-            .expect("replay")
-            .as_slice(),
-        [RunCycle::Completed { .. }]
-    ));
-    assert_eq!(protocol.completion_reports.load(Ordering::SeqCst), 2);
-    let sent = protocol
-        .reported_completions
-        .lock()
-        .expect("fake protocol lock");
-    assert_eq!(
-        serde_json::to_string(&sent[0]).expect("first payload"),
-        serde_json::to_string(&sent[1]).expect("replayed payload")
-    );
-    assert_eq!(
-        serde_json::to_string(&sent[1]).expect("replayed payload"),
-        first_payload
-    );
+    let outcomes = restarted.recover(&session()).await.expect("replay");
+    match kind {
+        TerminalKind::Completion => {
+            assert!(matches!(outcomes.as_slice(), [RunCycle::Completed { .. }]))
+        }
+        TerminalKind::Cancellation => {
+            assert!(matches!(outcomes.as_slice(), [RunCycle::Cancelled { .. }]))
+        }
+    }
+    let (reports, sent_json): (usize, Vec<String>) = match kind {
+        TerminalKind::Completion => (
+            protocol.completion_reports.load(Ordering::SeqCst),
+            protocol
+                .reported_completions
+                .lock()
+                .expect("fake protocol lock")
+                .iter()
+                .map(|r| serde_json::to_string(r).expect("payload"))
+                .collect(),
+        ),
+        TerminalKind::Cancellation => (
+            protocol.cancellation_reports.load(Ordering::SeqCst),
+            protocol
+                .reported_cancellations
+                .lock()
+                .expect("fake protocol lock")
+                .iter()
+                .map(|r| serde_json::to_string(r).expect("payload"))
+                .collect(),
+        ),
+    };
+    assert_eq!(reports, 2);
+    assert_eq!(sent_json[0], sent_json[1]);
+    assert_eq!(sent_json[1], first_payload);
     assert!(!never_respawned.load(Ordering::SeqCst));
     assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 0);
     let settled = journal
@@ -1522,6 +1595,11 @@ async fn completion_outbox_replays_exact_payload_after_response_loss_without_res
         "restart replay cleans only after the Reported acknowledgement"
     );
     std::fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+#[tokio::test]
+async fn completion_outbox_replays_exact_payload_after_response_loss_without_respawn() {
+    assert_outbox_replays_exact_payload_after_response_loss(TerminalKind::Completion).await;
 }
 
 #[tokio::test]
@@ -1560,16 +1638,33 @@ async fn completion_bad_ack_stays_in_terminal_outbox() {
     }
 }
 
-#[tokio::test]
-async fn completion_ack_then_journal_failure_replays_pending_payload() {
-    let root_dir = temporary_root("completion-ack-write-failure");
+/// Shared body for `completion_ack_then_journal_failure_...`/
+/// `cancellation_ack_then_journal_failure_...`: the outbound report is
+/// acknowledged, but persisting that ack fails; a restart must still replay
+/// the report, since the journal never recorded it as sent.
+async fn assert_ack_then_journal_failure_replays_pending_payload(kind: TerminalKind) {
+    let (label, cancellation_requested) = match kind {
+        TerminalKind::Completion => ("completion-ack-write-failure", false),
+        TerminalKind::Cancellation => ("cancellation-ack-write-failure", true),
+    };
+    let root_dir = temporary_root(label);
     let root = root_dir.path();
     let journal = OwnerOnlyJournal::new(root);
-    let protocol = protocol(work(), false, false);
-    *protocol
-        .fail_completion_ack_update
-        .lock()
-        .expect("fake protocol lock") = Some(journal.clone());
+    let protocol = protocol(work(), cancellation_requested, false);
+    match kind {
+        TerminalKind::Completion => {
+            *protocol
+                .fail_completion_ack_update
+                .lock()
+                .expect("fake protocol lock") = Some(journal.clone())
+        }
+        TerminalKind::Cancellation => {
+            *protocol
+                .fail_cancellation_ack_update
+                .lock()
+                .expect("fake protocol lock") = Some(journal.clone())
+        }
+    }
     let first_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
     let engine = runner_engine(protocol.clone(), first_adapter, journal.clone(), root);
 
@@ -1585,7 +1680,11 @@ async fn completion_ack_then_journal_failure_replays_pending_payload() {
         workspace_path.exists(),
         "pending replay retains the workspace"
     );
-    assert_eq!(protocol.completion_reports.load(Ordering::SeqCst), 1);
+    let reports = |protocol: &FakeProtocol| match kind {
+        TerminalKind::Completion => protocol.completion_reports.load(Ordering::SeqCst),
+        TerminalKind::Cancellation => protocol.cancellation_reports.load(Ordering::SeqCst),
+    };
+    assert_eq!(reports(&protocol), 1);
     assert_eq!(
         journal
             .load(&AttemptId::new("attempt"))
@@ -1599,20 +1698,26 @@ async fn completion_ack_then_journal_failure_replays_pending_payload() {
         journal.clone(),
         root,
     );
-    assert!(matches!(
-        restarted
-            .recover(&session())
-            .await
-            .expect("replay")
-            .as_slice(),
-        [RunCycle::Completed { .. }]
-    ));
-    assert_eq!(protocol.completion_reports.load(Ordering::SeqCst), 2);
+    let outcomes = restarted.recover(&session()).await.expect("replay");
+    match kind {
+        TerminalKind::Completion => {
+            assert!(matches!(outcomes.as_slice(), [RunCycle::Completed { .. }]))
+        }
+        TerminalKind::Cancellation => {
+            assert!(matches!(outcomes.as_slice(), [RunCycle::Cancelled { .. }]))
+        }
+    }
+    assert_eq!(reports(&protocol), 2);
     assert!(
         !workspace_path.exists(),
         "restart replay cleans only after the Reported acknowledgement"
     );
     std::fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+#[tokio::test]
+async fn completion_ack_then_journal_failure_replays_pending_payload() {
+    assert_ack_then_journal_failure_replays_pending_payload(TerminalKind::Completion).await;
 }
 
 #[tokio::test]
@@ -1691,11 +1796,7 @@ async fn needs_operator_response_durably_quarantines_stopped_pre_spawn_recovery(
     ));
     assert!(journal.unresolved().expect("scanned journal").is_empty());
     assert!(
-        root.join("quarantine")
-            .read_dir()
-            .expect("quarantine")
-            .next()
-            .is_some(),
+        quarantine_dir_has_entries(root),
         "operator disposition moves evidence out of restart scans"
     );
     std::fs::remove_dir_all(root).expect("remove temporary root");
@@ -1740,11 +1841,7 @@ async fn stale_lease_on_recovery_retires_the_record_and_keeps_the_checkout() {
         "an attempt the server has no lease for is retired from the restart scan, not rescanned"
     );
     assert!(
-        root.join("quarantine")
-            .read_dir()
-            .expect("quarantine")
-            .next()
-            .is_some(),
+        quarantine_dir_has_entries(root),
         "the record is retired into quarantine, not deleted outright"
     );
     assert!(
@@ -1769,11 +1866,9 @@ async fn unreachable_server_on_recovery_never_retires_the_record() {
     std::fs::write(workspace_path.join("evidence.txt"), b"operator evidence")
         .expect("fake checkout file");
     let protocol = protocol(work(), false, false);
-    // A transport failure means the server was never reached at all --
-    // as distinct from `StaleLease` above, this must never settle
-    // anything. Proven across two separate restarts, not one, so a
-    // fluke single-boot pass can't hide a "quarantine after N tries"
-    // regression.
+    // Unlike `StaleLease`, a transport failure never reached the server and
+    // must never settle anything; proven across two restarts so a fluke
+    // single-boot pass can't hide a "quarantine after N tries" regression.
     *protocol.recovery_error.lock().expect("fake protocol lock") =
         Some(ProtocolClientError::Transport);
 
@@ -1802,13 +1897,7 @@ async fn unreachable_server_on_recovery_never_retires_the_record() {
         "an unanswered server is never grounds to retire the record"
     );
     assert!(
-        root.join("quarantine").read_dir().is_err()
-            || root
-                .join("quarantine")
-                .read_dir()
-                .expect("quarantine")
-                .next()
-                .is_none(),
+        !quarantine_dir_has_entries(root),
         "a transport failure must never move the record into quarantine"
     );
     assert!(
@@ -1982,139 +2071,12 @@ async fn cancellation_transport_loss_stays_in_terminal_outbox() {
 
 #[tokio::test]
 async fn cancellation_outbox_replays_exact_payload_after_response_loss_without_respawn() {
-    let root_dir = temporary_root("cancellation-outbox-replay");
-    let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
-    let protocol = protocol(work(), true, false);
-    protocol
-        .fail_cancellation_report
-        .store(true, Ordering::SeqCst);
-    *protocol
-        .terminal_journal_at_send
-        .lock()
-        .expect("fake protocol lock") = Some(journal.clone());
-    let first_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-    let engine = runner_engine(protocol.clone(), first_adapter, journal.clone(), root);
-
-    assert!(matches!(
-        engine
-            .run_once(&session(), claim_request())
-            .await
-            .expect("first delivery"),
-        RunCycle::TerminalReportPending { .. }
-    ));
-    let workspace_path = root.join("workspaces/617474656d7074");
-    assert!(
-        workspace_path.exists(),
-        "pending replay retains the workspace"
-    );
-    assert!(protocol.terminal_payload_was_durable.load(Ordering::SeqCst));
-    let first_payload = journal
-        .load(&AttemptId::new("attempt"))
-        .expect("pending journal")
-        .pending_terminal_report
-        .expect("pending cancellation")
-        .canonical_json;
-    protocol
-        .fail_cancellation_report
-        .store(false, Ordering::SeqCst);
-    protocol
-        .cancellation_response
-        .lock()
-        .expect("fake protocol lock")
-        .replayed = true;
-    let restarted_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-    let never_respawned = Arc::clone(&restarted_adapter.start_after_journal);
-    let restarted = runner_engine(protocol.clone(), restarted_adapter, journal.clone(), root);
-
-    assert!(matches!(
-        restarted
-            .recover(&session())
-            .await
-            .expect("replay")
-            .as_slice(),
-        [RunCycle::Cancelled { .. }]
-    ));
-    assert_eq!(protocol.cancellation_reports.load(Ordering::SeqCst), 2);
-    let sent = protocol
-        .reported_cancellations
-        .lock()
-        .expect("fake protocol lock");
-    assert_eq!(
-        serde_json::to_string(&sent[0]).expect("first payload"),
-        serde_json::to_string(&sent[1]).expect("replayed payload")
-    );
-    assert_eq!(
-        serde_json::to_string(&sent[1]).expect("replayed payload"),
-        first_payload
-    );
-    assert!(!never_respawned.load(Ordering::SeqCst));
-    assert_eq!(protocol.recovery_reports.load(Ordering::SeqCst), 0);
-    let settled = journal
-        .load(&AttemptId::new("attempt"))
-        .expect("settled journal");
-    assert_eq!(settled.state, JournalState::Reported);
-    assert!(settled.pending_terminal_report.is_none());
-    assert!(
-        !workspace_path.exists(),
-        "restart replay cleans only after the Reported acknowledgement"
-    );
-    std::fs::remove_dir_all(root).expect("remove temporary root");
+    assert_outbox_replays_exact_payload_after_response_loss(TerminalKind::Cancellation).await;
 }
 
 #[tokio::test]
 async fn cancellation_ack_then_journal_failure_replays_pending_payload() {
-    let root_dir = temporary_root("cancellation-ack-write-failure");
-    let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
-    let protocol = protocol(work(), true, false);
-    *protocol
-        .fail_cancellation_ack_update
-        .lock()
-        .expect("fake protocol lock") = Some(journal.clone());
-    let first_adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
-    let engine = runner_engine(protocol.clone(), first_adapter, journal.clone(), root);
-
-    assert!(matches!(
-        engine
-            .run_once(&session(), claim_request())
-            .await
-            .expect("ack write failure"),
-        RunCycle::TerminalReportPending { .. }
-    ));
-    assert_eq!(protocol.cancellation_reports.load(Ordering::SeqCst), 1);
-    assert_eq!(
-        journal
-            .load(&AttemptId::new("attempt"))
-            .expect("pending journal")
-            .state,
-        JournalState::TerminalReportPending
-    );
-    let workspace_path = root.join("workspaces/617474656d7074");
-    assert!(
-        workspace_path.exists(),
-        "ack write failure retains the workspace"
-    );
-    let restarted = runner_engine(
-        protocol.clone(),
-        adapter(journal.journal_path(&AttemptId::new("attempt"))),
-        journal.clone(),
-        root,
-    );
-    assert!(matches!(
-        restarted
-            .recover(&session())
-            .await
-            .expect("replay")
-            .as_slice(),
-        [RunCycle::Cancelled { .. }]
-    ));
-    assert_eq!(protocol.cancellation_reports.load(Ordering::SeqCst), 2);
-    assert!(
-        !workspace_path.exists(),
-        "restart replay cleans only after the Reported acknowledgement"
-    );
-    std::fs::remove_dir_all(root).expect("remove temporary root");
+    assert_ack_then_journal_failure_replays_pending_payload(TerminalKind::Cancellation).await;
 }
 
 #[tokio::test]
@@ -2401,16 +2363,65 @@ fn engine_with_data_protocol(
     .with_data_protocol(Arc::new(data_protocol))
 }
 
+/// Writes a real file under `root` and returns its path, bytes and sha256 --
+/// so an "artifact was staged" assertion reads genuine bytes back out,
+/// never a value the test only asserts against itself.
+fn staged_artifact_fixture(root: &Path) -> (PathBuf, Vec<u8>, String) {
+    let staged_path = root.join("staged-artifact.log");
+    let content = b"real staged artifact bytes, not a placeholder".to_vec();
+    std::fs::write(&staged_path, &content).expect("write staged artifact");
+    let sha256 = crate::harness::sha256::sha256_hex(&content);
+    (staged_path, content, sha256)
+}
+
+/// The one event batch a terminal `run_once`/`recover` submits carries the
+/// expected kind/source/code and is never replayed as a duplicate.
+fn assert_single_terminal_event_submitted(state: &FakeDataProtocolState, code: &str) {
+    assert_eq!(state.events.len(), 1, "exactly one event batch submitted");
+    let submitted = &state.events[0];
+    assert_eq!(submitted.events.len(), 1);
+    assert_eq!(submitted.events[0].kind, "attempt.terminal");
+    assert_eq!(submitted.events[0].source, "runner");
+    assert_eq!(submitted.events[0].payload["code"], code);
+    assert_eq!(submitted.previous_checkpoint, None, "first submission ever");
+    assert!(
+        state
+            .accepted_event_ids
+            .contains(&submitted.events[0].event_id)
+    );
+}
+
+/// The one artifact manifest and upload a terminal event with a staged
+/// artifact produces carry the real bytes/hash the harness staged, not a
+/// value only the test asserts against itself.
+fn assert_single_artifact_uploaded(
+    state: &FakeDataProtocolState,
+    sha256: &str,
+    content: &[u8],
+    name: &str,
+) {
+    assert_eq!(state.manifests.len(), 1, "exactly one artifact manifest");
+    let manifest_item = &state.manifests[0].artifacts[0];
+    assert_eq!(manifest_item.sha256, sha256);
+    assert_eq!(manifest_item.size_bytes, content.len() as u64);
+    assert_eq!(manifest_item.name, name);
+
+    assert_eq!(state.uploads.len(), 1, "exactly one artifact upload");
+    assert_eq!(state.uploads[0].0, manifest_item.artifact_id);
+    assert_eq!(
+        state.uploads[0].1, content,
+        "the exact bytes read from the staged file were uploaded"
+    );
+    assert_eq!(state.uploads[0].2.as_deref(), Some("text/plain"));
+}
+
 #[tokio::test]
 async fn run_once_with_a_data_protocol_submits_the_terminal_event_and_uploads_the_staged_artifact()
 {
     let root_dir = temporary_root("data-protocol-terminal");
     let root = root_dir.path();
     std::fs::create_dir_all(root).expect("test root");
-    let staged_path = root.join("staged-artifact.log");
-    let content = b"real staged artifact bytes, not a placeholder".to_vec();
-    std::fs::write(&staged_path, &content).expect("write staged artifact");
-    let sha256 = crate::harness::sha256::sha256_hex(&content);
+    let (staged_path, content, sha256) = staged_artifact_fixture(root);
 
     let journal = OwnerOnlyJournal::new(root);
     let data_protocol = FakeDataProtocol::new();
@@ -2441,32 +2452,8 @@ async fn run_once_with_a_data_protocol_submits_the_terminal_event_and_uploads_th
     ));
 
     let state = data_protocol.state.lock().expect("fake data protocol lock");
-    assert_eq!(state.events.len(), 1, "exactly one event batch submitted");
-    let submitted = &state.events[0];
-    assert_eq!(submitted.events.len(), 1);
-    assert_eq!(submitted.events[0].kind, "attempt.terminal");
-    assert_eq!(submitted.events[0].source, "runner");
-    assert_eq!(submitted.events[0].payload["code"], "completed");
-    assert_eq!(submitted.previous_checkpoint, None, "first submission ever");
-    assert!(
-        state
-            .accepted_event_ids
-            .contains(&submitted.events[0].event_id)
-    );
-
-    assert_eq!(state.manifests.len(), 1, "exactly one artifact manifest");
-    let manifest_item = &state.manifests[0].artifacts[0];
-    assert_eq!(manifest_item.sha256, sha256);
-    assert_eq!(manifest_item.size_bytes, content.len() as u64);
-    assert_eq!(manifest_item.name, "staged-artifact.log");
-
-    assert_eq!(state.uploads.len(), 1, "exactly one artifact upload");
-    assert_eq!(state.uploads[0].0, manifest_item.artifact_id);
-    assert_eq!(
-        state.uploads[0].1, content,
-        "the exact bytes read from the staged file were uploaded"
-    );
-    assert_eq!(state.uploads[0].2.as_deref(), Some("text/plain"));
+    assert_single_terminal_event_submitted(&state, "completed");
+    assert_single_artifact_uploaded(&state, &sha256, &content, "staged-artifact.log");
 
     std::fs::remove_dir_all(root).expect("remove temporary root");
 }
