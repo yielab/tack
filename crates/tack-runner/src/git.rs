@@ -1,11 +1,27 @@
 //! The real [`WorktreeProvisioner`]: a private, attempt-scoped git checkout.
 //!
-//! # Why a private clone and not `git worktree add`
+//! `git init` in place, not `git worktree add`: `worktree add` keeps administrative
+//! state (a lock file, a `gitdir` pointer) inside one shared repository, so two
+//! attempts provisioning at once would contend on that repository's index lock, and a
+//! runner killed mid-add would leave a registered-but-absent worktree a later attempt
+//! inherits. It also refuses a non-empty target directory, and every attempt
+//! directory already carries the `.tack-attempt` marker
+//! [`super::WorkspaceManager`] writes before provisioning. A private clone has neither
+//! problem: every attempt owns 100% of its own repository state, and cleanup is a
+//! plain recursive delete ([`super::WorkspaceManager::cleanup`]).
 //!
-//! The trait is named `WorktreeProvisioner` because the *product* requirement
-//! is an isolated working tree per attempt, not because git's `worktree`
+//! Provisioning is not atomic — a checkout is thousands of files. The completion
+//! sentinel [`CHECKOUT_MARKER`] is written (and fsynced) only after `checkout`
+//! returns, recording the exact resolved commit. On restart the provisioner either
+//! finds a sentinel that agrees with the live repository and reuses the checkout, or
+//! discards everything under the attempt directory and provisions again — a
+//! half-made checkout is never inherited.
 //!
-//! Design notes: docs/dev-notes/tack-runner/git.md
+//! A remote URL can embed credentials and a query string, and git echoes the remote
+//! back in most of its error messages. Raw git output is therefore treated as
+//! tainted: scrubbed through [`SecretMaterial`] (seeded with the remote, its userinfo
+//! and its password) and [`redact_query`] before it can reach a tracing field; the
+//! typed errors this module returns carry no remote, path or git text at all.
 
 use std::{
     fs::{self, OpenOptions},

@@ -1,11 +1,10 @@
 //! The deterministic fleet scheduler.
 //!
-//! This module is a pure decision library: given a candidate set of runners
-//! (their current health/capacity/labels/declared harness and model
-//! support) and a request (exact runner or fleet selector, required
-//! harness, optional provider/model, priority), it returns either a
-//!
-//! Design notes: docs/dev-notes/tack-orch/scheduler/mod.md
+//! A pure decision library, no I/O: given a candidate runner pool and a request, it
+//! returns a selected runner or a typed reason none qualify. It never grants the
+//! authoritative lease itself — only the repository's fenced claim
+//! (`docs/contracts/runner-v1/`) can. [`select::select_runner`] decides one request;
+//! [`batch::schedule`] schedules several sharing a pool, priority then FIFO.
 
 pub mod batch;
 pub mod select;

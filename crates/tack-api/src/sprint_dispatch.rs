@@ -1,11 +1,31 @@
-//! `POST /api/sprints/{id}/dispatch` and
-//! `GET /api/sprints/{id}/dispatch/dry-run` — dispatch a whole sprint's
-//! items to the project's linked control plane in dependency order.
+//! `POST /api/sprints/{id}/dispatch` and `GET /api/sprints/{id}/dispatch/dry-run` —
+//! dispatch a whole sprint's items to the project's linked control plane in
+//! dependency order. Five decisions this module makes deliberately:
 //!
-//! Five decisions this module makes deliberately, rather than letting them
-//! fall out of a stray `?`:
+//! 1. **Partial failure skips the one item, not its descendants explicitly.** An item
+//!    that doesn't reach a Done-category status stays wherever it is; every item
+//!    downstream of it is gated by dependency readiness (2) and reports
+//!    `waiting_on_dependencies` on its own — no separate bookkeeping needed.
+//! 2. **Readiness** is every direct dependency's *current* status being Done-category,
+//!    checked live at plan time, never `RunState`. A dispatch inside this same call can
+//!    never make a same-run dependency ready (Done only happens later, via the
+//!    reconciler), so the plan is computed once, up front — see [`plan_sprint_dispatch`].
+//! 3. **Concurrency** is a bounded pool: [`dispatch_sprint`] submits ready items through
+//!    a `Semaphore` capped at `max_in_flight` (clamped to `[1, MAX_MAX_IN_FLIGHT]`), in
+//!    topological order.
+//! 4. **No write transaction spans this module's loop.** [`plan_sprint_dispatch`] is
+//!    pure reads; every write happens inside [`dispatcher::dispatch_item`]'s own short
+//!    fetch/HTTP/write sequence, one item at a time.
+//! 5. **Dry-run and the real run share [`plan_sprint_dispatch`]** — the only place
+//!    ordering and the readiness gate are expressed, so they cannot diverge. Dry-run
+//!    never calls [`dispatcher::dispatch_item`] (zero HTTP, zero writes); both paths
+//!    evaluate per-item eligibility through the same helpers
+//!    (`dispatcher::is_dispatch_eligible`, `dispatcher::is_active_task_status`).
 //!
-//! Design notes: docs/dev-notes/tack-api/sprint_dispatch.md
+//! Every HTTP call goes through [`dispatcher::dispatch_item`], so idempotency, the
+//! `trusted` boundary and `status_map` application are the same code path as a single
+//! manual dispatch. A `waiting_on_dependencies` item is not retried within the same
+//! call — a blocker finishing later is a fresh call to [`dispatch_sprint`].
 
 use std::collections::HashMap;
 use std::sync::Arc;

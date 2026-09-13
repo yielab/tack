@@ -1,17 +1,16 @@
-//! The Docket compatibility decision and its explicit
-//! label/policy, plus the pure, DB-free pieces of "one scheduling owner."
+//! The Docket compatibility decision's label, plus the pure, DB-free pieces of "one
+//! scheduling owner" — the decision (keep Docket a maintained, optional bridge) is
+//! ADR 0060, which also covers [`provider_scoped_task_id`]/[`LegacyAttemptProjection`].
 //!
-//! # Decision: maintain
-//!
-//! Three options exist for the legacy Docket bridge: maintain, export, or
-//!
-//! Design notes: docs/dev-notes/tack-orch/adapters/legacy_bridge.md
+//! **Runner-v1 always outranks legacy Docket**: an active `execution_requests` row
+//! makes legacy dispatch defer, never the reverse — proven in
+//! `crates/tack-api/tests/orchestration/dispatch/dual_scheduling.rs`.
 
 use tack_db::repo::orch::OrchTask;
 
 /// The one explicit, stable compatibility label naming this decision ("Docket is
-/// optional and has one documented compatibility state"). See the module doc's
-/// "Decision: maintain" section for the evidence behind it.
+/// optional and has one documented compatibility state"). See ADR 0060 for the
+/// evidence behind it.
 ///
 /// Format is deliberately machine-quotable (`<decision>:<scope>-v<n>`) rather than a
 /// prose sentence, so operator docs and a future API field can both embed it
@@ -19,8 +18,8 @@ use tack_db::repo::orch::OrchTask;
 pub const LEGACY_DOCKET_COMPATIBILITY_LABEL: &str = "legacy-docket:maintained-bridge-v1";
 
 /// Human-readable justification for [`LEGACY_DOCKET_COMPATIBILITY_LABEL`], suitable
-/// for direct embedding in operator-facing documentation without
-/// paraphrasing the module doc's "Decision: maintain" section.
+/// for direct embedding in operator-facing documentation without paraphrasing
+/// ADR 0060.
 pub const LEGACY_DOCKET_COMPATIBILITY_POLICY: &str = "Docket is maintained as an optional legacy bridge (TACK_ORCH_ENABLE, default off). \
      It is never the owner of a new runner-v1 execution request; runner-v1 is the \
      plan-of-record scheduler. An item with an active runner-v1 execution \
