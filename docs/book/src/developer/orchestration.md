@@ -7,7 +7,8 @@ behind all of it. It assumes you've read the
 this crate alongside the other five in the main workspace.
 
 For the *why* behind this feature, see
-[Roadmap → Agent-Factory Control Center](../roadmap.md#next--agent-factory-control-center-phases-3338-august-2026).
+[Roadmap → Agent-Factory Control Center](../../../closed-cycles/boards/roadmap-phases-0-57.md#next--agent-factory-control-center-phases-3338-august-2026)
+(archived; Phases 33–38 shipped 2026-08-05).
 This page documents what's actually implemented — not an aspirational end state.
 The reciprocal docket-side work (the `POST /tasks`, `GET /traces`, `POST /pods`
 endpoints this crate depends on) lives in docket, a separate public project.
