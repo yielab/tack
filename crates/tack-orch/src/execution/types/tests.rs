@@ -17,6 +17,17 @@ fn assert_versioned_fixture_round_trip(raw: &str) {
     );
 }
 
+/// Parses `value` as `T` and asserts re-serializing it reproduces `value`
+/// exactly — the shared shape behind every "fixture round-trips" test in
+/// this file that isn't checking anything fixture-specific beyond that.
+fn assert_round_trips<T: serde::de::DeserializeOwned + Serialize>(value: serde_json::Value) {
+    let typed: T = serde_json::from_value(value.clone()).expect("typed fixture");
+    assert_eq!(
+        serde_json::to_value(typed).expect("serialize fixture"),
+        value
+    );
+}
+
 #[test]
 fn model_id_types_are_distinct_so_swaps_fail_to_compile() {
     fn takes_requested(_model: Option<RequestedModelId>) {}
@@ -41,7 +52,7 @@ fn stale_lease_code_is_stable() {
 }
 
 #[test]
-fn every_frozen_fixture_round_trips_and_every_error_code_is_typed() {
+fn every_versioned_fixture_round_trips_intact() {
     for fixture in [
         include_str!("../../../../../docs/contracts/runner-v1/artifact.request.json"),
         include_str!("../../../../../docs/contracts/runner-v1/artifact.response.json"),
@@ -72,31 +83,24 @@ fn every_frozen_fixture_round_trips_and_every_error_code_is_typed() {
     ] {
         assert_versioned_fixture_round_trip(fixture);
     }
+}
 
-    for fixture in [
-        include_str!(
-            "../../../../../docs/contracts/runner-v1/errors/artifact-checksum-mismatch.json"
-        ),
-        include_str!("../../../../../docs/contracts/runner-v1/errors/conflict.json"),
-        include_str!("../../../../../docs/contracts/runner-v1/errors/decision-expired.json"),
-        include_str!("../../../../../docs/contracts/runner-v1/errors/forbidden.json"),
-        include_str!("../../../../../docs/contracts/runner-v1/errors/idempotency-conflict.json"),
-        include_str!("../../../../../docs/contracts/runner-v1/errors/internal-error.json"),
-        include_str!("../../../../../docs/contracts/runner-v1/errors/invalid-request.json"),
-        include_str!("../../../../../docs/contracts/runner-v1/errors/invalid-transition.json"),
-        include_str!("../../../../../docs/contracts/runner-v1/errors/not-found.json"),
-        include_str!("../../../../../docs/contracts/runner-v1/errors/payload-too-large.json"),
-        include_str!("../../../../../docs/contracts/runner-v1/errors/rate-limited.json"),
-        include_str!("../../../../../docs/contracts/runner-v1/errors/runner-revoked.json"),
-        include_str!("../../../../../docs/contracts/runner-v1/errors/stale-lease.json"),
-        include_str!("../../../../../docs/contracts/runner-v1/errors/unauthorized.json"),
-        include_str!("../../../../../docs/contracts/runner-v1/errors/unsupported-protocol.json"),
-    ] {
-        let original: serde_json::Value = serde_json::from_str(fixture).expect("fixture JSON");
-        let typed: ProtocolErrorEnvelope = serde_json::from_str(fixture).expect("typed error");
+/// Reuses [`ERROR_FIXTURES`] rather than a second copy of the same file
+/// list — [`stable_error_code_retryable_matches_every_fixture_and_constructor`]
+/// below checks `retryable`/constructor conformance against the same list;
+/// this one just checks every error fixture parses as `ProtocolErrorEnvelope`
+/// and serializes back byte-for-byte.
+#[test]
+fn every_error_fixture_round_trips_as_a_typed_error() {
+    for (name, fixture) in ERROR_FIXTURES {
+        let original: serde_json::Value =
+            serde_json::from_str(fixture).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let typed: ProtocolErrorEnvelope =
+            serde_json::from_str(fixture).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert_eq!(
             serde_json::to_value(typed).expect("serialize error"),
-            original
+            original,
+            "{name}"
         );
     }
 }
@@ -205,7 +209,7 @@ fn every_error_fixture_file_on_disk_is_in_the_conformance_list() {
 }
 
 #[test]
-fn stable_error_code_retryable_matches_every_fixture_and_constructor() {
+fn stable_error_code_retryable_matches_every_fixture() {
     for (name, fixture) in ERROR_FIXTURES {
         let envelope: ProtocolErrorEnvelope =
             serde_json::from_str(fixture).unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -235,54 +239,29 @@ fn stable_error_code_retryable_matches_every_fixture_and_constructor() {
 
 #[test]
 fn core_domain_snapshots_match_their_exact_fixture_shapes() {
-    let capabilities: crate::execution::RunnerCapabilities = serde_json::from_str(include_str!(
+    let capabilities_json: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../../docs/contracts/runner-v1/capabilities.json"
     ))
-    .expect("capability fixture");
-    assert_eq!(
-        serde_json::to_value(capabilities).expect("serialize capabilities"),
-        serde_json::from_str::<serde_json::Value>(include_str!(
-            "../../../../../docs/contracts/runner-v1/capabilities.json"
-        ))
-        .expect("capability fixture JSON")
-    );
+    .expect("capability fixture JSON");
+    assert_round_trips::<crate::execution::RunnerCapabilities>(capabilities_json);
 
     let claim: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../../docs/contracts/runner-v1/claim.response.json"
     ))
     .expect("claim fixture JSON");
-    let request: ExecutionRequestSnapshot =
-        serde_json::from_value(claim["request"].clone()).expect("request snapshot");
-    let attempt: AttemptSnapshot =
-        serde_json::from_value(claim["attempt"].clone()).expect("attempt snapshot");
-    assert_eq!(
-        serde_json::to_value(request).expect("serialize request"),
-        claim["request"]
-    );
-    assert_eq!(
-        serde_json::to_value(attempt).expect("serialize attempt"),
-        claim["attempt"]
-    );
+    assert_round_trips::<ExecutionRequestSnapshot>(claim["request"].clone());
+    assert_round_trips::<AttemptSnapshot>(claim["attempt"].clone());
 
     let completion: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../../docs/contracts/runner-v1/completion.request.json"
     ))
     .expect("completion fixture JSON");
-    let actual: ActualExecution = serde_json::from_value(completion["actual_execution"].clone())
-        .expect("actual execution snapshot");
-    let usage: Usage = serde_json::from_value(completion["usage"].clone()).expect("usage");
-    assert_eq!(
-        serde_json::to_value(actual).expect("serialize actual execution"),
-        completion["actual_execution"]
-    );
-    assert_eq!(
-        serde_json::to_value(usage).expect("serialize usage"),
-        completion["usage"]
-    );
+    assert_round_trips::<ActualExecution>(completion["actual_execution"].clone());
+    assert_round_trips::<Usage>(completion["usage"].clone());
 }
 
 #[test]
-fn recovery_observation_fixtures_round_trip_exactly_and_preserve_additions() {
+fn recovery_observation_request_and_response_round_trip_exactly() {
     let request_json: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../../docs/contracts/runner-v1/recovery-observation.request.json"
     ))
@@ -315,8 +294,15 @@ fn recovery_observation_fixtures_round_trip_exactly_and_preserve_additions() {
         RecoveryDisposition::SafePreSpawnRequeue
     );
     assert!(!response.replayed);
+}
 
-    let mut additive_request = serde_json::to_value(request).expect("serialize request");
+#[test]
+fn recovery_observation_additive_fields_survive_a_round_trip() {
+    let request_json: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../docs/contracts/runner-v1/recovery-observation.request.json"
+    ))
+    .expect("recovery request fixture JSON");
+    let mut additive_request = request_json.clone();
     additive_request["future_request_field"] = serde_json::json!({"kept": true});
     additive_request["details"]["future_evidence"] = serde_json::json!("kept");
     let parsed: RecoveryObservationRequest =
@@ -326,7 +312,11 @@ fn recovery_observation_fixtures_round_trip_exactly_and_preserve_additions() {
         additive_request
     );
 
-    let mut additive_response = serde_json::to_value(response).expect("serialize response");
+    let response_json: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../docs/contracts/runner-v1/recovery-observation.response.json"
+    ))
+    .expect("recovery response fixture JSON");
+    let mut additive_response = response_json.clone();
     additive_response["future_response_field"] = serde_json::json!(42);
     let parsed: RecoveryObservationResponse =
         serde_json::from_value(additive_response.clone()).expect("parse additive response");
@@ -336,55 +326,59 @@ fn recovery_observation_fixtures_round_trip_exactly_and_preserve_additions() {
     );
 }
 
-#[test]
-fn recovery_dispositions_follow_lifecycle_and_observation_invariants() {
-    use crate::execution::{TransitionActor, validate_transition};
+const ACTIVE_EXECUTION_STATES: [ExecutionState; 4] = [
+    ExecutionState::Leased,
+    ExecutionState::Preparing,
+    ExecutionState::Running,
+    ExecutionState::WaitingDecision,
+];
 
-    let active = [
-        ExecutionState::Leased,
-        ExecutionState::Preparing,
-        ExecutionState::Running,
-        ExecutionState::WaitingDecision,
-    ];
-    for state in active {
-        assert!(
-            RecoveryDisposition::SafePreSpawnRequeue
-                .is_compatible_with(state, RecoveryObservation::ProcessStopped)
+/// Every observation in `observations` is compatible with `disposition` at
+/// `state`, and `disposition`'s own attempt transition (out of `state`) is
+/// itself a legal lifecycle transition for the recovery service.
+fn assert_recovery_disposition_valid_for(
+    disposition: RecoveryDisposition,
+    state: ExecutionState,
+    observations: &[RecoveryObservation],
+) {
+    use crate::execution::{TransitionActor, validate_transition};
+    for &observation in observations {
+        assert!(disposition.is_compatible_with(state, observation));
+    }
+    assert!(
+        validate_transition(
+            state,
+            disposition
+                .attempt_transition()
+                .expect("recovery disposition transitions attempt"),
+            TransitionActor::RecoveryService,
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn recovery_dispositions_are_compatible_with_every_active_state() {
+    for state in ACTIVE_EXECUTION_STATES {
+        assert_recovery_disposition_valid_for(
+            RecoveryDisposition::SafePreSpawnRequeue,
+            state,
+            &[RecoveryObservation::ProcessStopped],
         );
-        assert!(
-            validate_transition(
-                state,
-                RecoveryDisposition::SafePreSpawnRequeue
-                    .attempt_transition()
-                    .expect("safe recovery transitions attempt"),
-                TransitionActor::RecoveryService,
-            )
-            .is_ok()
-        );
-        assert!(
-            RecoveryDisposition::NeedsOperator
-                .is_compatible_with(state, RecoveryObservation::ProcessStopped)
-        );
-        assert!(
-            RecoveryDisposition::NeedsOperator
-                .is_compatible_with(state, RecoveryObservation::ProcessRunning)
-        );
-        assert!(
-            RecoveryDisposition::NeedsOperator
-                .is_compatible_with(state, RecoveryObservation::Ambiguous)
-        );
-        assert!(
-            validate_transition(
-                state,
-                RecoveryDisposition::NeedsOperator
-                    .attempt_transition()
-                    .expect("needs-operator recovery transitions attempt"),
-                TransitionActor::RecoveryService,
-            )
-            .is_ok()
+        assert_recovery_disposition_valid_for(
+            RecoveryDisposition::NeedsOperator,
+            state,
+            &[
+                RecoveryObservation::ProcessStopped,
+                RecoveryObservation::ProcessRunning,
+                RecoveryObservation::Ambiguous,
+            ],
         );
     }
+}
 
+#[test]
+fn recovery_dispositions_reject_mismatched_state_pairs() {
     assert!(
         !RecoveryDisposition::SafePreSpawnRequeue
             .is_compatible_with(ExecutionState::Running, RecoveryObservation::ProcessRunning)
@@ -409,6 +403,10 @@ fn recovery_dispositions_follow_lifecycle_and_observation_invariants() {
         !RecoveryDisposition::AlreadyTerminal
             .is_compatible_with(ExecutionState::Leased, RecoveryObservation::ProcessStopped)
     );
+}
+
+#[test]
+fn recovery_disposition_transition_targets_are_fixed() {
     assert_eq!(
         RecoveryDisposition::SafePreSpawnRequeue.request_transition(),
         Some(ExecutionState::Queued)

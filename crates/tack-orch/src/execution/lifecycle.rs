@@ -143,6 +143,25 @@ mod tests {
         assert_eq!(error.reason, "invalid_transition");
     }
 
+    const ALL_STATES: [ExecutionState; 10] = [
+        ExecutionState::Queued,
+        ExecutionState::Leased,
+        ExecutionState::Preparing,
+        ExecutionState::Running,
+        ExecutionState::WaitingDecision,
+        ExecutionState::Succeeded,
+        ExecutionState::Failed,
+        ExecutionState::Cancelled,
+        ExecutionState::Lost,
+        ExecutionState::NeedsOperator,
+    ];
+    const ALL_ACTORS: [TransitionActor; 4] = [
+        TransitionActor::Scheduler,
+        TransitionActor::Operator,
+        TransitionActor::LeaseOwner,
+        TransitionActor::RecoveryService,
+    ];
+
     #[test]
     fn frozen_lifecycle_fixture_is_implemented_exactly() {
         let raw = include_str!("../../../../docs/contracts/runner-v1/lifecycle-transitions.json");
@@ -154,28 +173,9 @@ mod tests {
             "lifecycle fixture must round-trip without dropping additive fields"
         );
 
-        let states = [
-            ExecutionState::Queued,
-            ExecutionState::Leased,
-            ExecutionState::Preparing,
-            ExecutionState::Running,
-            ExecutionState::WaitingDecision,
-            ExecutionState::Succeeded,
-            ExecutionState::Failed,
-            ExecutionState::Cancelled,
-            ExecutionState::Lost,
-            ExecutionState::NeedsOperator,
-        ];
-        let actors = [
-            TransitionActor::Scheduler,
-            TransitionActor::Operator,
-            TransitionActor::LeaseOwner,
-            TransitionActor::RecoveryService,
-        ];
-
         for rule in fixture.rules {
-            for to in states {
-                for transition_actor in actors {
+            for to in ALL_STATES {
+                for transition_actor in ALL_ACTORS {
                     let expected = rule.allow.get(&to).is_some_and(|allowed| {
                         allowed.iter().any(|name| actor(name) == transition_actor)
                     });
