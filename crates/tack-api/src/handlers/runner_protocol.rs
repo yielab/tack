@@ -2348,7 +2348,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_capability_payload_rejects_available_over_total_and_oversized_labels() {
+    fn validate_capability_rejects_over_total_or_oversized_label() {
         // Every case below is otherwise a complete `EmbeddedCapabilitySnapshot`
         // shape (`reported_at`/`limits`/`concurrency`/`labels`/`harnesses`/
         // `features` all present) — the typed parse this handler validates
@@ -2403,7 +2403,7 @@ mod tests {
     /// `features: {}`), which fails strict `RunnerCapabilities` parsing, must
     /// still validate under `EmbeddedCapabilitySnapshot`.
     #[test]
-    fn validate_capability_payload_accepts_refresh_fixtures_sparse_shape() {
+    fn validate_capability_accepts_sparse_refresh_fixtures_shape() {
         let raw = include_str!("../../../../docs/contracts/runner-v1/refresh.request.json");
         let value: Value = serde_json::from_str(raw).expect("refresh fixture");
         let capabilities = &value["capabilities"];

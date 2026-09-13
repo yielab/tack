@@ -12,7 +12,7 @@ fn workdir(tag: &str) -> tempfile::TempDir {
 }
 
 #[test]
-fn a_configured_log_path_creates_its_directory_and_splits_into_dir_and_name() {
+fn configured_log_path_creates_dir_and_splits_into_dir_and_name() {
     let dir_guard = workdir("log-target");
     let nested = dir_guard.path().join("logs").join("tack.log");
     assert!(!nested.parent().unwrap().exists());
@@ -246,7 +246,7 @@ fn serve_still_takes_no_arguments() {
 
 /// A control whose `start()` records whether it was ever called — the
 /// auto-start check under test in
-/// `a_persisted_enable_preference_never_auto_starts_on_a_non_loopback_bind`
+/// `persisted_enable_pref_never_auto_starts_non_loopback_bind`
 /// below is the only thing calling it in that test.
 struct RecordingControl {
     started: std::sync::atomic::AtomicBool,
@@ -296,7 +296,7 @@ impl LocalRunnerControl for RecordingControl {
 /// absent — a route being unreachable would not by itself prove the
 /// runner never actually started.
 #[tokio::test]
-async fn a_persisted_enable_preference_never_auto_starts_on_a_non_loopback_bind() {
+async fn persisted_enable_pref_never_auto_starts_non_loopback_bind() {
     let _env_guard = SERVE_ENV_LOCK.lock().await;
     let _restore = EnvRestore {
         port: std::env::var("TACK_PORT").ok(),

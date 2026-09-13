@@ -273,7 +273,7 @@ fn negative_duration_is_excluded_not_shown_as_negative() {
 }
 
 #[test]
-fn slices_by_project_type_and_item_type_are_disjoint_and_sum_to_overall() {
+fn slices_by_project_and_item_type_sum_to_the_overall() {
     let rows = vec![
         item(
             "software",
@@ -335,7 +335,7 @@ fn item_response_marks_rework_not_applicable_for_human_items() {
 }
 
 #[test]
-fn constants_are_asserted_verbatim_so_the_number_and_the_words_cannot_drift() {
+fn rework_rate_words_and_number_are_asserted_verbatim() {
     assert!(REWORK_RATE_DEFINITION.contains("rework_started"));
     assert!(REWORK_RATE_DEFINITION.contains("verification_failed"));
     assert!(REWORK_RATE_DEFINITION.contains("tester_verdict_failed"));
