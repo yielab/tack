@@ -1840,7 +1840,7 @@ impl RetentionStore for FakeRetentionStore {
 }
 
 #[tokio::test]
-async fn disabled_retention_sweep_spawns_nothing_and_never_calls_the_store() {
+async fn disabled_rollup_retention_sweep_never_calls_the_store() {
     let store = Arc::new(FakeRetentionStore::new());
     let handle = spawn_retention_sweep(false, store.clone(), 90, 1);
     assert!(handle.is_none());
