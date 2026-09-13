@@ -200,7 +200,7 @@ async fn create_control_plane(app: &Router, name: &str) -> Uuid {
 // ─── Off by default ────────────────────────────────────
 
 #[tokio::test]
-async fn both_routes_409_when_orch_disabled() {
+async fn disabled_orchestration_blocks_the_economics_endpoints() {
     let (app, _) = common::test_app().await; // orch_enable defaults to false
 
     let res = req(&app, Method::GET, "/api/economics/summary", None).await;
@@ -388,7 +388,7 @@ async fn summary_rework_correlates_by_item_id_and_names_definition() {
 }
 
 #[tokio::test]
-async fn summary_excludes_stale_attempts_from_the_rework_denominator() {
+async fn get_economics_summary_excludes_stale_rework_attempts() {
     // Retention window set short so "stale" is easy to construct.
     let config = AppConfig {
         orch_event_retention_days: 7,

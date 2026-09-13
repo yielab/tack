@@ -256,7 +256,7 @@ fn item_by_title<'a>(items: &'a [Value], title: &str) -> &'a Value {
 // ─── Off by default / not found / not linked ───────────────────────────────
 
 #[tokio::test]
-async fn dispatch_sprint_409s_when_orch_disabled() {
+async fn sprint_dispatch_and_preview_need_orchestration_on() {
     let (app, _) = common::test_app().await; // orch_enable defaults to false
     let res = req(
         &app,
@@ -282,7 +282,7 @@ async fn dispatch_sprint_409s_when_orch_disabled() {
 }
 
 #[tokio::test]
-async fn dispatch_sprint_404s_for_unknown_sprint() {
+async fn dispatching_a_ghost_sprint_id_yields_404() {
     let (app, _) = app_with_state(orch_config()).await;
     let res = req(
         &app,
@@ -295,7 +295,7 @@ async fn dispatch_sprint_404s_for_unknown_sprint() {
 }
 
 #[tokio::test]
-async fn dispatch_sprint_409s_when_project_not_linked() {
+async fn sprint_dispatch_409s_until_the_project_gets_linked() {
     let (app, _) = app_with_state(orch_config()).await;
     let project_id = common::create_project(&app, "Sprint Dispatch Test Project", "software").await;
     let sprint_id = create_sprint(&app, project_id).await;

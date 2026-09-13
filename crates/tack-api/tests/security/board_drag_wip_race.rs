@@ -102,7 +102,7 @@ async fn create_item(app: &Router, project_id: Uuid, title: &str) -> Uuid {
 /// explicit-transition restriction), so every item created here can go
 /// straight from the initial status ("Backlog") to "In Progress".
 #[tokio::test(flavor = "multi_thread", worker_threads = 16)]
-async fn concurrent_board_drags_into_one_wip_column_stay_under_limit() {
+async fn dragging_many_cards_at_once_never_exceeds_the_wip_cap() {
     const N: usize = 12;
     const WIP_LIMIT: i64 = 5;
 
