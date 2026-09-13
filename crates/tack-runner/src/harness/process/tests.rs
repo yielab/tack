@@ -34,39 +34,55 @@ fn generous_limits() -> ProcessLimits {
     ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(10))
 }
 
+/// Spawns `env` in `workspace` and waits for it to finish under `limits`,
+/// redacting `secrets`. Shared by every test that only cares about the
+/// outcome, not the spawn/wait mechanics.
+async fn run(
+    workspace: &Path,
+    env: BTreeMap<String, String>,
+    limits: &ProcessLimits,
+    secrets: &SecretMaterial,
+) -> ProcessResult {
+    spec(workspace, env)
+        .spawn()
+        .await
+        .expect("spawn")
+        .wait_with_capture(limits, secrets)
+        .await
+        .expect("wait")
+}
+
+async fn run_default(
+    workspace: &Path,
+    env: BTreeMap<String, String>,
+    limits: &ProcessLimits,
+) -> ProcessResult {
+    run(workspace, env, limits, &SecretMaterial::new()).await
+}
+
 #[tokio::test]
 async fn success_mode_exits_cleanly_and_captures_stdout() {
     let workspace_dir = temp_workspace("success");
-    let workspace = workspace_dir.path();
-    let process = spec(workspace, env_with_mode("success"))
-        .spawn()
-        .await
-        .expect("spawn");
-    let result = process
-        .wait_with_capture(&generous_limits(), &SecretMaterial::new())
-        .await
-        .expect("wait");
+    let result = run_default(
+        workspace_dir.path(),
+        env_with_mode("success"),
+        &generous_limits(),
+    )
+    .await;
 
     assert_eq!(result.exit, ProcessExit::Exited(0));
     assert!(result.stdout.text.contains("fake-harness-ok"));
     assert!(!result.stdout.truncated);
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
 #[tokio::test]
 async fn failure_mode_reports_configured_exit_code() {
     let workspace_dir = temp_workspace("failure");
-    let workspace = workspace_dir.path();
     let mut env = env_with_mode("failure");
     env.insert("TACK_FAKE_HARNESS_EXIT_CODE".to_owned(), "17".to_owned());
-    let process = spec(workspace, env).spawn().await.expect("spawn");
-    let result = process
-        .wait_with_capture(&generous_limits(), &SecretMaterial::new())
-        .await
-        .expect("wait");
+    let result = run_default(workspace_dir.path(), env, &generous_limits()).await;
 
     assert_eq!(result.exit, ProcessExit::Exited(17));
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
 /// Acceptance: "adapters cannot cross-read each other's workspaces" —
@@ -85,8 +101,17 @@ async fn spawn_refuses_a_working_directory_outside_its_workspace_root() {
         escaping.spawn().await,
         Err(ProcessError::WorkspaceEscape)
     ));
-    std::fs::remove_dir_all(workspace).expect("cleanup");
-    std::fs::remove_dir_all(sibling).expect("cleanup");
+}
+
+/// Runs the `read_relative` fixture mode against `workspace`, telling it to
+/// read `canary.txt` and report the result.
+async fn read_canary(workspace: &Path) -> ProcessResult {
+    let mut env = env_with_mode("read_relative");
+    env.insert(
+        "TACK_FAKE_HARNESS_READ_PATH".to_owned(),
+        "canary.txt".to_owned(),
+    );
+    run_default(workspace, env, &generous_limits()).await
 }
 
 /// Acceptance: "adapters cannot cross-read each other's workspaces" —
@@ -113,40 +138,15 @@ async fn each_confined_process_only_ever_sees_its_own_canary_file() {
     std::fs::write(workspace_b.join("canary.txt"), "workspace-b-secret")
         .expect("write workspace b canary");
 
-    let mut env_a = env_with_mode("read_relative");
-    env_a.insert(
-        "TACK_FAKE_HARNESS_READ_PATH".to_owned(),
-        "canary.txt".to_owned(),
-    );
-    let read_a = spec(workspace_a, env_a)
-        .spawn()
-        .await
-        .expect("spawn")
-        .wait_with_capture(&generous_limits(), &SecretMaterial::new())
-        .await
-        .expect("wait");
+    let read_a = read_canary(workspace_a).await;
     assert_eq!(read_a.exit, ProcessExit::Exited(0));
     assert!(read_a.stdout.text.contains("workspace-a-secret"));
     assert!(!read_a.stdout.text.contains("workspace-b-secret"));
 
-    let mut env_b = env_with_mode("read_relative");
-    env_b.insert(
-        "TACK_FAKE_HARNESS_READ_PATH".to_owned(),
-        "canary.txt".to_owned(),
-    );
-    let read_b = spec(workspace_b, env_b)
-        .spawn()
-        .await
-        .expect("spawn")
-        .wait_with_capture(&generous_limits(), &SecretMaterial::new())
-        .await
-        .expect("wait");
+    let read_b = read_canary(workspace_b).await;
     assert_eq!(read_b.exit, ProcessExit::Exited(0));
     assert!(read_b.stdout.text.contains("workspace-b-secret"));
     assert!(!read_b.stdout.text.contains("workspace-a-secret"));
-
-    std::fs::remove_dir_all(workspace_a).expect("cleanup");
-    std::fs::remove_dir_all(workspace_b).expect("cleanup");
 }
 
 /// Acceptance: high-volume output stays memory-bounded. Drives 8 MiB of
@@ -157,7 +157,6 @@ async fn each_confined_process_only_ever_sees_its_own_canary_file() {
 #[tokio::test]
 async fn high_volume_output_is_memory_bounded_and_truncated() {
     let workspace_dir = temp_workspace("high-volume");
-    let workspace = workspace_dir.path();
     const VOLUME_BYTES: usize = 8 * 1024 * 1024;
     const CAP: usize = 64 * 1024;
     let mut env = env_with_mode("high_volume");
@@ -166,13 +165,7 @@ async fn high_volume_output_is_memory_bounded_and_truncated() {
         VOLUME_BYTES.to_string(),
     );
     let limits = ProcessLimits::new(CAP, CAP, Duration::from_secs(30));
-    let result = spec(workspace, env)
-        .spawn()
-        .await
-        .expect("spawn")
-        .wait_with_capture(&limits, &SecretMaterial::new())
-        .await
-        .expect("wait");
+    let result = run_default(workspace_dir.path(), env, &limits).await;
 
     assert_eq!(
         result.exit,
@@ -189,17 +182,15 @@ async fn high_volume_output_is_memory_bounded_and_truncated() {
         result.stdout.bytes_dropped,
         VOLUME_BYTES as u64 - result.stdout.text.len() as u64
     );
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
-/// Acceptance: cancel kills descendants. The fake binary spawns a
-/// grandchild `sleep` in the background (inheriting the same process
-/// group, since it does not call `setpgid` itself) and writes its pid to
-/// a file before waiting on it. Cancelling the direct child must also
-/// reap that grandchild, not merely the shell that spawned it.
-#[tokio::test]
-async fn cancel_kills_the_whole_descendant_tree_not_just_the_child() {
-    let workspace_dir = temp_workspace("cancel-tree");
+/// Spawns the `spawn_child` fixture mode in a fresh workspace and waits
+/// for its grandchild's pidfile, returning the workspace guard (kept alive
+/// for the caller), the parent process, and both pids.
+async fn spawn_with_live_grandchild(
+    label: &str,
+) -> (tempfile::TempDir, SupervisedProcess, u32, u32) {
+    let workspace_dir = temp_workspace(label);
     let workspace = workspace_dir.path();
     let pidfile = workspace.join("grandchild.pid");
     let mut env = env_with_mode("spawn_child");
@@ -213,8 +204,19 @@ async fn cancel_kills_the_whole_descendant_tree_not_just_the_child() {
     );
     let process = spec(workspace, env).spawn().await.expect("spawn");
     let direct_child_pid = process.pid();
-
     let grandchild_pid = wait_for_pidfile(&pidfile).await;
+    (workspace_dir, process, grandchild_pid, direct_child_pid)
+}
+
+/// Acceptance: cancel kills descendants. The fake binary spawns a
+/// grandchild `sleep` in the background (inheriting the same process
+/// group, since it does not call `setpgid` itself) and writes its pid to
+/// a file before waiting on it. Cancelling the direct child must also
+/// reap that grandchild, not merely the shell that spawned it.
+#[tokio::test]
+async fn cancel_kills_the_whole_descendant_tree_not_just_the_child() {
+    let (_workspace_dir, process, grandchild_pid, direct_child_pid) =
+        spawn_with_live_grandchild("cancel-tree").await;
     assert!(
         process_alive(grandchild_pid),
         "grandchild must be observed running before cancellation"
@@ -229,8 +231,8 @@ async fn cancel_kills_the_whole_descendant_tree_not_just_the_child() {
         CancelOutcome::Stopped | CancelOutcome::Killed
     ));
 
-    // Give the kernel a brief moment to finish reaping; poll instead of a
-    // single fixed sleep so this is not a hidden pacing dependency.
+    // Poll instead of a single fixed sleep so reaping is not a hidden
+    // pacing dependency.
     assert!(
         wait_until_dead(grandchild_pid, Duration::from_secs(5)).await,
         "grandchild must be gone after cancelling its parent"
@@ -240,7 +242,6 @@ async fn cancel_kills_the_whole_descendant_tree_not_just_the_child() {
             || wait_until_dead(direct_child_pid, Duration::from_secs(5)).await,
         "direct child must also be gone"
     );
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
 /// Acceptance: timeouts. A process that runs longer than the configured
@@ -249,23 +250,15 @@ async fn cancel_kills_the_whole_descendant_tree_not_just_the_child() {
 #[tokio::test]
 async fn a_process_exceeding_timeout_is_killed_and_reported_timed_out() {
     let workspace_dir = temp_workspace("timeout");
-    let workspace = workspace_dir.path();
     let mut env = env_with_mode("hang");
     env.insert(
         "TACK_FAKE_HARNESS_SLEEP_SECONDS".to_owned(),
         "3600".to_owned(),
     );
     let limits = ProcessLimits::new(4096, 4096, Duration::from_millis(50));
-    let result = spec(workspace, env)
-        .spawn()
-        .await
-        .expect("spawn")
-        .wait_with_capture(&limits, &SecretMaterial::new())
-        .await
-        .expect("wait");
+    let result = run_default(workspace_dir.path(), env, &limits).await;
 
     assert_eq!(result.exit, ProcessExit::TimedOut);
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
 /// Acceptance: secret canaries are absent from logs and events. A canary
@@ -313,7 +306,6 @@ async fn secret_canaries_never_survive_into_output_or_spec_debug() {
     assert!(!result.stdout.text.contains(CANARY_STDIN));
     assert!(!result.stderr.text.contains(CANARY_ENV));
     assert!(!result.stderr.text.contains(CANARY_STDIN));
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
 /// Not itself one of the five acceptance bullets, but every mode
@@ -326,48 +318,29 @@ async fn every_documented_fixture_mode_behaves_as_documented() {
     let limits = generous_limits();
 
     let workspace_dir = temp_workspace("mode-version");
-    let workspace = workspace_dir.path();
     let mut env = env_with_mode("version");
     env.insert("TACK_FAKE_HARNESS_VERSION".to_owned(), "9.9.9".to_owned());
-    let result = spec(workspace, env)
-        .spawn()
-        .await
-        .expect("spawn")
-        .wait_with_capture(&limits, &SecretMaterial::new())
-        .await
-        .expect("wait");
+    let result = run_default(workspace_dir.path(), env, &limits).await;
     assert_eq!(result.exit, ProcessExit::Exited(0));
     assert!(result.stdout.text.contains("9.9.9"));
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 
     let workspace_dir = temp_workspace("mode-unknown-version");
-    let workspace = workspace_dir.path();
-    let result = spec(workspace, env_with_mode("unknown_version"))
-        .spawn()
-        .await
-        .expect("spawn")
-        .wait_with_capture(&limits, &SecretMaterial::new())
-        .await
-        .expect("wait");
+    let result = run_default(
+        workspace_dir.path(),
+        env_with_mode("unknown_version"),
+        &limits,
+    )
+    .await;
     assert_eq!(result.exit, ProcessExit::Exited(0));
     assert!(result.stdout.text.contains("999.999.999"));
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 
     let workspace_dir = temp_workspace("mode-malformed");
-    let workspace = workspace_dir.path();
-    let result = spec(workspace, env_with_mode("malformed"))
-        .spawn()
-        .await
-        .expect("spawn")
-        .wait_with_capture(&limits, &SecretMaterial::new())
-        .await
-        .expect("wait");
+    let result = run_default(workspace_dir.path(), env_with_mode("malformed"), &limits).await;
     assert_eq!(result.exit, ProcessExit::Exited(0));
     assert!(
         serde_json::from_str::<serde_json::Value>(&result.stdout.text).is_err(),
         "malformed mode must actually produce unparseable output"
     );
-    std::fs::remove_dir_all(workspace).expect("cleanup");
 }
 
 /// `pub(crate)`: `harness::tests`'s own cross-adapter descendant-tree

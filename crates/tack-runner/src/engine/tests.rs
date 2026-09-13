@@ -494,6 +494,14 @@ fn temporary_root(label: &str) -> tempfile::TempDir {
         .expect("temporary directory")
 }
 
+/// A fresh scratch root paired with a journal rooted in it — the setup
+/// nearly every test in this file starts from.
+fn fresh_journal(label: &str) -> (tempfile::TempDir, OwnerOnlyJournal) {
+    let root_dir = temporary_root(label);
+    let journal = OwnerOnlyJournal::new(root_dir.path());
+    (root_dir, journal)
+}
+
 fn session() -> RunnerSession {
     RunnerSession::new(
         RunnerId::new("runner"),
@@ -688,6 +696,44 @@ fn runner_engine_with_clock<A: HarnessAdapter, C: crate::Clock>(
     RunnerEngine::with_clock(protocol, adapter, journal, workspace_manager(root), clock)
 }
 
+/// [`runner_engine_with_clock`] for the common case of a default adapter —
+/// only the clock and protocol vary between callers.
+fn default_clock_engine<C: crate::Clock>(
+    protocol: FakeProtocol,
+    journal: OwnerOnlyJournal,
+    root: &Path,
+    clock: C,
+) -> RunnerEngine<FakeProtocol, FakeAdapter, FakeWorktree, C> {
+    runner_engine_with_clock(
+        protocol,
+        adapter(journal.journal_path(&AttemptId::new("attempt"))),
+        journal,
+        root,
+        clock,
+    )
+}
+
+fn clock_fixed_at_12_20_15() -> FixedClock {
+    FixedClock(
+        chrono::DateTime::parse_from_rfc3339("2026-08-06T12:20:15Z")
+            .expect("timestamp")
+            .into(),
+    )
+}
+
+/// A real per-call clock (unlike tokio's paused clock, which advances only
+/// *tokio* timers, not `SystemTime`) for tests whose repeated heartbeats
+/// need a distinct `sent_at`/`heartbeat_id` each time rather than being
+/// rejected as replays.
+fn clock_advancing_from_12_20_15() -> AdvancingClock {
+    AdvancingClock {
+        base: chrono::DateTime::parse_from_rfc3339("2026-08-06T12:20:15Z")
+            .expect("timestamp")
+            .into(),
+        calls: Arc::new(AtomicUsize::new(0)),
+    }
+}
+
 fn workspace_manager(root: &Path) -> WorkspaceManager<FakeWorktree> {
     WorkspaceManager::new(
         root.join("workspaces"),
@@ -852,18 +898,13 @@ fn heartbeat_dtos_round_trip_v1_and_reject_other_versions() {
 
 #[test]
 fn heartbeat_retries_keep_a_canonical_payload_per_clock_instant() {
-    let root_dir = temporary_root("heartbeat-canonical-retry");
+    let (root_dir, journal) = fresh_journal("heartbeat-canonical-retry");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
-    let fixed_at: SystemTime = chrono::DateTime::parse_from_rfc3339("2026-08-06T12:20:15Z")
-        .expect("timestamp")
-        .into();
-    let engine = runner_engine_with_clock(
+    let engine = default_clock_engine(
         protocol(work(), false, false),
-        adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal,
         root,
-        FixedClock(fixed_at),
+        clock_fixed_at_12_20_15(),
     );
     let claimed = work();
     let record = claimed_record(&claimed.lease, root);
@@ -878,22 +919,14 @@ fn heartbeat_retries_keep_a_canonical_payload_per_clock_instant() {
 
 #[tokio::test]
 async fn periodic_heartbeats_advance_ids_without_replay_conflicts() {
-    let root_dir = temporary_root("periodic-heartbeat-ids");
+    let (root_dir, journal) = fresh_journal("periodic-heartbeat-ids");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let protocol = protocol(work(), false, false);
-    let base: SystemTime = chrono::DateTime::parse_from_rfc3339("2026-08-06T12:20:15Z")
-        .expect("timestamp")
-        .into();
-    let engine = runner_engine_with_clock(
+    let engine = default_clock_engine(
         protocol.clone(),
-        adapter(journal.journal_path(&AttemptId::new("attempt"))),
         journal,
         root,
-        AdvancingClock {
-            base,
-            calls: Arc::new(AtomicUsize::new(0)),
-        },
+        clock_advancing_from_12_20_15(),
     );
     let claimed = work();
     let record = claimed_record(&claimed.lease, root);
@@ -914,20 +947,10 @@ async fn periodic_heartbeats_advance_ids_without_replay_conflicts() {
 
 #[tokio::test]
 async fn heartbeat_sent_at_comes_from_the_injected_clock() {
-    let root_dir = temporary_root("heartbeat-clock");
+    let (root_dir, journal) = fresh_journal("heartbeat-clock");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let protocol = protocol(work(), false, false);
-    let fixed_at: SystemTime = chrono::DateTime::parse_from_rfc3339("2026-08-06T12:20:15Z")
-        .expect("timestamp")
-        .into();
-    let engine = runner_engine_with_clock(
-        protocol.clone(),
-        adapter(journal.journal_path(&AttemptId::new("attempt"))),
-        journal,
-        root,
-        FixedClock(fixed_at),
-    );
+    let engine = default_clock_engine(protocol.clone(), journal, root, clock_fixed_at_12_20_15());
     assert!(matches!(
         engine
             .run_once(&session(), claim_request())
@@ -947,38 +970,26 @@ async fn heartbeat_sent_at_comes_from_the_injected_clock() {
 
 /// Acceptance: a harness that outlives several lease-renewal intervals
 /// still gets its lease renewed throughout, not just once at the start.
-/// Uses tokio's paused/auto-advancing clock so the wait genuinely spans
-/// multiple [`LEASE_RENEWAL_INTERVAL`] ticks without the test itself
-/// taking minutes; `FakeAdapter::wait`'s own sleep and the engine's
-/// renewal sleep race on the same virtual clock, so the assertion is
-/// exercising the real `tokio::select!` loop, not a mocked timer.
+/// Uses tokio's paused clock plus [`clock_advancing_from_12_20_15`] so the
+/// wait genuinely spans multiple [`LEASE_RENEWAL_INTERVAL`] ticks without
+/// the test itself taking minutes; `FakeAdapter::wait`'s own sleep and the
+/// engine's renewal sleep race on the same virtual clock, so the assertion
+/// is exercising the real `tokio::select!` loop, not a mocked timer.
 #[tokio::test(start_paused = true)]
 async fn wait_periodically_renews_the_lease_while_still_running() {
-    let root_dir = temporary_root("lease-renewal");
+    let (root_dir, journal) = fresh_journal("lease-renewal");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let protocol = protocol(work(), false, false);
     let long_running_adapter = FakeAdapter {
         wait_delay: LEASE_RENEWAL_INTERVAL * 3 + std::time::Duration::from_secs(1),
         ..adapter(journal.journal_path(&AttemptId::new("attempt")))
     };
-    // `AdvancingClock` (not the default `SystemClock`) so each heartbeat
-    // this test observes carries a distinct `sent_at`/`heartbeat_id`:
-    // tokio's paused clock advances *tokio* timers, not `SystemTime`, so
-    // a real per-call clock is needed for the renewal loop's repeated
-    // heartbeats to be distinguishable rather than rejected as replays.
-    let base: SystemTime = chrono::DateTime::parse_from_rfc3339("2026-08-06T12:20:15Z")
-        .expect("timestamp")
-        .into();
     let engine = runner_engine_with_clock(
         protocol.clone(),
         long_running_adapter,
         journal.clone(),
         root,
-        AdvancingClock {
-            base,
-            calls: Arc::new(AtomicUsize::new(0)),
-        },
+        clock_advancing_from_12_20_15(),
     );
 
     assert!(matches!(
@@ -1005,9 +1016,8 @@ async fn wait_periodically_renews_the_lease_while_still_running() {
 
 #[tokio::test]
 async fn mismatched_heartbeat_echo_quarantines_before_lease_facts() {
-    let root_dir = temporary_root("heartbeat-echo-mismatch");
+    let (root_dir, journal) = fresh_journal("heartbeat-echo-mismatch");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let protocol = protocol(work(), true, false);
     protocol
         .heartbeat_echo_matches
@@ -1034,9 +1044,8 @@ async fn mismatched_heartbeat_echo_quarantines_before_lease_facts() {
 /// `tamper` names, then asserts recovery rejects it as malformed rather than
 /// replaying it.
 async fn assert_tampered_binding_rejected(tamper: &str) {
-    let root_dir = temporary_root(tamper);
+    let (root_dir, journal) = fresh_journal(tamper);
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
     let mut record = claimed_record(&lease, root);
     record.state = JournalState::TerminalReportPending;
@@ -1131,9 +1140,8 @@ fn claim_request() -> ClaimRequest {
 
 #[tokio::test]
 async fn refresh_carries_capabilities_and_returns_expiring_session() {
-    let root_dir = temporary_root("refresh");
+    let (root_dir, journal) = fresh_journal("refresh");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let protocol = protocol(work(), false, false);
     let engine = runner_engine(
         protocol.clone(),
@@ -1209,9 +1217,8 @@ fn assert_cancellation_report_matches_evidence_fixture(report: &CancellationRepo
 
 #[tokio::test]
 async fn cancellation_is_coordinated_after_journal_precedes_spawn() {
-    let root_dir = temporary_root("cancel");
+    let (root_dir, journal) = fresh_journal("cancel");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let expected = journal.journal_path(&AttemptId::new("attempt"));
     let protocol = protocol(work(), true, false);
     let adapter = adapter(expected);
@@ -1262,9 +1269,8 @@ async fn cancellation_is_coordinated_after_journal_precedes_spawn() {
 
 #[tokio::test]
 async fn replayed_cancellation_ack_settles_stopped_evidence() {
-    let root_dir = temporary_root("replayed-cancellation");
+    let (root_dir, journal) = fresh_journal("replayed-cancellation");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let protocol = protocol(work(), true, false);
     protocol
         .cancellation_response
@@ -1300,9 +1306,8 @@ async fn mismatched_cancellation_ack_stays_in_terminal_outbox() {
         ("cancel-mismatch-request", CancellationAckMismatch::Request),
         ("cancel-mismatch-state", CancellationAckMismatch::State),
     ] {
-        let root_dir = temporary_root(label);
+        let (root_dir, journal) = fresh_journal(label);
         let root = root_dir.path();
-        let journal = OwnerOnlyJournal::new(root);
         let protocol = protocol(work(), true, false);
         protocol
             .cancellation_response
@@ -1337,9 +1342,8 @@ async fn non_stopped_cancellation_evidence_skips_transport() {
         ),
         ("cancel-ambiguous", CancelObservation::Ambiguous),
     ] {
-        let root_dir = temporary_root(label);
+        let (root_dir, journal) = fresh_journal(label);
         let root = root_dir.path();
-        let journal = OwnerOnlyJournal::new(root);
         let protocol = protocol(work(), true, false);
         let mut adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
         adapter.cancellation_evidence.observation = observation;
@@ -1368,9 +1372,8 @@ async fn non_stopped_cancellation_evidence_skips_transport() {
 /// process is ever started for it.
 #[tokio::test]
 async fn a_rejection_at_validate_is_reported_failed_and_never_spawns() {
-    let root_dir = temporary_root("validate-rejected");
+    let (root_dir, journal) = fresh_journal("validate-rejected");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let protocol = protocol(work(), false, false);
     let mut adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
     adapter.validate_error = Some(HarnessError::Rejected {
@@ -1423,9 +1426,8 @@ fn assert_pre_spawn_rejection_actual_execution(actual: &tack_orch::execution::Ac
 
 #[tokio::test]
 async fn completion_transport_loss_stays_in_terminal_outbox() {
-    let root_dir = temporary_root("stale");
+    let (root_dir, journal) = fresh_journal("stale");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let protocol = protocol(work(), false, true);
     let mut adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
     adapter.completion_actual_execution = mismatched_actual_execution();
@@ -1485,9 +1487,8 @@ async fn assert_outbox_replays_exact_payload_after_response_loss(kind: TerminalK
         TerminalKind::Completion => ("completion-outbox-replay", false, true),
         TerminalKind::Cancellation => ("cancellation-outbox-replay", true, false),
     };
-    let root_dir = temporary_root(label);
+    let (root_dir, journal) = fresh_journal(label);
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let protocol = protocol(work(), cancellation_requested, stale_completion);
     if matches!(kind, TerminalKind::Cancellation) {
         protocol
@@ -1612,9 +1613,8 @@ async fn completion_bad_ack_stays_in_terminal_outbox() {
         ("completion-mismatch-id", CompletionAckMismatch::Completion),
         ("completion-mismatch-state", CompletionAckMismatch::State),
     ] {
-        let root_dir = temporary_root(label);
+        let (root_dir, journal) = fresh_journal(label);
         let root = root_dir.path();
-        let journal = OwnerOnlyJournal::new(root);
         let protocol = protocol(work(), false, false);
         protocol
             .completion_response
@@ -1647,9 +1647,8 @@ async fn assert_ack_then_journal_failure_replays_pending_payload(kind: TerminalK
         TerminalKind::Completion => ("completion-ack-write-failure", false),
         TerminalKind::Cancellation => ("cancellation-ack-write-failure", true),
     };
-    let root_dir = temporary_root(label);
+    let (root_dir, journal) = fresh_journal(label);
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let protocol = protocol(work(), cancellation_requested, false);
     match kind {
         TerminalKind::Completion => {
@@ -1722,9 +1721,8 @@ async fn completion_ack_then_journal_failure_replays_pending_payload() {
 
 #[tokio::test]
 async fn restart_reports_unresolved_observation_without_respawn() {
-    let root_dir = temporary_root("recovery");
+    let (root_dir, journal) = fresh_journal("recovery");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
     let record = prepared_record(&lease, root);
     journal
@@ -1769,9 +1767,8 @@ async fn restart_reports_unresolved_observation_without_respawn() {
 
 #[tokio::test]
 async fn operator_response_durably_quarantines_pre_spawn_recovery() {
-    let root_dir = temporary_root("needs-operator-recovery");
+    let (root_dir, journal) = fresh_journal("needs-operator-recovery");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
     let record = prepared_record(&lease, root);
     journal
@@ -1804,9 +1801,8 @@ async fn operator_response_durably_quarantines_pre_spawn_recovery() {
 
 #[tokio::test]
 async fn stale_lease_on_recovery_retires_the_record_keeps_checkout() {
-    let root_dir = temporary_root("stale-lease-recovery");
+    let (root_dir, journal) = fresh_journal("stale-lease-recovery");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
     let workspace_path = root.join("workspaces/attempt");
     let record = prepared_record(&lease, root);
@@ -1853,9 +1849,8 @@ async fn stale_lease_on_recovery_retires_the_record_keeps_checkout() {
 
 #[tokio::test]
 async fn unreachable_server_on_recovery_never_retires_the_record() {
-    let root_dir = temporary_root("unreachable-recovery");
+    let (root_dir, journal) = fresh_journal("unreachable-recovery");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
     let workspace_path = root.join("workspaces/attempt");
     let record = prepared_record(&lease, root);
@@ -1909,9 +1904,8 @@ async fn unreachable_server_on_recovery_never_retires_the_record() {
 
 #[tokio::test]
 async fn replayed_terminal_response_settles_only_stopped_evidence() {
-    let root_dir = temporary_root("terminal-replay-recovery");
+    let (root_dir, journal) = fresh_journal("terminal-replay-recovery");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
     let record = prepared_record(&lease, root);
     journal
@@ -1957,9 +1951,8 @@ async fn already_terminal_response_quarantines_running_or_ambiguous() {
         ("terminal-running-recovery", true, false),
         ("terminal-ambiguous-recovery", false, true),
     ] {
-        let root_dir = temporary_root(label);
+        let (root_dir, journal) = fresh_journal(label);
         let root = root_dir.path();
-        let journal = OwnerOnlyJournal::new(root);
         let lease = work().lease;
         let record = prepared_record(&lease, root);
         journal
@@ -1993,9 +1986,8 @@ async fn already_terminal_response_quarantines_running_or_ambiguous() {
 
 #[tokio::test]
 async fn safe_requeue_never_settles_post_spawn_stopped_evidence() {
-    let root_dir = temporary_root("safe-post-spawn-recovery");
+    let (root_dir, journal) = fresh_journal("safe-post-spawn-recovery");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
     let mut record = prepared_record(&lease, root);
     record.state = JournalState::ProcessObservedRunning;
@@ -2021,9 +2013,8 @@ async fn safe_requeue_never_settles_post_spawn_stopped_evidence() {
 
 #[tokio::test]
 async fn post_spawn_start_ack_failure_reports_ambiguity_quarantines() {
-    let root_dir = temporary_root("start-ack");
+    let (root_dir, journal) = fresh_journal("start-ack");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let mut protocol = protocol(work(), false, false);
     protocol.fail_running_start = true;
     let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
@@ -2044,9 +2035,8 @@ async fn post_spawn_start_ack_failure_reports_ambiguity_quarantines() {
 
 #[tokio::test]
 async fn cancellation_transport_loss_stays_in_terminal_outbox() {
-    let root_dir = temporary_root("cancel-report");
+    let (root_dir, journal) = fresh_journal("cancel-report");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let protocol = protocol(work(), true, false);
     protocol
         .fail_cancellation_report
@@ -2081,9 +2071,8 @@ async fn cancellation_ack_journal_failure_replays_pending_payload() {
 
 #[tokio::test]
 async fn failed_ambiguity_delivery_retries_on_restart_without_respawn() {
-    let root_dir = temporary_root("retry-recovery");
+    let (root_dir, journal) = fresh_journal("retry-recovery");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
     let record = prepared_record(&lease, root);
     journal
@@ -2124,9 +2113,8 @@ async fn failed_ambiguity_delivery_retries_on_restart_without_respawn() {
 
 #[tokio::test]
 async fn running_recovery_observation_is_quarantined_not_completed() {
-    let root_dir = temporary_root("running-recovery");
+    let (root_dir, journal) = fresh_journal("running-recovery");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
     let record = prepared_record(&lease, root);
     journal
@@ -2152,9 +2140,8 @@ async fn running_recovery_observation_is_quarantined_not_completed() {
 
 #[tokio::test]
 async fn duplicate_claim_for_quarantined_attempt_cannot_start_again() {
-    let root_dir = temporary_root("duplicate-quarantine");
+    let (root_dir, journal) = fresh_journal("duplicate-quarantine");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let lease = work().lease;
     let record = prepared_record(&lease, root);
     journal
@@ -2179,9 +2166,8 @@ async fn duplicate_claim_for_quarantined_attempt_cannot_start_again() {
 
 #[tokio::test]
 async fn post_spawn_journal_update_failure_reports_ambiguity_cancels() {
-    let root_dir = temporary_root("journal-update");
+    let (root_dir, journal) = fresh_journal("journal-update");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     journal.fail_next_update_for_test();
     let protocol = protocol(work(), false, false);
     let adapter = adapter(journal.journal_path(&AttemptId::new("attempt")));
@@ -2495,9 +2481,8 @@ async fn run_once_with_a_data_protocol_submits_a_cancellation_event() {
 /// the lifecycle depends on the new seam being present.
 #[tokio::test]
 async fn without_data_protocol_attempt_completes_nothing_submitted() {
-    let root_dir = temporary_root("data-protocol-absent");
+    let (root_dir, journal) = fresh_journal("data-protocol-absent");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let engine = runner_engine(
         protocol(work(), false, false),
         adapter(journal.journal_path(&AttemptId::new("attempt"))),
@@ -2521,9 +2506,8 @@ async fn without_data_protocol_attempt_completes_nothing_submitted() {
 /// reach the server even if this best-effort evidence upload could not.
 #[tokio::test]
 async fn data_protocol_transport_failure_does_not_block_completion() {
-    let root_dir = temporary_root("data-protocol-failure");
+    let (root_dir, journal) = fresh_journal("data-protocol-failure");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let data_protocol = FakeDataProtocol::new();
     data_protocol.events_fail.store(true, Ordering::SeqCst);
     let engine = runner_engine(
@@ -2562,9 +2546,8 @@ async fn data_protocol_transport_failure_does_not_block_completion() {
 /// no-op: the accepted set never grows past one member.
 #[tokio::test]
 async fn resubmitting_the_same_terminal_event_is_idempotent() {
-    let root_dir = temporary_root("data-protocol-idempotent-retry");
+    let (root_dir, journal) = fresh_journal("data-protocol-idempotent-retry");
     let root = root_dir.path();
-    let journal = OwnerOnlyJournal::new(root);
     let data_protocol = FakeDataProtocol::new();
     let engine = runner_engine(
         protocol(work(), false, false),

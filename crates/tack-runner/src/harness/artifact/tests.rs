@@ -36,8 +36,6 @@ fn stages_a_file_with_a_correct_checksum_and_size() {
         fs::read(&staged.staged_path).expect("read staged file"),
         b"diff --git a b\n"
     );
-    fs::remove_dir_all(workspace).expect("cleanup");
-    fs::remove_dir_all(staging).expect("cleanup");
 }
 
 #[test]
@@ -69,9 +67,6 @@ fn refuses_a_source_outside_its_workspace_root() {
         "text/plain",
     );
     assert!(matches!(result, Err(ArtifactError::WorkspaceEscape)));
-    fs::remove_dir_all(workspace).expect("cleanup");
-    fs::remove_dir_all(staging).expect("cleanup");
-    fs::remove_dir_all(outside).expect("cleanup");
 }
 
 #[cfg(unix)]
@@ -97,9 +92,6 @@ fn refuses_a_symlinked_source() {
         "text/plain",
     );
     assert!(matches!(result, Err(ArtifactError::SourceUnavailable)));
-    fs::remove_dir_all(workspace).expect("cleanup");
-    fs::remove_dir_all(staging).expect("cleanup");
-    fs::remove_dir_all(outside).expect("cleanup");
 }
 
 /// Reinforces "adapters cannot cross-read each other's workspaces" on the
@@ -145,9 +137,6 @@ fn distinct_attempts_get_isolated_staging_directories() {
         fs::read(&staged_b.staged_path).unwrap(),
         b"attempt-b-content"
     );
-    fs::remove_dir_all(workspace_a).expect("cleanup");
-    fs::remove_dir_all(workspace_b).expect("cleanup");
-    fs::remove_dir_all(staging).expect("cleanup");
 }
 
 #[cfg(unix)]
@@ -186,6 +175,4 @@ fn staged_files_and_directories_are_owner_only() {
         0,
         "attempt staging directory is owner-only"
     );
-    fs::remove_dir_all(workspace).expect("cleanup");
-    fs::remove_dir_all(staging).expect("cleanup");
 }

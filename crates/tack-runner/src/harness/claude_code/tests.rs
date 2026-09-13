@@ -709,6 +709,31 @@ fn install_secret_log_capture() -> tracing::dispatcher::DefaultGuard {
     tracing::dispatcher::set_default(&tracing::Dispatch::new(subscriber))
 }
 
+/// A shim that writes only the *byte length* of `$SECRET_VAR` to `marker`
+/// — never the value itself — so a test can prove a resolved secret
+/// reached the spawned process without ever holding the value.
+fn secret_length_dump_binary(workspace: &Path, marker: &Path) -> HarnessBinary {
+    let script = format!(
+        "#!/bin/sh\nprintf '%s' \"$SECRET_VAR\" | wc -c > {}\nexit 0\n",
+        marker.display()
+    );
+    let script_path = workspace.join("shim.sh");
+    std::fs::write(&script_path, script).expect("write shim script");
+    HarnessBinary {
+        program: PathBuf::from("/bin/sh"),
+        prefix_args: vec![script_path.display().to_string()],
+    }
+}
+
+/// The byte count `secret_length_dump_binary`'s shim wrote to `marker`.
+fn recorded_length(marker: &Path) -> usize {
+    std::fs::read_to_string(marker)
+        .expect("shim wrote the length marker")
+        .trim()
+        .parse()
+        .expect("marker holds a byte count")
+}
+
 /// Acceptance: a live attempt with a `secret_reference` environment
 /// entry reaches the spawned process with the resolved value set — the
 /// shim here proves it by writing the value's *byte length* to a marker
@@ -726,17 +751,7 @@ async fn secret_reference_resolves_and_only_length_reaches_the_shim() {
     store.set("demo", secret_value).expect("seed the store");
 
     let marker = workspace.join("secret-length.marker");
-    let script = format!(
-        "#!/bin/sh\nprintf '%s' \"$SECRET_VAR\" | wc -c > {}\nexit 0\n",
-        marker.display()
-    );
-    let script_path = workspace.join("shim.sh");
-    std::fs::write(&script_path, script).expect("write shim script");
-    let binary = HarnessBinary {
-        program: PathBuf::from("/bin/sh"),
-        prefix_args: vec![script_path.display().to_string()],
-    };
-
+    let binary = secret_length_dump_binary(workspace, &marker);
     let adapter = ClaudeCodeAdapter::with_binary(binary, clock(), store);
     let mut environment = BTreeMap::new();
     environment.insert("SECRET_VAR".to_string(), secret_reference_entry("demo"));
@@ -756,11 +771,8 @@ async fn secret_reference_resolves_and_only_length_reaches_the_shim() {
     let handle = adapter.start(&spec).await.expect("start");
     let outcome = adapter.wait(&handle).await.expect("wait");
     assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
-
-    let recorded = std::fs::read_to_string(&marker).expect("shim wrote the length marker");
-    let recorded_length: usize = recorded.trim().parse().expect("marker holds a byte count");
     assert_eq!(
-        recorded_length,
+        recorded_length(&marker),
         secret_value.len(),
         "the shim must have received the resolved value, not something else"
     );
@@ -1079,6 +1091,21 @@ fn journal_with_process(process_id: Option<&str>) -> AttemptJournal {
 // (`process_program_matches`, genuinely different from codex's
 // unconditional trust) stays below, in the two Linux-only tests.
 
+/// Deliberately drives `spawn_child` mode, not `hang`: `hang` execs into
+/// `sleep`, replacing the process image so `/proc/<pid>/cmdline` becomes
+/// `sleep ...` moments after spawn — behavior specific to that one fixture
+/// mode, not representative of what `process_program_matches` must identify
+/// against a real `claude` process, which never re-execs over its own
+/// lifetime. `spawn_child`'s own process (distinct from the grandchild
+/// `sleep` it backgrounds) never execs, keeping a stable, checkable
+/// `/bin/sh <script>` cmdline throughout — which is what lets the bounded
+/// poll below converge instead of being structurally unable to: reading
+/// `/proc/<pid>/cmdline` immediately after spawn can transiently return
+/// `None` (the kernel has not necessarily finished populating it yet),
+/// which `reconcile` itself already reports honestly as `Ambiguous` rather
+/// than guessing, so the loop exists only to make the assertion insensitive
+/// to that one-time startup window, not because `reconcile` is retried in
+/// production.
 #[cfg(target_os = "linux")]
 #[tokio::test]
 async fn reconcile_reports_running_for_a_still_running_harness() {
@@ -1086,16 +1113,6 @@ async fn reconcile_reports_running_for_a_still_running_harness() {
     let workspace_dir = temp_workspace("reconcile-running");
     let workspace = workspace_dir.path();
     let mut environment = BTreeMap::new();
-    // Deliberately `spawn_child`, not `hang`: `hang` mode `exec`s into
-    // `sleep` (see `fake_harness.sh`'s own doc comment), which replaces
-    // the process image, so `/proc/<pid>/cmdline` permanently becomes
-    // `sleep ...` rather than `/bin/sh <script>` moments after spawn —
-    // a real `claude` process never re-execs into something else over
-    // its own lifetime, so that behavior is specific to this one fixture
-    // mode, not representative of what `process_program_matches` needs
-    // to identify in production. `spawn_child` mode's own process
-    // (distinct from the grandchild `sleep` it backgrounds) never execs,
-    // keeping a stable, checkable `/bin/sh <script>` cmdline throughout.
     environment.insert(
         "TACK_FAKE_HARNESS_MODE".to_string(),
         env_entry("spawn_child"),
@@ -1117,17 +1134,6 @@ async fn reconcile_reports_running_for_a_still_running_harness() {
     let pid: u32 = handle.process_id.parse().expect("numeric pid");
 
     let journal = journal_with_process(Some(&handle.process_id));
-    // Bounded poll, not a fixed sleep. `spawn_child` mode's own
-    // process never execs (see the comment above), so unlike the
-    // earlier `hang`-mode attempt this converges rather than being
-    // structurally unable to: under heavy parallel test load, reading
-    // `/proc/<pid>/cmdline` immediately after spawn can transiently
-    // fail (`process_program_matches` returning `None`, since the
-    // kernel has not necessarily finished populating it), which is a
-    // real, if rare, possibility `reconcile` itself already reports
-    // honestly as `Ambiguous` rather than guessing — this loop exists
-    // only so the test's assertion is not sensitive to that one-time
-    // startup window, not because `reconcile` is retried in production.
     let mut observation = None;
     for _ in 0..80 {
         let latest = adapter.reconcile(&journal).await.expect("reconcile");
@@ -1139,10 +1145,9 @@ async fn reconcile_reports_running_for_a_still_running_harness() {
     }
     assert_eq!(observation, Some(RecoveryObservation::ProcessRunning));
 
-    // Cleanup: this adapter's own `cancel` both stops the process (and
-    // its backgrounded grandchild, via `process.rs`'s own process-group
-    // signalling) and forgets the bookkeeping entry `reconcile` never
-    // touched.
+    // This adapter's own `cancel` stops the process (and its backgrounded
+    // grandchild, via `process.rs`'s process-group signalling) and forgets
+    // the bookkeeping entry `reconcile` never touched.
     adapter.cancel(&handle).await.expect("cancel");
     assert!(!process_alive(pid));
     std::fs::remove_dir_all(workspace).expect("cleanup");
