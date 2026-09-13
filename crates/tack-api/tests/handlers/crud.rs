@@ -251,47 +251,49 @@ async fn backup_roundtrip_with_file_db() {
     let tmp_dir = tempfile::tempdir().expect("temporary directory");
     let db_path = tmp_dir.path().join("test.db");
     let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
-
     let (app, _) = common::test_app_with_file_db(&db_url).await;
 
     // Backup should succeed and return a SQLite file.
-    let backup_res = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method(Method::GET)
-                .uri("/api/backup")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(backup_res.status(), StatusCode::OK);
-
-    let backup_bytes = axum::body::to_bytes(backup_res.into_body(), usize::MAX)
-        .await
-        .unwrap();
+    let (status, backup_bytes) = raw_bytes(&app, Method::GET, "/api/backup", &[], Vec::new()).await;
+    assert_eq!(status, StatusCode::OK);
     assert!(
         backup_bytes.starts_with(b"SQLite format 3\x00"),
         "backup must be a valid SQLite file"
     );
 
     // Staging the backup should succeed and write a .restore file.
-    let restore_res = app
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/api/restore")
-                .header("content-type", "application/octet-stream")
-                .body(Body::from(backup_bytes.to_vec()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(restore_res.status(), StatusCode::OK);
+    let headers = [("content-type", "application/octet-stream")];
+    let (status, _) = raw_bytes(&app, Method::POST, "/api/restore", &headers, backup_bytes).await;
+    assert_eq!(status, StatusCode::OK);
 
     let restore_path = PathBuf::from(format!("{}.restore", db_path.display()));
     assert!(restore_path.exists(), ".restore file should be staged");
+}
+
+/// A oneshot request that returns the raw response bytes rather than
+/// parsed JSON — for the SQLite-binary backup/restore endpoints, which
+/// `common::send*` (JSON in, JSON out) cannot round-trip.
+async fn raw_bytes(
+    app: &Router,
+    method: Method,
+    uri: &str,
+    headers: &[(&str, &str)],
+    body: Vec<u8>,
+) -> (StatusCode, Vec<u8>) {
+    let mut builder = Request::builder().method(method).uri(uri);
+    for (name, value) in headers {
+        builder = builder.header(*name, *value);
+    }
+    let res = app
+        .clone()
+        .oneshot(builder.body(Body::from(body)).unwrap())
+        .await
+        .unwrap();
+    let status = res.status();
+    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (status, bytes.to_vec())
 }
 
 #[tokio::test]
@@ -392,60 +394,46 @@ async fn make_item(app: &axum::Router, project_id: Uuid) -> String {
 
 #[tokio::test]
 async fn custom_field_value_validated_by_type_and_rule() {
+    let unproc = StatusCode::UNPROCESSABLE_ENTITY;
+    let score = r#"{"name":"Score","field_type":"number"}"#;
+    let select = r#"{"name":"Priority","field_type":"select","options":["Low","High"]}"#;
+    let code = r#"{"name":"Code","field_type":"text","validation":{"pattern":"^[A-Z]{3}$"}}"#;
+    let ranged = r#"{"name":"Score","field_type":"number","validation":{"min":0,"max":100}}"#;
     let cases: Vec<(&str, &str, Value, StatusCode)> = vec![
+        ("number accepts", score, json!(42), StatusCode::OK),
+        ("number rejects a string", score, json!("bad"), unproc),
         (
-            "number accepts a number",
-            r#"{"name":"Score","field_type":"number"}"#,
-            json!(42),
-            StatusCode::OK,
-        ),
-        (
-            "number rejects a string",
-            r#"{"name":"Score","field_type":"number"}"#,
-            json!("not a number"),
-            StatusCode::UNPROCESSABLE_ENTITY,
-        ),
-        (
-            "select rejects an undeclared option",
-            r#"{"name":"Priority","field_type":"select","options":["Low","High"]}"#,
+            "select rejects undeclared option",
+            select,
             json!("Critical"),
-            StatusCode::UNPROCESSABLE_ENTITY,
+            unproc,
         ),
         (
-            "text accepts a value matching its pattern",
-            r#"{"name":"Code","field_type":"text","validation":{"pattern":"^[A-Z]{3}$"}}"#,
+            "text matches its pattern",
+            code,
             json!("ABC"),
             StatusCode::OK,
         ),
-        (
-            "text rejects a value failing its pattern",
-            r#"{"name":"Code","field_type":"text","validation":{"pattern":"^[A-Z]{3}$"}}"#,
-            json!("lowercase"),
-            StatusCode::UNPROCESSABLE_ENTITY,
-        ),
-        (
-            "number rejects a value outside its range",
-            r#"{"name":"Score","field_type":"number","validation":{"min":0,"max":100}}"#,
-            json!(150),
-            StatusCode::UNPROCESSABLE_ENTITY,
-        ),
+        ("text fails its pattern", code, json!("lowercase"), unproc),
+        ("number outside its range", ranged, json!(150), unproc),
     ];
     for (name, field_def, value, expected) in cases {
-        let (app, _) = common::test_app().await;
-        let pid = common::create_project(&app, "P", "software").await;
-        let fid = make_custom_field(&app, pid, field_def).await;
-        let iid = make_item(&app, pid).await;
-
-        let (status, _) = common::send(
-            &app,
-            "PUT",
-            &format!("/api/items/{iid}/custom-fields/{fid}"),
-            value,
-            &[],
-        )
-        .await;
+        let (app, fid, iid) = setup_custom_field_case(field_def).await;
+        let uri = format!("/api/items/{iid}/custom-fields/{fid}");
+        let (status, _) = common::send(&app, "PUT", &uri, value, &[]).await;
         assert_eq!(status, expected, "{name}");
     }
+}
+
+/// A fresh app with one project, one item, and one custom field defined by
+/// `field_def` on that project — the setup every custom-field-value case
+/// needs before it can PUT a value.
+async fn setup_custom_field_case(field_def: &str) -> (Router, String, String) {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "P", "software").await;
+    let fid = make_custom_field(&app, pid, field_def).await;
+    let iid = make_item(&app, pid).await;
+    (app, fid, iid)
 }
 
 // ─── Board filter integration ─────────────────────────────────────────────────
@@ -454,39 +442,23 @@ async fn custom_field_value_validated_by_type_and_rule() {
 async fn board_view_filter_by_item_type_returns_only_matching_items() {
     let (app, _) = common::test_app().await;
     let pid = common::create_project(&app, "P", "software").await;
+    let items_uri = format!("/api/projects/{pid}/items");
 
     // Create a task and a bug
     for (title, item_type) in [("Task A", "task"), ("Bug B", "bug")] {
-        common::send(
-            &app,
-            "POST",
-            &format!("/api/projects/{pid}/items"),
-            json!({"title": title, "item_type": item_type}),
-            &[],
-        )
-        .await;
+        let body = json!({"title": title, "item_type": item_type});
+        common::send(&app, "POST", &items_uri, body, &[]).await;
     }
 
     // Create a board that filters to only "task" items
-    let (_, board) = common::send(
-        &app,
-        "POST",
-        &format!("/api/projects/{pid}/boards"),
-        json!({"name":"Tasks Only","filters":{"item_type":"task"}}),
-        &[],
-    )
-    .await;
+    let boards_uri = format!("/api/projects/{pid}/boards");
+    let filter = json!({"name":"Tasks Only","filters":{"item_type":"task"}});
+    let (_, board) = common::send(&app, "POST", &boards_uri, filter, &[]).await;
     let board_id = board["id"].as_str().unwrap();
 
     // Fetch the board view
-    let (status, view) = common::send(
-        &app,
-        "GET",
-        &format!("/api/boards/{board_id}/view"),
-        Value::Null,
-        &[],
-    )
-    .await;
+    let view_uri = format!("/api/boards/{board_id}/view");
+    let (status, view) = common::send(&app, "GET", &view_uri, Value::Null, &[]).await;
     assert_eq!(status, StatusCode::OK);
 
     // All items across all columns must be of type "task"
@@ -640,38 +612,20 @@ async fn sprint_status_transitions_to_active() {
 async fn sprint_edit_replaces_fields_clears_omitted_ones() {
     let (app, _) = common::test_app().await;
     let pid = common::create_project(&app, "P", "software").await;
-
-    let (_, sprint) = common::send(
-        &app,
-        "POST",
-        &format!("/api/projects/{pid}/sprints"),
-        json!({"name":"Sprint A","goal":"Ship the MVP","start_date":"2026-01-01T00:00:00Z"}),
-        &[],
-    )
-    .await;
+    let sprints_uri = format!("/api/projects/{pid}/sprints");
+    let seed = json!({"name":"Sprint A","goal":"Ship the MVP","start_date":"2026-01-01T00:00:00Z"});
+    let (_, sprint) = common::send(&app, "POST", &sprints_uri, seed, &[]).await;
     let sid = sprint["id"].as_str().unwrap().to_owned();
+    let sprint_uri = format!("/api/sprints/{sid}");
 
     // The edit form sends every editable field it holds, so a goal and a start
     // date the user emptied arrive omitted and must end up NULL — not left at
     // their old values.
-    let (status, _) = common::send(
-        &app,
-        "PATCH",
-        &format!("/api/sprints/{sid}"),
-        json!({"name":"Sprint A, renamed"}),
-        &[],
-    )
-    .await;
+    let rename = json!({"name":"Sprint A, renamed"});
+    let (status, _) = common::send(&app, "PATCH", &sprint_uri, rename, &[]).await;
     assert_eq!(status, StatusCode::OK);
 
-    let (_, s) = common::send(
-        &app,
-        "GET",
-        &format!("/api/sprints/{sid}"),
-        Value::Null,
-        &[],
-    )
-    .await;
+    let (_, s) = common::send(&app, "GET", &sprint_uri, Value::Null, &[]).await;
     assert_eq!(s["name"], "Sprint A, renamed");
     assert!(
         s["goal"].is_null(),
@@ -882,14 +836,8 @@ async fn list_items_returns_pagination_envelope_and_slices_pages() {
     }
 
     // Page 1: envelope shape + total count + first slice.
-    let (status, page1) = common::send(
-        &app,
-        "GET",
-        &format!("/api/projects/{pid}/items?per_page=2&page=1"),
-        Value::Null,
-        &[],
-    )
-    .await;
+    let page1_uri = format!("/api/projects/{pid}/items?per_page=2&page=1");
+    let (status, page1) = common::send(&app, "GET", &page1_uri, Value::Null, &[]).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(page1["total"], 3, "total must count all matching items");
     assert_eq!(page1["page"], 1);
@@ -901,14 +849,8 @@ async fn list_items_returns_pagination_envelope_and_slices_pages() {
     );
 
     // Page 2: the remaining slice.
-    let (_, page2) = common::send(
-        &app,
-        "GET",
-        &format!("/api/projects/{pid}/items?per_page=2&page=2"),
-        Value::Null,
-        &[],
-    )
-    .await;
+    let page2_uri = format!("/api/projects/{pid}/items?per_page=2&page=2");
+    let (_, page2) = common::send(&app, "GET", &page2_uri, Value::Null, &[]).await;
     assert_eq!(page2["total"], 3);
     assert_eq!(page2["page"], 2);
     assert_eq!(
