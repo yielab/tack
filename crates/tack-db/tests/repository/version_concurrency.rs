@@ -77,6 +77,22 @@ async fn update_item_status_checked_bumps_version() {
     );
 }
 
+fn item_titled(title: &str, item_type: ItemType, parent_id: Option<uuid::Uuid>) -> CreateItem {
+    CreateItem {
+        title: title.into(),
+        description: None,
+        item_type: Some(item_type),
+        parent_id,
+        priority: Some(Priority::Medium),
+        estimate: None,
+        estimate_unit: None,
+        tags: None,
+        due_date: None,
+        sprint_id: None,
+        assignee: None,
+    }
+}
+
 #[tokio::test]
 async fn check_and_update_parent_status_bumps_version() {
     let repo = common::setup_test_db().await;
@@ -87,19 +103,7 @@ async fn check_and_update_parent_status_bumps_version() {
         .create_item(
             project.id,
             "Backlog",
-            CreateItem {
-                title: "Parent".into(),
-                description: None,
-                item_type: Some(ItemType::Epic),
-                parent_id: None,
-                priority: Some(Priority::Medium),
-                estimate: None,
-                estimate_unit: None,
-                tags: None,
-                due_date: None,
-                sprint_id: None,
-                assignee: None,
-            },
+            item_titled("Parent", ItemType::Epic, None),
         )
         .await
         .unwrap();
@@ -107,19 +111,7 @@ async fn check_and_update_parent_status_bumps_version() {
         .create_item(
             project.id,
             "Done",
-            CreateItem {
-                title: "Only child".into(),
-                description: None,
-                item_type: Some(ItemType::Task),
-                parent_id: Some(parent.id),
-                priority: Some(Priority::Medium),
-                estimate: None,
-                estimate_unit: None,
-                tags: None,
-                due_date: None,
-                sprint_id: None,
-                assignee: None,
-            },
+            item_titled("Only child", ItemType::Task, Some(parent.id)),
         )
         .await
         .unwrap();
