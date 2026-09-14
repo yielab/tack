@@ -2,31 +2,24 @@
 //! control plane, polling it on an interval and driving the
 //! `healthy` → `degraded` → `unreachable` state machine.
 //!
-//! # Fetch, decide, persist — never a write held across an HTTP call
+//! **Fetch, decide, persist — never a write held across an HTTP call.** Each
+//! poll tick runs three non-interleaving phases: fetch ([`reconcile_once`])
+//! makes every HTTP call and touches no database handle; decide
+//! ([`HealthTracker::observe`]) is a pure, synchronous transition; persist
+//! ([`spawn_one`]'s `store.record_health(...)`) is one short write, strictly
+//! after fetch resolves. A new `poll_*` step means one field on
+//! [`FetchOutcome`], one function, one line in [`reconcile_once`]; a
+//! data-ingestion failure (runs/approvals/traces/metrics) must never affect
+//! the health verdict — only `/health` and `/status.json` do.
 //!
-//! Each poll tick runs in three phases that cannot interleave, by
-//! construction: **fetch** ([`reconcile_once`]) makes every HTTP call the
-//! tick needs and touches no database handle; **decide**
-//! ([`HealthTracker::observe`]) is a pure, synchronous transition over the
-//! fetch result; **persist** ([`spawn_one`]'s `store.record_health(...)`
-//! call) is one short write, strictly after phase 1 has resolved. Adding a
-//! new `poll_*` step means one field on [`FetchOutcome`], one `poll_*`
-//! function, and one line in [`reconcile_once`]; a data-ingestion failure
-//! (runs/approvals/traces/metrics) must never affect the health verdict —
-//! only `/health` and `/status.json` do.
-//!
-//! # Trace cursor and event id
-//!
-//! [`crate::TracesPage::next`] is opaque and forwarded verbatim — never
-//! reconstructed client-side. `orch_events.id` has no natural key, so
-//! [`derive_event_id`] hashes the event's content instead — see that
-//! function's own doc for the collision caveat and the retention interplay.
-//!
-//! # Not wired at boot
+//! [`crate::TracesPage::next`] is opaque and forwarded verbatim, never
+//! reconstructed client-side; `orch_events.id` has no natural key, so
+//! [`derive_event_id`] hashes the event's content instead (see its own doc
+//! for the collision caveat).
 //!
 //! [`spawn_retention_sweep`] is built and tested but has no caller in
-//! `tack-api::server` — fleet-wide orch event/metric retention does not
-//! actually run until something spawns it.
+//! `tack-api::server` — fleet-wide orch event/metric retention does not run
+//! until something spawns it.
 
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -69,15 +62,14 @@ pub const EXPECTED_API_VERSION: &str = "2";
 
 /// A control plane's health as the reconciler sees it. Column values in
 /// `control_planes.health` are these variants' [`HealthState::as_str`]
-/// output verbatim (`"healthy"` / `"degraded"` / `"unreachable"`) — the
-/// column also allows `"unknown"` as its pre-first-poll default, which this
-/// enum deliberately has no variant for: nothing in this module ever writes
-/// `"unknown"`, only a fresh row's DEFAULT does.
+/// output verbatim — the column also allows `"unknown"` as its
+/// pre-first-poll default, which this enum has no variant for: nothing in
+/// this module ever writes it, only a fresh row's DEFAULT does.
 ///
 /// Variant order is significant: `derive(PartialOrd, Ord)` ranks
-/// `Healthy < Degraded < Unreachable`, which [`evaluate`] and
-/// [`HealthTracker::observe`] rely on to combine two independent signals
-/// (reachability and apiVersion match) by taking the more severe one.
+/// `Healthy < Degraded < Unreachable`, which [`evaluate`]/
+/// [`HealthTracker::observe`] rely on to combine reachability and
+/// apiVersion-match by taking the more severe signal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HealthState {
     Healthy,
@@ -102,12 +94,9 @@ impl std::fmt::Display for HealthState {
 }
 
 /// Severity to log a health transition at. Anything that doesn't change
-/// state (a poll that fails for the 7th time in a row while already
-/// `unreachable`, say) logs at `debug`, not `warn` — this is what makes the
-/// "logs backoff at warn without spam" acceptance criterion true: warn-level
-/// logging only fires *on a transition*, so a sustained outage produces at
-/// most two warns (entering `degraded`, entering `unreachable`) no matter
-/// how long it lasts, plus one `info` on recovery.
+/// state logs at `debug`, not `warn` — warn only fires *on a transition*, so
+/// a sustained outage produces at most two warns (entering `degraded`,
+/// entering `unreachable`), plus one `info` on recovery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LogSeverity {
     Warn,
@@ -146,15 +135,12 @@ impl HealthTracker {
         }
     }
 
-    /// Feed one poll's outcome into the state machine.
-    ///
-    /// `reachable` is true iff both required Wave-1 calls (`/health`,
-    /// `/status.json`) succeeded. `version_mismatch` is an independent
-    /// signal (see [`evaluate`]): a plane can be fully reachable and still
-    /// show `degraded` because it's running a docket version this Tack
-    /// doesn't understand. Recovery is immediate — a single `reachable`
-    /// poll resets `consecutive_failures` to zero and re-evaluates state
-    /// from scratch, regardless of how deep the prior outage was.
+    /// Feed one poll's outcome into the state machine. `reachable` is true
+    /// iff both `/health` and `/status.json` succeeded. `version_mismatch`
+    /// is independent (see [`evaluate`]): a fully reachable plane can still
+    /// show `degraded` on a docket version this Tack doesn't understand.
+    /// Recovery is immediate — one `reachable` poll resets
+    /// `consecutive_failures` and re-evaluates state from scratch.
     fn observe(
         &mut self,
         reachable: bool,
@@ -291,12 +277,10 @@ async fn poll_approvals(
 }
 
 /// `GET /metrics` — fleet-wide, not per-project, exactly like `/health`/
-/// `/status.json`. `ControlPlane::metrics()` (the `DocketAdapter` impl)
-/// already fetches the raw Prometheus text and
-/// parses it via `adapters::prometheus::parse` internally — this function is
-/// not a second parsing step, just the same thin HTTP-call wrapper every
-/// other `poll_*` fn is. A failure here must never influence [`evaluate`]'s
-/// reachability verdict, same as `poll_approvals`.
+/// `/status.json`. `ControlPlane::metrics()` already fetches and parses the
+/// raw Prometheus text internally; this is just the same thin HTTP-call
+/// wrapper every other `poll_*` fn is. A failure here must never influence
+/// [`evaluate`]'s reachability verdict, same as `poll_approvals`.
 async fn poll_metrics(
     control_plane: &Arc<dyn ControlPlane>,
 ) -> Result<Vec<MetricSample>, OrchError> {
@@ -304,27 +288,20 @@ async fn poll_metrics(
 }
 
 /// One linked project's `/traces?since=` result for this tick, paired with
-/// the exact cursor that was actually sent as `since` — carried alongside
-/// the result rather than re-derived at persist time from a separately
-/// threaded map, so [`persist_events`] can never pair a result with the
-/// wrong "previous cursor" even if a future edit reorders when cursors are
-/// read. `since` is `None` for a project that has never been polled before
-/// (no stored row yet) — docket treats an absent/empty `since` as "from the
-/// beginning", so the very first poll for a newly-linked project mirrors
-/// its entire trace history, same as `poll_runs`'s first-poll behavior for
-/// CLI-dispatched runs. The `Ok` payload is a [`TracesPage`] — events plus
-/// the remote's own opaque `next` cursor, which [`persist_events`] stores
-/// verbatim (see the module doc's "Trace cursor" section).
+/// the exact cursor sent as `since` — carried alongside the result rather
+/// than re-derived at persist time, so [`persist_events`] can never pair a
+/// result with the wrong "previous cursor". `since` is `None` for a
+/// never-before-polled project; docket treats that as "from the beginning",
+/// so the first poll mirrors the project's entire trace history. The `Ok`
+/// payload's `next` cursor is stored verbatim (see the module doc).
 type TracesPollResult = (String, Option<String>, Result<TracesPage, OrchError>);
 
 /// `GET /traces/{project}?since=`, one call per linked project — docket has
 /// no fleet-wide trace listing, same shape as [`poll_runs`]. `cursors` is
-/// this tick's starting cursor per project, resolved by
-/// [`spawn_one`] via `ControlPlaneStore::list_trace_cursors` before the
-/// fetch phase begins — the same "DB read outside the panic-isolation
-/// boundary" pattern established for `list_linked_projects` (see the
-/// module doc). Each project's own result is kept independent so one
-/// project's failure never blocks another's traces for this tick.
+/// this tick's starting cursor per project, resolved by [`spawn_one`]
+/// before the fetch phase begins (same pattern as `list_linked_projects`).
+/// Each project's result is kept independent so one failure never blocks
+/// another's traces for this tick.
 async fn poll_traces(
     control_plane: &Arc<dyn ControlPlane>,
     projects: &[String],
@@ -386,14 +363,11 @@ struct PollEvaluation {
     detail: String,
 }
 
-/// apiVersion policy:
-/// a "mismatch" is a difference in the **major** version component — the
-/// substring before the first `.`, or the whole string if there is no `.`.
-/// docket's version scheme today is a bare incrementing integer (`"2"`), so
-/// in practice this is currently an exact-string comparison; the `.`-split
-/// is there so a future move to a dotted scheme (`"2.1"` vs `"3.0"`) degrades
-/// only on the part that actually signals a breaking contract change, not on
-/// every patch bump.
+/// apiVersion policy: a "mismatch" is a difference in the **major** version
+/// component (before the first `.`, or the whole string if none). docket's
+/// scheme today is a bare integer (`"2"`), so this is currently an
+/// exact-string comparison; the split is there for a future dotted scheme
+/// to degrade only on a breaking change, not every patch bump.
 fn major_version(v: &str) -> &str {
     v.split('.').next().unwrap_or(v)
 }
@@ -764,19 +738,11 @@ async fn persist_metrics(
 const ORCH_EVENT_ID_NAMESPACE: Uuid = Uuid::from_bytes(*b"tack-orch-events");
 
 /// Derives `orch_events.id` as a pure function of the source docket trace
-/// event, so the *same* event ingested on two different polls — an
-/// overlapping cursor window, a rewound/lost cursor, a restart — always
-/// produces the *same* row; `upsert_orch_events`'s `ON CONFLICT(id)` then
-/// makes re-ingestion a no-op row-count-wise.
-///
-/// docket's trace records carry no monotonic sequence number or byte
-/// offset, so this hashes every field instead (UUIDv5, deterministic).
-/// `payload` serializes with sorted keys for free (`preserve_order` is
-/// never enabled here); fields are joined with `\u{1}` so an empty one
-/// can't shift into an adjacent one. **Two genuinely distinct events
-/// identical across every hashed field collapse into one row** —
-/// vanishingly unlikely given a real payload, and otherwise already
-/// indistinguishable to any consumer of this table.
+/// event, so the *same* event ingested on two different polls always
+/// produces the *same* row (`upsert_orch_events`'s `ON CONFLICT(id)` then
+/// makes re-ingestion a no-op). docket's trace records carry no sequence
+/// number, so this hashes every field instead (UUIDv5), fields joined with
+/// `\u{1}` so an empty one can't shift into an adjacent one.
 fn derive_event_id(control_plane_id: Uuid, remote_project: &str, event: &RemoteEvent) -> Uuid {
     const SEP: char = '\u{1}';
     let payload = serde_json::to_string(&event.payload).unwrap_or_default();
@@ -793,17 +759,12 @@ fn derive_event_id(control_plane_id: Uuid, remote_project: &str, event: &RemoteE
 }
 
 /// Extracts the trailing `<suffix>` from docket's `session_id` convention
-/// `"agent:<project>:<suffix>"` (`core/dispatch.py`'s `enqueue_task`/hop
-/// execution, confirmed by reading the writer directly) as a candidate
-/// `orch_tasks.remote_task_id` to correlate against — the same "try, and
-/// treat a miss as normal" shape [`persist_approvals`] already uses for
-/// `context.taskId`. `<suffix>` is the real task id for a task-dispatched
-/// session, but docket also uses this convention for non-task sessions
-/// (`"agent:<project>:dispatch"` for a bare project-level dispatch,
-/// `core/pod.py`'s own project-key session) — [`correlate_remote_task`] on
-/// the result simply won't find a matching `orch_tasks` row for those,
-/// which is not an error, so no special-casing is needed here beyond
-/// parsing the string.
+/// `"agent:<project>:<suffix>"` as a candidate `orch_tasks.remote_task_id`
+/// to correlate against — the same "try, and treat a miss as normal" shape
+/// [`persist_approvals`] uses for `context.taskId`. `<suffix>` is the real
+/// task id for a task-dispatched session, but docket also uses this
+/// convention for non-task sessions; [`correlate_remote_task`] simply won't
+/// find a matching row for those, which is not an error.
 fn session_id_task_id(session_id: &str) -> Option<String> {
     session_id
         .strip_prefix("agent:")
@@ -812,18 +773,13 @@ fn session_id_task_id(session_id: &str) -> Option<String> {
 }
 
 /// Batch-derives, correlates, and upserts one tick's trace events, then
-/// advances (or leaves untouched) each project's cursor. A project whose
-/// poll failed is logged and skipped, and never touches plane health (only
-/// `.health`/`.status` do; see [`evaluate`]).
+/// advances each project's cursor. A failed poll is logged and skipped,
+/// never touching plane health (only `.health`/`.status` do).
 ///
-/// **Retention composition.** An event whose `occurred_at` already predates
-/// `now - retention_days` — the same cutoff [`spawn_retention_sweep`]
-/// uses — is dropped, not inserted. Without this, a lost/rewound cursor
-/// could resurrect a row already rolled into `orch_events_daily` and
-/// purged; since `orch_events.id` is content-derived, that resurrection
-/// would look like a brand-new event and get rolled in a second time.
-/// Dropping it here costs only a handful of uncounted events at the edge
-/// of a pathological rewind, never a corrupted total.
+/// An event whose `occurred_at` predates `now - retention_days` (the same
+/// cutoff [`spawn_retention_sweep`] uses) is dropped, not inserted —
+/// otherwise a rewound cursor could resurrect an already-purged, rolled-up
+/// row a second time (since `orch_events.id` is content-derived).
 async fn persist_events(
     store: &dyn ControlPlaneStore,
     control_plane_id: Uuid,
@@ -1116,20 +1072,13 @@ async fn wait_until_stopped(rx: &mut watch::Receiver<bool>) {
 }
 
 /// One `tokio` task per plane, looping: fetch → decide → persist → sleep.
-/// See the module doc for the panic-isolation and phase-separation
-/// rationale.
+/// See the module doc for the panic-isolation and phase-separation rationale.
 ///
-/// `stop_rx`, when present (the runtime enable/disable toggle, driven
-/// per-plane by the supervisor — see [`spawn_reconcilers_supervised`]), is
-/// checked at
-/// the top of every loop iteration and raced against the end-of-tick sleep
-/// via `tokio::select!`.
-/// Both are safe points: nothing here ever awaits an HTTP call or holds a
-/// SQLite write transaction across a check, so a task can only ever stop
-/// between ticks, never mid-fetch or mid-persist.
-/// `None` (the plain [`spawn_reconcilers`] path) preserves the original,
-/// uncancellable infinite loop exactly — existing callers/tests are
-/// unaffected.
+/// `stop_rx`, when present (the runtime toggle, driven by the supervisor),
+/// is checked at the top of the loop and raced against the end-of-tick
+/// sleep — both safe points, since nothing here awaits an HTTP call or
+/// holds a write transaction across a check. `None` preserves the plain
+/// [`spawn_reconcilers`] path's original, uncancellable infinite loop.
 fn spawn_one(
     plane: RegisteredPlane,
     store: Arc<dyn ControlPlaneStore>,
@@ -1302,51 +1251,23 @@ fn spawn_one(
     })
 }
 
-// ---------------------------------------------------------------------------
-// Supervisor — keeps the running set of per-plane
-// pollers in sync with `control_planes`, rather than reading it once.
-// ---------------------------------------------------------------------------
+// Supervisor — keeps the running set of per-plane pollers in sync with
+// `control_planes` by periodically re-reading `list_registered()` and
+// diffing it against the currently-running task set, rather than reading it
+// once at startup (a one-time read means a control plane registered after
+// boot is never polled — no task, no error, just a stale snapshot forever).
 //
-// **The bug this replaces.** `spawn_reconcilers`/the old
-// `spawn_reconcilers_cancellable` each called `store.list_registered()`
-// exactly once and spawned one `spawn_one` task per plane found at that
-// instant — the list was never re-read. A control plane registered *after*
-// the reconciler started was therefore never polled: no task, no health
-// updates, no run/approval/trace/metric mirroring, and no error anywhere,
-// because nothing failed — the snapshot was simply stale forever. This
-// mattered in practice because "enable orchestration -> register a control
-// plane -> link a project" is the natural setup order (and exactly what the
-// guided setup wizard walks a user through), so the bug landed squarely in
-// the first-run path.
+// Polling, not an event from the create/delete handlers, because it
+// self-heals regardless of *how* the table changed — a bulk import, a
+// direct DB edit, a restore — where an event scheme depends on every future
+// write path remembering to signal it. Cost: a bounded polling delay
+// ([`DEFAULT_SUPERVISOR_SCAN_SECS`], a few seconds, not the per-plane
+// `poll_secs`), small enough not to hurt "register -> see it come alive".
 //
-// **Why a supervisor loop, not an event from the create/delete handlers.**
-// Two shapes were on the table: (a) a background loop that periodically
-// re-reads `list_registered()` and diffs it against the currently-running
-// task set, or (b) the control-plane create/delete handlers notifying the
-// runtime directly. (b) is lower-latency in the common case, but every
-// future write path that can change `control_planes` (a bulk import, a
-// direct DB edit, a restore from backup) has to remember to signal it, and
-// any path that doesn't is a silent repeat of this exact bug. (a)
-// self-heals regardless of *how* the table changed — including a row
-// deleted directly in the database, which no handler-notification scheme
-// can observe by construction — at the cost of a bounded polling delay
-// ([`DEFAULT_SUPERVISOR_SCAN_SECS`], deliberately small: a few seconds, not
-// the per-plane `poll_secs`). The goal is self-healing regardless of how the
-// table changed, and the delay is small enough not to hurt the wizard's
-// "register -> see it come alive" moment, so (a) is what's implemented.
-// Nothing here rules out adding an event-driven nudge later
-// (e.g. the create-control-plane handler could shrink the *next* scan's
-// wait by writing to a `Notify`) if the scan interval ever needs to be
-// larger than a few seconds; it isn't needed today and would be a second
-// cancellation-adjacent mechanism for no observable benefit yet.
-//
-// **What's reused, what's new.** Every per-plane poller is still exactly
-// [`spawn_one`], with exactly the same fetch -> decide -> persist -> sleep
-// shape and the same `watch`-channel stop signal each poller already uses —
-// the supervisor just gives each plane its *own* channel and sender instead
-// of one shared broadcast for the whole fleet, so it can stop a single
-// plane's poller (deleted) without touching the others. This is the same
-// primitive multiplied per-plane, not a second cancellation mechanism.
+// Every per-plane poller is still exactly [`spawn_one`] — same fetch ->
+// decide -> persist -> sleep shape, same `watch`-channel stop signal — the
+// supervisor just gives each plane its *own* channel instead of one shared
+// broadcast, so it can stop a single plane's poller without touching others.
 
 /// One currently-running per-plane poller, as tracked by the supervisor:
 /// its `spawn_one` handle, plus the sender half of *that plane's own* stop
@@ -1396,19 +1317,14 @@ async fn stop_all_plane_tasks(tasks: &PlaneTasks) {
 }
 
 /// One diff-and-converge pass: list currently-registered planes, start a
-/// poller (a fresh [`spawn_one`] with its own stop channel) for any that
-/// don't have one yet, and stop the poller for any tracked plane that no
-/// longer appears in the list — deleted through the API, or a row that
-/// vanished by any other means (a direct DB edit, a restore). A poller
-/// found already finished on its own (defensive: [`spawn_one`]'s loop only
-/// ever exits via its own stop signal today, but this keeps the map/count
-/// honest even if that ever changes) is pruned the same way.
+/// poller (a fresh [`spawn_one`]) for any that don't have one yet, and stop
+/// the poller for any tracked plane no longer in the list (deleted through
+/// the API, or vanished by any other means). A poller found already
+/// finished on its own is pruned the same way, defensively.
 ///
-/// A `list_registered` failure (e.g. a transient DB error) is logged and
-/// this pass is skipped entirely, leaving every currently-running poller
-/// untouched — the next scan retries. This mirrors [`spawn_reconcilers`]'s
-/// own handling of the same error, and means a blip in listing planes never
-/// tears down pollers that were working fine.
+/// A `list_registered` failure is logged and this pass is skipped entirely,
+/// leaving every running poller untouched for the next scan to retry — a
+/// blip in listing planes never tears down pollers that were working fine.
 async fn reconcile_tick(
     store: &Arc<dyn ControlPlaneStore>,
     config: &ReconcilerConfig,
@@ -1489,19 +1405,13 @@ async fn supervisor_loop(
 
 /// Start a self-healing reconciler run: one poller per currently-registered
 /// control plane, kept in sync with `control_planes` for as long as
-/// `stop_rx` stays `false`.
-///
-/// Does an initial [`reconcile_tick`] synchronously, before returning, so a
-/// caller that checks
-/// [`SupervisedReconciler::live_task_count`] immediately after this
-/// `.await` resolves already sees a poller for every plane registered *as
-/// of now*. Everything registered *later* is the supervisor loop's job,
-/// picked up within `config.supervisor_scan_secs`.
+/// `stop_rx` stays `false`. Does an initial [`reconcile_tick`]
+/// synchronously, before returning, so a caller checking
+/// [`SupervisedReconciler::live_task_count`] right after already sees a
+/// poller for every plane registered *as of now*.
 ///
 /// Unlike [`spawn_reconcilers`] this has no `enabled` gate of its own: the
-/// caller only calls this function when it has already decided to run, so
-/// "off" is simply "never call this" rather than a second flag that could
-/// disagree with `stop_rx`.
+/// caller only calls it once already decided to run.
 pub async fn spawn_reconcilers_supervised(
     store: Arc<dyn ControlPlaneStore>,
     config: ReconcilerConfig,
