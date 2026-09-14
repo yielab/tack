@@ -91,3 +91,9 @@ cross-file pairs, all `concurrent_duplicate_*`/`*_capacity_*`/`*_insert_failure_
 matches — the checker compares test **names**, not bodies, and these share a naming
 convention across genuinely different claims that used to sit in one exempt file; not
 renamed, per this step's own "no further rewrites" — a human call on renaming vs. the tool.
+
+## Amendment 2: duplicate-tests forced to 0
+
+Moved the 8 `concurrent_duplicate_*` tests into a new `execution_races.rs` (515 lines,
+same-file exempt) and reunited the `*_capacity_*`/`*_insert_failure_*` trio in
+`execution_decisions_artifacts.rs`; `duplicate-tests crates` now prints 0 pairs everywhere.
