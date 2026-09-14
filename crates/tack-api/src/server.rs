@@ -350,7 +350,22 @@ fn log_file_target(path: &str) -> Option<(std::path::PathBuf, std::ffi::OsString
 }
 
 fn init_tracing(config: &AppConfig) {
-    use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+    use tracing_subscriber::util::SubscriberInitExt;
+
+    // `try_init` rather than `init`: this process may call `serve_inner` more
+    // than once (multiple in-process servers under one test binary, e.g. under
+    // `cargo llvm-cov`, which runs all tests as one process rather than
+    // nextest's one-process-per-test). Only the first call can ever install
+    // the global subscriber; a `Err` here means one already is installed, which
+    // is exactly the outcome this call wanted, so it is not a failure to log or
+    // propagate.
+    let _ = tracing_subscriber_for(config).try_init();
+}
+
+/// The subscriber `init_tracing` installs, built apart so a test can scope it to
+/// one thread instead of racing other tests for the process-wide slot.
+fn tracing_subscriber_for(config: &AppConfig) -> Box<dyn tracing::Subscriber + Send + Sync> {
+    use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt};
 
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         EnvFilter::new(format!(
@@ -376,38 +391,33 @@ fn init_tracing(config: &AppConfig) {
         tracing_appender::rolling::never(dir, name)
     };
 
-    // `try_init` rather than `init`: this process may call `serve_inner` more
-    // than once (multiple in-process servers under one test binary, e.g. under
-    // `cargo llvm-cov`, which runs all tests as one process rather than
-    // nextest's one-process-per-test). Only the first call can ever install
-    // the global subscriber; a `Err` here means one already is installed, which
-    // is exactly the outcome this call wanted, so it is not a failure to log or
-    // propagate.
     if config.log_json {
-        let _ = tracing_subscriber::registry()
-            .with(env_filter)
-            .with(fmt_layer.json())
-            .with(file_target.map(|t| {
-                fmt::layer()
-                    .with_ansi(false)
-                    .with_file(true)
-                    .with_line_number(true)
-                    .with_writer(file_writer(t))
-                    .json()
-            }))
-            .try_init();
+        Box::new(
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt_layer.json())
+                .with(file_target.map(|t| {
+                    fmt::layer()
+                        .with_ansi(false)
+                        .with_file(true)
+                        .with_line_number(true)
+                        .with_writer(file_writer(t))
+                        .json()
+                })),
+        )
     } else {
-        let _ = tracing_subscriber::registry()
-            .with(env_filter)
-            .with(fmt_layer)
-            .with(file_target.map(|t| {
-                fmt::layer()
-                    .with_ansi(false)
-                    .with_file(true)
-                    .with_line_number(true)
-                    .with_writer(file_writer(t))
-            }))
-            .try_init();
+        Box::new(
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt_layer)
+                .with(file_target.map(|t| {
+                    fmt::layer()
+                        .with_ansi(false)
+                        .with_file(true)
+                        .with_line_number(true)
+                        .with_writer(file_writer(t))
+                })),
+        )
     }
 }
 
