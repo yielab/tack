@@ -211,14 +211,12 @@ async fn token_never_appears_in_list_or_get_response() {
     assert_eq!(got["token_set"], true);
 }
 
-/// The tri-state PATCH semantics for `token`: omitting the field preserves
-/// the stored token; an explicit `null` clears it; a string value replaces
-/// it without ever leaking the old or new value in the response.
-#[tokio::test]
-async fn patch_token_field_is_tri_state() {
-    // (initial_token, patch_body, expect_token_set, also_check, note).
-    #[allow(clippy::type_complexity)]
-    let cases: [(&str, Value, bool, fn(&Value), &str); 3] = [
+/// (initial_token, patch_body, expect_token_set, also_check, note) rows for
+/// [`patch_token_field_is_tri_state`].
+type PatchTokenCase = (&'static str, Value, bool, fn(&Value), &'static str);
+
+fn patch_token_cases() -> [PatchTokenCase; 3] {
+    [
         (
             "preserve-me",
             json!({"name": "docket-renamed"}),
@@ -240,9 +238,15 @@ async fn patch_token_field_is_tri_state() {
             |v| assert_no_token_leak(v, "new-token"),
             "a string value must replace the stored token without leaking it",
         ),
-    ];
+    ]
+}
 
-    for (initial_token, patch_body, expect_token_set, also_check, note) in cases {
+/// The tri-state PATCH semantics for `token`: omitting the field preserves
+/// the stored token; an explicit `null` clears it; a string value replaces
+/// it without ever leaking the old or new value in the response.
+#[tokio::test]
+async fn patch_token_field_is_tri_state() {
+    for (initial_token, patch_body, expect_token_set, also_check, note) in patch_token_cases() {
         let (app, _) = common::test_app_with_config(orch_config()).await;
         let created = create_control_plane(&app, Some(initial_token)).await;
         let id = created["id"].as_str().unwrap();
