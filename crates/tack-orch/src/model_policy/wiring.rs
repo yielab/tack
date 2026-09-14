@@ -1,18 +1,17 @@
 //! Live wiring between the pure [`super::resolve_model_policy`] and real
 //! `agent_profiles.limits` / `agent_fleets.default_policy` rows.
 //!
-//! A request override reads straight from `execution_requests.requested_model_provider`/
-//! `requested_model_id` — nothing to fetch. An agent-profile or fleet default is
-//! [`parse_model_default_convention`]'s optional `{"default_model": {...}}` key out of
-//! an already operator-settable JSON blob, mirroring `crate::scheduler::wiring`'s own
-//! convention over an unenforced column. A project default differs: `projects.
-//! default_model` is a typed `ProjectModelDefault` enum, so
-//! [`parse_project_default_model`] treats a decode failure as a real error rather than
-//! folding it into "no opinion" the way the convention-based parser does.
+//! A request override reads straight off the request row — nothing to
+//! fetch. An agent-profile or fleet default is
+//! [`parse_model_default_convention`]'s optional `{"default_model": {...}}`
+//! key out of an operator-settable JSON blob (mirrors
+//! `crate::scheduler::wiring`'s convention over an unenforced column). A
+//! project default differs: `projects.default_model` is a typed enum, so
+//! [`parse_project_default_model`] treats a decode failure as a real error
+//! rather than folding it into "no opinion" like the convention parser does.
 //!
-//! This module never checks a resolved model against a runner's declared capability —
-//! that already happens, unmodified, in `crate::scheduler::select::select_runner` once
-//! the policy's selector is persisted on the request row.
+//! Never checks a resolved model against a runner's capability — that
+//! happens, unmodified, in `select_runner` once the selector is persisted.
 
 use tack_core::models::ProjectModelDefault;
 use tack_db::Repository;
@@ -46,10 +45,8 @@ pub fn parse_model_default_convention(raw_json: &str) -> Option<ModelSelector> {
 }
 
 /// Decodes `projects.default_model`'s JSON into the [`ModelSelector`] this
-/// module resolves against. `None` when the column itself is `None` (the
-/// project expressed no opinion) — a genuine decode failure is returned as
-/// an error, not folded into that same `None`, per this module's doc
-/// comment.
+/// module resolves against. A genuine decode failure is returned as an
+/// error, not folded into "no opinion" like the caller's `None` check.
 fn parse_project_default_model(raw_json: &str) -> Result<ModelSelector, sqlx::Error> {
     let parsed: ProjectModelDefault =
         serde_json::from_str(raw_json).map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
@@ -64,12 +61,8 @@ fn parse_project_default_model(raw_json: &str) -> Result<ModelSelector, sqlx::Er
 
 /// Fetches each tier's configured default (agent profile, project, fleet)
 /// and resolves the final [`ResolvedModelPolicy`] via [`resolve_model_policy`].
-///
-/// `agent_profile_id`/`project_id`/`fleet_id` are each `None` whenever the
-/// request has nothing to read that tier from — no agent profile, no
-/// project on the underlying item, or a selector that isn't `fleet` (there
-/// is no fleet to read a default from in that case). An absent tier is
-/// simply skipped, exactly as if no default had been configured.
+/// Each id is `None` whenever the request has nothing to read that tier
+/// from; an absent tier is skipped, as if no default had been configured.
 pub async fn resolve_request_model_policy(
     repo: &Repository,
     agent_profile_id: Option<&str>,
