@@ -137,17 +137,10 @@ EXCLUSIONS: dict[tuple[str, str], str] = {
     ("crates/tack-runner/src/engine/tests.rs", "test_file_lines"): "IX-M8-runner: unmet acceptance line, 2 587 lines, further split rejected",
     ("crates/tack-runner/src/harness/claude_code/tests.rs", "test_file_lines"): "IX-M8-runner: unmet acceptance line, 1 344 lines",
     ("crates/tack-runner/src/harness/claude_code/tests.rs", "test_fn_max_lines"): "IX-M8-runner: unmet on the interim 40-line target (41, 43), both under the 60 hard cap",
-    ("crates/tack-runner/src/bootstrap.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
     ("crates/tack-runner/src/engine/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-runner (sleeps, not in its acceptance lines)",
     ("crates/tack-runner/src/git/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-runner (sleeps, not in its acceptance lines)",
     ("crates/tack-runner/src/harness/claude_code/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-runner (sleeps, not in its acceptance lines)",
-    ("crates/tack-runner/src/harness/fixtures/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
-    ("crates/tack-runner/src/harness/local_process.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
-    ("crates/tack-runner/src/harness/locate.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
-    ("crates/tack-runner/src/harness/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
     ("crates/tack-runner/src/harness/process/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-runner (sleeps, not in its acceptance lines)",
-    ("crates/tack-runner/src/harness/redact.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
-    ("crates/tack-runner/src/provider/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
     ("crates/tack-runner/tests/bootstrap_entrypoint.rs", "test_sleeps"): "unmet, not recorded by IX-M8-runner (sleeps, not in its acceptance lines)",
 }
 

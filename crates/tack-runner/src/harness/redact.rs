@@ -1,34 +1,21 @@
 //! Redaction primitives shared by [`super::process`] and [`super::event_sink`].
-//!
-//! Credentials, prompt bodies, query strings and
-//! complete environment values must never reach a log line or a harness
-//! event. Two independent mechanisms enforce this:
-//!
-//! 1. **Structural avoidance** — [`RedactedEnv`] and [`PromptSummary`] give
-//!    [`std::fmt::Debug`]-safe stand-ins for values that must never be
-//!    formatted directly, so a future `tracing::debug!(?spec)` cannot
-//!    accidentally print a secret merely by existing.
-//! 2. **Content scrubbing** — [`SecretMaterial`] replaces every exact
-//!    occurrence of a known secret value inside text a harness produced.
-//!    Structural avoidance alone is not enough: the *harness itself* can
-//!    echo a credential or prompt fragment into its own stdout/stderr (a
-//!    buggy or malicious harness, or a verbose debug flag), and that text
-//!    flows through [`super::process`]/[`super::event_sink`] as ordinary
-//!    captured output. Scrubbing is applied to that captured text before it
-//!    is ever stored, so a canary planted in credentials/env/prompt cannot
-//!    surface even via that path.
+//! Credentials, prompt bodies, query strings and environment values must
+//! never reach a log line or a harness event. Two independent mechanisms
+//! enforce this: **structural avoidance** ([`RedactedEnv`]/[`PromptSummary`]
+//! give `Debug`-safe stand-ins so a future `tracing::debug!(?spec)` can't
+//! accidentally print a secret) and **content scrubbing**
+//! ([`SecretMaterial`] replaces every exact occurrence of a known secret in
+//! text a harness produced) — needed because a buggy or malicious harness
+//! can echo a credential into its own stdout/stderr, which flows through as
+//! ordinary captured output; scrubbing catches it before it is ever stored.
 
 use std::collections::BTreeSet;
 
 /// A set of exact secret values to strip from any text a harness produced.
-///
-/// Every registered value is treated as an opaque byte string: no
-/// normalization, casing, or partial-match heuristic is applied, because a
-/// heuristic match is also a heuristic *miss*. Callers seed this with every
-/// value that must never survive into captured output: the enrollment/runner
-/// credential, resolved secret-reference values placed into the child's
-/// environment, and the prompt body (or a distinctive fragment of it) handed
-/// to the harness.
+/// Every registered value is an opaque byte string — no normalization,
+/// casing, or partial-match heuristic, because a heuristic match is also a
+/// heuristic *miss*. Callers seed this with the enrollment/runner
+/// credential, resolved secret-reference env values, and the prompt body.
 #[derive(Debug, Clone, Default)]
 pub struct SecretMaterial {
     // Longest-first so a secret that is a substring of another registered
