@@ -343,13 +343,19 @@ async fn start_then_stop_leaves_no_live_task() {
     assert_eq!(runtime.live_task_count().await, 1);
 
     runtime.stop().await;
-    // Cooperative shutdown observes the signal via select! promptly.
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    assert_eq!(
-        runtime.live_task_count().await,
-        0,
-        "task must have exited after stop()"
-    );
+    // Bounded poll rather than a fixed sleep: cooperative shutdown observes
+    // the signal via select! promptly, but is not guaranteed instantaneous.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        if runtime.live_task_count().await == 0 {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "task must have exited after stop()"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 #[tokio::test]

@@ -8,7 +8,7 @@
 //! reconciler polls a real (wiremock) docket end to end; and an unset
 //! `TACK_ORCH_ENABLE` spawns no tasks even with a plane registered.
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use tack_api::config::AppConfig;
 use tack_api::orch_store::RepoControlPlaneStore;
 use tack_db::repo::orch::CreateControlPlane;
@@ -16,6 +16,7 @@ use tack_db::{Repository, init_pool, migrations};
 use tack_orch::reconciler::{
     ControlPlaneStore, HealthRecord, HealthState, ReconcilerConfig, spawn_reconcilers,
 };
+use uuid::Uuid;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -26,46 +27,131 @@ async fn test_repo() -> Repository {
     Repository::new(pool)
 }
 
+/// Creates a real "docket-prod" control plane row, kind "docket".
+async fn create_docket_plane(
+    repo: &Repository,
+    token: Option<&str>,
+) -> tack_db::repo::orch::ControlPlane {
+    repo.create_control_plane(CreateControlPlane {
+        name: "docket-prod".into(),
+        kind: Some("docket".into()),
+        base_url: "http://127.0.0.1:7331".into(),
+        token: token.map(String::from),
+    })
+    .await
+    .expect("create control plane")
+}
+
+/// Asserts a control plane row's `health`/`consecutive_failures`/`api_version`.
+fn assert_health_fields(
+    plane: &tack_db::repo::orch::ControlPlane,
+    health: &str,
+    failures: i64,
+    api_version: Option<&str>,
+) {
+    assert_eq!(plane.health, health);
+    assert_eq!(plane.consecutive_failures, failures);
+    assert_eq!(plane.api_version.as_deref(), api_version);
+}
+
+/// Records a health observation through the store, panicking on failure.
+async fn apply_health(
+    store: &RepoControlPlaneStore,
+    plane_id: Uuid,
+    health: HealthState,
+    consecutive_failures: i64,
+    last_seen_at: Option<DateTime<Utc>>,
+    api_version: Option<&str>,
+) {
+    store
+        .record_health(
+            plane_id,
+            &HealthRecord {
+                health,
+                consecutive_failures,
+                last_seen_at,
+                api_version: api_version.map(String::from),
+            },
+        )
+        .await
+        .expect("record_health must succeed");
+}
+
+async fn mark_healthy(
+    store: &RepoControlPlaneStore,
+    plane_id: Uuid,
+    seen_at: DateTime<Utc>,
+    api_version: &str,
+) {
+    apply_health(
+        store,
+        plane_id,
+        HealthState::Healthy,
+        0,
+        Some(seen_at),
+        Some(api_version),
+    )
+    .await;
+}
+
+async fn mark_degraded_unobserved(store: &RepoControlPlaneStore, plane_id: Uuid, failures: i64) {
+    apply_health(store, plane_id, HealthState::Degraded, failures, None, None).await;
+}
+
+/// Mocks docket's `/health` and `/status.json` endpoints, healthy/inactive.
+async fn mock_docket_health(server: &MockServer) {
+    Mock::given(method("GET"))
+        .and(path("/health"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"status":"ok","gateway":0}"#))
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/status.json"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"apiVersion":"2","timestamp":"2026-08-04T00:00:00Z","gateway":"inactive","channels":[],"agents":[],"totalCostUsd":0.0}"#,
+        ))
+        .mount(server)
+        .await;
+}
+
+/// Bounded, deterministic poll for `plane_id`'s row to report "healthy" —
+/// the reconciler polls docket on a background task; `Interval::tick`
+/// forces this current-thread runtime to actually park and service that
+/// task's socket I/O (see `auto_dispatch/hook.rs`'s `wait_for_hits`).
+async fn wait_until_healthy(
+    repo: &Repository,
+    plane_id: Uuid,
+) -> tack_db::repo::orch::ControlPlane {
+    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(25));
+    let mut reloaded = repo.get_control_plane(plane_id).await.expect("reload");
+    for _ in 0..80 {
+        if reloaded.health == "healthy" {
+            break;
+        }
+        ticker.tick().await;
+        reloaded = repo.get_control_plane(plane_id).await.expect("reload");
+    }
+    reloaded
+}
+
 // ─── 1. Store round-trips health through the real repo ────────────────────
 
 #[tokio::test]
 async fn record_health_round_trips_through_the_real_repo() {
     let repo = test_repo().await;
-    let plane = repo
-        .create_control_plane(CreateControlPlane {
-            name: "docket-prod".into(),
-            kind: Some("docket".into()),
-            base_url: "http://127.0.0.1:7331".into(),
-            token: Some("secret-token".into()),
-        })
-        .await
-        .expect("create control plane");
+    let plane = create_docket_plane(&repo, Some("secret-token")).await;
 
     // Freshly created rows start at the DB default, untouched by the store.
-    assert_eq!(plane.health, "unknown");
-    assert_eq!(plane.consecutive_failures, 0);
+    assert_health_fields(&plane, "unknown", 0, None);
     assert!(plane.last_seen_at.is_none());
 
     let (broadcast_tx, _) = tokio::sync::broadcast::channel(100);
     let store = RepoControlPlaneStore::new(repo.clone(), broadcast_tx);
     let now = Utc::now();
-    store
-        .record_health(
-            plane.id,
-            &HealthRecord {
-                health: HealthState::Healthy,
-                consecutive_failures: 0,
-                last_seen_at: Some(now),
-                api_version: Some("2".into()),
-            },
-        )
-        .await
-        .expect("record_health must succeed");
+    mark_healthy(&store, plane.id, now, "2").await;
 
     let reloaded = repo.get_control_plane(plane.id).await.expect("reload");
-    assert_eq!(reloaded.health, "healthy");
-    assert_eq!(reloaded.consecutive_failures, 0);
-    assert_eq!(reloaded.api_version.as_deref(), Some("2"));
+    assert_health_fields(&reloaded, "healthy", 0, Some("2"));
     // Round-trips through SQLite's TEXT storage, so compare at second
     // resolution rather than requiring bit-for-bit equality.
     let seen = reloaded.last_seen_at.expect("last_seen_at must be set");
@@ -74,30 +160,17 @@ async fn record_health_round_trips_through_the_real_repo() {
     // A failed poll (`last_seen_at: None`) must leave the stored timestamp
     // untouched — this is the exact "None means don't touch, not clear"
     // contract reconciler.rs relies on and the repo layer must honor.
-    store
-        .record_health(
-            plane.id,
-            &HealthRecord {
-                health: HealthState::Degraded,
-                consecutive_failures: 3,
-                last_seen_at: None,
-                api_version: None,
-            },
-        )
-        .await
-        .expect("record_health must succeed");
+    mark_degraded_unobserved(&store, plane.id, 3).await;
 
     let reloaded_again = repo.get_control_plane(plane.id).await.expect("reload");
-    assert_eq!(reloaded_again.health, "degraded");
-    assert_eq!(reloaded_again.consecutive_failures, 3);
+    // api_version: None must not clobber the previously stored "2" either
+    // (COALESCE semantics in update_control_plane_health).
+    assert_health_fields(&reloaded_again, "degraded", 3, Some("2"));
     assert_eq!(
         reloaded_again.last_seen_at.expect("still set").timestamp(),
         now.timestamp(),
         "a failed poll (last_seen_at: None) must leave the previous value untouched"
     );
-    // api_version: None must not clobber the previously stored "2" either
-    // (COALESCE semantics in update_control_plane_health).
-    assert_eq!(reloaded_again.api_version.as_deref(), Some("2"));
 }
 
 // ─── 2. list_registered builds a live adapter, dispatched on `kind` ───────
@@ -209,18 +282,7 @@ async fn unconfigured_plane_reports_unconfigured_not_unknown() {
 #[tokio::test]
 async fn spawn_reconcilers_polls_docket_persists_health_via_store() {
     let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/health"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"status":"ok","gateway":0}"#))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/status.json"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(
-            r#"{"apiVersion":"2","timestamp":"2026-08-04T00:00:00Z","gateway":"inactive","channels":[],"agents":[],"totalCostUsd":0.0}"#,
-        ))
-        .mount(&server)
-        .await;
+    mock_docket_health(&server).await;
 
     let repo = test_repo().await;
     let plane = repo
@@ -247,20 +309,8 @@ async fn spawn_reconcilers_polls_docket_persists_health_via_store() {
     assert_eq!(handles.len(), 1);
 
     // The reconciler polls immediately on start, doing real (loopback) HTTP
-    // I/O against `server` on a background task. `Interval::tick`, not a
-    // bare `yield_now` loop, forces this current-thread runtime to actually
-    // park and let its I/O driver service that task's socket I/O — see
-    // `auto_dispatch/hook.rs`'s `wait_for_hits` for why a `yield_now` loop
-    // was tried first there and found to starve exactly this kind of wait.
-    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(25));
-    let mut reloaded = repo.get_control_plane(plane.id).await.expect("reload");
-    for _ in 0..80 {
-        if reloaded.health == "healthy" {
-            break;
-        }
-        ticker.tick().await;
-        reloaded = repo.get_control_plane(plane.id).await.expect("reload");
-    }
+    // I/O against `server` on a background task.
+    let reloaded = wait_until_healthy(&repo, plane.id).await;
     for h in handles {
         h.abort();
     }

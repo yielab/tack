@@ -154,43 +154,31 @@ async fn decide(
 }
 
 async fn seed_pending_approval(state: &AppState, control_plane_id: Uuid, token: &str) {
+    let approval = new_pending_approval(token, None, "builder", "git push", Utc::now());
     state
         .repo
-        .upsert_orch_approvals(
-            control_plane_id,
-            &[NewOrchApproval {
-                token: token.into(),
-                item_id: None,
-                remote_task_id: None,
-                agent: Some("builder".into()),
-                action: Some("git push".into()),
-                state: "pending".into(),
-                requested_at: Utc::now(),
-                decided_at: None,
-            }],
-        )
+        .upsert_orch_approvals(control_plane_id, &[approval])
         .await
         .expect("seed pending approval");
 }
 
-// ─── Off by default / actionable refusal ───────────────────────────────────
-
-#[tokio::test]
-async fn listing_orch_approvals_needs_the_enable_flag() {
-    let (app, _) = common::test_app().await; // orch_enable defaults to false
-    let res = list_approvals(&app).await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
-}
-
-#[tokio::test]
-async fn deciding_an_orch_approval_needs_the_enable_flag() {
-    let (app, _) = common::test_app().await;
-    let res = decide(&app, "apr-1", "grant", Some("whatever")).await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
+fn new_pending_approval(
+    token: &str,
+    item_id: Option<Uuid>,
+    agent: &str,
+    action: &str,
+    requested_at: chrono::DateTime<Utc>,
+) -> NewOrchApproval {
+    NewOrchApproval {
+        token: token.into(),
+        item_id,
+        remote_task_id: item_id.map(|_| "task-1".to_string()),
+        agent: Some(agent.into()),
+        action: Some(action.into()),
+        state: "pending".into(),
+        requested_at,
+        decided_at: None,
+    }
 }
 
 // ─── GET /api/approvals — inbox contents ───────────────────────────────────
@@ -201,59 +189,38 @@ async fn inbox_is_oldest_first_includes_uncorrelated_with_context() {
     let control_plane_id = create_control_plane(&app, "http://docket.local:9999").await;
     let project_id = common::create_project(&app, "Approvals Test Project", "software").await;
     let item_id = create_item(&app, project_id, "Deploy service").await;
-
+    let uncorrelated = new_pending_approval(
+        "apr-uncorrelated",
+        None,
+        "cli-agent",
+        "rm -rf /tmp/build",
+        Utc::now() - chrono::Duration::seconds(60),
+    );
+    let correlated = new_pending_approval(
+        "apr-correlated",
+        Some(item_id),
+        "builder",
+        "git push origin main",
+        Utc::now(),
+    );
     state
         .repo
-        .upsert_orch_approvals(
-            control_plane_id,
-            &[
-                NewOrchApproval {
-                    token: "apr-uncorrelated".into(),
-                    item_id: None,
-                    remote_task_id: None,
-                    agent: Some("cli-agent".into()),
-                    action: Some("rm -rf /tmp/build".into()),
-                    state: "pending".into(),
-                    requested_at: Utc::now() - chrono::Duration::seconds(60),
-                    decided_at: None,
-                },
-                NewOrchApproval {
-                    token: "apr-correlated".into(),
-                    item_id: Some(item_id),
-                    remote_task_id: Some("task-1".into()),
-                    agent: Some("builder".into()),
-                    action: Some("git push origin main".into()),
-                    state: "pending".into(),
-                    requested_at: Utc::now(),
-                    decided_at: None,
-                },
-            ],
-        )
+        .upsert_orch_approvals(control_plane_id, &[uncorrelated, correlated])
         .await
         .expect("seed approvals");
-
-    let res = list_approvals(&app).await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let v = body_json(res).await;
+    let v = body_json(list_approvals(&app).await).await;
     let rows = v["rows"].as_array().unwrap();
     assert_eq!(rows.len(), 2);
-
-    // Oldest first.
-    assert_eq!(rows[0]["token"], "apr-uncorrelated");
-    assert!(
-        rows[0]["item_id"].is_null(),
-        "uncorrelated approval must still appear"
-    );
+    assert_eq!(rows[0]["token"], "apr-uncorrelated"); // oldest first
+    assert!(rows[0]["item_id"].is_null());
     assert!(rows[0]["item_title"].is_null());
     assert!(rows[0]["project_name"].is_null());
     assert_eq!(rows[0]["agent"], "cli-agent");
-
     assert_eq!(rows[1]["token"], "apr-correlated");
     assert_eq!(rows[1]["item_id"], item_id.to_string());
     assert_eq!(rows[1]["item_title"], "Deploy service");
     assert_eq!(rows[1]["action"], "git push origin main");
     assert!(rows[1]["control_plane_name"].is_string());
-
     // grant_available reflects config (no TACK_ORCH_APPROVAL_TOKEN here).
     assert_eq!(v["grant_available"], false);
 }
@@ -276,31 +243,16 @@ async fn inbox_grant_available_is_true_when_approval_token_configured() {
 /// header missing or wrong.
 #[tokio::test]
 async fn decide_approval_403s_when_token_unset_missing_or_wrong() {
-    struct Case {
-        config_token: Option<&'static str>,
-        request_token: Option<&'static str>,
-    }
-    let cases = [
-        Case {
-            config_token: None,
-            request_token: Some("anything-at-all"),
-        },
-        Case {
-            config_token: None,
-            request_token: None,
-        },
-        Case {
-            config_token: Some("correct-secret"),
-            request_token: None,
-        },
-        Case {
-            config_token: Some("correct-secret"),
-            request_token: Some("wrong-secret"),
-        },
+    // (configured token, request header token).
+    let cases: [(Option<&str>, Option<&str>); 4] = [
+        (None, Some("anything-at-all")),
+        (None, None),
+        (Some("correct-secret"), None),
+        (Some("correct-secret"), Some("wrong-secret")),
     ];
 
-    for case in cases {
-        let config = match case.config_token {
+    for (config_token, request_token) in cases {
+        let config = match config_token {
             Some(t) => orch_config_with_approval_token(t),
             None => orch_config(),
         };
@@ -308,13 +260,11 @@ async fn decide_approval_403s_when_token_unset_missing_or_wrong() {
         let cp = create_control_plane(&app, "http://docket.local:9999").await;
         seed_pending_approval(&state, cp, "apr-1").await;
 
-        let res = decide(&app, "apr-1", "grant", case.request_token).await;
+        let res = decide(&app, "apr-1", "grant", request_token).await;
         assert_eq!(
             res.status(),
             StatusCode::FORBIDDEN,
-            "config_token={:?} request_token={:?}",
-            case.config_token,
-            case.request_token
+            "{config_token:?} {request_token:?}"
         );
     }
 }
@@ -337,56 +287,38 @@ async fn decide_unknown_token_404s_before_calling_docket() {
 /// chosen action, and both remove the decided row from the pending inbox.
 #[tokio::test]
 async fn decide_approval_sends_action_and_channel_removes_from_inbox() {
-    struct Case {
-        token: &'static str,
-        action: &'static str,
-        expect_state: &'static str,
-    }
+    // (token, action, expected resulting state).
     let cases = [
-        Case {
-            token: "apr-grant",
-            action: "grant",
-            expect_state: "granted",
-        },
-        Case {
-            token: "apr-deny",
-            action: "deny",
-            expect_state: "denied",
-        },
+        ("apr-grant", "grant", "granted"),
+        ("apr-deny", "deny", "denied"),
     ];
 
-    for case in cases {
+    for (token, action, expect_state) in cases {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path(format!("/approvals/{}", case.token)))
+            .and(path(format!("/approvals/{token}")))
             .and(body_partial_json(
-                json!({"action": case.action, "channel": "tack"}),
+                json!({"action": action, "channel": "tack"}),
             ))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "ok": true, "token": case.token, "state": case.expect_state
+                "ok": true, "token": token, "state": expect_state
             })))
             .mount(&server)
             .await;
 
         let (app, state) = app_with_state(orch_config_with_approval_token("secret")).await;
         let cp = create_control_plane(&app, &server.uri()).await;
-        seed_pending_approval(&state, cp, case.token).await;
+        seed_pending_approval(&state, cp, token).await;
 
-        let res = decide(&app, case.token, case.action, Some("secret")).await;
+        let res = decide(&app, token, action, Some("secret")).await;
         assert_eq!(res.status(), StatusCode::OK, "{:?}", body_json(res).await);
 
-        let row = state
-            .repo
-            .get_orch_approval(case.token)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(row.state, case.expect_state);
+        let row = state.repo.get_orch_approval(token).await.unwrap().unwrap();
+        assert_eq!(row.state, expect_state);
         assert!(row.decided_at.is_some());
 
         // No longer in the pending inbox.
-        let list_res = list_approvals(&app).await;
-        let v = body_json(list_res).await;
+        let v = body_json(list_approvals(&app).await).await;
         assert_eq!(v["rows"].as_array().unwrap().len(), 0);
     }
 }

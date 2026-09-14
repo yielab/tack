@@ -608,7 +608,7 @@ mod tests {
     }
 
     #[test]
-    fn unsafe_non_loopback_startup_with_the_documented_opt_out_is_accepted() {
+    fn unsafe_non_loopback_startup_with_the_opt_out_is_accepted() {
         let config = AppConfig {
             host: "0.0.0.0".into(),
             allow_unauthenticated_nonloopback: true,
@@ -618,7 +618,7 @@ mod tests {
     }
 
     #[test]
-    fn loopback_startup_with_no_token_is_unaffected_by_the_opt_out_flag() {
+    fn loopback_startup_with_no_token_ignores_the_opt_out_flag() {
         // The opt-out only ever relaxes the non-loopback branch; it must never
         // become a second way to fail a loopback bind that today always
         // succeeds — pure-local mode is the design's baseline case, not one
@@ -635,7 +635,7 @@ mod tests {
     }
 
     #[test]
-    fn a_loopback_host_is_an_address_or_localhost_never_a_name_that_starts_like_one() {
+    fn loopback_host_is_address_or_localhost_never_a_lookalike_name() {
         for host in [
             "127.0.0.1",
             "127.9.9.9",

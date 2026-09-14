@@ -7,13 +7,16 @@
 
 use crate::common;
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode, header},
 };
+use std::net::SocketAddr;
 use tack_api::config::AppConfig;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    task::JoinHandle,
     time::{Duration, timeout},
 };
 use tower::ServiceExt;
@@ -27,6 +30,73 @@ fn protected_config() -> AppConfig {
         allowed_origins: vec![SPLIT_ORIGIN.into()],
         ..AppConfig::default()
     }
+}
+
+/// Binds a real TCP listener, serves `app` on a background task, and
+/// returns its address plus the task handle — callers must `.abort()` it.
+async fn spawn_real_server(app: Router) -> (SocketAddr, JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind test listener");
+    let address = listener.local_addr().expect("test listener address");
+    let server = tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    (address, server)
+}
+
+/// Creates a project over the real listener at `address`, bearer-authed
+/// with `token` when given, and returns its id.
+async fn create_project_via_listener(
+    address: SocketAddr,
+    token: Option<&str>,
+    name: &str,
+) -> String {
+    let mut req = reqwest::Client::new()
+        .post(format!("http://{address}/api/projects"))
+        .json(&serde_json::json!({ "name": name, "project_type": "software" }));
+    if let Some(t) = token {
+        req = req.bearer_auth(t);
+    }
+    let project = req
+        .send()
+        .await
+        .expect("create project over the real listener")
+        .error_for_status()
+        .expect("project creation must succeed")
+        .json::<serde_json::Value>()
+        .await
+        .expect("project JSON");
+    project["id"].as_str().expect("project ID").to_string()
+}
+
+/// The trimmed value of `name`'s header line in a raw HTTP `response`,
+/// matched case-insensitively; panics if the header is absent.
+fn response_header<'a>(response: &'a str, name: &str) -> &'a str {
+    let prefix = format!("{name}:").to_ascii_lowercase();
+    let line = response
+        .lines()
+        .find(|line| line.to_ascii_lowercase().starts_with(&prefix))
+        .unwrap_or_else(|| panic!("response carries no {name} header: {response}"));
+    line.split_once(':').expect("header has a colon").1.trim()
+}
+
+/// Sends a raw HTTP/WebSocket-handshake request over a fresh TCP connection
+/// to `address` and returns whatever bytes come back within 2 seconds.
+async fn raw_handshake(address: SocketAddr, request: &str) -> String {
+    let mut stream = TcpStream::connect(address)
+        .await
+        .expect("connect WebSocket client");
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("send browser-style WebSocket handshake");
+    let mut buffer = [0_u8; 4096];
+    let count = timeout(Duration::from_secs(2), stream.read(&mut buffer))
+        .await
+        .expect("WebSocket handshake timed out")
+        .expect("read WebSocket handshake");
+    String::from_utf8_lossy(&buffer[..count]).into_owned()
 }
 
 #[tokio::test]
@@ -77,27 +147,9 @@ async fn csp_disallows_executable_content() {
 #[tokio::test]
 async fn handshake_credential_travels_in_subprotocol_not_query() {
     let (app, _) = common::test_app_with_config(protected_config()).await;
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind test listener");
-    let address = listener.local_addr().expect("test listener address");
-    let server = tokio::spawn(async move {
-        let _ = axum::serve(listener, app).await;
-    });
+    let (address, server) = spawn_real_server(app).await;
 
-    let project = reqwest::Client::new()
-        .post(format!("http://{address}/api/projects"))
-        .bearer_auth(API_TOKEN)
-        .json(&serde_json::json!({ "name": "WebSocket test", "project_type": "software" }))
-        .send()
-        .await
-        .expect("create project over the real listener")
-        .error_for_status()
-        .expect("project creation must succeed")
-        .json::<serde_json::Value>()
-        .await
-        .expect("project JSON");
-    let project_id = project["id"].as_str().expect("project ID");
+    let project_id = create_project_via_listener(address, Some(API_TOKEN), "WebSocket test").await;
 
     let request_target = format!("/api/projects/{project_id}/boards/live");
     let request = format!(
@@ -113,19 +165,7 @@ async fn handshake_credential_travels_in_subprotocol_not_query() {
     assert!(!request_target.contains('?'));
     assert!(!request.contains("Authorization:"));
 
-    let mut stream = TcpStream::connect(address)
-        .await
-        .expect("connect WebSocket client");
-    stream
-        .write_all(request.as_bytes())
-        .await
-        .expect("send browser-style WebSocket handshake");
-    let mut buffer = [0_u8; 4096];
-    let count = timeout(Duration::from_secs(2), stream.read(&mut buffer))
-        .await
-        .expect("WebSocket handshake timed out")
-        .expect("read WebSocket handshake");
-    let response = String::from_utf8_lossy(&buffer[..count]).into_owned();
+    let response = raw_handshake(address, &request).await;
     server.abort();
 
     assert!(
@@ -149,26 +189,9 @@ async fn handshake_credential_travels_in_subprotocol_not_query() {
 #[tokio::test]
 async fn board_live_handshake_selects_tack_v1_subprotocol() {
     let (app, _) = common::test_app().await;
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind test listener");
-    let address = listener.local_addr().expect("test listener address");
-    let server = tokio::spawn(async move {
-        let _ = axum::serve(listener, app).await;
-    });
+    let (address, server) = spawn_real_server(app).await;
 
-    let project = reqwest::Client::new()
-        .post(format!("http://{address}/api/projects"))
-        .json(&serde_json::json!({ "name": "WS subprotocol test", "project_type": "software" }))
-        .send()
-        .await
-        .expect("create project over the real listener")
-        .error_for_status()
-        .expect("project creation must succeed")
-        .json::<serde_json::Value>()
-        .await
-        .expect("project JSON");
-    let project_id = project["id"].as_str().expect("project ID");
+    let project_id = create_project_via_listener(address, None, "WS subprotocol test").await;
 
     let request_target = format!("/api/projects/{project_id}/boards/live");
     let request = format!(
@@ -181,41 +204,31 @@ async fn board_live_handshake_selects_tack_v1_subprotocol() {
          Sec-WebSocket-Protocol: tack.v1\r\n\r\n"
     );
 
-    let mut stream = TcpStream::connect(address)
-        .await
-        .expect("connect WebSocket client");
-    stream
-        .write_all(request.as_bytes())
-        .await
-        .expect("send browser-style WebSocket handshake");
-    let mut buffer = [0_u8; 4096];
-    let count = timeout(Duration::from_secs(2), stream.read(&mut buffer))
-        .await
-        .expect("WebSocket handshake timed out")
-        .expect("read WebSocket handshake");
-    let response = String::from_utf8_lossy(&buffer[..count]).into_owned();
+    let response = raw_handshake(address, &request).await;
     server.abort();
 
     assert!(
         response.starts_with("HTTP/1.1 101"),
         "handshake did not upgrade: {response}"
     );
-    let header_line = response
-        .lines()
-        .find(|line| {
-            line.to_ascii_lowercase()
-                .starts_with("sec-websocket-protocol:")
-        })
-        .unwrap_or_else(|| panic!("response carries no Sec-WebSocket-Protocol header: {response}"));
-    let value = header_line
-        .split_once(':')
-        .expect("header has a colon")
-        .1
-        .trim();
+    let value = response_header(&response, "sec-websocket-protocol");
     assert_eq!(
         value, "tack.v1",
-        "response selected the wrong subprotocol: {header_line}"
+        "response selected the wrong subprotocol: {response}"
     );
+}
+
+/// The default `AppConfig`, bound to `0.0.0.0` instead of loopback when
+/// `non_loopback` is set.
+fn config_for_bind(non_loopback: bool) -> AppConfig {
+    if non_loopback {
+        AppConfig {
+            host: "0.0.0.0".into(),
+            ..AppConfig::default()
+        }
+    } else {
+        AppConfig::default()
+    }
 }
 
 /// Starts `app` on a real loopback listener, creates a project through it,
@@ -276,16 +289,6 @@ async fn board_live_handshake_response(app: axum::Router, origin: Option<&str>) 
     response
 }
 
-/// One case of `board_live_handshake_origin_authorization`: an `origin` tried
-/// against either the default loopback bind or an explicit `0.0.0.0` bind,
-/// with the expected handshake outcome.
-struct OriginCase {
-    claim: &'static str,
-    origin: &'static str,
-    non_loopback_bind: bool,
-    authorized: bool,
-}
-
 /// Origin-based authorization for the board's live handshake follows the
 /// documented developer recipe (`tack serve` on its loopback default, then
 /// `npm run dev` on `http://localhost:5173`, never listed in
@@ -294,48 +297,41 @@ struct OriginCase {
 /// prefix, and only on a loopback bind — never on `0.0.0.0`.
 #[tokio::test]
 async fn board_live_handshake_origin_authorization() {
+    // (claim, origin, non_loopback_bind, authorized).
     let cases = [
-        OriginCase {
-            claim: "vite dev origin is authorized on a loopback bind",
-            origin: "http://localhost:5173",
-            non_loopback_bind: false,
-            authorized: true,
-        },
-        OriginCase {
-            claim: "a hostname merely starting with 127. is not this machine",
-            origin: "http://127.attacker.example:5173",
-            non_loopback_bind: false,
-            authorized: false,
-        },
-        OriginCase {
-            claim: "a bracketed IPv6 loopback literal is this machine",
-            origin: "http://[::1]:5173",
-            non_loopback_bind: false,
-            authorized: true,
-        },
-        OriginCase {
-            claim: "a loopback origin gets no special treatment on a non-loopback bind",
-            origin: "http://localhost:5173",
-            non_loopback_bind: true,
-            authorized: false,
-        },
+        (
+            "vite dev origin is authorized on a loopback bind",
+            "http://localhost:5173",
+            false,
+            true,
+        ),
+        (
+            "a hostname merely starting with 127. is not this machine",
+            "http://127.attacker.example:5173",
+            false,
+            false,
+        ),
+        (
+            "a bracketed IPv6 loopback literal is this machine",
+            "http://[::1]:5173",
+            false,
+            true,
+        ),
+        (
+            "a loopback origin gets no special treatment on a non-loopback bind",
+            "http://localhost:5173",
+            true,
+            false,
+        ),
     ];
-    for case in cases {
-        let config = if case.non_loopback_bind {
-            AppConfig {
-                host: "0.0.0.0".into(),
-                ..AppConfig::default()
-            }
-        } else {
-            AppConfig::default()
-        };
+    for (claim, origin, non_loopback_bind, authorized) in cases {
+        let config = config_for_bind(non_loopback_bind);
         let (app, _) = common::test_app_with_config(config).await;
-        let response = board_live_handshake_response(app, Some(case.origin)).await;
+        let response = board_live_handshake_response(app, Some(origin)).await;
         assert_eq!(
             response.starts_with("HTTP/1.1 101"),
-            case.authorized,
-            "{}: {response}",
-            case.claim
+            authorized,
+            "{claim}: {response}"
         );
     }
 }

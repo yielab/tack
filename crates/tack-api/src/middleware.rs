@@ -272,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn websocket_subprotocol_credentials_decode_without_query_parameters() {
+    fn websocket_subprotocol_creds_decode_without_query_params() {
         assert_eq!(
             decode_base64url("b3BlcmF0b3ItdG9rZW4"),
             Some(b"operator-token".to_vec())

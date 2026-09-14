@@ -35,9 +35,9 @@ fn hours_ago(h: i64) -> DateTime<Utc> {
     Utc::now() - Duration::hours(h)
 }
 
-#[test]
-fn agent_and_human_populations_split_correctly() {
-    let agent = item(
+/// An agent-dispatched item: dispatched and completed, with usage/cost.
+fn agent_item(cost: f64) -> ItemEconomicsRow {
+    item(
         "software",
         "task",
         1,
@@ -47,9 +47,13 @@ fn agent_and_human_populations_split_correctly() {
         Some(hours_ago(2)),
         100,
         200,
-        Some(1.5),
-    );
-    let human = item(
+        Some(cost),
+    )
+}
+
+/// A human-worked item: never dispatched, no usage/cost.
+fn human_item() -> ItemEconomicsRow {
+    item(
         "software",
         "task",
         0,
@@ -60,8 +64,44 @@ fn agent_and_human_populations_split_correctly() {
         0,
         0,
         None,
-    );
-    let rows = vec![agent, human];
+    )
+}
+
+/// A freshly dispatched item within the rework retention window.
+fn fresh_item() -> ItemEconomicsRow {
+    item(
+        "software",
+        "task",
+        1,
+        Some(hours_ago(10)),
+        Some(hours_ago(10)),
+        None,
+        Some(hours_ago(1)),
+        10,
+        10,
+        Some(1.0),
+    )
+}
+
+/// An item last dispatched well before the rework retention cutoff.
+fn stale_item() -> ItemEconomicsRow {
+    item(
+        "software",
+        "task",
+        1,
+        Some(Utc::now() - Duration::days(120)),
+        Some(Utc::now() - Duration::days(120)),
+        None,
+        Some(hours_ago(1)),
+        10,
+        10,
+        Some(1.0),
+    )
+}
+
+#[test]
+fn agent_and_human_populations_split_correctly() {
+    let rows = vec![agent_item(1.5), human_item()];
     let signal = std::collections::HashSet::new();
     let summary = build_summary(&rows, &signal, Utc::now() - Duration::days(90), 90);
 
@@ -182,18 +222,7 @@ fn rework_denominator_excludes_stale_attempts() {
     let mut rows = Vec::new();
     let mut signal_ids = std::collections::HashSet::new();
     for i in 0..5 {
-        let row = item(
-            "software",
-            "task",
-            1,
-            Some(hours_ago(10)),
-            Some(hours_ago(10)),
-            None,
-            Some(hours_ago(1)),
-            10,
-            10,
-            Some(1.0),
-        );
+        let row = fresh_item();
         if i < 2 {
             signal_ids.insert(row.item_id);
         }
@@ -202,18 +231,7 @@ fn rework_denominator_excludes_stale_attempts() {
     // 3 stale items (last_dispatched_at before the cutoff) — must be excluded
     // from the denominator entirely, not counted as "no rework".
     for _ in 0..3 {
-        rows.push(item(
-            "software",
-            "task",
-            1,
-            Some(Utc::now() - Duration::days(120)),
-            Some(Utc::now() - Duration::days(120)),
-            None,
-            Some(hours_ago(1)),
-            10,
-            10,
-            Some(1.0),
-        ));
+        rows.push(stale_item());
     }
 
     let summary = build_summary(&rows, &signal_ids, cutoff, 30);
@@ -273,7 +291,7 @@ fn negative_duration_is_excluded_not_shown_as_negative() {
 }
 
 #[test]
-fn slices_by_project_type_and_item_type_are_disjoint_and_sum_to_overall() {
+fn slices_by_project_and_item_type_sum_to_the_overall() {
     let rows = vec![
         item(
             "software",
@@ -335,7 +353,7 @@ fn item_response_marks_rework_not_applicable_for_human_items() {
 }
 
 #[test]
-fn constants_are_asserted_verbatim_so_the_number_and_the_words_cannot_drift() {
+fn rework_rate_words_and_number_are_asserted_verbatim() {
     assert!(REWORK_RATE_DEFINITION.contains("rework_started"));
     assert!(REWORK_RATE_DEFINITION.contains("verification_failed"));
     assert!(REWORK_RATE_DEFINITION.contains("tester_verdict_failed"));

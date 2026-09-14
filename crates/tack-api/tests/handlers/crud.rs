@@ -5,6 +5,7 @@
 //! dependencies, search, export, item provenance, and the GitHub push sync.
 
 use crate::common;
+use axum::Router;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use serde_json::{Value, json};
@@ -118,28 +119,16 @@ async fn oversized_body_rejected() {
 #[tokio::test]
 async fn create_project_empty_name_rejected() {
     let (app, _) = common::test_app().await;
-    let (status, _) = common::send(
-        &app,
-        "POST",
-        "/api/projects",
-        json!({"name":"","project_type":"software"}),
-        &[],
-    )
-    .await;
+    let body = json!({"name":"","project_type":"software"});
+    let (status, _) = common::send(&app, "POST", "/api/projects", body, &[]).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
 async fn create_project_valid_accepted() {
     let (app, _) = common::test_app().await;
-    let (status, _) = common::send(
-        &app,
-        "POST",
-        "/api/projects",
-        json!({"name":"My Project","project_type":"software"}),
-        &[],
-    )
-    .await;
+    let body = json!({"name":"My Project","project_type":"software"});
+    let (status, _) = common::send(&app, "POST", "/api/projects", body, &[]).await;
     assert_eq!(status, StatusCode::OK);
 }
 
@@ -147,14 +136,8 @@ async fn create_project_valid_accepted() {
 async fn create_item_empty_title_rejected() {
     let (app, _) = common::test_app().await;
     let pid = common::create_project(&app, "P", "software").await;
-    let (status, _) = common::send(
-        &app,
-        "POST",
-        &format!("/api/projects/{pid}/items"),
-        json!({"title":""}),
-        &[],
-    )
-    .await;
+    let uri = format!("/api/projects/{pid}/items");
+    let (status, _) = common::send(&app, "POST", &uri, json!({"title":""}), &[]).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
@@ -250,60 +233,56 @@ async fn backup_roundtrip_with_file_db() {
     let tmp_dir = tempfile::tempdir().expect("temporary directory");
     let db_path = tmp_dir.path().join("test.db");
     let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
-
     let (app, _) = common::test_app_with_file_db(&db_url).await;
 
     // Backup should succeed and return a SQLite file.
-    let backup_res = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method(Method::GET)
-                .uri("/api/backup")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(backup_res.status(), StatusCode::OK);
-
-    let backup_bytes = axum::body::to_bytes(backup_res.into_body(), usize::MAX)
-        .await
-        .unwrap();
+    let (status, backup_bytes) = raw_bytes(&app, Method::GET, "/api/backup", &[], Vec::new()).await;
+    assert_eq!(status, StatusCode::OK);
     assert!(
         backup_bytes.starts_with(b"SQLite format 3\x00"),
         "backup must be a valid SQLite file"
     );
 
     // Staging the backup should succeed and write a .restore file.
-    let restore_res = app
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/api/restore")
-                .header("content-type", "application/octet-stream")
-                .body(Body::from(backup_bytes.to_vec()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(restore_res.status(), StatusCode::OK);
+    let headers = [("content-type", "application/octet-stream")];
+    let (status, _) = raw_bytes(&app, Method::POST, "/api/restore", &headers, backup_bytes).await;
+    assert_eq!(status, StatusCode::OK);
 
     let restore_path = PathBuf::from(format!("{}.restore", db_path.display()));
     assert!(restore_path.exists(), ".restore file should be staged");
 }
 
+/// A oneshot request that returns the raw response bytes rather than
+/// parsed JSON — for the SQLite-binary backup/restore endpoints, which
+/// `common::send*` (JSON in, JSON out) cannot round-trip.
+async fn raw_bytes(
+    app: &Router,
+    method: Method,
+    uri: &str,
+    headers: &[(&str, &str)],
+    body: Vec<u8>,
+) -> (StatusCode, Vec<u8>) {
+    let mut builder = Request::builder().method(method).uri(uri);
+    for (name, value) in headers {
+        builder = builder.header(*name, *value);
+    }
+    let res = app
+        .clone()
+        .oneshot(builder.body(Body::from(body)).unwrap())
+        .await
+        .unwrap();
+    let status = res.status();
+    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (status, bytes.to_vec())
+}
+
 #[tokio::test]
 async fn backup_settings_invalid_returns_422_envelope() {
     let (app, _) = common::test_app().await;
-    let (status, body) = common::send(
-        &app,
-        "PUT",
-        "/api/settings/backup",
-        json!({"retention":0}),
-        &[],
-    )
-    .await;
+    let req_body = json!({"retention": 0});
+    let (status, body) = common::send(&app, "PUT", "/api/settings/backup", req_body, &[]).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["error"]["status"], 422);
     assert!(body["error"]["message"].is_string());
@@ -365,86 +344,61 @@ async fn api_routes_take_priority_over_spa_fallback() {
 
 /// Helper: create a custom field and return its id string.
 async fn make_custom_field(app: &axum::Router, project_id: Uuid, body: &str) -> String {
-    let (_, f) = common::send(
-        app,
-        "POST",
-        &format!("/api/projects/{project_id}/custom-fields"),
-        serde_json::from_str(body).unwrap(),
-        &[],
-    )
-    .await;
+    let uri = format!("/api/projects/{project_id}/custom-fields");
+    let (_, f) = common::send(app, "POST", &uri, serde_json::from_str(body).unwrap(), &[]).await;
     f["id"].as_str().unwrap().to_owned()
 }
 
 /// Helper: create a default item and return its id string.
 async fn make_item(app: &axum::Router, project_id: Uuid) -> String {
-    let (_, i) = common::send(
-        app,
-        "POST",
-        &format!("/api/projects/{project_id}/items"),
-        json!({"title":"Item","item_type":"task"}),
-        &[],
-    )
-    .await;
+    let uri = format!("/api/projects/{project_id}/items");
+    let body = json!({"title":"Item","item_type":"task"});
+    let (_, i) = common::send(app, "POST", &uri, body, &[]).await;
     i["id"].as_str().unwrap().to_owned()
 }
 
 #[tokio::test]
 async fn custom_field_value_validated_by_type_and_rule() {
+    let unproc = StatusCode::UNPROCESSABLE_ENTITY;
+    let score = r#"{"name":"Score","field_type":"number"}"#;
+    let select = r#"{"name":"Priority","field_type":"select","options":["Low","High"]}"#;
+    let code = r#"{"name":"Code","field_type":"text","validation":{"pattern":"^[A-Z]{3}$"}}"#;
+    let ranged = r#"{"name":"Score","field_type":"number","validation":{"min":0,"max":100}}"#;
     let cases: Vec<(&str, &str, Value, StatusCode)> = vec![
+        ("number accepts", score, json!(42), StatusCode::OK),
+        ("number rejects a string", score, json!("bad"), unproc),
         (
-            "number accepts a number",
-            r#"{"name":"Score","field_type":"number"}"#,
-            json!(42),
-            StatusCode::OK,
-        ),
-        (
-            "number rejects a string",
-            r#"{"name":"Score","field_type":"number"}"#,
-            json!("not a number"),
-            StatusCode::UNPROCESSABLE_ENTITY,
-        ),
-        (
-            "select rejects an undeclared option",
-            r#"{"name":"Priority","field_type":"select","options":["Low","High"]}"#,
+            "select rejects undeclared option",
+            select,
             json!("Critical"),
-            StatusCode::UNPROCESSABLE_ENTITY,
+            unproc,
         ),
         (
-            "text accepts a value matching its pattern",
-            r#"{"name":"Code","field_type":"text","validation":{"pattern":"^[A-Z]{3}$"}}"#,
+            "text matches its pattern",
+            code,
             json!("ABC"),
             StatusCode::OK,
         ),
-        (
-            "text rejects a value failing its pattern",
-            r#"{"name":"Code","field_type":"text","validation":{"pattern":"^[A-Z]{3}$"}}"#,
-            json!("lowercase"),
-            StatusCode::UNPROCESSABLE_ENTITY,
-        ),
-        (
-            "number rejects a value outside its range",
-            r#"{"name":"Score","field_type":"number","validation":{"min":0,"max":100}}"#,
-            json!(150),
-            StatusCode::UNPROCESSABLE_ENTITY,
-        ),
+        ("text fails its pattern", code, json!("lowercase"), unproc),
+        ("number outside its range", ranged, json!(150), unproc),
     ];
     for (name, field_def, value, expected) in cases {
-        let (app, _) = common::test_app().await;
-        let pid = common::create_project(&app, "P", "software").await;
-        let fid = make_custom_field(&app, pid, field_def).await;
-        let iid = make_item(&app, pid).await;
-
-        let (status, _) = common::send(
-            &app,
-            "PUT",
-            &format!("/api/items/{iid}/custom-fields/{fid}"),
-            value,
-            &[],
-        )
-        .await;
+        let (app, fid, iid) = setup_custom_field_case(field_def).await;
+        let uri = format!("/api/items/{iid}/custom-fields/{fid}");
+        let (status, _) = common::send(&app, "PUT", &uri, value, &[]).await;
         assert_eq!(status, expected, "{name}");
     }
+}
+
+/// A fresh app with one project, one item, and one custom field defined by
+/// `field_def` on that project — the setup every custom-field-value case
+/// needs before it can PUT a value.
+async fn setup_custom_field_case(field_def: &str) -> (Router, String, String) {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "P", "software").await;
+    let fid = make_custom_field(&app, pid, field_def).await;
+    let iid = make_item(&app, pid).await;
+    (app, fid, iid)
 }
 
 // ─── Board filter integration ─────────────────────────────────────────────────
@@ -453,39 +407,23 @@ async fn custom_field_value_validated_by_type_and_rule() {
 async fn board_view_filter_by_item_type_returns_only_matching_items() {
     let (app, _) = common::test_app().await;
     let pid = common::create_project(&app, "P", "software").await;
+    let items_uri = format!("/api/projects/{pid}/items");
 
     // Create a task and a bug
     for (title, item_type) in [("Task A", "task"), ("Bug B", "bug")] {
-        common::send(
-            &app,
-            "POST",
-            &format!("/api/projects/{pid}/items"),
-            json!({"title": title, "item_type": item_type}),
-            &[],
-        )
-        .await;
+        let body = json!({"title": title, "item_type": item_type});
+        common::send(&app, "POST", &items_uri, body, &[]).await;
     }
 
     // Create a board that filters to only "task" items
-    let (_, board) = common::send(
-        &app,
-        "POST",
-        &format!("/api/projects/{pid}/boards"),
-        json!({"name":"Tasks Only","filters":{"item_type":"task"}}),
-        &[],
-    )
-    .await;
+    let boards_uri = format!("/api/projects/{pid}/boards");
+    let filter = json!({"name":"Tasks Only","filters":{"item_type":"task"}});
+    let (_, board) = common::send(&app, "POST", &boards_uri, filter, &[]).await;
     let board_id = board["id"].as_str().unwrap();
 
     // Fetch the board view
-    let (status, view) = common::send(
-        &app,
-        "GET",
-        &format!("/api/boards/{board_id}/view"),
-        Value::Null,
-        &[],
-    )
-    .await;
+    let view_uri = format!("/api/boards/{board_id}/view");
+    let (status, view) = common::send(&app, "GET", &view_uri, Value::Null, &[]).await;
     assert_eq!(status, StatusCode::OK);
 
     // All items across all columns must be of type "task"
@@ -639,38 +577,20 @@ async fn sprint_status_transitions_to_active() {
 async fn sprint_edit_replaces_fields_clears_omitted_ones() {
     let (app, _) = common::test_app().await;
     let pid = common::create_project(&app, "P", "software").await;
-
-    let (_, sprint) = common::send(
-        &app,
-        "POST",
-        &format!("/api/projects/{pid}/sprints"),
-        json!({"name":"Sprint A","goal":"Ship the MVP","start_date":"2026-01-01T00:00:00Z"}),
-        &[],
-    )
-    .await;
+    let sprints_uri = format!("/api/projects/{pid}/sprints");
+    let seed = json!({"name":"Sprint A","goal":"Ship the MVP","start_date":"2026-01-01T00:00:00Z"});
+    let (_, sprint) = common::send(&app, "POST", &sprints_uri, seed, &[]).await;
     let sid = sprint["id"].as_str().unwrap().to_owned();
+    let sprint_uri = format!("/api/sprints/{sid}");
 
     // The edit form sends every editable field it holds, so a goal and a start
     // date the user emptied arrive omitted and must end up NULL — not left at
     // their old values.
-    let (status, _) = common::send(
-        &app,
-        "PATCH",
-        &format!("/api/sprints/{sid}"),
-        json!({"name":"Sprint A, renamed"}),
-        &[],
-    )
-    .await;
+    let rename = json!({"name":"Sprint A, renamed"});
+    let (status, _) = common::send(&app, "PATCH", &sprint_uri, rename, &[]).await;
     assert_eq!(status, StatusCode::OK);
 
-    let (_, s) = common::send(
-        &app,
-        "GET",
-        &format!("/api/sprints/{sid}"),
-        Value::Null,
-        &[],
-    )
-    .await;
+    let (_, s) = common::send(&app, "GET", &sprint_uri, Value::Null, &[]).await;
     assert_eq!(s["name"], "Sprint A, renamed");
     assert!(
         s["goal"].is_null(),
@@ -881,14 +801,8 @@ async fn list_items_returns_pagination_envelope_and_slices_pages() {
     }
 
     // Page 1: envelope shape + total count + first slice.
-    let (status, page1) = common::send(
-        &app,
-        "GET",
-        &format!("/api/projects/{pid}/items?per_page=2&page=1"),
-        Value::Null,
-        &[],
-    )
-    .await;
+    let page1_uri = format!("/api/projects/{pid}/items?per_page=2&page=1");
+    let (status, page1) = common::send(&app, "GET", &page1_uri, Value::Null, &[]).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(page1["total"], 3, "total must count all matching items");
     assert_eq!(page1["page"], 1);
@@ -900,14 +814,8 @@ async fn list_items_returns_pagination_envelope_and_slices_pages() {
     );
 
     // Page 2: the remaining slice.
-    let (_, page2) = common::send(
-        &app,
-        "GET",
-        &format!("/api/projects/{pid}/items?per_page=2&page=2"),
-        Value::Null,
-        &[],
-    )
-    .await;
+    let page2_uri = format!("/api/projects/{pid}/items?per_page=2&page=2");
+    let (_, page2) = common::send(&app, "GET", &page2_uri, Value::Null, &[]).await;
     assert_eq!(page2["total"], 3);
     assert_eq!(page2["page"], 2);
     assert_eq!(
@@ -969,35 +877,11 @@ async fn export_csv_starts_with_header_row() {
     );
 }
 
-#[tokio::test]
-async fn export_yaml_round_trips_through_import() {
-    let (app, _) = common::test_app().await;
-    let pid = common::create_project(&app, "P", "software").await;
-    make_item(&app, pid).await;
-
-    // Export as YAML.
-    let (status, _, yaml) = common::send_with_raw(
-        &app,
-        "GET",
-        &format!("/api/projects/{pid}/export?format=yaml"),
-        Value::Null,
-        &[],
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    // It must be YAML (block mappings), not JSON braces.
-    assert!(
-        yaml.contains("project:") && yaml.contains("items:"),
-        "got: {yaml}"
-    );
-    let parsed: Value = serde_yaml::from_str(&yaml).unwrap();
-    assert_eq!(parsed["items"].as_array().unwrap().len(), 1);
-    assert_eq!(
-        parsed["items"][0]["source"], "manual",
-        "an ordinarily-created item's provenance marker must round-trip through export"
-    );
-
-    // Import the same YAML back: a new project is created with the item.
+/// POSTs a YAML export body to `/api/projects/import`, which only accepts
+/// this format via a real `Content-Type: application/x-yaml` header — no
+/// `common::send*` helper sets that content type, so this stays a direct
+/// request build. Returns the parsed JSON response body.
+async fn import_yaml(app: &Router, yaml: String) -> Value {
     let res = app
         .clone()
         .oneshot(
@@ -1012,20 +896,40 @@ async fn export_yaml_round_trips_through_import() {
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let bytes = axum::body::to_bytes(res.into_body(), 131072).await.unwrap();
-    let out: Value = serde_json::from_slice(&bytes).unwrap();
+    serde_json::from_slice(&bytes).unwrap()
+}
+
+#[tokio::test]
+async fn export_yaml_round_trips_through_import() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "P", "software").await;
+    make_item(&app, pid).await;
+
+    // Export as YAML.
+    let export_uri = format!("/api/projects/{pid}/export?format=yaml");
+    let (status, _, yaml) = common::send_with_raw(&app, "GET", &export_uri, Value::Null, &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    // It must be YAML (block mappings), not JSON braces.
+    assert!(
+        yaml.contains("project:") && yaml.contains("items:"),
+        "got: {yaml}"
+    );
+    let parsed: Value = serde_yaml::from_str(&yaml).unwrap();
+    assert_eq!(parsed["items"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        parsed["items"][0]["source"], "manual",
+        "an ordinarily-created item's provenance marker must round-trip through export"
+    );
+
+    // Import the same YAML back: a new project is created with the item.
+    let out = import_yaml(&app, yaml).await;
     assert_eq!(out["success"], true, "import response: {out}");
     let new_pid = out["project"]["id"].as_str().unwrap();
     assert_ne!(new_pid, pid.to_string(), "import must create a new project");
 
     // The imported project has the round-tripped item.
-    let (_, items) = common::send(
-        &app,
-        "GET",
-        &format!("/api/projects/{new_pid}/items"),
-        Value::Null,
-        &[],
-    )
-    .await;
+    let items_uri = format!("/api/projects/{new_pid}/items");
+    let (_, items) = common::send(&app, "GET", &items_uri, Value::Null, &[]).await;
     assert_eq!(
         items["data"].as_array().unwrap().len(),
         1,
@@ -1056,23 +960,15 @@ async fn mount_single_issue(gh: &wiremock::MockServer, number: u32, title: &str)
         .await;
 }
 
-/// An item imported
-/// from GitHub is marked untrusted at creation time, and that marker
-/// survives an export → import round trip rather than resetting to
-/// trusted. (The wire-level "docket sees trusted:false" assertion lives in
-/// `crates/tack-api/tests/orchestration/auto_dispatch/hook.rs` and
-/// `orchestration/dispatch/item.rs`
-/// — this test covers the provenance marker itself, end to end through the
-/// real HTTP import/export/import path.)
-#[tokio::test]
-async fn github_import_source_untrusted_survives_export_reimport() {
-    use wiremock::MockServer;
-
-    let gh = MockServer::start().await;
-    mount_single_issue(&gh, 7, "Untrusted issue").await;
-
+/// Starts a fresh app against `gh`, imports the one mounted issue into a
+/// new project, and returns the app, project id and that project's items.
+async fn import_single_issue(
+    gh: &wiremock::MockServer,
+    github_token: Option<&str>,
+) -> (Router, Uuid, Value) {
     let config = AppConfig {
         github_api_base: gh.uri(),
+        github_token: github_token.map(String::from),
         ..AppConfig::default()
     };
     let (app, _) = common::test_app_with_config(config).await;
@@ -1096,36 +992,42 @@ async fn github_import_source_untrusted_survives_export_reimport() {
         &[],
     )
     .await;
+    (app, pid, items)
+}
+
+/// An item imported
+/// from GitHub is marked untrusted at creation time, and that marker
+/// survives an export → import round trip rather than resetting to
+/// trusted. (The wire-level "docket sees trusted:false" assertion lives in
+/// `crates/tack-api/tests/orchestration/auto_dispatch/hook.rs` and
+/// `orchestration/dispatch/item.rs`
+/// — this test covers the provenance marker itself, end to end through the
+/// real HTTP import/export/import path.)
+#[tokio::test]
+async fn github_import_source_untrusted_survives_export_reimport() {
+    use wiremock::MockServer;
+
+    let gh = MockServer::start().await;
+    mount_single_issue(&gh, 7, "Untrusted issue").await;
+    let (app, pid, items) = import_single_issue(&gh, None).await;
     assert_eq!(
         items["data"][0]["source"], "github",
-        "an item imported from GitHub must be recorded with source: github"
+        "a GitHub import must record source: github"
     );
 
     // Export the linked project, then re-import that snapshot into a fresh
     // project — the item's `source` must survive, not reset to `manual`.
-    let (_, _, export_raw) = common::send_with_raw(
-        &app,
-        "GET",
-        &format!("/api/projects/{pid}/export?format=json"),
-        Value::Null,
-        &[],
-    )
-    .await;
-
+    let export_uri = format!("/api/projects/{pid}/export?format=json");
+    let (_, _, export_raw) =
+        common::send_with_raw(&app, "GET", &export_uri, Value::Null, &[]).await;
     let (status, out) =
         common::send_str_strict(&app, "POST", "/api/projects/import", export_raw, &[]).await;
     assert_eq!(status, StatusCode::OK);
     let new_pid = out["project"]["id"].as_str().unwrap();
     assert_ne!(new_pid, pid.to_string());
 
-    let (_, reimported) = common::send(
-        &app,
-        "GET",
-        &format!("/api/projects/{new_pid}/items"),
-        Value::Null,
-        &[],
-    )
-    .await;
+    let items_uri = format!("/api/projects/{new_pid}/items");
+    let (_, reimported) = common::send(&app, "GET", &items_uri, Value::Null, &[]).await;
     assert_eq!(
         reimported["data"][0]["source"], "github",
         "the trust marker must survive an export -> import round trip, never reset to trusted"
@@ -1154,16 +1056,9 @@ async fn github_import_redirect_never_leaks_user_token() {
     };
     let (app, _) = common::test_app_with_config(config).await;
     let pid = common::create_project(&app, "P", "software").await;
-
-    let (status, _) = common::send(
-        &app,
-        "POST",
-        &format!("/api/projects/{pid}/import-github"),
-        json!({"repo":"acme/widgets","token":"user-pat"}),
-        &[],
-    )
-    .await;
-
+    let import_uri = format!("/api/projects/{pid}/import-github");
+    let body = json!({"repo":"acme/widgets","token":"user-pat"});
+    let (status, _) = common::send(&app, "POST", &import_uri, body, &[]).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert!(
         private_destination
@@ -1227,67 +1122,32 @@ async fn completing_github_item_pushes_issue_close() {
         .mount(&gh)
         .await;
 
-    let config = AppConfig {
-        github_token: Some("tok".into()),
-        github_api_base: gh.uri(),
-        ..AppConfig::default()
-    };
-    let (app, _) = common::test_app_with_config(config).await;
-    let pid = common::create_project(&app, "P", "software").await;
-
     // Import → creates one item linked to issue #42.
-    let (status, _) = common::send(
-        &app,
-        "POST",
-        &format!("/api/projects/{pid}/import-github"),
-        json!({"repo":"acme/widgets"}),
-        &[],
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-
-    // Grab the imported item.
-    let (_, items) = common::send(
-        &app,
-        "GET",
-        &format!("/api/projects/{pid}/items"),
-        Value::Null,
-        &[],
-    )
-    .await;
-    let item_id = items["data"].as_array().unwrap()[0]["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let (app, _pid, items) = import_single_issue(&gh, Some("tok")).await;
+    let item_id = items["data"][0]["id"].as_str().unwrap();
 
     // Move it to Done → fires a best-effort close to GitHub.
-    let (status, _) = common::send(
-        &app,
-        "PATCH",
-        &format!("/api/items/{item_id}"),
-        json!({"status":"Done"}),
-        &[],
-    )
-    .await;
+    let item_uri = format!("/api/items/{item_id}");
+    let (status, _) = common::send(&app, "PATCH", &item_uri, json!({"status":"Done"}), &[]).await;
     assert_eq!(status, StatusCode::OK);
 
-    // The push is fire-and-forget; poll the mock, bounded by wall-clock time
-    // rather than a fixed per-iteration sleep.
+    assert!(
+        wait_for_gh_request(&gh, "/repos/acme/widgets/issues/42").await,
+        "expected a PATCH closing GitHub issue #42 after completion"
+    );
+}
+
+/// Polls a mock GitHub server's received requests, bounded by wall-clock
+/// time rather than a fixed per-iteration sleep, for a fire-and-forget push
+/// that already reached the given path.
+async fn wait_for_gh_request(gh: &wiremock::MockServer, path: &str) -> bool {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-    let mut closed = false;
     while std::time::Instant::now() < deadline {
         let reqs = gh.received_requests().await.unwrap_or_default();
-        if reqs
-            .iter()
-            .any(|r| r.url.path() == "/repos/acme/widgets/issues/42")
-        {
-            closed = true;
-            break;
+        if reqs.iter().any(|r| r.url.path() == path) {
+            return true;
         }
         tokio::task::yield_now().await;
     }
-    assert!(
-        closed,
-        "expected a PATCH closing GitHub issue #42 after completion"
-    );
+    false
 }

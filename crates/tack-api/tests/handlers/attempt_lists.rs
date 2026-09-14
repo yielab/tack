@@ -327,6 +327,44 @@ async fn request_without_claiming(app: &axum::Router, item_id: &str, label: &str
 // GET /api/executions/{request_id}/attempts/{attempt_number}/{artifacts,decisions}
 // =======================================================================
 
+/// Asserts an unauthenticated `GET` of `kind`'s list is 401 and leaks
+/// nothing of the seeded row — not the status code alone, which would not
+/// catch a gate that rejects but still lets the handler run.
+async fn assert_unauth_leaks_nothing(
+    app: &axum::Router,
+    request_id: &str,
+    kind: ResourceKind,
+    seeded_id: &str,
+) {
+    let (status, body, raw) = common::send_with_raw(
+        app,
+        "GET",
+        &format!(
+            "/api/executions/{request_id}/attempts/1/{}",
+            kind.route_segment()
+        ),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "{}: {body}",
+        kind.route_segment()
+    );
+    assert!(
+        body.get("data").is_none(),
+        "{}: unauthenticated response must carry no data field: {body}",
+        kind.route_segment()
+    );
+    assert!(
+        !raw.contains(seeded_id),
+        "{}: unauthenticated response must not leak the seeded id: {raw}",
+        kind.route_segment()
+    );
+}
+
 #[tokio::test]
 async fn attempt_list_requires_auth_and_leaks_nothing_without_it() {
     for kind in [ResourceKind::Artifact, ResourceKind::Decision] {
@@ -337,36 +375,7 @@ async fn attempt_list_requires_auth_and_leaks_nothing_without_it() {
         kind.insert(&repo, &attempt_id, &seeded_id, "2026-01-01T00:00:00Z")
             .await;
 
-        let (status, body, raw) = common::send_with_raw(
-            &app,
-            "GET",
-            &format!(
-                "/api/executions/{request_id}/attempts/1/{}",
-                kind.route_segment()
-            ),
-            Value::Null,
-            &[],
-        )
-        .await;
-        assert_eq!(
-            status,
-            StatusCode::UNAUTHORIZED,
-            "{}: {body}",
-            kind.route_segment()
-        );
-        // A status code alone would not catch a gate that rejects but still
-        // lets the handler run: assert the real seeded row never reached the
-        // response body at all.
-        assert!(
-            body.get("data").is_none(),
-            "{}: unauthenticated response must carry no data field: {body}",
-            kind.route_segment()
-        );
-        assert!(
-            !raw.contains(&seeded_id),
-            "{}: unauthenticated response must not leak the seeded id: {raw}",
-            kind.route_segment()
-        );
+        assert_unauth_leaks_nothing(&app, &request_id, kind, &seeded_id).await;
     }
 }
 
@@ -467,6 +476,47 @@ async fn artifact_and_decision_lists_404_for_an_unknown_attempt() {
     }
 }
 
+/// Asserts a foreign execution's `GET` of `kind`'s list 404s as
+/// `execution_attempt` and leaks nothing of the other execution's row — not
+/// the status code alone, which would not catch a query that scopes only by
+/// attempt_number and forgets request_id.
+async fn assert_404_for_foreign_execution(
+    app: &axum::Router,
+    request_id: &str,
+    kind: ResourceKind,
+    seeded_id: &str,
+) {
+    let (status, body, raw) = common::send_with_raw(
+        app,
+        "GET",
+        &format!(
+            "/api/executions/{request_id}/attempts/1/{}",
+            kind.route_segment()
+        ),
+        Value::Null,
+        &operator_headers(),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "{}: {body}",
+        kind.route_segment()
+    );
+    assert_eq!(
+        body["error"]["details"]["resource"],
+        "execution_attempt",
+        "{}",
+        kind.route_segment()
+    );
+    assert!(
+        !raw.contains(seeded_id),
+        "{}: must not leak another execution's {}: {raw}",
+        kind.route_segment(),
+        kind.noun()
+    );
+}
+
 #[tokio::test]
 async fn artifact_and_decision_lists_404_for_a_foreign_execution() {
     for kind in [ResourceKind::Artifact, ResourceKind::Decision] {
@@ -483,37 +533,6 @@ async fn artifact_and_decision_lists_404_for_a_foreign_execution() {
         let caller_label = format!("{}-cross-caller", kind.route_segment());
         let request_id = request_without_claiming(&app, &item_id, &caller_label).await;
 
-        let (status, body, raw) = common::send_with_raw(
-            &app,
-            "GET",
-            &format!(
-                "/api/executions/{request_id}/attempts/1/{}",
-                kind.route_segment()
-            ),
-            Value::Null,
-            &operator_headers(),
-        )
-        .await;
-        assert_eq!(
-            status,
-            StatusCode::NOT_FOUND,
-            "{}: {body}",
-            kind.route_segment()
-        );
-        assert_eq!(
-            body["error"]["details"]["resource"],
-            "execution_attempt",
-            "{}",
-            kind.route_segment()
-        );
-        // A status code alone would not catch a query that scopes only by
-        // attempt_number and forgets request_id: assert X's real row never
-        // reached this response.
-        assert!(
-            !raw.contains(&seeded_id),
-            "{}: must not leak another execution's {}: {raw}",
-            kind.route_segment(),
-            kind.noun()
-        );
+        assert_404_for_foreign_execution(&app, &request_id, kind, &seeded_id).await;
     }
 }
