@@ -114,7 +114,7 @@ mod tests {
     }
 
     #[test]
-    fn has_stored_session_is_false_when_state_dir_does_not_exist_yet() {
+    fn has_stored_session_is_false_when_state_dir_is_absent() {
         let guard = tempfile::tempdir().expect("temporary directory");
         // A path under the guard that was never created: `has_stored_session`
         // must answer for a state directory that does not exist at all.
@@ -130,7 +130,7 @@ mod tests {
     /// rather than guessing, and a real (unreachable) `database_url` proves
     /// neither branch tries to open it.
     #[tokio::test]
-    async fn stored_session_orphaned_is_false_with_nothing_on_disk_to_check() {
+    async fn stored_session_orphaned_is_false_with_nothing_on_disk() {
         let guard = tempfile::tempdir().expect("temporary directory");
         let dir = guard.path();
 

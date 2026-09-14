@@ -43,34 +43,51 @@ fn initialized_notification_has_no_response() {
     assert!(resp.is_none());
 }
 
-#[test]
-fn tools_list_advertises_all_fifteen() {
+fn mcp_tool_names() -> Vec<String> {
     let resp = handle_line(
         &test_client(),
         r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
     )
     .unwrap();
     let v: Value = serde_json::from_str(&resp).unwrap();
-    let tools = v["result"]["tools"].as_array().unwrap();
+    v["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn tools_list_advertises_all_fifteen() {
     // The original 8 item/project tools plus 7 execution/fleet/
     // profile tools (list_fleets, list_agent_profiles,
     // list_model_profiles, list_executions, get_execution,
     // cancel_execution, create_execution).
-    assert_eq!(tools.len(), 15);
-    let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert!(names.contains(&"list_projects"));
-    assert!(names.contains(&"move_item"));
-    assert!(names.contains(&"add_comment"));
-    assert!(names.contains(&"list_fleets"));
-    assert!(names.contains(&"list_agent_profiles"));
-    assert!(names.contains(&"list_model_profiles"));
-    assert!(names.contains(&"list_executions"));
-    assert!(names.contains(&"get_execution"));
-    assert!(names.contains(&"cancel_execution"));
-    assert!(names.contains(&"create_execution"));
-    // This module deliberately keeps admin/secret-bearing actions off the MCP
-    // surface (see the dispatch-time doc comment) — pin their absence so
-    // a future edit can't add them without a second look.
+    let names = mcp_tool_names();
+    assert_eq!(names.len(), 15);
+    for expected in [
+        "list_projects",
+        "move_item",
+        "add_comment",
+        "list_fleets",
+        "list_agent_profiles",
+        "list_model_profiles",
+        "list_executions",
+        "get_execution",
+        "cancel_execution",
+        "create_execution",
+    ] {
+        assert!(names.iter().any(|n| n == expected), "missing {expected}");
+    }
+}
+
+/// This module deliberately keeps admin/secret-bearing actions off the MCP
+/// surface (see the dispatch-time doc comment) — pin their absence so a
+/// future edit can't add them without a second look.
+#[test]
+fn tools_list_excludes_admin_and_secret_actions() {
+    let names = mcp_tool_names();
     for excluded in [
         "enroll_runner",
         "revoke_runner",
@@ -80,7 +97,7 @@ fn tools_list_advertises_all_fifteen() {
         "reconcile_execution",
     ] {
         assert!(
-            !names.contains(&excluded),
+            !names.iter().any(|n| n == excluded),
             "{excluded} should not be an MCP tool"
         );
     }

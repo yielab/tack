@@ -378,15 +378,7 @@ mod tests {
         assert!(err.downcast_ref::<UnsupportedPlatform>().is_some());
     }
 
-    #[test]
-    fn systemd_unit_has_the_expected_keys() {
-        let root = Path::new("/home/alice/.local/share/tack");
-        let binary = Path::new("/home/alice/.local/bin/tack");
-        let unit = systemd_unit_contents(binary, root);
-
-        assert_eq!(
-            unit,
-            "[Unit]\n\
+    const EXPECTED_SYSTEMD_UNIT: &str = "[Unit]\n\
 Description=Tack project management (agent execution service)\n\
 After=network-online.target\n\
 Wants=network-online.target\n\
@@ -402,22 +394,21 @@ ExecStart=/home/alice/.local/bin/tack serve --with-runner\n\
 Restart=on-failure\n\
 \n\
 [Install]\n\
-WantedBy=default.target\n"
-        );
-    }
+WantedBy=default.target\n";
 
     #[test]
-    fn launchd_plist_has_the_expected_keys() {
-        let root = Path::new("/Users/alice/Library/Application Support/tack");
-        let binary = Path::new("/Users/alice/.local/bin/tack");
-        let plist = launchd_plist_contents(binary, root);
+    fn systemd_unit_has_the_expected_keys() {
+        let root = Path::new("/home/alice/.local/share/tack");
+        let binary = Path::new("/home/alice/.local/bin/tack");
+        let unit = systemd_unit_contents(binary, root);
 
-        // A raw string, not `\n\`-continued lines: Rust's backslash-newline
-        // continuation eats the following line's leading whitespace, which
-        // would silently strip every bit of the indentation being pinned.
-        assert_eq!(
-            plist,
-            r#"<?xml version="1.0" encoding="UTF-8"?>
+        assert_eq!(unit, EXPECTED_SYSTEMD_UNIT);
+    }
+
+    // A raw string, not `\n\`-continued lines: Rust's backslash-newline
+    // continuation eats the following line's leading whitespace, which
+    // would silently strip every bit of the indentation being pinned.
+    const EXPECTED_LAUNCHD_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -448,8 +439,15 @@ WantedBy=default.target\n"
     </dict>
 </dict>
 </plist>
-"#
-        );
+"#;
+
+    #[test]
+    fn launchd_plist_has_the_expected_keys() {
+        let root = Path::new("/Users/alice/Library/Application Support/tack");
+        let binary = Path::new("/Users/alice/.local/bin/tack");
+        let plist = launchd_plist_contents(binary, root);
+
+        assert_eq!(plist, EXPECTED_LAUNCHD_PLIST);
     }
 
     #[test]

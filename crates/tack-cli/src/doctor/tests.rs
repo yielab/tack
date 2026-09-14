@@ -52,7 +52,7 @@ fn a_binary_never_found_on_path_is_absent_not_a_probe_error() {
 /// `codex.rs`'s own `probe_reports_an_unrecognized_version_string_as_an_
 /// explicit_probe_error` fixture wording.
 #[test]
-fn a_present_binary_with_unparseable_version_output_is_a_probe_error_not_absent() {
+fn a_present_binary_with_unparseable_version_is_a_probe_error() {
     let harnesses = vec![capability(
         "codex",
         "",
@@ -70,7 +70,7 @@ fn a_present_binary_with_unparseable_version_output_is_a_probe_error_not_absent(
 /// must render as "present" with a version, plus a distinct probe
 /// error, never collapse into "absent".
 #[test]
-fn a_present_binary_with_a_later_probe_failure_keeps_its_confirmed_version() {
+fn a_present_binary_with_later_probe_failure_keeps_its_version() {
     let harnesses = vec![capability(
         "future-harness",
         "1.18.0",
@@ -94,7 +94,7 @@ fn a_present_binary_with_a_later_probe_failure_keeps_its_confirmed_version() {
 /// this proves doctor still reports it as absent rather than silently
 /// omitting it because the entry doesn't exist.
 #[test]
-fn claude_code_missing_from_the_harness_list_is_reported_absent_using_its_own_discovery_error() {
+fn claude_code_missing_from_list_reports_discovery_error() {
     let harnesses: Vec<HarnessCapability> = Vec::new();
     let status = classify(
         "claude-code",
@@ -130,23 +130,12 @@ fn every_known_harness_kind_has_a_credential_note() {
 /// completion for a shape with real model combinations, so a future
 /// field addition to `ModelCombination` fails loudly here instead of
 /// only in a manual `--json` read.
-#[test]
-fn render_does_not_panic_on_a_populated_report() {
-    let mut with_models = capability("codex", "1.18.0", None);
-    with_models.model_combinations = vec![ModelCombination {
-        model_provider: ModelProvider::new("openai"),
-        model_ids: vec![ModelId::new("grok-code")],
-        discovery: "codex models".to_owned(),
-        model_metadata: Default::default(),
-        additional: Default::default(),
-    }];
-    with_models.model_passthrough = Some(CapabilityValue {
-        support: CapabilitySupport::Unsupported,
-        reason: Some("declaration-based only".to_owned()),
-        additional: Default::default(),
-    });
-
-    let report = bootstrap::DiscoveryReport {
+/// A fully-populated `DiscoveryReport` — every feature flag, one harness
+/// with model combinations and passthrough, one configured provider — for
+/// tests that only prove `render`/`render_provider` run to completion
+/// over a realistic shape without panicking.
+fn sample_discovery_report(harnesses: Vec<HarnessCapability>) -> bootstrap::DiscoveryReport {
+    bootstrap::DiscoveryReport {
         capabilities: tack_orch::execution::RunnerCapabilities {
             protocol_version: None,
             runner_version: "0.0.0-test".to_owned(),
@@ -157,7 +146,7 @@ fn render_does_not_panic_on_a_populated_report() {
                 available: 1,
                 additional: Default::default(),
             },
-            harnesses: vec![with_models],
+            harnesses,
             features: tack_orch::execution::FeatureCapabilities {
                 cancel: CapabilityValue {
                     support: CapabilitySupport::Advisory,
@@ -206,9 +195,26 @@ fn render_does_not_panic_on_a_populated_report() {
                 checked_at: fixed_timestamp(),
             },
         )]),
-    };
+    }
+}
 
-    render(&report);
+#[test]
+fn render_does_not_panic_on_a_populated_report() {
+    let mut with_models = capability("codex", "1.18.0", None);
+    with_models.model_combinations = vec![ModelCombination {
+        model_provider: ModelProvider::new("openai"),
+        model_ids: vec![ModelId::new("grok-code")],
+        discovery: "codex models".to_owned(),
+        model_metadata: Default::default(),
+        additional: Default::default(),
+    }];
+    with_models.model_passthrough = Some(CapabilityValue {
+        support: CapabilitySupport::Unsupported,
+        reason: Some("declaration-based only".to_owned()),
+        additional: Default::default(),
+    });
+
+    render(&sample_discovery_report(vec![with_models]));
 }
 
 /// `render_provider` is exercised for its side effects (stdout), not a

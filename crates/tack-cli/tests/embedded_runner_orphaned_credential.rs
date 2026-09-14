@@ -218,6 +218,41 @@ fn assert_recovery_logged_once_with_no_identifiers(
     );
 }
 
+/// Boots once, waits for the embedded runner to reach `active`, reads back
+/// its on-disk session, and drops the boot — the shape a "prior boot already
+/// enrolled" setup needs, without keeping its process alive for the caller.
+fn first_boot_session(
+    database_url: &str,
+    storage_dir: &Path,
+    state_dir: &Path,
+) -> (String, String) {
+    let boot = start_server(database_url, storage_dir);
+    let runner_id = wait_for_active_runner(&boot.base_url)
+        .expect("the first boot must reach an active embedded runner");
+    let session = wait_for_session_containing(&state_dir.join("session.json"), &runner_id);
+    drop(boot);
+    (runner_id, session)
+}
+
+/// Waits for `boot` (already running) to reach `active` under a fresh
+/// identity distinct from `runner_id_before`, and reads back its session.
+fn recovered_session(
+    boot: &ServerGuard,
+    state_dir: &Path,
+    runner_id_before: &str,
+) -> (String, String) {
+    let runner_id = wait_for_active_runner(&boot.base_url).expect(
+        "a credential orphaned by a recreated database must not stall the embedded runner; \
+         it must recover under a fresh identity and still reach `active`",
+    );
+    assert_ne!(
+        runner_id_before, runner_id,
+        "an orphaned credential must never be reused as-is — the recovered identity must be new"
+    );
+    let session = wait_for_session_containing(&state_dir.join("session.json"), &runner_id);
+    (runner_id, session)
+}
+
 /// A `storage_dir` an earlier boot already enrolled a runner into, paired
 /// with a database that was deleted and recreated underneath it rather than
 /// reconfigured alongside it. The embedded runner must still reach `active`,
@@ -234,28 +269,16 @@ fn orphaned_credential_recovers_on_recreated_database() {
     let storage_dir = root.path().join("storage");
     let state_dir = storage_dir.join("runner");
 
-    let first_boot = start_server(&database_url, &storage_dir);
-    let runner_id_before = wait_for_active_runner(&first_boot.base_url)
-        .expect("the first boot must reach an active embedded runner");
-    let session_before =
-        wait_for_session_containing(&state_dir.join("session.json"), &runner_id_before);
-    drop(first_boot);
+    let (runner_id_before, session_before) =
+        first_boot_session(&database_url, &storage_dir, &state_dir);
 
     // The database is deleted and recreated; `storage_dir` — and the
     // session inside it — never moves.
     remove_sqlite_file(&database_path);
 
     let second_boot = start_server(&database_url, &storage_dir);
-    let runner_id_after = wait_for_active_runner(&second_boot.base_url).expect(
-        "a credential orphaned by a recreated database must not stall the embedded runner; \
-         it must recover under a fresh identity and still reach `active`",
-    );
-    assert_ne!(
-        runner_id_before, runner_id_after,
-        "an orphaned credential must never be reused as-is — the recovered identity must be new"
-    );
-    let session_after =
-        wait_for_session_containing(&state_dir.join("session.json"), &runner_id_after);
+    let (runner_id_after, session_after) =
+        recovered_session(&second_boot, &state_dir, &runner_id_before);
     assert_ne!(
         session_before, session_after,
         "the on-disk session must be overwritten with the fresh identity's own credential"
