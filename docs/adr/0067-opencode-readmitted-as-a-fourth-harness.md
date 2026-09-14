@@ -42,7 +42,7 @@ Everything past this point is supporting detail; nothing above depends on anythi
 
 ---
 
-- **Status:** proposed 2026-09-11.
+- **Status:** accepted 2026-09-14 — recorded as a dated amendment at the bottom of this file.
 - **Date:** 2026-09-11
 - **Plan:** `docs/plans/harnesses.md`. Nothing is built until IX-M5 has landed and this
   ADR is accepted.
@@ -102,3 +102,9 @@ that was promised none. If Phase 0 finds it does, the adapter pre-populates the 
 at probe time — outside any attempt — and the attempt's own spawn stays offline; if that
 is not possible, `network: false` policies reject `opencode` at `validate`, typed. Either
 way the promise holds; what changes is the cost of keeping it.
+
+## Amendments
+
+*(Appended by later readers, dated. The text above is never rewritten.)*
+
+**2026-09-14 — ACCEPTED.** The user approved this ADR together with ADR 0066 while reviewing ADR 0068. The grammar, its fixtures and its tests are built under ADR 0068 decisions 5–11 instead of the Part IX per-card budgets `docs/plans/harnesses.md` cites. The shared harness core this ADR depends on has landed.
