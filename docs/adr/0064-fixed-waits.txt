@@ -12,14 +12,6 @@
 # or paused time (tokio::time::pause) where the code under test is clock-driven.
 # A bounded cap on a poll is not a fixed wait and never appears here.
 
-10 waits, 6.8 s in total
-  2500 ms  crates/tack-orch/src/reconciler/tests.rs:1919
-  1300 ms  crates/tack-orch/src/execution_observability/tests.rs:168
-  1300 ms  crates/tack-orch/src/execution_retention/tests.rs:153
-   300 ms  crates/tack-orch/src/reconciler/tests.rs:1071
-   300 ms  crates/tack-orch/src/reconciler/tests.rs:1203
-   300 ms  crates/tack-orch/src/reconciler/tests.rs:1786
+2 waits, 0.4 s in total
    200 ms  crates/tack-api/src/orch_runtime/tests.rs:347
-   200 ms  crates/tack-orch/src/reconciler/tests.rs:1862
    200 ms  crates/tack-orch/tests/docket_live_test.rs:145
-   200 ms  crates/tack-orch/tests/docket_tick_contract_test.rs:410
