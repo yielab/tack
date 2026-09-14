@@ -1,7 +1,7 @@
 //! Enqueueing execution requests, snapshot validation, and the legacy
 //! (pre-`request_snapshot`) schema-quarantine migration.
 
-use crate::common::execution_fixture::{FakeClock, Fixture, count_where, request};
+use crate::common::execution_fixture::{FakeClock, Fixture, request};
 
 use chrono::Duration;
 use tack_db::{
@@ -349,52 +349,5 @@ async fn enqueue_replay_compares_frozen_snapshot_before_current_time() {
             .unwrap(),
         EnqueueResult::Conflict,
         "same idempotency key with a changed frozen timestamp is not an exact replay"
-    );
-}
-
-#[tokio::test]
-async fn concurrent_duplicate_enqueues_have_one_authoritative_writer() {
-    let fx = Fixture::new().await;
-    let (a, b) = tokio::join!(
-        fx.enqueue_result(
-            "request-concurrent-enqueue",
-            "key-concurrent-enqueue",
-            "same"
-        ),
-        fx.enqueue_result(
-            "request-concurrent-enqueue",
-            "key-concurrent-enqueue",
-            "same"
-        ),
-    );
-    let a = a.expect("first enqueue report must succeed at the sqlx level");
-    let b = b.expect("second enqueue report must succeed at the sqlx level");
-
-    let created = count_where([&a, &b], |r| matches!(r, EnqueueResult::Created(_)));
-    let replayed = count_where([&a, &b], |r| matches!(r, EnqueueResult::Replayed(_)));
-    assert_eq!(
-        created, 1,
-        "exactly one duplicate enqueue creates: {a:?} / {b:?}"
-    );
-    assert_eq!(
-        replayed, 1,
-        "the other duplicate enqueue replays: {a:?} / {b:?}"
-    );
-
-    let id = |r: &EnqueueResult| match r {
-        EnqueueResult::Created(id) | EnqueueResult::Replayed(id) => id.clone(),
-        other => panic!("expected created/replayed, got {other:?}"),
-    };
-    assert_eq!(
-        id(&a),
-        id(&b),
-        "both branches observe the single committed request id"
-    );
-    assert_eq!(id(&a), "request-concurrent-enqueue");
-    assert_eq!(
-        fx.count_by("execution_requests", "id", "request-concurrent-enqueue")
-            .await,
-        1,
-        "exactly one execution request row is written"
     );
 }

@@ -1306,9 +1306,9 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 1069,
+   "test_file_lines": 1068,
    "test_fn_max_lines": 98,
-   "test_lines": 1069,
+   "test_lines": 1068,
    "test_module_doc_lines": 5,
    "test_name_max_chars": 57,
    "test_sleeps": 0,
@@ -2370,10 +2370,10 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 39,
+   "test_file_lines": 42,
    "test_fn_max_lines": 0,
-   "test_lines": 39,
-   "test_module_doc_lines": 9,
+   "test_lines": 42,
+   "test_module_doc_lines": 10,
    "test_name_max_chars": 0,
    "test_sleeps": 0,
    "tests": 0
@@ -2398,13 +2398,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 555,
-   "test_fn_max_lines": 68,
-   "test_lines": 555,
+   "test_file_lines": 485,
+   "test_fn_max_lines": 67,
+   "test_lines": 485,
    "test_module_doc_lines": 2,
    "test_name_max_chars": 59,
    "test_sleeps": 0,
-   "tests": 15
+   "tests": 14
   },
   "crates/tack-db/tests/repository/execution_decisions_artifacts.rs": {
    "doc_block_max_lines": 0,
@@ -2412,13 +2412,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 472,
+   "test_file_lines": 492,
    "test_fn_max_lines": 71,
-   "test_lines": 472,
+   "test_lines": 492,
    "test_module_doc_lines": 2,
    "test_name_max_chars": 58,
    "test_sleeps": 0,
-   "tests": 12
+   "tests": 14
   },
   "crates/tack-db/tests/repository/execution_enqueue.rs": {
    "doc_block_max_lines": 0,
@@ -2426,13 +2426,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 401,
+   "test_file_lines": 354,
    "test_fn_max_lines": 131,
-   "test_lines": 401,
+   "test_lines": 354,
    "test_module_doc_lines": 2,
    "test_name_max_chars": 59,
    "test_sleeps": 0,
-   "tests": 6
+   "tests": 5
   },
   "crates/tack-db/tests/repository/execution_enrollment.rs": {
    "doc_block_max_lines": 0,
@@ -2454,13 +2454,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 328,
-   "test_fn_max_lines": 79,
-   "test_lines": 328,
+   "test_file_lines": 247,
+   "test_fn_max_lines": 44,
+   "test_lines": 247,
    "test_module_doc_lines": 1,
    "test_name_max_chars": 55,
    "test_sleeps": 0,
-   "tests": 7
+   "tests": 6
+  },
+  "crates/tack-db/tests/repository/execution_races.rs": {
+   "doc_block_max_lines": 0,
+   "env_gated_tests": 0,
+   "inline_test_lines": 0,
+   "src_comment_share": 0.0,
+   "src_module_doc_lines": 0,
+   "test_file_lines": 517,
+   "test_fn_max_lines": 79,
+   "test_lines": 517,
+   "test_module_doc_lines": 6,
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 8
   },
   "crates/tack-db/tests/repository/execution_recovery_requeue.rs": {
    "doc_block_max_lines": 0,
@@ -2468,13 +2482,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 466,
+   "test_file_lines": 293,
    "test_fn_max_lines": 73,
-   "test_lines": 466,
+   "test_lines": 293,
    "test_module_doc_lines": 1,
    "test_name_max_chars": 59,
    "test_sleeps": 0,
-   "tests": 12
+   "tests": 8
   },
   "crates/tack-db/tests/repository/execution_retention.rs": {
    "doc_block_max_lines": 0,
@@ -2496,13 +2510,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 573,
+   "test_file_lines": 430,
    "test_fn_max_lines": 85,
-   "test_lines": 573,
+   "test_lines": 430,
    "test_module_doc_lines": 2,
    "test_name_max_chars": 60,
    "test_sleeps": 0,
-   "tests": 14
+   "tests": 11
   },
   "crates/tack-db/tests/repository/integration.rs": {
    "doc_block_max_lines": 0,
@@ -4243,12 +4257,12 @@
  },
  "totals": {
   "env_gated_tests": 0,
-  "files": 302,
+  "files": 303,
   "prod_comment_lines": 11144,
   "prod_lines": 55602,
-  "test_lines": 69618,
+  "test_lines": 69643,
   "test_sleeps": 24,
-  "test_to_prod_ratio": 1.252,
+  "test_to_prod_ratio": 1.253,
   "tests": 1415
  }
 }

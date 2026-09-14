@@ -1,7 +1,7 @@
 //! Claiming an execution request into a leased attempt, and the heartbeat
 //! protocol that keeps a lease alive.
 
-use crate::common::execution_fixture::{Fixture, count_where, recovery_input, request};
+use crate::common::execution_fixture::{Fixture, recovery_input, request};
 
 use chrono::Duration;
 use sqlx::Row;
@@ -480,75 +480,5 @@ async fn heartbeat_replay_insert_failure_rolls_back_all_updates() {
         )
         .await,
         0
-    );
-}
-
-#[tokio::test]
-async fn concurrent_duplicate_heartbeats_have_one_writer() {
-    let fx = Fixture::new().await;
-    let fence = fx
-        .ready_completion_attempt(
-            "request-concurrent-heartbeat",
-            "attempt-concurrent-heartbeat",
-        )
-        .await;
-    let leases = [HeartbeatLease {
-        state: "running",
-        journal_state: "running",
-        ..fx.lease("attempt-concurrent-heartbeat", fence)
-    }];
-    let sent_at = fx.clock.now();
-    let (a, b) = tokio::join!(
-        fx.heartbeat_result(
-            "heartbeat-concurrent",
-            sent_at,
-            0,
-            &leases,
-            Duration::seconds(30)
-        ),
-        fx.heartbeat_result(
-            "heartbeat-concurrent",
-            sent_at,
-            0,
-            &leases,
-            Duration::seconds(30)
-        ),
-    );
-    let a = a.expect("first heartbeat report must succeed at the sqlx level");
-    let b = b.expect("second heartbeat report must succeed at the sqlx level");
-
-    let accepted = count_where([&a, &b], |r| matches!(r, HeartbeatBatchResult::Accepted(_)));
-    let replayed = count_where([&a, &b], |r| matches!(r, HeartbeatBatchResult::Replayed(_)));
-    assert_eq!(
-        accepted, 1,
-        "exactly one duplicate heartbeat accepts: {a:?} / {b:?}"
-    );
-    assert_eq!(
-        replayed, 1,
-        "the other duplicate heartbeat replays: {a:?} / {b:?}"
-    );
-
-    let response = |r: &HeartbeatBatchResult| match r {
-        HeartbeatBatchResult::Accepted(resp) | HeartbeatBatchResult::Replayed(resp) => resp.clone(),
-        other => panic!("expected accepted/replayed, got {other:?}"),
-    };
-    assert_eq!(
-        response(&a),
-        response(&b),
-        "both branches observe the single committed heartbeat response"
-    );
-
-    // Capacity is set exactly once, even though both branches raced to
-    // report the same duplicate heartbeat.
-    assert_eq!(fx.capacity().await, 0);
-    assert_eq!(
-        fx.count_by(
-            "execution_heartbeat_replays",
-            "heartbeat_id",
-            "heartbeat-concurrent"
-        )
-        .await,
-        1,
-        "exactly one durable replay record is written"
     );
 }
