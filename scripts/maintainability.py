@@ -120,9 +120,9 @@ EXCLUSIONS: dict[tuple[str, str], str] = {
     ("crates/tack-core/src/workflow/tests.rs", "test_name_max_chars"): "unmet, not recorded by IX-M8 (tack-core was never carded)",
 
     # --- tack-db: IX-M8-db's Budget check names both by number, "unmet, not worsened" ---
-    ("crates/tack-db/tests/migrations/orch_migrations.rs", "test_file_lines"): "IX-M8-db: 1 190 lines, splitting migration coverage forbidden by the card; every body already <=40",
-    ("crates/tack-db/tests/repository/execution_repo.rs", "test_file_lines"): "IX-M8-db: 4 176-line state-machine narrative; splitting forbidden",
-    ("crates/tack-db/tests/repository/execution_repo.rs", "test_fn_max_lines"): "IX-M8-db: 38 of 42 bodies still exceed 40 lines (up to 174); each is one race/assertion narrative on shared fixtures",
+    ("crates/tack-db/tests/migrations/orch_migrations.rs", "test_file_lines"): "IX-X3-db: 1 190 lines, every body already <=40; natural section boundaries exist (fresh install / upgrade / FK / redispatch / 032-036 / 037-038 rebuilds) but splitting would relocate shared helpers (table_exists, column_exists, insert_control_plane, seed_item) into tests/common for marginal gain — left as one file",
+    ("crates/tack-db/tests/repository/execution_repo.rs", "test_file_lines"): "IX-X3-db: shrunk 4 176 -> 2 900 lines via a shared Fixture (tests/common/execution_fixture.rs); still a multi-race state-machine narrative, splitting further forbidden",
+    ("crates/tack-db/tests/repository/execution_repo.rs", "test_fn_max_lines"): "IX-X3-db: 20 of 69 bodies still exceed 40 lines (up to 131, down from 38 of 61 up to 174); each is one race/assertion narrative on shared fixtures",
     ("crates/tack-db/src/repo/economics.rs", "src_comment_share"): "unmet, not recorded by IX-M8-db (comment share, not test-body work)",
 
     # --- tack-desktop: IX-M8-cli's named exception covered only supervisor.rs/tests.rs ---
