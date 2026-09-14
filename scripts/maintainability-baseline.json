@@ -1314,6 +1314,20 @@
    "test_sleeps": 0,
    "tests": 19
   },
+  "crates/tack-api/tests/runner_protocol/enrollment.rs": {
+   "doc_block_max_lines": 0,
+   "env_gated_tests": 0,
+   "inline_test_lines": 0,
+   "src_comment_share": 0.0,
+   "src_module_doc_lines": 0,
+   "test_file_lines": 593,
+   "test_fn_max_lines": 89,
+   "test_lines": 593,
+   "test_module_doc_lines": 8,
+   "test_name_max_chars": 56,
+   "test_sleeps": 0,
+   "tests": 7
+  },
   "crates/tack-api/tests/runner_protocol/lifecycle.rs": {
    "doc_block_max_lines": 0,
    "env_gated_tests": 0,
@@ -1398,15 +1412,43 @@
    "test_sleeps": 0,
    "tests": 2
   },
+  "crates/tack-api/tests/security/chaos_common.rs": {
+   "doc_block_max_lines": 0,
+   "env_gated_tests": 0,
+   "inline_test_lines": 0,
+   "src_comment_share": 0.0,
+   "src_module_doc_lines": 0,
+   "test_file_lines": 505,
+   "test_fn_max_lines": 0,
+   "test_lines": 505,
+   "test_module_doc_lines": 9,
+   "test_name_max_chars": 0,
+   "test_sleeps": 0,
+   "tests": 0
+  },
+  "crates/tack-api/tests/security/chaos_races.rs": {
+   "doc_block_max_lines": 0,
+   "env_gated_tests": 0,
+   "inline_test_lines": 0,
+   "src_comment_share": 0.0,
+   "src_module_doc_lines": 0,
+   "test_file_lines": 302,
+   "test_fn_max_lines": 97,
+   "test_lines": 302,
+   "test_module_doc_lines": 6,
+   "test_name_max_chars": 55,
+   "test_sleeps": 0,
+   "tests": 3
+  },
   "crates/tack-api/tests/security/chaos_recovery.rs": {
    "doc_block_max_lines": 0,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 575,
+   "test_file_lines": 576,
    "test_fn_max_lines": 70,
-   "test_lines": 575,
+   "test_lines": 576,
    "test_module_doc_lines": 5,
    "test_name_max_chars": 57,
    "test_sleeps": 0,
@@ -4159,12 +4201,12 @@
  },
  "totals": {
   "env_gated_tests": 0,
-  "files": 296,
+  "files": 299,
   "prod_comment_lines": 11155,
   "prod_lines": 55650,
-  "test_lines": 68664,
+  "test_lines": 70065,
   "test_sleeps": 3,
-  "test_to_prod_ratio": 1.234,
-  "tests": 1409
+  "test_to_prod_ratio": 1.259,
+  "tests": 1419
  }
 }

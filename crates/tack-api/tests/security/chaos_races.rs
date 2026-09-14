@@ -1,15 +1,9 @@
 //! Multi-runner/duplicated-credential race and revocation tests, split out
-//! of `chaos_recovery.rs` once that file passed 1000 lines — these three
-//! are the ones needing `multi_thread`/file-backed setup, distinct from the
-//! single-threaded fencing/artifact/replay/corruption tests that stayed
-//! behind. See `chaos_common.rs`'s own doc comment for why this is a
-//! second, independent copy of that module tree rather than a shared one.
-//!
-//! `fleet_race_between_two_runners_grants_exactly_one_lease` and
-//! `duplicated_credential_race_grants_exactly_one_lease` run against a
-//! file-backed SQLite database — a shared in-memory pool can accidentally
-//! serialize a real race. `revoked_credential_rejected_everywhere_freezes_attempt`
-//! is in-memory.
+//! of `chaos_recovery.rs` once that file passed 1000 lines. The two races
+//! run against a file-backed SQLite database (a shared in-memory pool can
+//! accidentally serialize a real race); the revocation test is in-memory.
+//! See `chaos_common.rs`'s own doc comment for why this is a second,
+//! independent copy of that module tree rather than a shared one.
 
 #[allow(clippy::duplicate_mod)]
 #[path = "chaos_common.rs"]

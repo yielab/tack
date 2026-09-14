@@ -33,7 +33,8 @@ since each importer uses a different subset) — the same duplication pattern
 
 Totals: 5 287 → 5 300 test lines (flat: fixture methods add lines that reused JSON
 literals removed), 54 → 66 tests (+12, all splits — no assertion lost). Workspace
-`test_to_prod_ratio` unchanged (no production code touched).
+`test_to_prod_ratio` 1.234 → 1.259 (no production code touched; the new fixtures and
+wire-body builders are test-only lines with no prod-code counterpart).
 
 ## Coverage
 
@@ -69,9 +70,9 @@ replay-count, unchanged state). Dropped the weaker duplicate, not flagged by
 
 ## Gate tails
 
-`maintainability baseline && check`: bare, green (296 files, ratio 1.234).
-`check-comments.sh`/`check-test-hygiene.sh`: green (the dead-pointer check needed
-the two new files `git add`ed first — it reads `git ls-files`, not the working tree).
+`maintainability baseline && check`: bare, green (299 files) — `rs_files`/`baseline`
+read `git ls-files`, so the three new files needed `git add` before either the
+dead-pointer comment check or `baseline` would see them; re-ran both post-commit.
 `duplicate-tests crates`: 0 pairs, every crate. `cargo fmt --all --check` (root +
 `tack-desktop`) and `cargo clippy --workspace --all-targets -- -D warnings`: clean
 (clippy needed `#[allow(clippy::duplicate_mod)]` on both `chaos_common.rs` loads).
