@@ -104,18 +104,20 @@ crates/<crate>/
 crates/tack-test-support/      fixtures for the layers below the API (arrives with Part IX card M3)
 ```
 
-Rules a test is held to, measured by `python3 scripts/maintainability.py check --changed`
-against `scripts/maintainability-baseline.json` (a file may exceed a budget only if it
-already did and is not worse; a new file meets every budget):
+Rules a test is held to, measured by `python3 scripts/maintainability.py check` (bare, every
+file) and `check --changed` (only what a card touched). Each is a hard cap; a file named in
+`EXCLUSIONS` (`scripts/maintainability.py`) is the one exception and instead ratchets
+against `scripts/maintainability-baseline.json` — it may exceed its budget only if it
+already did and is not worse. A new file meets every budget, excluded or not:
 
 | Rule | Budget |
 |---|---|
 | One claim per test; variants are rows of a table-driven test | — |
 | The name states the claim, no articles or narrative | ≤ 60 characters |
-| The body, signature to closing brace | ≤ 60 lines (target 40) |
+| The body, signature to closing brace | ≤ 40 lines outside `EXCLUSIONS` |
 | A test file's `//!` preamble: what it proves, how to run it | ≤ 10 lines |
 | A trailing `#[cfg(test)] mod tests` in a production file | ≤ 150 lines, else `<module>/tests.rs` |
-| A test file | ≤ 1 000 lines |
+| A test file | ≤ 1 000 lines outside `EXCLUSIONS` |
 | An invariant is pinned at the repository and at one router-level test, not a third time | 2 layers |
 | Fixed waits (`sleep`) in test code | 0 — poll with a bound, or pause time |
 | A test that early-returns on an env var inside a unit module | 0 — it belongs under `tests/live/`, `#[ignore]`d |
@@ -124,6 +126,12 @@ already did and is not worse; a new file meets every budget):
 `measure` prints the per-file table, `comment-worklist` and `duplicate-tests` print what
 is over. The plan behind the numbers, and the cards bringing the tree under them, is
 `docs/plans/human-maintainability.md`.
+
+The workspace test : production ratio ceiling is **1.261** (`measure --totals`), IX-M8's
+measured landing, not the plan's original 0.8 aspiration: the exclusion list's own
+four-figure-line state machines, migrations and contract fixtures carry real weight 0.8
+assumed would be gone. `docs/plans/human-maintainability.md` §1 still records 0.8 as the
+target; a card that brings an excluded file down moves this ceiling too.
 
 Conventions that hold everywhere: `assert_matches!` for enum variants; `#[tokio::test]` for
 async; a test of "writes nothing" or "rejects before X" asserts the absence directly (row
