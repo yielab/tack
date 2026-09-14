@@ -275,6 +275,70 @@ async fn decision_state(repo: &Repository, decision_id: &str) -> String {
         .unwrap()
 }
 
+/// Records a manifest-only artifact (no content uploaded) with `created_at`
+/// backdated `days_ago` days, so a retention sweep sees it as stale.
+async fn seed_stale_manifest_only_artifact(
+    repo: &Repository,
+    attempt_id: &str,
+    fence: i64,
+    row_id: &str,
+    artifact_id: &str,
+    days_ago: i64,
+) {
+    repo.record_execution_artifact(
+        RUNNER_ID,
+        attempt_id,
+        fence,
+        NewArtifact {
+            id: row_id,
+            artifact_id,
+            kind: "patch",
+            name: "never-uploaded.patch",
+            media_type: Some("text/plain"),
+            size_bytes: 4,
+            sha256: &"7".repeat(64),
+            content_disposition: Some("inline_upload"),
+            content_reference: None,
+            metadata: "{}",
+        },
+        &SystemExecutionClock,
+    )
+    .await
+    .expect("record manifest-only artifact");
+    sqlx::query("UPDATE execution_artifacts SET created_at = ? WHERE id = ?")
+        .bind((Utc::now() - Duration::days(days_ago)).to_rfc3339())
+        .bind(row_id)
+        .execute(repo.pool())
+        .await
+        .unwrap();
+}
+
+/// Starts an `ExecutionRuntime` with retention on `storage_dir`, a 1-second
+/// sweep interval, and health checking off — the shape every retention test
+/// in this file starts from, varying only `retention_enable`/`retention_days`.
+async fn start_retention_runtime(
+    repo: &Repository,
+    storage_dir: String,
+    retention_enable: bool,
+    retention_days: u32,
+) -> ExecutionRuntime {
+    let runtime = ExecutionRuntime::new();
+    runtime
+        .start(
+            repo.clone(),
+            ExecutionRuntimeConfig {
+                retention_enable,
+                retention_days,
+                retention_interval_secs: 1,
+                health_enable: false,
+                health_interval_secs: 3600,
+                storage_dir,
+            },
+        )
+        .await;
+    runtime
+}
+
 /// Bounded, deterministic poll for an async condition to become true — never
 /// a blind sleep standing in for the actual assertion. Uses an interval's
 /// pause between checks rather than a bare `sleep` in a loop, since a
@@ -358,20 +422,7 @@ async fn assert_artifact_retention_gate(retention_enable: bool) {
     assert!(tokio::fs::try_exists(&old_blob_path).await.unwrap());
     assert!(tokio::fs::try_exists(&fresh_blob_path).await.unwrap());
 
-    let runtime = ExecutionRuntime::new();
-    runtime
-        .start(
-            repo.clone(),
-            ExecutionRuntimeConfig {
-                retention_enable,
-                retention_days: 1,
-                retention_interval_secs: 1,
-                health_enable: false,
-                health_interval_secs: 3600,
-                storage_dir: storage_dir.clone(),
-            },
-        )
-        .await;
+    let runtime = start_retention_runtime(&repo, storage_dir.clone(), retention_enable, 1).await;
 
     if retention_enable {
         let purged = wait_for(|| async { !artifact_row_exists(&repo, "art-row-old").await }).await;
@@ -421,47 +472,23 @@ async fn retention_enabled_purges_a_manifest_only_artifact_row() {
     let (repo, item_id) = setup().await;
     let (attempt_id, fence) = running_attempt(&repo, &item_id, "manifest-only").await;
     let storage_root_dir = temp_storage_root("manifest-only");
-
-    repo.record_execution_artifact(
-        RUNNER_ID,
+    seed_stale_manifest_only_artifact(
+        &repo,
         &attempt_id,
         fence,
-        NewArtifact {
-            id: "art-row-manifest-only",
-            artifact_id: "art-manifest-only",
-            kind: "patch",
-            name: "never-uploaded.patch",
-            media_type: Some("text/plain"),
-            size_bytes: 4,
-            sha256: &"7".repeat(64),
-            content_disposition: Some("inline_upload"),
-            content_reference: None,
-            metadata: "{}",
-        },
-        &SystemExecutionClock,
+        "art-row-manifest-only",
+        "art-manifest-only",
+        5,
     )
-    .await
-    .expect("record manifest-only artifact");
-    sqlx::query("UPDATE execution_artifacts SET created_at = ? WHERE id = 'art-row-manifest-only'")
-        .bind((Utc::now() - Duration::days(5)).to_rfc3339())
-        .execute(repo.pool())
-        .await
-        .unwrap();
+    .await;
 
-    let runtime = ExecutionRuntime::new();
-    runtime
-        .start(
-            repo.clone(),
-            ExecutionRuntimeConfig {
-                retention_enable: true,
-                retention_days: 1,
-                retention_interval_secs: 1,
-                health_enable: false,
-                health_interval_secs: 3600,
-                storage_dir: storage_root_dir.path().to_string_lossy().into_owned(),
-            },
-        )
-        .await;
+    let runtime = start_retention_runtime(
+        &repo,
+        storage_root_dir.path().to_string_lossy().into_owned(),
+        true,
+        1,
+    )
+    .await;
 
     let purged =
         wait_for(|| async { !artifact_row_exists(&repo, "art-row-manifest-only").await }).await;
@@ -539,20 +566,13 @@ async fn assert_decision_expiry_gate(retention_enable: bool) {
     .await;
 
     let storage_root_dir = temp_storage_root(&tag);
-    let runtime = ExecutionRuntime::new();
-    runtime
-        .start(
-            repo.clone(),
-            ExecutionRuntimeConfig {
-                retention_enable,
-                retention_days: 90,
-                retention_interval_secs: 1,
-                health_enable: false,
-                health_interval_secs: 3600,
-                storage_dir: storage_root_dir.path().to_string_lossy().into_owned(),
-            },
-        )
-        .await;
+    let runtime = start_retention_runtime(
+        &repo,
+        storage_root_dir.path().to_string_lossy().into_owned(),
+        retention_enable,
+        90,
+    )
+    .await;
 
     if retention_enable {
         let expired =
