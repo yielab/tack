@@ -1,26 +1,19 @@
 //! Unit economics — read-only aggregate queries over `items` + `orch_tasks` (+
-//! `orch_events` for the rework signal). Its own module rather than an extension of
-//! `repo/orch.rs`: every query here is additive/read-only against tables
-//! `repo/orch.rs` already owns, so a separate file avoids colliding with unrelated
-//! edits to that file.
+//! `orch_events` for the rework signal). Its own module rather than an
+//! extension of `repo/orch.rs`, whose tables these additive/read-only queries
+//! reuse, so edits here never collide with unrelated edits there.
 //!
 //! The rework-signal event types (`rework_started`, `verification_failed`,
-//! `tester_verdict_failed`) arrive only via `tack-orch::reconciler`'s trace
-//! ingestion, which always leaves `orch_events.run_id` unset — docket's trace
-//! payload carries no `run_id`, only `session_id`. A per-*attempt* correlation via
-//! `run_id` would therefore silently match nothing; what is reliably populated is
-//! `orch_events.item_id`, so [`Repository::list_item_ids_with_rework_signal`]
-//! correlates at the item level instead — a disclosed gap for whoever next needs
-//! per-attempt rework correlation.
+//! `tester_verdict_failed`) arrive only via the reconciler's trace ingestion,
+//! which always leaves `orch_events.run_id` unset (docket's payload carries no
+//! `run_id`, only `session_id`) — so [`Repository::list_item_ids_with_rework_signal`]
+//! correlates at the item level instead of per-attempt; a disclosed gap.
 //!
-//! Only `orch_events`/`orch_metrics` are subject to the retention sweep —
-//! `orch_tasks` is never purged. So `tokens_in`/`tokens_out`/`cost_usd_estimated`/
-//! lead-time figures are never truncated by `TACK_ORCH_EVENT_RETENTION_DAYS`; only
-//! the rework-signal correlation can silently miss history once a task's raw events
-//! have aged out. Callers must compare `last_dispatched_at` against their own
-//! retention cutoff to know whether absence from
-//! [`Repository::list_item_ids_with_rework_signal`]'s result means "no rework" or
-//! "unknown — the evidence may already be gone."
+//! Only `orch_events`/`orch_metrics` are retention-swept — `orch_tasks` never
+//! is, so token/cost/lead-time figures are never truncated, but the
+//! rework-signal correlation can silently miss history once its raw events
+//! age out. Callers must compare `last_dispatched_at` against their own
+//! retention cutoff before treating absence as "confirmed no rework."
 
 use std::collections::HashSet;
 
@@ -58,9 +51,8 @@ pub struct ItemEconomicsRow {
     /// Earliest `orch_tasks.dispatched_at` for this item — the anchor for "agent lead
     /// time" (`first_dispatched_at → completed_at`). `None` iff `attempt_count == 0`.
     pub first_dispatched_at: Option<DateTime<Utc>>,
-    /// Latest `orch_tasks.dispatched_at` — used only to judge whether this item's
-    /// rework-signal correlation is trustworthy (see the module doc above), never
-    /// shown as a metric on its own.
+    /// Latest `orch_tasks.dispatched_at` — used only to judge whether this
+    /// item's rework-signal correlation is trustworthy (see module doc).
     pub last_dispatched_at: Option<DateTime<Utc>>,
     pub tokens_in: i64,
     pub tokens_out: i64,
