@@ -2258,9 +2258,9 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 2,
+   "test_file_lines": 4,
    "test_fn_max_lines": 0,
-   "test_lines": 2,
+   "test_lines": 4,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
    "test_sleeps": 0,
@@ -2384,13 +2384,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 4176,
-   "test_fn_max_lines": 174,
-   "test_lines": 4176,
+   "test_file_lines": 2900,
+   "test_fn_max_lines": 131,
+   "test_lines": 2900,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 60,
    "test_sleeps": 0,
-   "tests": 61
+   "tests": 69
   },
   "crates/tack-db/tests/repository/execution_retention.rs": {
    "doc_block_max_lines": 0,
@@ -4148,9 +4148,9 @@
   "files": 295,
   "prod_comment_lines": 11144,
   "prod_lines": 55602,
-  "test_lines": 70098,
+  "test_lines": 68824,
   "test_sleeps": 24,
-  "test_to_prod_ratio": 1.261,
-  "tests": 1407
+  "test_to_prod_ratio": 1.238,
+  "tests": 1415
  }
 }
