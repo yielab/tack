@@ -218,6 +218,17 @@ async fn a_disabled_provider_reports_not_configured_no_network_call() {
 /// records that it observed the request, so a test can tell "joined
 /// after being told to stop" apart from "still running" without a real
 /// runner behind it.
+/// Points D-Bus at nothing so `SecretStore::open` takes its file fallback:
+/// a test never writes into the real keychain, and never waits on it — a
+/// keychain call that fails under load returns before the code under test runs.
+fn force_file_secret_backend() {
+    // SAFETY: every caller writes the same value, so a concurrent reader
+    // sees either the old environment or this one.
+    unsafe {
+        std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "/dev/null");
+    }
+}
+
 fn fake_running(stopped: Arc<std::sync::atomic::AtomicBool>) -> Running {
     let (mut shutdown, shutdown_handle) = Shutdown::channel();
     let runner_task = tokio::spawn(async move {
@@ -241,6 +252,7 @@ fn fake_running(stopped: Arc<std::sync::atomic::AtomicBool>) -> Running {
 /// `Stopped` rather than pretending the old task still serves.
 #[tokio::test]
 async fn setting_provider_secret_while_running_stops_old_task_first() {
+    force_file_secret_backend();
     let dir = unique_temp_dir("restart-on-provider-secret");
     let control = control_with_state_dir(dir.path());
     let stopped = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -279,6 +291,7 @@ async fn setting_provider_secret_while_running_stops_old_task_first() {
 /// requests reference it, so the running task keeps serving untouched.
 #[tokio::test]
 async fn setting_unrelated_secret_while_running_leaves_task_alone() {
+    force_file_secret_backend();
     let dir = unique_temp_dir("no-restart-on-unrelated-secret");
     let control = control_with_state_dir(dir.path());
     let stopped = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -302,6 +315,7 @@ async fn setting_unrelated_secret_while_running_leaves_task_alone() {
 /// provider on, and nothing it holds can learn otherwise.
 #[tokio::test]
 async fn removing_a_provider_secret_while_running_stops_the_old_task() {
+    force_file_secret_backend();
     let dir = unique_temp_dir("restart-on-provider-secret-removal");
     let control = control_with_state_dir(dir.path());
     let stopped = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -322,14 +336,7 @@ async fn removing_a_provider_secret_while_running_stops_the_old_task() {
 #[tokio::test]
 async fn set_list_remove_secret_round_trips_with_a_recorded_set_at() {
     let dir = unique_temp_dir("secret-round-trip");
-    // Forces the file backend (`SecretStore::open`'s own fallback path)
-    // so this test never touches a real keychain.
-    // SAFETY: serialized by this variable's own uniqueness within this
-    // process, same justification as `with_runner_enabled_reads_the_
-    // environment_gate` above.
-    unsafe {
-        std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "/dev/null");
-    }
+    force_file_secret_backend();
     let control = control_with_state_dir(dir.path());
 
     control
@@ -354,9 +361,7 @@ async fn set_list_remove_secret_round_trips_with_a_recorded_set_at() {
 #[tokio::test]
 async fn setting_the_default_vercel_secret_enables_that_provider() {
     let dir = unique_temp_dir("secret-enables-provider");
-    unsafe {
-        std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "/dev/null");
-    }
+    force_file_secret_backend();
     let control = control_with_state_dir(dir.path());
     assert!(matches!(
         control.catalog().await,
@@ -377,9 +382,7 @@ async fn setting_the_default_vercel_secret_enables_that_provider() {
 #[tokio::test]
 async fn removing_default_vercel_secret_disables_provider_it_enabled() {
     let dir = unique_temp_dir("secret-removal-disables");
-    unsafe {
-        std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "/dev/null");
-    }
+    force_file_secret_backend();
     let control = control_with_state_dir(dir.path());
 
     control
@@ -410,9 +413,7 @@ async fn removing_default_vercel_secret_disables_provider_it_enabled() {
 #[tokio::test]
 async fn removing_default_vercel_secret_leaves_operator_enabled_on() {
     let dir = unique_temp_dir("secret-removal-preserves-operator-enable");
-    unsafe {
-        std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "/dev/null");
-    }
+    force_file_secret_backend();
     let control = control_with_state_dir(dir.path());
     // Simulates an operator's own explicit configuration (TOML, or
     // `TACK_RUNNER_PROVIDER_VERCEL_AI_GATEWAY_ENABLED`) turning the
@@ -439,9 +440,7 @@ async fn removing_default_vercel_secret_leaves_operator_enabled_on() {
 #[tokio::test]
 async fn removing_non_default_secret_never_touches_enabled_flag() {
     let dir = unique_temp_dir("secret-removal-narrow-name");
-    unsafe {
-        std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "/dev/null");
-    }
+    force_file_secret_backend();
     let control = control_with_state_dir(dir.path());
     set_vercel_provider_enabled(&control, true).await;
 
@@ -460,9 +459,7 @@ async fn removing_non_default_secret_never_touches_enabled_flag() {
 #[tokio::test]
 async fn start_then_stop_round_trips_the_runtime_state() {
     let dir = unique_temp_dir("start-stop");
-    unsafe {
-        std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "/dev/null");
-    }
+    force_file_secret_backend();
     let control = control_with_state_dir(dir.path());
     // `unreachable_database_url` makes self-provisioning fail deliberately
     // (no session on disk, no manual credential) — this test only needs
