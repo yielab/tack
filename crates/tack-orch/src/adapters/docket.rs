@@ -1,28 +1,22 @@
 //! `DocketAdapter` — the [`ControlPlane`] implementation for docket.
 //!
 //! `new` takes the docket base URL and an optional Bearer token. A `None`
-//! token is legitimate: every unauthenticated route (`/health`,
-//! `/status.json`, `/metrics`) still works, and an authenticated route
-//! called without one degrades to whatever docket itself returns for a
-//! missing `Authorization` header, rather than a client-side short-circuit.
+//! token is legitimate: every unauthenticated route still works, and an
+//! authenticated route called without one degrades to whatever docket
+//! itself returns for a missing header, not a client-side short-circuit.
 //!
-//! # Auth split
+//! **Auth split:** `/status.json`, `/metrics`, and `/health` never carry a
+//! Bearer token, even if one is configured — every other route does. Enforced
+//! structurally: [`DocketAdapter::get_unauthed`] and
+//! [`DocketAdapter::get_authed`] never share a code path that attaches the
+//! header, so a future edit can't leak the token onto an unauthenticated
+//! request by adding one branch to a shared function.
 //!
-//! `/status.json`, `/metrics`, and `/health` never carry a Bearer token,
-//! even if one is configured — every other route does. This is enforced
-//! structurally, by [`DocketAdapter::get_unauthed`] and
-//! [`DocketAdapter::get_authed`] never sharing a code path that attaches
-//! the header, so a future edit can't leak the token onto an
-//! unauthenticated request by adding one branch to a shared function.
-//!
-//! # Write methods
-//!
-//! `enqueue_task`, `decide_approval`, `provision_pod`, and `dispatch` each
-//! build their own request rather than going through `get_authed`/`send`,
-//! since each needs a non-2xx status classified more finely than that
-//! helper's generic branch. See each method's own doc comment for its wire
-//! format; the vendor captures behind them live in
-//! `tests/fixtures/README.md`.
+//! **Write methods** (`enqueue_task`, `decide_approval`, `provision_pod`,
+//! `dispatch`) each build their own request rather than going through
+//! `get_authed`/`send`, since each needs a non-2xx status classified more
+//! finely than that helper's generic branch. Vendor captures behind them
+//! live in `tests/fixtures/README.md`.
 
 use std::time::Duration;
 

@@ -1,25 +1,14 @@
 //! The Docket compatibility decision's label, plus the pure, DB-free pieces of "one
-//! scheduling owner" — the decision (keep Docket a maintained, optional bridge) is
-//! ADR 0060, which also covers [`provider_scoped_task_id`]/[`LegacyAttemptProjection`].
-//!
-//! **Runner-v1 always outranks legacy Docket**: an active `execution_requests` row
-//! makes legacy dispatch defer, never the reverse — proven in
-//! `crates/tack-api/tests/orchestration/dispatch/dual_scheduling.rs`.
+//! scheduling owner" (ADR 0060). Runner-v1 always outranks legacy Docket: an active
+//! `execution_requests` row makes legacy dispatch defer, never the reverse.
 
 use tack_db::repo::orch::OrchTask;
 
-/// The one explicit, stable compatibility label naming this decision ("Docket is
-/// optional and has one documented compatibility state"). See ADR 0060 for the
-/// evidence behind it.
-///
-/// Format is deliberately machine-quotable (`<decision>:<scope>-v<n>`) rather than a
-/// prose sentence, so operator docs and a future API field can both embed it
-/// verbatim without truncation or paraphrase drift.
+/// The one stable compatibility label for this decision (ADR 0060), in a
+/// machine-quotable `<decision>:<scope>-v<n>` form for embedding verbatim.
 pub const LEGACY_DOCKET_COMPATIBILITY_LABEL: &str = "legacy-docket:maintained-bridge-v1";
 
-/// Human-readable justification for [`LEGACY_DOCKET_COMPATIBILITY_LABEL`], suitable
-/// for direct embedding in operator-facing documentation without paraphrasing
-/// ADR 0060.
+/// Human-readable justification for [`LEGACY_DOCKET_COMPATIBILITY_LABEL`].
 pub const LEGACY_DOCKET_COMPATIBILITY_POLICY: &str = "Docket is maintained as an optional legacy bridge (TACK_ORCH_ENABLE, default off). \
      It is never the owner of a new runner-v1 execution request; runner-v1 is the \
      plan-of-record scheduler. An item with an active runner-v1 execution \
@@ -27,29 +16,18 @@ pub const LEGACY_DOCKET_COMPATIBILITY_POLICY: &str = "Docket is maintained as an
      is identified with a provider-scoped id (`docket:<remote_task_id>`), distinct from \
      any runner-v1 attempt or opaque model id.";
 
-/// Which plane currently owns (or would own) scheduling a Tack item's execution. See
-/// the module doc's "One scheduling owner" section.
+/// Which plane currently owns (or would own) scheduling an item's execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchedulingOwner {
-    /// The neutral runner-v1 domain (`execution_requests`/`execution_attempts`) —
-    /// the plan-of-record scheduler.
+    /// The neutral runner-v1 domain — the plan-of-record scheduler.
     RunnerV1,
-    /// The legacy Docket bridge (`orch_tasks`, dispatched via
-    /// `tack_orch::adapters::docket::DocketAdapter`).
+    /// The legacy Docket bridge (`orch_tasks`).
     LegacyDocket,
 }
 
-/// Pure decision: given whether an item already has an active runner-v1 execution
-/// request, may a *new* legacy Docket dispatch proceed? No I/O — the caller
-/// (`tack_api::dispatcher::dispatch_item`) is responsible for producing
-/// `has_active_runner_request` from `Repository::
-/// has_active_execution_request_for_item` and for turning `Err` into whatever error
-/// shape its own return type uses.
-///
-/// `Ok(SchedulingOwner::LegacyDocket)` means the caller may proceed to dispatch (or
-/// redispatch — this function does not know about `orch_tasks`' own idempotency
-/// state, only about the cross-plane collision). `Err(SchedulingOwner::RunnerV1)`
-/// means runner-v1 already owns this item; legacy dispatch must defer.
+/// Pure decision (no I/O): given whether an item already has an active
+/// runner-v1 request, may a *new* legacy Docket dispatch proceed?
+/// `Err(RunnerV1)` means runner-v1 already owns this item and legacy must defer.
 pub fn decide_scheduling_owner(
     has_active_runner_request: bool,
 ) -> Result<SchedulingOwner, SchedulingOwner> {
@@ -60,29 +38,21 @@ pub fn decide_scheduling_owner(
     }
 }
 
-/// Namespaces a docket `remote_task_id` as `docket:<remote_task_id>` — see the module
-/// doc's "Provider-scoped ids" section for why this exists.
+/// Namespaces a docket id as `docket:<remote_task_id>` (see module doc).
 pub fn provider_scoped_task_id(remote_task_id: &str) -> String {
     format!("docket:{remote_task_id}")
 }
 
-/// A read-only, normalized-for-display projection of one `orch_tasks` row. See the
-/// module doc's "Provider-scoped ids and the normalized-attempt projection" section —
-/// this is a presentation mapping, not a write into `execution_attempts` and not a
-/// runner-v1 attempt.
+/// Read-only, display-normalized projection of one `orch_tasks` row — a
+/// presentation mapping, not a runner-v1 attempt.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyAttemptProjection {
     /// `docket:<remote_task_id>` — see [`provider_scoped_task_id`].
     pub provider_scoped_id: String,
     pub item_id: uuid::Uuid,
-    /// Docket's own `remote_status` string, unvalidated and shown as-is — same
-    /// discipline `repo/orch.rs`'s module doc already documents for this column
-    /// ("every remote-state string column stores whatever docket sent, unvalidated").
+    /// Docket's own status string, unvalidated and shown as-is.
     pub remote_status: String,
-    /// Always [`SchedulingOwner::LegacyDocket`] — every row this projection can be
-    /// built from came from the legacy bridge. Carried explicitly, not implied, so a
-    /// caller rendering rows from both planes side by side never has to infer which
-    /// is which from the id's string shape alone.
+    /// Always `LegacyDocket` — carried explicitly, never inferred from the id.
     pub scheduling_owner: SchedulingOwner,
 }
 
