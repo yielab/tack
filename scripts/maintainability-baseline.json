@@ -3,10 +3,10 @@
   "doc_block_max_lines": 15,
   "env_gated_tests": 0,
   "inline_test_lines": 150,
-  "src_comment_share": 0.35,
+  "src_comment_share": 0.3,
   "src_module_doc_lines": 30,
   "test_file_lines": 1000,
-  "test_fn_max_lines": 60,
+  "test_fn_max_lines": 40,
   "test_module_doc_lines": 10,
   "test_name_max_chars": 60,
   "test_sleeps": 0
@@ -20,9 +20,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 23,
+   "test_lines": 88,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 76,
-   "test_sleeps": 0
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 6
   },
   "crates/tack-api/src/debug.rs": {
    "doc_block_max_lines": 1,
@@ -32,21 +34,25 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/dispatcher.rs": {
-   "doc_block_max_lines": 27,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.322,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.307,
+   "src_module_doc_lines": 5,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/error.rs": {
    "doc_block_max_lines": 7,
@@ -56,21 +62,25 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/execution_runtime.rs": {
-   "doc_block_max_lines": 47,
+   "doc_block_max_lines": 13,
    "env_gated_tests": 0,
    "inline_test_lines": 96,
-   "src_comment_share": 0.345,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.276,
+   "src_module_doc_lines": 11,
    "test_file_lines": 0,
    "test_fn_max_lines": 27,
+   "test_lines": 96,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 66,
-   "test_sleeps": 0
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 3
   },
   "crates/tack-api/src/github_sync.rs": {
    "doc_block_max_lines": 5,
@@ -80,9 +90,11 @@
    "src_module_doc_lines": 5,
    "test_file_lines": 0,
    "test_fn_max_lines": 27,
+   "test_lines": 101,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 58,
-   "test_sleeps": 0
+   "test_name_max_chars": 41,
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-api/src/handlers.rs": {
    "doc_block_max_lines": 0,
@@ -92,9 +104,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/attachments.rs": {
    "doc_block_max_lines": 4,
@@ -104,9 +118,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/attempt_lists.rs": {
    "doc_block_max_lines": 6,
@@ -116,9 +132,11 @@
    "src_module_doc_lines": 12,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/backup.rs": {
    "doc_block_max_lines": 4,
@@ -128,9 +146,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/boards_multi.rs": {
    "doc_block_max_lines": 1,
@@ -140,9 +160,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/comments.rs": {
    "doc_block_max_lines": 0,
@@ -152,9 +174,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/custom_fields.rs": {
    "doc_block_max_lines": 1,
@@ -164,21 +188,25 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/decisions.rs": {
-   "doc_block_max_lines": 21,
+   "doc_block_max_lines": 11,
    "env_gated_tests": 0,
    "inline_test_lines": 58,
-   "src_comment_share": 0.216,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.22,
+   "src_module_doc_lines": 21,
    "test_file_lines": 0,
    "test_fn_max_lines": 15,
+   "test_lines": 58,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 64,
-   "test_sleeps": 0
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 4
   },
   "crates/tack-api/src/handlers/dependencies.rs": {
    "doc_block_max_lines": 0,
@@ -188,21 +216,25 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/economics.rs": {
    "doc_block_max_lines": 5,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.165,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.192,
+   "src_module_doc_lines": 28,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/economics/tests.rs": {
    "doc_block_max_lines": 0,
@@ -210,23 +242,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 345,
-   "test_fn_max_lines": 50,
+   "test_file_lines": 363,
+   "test_fn_max_lines": 39,
+   "test_lines": 363,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 72,
-   "test_sleeps": 0
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 10
   },
   "crates/tack-api/src/handlers/executions.rs": {
-   "doc_block_max_lines": 27,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.19,
+   "src_comment_share": 0.183,
    "src_module_doc_lines": 1,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/export.rs": {
    "doc_block_max_lines": 8,
@@ -236,9 +272,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/import_github.rs": {
    "doc_block_max_lines": 7,
@@ -248,9 +286,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 5,
+   "test_lines": 48,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 30,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 7
   },
   "crates/tack-api/src/handlers/import_linear.rs": {
    "doc_block_max_lines": 4,
@@ -260,21 +300,25 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 9,
+   "test_lines": 77,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 35,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 8
   },
   "crates/tack-api/src/handlers/items.rs": {
-   "doc_block_max_lines": 53,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.164,
+   "src_comment_share": 0.106,
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/local_runner.rs": {
    "doc_block_max_lines": 9,
@@ -284,21 +328,25 @@
    "src_module_doc_lines": 27,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/orch.rs": {
-   "doc_block_max_lines": 22,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.267,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.268,
+   "src_module_doc_lines": 21,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/projects.rs": {
    "doc_block_max_lines": 0,
@@ -308,21 +356,25 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/provisioning.rs": {
    "doc_block_max_lines": 9,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.255,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.287,
+   "src_module_doc_lines": 30,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/roles.rs": {
    "doc_block_max_lines": 0,
@@ -332,57 +384,67 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/runner_admin.rs": {
-   "doc_block_max_lines": 19,
+   "doc_block_max_lines": 14,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.086,
+   "src_comment_share": 0.082,
    "src_module_doc_lines": 1,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/runner_protocol.rs": {
-   "doc_block_max_lines": 22,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 148,
-   "src_comment_share": 0.205,
+   "src_comment_share": 0.201,
    "src_module_doc_lines": 22,
    "test_file_lines": 0,
    "test_fn_max_lines": 35,
+   "test_lines": 148,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 77,
-   "test_sleeps": 0
+   "test_name_max_chars": 57,
+   "test_sleeps": 0,
+   "tests": 7
   },
   "crates/tack-api/src/handlers/runner_protocol/artifact_download.rs": {
    "doc_block_max_lines": 5,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.17,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.236,
+   "src_module_doc_lines": 23,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/runner_protocol/artifact_storage.rs": {
-   "doc_block_max_lines": 16,
+   "doc_block_max_lines": 12,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.232,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.244,
+   "src_module_doc_lines": 16,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/runner_protocol/artifact_storage/tests.rs": {
    "doc_block_max_lines": 0,
@@ -392,33 +454,39 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 317,
    "test_fn_max_lines": 38,
+   "test_lines": 317,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 75,
-   "test_sleeps": 0
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 9
   },
   "crates/tack-api/src/handlers/runner_protocol/retention.rs": {
-   "doc_block_max_lines": 22,
+   "doc_block_max_lines": 12,
    "env_gated_tests": 0,
    "inline_test_lines": 12,
-   "src_comment_share": 0.49,
+   "src_comment_share": 0.453,
    "src_module_doc_lines": 12,
    "test_file_lines": 0,
    "test_fn_max_lines": 5,
+   "test_lines": 12,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 48,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 1
   },
   "crates/tack-api/src/handlers/runner_protocol/runner_auth.rs": {
-   "doc_block_max_lines": 25,
+   "doc_block_max_lines": 14,
    "env_gated_tests": 0,
    "inline_test_lines": 67,
-   "src_comment_share": 0.322,
+   "src_comment_share": 0.292,
    "src_module_doc_lines": 16,
    "test_file_lines": 0,
    "test_fn_max_lines": 25,
+   "test_lines": 67,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 68,
-   "test_sleeps": 0
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 4
   },
   "crates/tack-api/src/handlers/settings.rs": {
    "doc_block_max_lines": 8,
@@ -428,9 +496,11 @@
    "src_module_doc_lines": 13,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/spa.rs": {
    "doc_block_max_lines": 0,
@@ -440,9 +510,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/sprints.rs": {
    "doc_block_max_lines": 0,
@@ -452,21 +524,25 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/templates.rs": {
-   "doc_block_max_lines": 35,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.169,
+   "src_comment_share": 0.131,
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/handlers/websocket.rs": {
    "doc_block_max_lines": 8,
@@ -476,9 +552,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 12,
+   "test_lines": 75,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 67,
-   "test_sleeps": 0
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-api/src/lib.rs": {
    "doc_block_max_lines": 0,
@@ -488,9 +566,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/middleware.rs": {
    "doc_block_max_lines": 11,
@@ -500,9 +580,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 38,
+   "test_lines": 134,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 65,
-   "test_sleeps": 0
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 9
   },
   "crates/tack-api/src/openapi.rs": {
    "doc_block_max_lines": 9,
@@ -512,9 +594,11 @@
    "src_module_doc_lines": 26,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/orch_runtime.rs": {
    "doc_block_max_lines": 11,
@@ -524,9 +608,11 @@
    "src_module_doc_lines": 8,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/orch_runtime/tests.rs": {
    "doc_block_max_lines": 0,
@@ -534,35 +620,41 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 404,
+   "test_file_lines": 410,
    "test_fn_max_lines": 27,
+   "test_lines": 410,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 53,
-   "test_sleeps": 7
+   "test_name_max_chars": 55,
+   "test_sleeps": 7,
+   "tests": 5
   },
   "crates/tack-api/src/orch_store.rs": {
-   "doc_block_max_lines": 42,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.374,
-   "src_module_doc_lines": 30,
+   "src_comment_share": 0.249,
+   "src_module_doc_lines": 15,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/remote_backup.rs": {
-   "doc_block_max_lines": 27,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.233,
+   "src_comment_share": 0.221,
    "src_module_doc_lines": 11,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/remote_backup/tests.rs": {
    "doc_block_max_lines": 0,
@@ -572,21 +664,25 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 837,
    "test_fn_max_lines": 78,
+   "test_lines": 837,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 65,
-   "test_sleeps": 0
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 19
   },
   "crates/tack-api/src/router.rs": {
-   "doc_block_max_lines": 46,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.382,
+   "src_comment_share": 0.324,
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/server.rs": {
    "doc_block_max_lines": 13,
@@ -596,9 +692,11 @@
    "src_module_doc_lines": 2,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/server/tests.rs": {
    "doc_block_max_lines": 0,
@@ -606,23 +704,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 355,
-   "test_fn_max_lines": 56,
+   "test_file_lines": 368,
+   "test_fn_max_lines": 40,
+   "test_lines": 368,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 72,
-   "test_sleeps": 0
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 10
   },
   "crates/tack-api/src/sprint_dispatch.rs": {
    "doc_block_max_lines": 14,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.251,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.282,
+   "src_module_doc_lines": 28,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/src/webhook.rs": {
    "doc_block_max_lines": 3,
@@ -632,9 +734,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 34,
+   "test_lines": 43,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 64,
-   "test_sleeps": 0
+   "test_name_max_chars": 46,
+   "test_sleeps": 0,
+   "tests": 1
   },
   "crates/tack-api/tests/common/mod.rs": {
    "doc_block_max_lines": 0,
@@ -642,11 +746,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 99,
+   "test_file_lines": 356,
    "test_fn_max_lines": 0,
+   "test_lines": 356,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/tests/handlers.rs": {
    "doc_block_max_lines": 0,
@@ -656,9 +762,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 32,
    "test_fn_max_lines": 0,
+   "test_lines": 32,
    "test_module_doc_lines": 8,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/tests/handlers/attempt_lists.rs": {
    "doc_block_max_lines": 0,
@@ -666,11 +774,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 597,
-   "test_fn_max_lines": 34,
-   "test_module_doc_lines": 16,
-   "test_name_max_chars": 69,
-   "test_sleeps": 0
+   "test_file_lines": 539,
+   "test_fn_max_lines": 37,
+   "test_lines": 539,
+   "test_module_doc_lines": 9,
+   "test_name_max_chars": 55,
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-api/tests/handlers/attempt_scoping.rs": {
    "doc_block_max_lines": 0,
@@ -678,11 +788,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 600,
-   "test_fn_max_lines": 56,
-   "test_module_doc_lines": 20,
+   "test_file_lines": 556,
+   "test_fn_max_lines": 35,
+   "test_lines": 556,
+   "test_module_doc_lines": 9,
    "test_name_max_chars": 59,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 4
   },
   "crates/tack-api/tests/handlers/crud.rs": {
    "doc_block_max_lines": 0,
@@ -690,11 +802,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 1856,
-   "test_fn_max_lines": 108,
+   "test_file_lines": 1154,
+   "test_fn_max_lines": 40,
+   "test_lines": 1154,
    "test_module_doc_lines": 5,
-   "test_name_max_chars": 78,
-   "test_sleeps": 1
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 40
   },
   "crates/tack-api/tests/handlers/economics.rs": {
    "doc_block_max_lines": 0,
@@ -702,11 +816,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 607,
-   "test_fn_max_lines": 54,
+   "test_file_lines": 556,
+   "test_fn_max_lines": 40,
+   "test_lines": 556,
    "test_module_doc_lines": 10,
-   "test_name_max_chars": 80,
-   "test_sleeps": 0
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 10
   },
   "crates/tack-api/tests/handlers/executions_runner_admin.rs": {
    "doc_block_max_lines": 0,
@@ -714,11 +830,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 918,
+   "test_file_lines": 884,
    "test_fn_max_lines": 121,
+   "test_lines": 884,
    "test_module_doc_lines": 3,
-   "test_name_max_chars": 84,
-   "test_sleeps": 0
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 16
   },
   "crates/tack-api/tests/handlers/item_concurrency.rs": {
    "doc_block_max_lines": 0,
@@ -726,11 +844,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 590,
-   "test_fn_max_lines": 49,
-   "test_module_doc_lines": 23,
-   "test_name_max_chars": 83,
-   "test_sleeps": 0
+   "test_file_lines": 569,
+   "test_fn_max_lines": 38,
+   "test_lines": 569,
+   "test_module_doc_lines": 9,
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 11
   },
   "crates/tack-api/tests/handlers/local_runner.rs": {
    "doc_block_max_lines": 0,
@@ -738,11 +858,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 290,
+   "test_file_lines": 281,
    "test_fn_max_lines": 73,
-   "test_module_doc_lines": 11,
-   "test_name_max_chars": 71,
-   "test_sleeps": 0
+   "test_lines": 281,
+   "test_module_doc_lines": 9,
+   "test_name_max_chars": 54,
+   "test_sleeps": 0,
+   "tests": 3
   },
   "crates/tack-api/tests/handlers/operator_read_routes.rs": {
    "doc_block_max_lines": 0,
@@ -750,11 +872,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 491,
+   "test_file_lines": 459,
    "test_fn_max_lines": 104,
+   "test_lines": 459,
    "test_module_doc_lines": 6,
-   "test_name_max_chars": 70,
-   "test_sleeps": 0
+   "test_name_max_chars": 55,
+   "test_sleeps": 0,
+   "tests": 6
   },
   "crates/tack-api/tests/handlers/production_router.rs": {
    "doc_block_max_lines": 0,
@@ -762,11 +886,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 1101,
+   "test_file_lines": 1022,
    "test_fn_max_lines": 237,
+   "test_lines": 1022,
    "test_module_doc_lines": 9,
-   "test_name_max_chars": 78,
-   "test_sleeps": 0
+   "test_name_max_chars": 56,
+   "test_sleeps": 0,
+   "tests": 7
   },
   "crates/tack-api/tests/handlers/provisioning.rs": {
    "doc_block_max_lines": 0,
@@ -774,11 +900,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 449,
-   "test_fn_max_lines": 62,
-   "test_module_doc_lines": 15,
-   "test_name_max_chars": 67,
-   "test_sleeps": 0
+   "test_file_lines": 447,
+   "test_fn_max_lines": 40,
+   "test_lines": 447,
+   "test_module_doc_lines": 9,
+   "test_name_max_chars": 54,
+   "test_sleeps": 0,
+   "tests": 7
   },
   "crates/tack-api/tests/openapi_contract.rs": {
    "doc_block_max_lines": 0,
@@ -786,11 +914,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 196,
+   "test_file_lines": 190,
    "test_fn_max_lines": 39,
-   "test_module_doc_lines": 11,
+   "test_lines": 190,
+   "test_module_doc_lines": 5,
    "test_name_max_chars": 72,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-api/tests/orchestration.rs": {
    "doc_block_max_lines": 0,
@@ -798,11 +928,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 20,
+   "test_file_lines": 22,
    "test_fn_max_lines": 0,
+   "test_lines": 22,
    "test_module_doc_lines": 4,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/tests/orchestration/auto_dispatch.rs": {
    "doc_block_max_lines": 0,
@@ -812,9 +944,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 15,
    "test_fn_max_lines": 0,
+   "test_lines": 15,
    "test_module_doc_lines": 7,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/tests/orchestration/auto_dispatch/gate.rs": {
    "doc_block_max_lines": 0,
@@ -822,11 +956,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 303,
-   "test_fn_max_lines": 56,
-   "test_module_doc_lines": 16,
-   "test_name_max_chars": 80,
-   "test_sleeps": 2
+   "test_file_lines": 316,
+   "test_fn_max_lines": 40,
+   "test_lines": 316,
+   "test_module_doc_lines": 9,
+   "test_name_max_chars": 55,
+   "test_sleeps": 0,
+   "tests": 2
   },
   "crates/tack-api/tests/orchestration/auto_dispatch/hook.rs": {
    "doc_block_max_lines": 0,
@@ -834,11 +970,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 510,
-   "test_fn_max_lines": 61,
-   "test_module_doc_lines": 19,
-   "test_name_max_chars": 72,
-   "test_sleeps": 5
+   "test_file_lines": 511,
+   "test_fn_max_lines": 40,
+   "test_lines": 511,
+   "test_module_doc_lines": 7,
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 4
   },
   "crates/tack-api/tests/orchestration/auto_dispatch/sprint.rs": {
    "doc_block_max_lines": 0,
@@ -846,11 +984,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 760,
-   "test_fn_max_lines": 62,
-   "test_module_doc_lines": 14,
-   "test_name_max_chars": 78,
-   "test_sleeps": 0
+   "test_file_lines": 697,
+   "test_fn_max_lines": 39,
+   "test_lines": 697,
+   "test_module_doc_lines": 8,
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 11
   },
   "crates/tack-api/tests/orchestration/control_plane.rs": {
    "doc_block_max_lines": 0,
@@ -860,9 +1000,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 12,
    "test_fn_max_lines": 0,
+   "test_lines": 12,
    "test_module_doc_lines": 6,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/tests/orchestration/control_plane/resource.rs": {
    "doc_block_max_lines": 0,
@@ -870,11 +1012,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 548,
-   "test_fn_max_lines": 54,
+   "test_file_lines": 520,
+   "test_fn_max_lines": 41,
+   "test_lines": 520,
    "test_module_doc_lines": 9,
    "test_name_max_chars": 59,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 15
   },
   "crates/tack-api/tests/orchestration/control_plane/settings.rs": {
    "doc_block_max_lines": 0,
@@ -882,11 +1026,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 318,
+   "test_file_lines": 319,
    "test_fn_max_lines": 25,
-   "test_module_doc_lines": 11,
-   "test_name_max_chars": 62,
-   "test_sleeps": 1
+   "test_lines": 319,
+   "test_module_doc_lines": 10,
+   "test_name_max_chars": 57,
+   "test_sleeps": 0,
+   "tests": 9
   },
   "crates/tack-api/tests/orchestration/dispatch.rs": {
    "doc_block_max_lines": 0,
@@ -896,9 +1042,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 13,
    "test_fn_max_lines": 0,
+   "test_lines": 13,
    "test_module_doc_lines": 5,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/tests/orchestration/dispatch/dual_scheduling.rs": {
    "doc_block_max_lines": 0,
@@ -906,11 +1054,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 845,
+   "test_file_lines": 789,
    "test_fn_max_lines": 81,
-   "test_module_doc_lines": 12,
-   "test_name_max_chars": 72,
-   "test_sleeps": 0
+   "test_lines": 789,
+   "test_module_doc_lines": 8,
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 6
   },
   "crates/tack-api/tests/orchestration/dispatch/item.rs": {
    "doc_block_max_lines": 0,
@@ -918,11 +1068,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 677,
-   "test_fn_max_lines": 75,
-   "test_module_doc_lines": 13,
-   "test_name_max_chars": 78,
-   "test_sleeps": 0
+   "test_file_lines": 636,
+   "test_fn_max_lines": 38,
+   "test_lines": 636,
+   "test_module_doc_lines": 9,
+   "test_name_max_chars": 55,
+   "test_sleeps": 0,
+   "tests": 11
   },
   "crates/tack-api/tests/orchestration/dispatch/pipeline.rs": {
    "doc_block_max_lines": 0,
@@ -930,11 +1082,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 517,
-   "test_fn_max_lines": 46,
-   "test_module_doc_lines": 13,
-   "test_name_max_chars": 61,
-   "test_sleeps": 0
+   "test_file_lines": 504,
+   "test_fn_max_lines": 37,
+   "test_lines": 504,
+   "test_module_doc_lines": 8,
+   "test_name_max_chars": 57,
+   "test_sleeps": 0,
+   "tests": 7
   },
   "crates/tack-api/tests/orchestration/fleet_templates.rs": {
    "doc_block_max_lines": 0,
@@ -944,9 +1098,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 12,
    "test_fn_max_lines": 0,
+   "test_lines": 12,
    "test_module_doc_lines": 6,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/tests/orchestration/fleet_templates/fleet_membership.rs": {
    "doc_block_max_lines": 0,
@@ -954,11 +1110,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 508,
+   "test_file_lines": 476,
    "test_fn_max_lines": 212,
+   "test_lines": 476,
    "test_module_doc_lines": 10,
-   "test_name_max_chars": 79,
-   "test_sleeps": 0
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 2
   },
   "crates/tack-api/tests/orchestration/fleet_templates/templates.rs": {
    "doc_block_max_lines": 0,
@@ -966,11 +1124,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 295,
-   "test_fn_max_lines": 50,
-   "test_module_doc_lines": 13,
-   "test_name_max_chars": 61,
-   "test_sleeps": 0
+   "test_file_lines": 275,
+   "test_fn_max_lines": 38,
+   "test_lines": 275,
+   "test_module_doc_lines": 8,
+   "test_name_max_chars": 57,
+   "test_sleeps": 0,
+   "tests": 6
+  },
+  "crates/tack-api/tests/orchestration/off_by_default.rs": {
+   "doc_block_max_lines": 0,
+   "env_gated_tests": 0,
+   "inline_test_lines": 0,
+   "src_comment_share": 0.0,
+   "src_module_doc_lines": 0,
+   "test_file_lines": 48,
+   "test_fn_max_lines": 26,
+   "test_lines": 48,
+   "test_module_doc_lines": 3,
+   "test_name_max_chars": 48,
+   "test_sleeps": 0,
+   "tests": 1
   },
   "crates/tack-api/tests/orchestration/reconciler.rs": {
    "doc_block_max_lines": 0,
@@ -980,9 +1154,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 14,
    "test_fn_max_lines": 0,
+   "test_lines": 14,
    "test_module_doc_lines": 6,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/tests/orchestration/reconciler/broadcast.rs": {
    "doc_block_max_lines": 0,
@@ -990,11 +1166,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 388,
-   "test_fn_max_lines": 46,
-   "test_module_doc_lines": 11,
-   "test_name_max_chars": 69,
-   "test_sleeps": 0
+   "test_file_lines": 390,
+   "test_fn_max_lines": 34,
+   "test_lines": 390,
+   "test_module_doc_lines": 8,
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 8
   },
   "crates/tack-api/tests/orchestration/reconciler/terminal_status.rs": {
    "doc_block_max_lines": 0,
@@ -1003,10 +1181,12 @@
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
    "test_file_lines": 476,
-   "test_fn_max_lines": 50,
-   "test_module_doc_lines": 16,
-   "test_name_max_chars": 101,
-   "test_sleeps": 0
+   "test_fn_max_lines": 40,
+   "test_lines": 476,
+   "test_module_doc_lines": 9,
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 8
   },
   "crates/tack-api/tests/orchestration/reconciler/wiring.rs": {
    "doc_block_max_lines": 0,
@@ -1014,11 +1194,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 302,
-   "test_fn_max_lines": 70,
-   "test_module_doc_lines": 10,
-   "test_name_max_chars": 76,
-   "test_sleeps": 1
+   "test_file_lines": 362,
+   "test_fn_max_lines": 39,
+   "test_lines": 362,
+   "test_module_doc_lines": 9,
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 6
   },
   "crates/tack-api/tests/orchestration/reporting.rs": {
    "doc_block_max_lines": 0,
@@ -1028,9 +1210,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 14,
    "test_fn_max_lines": 0,
+   "test_lines": 14,
    "test_module_doc_lines": 4,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/tests/orchestration/reporting/agent_activity.rs": {
    "doc_block_max_lines": 0,
@@ -1038,11 +1222,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 618,
-   "test_fn_max_lines": 78,
-   "test_module_doc_lines": 13,
-   "test_name_max_chars": 71,
-   "test_sleeps": 0
+   "test_file_lines": 501,
+   "test_fn_max_lines": 40,
+   "test_lines": 501,
+   "test_module_doc_lines": 10,
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 9
   },
   "crates/tack-api/tests/orchestration/reporting/approvals.rs": {
    "doc_block_max_lines": 0,
@@ -1050,11 +1236,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 493,
-   "test_fn_max_lines": 61,
-   "test_module_doc_lines": 12,
-   "test_name_max_chars": 82,
-   "test_sleeps": 0
+   "test_file_lines": 369,
+   "test_fn_max_lines": 40,
+   "test_lines": 369,
+   "test_module_doc_lines": 9,
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 7
   },
   "crates/tack-api/tests/orchestration/reporting/budget_policy.rs": {
    "doc_block_max_lines": 0,
@@ -1062,11 +1250,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 536,
-   "test_fn_max_lines": 53,
-   "test_module_doc_lines": 16,
-   "test_name_max_chars": 63,
-   "test_sleeps": 0
+   "test_file_lines": 443,
+   "test_fn_max_lines": 39,
+   "test_lines": 443,
+   "test_module_doc_lines": 10,
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 8
   },
   "crates/tack-api/tests/orchestration/reporting/run_readback.rs": {
    "doc_block_max_lines": 0,
@@ -1074,11 +1264,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 335,
-   "test_fn_max_lines": 63,
-   "test_module_doc_lines": 12,
-   "test_name_max_chars": 79,
-   "test_sleeps": 0
+   "test_file_lines": 265,
+   "test_fn_max_lines": 40,
+   "test_lines": 265,
+   "test_module_doc_lines": 10,
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 4
   },
   "crates/tack-api/tests/runner_protocol.rs": {
    "doc_block_max_lines": 0,
@@ -1086,11 +1278,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 15,
+   "test_file_lines": 17,
    "test_fn_max_lines": 0,
+   "test_lines": 17,
    "test_module_doc_lines": 5,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/tests/runner_protocol/artifact_events.rs": {
    "doc_block_max_lines": 0,
@@ -1098,11 +1292,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 1187,
+   "test_file_lines": 1154,
    "test_fn_max_lines": 105,
-   "test_module_doc_lines": 23,
-   "test_name_max_chars": 68,
-   "test_sleeps": 0
+   "test_lines": 1154,
+   "test_module_doc_lines": 5,
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 13
   },
   "crates/tack-api/tests/runner_protocol/decisions.rs": {
    "doc_block_max_lines": 0,
@@ -1110,11 +1306,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 1209,
-   "test_fn_max_lines": 164,
-   "test_module_doc_lines": 16,
-   "test_name_max_chars": 97,
-   "test_sleeps": 1
+   "test_file_lines": 1069,
+   "test_fn_max_lines": 98,
+   "test_lines": 1069,
+   "test_module_doc_lines": 5,
+   "test_name_max_chars": 57,
+   "test_sleeps": 0,
+   "tests": 19
   },
   "crates/tack-api/tests/runner_protocol/lifecycle.rs": {
    "doc_block_max_lines": 0,
@@ -1122,11 +1320,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 2002,
+   "test_file_lines": 1821,
    "test_fn_max_lines": 270,
-   "test_module_doc_lines": 23,
-   "test_name_max_chars": 85,
-   "test_sleeps": 1
+   "test_lines": 1821,
+   "test_module_doc_lines": 4,
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 14
   },
   "crates/tack-api/tests/runner_protocol/log_capture.rs": {
    "doc_block_max_lines": 0,
@@ -1134,11 +1334,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 120,
+   "test_file_lines": 91,
    "test_fn_max_lines": 0,
-   "test_module_doc_lines": 43,
+   "test_lines": 91,
+   "test_module_doc_lines": 5,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/tests/runner_vertical_slice.rs": {
    "doc_block_max_lines": 0,
@@ -1146,11 +1348,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 12,
+   "test_file_lines": 14,
    "test_fn_max_lines": 0,
+   "test_lines": 14,
    "test_module_doc_lines": 8,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/tests/runner_vertical_slice/repository_crash.rs": {
    "doc_block_max_lines": 0,
@@ -1158,11 +1362,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 734,
-   "test_fn_max_lines": 110,
+   "test_file_lines": 765,
+   "test_fn_max_lines": 40,
+   "test_lines": 765,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 80,
-   "test_sleeps": 0
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 10
   },
   "crates/tack-api/tests/security.rs": {
    "doc_block_max_lines": 0,
@@ -1172,9 +1378,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 20,
    "test_fn_max_lines": 0,
+   "test_lines": 20,
    "test_module_doc_lines": 6,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/tests/security/board_drag_wip_race.rs": {
    "doc_block_max_lines": 0,
@@ -1182,11 +1390,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 227,
+   "test_file_lines": 202,
    "test_fn_max_lines": 72,
-   "test_module_doc_lines": 21,
-   "test_name_max_chars": 78,
-   "test_sleeps": 0
+   "test_lines": 202,
+   "test_module_doc_lines": 9,
+   "test_name_max_chars": 53,
+   "test_sleeps": 0,
+   "tests": 2
   },
   "crates/tack-api/tests/security/chaos_recovery.rs": {
    "doc_block_max_lines": 0,
@@ -1194,11 +1404,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 1329,
-   "test_fn_max_lines": 230,
-   "test_module_doc_lines": 17,
-   "test_name_max_chars": 90,
-   "test_sleeps": 0
+   "test_file_lines": 1243,
+   "test_fn_max_lines": 106,
+   "test_lines": 1243,
+   "test_module_doc_lines": 9,
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 8
   },
   "crates/tack-api/tests/security/cors.rs": {
    "doc_block_max_lines": 0,
@@ -1206,11 +1418,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 147,
-   "test_fn_max_lines": 52,
-   "test_module_doc_lines": 12,
-   "test_name_max_chars": 61,
-   "test_sleeps": 0
+   "test_file_lines": 145,
+   "test_fn_max_lines": 31,
+   "test_lines": 145,
+   "test_module_doc_lines": 6,
+   "test_name_max_chars": 53,
+   "test_sleeps": 0,
+   "tests": 2
   },
   "crates/tack-api/tests/security/trust_boundary.rs": {
    "doc_block_max_lines": 0,
@@ -1218,11 +1432,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 333,
-   "test_fn_max_lines": 70,
+   "test_file_lines": 338,
+   "test_fn_max_lines": 39,
+   "test_lines": 338,
    "test_module_doc_lines": 6,
-   "test_name_max_chars": 83,
-   "test_sleeps": 0
+   "test_name_max_chars": 53,
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-api/tests/security/wip_limit_race.rs": {
    "doc_block_max_lines": 0,
@@ -1230,11 +1446,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 288,
+   "test_file_lines": 265,
    "test_fn_max_lines": 85,
-   "test_module_doc_lines": 20,
-   "test_name_max_chars": 76,
-   "test_sleeps": 0
+   "test_lines": 265,
+   "test_module_doc_lines": 10,
+   "test_name_max_chars": 57,
+   "test_sleeps": 0,
+   "tests": 1
   },
   "crates/tack-api/tests/wave2_gate.rs": {
    "doc_block_max_lines": 0,
@@ -1242,11 +1460,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 1080,
+   "test_file_lines": 1070,
    "test_fn_max_lines": 296,
-   "test_module_doc_lines": 20,
+   "test_lines": 1070,
+   "test_module_doc_lines": 10,
    "test_name_max_chars": 82,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-api/tests/wiring.rs": {
    "doc_block_max_lines": 0,
@@ -1254,11 +1474,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 12,
+   "test_file_lines": 14,
    "test_fn_max_lines": 0,
+   "test_lines": 14,
    "test_module_doc_lines": 4,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-api/tests/wiring/artifact.rs": {
    "doc_block_max_lines": 0,
@@ -1266,11 +1488,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 568,
-   "test_fn_max_lines": 159,
-   "test_module_doc_lines": 40,
-   "test_name_max_chars": 96,
-   "test_sleeps": 0
+   "test_file_lines": 522,
+   "test_fn_max_lines": 40,
+   "test_lines": 522,
+   "test_module_doc_lines": 6,
+   "test_name_max_chars": 57,
+   "test_sleeps": 0,
+   "tests": 3
   },
   "crates/tack-api/tests/wiring/execution_sweep.rs": {
    "doc_block_max_lines": 0,
@@ -1278,11 +1502,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 683,
-   "test_fn_max_lines": 91,
-   "test_module_doc_lines": 15,
-   "test_name_max_chars": 85,
-   "test_sleeps": 3
+   "test_file_lines": 610,
+   "test_fn_max_lines": 32,
+   "test_lines": 610,
+   "test_module_doc_lines": 6,
+   "test_name_max_chars": 53,
+   "test_sleeps": 0,
+   "tests": 3
   },
   "crates/tack-api/tests/wiring/model.rs": {
    "doc_block_max_lines": 0,
@@ -1290,23 +1516,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 927,
-   "test_fn_max_lines": 106,
-   "test_module_doc_lines": 13,
-   "test_name_max_chars": 77,
-   "test_sleeps": 0
+   "test_file_lines": 725,
+   "test_fn_max_lines": 40,
+   "test_lines": 725,
+   "test_module_doc_lines": 7,
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 4
   },
   "crates/tack-cli/src/client.rs": {
-   "doc_block_max_lines": 17,
+   "doc_block_max_lines": 14,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.225,
+   "src_comment_share": 0.207,
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-cli/src/client/tests.rs": {
    "doc_block_max_lines": 0,
@@ -1316,9 +1546,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 250,
    "test_fn_max_lines": 29,
+   "test_lines": 250,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 68,
-   "test_sleeps": 0
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 12
   },
   "crates/tack-cli/src/config.rs": {
    "doc_block_max_lines": 7,
@@ -1328,9 +1560,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-cli/src/doctor.rs": {
    "doc_block_max_lines": 13,
@@ -1340,9 +1574,11 @@
    "src_module_doc_lines": 9,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-cli/src/doctor/tests.rs": {
    "doc_block_max_lines": 0,
@@ -1350,11 +1586,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 242,
-   "test_fn_max_lines": 79,
+   "test_file_lines": 248,
+   "test_fn_max_lines": 21,
+   "test_lines": 248,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 90,
-   "test_sleeps": 0
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 9
   },
   "crates/tack-cli/src/execution.rs": {
    "doc_block_max_lines": 11,
@@ -1364,9 +1602,11 @@
    "src_module_doc_lines": 17,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-cli/src/execution/tests.rs": {
    "doc_block_max_lines": 0,
@@ -1376,9 +1616,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 266,
    "test_fn_max_lines": 29,
+   "test_lines": 266,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 70,
-   "test_sleeps": 0
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 13
   },
   "crates/tack-cli/src/git.rs": {
    "doc_block_max_lines": 5,
@@ -1388,9 +1630,11 @@
    "src_module_doc_lines": 6,
    "test_file_lines": 0,
    "test_fn_max_lines": 13,
+   "test_lines": 74,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 34,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 8
   },
   "crates/tack-cli/src/lib.rs": {
    "doc_block_max_lines": 0,
@@ -1400,33 +1644,39 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-cli/src/local_enrollment.rs": {
-   "doc_block_max_lines": 18,
+   "doc_block_max_lines": 14,
    "env_gated_tests": 0,
    "inline_test_lines": 69,
-   "src_comment_share": 0.64,
+   "src_comment_share": 0.622,
    "src_module_doc_lines": 12,
    "test_file_lines": 0,
    "test_fn_max_lines": 13,
+   "test_lines": 69,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 62,
-   "test_sleeps": 0
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-cli/src/local_runner.rs": {
-   "doc_block_max_lines": 35,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.366,
+   "src_comment_share": 0.338,
    "src_module_doc_lines": 28,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-cli/src/local_runner/tests.rs": {
    "doc_block_max_lines": 0,
@@ -1434,11 +1684,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 631,
-   "test_fn_max_lines": 44,
+   "test_file_lines": 608,
+   "test_fn_max_lines": 35,
+   "test_lines": 608,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 82,
-   "test_sleeps": 0
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 22
   },
   "crates/tack-cli/src/main.rs": {
    "doc_block_max_lines": 12,
@@ -1448,9 +1700,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-cli/src/mcp.rs": {
    "doc_block_max_lines": 15,
@@ -1460,9 +1714,11 @@
    "src_module_doc_lines": 10,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-cli/src/mcp/tests.rs": {
    "doc_block_max_lines": 0,
@@ -1470,11 +1726,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 514,
-   "test_fn_max_lines": 41,
+   "test_file_lines": 526,
+   "test_fn_max_lines": 38,
+   "test_lines": 526,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 72,
-   "test_sleeps": 0
+   "test_name_max_chars": 56,
+   "test_sleeps": 0,
+   "tests": 21
   },
   "crates/tack-cli/src/secret.rs": {
    "doc_block_max_lines": 3,
@@ -1484,9 +1742,11 @@
    "src_module_doc_lines": 8,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-cli/src/secure_fs.rs": {
    "doc_block_max_lines": 2,
@@ -1496,21 +1756,25 @@
    "src_module_doc_lines": 12,
    "test_file_lines": 0,
    "test_fn_max_lines": 18,
+   "test_lines": 71,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 58,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 4
   },
   "crates/tack-cli/src/service.rs": {
    "doc_block_max_lines": 4,
    "env_gated_tests": 0,
-   "inline_test_lines": 142,
+   "inline_test_lines": 140,
    "src_comment_share": 0.106,
    "src_module_doc_lines": 9,
    "test_file_lines": 0,
-   "test_fn_max_lines": 44,
+   "test_fn_max_lines": 19,
+   "test_lines": 140,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 54,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 7
   },
   "crates/tack-cli/src/vocab.rs": {
    "doc_block_max_lines": 2,
@@ -1520,9 +1784,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-cli/tests/cli_test.rs": {
    "doc_block_max_lines": 0,
@@ -1530,11 +1796,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 317,
-   "test_fn_max_lines": 41,
+   "test_file_lines": 311,
+   "test_fn_max_lines": 35,
+   "test_lines": 311,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 33,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 11
+  },
+  "crates/tack-cli/tests/common/mod.rs": {
+   "doc_block_max_lines": 0,
+   "env_gated_tests": 0,
+   "inline_test_lines": 0,
+   "src_comment_share": 0.0,
+   "src_module_doc_lines": 0,
+   "test_file_lines": 10,
+   "test_fn_max_lines": 0,
+   "test_lines": 10,
+   "test_module_doc_lines": 1,
+   "test_name_max_chars": 0,
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-cli/tests/e6_scheduler_e2e_test.rs": {
    "doc_block_max_lines": 0,
@@ -1542,11 +1824,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 591,
-   "test_fn_max_lines": 60,
-   "test_module_doc_lines": 16,
-   "test_name_max_chars": 82,
-   "test_sleeps": 1
+   "test_file_lines": 588,
+   "test_fn_max_lines": 40,
+   "test_lines": 588,
+   "test_module_doc_lines": 8,
+   "test_name_max_chars": 53,
+   "test_sleeps": 1,
+   "tests": 5
   },
   "crates/tack-cli/tests/embedded_runner_live_secret.rs": {
    "doc_block_max_lines": 0,
@@ -1554,11 +1838,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 529,
-   "test_fn_max_lines": 151,
-   "test_module_doc_lines": 20,
-   "test_name_max_chars": 69,
-   "test_sleeps": 4
+   "test_file_lines": 605,
+   "test_fn_max_lines": 19,
+   "test_lines": 605,
+   "test_module_doc_lines": 10,
+   "test_name_max_chars": 46,
+   "test_sleeps": 1,
+   "tests": 1
   },
   "crates/tack-cli/tests/embedded_runner_orphaned_credential.rs": {
    "doc_block_max_lines": 0,
@@ -1566,11 +1852,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 270,
-   "test_fn_max_lines": 63,
-   "test_module_doc_lines": 16,
-   "test_name_max_chars": 70,
-   "test_sleeps": 3
+   "test_file_lines": 293,
+   "test_fn_max_lines": 34,
+   "test_lines": 293,
+   "test_module_doc_lines": 10,
+   "test_name_max_chars": 50,
+   "test_sleeps": 1,
+   "tests": 1
   },
   "crates/tack-cli/tests/embedded_runner_state_scoping.rs": {
    "doc_block_max_lines": 0,
@@ -1578,23 +1866,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 238,
-   "test_fn_max_lines": 55,
-   "test_module_doc_lines": 14,
-   "test_name_max_chars": 70,
-   "test_sleeps": 3
+   "test_file_lines": 209,
+   "test_fn_max_lines": 28,
+   "test_lines": 209,
+   "test_module_doc_lines": 10,
+   "test_name_max_chars": 47,
+   "test_sleeps": 1,
+   "tests": 1
   },
   "crates/tack-core/src/dependency.rs": {
-   "doc_block_max_lines": 23,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.207,
+   "src_comment_share": 0.17,
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-core/src/dependency/tests.rs": {
    "doc_block_max_lines": 0,
@@ -1604,9 +1896,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 180,
    "test_fn_max_lines": 19,
+   "test_lines": 180,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 66,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 14
   },
   "crates/tack-core/src/error.rs": {
    "doc_block_max_lines": 0,
@@ -1616,9 +1910,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-core/src/lib.rs": {
    "doc_block_max_lines": 0,
@@ -1628,9 +1924,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-core/src/models.rs": {
    "doc_block_max_lines": 11,
@@ -1640,9 +1938,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-core/src/models/tests.rs": {
    "doc_block_max_lines": 0,
@@ -1652,9 +1952,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 442,
    "test_fn_max_lines": 27,
+   "test_lines": 442,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 78,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 40
   },
   "crates/tack-core/src/vocabulary.rs": {
    "doc_block_max_lines": 2,
@@ -1664,9 +1966,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 35,
+   "test_lines": 70,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 52,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-core/src/workflow.rs": {
    "doc_block_max_lines": 8,
@@ -1676,9 +1980,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-core/src/workflow/tests.rs": {
    "doc_block_max_lines": 0,
@@ -1688,9 +1994,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 312,
    "test_fn_max_lines": 21,
+   "test_lines": 312,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 65,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 38
   },
   "crates/tack-db/src/lib.rs": {
    "doc_block_max_lines": 1,
@@ -1700,9 +2008,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/src/migrations.rs": {
    "doc_block_max_lines": 6,
@@ -1712,9 +2022,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/src/repo.rs": {
    "doc_block_max_lines": 2,
@@ -1724,9 +2036,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/src/repo/attachments.rs": {
    "doc_block_max_lines": 1,
@@ -1736,9 +2050,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/src/repo/boards.rs": {
    "doc_block_max_lines": 1,
@@ -1748,9 +2064,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/src/repo/comments.rs": {
    "doc_block_max_lines": 1,
@@ -1760,9 +2078,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/src/repo/custom_fields.rs": {
    "doc_block_max_lines": 1,
@@ -1772,9 +2092,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/src/repo/dependencies.rs": {
    "doc_block_max_lines": 8,
@@ -1784,33 +2106,39 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/src/repo/economics.rs": {
    "doc_block_max_lines": 10,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.268,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.333,
+   "src_module_doc_lines": 23,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/src/repo/execution.rs": {
-   "doc_block_max_lines": 34,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.161,
+   "src_comment_share": 0.148,
    "src_module_doc_lines": 3,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/src/repo/github_links.rs": {
    "doc_block_max_lines": 1,
@@ -1820,33 +2148,39 @@
    "src_module_doc_lines": 1,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/src/repo/items.rs": {
-   "doc_block_max_lines": 32,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.131,
+   "src_comment_share": 0.116,
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/src/repo/orch.rs": {
-   "doc_block_max_lines": 29,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.208,
+   "src_comment_share": 0.196,
    "src_module_doc_lines": 26,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/src/repo/projects.rs": {
    "doc_block_max_lines": 7,
@@ -1856,9 +2190,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/src/repo/roles.rs": {
    "doc_block_max_lines": 0,
@@ -1868,9 +2204,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/src/repo/sprints.rs": {
    "doc_block_max_lines": 2,
@@ -1880,9 +2218,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/src/repo/templates.rs": {
    "doc_block_max_lines": 6,
@@ -1892,9 +2232,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/src/repo/templates/tests.rs": {
    "doc_block_max_lines": 0,
@@ -1902,11 +2244,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 221,
-   "test_fn_max_lines": 72,
+   "test_file_lines": 244,
+   "test_fn_max_lines": 35,
+   "test_lines": 244,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 67,
-   "test_sleeps": 0
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 8
   },
   "crates/tack-db/tests/common/mod.rs": {
    "doc_block_max_lines": 0,
@@ -1914,11 +2258,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 83,
+   "test_file_lines": 2,
    "test_fn_max_lines": 0,
+   "test_lines": 2,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/tests/migrations.rs": {
    "doc_block_max_lines": 0,
@@ -1928,9 +2274,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 17,
    "test_fn_max_lines": 0,
+   "test_lines": 17,
    "test_module_doc_lines": 5,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/tests/migrations/item_source_migration.rs": {
    "doc_block_max_lines": 0,
@@ -1938,11 +2286,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 230,
-   "test_fn_max_lines": 78,
+   "test_file_lines": 232,
+   "test_fn_max_lines": 34,
+   "test_lines": 232,
    "test_module_doc_lines": 10,
    "test_name_max_chars": 59,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-db/tests/migrations/orch_metrics.rs": {
    "doc_block_max_lines": 0,
@@ -1950,11 +2300,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 682,
-   "test_fn_max_lines": 62,
-   "test_module_doc_lines": 18,
-   "test_name_max_chars": 78,
-   "test_sleeps": 0
+   "test_file_lines": 620,
+   "test_fn_max_lines": 39,
+   "test_lines": 620,
+   "test_module_doc_lines": 9,
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 14
   },
   "crates/tack-db/tests/migrations/orch_migrations.rs": {
    "doc_block_max_lines": 0,
@@ -1962,11 +2314,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 1353,
-   "test_fn_max_lines": 187,
-   "test_module_doc_lines": 43,
-   "test_name_max_chars": 74,
-   "test_sleeps": 0
+   "test_file_lines": 1190,
+   "test_fn_max_lines": 40,
+   "test_lines": 1190,
+   "test_module_doc_lines": 10,
+   "test_name_max_chars": 57,
+   "test_sleeps": 0,
+   "tests": 21
   },
   "crates/tack-db/tests/migrations/stale_reconcile.rs": {
    "doc_block_max_lines": 0,
@@ -1974,11 +2328,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 357,
-   "test_fn_max_lines": 58,
-   "test_module_doc_lines": 11,
+   "test_file_lines": 289,
+   "test_fn_max_lines": 34,
+   "test_lines": 289,
+   "test_module_doc_lines": 10,
    "test_name_max_chars": 55,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 6
   },
   "crates/tack-db/tests/perf_test.rs": {
    "doc_block_max_lines": 0,
@@ -1986,11 +2342,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 81,
-   "test_fn_max_lines": 69,
+   "test_file_lines": 90,
+   "test_fn_max_lines": 39,
+   "test_lines": 90,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 33,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 1
   },
   "crates/tack-db/tests/repository.rs": {
    "doc_block_max_lines": 0,
@@ -2000,9 +2358,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 24,
    "test_fn_max_lines": 0,
+   "test_lines": 24,
    "test_module_doc_lines": 6,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-db/tests/repository/event_artifact_retention.rs": {
    "doc_block_max_lines": 0,
@@ -2010,11 +2370,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 996,
-   "test_fn_max_lines": 101,
+   "test_file_lines": 950,
+   "test_fn_max_lines": 40,
+   "test_lines": 950,
    "test_module_doc_lines": 5,
-   "test_name_max_chars": 82,
-   "test_sleeps": 0
+   "test_name_max_chars": 57,
+   "test_sleeps": 0,
+   "tests": 7
   },
   "crates/tack-db/tests/repository/execution_repo.rs": {
    "doc_block_max_lines": 0,
@@ -2022,11 +2384,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 4323,
+   "test_file_lines": 4176,
    "test_fn_max_lines": 174,
+   "test_lines": 4176,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 79,
-   "test_sleeps": 1
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 61
   },
   "crates/tack-db/tests/repository/execution_retention.rs": {
    "doc_block_max_lines": 0,
@@ -2034,11 +2398,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 650,
-   "test_fn_max_lines": 138,
-   "test_module_doc_lines": 13,
-   "test_name_max_chars": 87,
-   "test_sleeps": 0
+   "test_file_lines": 699,
+   "test_fn_max_lines": 37,
+   "test_lines": 699,
+   "test_module_doc_lines": 7,
+   "test_name_max_chars": 56,
+   "test_sleeps": 0,
+   "tests": 9
   },
   "crates/tack-db/tests/repository/integration.rs": {
    "doc_block_max_lines": 0,
@@ -2046,11 +2412,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 1400,
-   "test_fn_max_lines": 88,
+   "test_file_lines": 981,
+   "test_fn_max_lines": 40,
+   "test_lines": 981,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 46,
-   "test_sleeps": 0
+   "test_name_max_chars": 41,
+   "test_sleeps": 0,
+   "tests": 27
   },
   "crates/tack-db/tests/repository/orch_repo.rs": {
    "doc_block_max_lines": 0,
@@ -2058,11 +2426,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 1012,
-   "test_fn_max_lines": 79,
-   "test_module_doc_lines": 11,
-   "test_name_max_chars": 87,
-   "test_sleeps": 0
+   "test_file_lines": 948,
+   "test_fn_max_lines": 40,
+   "test_lines": 948,
+   "test_module_doc_lines": 6,
+   "test_name_max_chars": 56,
+   "test_sleeps": 0,
+   "tests": 22
   },
   "crates/tack-db/tests/repository/status_update_checked.rs": {
    "doc_block_max_lines": 0,
@@ -2071,10 +2441,12 @@
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
    "test_file_lines": 224,
-   "test_fn_max_lines": 70,
+   "test_fn_max_lines": 35,
+   "test_lines": 224,
    "test_module_doc_lines": 9,
-   "test_name_max_chars": 81,
-   "test_sleeps": 0
+   "test_name_max_chars": 48,
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-db/tests/repository/version_concurrency.rs": {
    "doc_block_max_lines": 0,
@@ -2082,11 +2454,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 176,
-   "test_fn_max_lines": 98,
-   "test_module_doc_lines": 11,
-   "test_name_max_chars": 69,
-   "test_sleeps": 0
+   "test_file_lines": 173,
+   "test_fn_max_lines": 35,
+   "test_lines": 173,
+   "test_module_doc_lines": 5,
+   "test_name_max_chars": 56,
+   "test_sleeps": 0,
+   "tests": 6
   },
   "crates/tack-desktop/build.rs": {
    "doc_block_max_lines": 0,
@@ -2096,9 +2470,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-desktop/src/first_run.rs": {
    "doc_block_max_lines": 4,
@@ -2108,9 +2484,11 @@
    "src_module_doc_lines": 6,
    "test_file_lines": 0,
    "test_fn_max_lines": 12,
+   "test_lines": 56,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 51,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 6
   },
   "crates/tack-desktop/src/lifecycle.rs": {
    "doc_block_max_lines": 7,
@@ -2120,9 +2498,11 @@
    "src_module_doc_lines": 4,
    "test_file_lines": 0,
    "test_fn_max_lines": 20,
+   "test_lines": 76,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 46,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 3
   },
   "crates/tack-desktop/src/main.rs": {
    "doc_block_max_lines": 8,
@@ -2132,9 +2512,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-desktop/src/paths.rs": {
    "doc_block_max_lines": 5,
@@ -2144,21 +2526,39 @@
    "src_module_doc_lines": 7,
    "test_file_lines": 0,
    "test_fn_max_lines": 19,
+   "test_lines": 89,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 69,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-desktop/src/supervisor.rs": {
    "doc_block_max_lines": 13,
    "env_gated_tests": 0,
-   "inline_test_lines": 482,
-   "src_comment_share": 0.286,
+   "inline_test_lines": 0,
+   "src_comment_share": 0.284,
    "src_module_doc_lines": 8,
    "test_file_lines": 0,
-   "test_fn_max_lines": 54,
+   "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 69,
-   "test_sleeps": 2
+   "test_name_max_chars": 0,
+   "test_sleeps": 0,
+   "tests": 0
+  },
+  "crates/tack-desktop/src/supervisor/tests.rs": {
+   "doc_block_max_lines": 0,
+   "env_gated_tests": 0,
+   "inline_test_lines": 0,
+   "src_comment_share": 0.0,
+   "src_module_doc_lines": 0,
+   "test_file_lines": 478,
+   "test_fn_max_lines": 40,
+   "test_lines": 478,
+   "test_module_doc_lines": 0,
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 15
   },
   "crates/tack-desktop/src/tray.rs": {
    "doc_block_max_lines": 6,
@@ -2168,9 +2568,11 @@
    "src_module_doc_lines": 4,
    "test_file_lines": 0,
    "test_fn_max_lines": 7,
+   "test_lines": 53,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 69,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-desktop/tests/dependency_boundary.rs": {
    "doc_block_max_lines": 0,
@@ -2180,45 +2582,53 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 111,
    "test_fn_max_lines": 34,
+   "test_lines": 111,
    "test_module_doc_lines": 5,
    "test_name_max_chars": 51,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 3
   },
   "crates/tack-orch/src/adapters/docket.rs": {
-   "doc_block_max_lines": 13,
+   "doc_block_max_lines": 8,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.359,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.306,
+   "src_module_doc_lines": 25,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/src/adapters/github_actions.rs": {
    "doc_block_max_lines": 1,
    "env_gated_tests": 0,
    "inline_test_lines": 45,
-   "src_comment_share": 0.366,
+   "src_comment_share": 0.246,
    "src_module_doc_lines": 26,
    "test_file_lines": 0,
    "test_fn_max_lines": 21,
+   "test_lines": 45,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 40,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 3
   },
   "crates/tack-orch/src/adapters/legacy_bridge.rs": {
    "doc_block_max_lines": 11,
    "env_gated_tests": 0,
    "inline_test_lines": 67,
-   "src_comment_share": 0.538,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.533,
+   "src_module_doc_lines": 7,
    "test_file_lines": 0,
    "test_fn_max_lines": 8,
+   "test_lines": 67,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 56,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-orch/src/adapters/mod.rs": {
    "doc_block_max_lines": 4,
@@ -2228,9 +2638,11 @@
    "src_module_doc_lines": 4,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/src/adapters/prometheus.rs": {
    "doc_block_max_lines": 7,
@@ -2240,33 +2652,39 @@
    "src_module_doc_lines": 25,
    "test_file_lines": 0,
    "test_fn_max_lines": 15,
+   "test_lines": 121,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 57,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 11
   },
   "crates/tack-orch/src/adapters/registry.rs": {
-   "doc_block_max_lines": 19,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
-   "inline_test_lines": 74,
-   "src_comment_share": 0.624,
+   "inline_test_lines": 72,
+   "src_comment_share": 0.608,
    "src_module_doc_lines": 26,
    "test_file_lines": 0,
    "test_fn_max_lines": 14,
+   "test_lines": 72,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 41,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-orch/src/execution/capabilities.rs": {
-   "doc_block_max_lines": 36,
+   "doc_block_max_lines": 14,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.439,
+   "src_comment_share": 0.345,
    "src_module_doc_lines": 1,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/src/execution/capabilities/tests.rs": {
    "doc_block_max_lines": 0,
@@ -2275,10 +2693,12 @@
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
    "test_file_lines": 171,
-   "test_fn_max_lines": 53,
+   "test_fn_max_lines": 28,
+   "test_lines": 171,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 70,
-   "test_sleeps": 0
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 4
   },
   "crates/tack-orch/src/execution/lifecycle.rs": {
    "doc_block_max_lines": 5,
@@ -2287,10 +2707,12 @@
    "src_comment_share": 0.137,
    "src_module_doc_lines": 1,
    "test_file_lines": 0,
-   "test_fn_max_lines": 45,
+   "test_fn_max_lines": 26,
+   "test_lines": 112,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 47,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 3
   },
   "crates/tack-orch/src/execution/mod.rs": {
    "doc_block_max_lines": 0,
@@ -2300,9 +2722,11 @@
    "src_module_doc_lines": 6,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/src/execution/types.rs": {
    "doc_block_max_lines": 10,
@@ -2312,9 +2736,11 @@
    "src_module_doc_lines": 1,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/src/execution/types/tests.rs": {
    "doc_block_max_lines": 0,
@@ -2322,11 +2748,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 429,
-   "test_fn_max_lines": 89,
+   "test_file_lines": 427,
+   "test_fn_max_lines": 34,
+   "test_lines": 427,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 71,
-   "test_sleeps": 0
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 13
   },
   "crates/tack-orch/src/execution_observability.rs": {
    "doc_block_max_lines": 11,
@@ -2336,9 +2764,11 @@
    "src_module_doc_lines": 17,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/src/execution_observability/tests.rs": {
    "doc_block_max_lines": 0,
@@ -2346,23 +2776,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 202,
+   "test_file_lines": 203,
    "test_fn_max_lines": 36,
+   "test_lines": 203,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 57,
-   "test_sleeps": 3
+   "test_name_max_chars": 56,
+   "test_sleeps": 2,
+   "tests": 8
   },
   "crates/tack-orch/src/execution_retention.rs": {
-   "doc_block_max_lines": 17,
+   "doc_block_max_lines": 11,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.295,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.329,
+   "src_module_doc_lines": 25,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/src/execution_retention/tests.rs": {
    "doc_block_max_lines": 0,
@@ -2370,23 +2804,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 185,
-   "test_fn_max_lines": 37,
+   "test_file_lines": 181,
+   "test_fn_max_lines": 33,
+   "test_lines": 181,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 73,
-   "test_sleeps": 3
+   "test_name_max_chars": 58,
+   "test_sleeps": 2,
+   "tests": 4
   },
   "crates/tack-orch/src/lib.rs": {
-   "doc_block_max_lines": 32,
+   "doc_block_max_lines": 8,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.549,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.347,
+   "src_module_doc_lines": 24,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/src/model_policy/mod.rs": {
    "doc_block_max_lines": 9,
@@ -2396,9 +2834,11 @@
    "src_module_doc_lines": 22,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/src/model_policy/tests.rs": {
    "doc_block_max_lines": 0,
@@ -2408,33 +2848,39 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 151,
    "test_fn_max_lines": 37,
+   "test_lines": 151,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 66,
-   "test_sleeps": 0
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 6
   },
   "crates/tack-orch/src/model_policy/wiring.rs": {
    "doc_block_max_lines": 8,
    "env_gated_tests": 0,
    "inline_test_lines": 95,
-   "src_comment_share": 0.293,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.34,
+   "src_module_doc_lines": 15,
    "test_file_lines": 0,
    "test_fn_max_lines": 14,
+   "test_lines": 95,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 56,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 8
   },
   "crates/tack-orch/src/reconciler.rs": {
-   "doc_block_max_lines": 37,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.385,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.344,
+   "src_module_doc_lines": 29,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/src/reconciler/tests.rs": {
    "doc_block_max_lines": 0,
@@ -2442,23 +2888,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 1927,
-   "test_fn_max_lines": 70,
+   "test_file_lines": 1921,
+   "test_fn_max_lines": 40,
+   "test_lines": 1921,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 84,
-   "test_sleeps": 7
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 49
   },
   "crates/tack-orch/src/scheduler/batch.rs": {
-   "doc_block_max_lines": 26,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.444,
+   "src_comment_share": 0.357,
    "src_module_doc_lines": 10,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/src/scheduler/batch/tests.rs": {
    "doc_block_max_lines": 0,
@@ -2468,21 +2918,25 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 160,
    "test_fn_max_lines": 27,
+   "test_lines": 160,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 65,
-   "test_sleeps": 0
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-orch/src/scheduler/mod.rs": {
    "doc_block_max_lines": 0,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.421,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.389,
+   "src_module_doc_lines": 7,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/src/scheduler/select.rs": {
    "doc_block_max_lines": 12,
@@ -2492,9 +2946,11 @@
    "src_module_doc_lines": 9,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/src/scheduler/select/tests.rs": {
    "doc_block_max_lines": 0,
@@ -2504,33 +2960,39 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 469,
    "test_fn_max_lines": 39,
+   "test_lines": 469,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 69,
-   "test_sleeps": 0
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 19
   },
   "crates/tack-orch/src/scheduler/types.rs": {
-   "doc_block_max_lines": 15,
+   "doc_block_max_lines": 5,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.541,
-   "src_module_doc_lines": 9,
+   "src_comment_share": 0.309,
+   "src_module_doc_lines": 7,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/src/scheduler/wiring.rs": {
-   "doc_block_max_lines": 12,
+   "doc_block_max_lines": 9,
    "env_gated_tests": 0,
    "inline_test_lines": 93,
-   "src_comment_share": 0.358,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.347,
+   "src_module_doc_lines": 21,
    "test_file_lines": 0,
    "test_fn_max_lines": 24,
+   "test_lines": 93,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 80,
-   "test_sleeps": 0
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-orch/src/tests.rs": {
    "doc_block_max_lines": 0,
@@ -2538,23 +3000,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 336,
-   "test_fn_max_lines": 72,
+   "test_file_lines": 343,
+   "test_fn_max_lines": 35,
+   "test_lines": 343,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 68,
-   "test_sleeps": 0
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 20
   },
   "crates/tack-orch/src/usage_provenance.rs": {
    "doc_block_max_lines": 12,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.36,
-   "src_module_doc_lines": 18,
+   "src_comment_share": 0.335,
+   "src_module_doc_lines": 13,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/src/usage_provenance/tests.rs": {
    "doc_block_max_lines": 0,
@@ -2562,11 +3028,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 273,
-   "test_fn_max_lines": 53,
+   "test_file_lines": 263,
+   "test_fn_max_lines": 37,
+   "test_lines": 263,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 62,
-   "test_sleeps": 0
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 9
+  },
+  "crates/tack-orch/tests/common/mod.rs": {
+   "doc_block_max_lines": 0,
+   "env_gated_tests": 0,
+   "inline_test_lines": 0,
+   "src_comment_share": 0.0,
+   "src_module_doc_lines": 0,
+   "test_file_lines": 9,
+   "test_fn_max_lines": 0,
+   "test_lines": 9,
+   "test_module_doc_lines": 6,
+   "test_name_max_chars": 0,
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/tests/docket_adapter_test.rs": {
    "doc_block_max_lines": 0,
@@ -2574,11 +3056,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 1142,
+   "test_file_lines": 999,
    "test_fn_max_lines": 37,
+   "test_lines": 999,
    "test_module_doc_lines": 9,
-   "test_name_max_chars": 83,
-   "test_sleeps": 0
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 32
   },
   "crates/tack-orch/tests/docket_live_test.rs": {
    "doc_block_max_lines": 0,
@@ -2586,11 +3070,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 227,
+   "test_file_lines": 201,
    "test_fn_max_lines": 0,
-   "test_module_doc_lines": 35,
+   "test_lines": 201,
+   "test_module_doc_lines": 9,
    "test_name_max_chars": 0,
-   "test_sleeps": 3
+   "test_sleeps": 3,
+   "tests": 0
   },
   "crates/tack-orch/tests/docket_tick_contract_test.rs": {
    "doc_block_max_lines": 0,
@@ -2598,11 +3084,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 1255,
-   "test_fn_max_lines": 121,
-   "test_module_doc_lines": 139,
-   "test_name_max_chars": 79,
-   "test_sleeps": 2
+   "test_file_lines": 454,
+   "test_fn_max_lines": 40,
+   "test_lines": 454,
+   "test_module_doc_lines": 9,
+   "test_name_max_chars": 57,
+   "test_sleeps": 0,
+   "tests": 5
+  },
+  "crates/tack-orch/tests/docket_tick_contract_test/support.rs": {
+   "doc_block_max_lines": 0,
+   "env_gated_tests": 0,
+   "inline_test_lines": 0,
+   "src_comment_share": 0.0,
+   "src_module_doc_lines": 0,
+   "test_file_lines": 807,
+   "test_fn_max_lines": 0,
+   "test_lines": 807,
+   "test_module_doc_lines": 5,
+   "test_name_max_chars": 0,
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/tests/docket_wire_contract_test.rs": {
    "doc_block_max_lines": 0,
@@ -2610,11 +3112,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 659,
+   "test_file_lines": 615,
    "test_fn_max_lines": 55,
-   "test_module_doc_lines": 68,
+   "test_lines": 615,
+   "test_module_doc_lines": 9,
    "test_name_max_chars": 29,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 13
   },
   "crates/tack-orch/tests/ingestion.rs": {
    "doc_block_max_lines": 0,
@@ -2622,11 +3126,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 16,
+   "test_file_lines": 18,
    "test_fn_max_lines": 0,
+   "test_lines": 18,
    "test_module_doc_lines": 6,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/tests/ingestion/retention.rs": {
    "doc_block_max_lines": 0,
@@ -2634,11 +3140,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 312,
-   "test_fn_max_lines": 72,
+   "test_file_lines": 345,
+   "test_fn_max_lines": 39,
+   "test_lines": 345,
    "test_module_doc_lines": 9,
-   "test_name_max_chars": 86,
-   "test_sleeps": 3
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 2
   },
   "crates/tack-orch/tests/ingestion/runs.rs": {
    "doc_block_max_lines": 0,
@@ -2646,11 +3154,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 295,
-   "test_fn_max_lines": 130,
-   "test_module_doc_lines": 11,
-   "test_name_max_chars": 66,
-   "test_sleeps": 4
+   "test_file_lines": 208,
+   "test_fn_max_lines": 35,
+   "test_lines": 208,
+   "test_module_doc_lines": 7,
+   "test_name_max_chars": 52,
+   "test_sleeps": 0,
+   "tests": 2
   },
   "crates/tack-orch/tests/ingestion/support.rs": {
    "doc_block_max_lines": 0,
@@ -2658,11 +3168,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 290,
+   "test_file_lines": 426,
    "test_fn_max_lines": 0,
-   "test_module_doc_lines": 13,
+   "test_lines": 426,
+   "test_module_doc_lines": 9,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/tests/ingestion/traces.rs": {
    "doc_block_max_lines": 0,
@@ -2670,11 +3182,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 359,
-   "test_fn_max_lines": 141,
-   "test_module_doc_lines": 22,
-   "test_name_max_chars": 77,
-   "test_sleeps": 4
+   "test_file_lines": 231,
+   "test_fn_max_lines": 40,
+   "test_lines": 231,
+   "test_module_doc_lines": 8,
+   "test_name_max_chars": 54,
+   "test_sleeps": 0,
+   "tests": 2
   },
   "crates/tack-orch/tests/model_policy_contract.rs": {
    "doc_block_max_lines": 0,
@@ -2682,11 +3196,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 243,
+   "test_file_lines": 233,
    "test_fn_max_lines": 35,
-   "test_module_doc_lines": 19,
+   "test_lines": 233,
+   "test_module_doc_lines": 9,
    "test_name_max_chars": 42,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 1
   },
   "crates/tack-orch/tests/runner_contract.rs": {
    "doc_block_max_lines": 0,
@@ -2696,9 +3212,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 11,
    "test_fn_max_lines": 0,
+   "test_lines": 11,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/tests/runner_contract/domain.rs": {
    "doc_block_max_lines": 0,
@@ -2708,9 +3226,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 299,
    "test_fn_max_lines": 65,
+   "test_lines": 299,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 67,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 6
   },
   "crates/tack-orch/tests/runner_contract/fakes.rs": {
    "doc_block_max_lines": 0,
@@ -2720,9 +3240,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 261,
    "test_fn_max_lines": 38,
+   "test_lines": 261,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 67,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-orch/tests/runner_contract/fixtures.rs": {
    "doc_block_max_lines": 0,
@@ -2732,9 +3254,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 163,
    "test_fn_max_lines": 31,
+   "test_lines": 163,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 63,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 2
   },
   "crates/tack-orch/tests/runner_contract/lifecycle.rs": {
    "doc_block_max_lines": 0,
@@ -2744,9 +3268,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 151,
    "test_fn_max_lines": 29,
+   "test_lines": 151,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 76,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 3
   },
   "crates/tack-orch/tests/runner_contract/protocol.rs": {
    "doc_block_max_lines": 0,
@@ -2756,9 +3282,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 82,
    "test_fn_max_lines": 41,
+   "test_lines": 82,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 43,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 2
   },
   "crates/tack-orch/tests/scheduling.rs": {
    "doc_block_max_lines": 0,
@@ -2766,11 +3294,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 15,
+   "test_file_lines": 17,
    "test_fn_max_lines": 0,
+   "test_lines": 17,
    "test_module_doc_lines": 5,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/tests/scheduling/policy.rs": {
    "doc_block_max_lines": 0,
@@ -2778,11 +3308,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 499,
-   "test_fn_max_lines": 87,
-   "test_module_doc_lines": 16,
-   "test_name_max_chars": 66,
-   "test_sleeps": 0
+   "test_file_lines": 430,
+   "test_fn_max_lines": 39,
+   "test_lines": 430,
+   "test_module_doc_lines": 7,
+   "test_name_max_chars": 50,
+   "test_sleeps": 0,
+   "tests": 7
   },
   "crates/tack-orch/tests/scheduling/scheduler.rs": {
    "doc_block_max_lines": 0,
@@ -2790,11 +3322,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 389,
+   "test_file_lines": 382,
    "test_fn_max_lines": 34,
-   "test_module_doc_lines": 13,
-   "test_name_max_chars": 73,
-   "test_sleeps": 0
+   "test_lines": 382,
+   "test_module_doc_lines": 6,
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 10
   },
   "crates/tack-orch/tests/scheduling/support.rs": {
    "doc_block_max_lines": 0,
@@ -2804,9 +3338,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 115,
    "test_fn_max_lines": 0,
+   "test_lines": 115,
    "test_module_doc_lines": 6,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-orch/tests/scheduling/wiring.rs": {
    "doc_block_max_lines": 0,
@@ -2814,23 +3350,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 679,
-   "test_fn_max_lines": 79,
+   "test_file_lines": 497,
+   "test_fn_max_lines": 36,
+   "test_lines": 497,
    "test_module_doc_lines": 9,
-   "test_name_max_chars": 81,
-   "test_sleeps": 0
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 7
   },
   "crates/tack-runner/src/bootstrap.rs": {
-   "doc_block_max_lines": 23,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.347,
+   "src_comment_share": 0.33,
    "src_module_doc_lines": 10,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/client.rs": {
    "doc_block_max_lines": 12,
@@ -2840,9 +3380,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/clock.rs": {
    "doc_block_max_lines": 1,
@@ -2852,9 +3394,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/config.rs": {
    "doc_block_max_lines": 11,
@@ -2864,9 +3408,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/config/tests.rs": {
    "doc_block_max_lines": 0,
@@ -2876,21 +3422,25 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 218,
    "test_fn_max_lines": 36,
+   "test_lines": 218,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 78,
-   "test_sleeps": 0
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 9
   },
   "crates/tack-runner/src/engine.rs": {
-   "doc_block_max_lines": 20,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.172,
+   "src_comment_share": 0.159,
    "src_module_doc_lines": 5,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/engine/tests.rs": {
    "doc_block_max_lines": 0,
@@ -2898,11 +3448,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 3032,
-   "test_fn_max_lines": 102,
+   "test_file_lines": 2587,
+   "test_fn_max_lines": 40,
+   "test_lines": 2587,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 88,
-   "test_sleeps": 1
+   "test_name_max_chars": 60,
+   "test_sleeps": 1,
+   "tests": 40
   },
   "crates/tack-runner/src/error.rs": {
    "doc_block_max_lines": 4,
@@ -2912,9 +3464,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/filesystem.rs": {
    "doc_block_max_lines": 2,
@@ -2924,21 +3478,25 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/git.rs": {
    "doc_block_max_lines": 9,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.202,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.23,
+   "src_module_doc_lines": 24,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/git/tests.rs": {
    "doc_block_max_lines": 0,
@@ -2948,9 +3506,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 738,
    "test_fn_max_lines": 39,
+   "test_lines": 738,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 63,
-   "test_sleeps": 1
+   "test_name_max_chars": 59,
+   "test_sleeps": 1,
+   "tests": 20
   },
   "crates/tack-runner/src/harness/artifact.rs": {
    "doc_block_max_lines": 4,
@@ -2960,9 +3520,11 @@
    "src_module_doc_lines": 18,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/harness/artifact/tests.rs": {
    "doc_block_max_lines": 0,
@@ -2970,23 +3532,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 192,
-   "test_fn_max_lines": 43,
+   "test_file_lines": 179,
+   "test_fn_max_lines": 40,
+   "test_lines": 179,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 50,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-runner/src/harness/claude_code.rs": {
    "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.222,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.234,
+   "src_module_doc_lines": 11,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/harness/claude_code/tests.rs": {
    "doc_block_max_lines": 0,
@@ -2994,23 +3560,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 1735,
-   "test_fn_max_lines": 73,
+   "test_file_lines": 1344,
+   "test_fn_max_lines": 43,
+   "test_lines": 1344,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 89,
-   "test_sleeps": 1
+   "test_name_max_chars": 60,
+   "test_sleeps": 1,
+   "tests": 21
   },
   "crates/tack-runner/src/harness/codex.rs": {
-   "doc_block_max_lines": 7,
+   "doc_block_max_lines": 8,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.177,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.191,
+   "src_module_doc_lines": 11,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/harness/codex/tests.rs": {
    "doc_block_max_lines": 0,
@@ -3018,23 +3588,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 1149,
-   "test_fn_max_lines": 54,
+   "test_file_lines": 909,
+   "test_fn_max_lines": 38,
+   "test_lines": 909,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 88,
-   "test_sleeps": 2
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 14
   },
   "crates/tack-runner/src/harness/event_sink.rs": {
    "doc_block_max_lines": 5,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.161,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.245,
+   "src_module_doc_lines": 24,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/harness/event_sink/tests.rs": {
    "doc_block_max_lines": 0,
@@ -3044,9 +3618,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 197,
    "test_fn_max_lines": 33,
+   "test_lines": 197,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 67,
-   "test_sleeps": 0
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 6
   },
   "crates/tack-runner/src/harness/fixtures/mod.rs": {
    "doc_block_max_lines": 7,
@@ -3056,9 +3632,25 @@
    "src_module_doc_lines": 9,
    "test_file_lines": 0,
    "test_fn_max_lines": 16,
+   "test_lines": 33,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 51,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 2
+  },
+  "crates/tack-runner/src/harness/local_process.rs": {
+   "doc_block_max_lines": 8,
+   "env_gated_tests": 0,
+   "inline_test_lines": 0,
+   "src_comment_share": 0.319,
+   "src_module_doc_lines": 15,
+   "test_file_lines": 0,
+   "test_fn_max_lines": 0,
+   "test_lines": 0,
+   "test_module_doc_lines": 0,
+   "test_name_max_chars": 0,
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/harness/locate.rs": {
    "doc_block_max_lines": 12,
@@ -3068,21 +3660,25 @@
    "src_module_doc_lines": 15,
    "test_file_lines": 0,
    "test_fn_max_lines": 22,
+   "test_lines": 105,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 50,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-runner/src/harness/mod.rs": {
-   "doc_block_max_lines": 25,
+   "doc_block_max_lines": 15,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.395,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.347,
+   "src_module_doc_lines": 12,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/harness/process.rs": {
    "doc_block_max_lines": 7,
@@ -3092,9 +3688,11 @@
    "src_module_doc_lines": 27,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/harness/process/tests.rs": {
    "doc_block_max_lines": 0,
@@ -3102,11 +3700,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 395,
-   "test_fn_max_lines": 47,
+   "test_file_lines": 374,
+   "test_fn_max_lines": 39,
+   "test_lines": 374,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 67,
-   "test_sleeps": 2
+   "test_name_max_chars": 60,
+   "test_sleeps": 2,
+   "tests": 9
   },
   "crates/tack-runner/src/harness/redact.rs": {
    "doc_block_max_lines": 9,
@@ -3116,9 +3716,11 @@
    "src_module_doc_lines": 19,
    "test_file_lines": 0,
    "test_fn_max_lines": 18,
+   "test_lines": 111,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 68,
-   "test_sleeps": 0
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 9
   },
   "crates/tack-runner/src/harness/sha256.rs": {
    "doc_block_max_lines": 1,
@@ -3128,9 +3730,11 @@
    "src_module_doc_lines": 14,
    "test_file_lines": 0,
    "test_fn_max_lines": 14,
+   "test_lines": 42,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 49,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 3
   },
   "crates/tack-runner/src/harness/tests.rs": {
    "doc_block_max_lines": 0,
@@ -3138,11 +3742,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 772,
-   "test_fn_max_lines": 125,
+   "test_file_lines": 994,
+   "test_fn_max_lines": 39,
+   "test_lines": 994,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 90,
-   "test_sleeps": 0
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 17
   },
   "crates/tack-runner/src/journal.rs": {
    "doc_block_max_lines": 3,
@@ -3152,9 +3758,11 @@
    "src_module_doc_lines": 4,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/journal/tests.rs": {
    "doc_block_max_lines": 0,
@@ -3164,9 +3772,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 162,
    "test_fn_max_lines": 33,
+   "test_lines": 162,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 74,
-   "test_sleeps": 0
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-runner/src/lib.rs": {
    "doc_block_max_lines": 0,
@@ -3176,9 +3786,11 @@
    "src_module_doc_lines": 5,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/main.rs": {
    "doc_block_max_lines": 3,
@@ -3188,9 +3800,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/process.rs": {
    "doc_block_max_lines": 2,
@@ -3200,9 +3814,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/provider/anthropic.rs": {
    "doc_block_max_lines": 6,
@@ -3212,21 +3828,25 @@
    "src_module_doc_lines": 13,
    "test_file_lines": 0,
    "test_fn_max_lines": 21,
+   "test_lines": 69,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 76,
-   "test_sleeps": 0
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 3
   },
   "crates/tack-runner/src/provider/mod.rs": {
-   "doc_block_max_lines": 14,
+   "doc_block_max_lines": 9,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.376,
+   "src_comment_share": 0.349,
    "src_module_doc_lines": 25,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/provider/tests.rs": {
    "doc_block_max_lines": 0,
@@ -3234,23 +3854,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 349,
-   "test_fn_max_lines": 87,
+   "test_file_lines": 360,
+   "test_fn_max_lines": 36,
+   "test_lines": 360,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 89,
-   "test_sleeps": 0
+   "test_name_max_chars": 57,
+   "test_sleeps": 0,
+   "tests": 8
   },
   "crates/tack-runner/src/provider/vercel_ai_gateway.rs": {
-   "doc_block_max_lines": 19,
+   "doc_block_max_lines": 12,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.333,
+   "src_comment_share": 0.288,
    "src_module_doc_lines": 4,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/provider/vercel_ai_gateway/tests.rs": {
    "doc_block_max_lines": 0,
@@ -3258,11 +3882,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 246,
-   "test_fn_max_lines": 53,
+   "test_file_lines": 260,
+   "test_fn_max_lines": 37,
+   "test_lines": 260,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 88,
-   "test_sleeps": 0
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 5
   },
   "crates/tack-runner/src/registry.rs": {
    "doc_block_max_lines": 1,
@@ -3272,9 +3898,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/runtime.rs": {
    "doc_block_max_lines": 1,
@@ -3284,9 +3912,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 0,
    "test_fn_max_lines": 20,
+   "test_lines": 122,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 51,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 2
   },
   "crates/tack-runner/src/secrets.rs": {
    "doc_block_max_lines": 14,
@@ -3296,9 +3926,11 @@
    "src_module_doc_lines": 24,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/secrets/tests.rs": {
    "doc_block_max_lines": 0,
@@ -3306,23 +3938,27 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 189,
+   "test_file_lines": 193,
    "test_fn_max_lines": 25,
+   "test_lines": 193,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 61,
-   "test_sleeps": 1
+   "test_name_max_chars": 57,
+   "test_sleeps": 0,
+   "tests": 11
   },
   "crates/tack-runner/src/transport.rs": {
    "doc_block_max_lines": 9,
    "env_gated_tests": 0,
    "inline_test_lines": 0,
-   "src_comment_share": 0.139,
-   "src_module_doc_lines": 8,
+   "src_comment_share": 0.155,
+   "src_module_doc_lines": 30,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/transport/tests.rs": {
    "doc_block_max_lines": 0,
@@ -3330,11 +3966,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 1030,
-   "test_fn_max_lines": 113,
+   "test_file_lines": 965,
+   "test_fn_max_lines": 40,
+   "test_lines": 965,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 76,
-   "test_sleeps": 0
+   "test_name_max_chars": 59,
+   "test_sleeps": 0,
+   "tests": 24
   },
   "crates/tack-runner/src/workspace.rs": {
    "doc_block_max_lines": 3,
@@ -3344,9 +3982,11 @@
    "src_module_doc_lines": 1,
    "test_file_lines": 0,
    "test_fn_max_lines": 0,
+   "test_lines": 0,
    "test_module_doc_lines": 0,
    "test_name_max_chars": 0,
-   "test_sleeps": 0
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/src/workspace/tests.rs": {
    "doc_block_max_lines": 0,
@@ -3356,9 +3996,11 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 298,
    "test_fn_max_lines": 36,
+   "test_lines": 298,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 68,
-   "test_sleeps": 0
+   "test_name_max_chars": 57,
+   "test_sleeps": 0,
+   "tests": 8
   },
   "crates/tack-runner/tests/bootstrap_entrypoint.rs": {
    "doc_block_max_lines": 0,
@@ -3366,11 +4008,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 186,
-   "test_fn_max_lines": 53,
+   "test_file_lines": 180,
+   "test_fn_max_lines": 35,
+   "test_lines": 180,
    "test_module_doc_lines": 4,
-   "test_name_max_chars": 73,
-   "test_sleeps": 1
+   "test_name_max_chars": 60,
+   "test_sleeps": 1,
+   "tests": 2
   },
   "crates/tack-runner/tests/cli.rs": {
    "doc_block_max_lines": 0,
@@ -3380,9 +4024,25 @@
    "src_module_doc_lines": 0,
    "test_file_lines": 29,
    "test_fn_max_lines": 12,
+   "test_lines": 29,
    "test_module_doc_lines": 0,
-   "test_name_max_chars": 65,
-   "test_sleeps": 0
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 2
+  },
+  "crates/tack-runner/tests/common/mod.rs": {
+   "doc_block_max_lines": 0,
+   "env_gated_tests": 0,
+   "inline_test_lines": 0,
+   "src_comment_share": 0.0,
+   "src_module_doc_lines": 0,
+   "test_file_lines": 25,
+   "test_fn_max_lines": 0,
+   "test_lines": 25,
+   "test_module_doc_lines": 1,
+   "test_name_max_chars": 0,
+   "test_sleeps": 0,
+   "tests": 0
   },
   "crates/tack-runner/tests/crash_matrix.rs": {
    "doc_block_max_lines": 0,
@@ -3390,11 +4050,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 828,
-   "test_fn_max_lines": 84,
-   "test_module_doc_lines": 0,
-   "test_name_max_chars": 84,
-   "test_sleeps": 0
+   "test_file_lines": 820,
+   "test_fn_max_lines": 40,
+   "test_lines": 820,
+   "test_module_doc_lines": 4,
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 6
   },
   "crates/tack-runner/tests/g2_journal_corruption_test.rs": {
    "doc_block_max_lines": 0,
@@ -3402,11 +4064,13 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 178,
-   "test_fn_max_lines": 55,
-   "test_module_doc_lines": 12,
-   "test_name_max_chars": 75,
-   "test_sleeps": 0
+   "test_file_lines": 161,
+   "test_fn_max_lines": 38,
+   "test_lines": 161,
+   "test_module_doc_lines": 9,
+   "test_name_max_chars": 58,
+   "test_sleeps": 0,
+   "tests": 3
   },
   "crates/tack-runner/tests/h3_checkout.rs": {
    "doc_block_max_lines": 0,
@@ -3414,21 +4078,79 @@
    "inline_test_lines": 0,
    "src_comment_share": 0.0,
    "src_module_doc_lines": 0,
-   "test_file_lines": 681,
-   "test_fn_max_lines": 55,
+   "test_file_lines": 662,
+   "test_fn_max_lines": 35,
+   "test_lines": 662,
    "test_module_doc_lines": 9,
-   "test_name_max_chars": 70,
-   "test_sleeps": 0
+   "test_name_max_chars": 60,
+   "test_sleeps": 0,
+   "tests": 6
+  },
+  "crates/tack-runner/tests/live/claude_code.rs": {
+   "doc_block_max_lines": 0,
+   "env_gated_tests": 0,
+   "inline_test_lines": 0,
+   "src_comment_share": 0.0,
+   "src_module_doc_lines": 0,
+   "test_file_lines": 449,
+   "test_fn_max_lines": 0,
+   "test_lines": 449,
+   "test_module_doc_lines": 9,
+   "test_name_max_chars": 0,
+   "test_sleeps": 0,
+   "tests": 0
+  },
+  "crates/tack-runner/tests/live/codex.rs": {
+   "doc_block_max_lines": 0,
+   "env_gated_tests": 0,
+   "inline_test_lines": 0,
+   "src_comment_share": 0.0,
+   "src_module_doc_lines": 0,
+   "test_file_lines": 286,
+   "test_fn_max_lines": 0,
+   "test_lines": 286,
+   "test_module_doc_lines": 6,
+   "test_name_max_chars": 0,
+   "test_sleeps": 0,
+   "tests": 0
+  },
+  "crates/tack-runner/tests/live/main.rs": {
+   "doc_block_max_lines": 0,
+   "env_gated_tests": 0,
+   "inline_test_lines": 0,
+   "src_comment_share": 0.0,
+   "src_module_doc_lines": 0,
+   "test_file_lines": 13,
+   "test_fn_max_lines": 0,
+   "test_lines": 13,
+   "test_module_doc_lines": 6,
+   "test_name_max_chars": 0,
+   "test_sleeps": 0,
+   "tests": 0
+  },
+  "crates/tack-test-support/src/lib.rs": {
+   "doc_block_max_lines": 4,
+   "env_gated_tests": 0,
+   "inline_test_lines": 0,
+   "src_comment_share": 0.2,
+   "src_module_doc_lines": 7,
+   "test_file_lines": 0,
+   "test_fn_max_lines": 0,
+   "test_lines": 0,
+   "test_module_doc_lines": 0,
+   "test_name_max_chars": 0,
+   "test_sleeps": 0,
+   "tests": 0
   }
  },
  "totals": {
   "env_gated_tests": 0,
-  "files": 284,
-  "prod_comment_lines": 11907,
-  "prod_lines": 56103,
-  "test_lines": 73815,
-  "test_sleeps": 74,
-  "test_to_prod_ratio": 1.316,
-  "tests": 1498
+  "files": 295,
+  "prod_comment_lines": 11144,
+  "prod_lines": 55602,
+  "test_lines": 70098,
+  "test_sleeps": 24,
+  "test_to_prod_ratio": 1.261,
+  "tests": 1407
  }
 }
