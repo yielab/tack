@@ -40,22 +40,148 @@ ROOT = Path(__file__).resolve().parent.parent
 BASELINE = Path(os.environ.get("MAINTAINABILITY_BASELINE", ROOT / "scripts" / "maintainability-baseline.json"))
 DEV_NOTES = ROOT / "docs" / "dev-notes"
 
-# Per-file budgets. `check` reports a file only when it breaks one of these AND is
-# worse than the baseline, so the tree can be brought under budget one card at a time
-# while nothing already inside a budget is allowed back out.
+# Per-file budgets. `check` reports a file only when it breaks one of these budgets,
+# unless the file+key pair is in EXCLUSIONS below — an excluded pair falls back to the
+# ratchet (over budget AND worse than the baseline), everything else is a hard cap.
 BUDGETS = {
     "inline_test_lines": 150,  # a trailing test module larger than this goes to <module>/tests.rs
     "test_file_lines": 1000,  # any file under tests/ or any <module>/tests.rs
-    "test_fn_max_lines": 60,  # one test, signature to closing brace
+    "test_fn_max_lines": 40,  # one test, signature to closing brace
     "test_name_max_chars": 60,
     "test_module_doc_lines": 10,  # `//!` preamble of a test file
     "src_module_doc_lines": 30,  # `//!` preamble of a production file
     "doc_block_max_lines": 15,  # one `///` block
-    "src_comment_share": 0.35,  # comment lines / (code + comment) in production code
+    "src_comment_share": 0.30,  # comment lines / (code + comment) in production code
     "test_sleeps": 0,  # fixed waits in test code; poll or pause time instead
     "env_gated_tests": 0,  # a test that early-returns on an env var belongs under tests/live, #[ignore]d
 }
 WORKSPACE_RATIO_KEY = "test_to_prod_ratio"
+WORKSPACE_RATIO_TOLERANCE = 0.005
+
+# Files IX-M8 left over budget and named as such (see docs/agent-handoffs/part-ix/
+# IX-M8-*.md), keyed by (file, BUDGETS key). Each still ratchets against the baseline —
+# it may not get worse — but does not block the tree at the new hard caps. Not a free
+# pass: bring a file down and delete its entry, never add one without a named reason.
+# Built from IX-M9's own `check` run against the empty dict (89 failures); each entry
+# was then cross-checked against the IX-M8 handoffs. An entry with no handoff behind it
+# is reported as a finding in docs/agent-handoffs/part-ix/IX-M9.md, not hidden here.
+_RUNNER_CONTRACT = "TODO.md named exclusion: runner_contract byte-pins runner-v1 fixtures; IX-M8-orch found its 4 files already over budget at start, not to be pruned"
+_OPENAPI_CONTRACT = "TODO.md named exclusion: openapi_contract byte-pins the OpenAPI wire shape"
+_WAVE2_GATE = "TODO.md named exclusion: wave2_gate.rs keeps its own infrastructure by design"
+_DOCKET_WIRE = "TODO.md named exclusion: docket_wire_contract_test byte-pins a wire shape"
+_DOCKET_LIVE = "TODO.md named exclusion: docket_live_test is a live test, exempt from cutting"
+EXCLUSIONS: dict[tuple[str, str], str] = {
+    # --- tack-api: IX-M8-api's Budget check names these 13 bodies / 6 files as reached-
+    # but-not-fixed ("unmet acceptance lines, never 'not worsened'"). ---
+    ("crates/tack-api/src/remote_backup/tests.rs", "test_fn_max_lines"): "IX-M8-api: touched for its name-length row only, body-length work not reached (78 lines)",
+    ("crates/tack-api/tests/handlers/crud.rs", "test_file_lines"): "IX-M8-api: touched for body-length rows only, file-length target not reached (1 154)",
+    ("crates/tack-api/tests/handlers/executions_runner_admin.rs", "test_fn_max_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (121)",
+    ("crates/tack-api/tests/handlers/local_runner.rs", "test_fn_max_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (73)",
+    ("crates/tack-api/tests/handlers/operator_read_routes.rs", "test_fn_max_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (104)",
+    ("crates/tack-api/tests/handlers/production_router.rs", "test_file_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (1 022)",
+    ("crates/tack-api/tests/handlers/production_router.rs", "test_fn_max_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (237)",
+    ("crates/tack-api/tests/openapi_contract.rs", "test_name_max_chars"): _OPENAPI_CONTRACT,
+    ("crates/tack-api/tests/orchestration/control_plane/resource.rs", "test_fn_max_lines"): "IX-M8-api reported this file met at 40; now 41 — 1-line drift since integration, see IX-M9 handoff finding",
+    ("crates/tack-api/tests/orchestration/dispatch/dual_scheduling.rs", "test_fn_max_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (81)",
+    ("crates/tack-api/tests/orchestration/fleet_templates/fleet_membership.rs", "test_fn_max_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (212)",
+    ("crates/tack-api/tests/runner_protocol/artifact_events.rs", "test_file_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (1 154)",
+    ("crates/tack-api/tests/runner_protocol/artifact_events.rs", "test_fn_max_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (105)",
+    ("crates/tack-api/tests/runner_protocol/decisions.rs", "test_file_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (1 069)",
+    ("crates/tack-api/tests/runner_protocol/decisions.rs", "test_fn_max_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (98)",
+    ("crates/tack-api/tests/runner_protocol/lifecycle.rs", "test_file_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (1 821)",
+    ("crates/tack-api/tests/runner_protocol/lifecycle.rs", "test_fn_max_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (270)",
+    ("crates/tack-api/tests/security/board_drag_wip_race.rs", "test_fn_max_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (72)",
+    ("crates/tack-api/tests/security/chaos_recovery.rs", "test_file_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (1 243)",
+    ("crates/tack-api/tests/security/chaos_recovery.rs", "test_fn_max_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (106)",
+    ("crates/tack-api/tests/security/wip_limit_race.rs", "test_fn_max_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (85)",
+    ("crates/tack-api/tests/wave2_gate.rs", "test_file_lines"): _WAVE2_GATE,
+    ("crates/tack-api/tests/wave2_gate.rs", "test_fn_max_lines"): _WAVE2_GATE,
+    ("crates/tack-api/tests/wave2_gate.rs", "test_name_max_chars"): _WAVE2_GATE,
+    # comment share is M6's territory, not IX-M8-api's (test-body only) — not recorded
+    ("crates/tack-api/src/dispatcher.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
+    ("crates/tack-api/src/github_sync.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
+    ("crates/tack-api/src/handlers/runner_protocol/retention.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
+    ("crates/tack-api/src/orch_runtime.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
+    ("crates/tack-api/src/router.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
+    ("crates/tack-api/src/server.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
+    ("crates/tack-api/src/orch_runtime/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-api (sleep count unchanged from before the card, not in its acceptance lines)",
+
+    # --- tack-cli: none of these are on IX-M8-cli's acceptance lines (name-length only) ---
+    ("crates/tack-cli/src/local_enrollment.rs", "src_comment_share"): "unmet, not recorded by IX-M8-cli (comment share, not test-body work)",
+    ("crates/tack-cli/src/local_runner.rs", "src_comment_share"): "unmet, not recorded by IX-M8-cli (comment share, not test-body work)",
+    ("crates/tack-cli/tests/e6_scheduler_e2e_test.rs", "test_sleeps"): "unmet, not recorded by IX-M8-cli (sleeps, not in its acceptance lines)",
+    ("crates/tack-cli/tests/embedded_runner_live_secret.rs", "test_sleeps"): "unmet, not recorded by IX-M8-cli (sleeps, not in its acceptance lines)",
+    ("crates/tack-cli/tests/embedded_runner_orphaned_credential.rs", "test_sleeps"): "unmet, not recorded by IX-M8-cli (sleeps, not in its acceptance lines)",
+    ("crates/tack-cli/tests/embedded_runner_state_scoping.rs", "test_sleeps"): "unmet, not recorded by IX-M8-cli (sleeps, not in its acceptance lines)",
+
+    # --- tack-core: never carded in Part IX-M8 (orch/runner/api/db/cli/dedup only) ---
+    ("crates/tack-core/src/dependency/tests.rs", "test_name_max_chars"): "unmet, not recorded by IX-M8 (tack-core was never carded)",
+    ("crates/tack-core/src/models/tests.rs", "test_name_max_chars"): "unmet, not recorded by IX-M8 (tack-core was never carded)",
+    ("crates/tack-core/src/workflow/tests.rs", "test_name_max_chars"): "unmet, not recorded by IX-M8 (tack-core was never carded)",
+
+    # --- tack-db: IX-M8-db's Budget check names both by number, "unmet, not worsened" ---
+    ("crates/tack-db/tests/migrations/orch_migrations.rs", "test_file_lines"): "IX-M8-db: 1 190 lines, splitting migration coverage forbidden by the card; every body already <=40",
+    ("crates/tack-db/tests/repository/execution_repo.rs", "test_file_lines"): "IX-M8-db: 4 176-line state-machine narrative; splitting forbidden",
+    ("crates/tack-db/tests/repository/execution_repo.rs", "test_fn_max_lines"): "IX-M8-db: 38 of 42 bodies still exceed 40 lines (up to 174); each is one race/assertion narrative on shared fixtures",
+    ("crates/tack-db/src/repo/economics.rs", "src_comment_share"): "unmet, not recorded by IX-M8-db (comment share, not test-body work)",
+
+    # --- tack-desktop: IX-M8-cli's named exception covered only supervisor.rs/tests.rs ---
+    ("crates/tack-desktop/src/paths.rs", "test_name_max_chars"): "unmet, not recorded by IX-M8-cli (its tack-desktop exception covered only supervisor.rs)",
+    ("crates/tack-desktop/src/tray.rs", "test_name_max_chars"): "unmet, not recorded by IX-M8-cli (its tack-desktop exception covered only supervisor.rs)",
+
+    # --- tack-orch: named exclusions + reconciler/tests.rs (Defect 2: forbidden split
+    # reverted, kept as one file), rest is comment share / sleeps IX-M8-orch didn't own ---
+    ("crates/tack-orch/src/reconciler/tests.rs", "test_file_lines"): "IX-M8-orch: kept as one file after reverting a forbidden split (Defect 2); file length is the only unmet line (1 921)",
+    ("crates/tack-orch/tests/docket_live_test.rs", "test_sleeps"): _DOCKET_LIVE,
+    ("crates/tack-orch/tests/docket_wire_contract_test.rs", "test_fn_max_lines"): _DOCKET_WIRE,
+    ("crates/tack-orch/tests/runner_contract/domain.rs", "test_fn_max_lines"): _RUNNER_CONTRACT,
+    ("crates/tack-orch/tests/runner_contract/domain.rs", "test_name_max_chars"): _RUNNER_CONTRACT,
+    ("crates/tack-orch/tests/runner_contract/fakes.rs", "test_name_max_chars"): _RUNNER_CONTRACT,
+    ("crates/tack-orch/tests/runner_contract/fixtures.rs", "test_name_max_chars"): _RUNNER_CONTRACT,
+    ("crates/tack-orch/tests/runner_contract/lifecycle.rs", "test_name_max_chars"): _RUNNER_CONTRACT,
+    ("crates/tack-orch/tests/runner_contract/protocol.rs", "test_fn_max_lines"): _RUNNER_CONTRACT,
+    ("crates/tack-orch/src/adapters/docket.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
+    ("crates/tack-orch/src/adapters/legacy_bridge.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
+    ("crates/tack-orch/src/adapters/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
+    ("crates/tack-orch/src/adapters/prometheus.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
+    ("crates/tack-orch/src/adapters/registry.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
+    ("crates/tack-orch/src/execution/capabilities.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
+    ("crates/tack-orch/src/execution/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
+    ("crates/tack-orch/src/execution_observability/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-orch (sleeps, not in its acceptance lines)",
+    ("crates/tack-orch/src/execution_retention.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
+    ("crates/tack-orch/src/execution_retention/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-orch (sleeps, not in its acceptance lines)",
+    ("crates/tack-orch/src/lib.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
+    ("crates/tack-orch/src/model_policy/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
+    ("crates/tack-orch/src/model_policy/wiring.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
+    ("crates/tack-orch/src/reconciler.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
+    ("crates/tack-orch/src/scheduler/batch.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
+    ("crates/tack-orch/src/scheduler/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
+    ("crates/tack-orch/src/scheduler/types.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
+    ("crates/tack-orch/src/scheduler/wiring.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
+    ("crates/tack-orch/src/usage_provenance.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
+
+    # --- tack-runner: IX-M8-runner's Budget check names both files by number ---
+    ("crates/tack-runner/src/engine/tests.rs", "test_file_lines"): "IX-M8-runner: unmet acceptance line, 2 587 lines, further split rejected",
+    ("crates/tack-runner/src/harness/claude_code/tests.rs", "test_file_lines"): "IX-M8-runner: unmet acceptance line, 1 344 lines",
+    ("crates/tack-runner/src/harness/claude_code/tests.rs", "test_fn_max_lines"): "IX-M8-runner: unmet on the interim 40-line target (41, 43), both under the 60 hard cap",
+    ("crates/tack-runner/src/bootstrap.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
+    ("crates/tack-runner/src/engine/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-runner (sleeps, not in its acceptance lines)",
+    ("crates/tack-runner/src/git/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-runner (sleeps, not in its acceptance lines)",
+    ("crates/tack-runner/src/harness/claude_code/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-runner (sleeps, not in its acceptance lines)",
+    ("crates/tack-runner/src/harness/fixtures/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
+    ("crates/tack-runner/src/harness/local_process.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
+    ("crates/tack-runner/src/harness/locate.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
+    ("crates/tack-runner/src/harness/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
+    ("crates/tack-runner/src/harness/process/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-runner (sleeps, not in its acceptance lines)",
+    ("crates/tack-runner/src/harness/redact.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
+    ("crates/tack-runner/src/provider/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
+    ("crates/tack-runner/tests/bootstrap_entrypoint.rs", "test_sleeps"): "unmet, not recorded by IX-M8-runner (sleeps, not in its acceptance lines)",
+}
+
+# Per-card budget (plan §2.3): a change may add at most this many tests or test lines,
+# measured net against the baseline, over the files `check --changed` looks at.
+PER_CARD_MAX_NEW_TESTS = 15
+PER_CARD_MAX_NEW_TEST_LINES = 600
 
 TEST_ATTR = re.compile(r"^\s*#\[(tokio::test|test|sqlx::test)")
 FN_LINE = re.compile(r"^(\s*)(pub(\([a-z]+\))?\s+)?(async\s+)?fn\s+([A-Za-z0-9_]+)\s*[<(]")
@@ -80,8 +206,11 @@ def rs_files(paths: list[str] | None) -> list[Path]:
 
 
 def changed_files() -> list[Path]:
+    # --ignored so a leftover crates/*/tests/scratch_*.rs still counts against the
+    # per-card budget below: never committed (see the bare `check`'s tracked-scratch
+    # failure, and .gitignore), but real lines and tests while it sits in the tree.
     out = subprocess.run(
-        ["git", "status", "--porcelain", "--", "crates"], cwd=ROOT, capture_output=True, text=True
+        ["git", "status", "--porcelain", "--ignored=matching", "--", "crates"], cwd=ROOT, capture_output=True, text=True
     ).stdout.splitlines()
     files = []
     for line in out:
@@ -237,7 +366,8 @@ def cmd_measure(args):
 
 def cmd_baseline(args):
     rows = [measure_file(f) for f in rs_files(None)]
-    budgeted = lambda r: {k: r[k] for k in BUDGETS}
+    per_card_keys = ("tests", "test_lines")  # not a budget; feeds the per-card delta in `check --changed`
+    budgeted = lambda r: {**{k: r[k] for k in BUDGETS}, **{k: r[k] for k in per_card_keys}}
     data = {"budgets": BUDGETS, "totals": totals(rows), "files": {r["file"]: budgeted(r) for r in rows}}
     BASELINE.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
     print(f"wrote {BASELINE}: {len(rows)} files, ratio {data['totals'][WORKSPACE_RATIO_KEY]}")
@@ -248,22 +378,36 @@ def cmd_check(args):
     base = json.loads(BASELINE.read_text()) if BASELINE.exists() else {"files": {}, "totals": {}}
     files = changed_files() if args.changed else rs_files(args.paths)
     failures = []
+    new_tests = new_test_lines = 0
     for f in files:
         r = measure_file(f)
         was = base["files"].get(r["file"], {})
         for key, cap in BUDGETS.items():
             val = r.get(key, 0)
-            if val > cap and val > was.get(key, -1):
-                failures.append(f"{r['file']}: {key}={val} (budget {cap}, baseline {was.get(key, 'new file')})")
+            if val <= cap:
+                continue
+            reason = EXCLUSIONS.get((r["file"], key))
+            if reason is None:
+                failures.append(f"{r['file']}: {key}={val} (budget {cap})")
+            elif val > was.get(key, -1):
+                failures.append(f"{r['file']}: {key}={val} (budget {cap}, baseline {was.get(key, 'new file')}) [excluded: {reason}]")
+        if args.changed:
+            new_tests += r.get("tests", 0) - was.get("tests", 0)
+            new_test_lines += r.get("test_lines", 0) - was.get("test_lines", 0)
     scratch = subprocess.run(
         ["git", "ls-files", "crates/*/tests/scratch_*.rs"], cwd=ROOT, capture_output=True, text=True
     ).stdout.split()
     for s in scratch:
         failures.append(f"{s}: scratch tests are for local proof only and are never tracked")
+    if args.changed and (new_tests > PER_CARD_MAX_NEW_TESTS or new_test_lines > PER_CARD_MAX_NEW_TEST_LINES):
+        failures.append(
+            f"changed files add {new_tests} tests and {new_test_lines} test lines "
+            f"(per-card budget {PER_CARD_MAX_NEW_TESTS} tests / {PER_CARD_MAX_NEW_TEST_LINES} test lines)"
+        )
     if not args.changed and not args.paths:
         t = totals([measure_file(f) for f in files])
         was_ratio = base["totals"].get(WORKSPACE_RATIO_KEY)
-        if was_ratio is not None and t[WORKSPACE_RATIO_KEY] > was_ratio + 0.005:
+        if was_ratio is not None and t[WORKSPACE_RATIO_KEY] > was_ratio + WORKSPACE_RATIO_TOLERANCE:
             failures.append(f"workspace {WORKSPACE_RATIO_KEY}={t[WORKSPACE_RATIO_KEY]} grew past baseline {was_ratio}")
     if failures:
         print("\nmaintainability budgets — a file got bigger than the budget allows and bigger than it was:\n")
