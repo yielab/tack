@@ -221,7 +221,7 @@ fn validation_max_items_rejects_array_exceeding_limit() {
 // 26.1 — the double-`Option` PATCH fields must distinguish "absent" (leave
 // untouched) from "null" (clear) from an explicit value.
 #[test]
-fn update_item_double_option_distinguishes_absent_null_and_value() {
+fn update_item_double_option_separates_absent_null_and_value() {
     // Absent → outer None.
     let absent: UpdateItem = serde_json::from_value(json!({})).unwrap();
     assert_eq!(absent.sprint_id, None);
@@ -283,7 +283,7 @@ fn item_source_display_and_fromstr_round_trip() {
 }
 
 #[test]
-fn item_source_fromstr_never_fails_and_unrecognised_text_is_untrusted() {
+fn item_source_fromstr_never_fails_unrecognised_is_untrusted() {
     use std::str::FromStr;
     // A future Tack version's new source value, read by this binary, or
     // outright corruption — either way this must degrade to Unknown
@@ -347,7 +347,7 @@ fn item_deserialization_defaults_missing_source_to_unknown() {
 /// key at all — it must deserialize to `None`, not fail or default to
 /// `Some(TemplateOrchestration::default())`.
 #[test]
-fn project_template_deserialization_defaults_missing_orchestration_to_none() {
+fn project_template_deserialize_defaults_missing_orch_to_none() {
     let value = json!({
         "id": Uuid::new_v4(),
         "name": "Pre-existing template without an orchestration field",
@@ -371,7 +371,7 @@ fn project_template_deserialization_defaults_missing_orchestration_to_none() {
 /// create payload with no `orchestration` key must not fail validation
 /// or deserialization.
 #[test]
-fn create_project_template_deserialization_defaults_missing_orchestration_to_none() {
+fn create_project_template_missing_orch_defaults_to_none() {
     let value = json!({
         "name": "New template, old client",
         "description": null,
