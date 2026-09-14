@@ -361,6 +361,33 @@ struct LiveAttempt {
     fencing_token: i64,
 }
 
+/// Posts a completion for `live`'s attempt, reporting `model_id` as the
+/// actual model the harness ran, with the given `usage`.
+async fn complete_attempt(
+    app: &axum::Router,
+    live: &LiveAttempt,
+    completion_id: &str,
+    model_id: &str,
+    usage: Value,
+) -> (StatusCode, Value) {
+    common::send(
+        app,
+        "POST",
+        &format!("/api/runner/v1/attempts/{}/completion", live.attempt_id),
+        completion_body(
+            &live.runner_id,
+            &live.attempt_id,
+            live.fencing_token,
+            completion_id,
+            "openai",
+            model_id,
+            usage,
+        ),
+        &headers_ref(&live.runner_auth),
+    )
+    .await
+}
+
 /// Drives an execution request through claim, accept and start — stopping
 /// short of completion so callers can inspect the in-flight
 /// `model_provenance`/`usage_economics` shape (still honestly absent) before
@@ -435,6 +462,17 @@ async fn claim_accept_start(
         agent_profile_id,
         fencing_token,
     }
+}
+
+/// The `usage` shape for a completion whose harness never reported real
+/// token/duration/cost numbers — every dimension `not_measured`, not zero.
+fn not_measured_usage() -> Value {
+    json!({
+        "tokens_in": {"value": null, "source": "not_measured"},
+        "tokens_out": {"value": null, "source": "not_measured"},
+        "duration_ms": {"value": null, "source": "not_measured"},
+        "cost_usd": {"value": null, "source": "not_measured"},
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -547,22 +585,13 @@ struct ProvenanceCase {
 async fn assert_provenance_case(case: ProvenanceCase) {
     let (app, pool, item_id) = setup().await;
     let live = claim_accept_start(&app, &item_id, case.key, "openai", "opaque/model-f6b").await;
-    let runner_auth = headers_ref(&live.runner_auth);
 
-    let (status, completed) = common::send(
+    let (status, completed) = complete_attempt(
         &app,
-        "POST",
-        &format!("/api/runner/v1/attempts/{}/completion", live.attempt_id),
-        completion_body(
-            &live.runner_id,
-            &live.attempt_id,
-            live.fencing_token,
-            &format!("{}-completion", case.key),
-            "openai",
-            case.actual_model_id,
-            case.usage,
-        ),
-        &runner_auth,
+        &live,
+        &format!("{}-completion", case.key),
+        case.actual_model_id,
+        case.usage,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{}: {completed}", case.name);
@@ -629,12 +658,7 @@ async fn attempt_summary_reports_provenance_and_cost_after_completion() {
             name: "mismatched: the harness ran a different declared model than requested",
             key: "mismatched",
             actual_model_id: "opaque/model-f6b-mismatch",
-            usage: json!({
-                "tokens_in": {"value": null, "source": "not_measured"},
-                "tokens_out": {"value": null, "source": "not_measured"},
-                "duration_ms": {"value": null, "source": "not_measured"},
-                "cost_usd": {"value": null, "source": "not_measured"},
-            }),
+            usage: not_measured_usage(),
             expected_provenance: json!({
                 "kind": "mismatched",
                 "requested_provider": "openai",
@@ -662,31 +686,16 @@ async fn create_execution_succeeds_for_item_with_a_finished_attempt() {
     let (app, _pool, item_id) = setup().await;
     let live =
         claim_accept_start(&app, &item_id, "repeat-first", "openai", "opaque/model-f6b").await;
-    let runner_auth = headers_ref(&live.runner_auth);
 
-    let (status, completed) = common::send(
+    let (status, completed) = complete_attempt(
         &app,
-        "POST",
-        &format!("/api/runner/v1/attempts/{}/completion", live.attempt_id),
-        completion_body(
-            &live.runner_id,
-            &live.attempt_id,
-            live.fencing_token,
-            "repeat-completion",
-            "openai",
-            "opaque/model-f6b",
-            json!({
-                "tokens_in": {"value": null, "source": "not_measured"},
-                "tokens_out": {"value": null, "source": "not_measured"},
-                "duration_ms": {"value": null, "source": "not_measured"},
-                "cost_usd": {"value": null, "source": "not_measured"},
-            }),
-        ),
-        &runner_auth,
+        &live,
+        "repeat-completion",
+        "opaque/model-f6b",
+        not_measured_usage(),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{completed}");
-
     // The item's one attempt is now terminal (`succeeded`). A fresh
     // idempotency key against the same item, same runner, same profile.
     let (status2, second) = common::send(
