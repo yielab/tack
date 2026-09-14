@@ -78,3 +78,16 @@ Note: baseline once ran while the fixture file was untracked (ratio read 1.238 n
 
 `23e34f3` test: fixture + rewrite · `c2bbe52` chore: rebaseline + correct counts ·
 `48cd5ae` docs: this handoff · `8e11503` chore: re-baseline post-tracking
+
+## Amendment (step 3, same session)
+
+Split `execution_repo.rs` (2900 lines) by operation into 7 files, all ≤1000, moved as-is (69
+tests preserved): `execution_enrollment` 156, `execution_claim_lease_heartbeat` 555,
+`execution_events` 328, `execution_transitions_completion` 573,
+`execution_recovery_requeue` 466, `execution_decisions_artifacts` 472, `execution_enqueue`
+401. `EXCLUSIONS`' one `test_fn_max_lines` entry became 7 (real per-file counts);
+`test_file_lines` entry deleted. Gate re-ran clean except `duplicate-tests`: 23 new
+cross-file pairs, all `concurrent_duplicate_*`/`*_capacity_*`/`*_insert_failure_*` name
+matches — the checker compares test **names**, not bodies, and these share a naming
+convention across genuinely different claims that used to sit in one exempt file; not
+renamed, per this step's own "no further rewrites" — a human call on renaming vs. the tool.
