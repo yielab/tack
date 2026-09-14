@@ -218,9 +218,7 @@ fn assert_recovery_logged_once_with_no_identifiers(
     );
 }
 
-/// Boots once, waits for the embedded runner to reach `active`, reads back
-/// its on-disk session, and drops the boot — the shape a "prior boot already
-/// enrolled" setup needs, without keeping its process alive for the caller.
+/// Boots once, waits for `active`, reads back the session, and drops the boot.
 fn first_boot_session(
     database_url: &str,
     storage_dir: &Path,
@@ -234,8 +232,7 @@ fn first_boot_session(
     (runner_id, session)
 }
 
-/// Waits for `boot` (already running) to reach `active` under a fresh
-/// identity distinct from `runner_id_before`, and reads back its session.
+/// Waits for `boot` to reach `active` under a fresh identity and reads back its session.
 fn recovered_session(
     boot: &ServerGuard,
     state_dir: &Path,

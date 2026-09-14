@@ -361,40 +361,6 @@ fn queue_request_for_runner(
     )
 }
 
-/// The project/item/agent-profile setup every test in this file starts
-/// from, differing only in the project name used to tell test runs apart.
-fn setup(server: &ServerGuard, project_name: &str) -> (String, String) {
-    let (_project_id, item_id) = create_project_and_item(server, project_name);
-    let agent_profile_id = create_agent_profile(server);
-    (item_id, agent_profile_id)
-}
-
-/// Queues a request for `runner_id` and immediately claims it, returning
-/// the request id and whatever claim result came back.
-#[allow(clippy::too_many_arguments)]
-fn queue_and_claim(
-    server: &ServerGuard,
-    item_id: &str,
-    agent_profile_id: &str,
-    runner_id: &str,
-    credential: &str,
-    idempotency_key: &str,
-    claim_request_id: &str,
-    model_id: &str,
-) -> (String, Option<String>) {
-    let created = queue_request_for_runner(
-        server,
-        item_id,
-        agent_profile_id,
-        runner_id,
-        idempotency_key,
-        model_id,
-    );
-    let request_id = created["request_id"].as_str().unwrap().to_owned();
-    let claimed = claim_once(server, runner_id, credential, claim_request_id);
-    (request_id, claimed)
-}
-
 // =======================================================================
 // 1. Healthy fleet selection — a real runner enrolled via the CLI, a real
 //    request created via the CLI, a real claim over the runner-v1 wire,
@@ -443,30 +409,32 @@ fn eligible_runner_claims_request_and_cli_sees_it_leased() {
 #[test]
 fn a_saturated_runner_leaves_a_second_request_queued() {
     let server = start_server();
-    let (item_id, agent_profile_id) = setup(&server, "E6 CLI saturation");
+    let (_project_id, item_id) = create_project_and_item(&server, "E6 CLI saturation");
+    let agent_profile_id = create_agent_profile(&server);
     let (runner_id, credential) = enroll_runner_via_cli_and_protocol(
         &server,
         "saturated-runner",
         1,
         "opaque/model-saturated",
     );
-    let queue = |key: &str, claim_id: &str| {
-        queue_and_claim(
+    let queue_and_claim = |key: &str, claim_id: &str| {
+        let created = queue_request_for_runner(
             &server,
             &item_id,
             &agent_profile_id,
             &runner_id,
-            &credential,
             key,
-            claim_id,
             "opaque/model-saturated",
-        )
+        );
+        let request_id = created["request_id"].as_str().unwrap().to_owned();
+        let claimed = claim_once(&server, &runner_id, &credential, claim_id);
+        (request_id, claimed)
     };
 
-    let (first_id, first_claim) = queue("saturation-key-1", "saturation-claim-1");
+    let (first_id, first_claim) = queue_and_claim("saturation-key-1", "saturation-claim-1");
     assert_eq!(first_claim.as_deref(), Some(first_id.as_str()));
 
-    let (second_id, second_claim) = queue("saturation-key-2", "saturation-claim-2");
+    let (second_id, second_claim) = queue_and_claim("saturation-key-2", "saturation-claim-2");
     assert_eq!(
         second_claim, None,
         "the runner's one slot is already in use; the scheduler must not double-lease it"
