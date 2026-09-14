@@ -173,7 +173,7 @@ fn error_msg_reads_the_message_key_shape_unchanged() {
 }
 
 #[test]
-fn error_msg_surfaces_code_and_message_from_the_protocol_envelope() {
+fn error_msg_surfaces_code_and_message_from_protocol_envelope() {
     let body = serde_json::json!({
         "error": {
             "code": "idempotency_conflict",
@@ -212,7 +212,7 @@ fn error_msg_distinguishes_conflict_codes_from_each_other() {
 }
 
 #[test]
-fn error_msg_falls_back_to_generic_when_nothing_recognizable_is_present() {
+fn error_msg_falls_back_to_generic_for_unrecognized_body() {
     let body = serde_json::json!({ "whatever": true });
     assert_eq!(error_msg(&body), "server error");
 }

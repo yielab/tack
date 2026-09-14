@@ -21,7 +21,7 @@ const REPOSITORY_SNAPSHOT_JSON: &str =
     r#"{"kind":"git","remote":"https://example.test/repo.git","base_revision":"main"}"#;
 
 #[test]
-fn create_execution_body_matches_the_handler_struct_exact_runner() {
+fn create_execution_body_matches_handler_struct_exact_runner() {
     let selector = Selector::ExactRunner("runr_1".into());
     let args = CreateExecutionArgs {
         item_id: "11111111-1111-1111-1111-111111111111",
@@ -64,7 +64,7 @@ fn create_execution_body_matches_the_handler_struct_exact_runner() {
 /// three fields actually satisfies the deeper types, so nobody has to
 /// rediscover this by hand against a live server again.
 #[test]
-fn create_execution_nested_blobs_satisfy_the_deeper_snapshot_types() {
+fn create_execution_nested_blobs_satisfy_deeper_snapshot_types() {
     use tack_orch::execution::{AgentProfileSnapshot, PermissionPolicy, RepositorySnapshot};
 
     let _: AgentProfileSnapshot = serde_json::from_str(AGENT_PROFILE_SNAPSHOT_JSON)
@@ -86,7 +86,7 @@ fn create_execution_nested_blobs_satisfy_the_deeper_snapshot_types() {
 }
 
 #[test]
-fn create_execution_body_defaults_optional_blobs_to_empty_object() {
+fn create_execution_body_defaults_optional_blobs_to_empty() {
     let selector = Selector::Fleet("fleet_1".into());
     let args = CreateExecutionArgs {
         item_id: "22222222-2222-2222-2222-222222222222",

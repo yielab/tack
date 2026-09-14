@@ -492,37 +492,30 @@ fn dispatch_via_gateway(
         .to_owned()
 }
 
-/// The exact order the Agents page lays out, with no "Re-check" between
-/// pasting the key and running: execution already on, key stored, dispatch.
-#[test]
-fn key_stored_while_running_reaches_next_dispatch() {
-    let env = set_up_live_secret_env();
-    let server = start_server(
-        &env.database_url,
-        &env.storage_dir,
-        &env.shim_dir,
-        &env.gateway_base,
-    );
-    let client = reqwest::blocking::Client::new();
-    let base_url = server.base_url.clone();
-
-    // Execution is on and the runner is serving before the key exists — the
-    // shape this test is about. Its boot fetched no catalog: the provider was
-    // disabled and there was no key to fetch with.
-    let runner_before = wait_for_active_runner(&client, &base_url)
+/// The runner is serving before the key exists, and its boot fetched no catalog.
+fn assert_active_with_no_catalog_fetch(
+    client: &reqwest::blocking::Client,
+    base_url: &str,
+    env: &LiveSecretEnv,
+) -> String {
+    let runner = wait_for_active_runner(client, base_url)
         .expect("the embedded runner must reach `active` before any key is stored");
     assert_eq!(
         env.authorized_hits.load(Ordering::SeqCst),
         0,
         "no catalog fetch can carry the key before the key exists"
     );
+    runner
+}
 
-    store_gateway_key(&client, &base_url, FAKE_KEY);
-
-    // The runner that serves the next dispatch booted with the key: its
-    // enrollment snapshot advertises the fake gateway's model, which it could
-    // only have fetched with that key.
-    let runner_after = wait_for_runner_advertising_the_model(&client, &base_url).expect(
+/// The same runner now advertises the gateway's model and served an authorized hit.
+fn assert_now_advertises_model(
+    client: &reqwest::blocking::Client,
+    base_url: &str,
+    env: &LiveSecretEnv,
+    runner_before: &str,
+) -> String {
+    let runner_after = wait_for_runner_advertising_the_model(client, base_url).expect(
         "after the key is stored, the serving runner must advertise the gateway's catalog — \
          a runner that never restarted keeps the empty snapshot it booted with",
     );
@@ -534,19 +527,29 @@ fn key_stored_while_running_reaches_next_dispatch() {
         env.authorized_hits.load(Ordering::SeqCst) >= 1,
         "the fake gateway must have answered a catalog fetch that carried the pasted key"
     );
+    runner_after
+}
 
-    let (item_id, profile_id) = seed_dispatch_target(&client, &base_url);
+/// Dispatches through `runner_id`, asserts success via the gateway, and
+/// that the spawn environment was pointed at that same gateway.
+fn dispatch_and_assert_success(
+    client: &reqwest::blocking::Client,
+    base_url: &str,
+    env: &LiveSecretEnv,
+    runner_id: &str,
+) {
+    let (item_id, profile_id) = seed_dispatch_target(client, base_url);
     let request_id = dispatch_via_gateway(
-        &client,
-        &base_url,
+        client,
+        base_url,
         &item_id,
         &profile_id,
-        &runner_after,
+        runner_id,
         &env.repo_dir,
         &env.base_revision,
     );
 
-    let attempt = wait_for_terminal_attempt(&client, &base_url, &request_id);
+    let attempt = wait_for_terminal_attempt(client, base_url, &request_id);
     assert_eq!(
         attempt["state"].as_str(),
         Some("succeeded"),
@@ -567,8 +570,7 @@ fn key_stored_while_running_reaches_next_dispatch() {
         Some("vercel-ai-gateway")
     );
 
-    // The harness was pointed at the fake gateway's per-harness endpoint —
-    // the spawn environment carried the provider the key enabled.
+    // The harness was pointed at the fake gateway's per-harness endpoint.
     let invoked = std::fs::read_to_string(env.shim_dir.join("invoked"))
         .expect("the fake claude records the base URL it was spawned with");
     assert_eq!(
@@ -576,6 +578,27 @@ fn key_stored_while_running_reaches_next_dispatch() {
         format!("{}/claude-code", env.gateway_base),
         "the spawn environment must point at the gateway the key belongs to"
     );
+}
+
+/// The exact order the Agents page lays out, with no "Re-check" between
+/// pasting the key and running: execution already on, key stored, dispatch.
+#[test]
+fn key_stored_while_running_reaches_next_dispatch() {
+    let env = set_up_live_secret_env();
+    let server = start_server(
+        &env.database_url,
+        &env.storage_dir,
+        &env.shim_dir,
+        &env.gateway_base,
+    );
+    let client = reqwest::blocking::Client::new();
+    let base_url = server.base_url.clone();
+
+    let runner_before = assert_active_with_no_catalog_fetch(&client, &base_url, &env);
+    store_gateway_key(&client, &base_url, FAKE_KEY);
+    let runner_after = assert_now_advertises_model(&client, &base_url, &env, &runner_before);
+
+    dispatch_and_assert_success(&client, &base_url, &env, &runner_after);
 
     drop(server);
 }
