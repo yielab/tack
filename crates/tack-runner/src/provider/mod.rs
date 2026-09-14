@@ -3,24 +3,17 @@
 //! ambient login.
 //!
 //! Every harness this crate drives already has a working, credential-free
-//! mode: the harness's own subscription/login (Claude Max, a ChatGPT plan,
-//! `codex login`, ...). That mode needs nothing from this module — it is
-//! simply the absence of a configured entry for the request's provider, and
-//! every function here treats it as `None`/a typed absence, never a second
-//! implicit case to branch on.
+//! mode (the harness's own subscription/login) needing nothing from this
+//! module — it is simply the absence of a configured entry, treated as
+//! `None`/a typed absence, never a second implicit case to branch on.
 //!
 //! What this module adds is the other mode: `RunnerConfig::providers` names
 //! an entry (`[provider.<name>]`), and [`resolve_endpoint`] tells a harness
-//! adapter what to inject when a request's provider matches one — a base
-//! URL, the name of the environment variable that must carry the
-//! credential, and the resolved credential itself. A gateway and a vendor's
-//! own direct API are the same shape here — a base URL plus a credential —
-//! so a second provider, gateway or direct, is a new [`Provider`]
-//! implementation registered in [`registry`], never a new mechanism or a
-//! branch inside an adapter, [`resolve_endpoint`] or [`attach_catalog`].
-//! Providers do not share a catalog body shape, an auth header placement,
-//! or a pricing shape, so each one parses its own catalog into the common
-//! [`CatalogEntry`] shape; nothing in this file names a vendor.
+//! adapter what to inject — a base URL, the credential env var name, and the
+//! resolved credential. A gateway and a vendor's own direct API are the same
+//! shape here, so a second provider is a new [`Provider`] impl registered in
+//! [`registry`], never a new mechanism. Each provider parses its own catalog
+//! body/auth/pricing shape into the common [`CatalogEntry`] shape.
 //!
 //! Two providers exist today: [`vercel_ai_gateway`] and [`anthropic`].
 
@@ -44,17 +37,13 @@ const CATALOG_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Recorded in `ModelCombination::discovery` for a catalog-sourced entry,
 /// distinct from `"reported"` — a vendor's published list, not something
-/// this runner measured while actually running a task (ADR 0061 decision
-/// 3).
+/// measured while actually running a task (ADR 0061 decision 3).
 pub const CATALOG_DISCOVERY: &str = "catalog_reported";
 
-/// Harness kinds whose adapters apply a [`ProviderEndpoint`]. A harness
-/// qualifies only if its adapter can point it at a configured endpoint
-/// through per-spawn injection alone — environment variables or invocation
-/// flags set for that one process. A harness that instead needs a written,
-/// persistent config file (or a package loaded at its own startup) is a
-/// materially different mechanism this crate does not implement, and stays
-/// off this list.
+/// Harness kinds whose adapters apply a [`ProviderEndpoint`] through
+/// per-spawn injection alone (env vars or invocation flags). A harness that
+/// instead needs a written config file or a startup-loaded package stays
+/// off this list — a materially different mechanism this crate doesn't implement.
 const CATALOG_ELIGIBLE_HARNESSES: [&str; 2] = ["claude-code", "codex"];
 
 /// The wire shape a harness adapter already speaks. Selects which
@@ -67,10 +56,9 @@ pub enum Wire {
     OpenAiResponses,
 }
 
-/// Which [`Wire`] a catalog-eligible harness kind speaks, so [`attach_catalog`]
-/// never records a model combination for a harness a provider cannot
-/// actually reach — a provider need not serve every wire (the Anthropic
-/// provider has no OpenAI-Responses endpoint at all).
+/// Which [`Wire`] a catalog-eligible harness kind speaks, so
+/// [`attach_catalog`] never records a combination for a harness a provider
+/// can't reach (a provider need not serve every wire).
 fn wire_for_harness(harness_kind: &str) -> Option<Wire> {
     match harness_kind {
         "claude-code" => Some(Wire::AnthropicMessages),
@@ -79,11 +67,9 @@ fn wire_for_harness(harness_kind: &str) -> Option<Wire> {
     }
 }
 
-/// What an adapter must inject to point a spawn at a configured provider
-/// endpoint instead of the harness's own default: where to send requests,
-/// which environment variable carries the credential, its resolved value,
-/// and a display label for a harness that must declare the provider under
-/// a name (codex's `-c model_providers.<key>.name`).
+/// What an adapter must inject to point a spawn at a configured provider:
+/// where to send requests, which env var carries the credential, its
+/// resolved value, and a display label (codex's `-c model_providers.<key>.name`).
 #[derive(Debug)]
 pub struct ProviderEndpoint {
     pub base_url: String,
@@ -93,22 +79,19 @@ pub struct ProviderEndpoint {
 }
 
 /// Fixed, non-configurable facts about one provider's endpoint for one
-/// wire — vendor data, never user configuration. `enabled`/`secret`
-/// ([`ProviderConfig`]) are the only two knobs a `[provider.<name>]` table
-/// exposes; a base URL or a credential env-var name is not one of them.
+/// wire — vendor data, never user configuration (`[provider.<name>]` only
+/// exposes `enabled`/`secret`).
 pub struct KnownEndpoint {
     pub base_url: &'static str,
     pub credential_env_var: &'static str,
 }
 
 /// One entry from a provider's own model catalog, parsed into the shape
-/// every provider fills regardless of its vendor's own body shape (ADR
-/// 0063 decision 5). A field the vendor's catalog does not publish is
-/// `None`, never a default or zero (decision 7). `price` and `modality`
-/// keep the vendor's own raw shape rather than a normalized one — vendor
-/// catalogs disagree too much on both (tiered pricing, regional variants,
-/// `"varies_by_provider"`; inconsistent modality shapes) for a common
-/// shape to avoid silently falsifying most of them.
+/// every provider fills regardless of its vendor's body shape (ADR 0063
+/// decision 5). An unpublished field is `None`, never a default or zero
+/// (decision 7). `price`/`modality` keep the vendor's raw shape rather than
+/// a normalized one — vendor catalogs disagree too much on both to avoid
+/// silently falsifying most of them.
 #[derive(Debug, Clone)]
 pub struct CatalogEntry {
     pub id: String,
@@ -117,10 +100,9 @@ pub struct CatalogEntry {
     pub modality: Option<serde_json::Value>,
 }
 
-/// Why `requested_provider` named a known endpoint but it could not be
-/// resolved into a working [`ProviderEndpoint`]. Every variant names a
-/// fact, never a secret value — safe inside a `HarnessError::Rejected`
-/// reason or a log line.
+/// Why `requested_provider` named a known endpoint but it could not resolve
+/// into a working [`ProviderEndpoint`]. Every variant names a fact, never a
+/// secret value — safe in a `HarnessError::Rejected` reason or a log line.
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
     #[error("provider {0:?} has no enabled [provider.<name>] entry")]
@@ -129,9 +111,8 @@ pub enum ProviderError {
     Secret(String, crate::secrets::SecretError),
 }
 
-/// Why a catalog request did not produce a parsed body — a status the
-/// vendor's own endpoint returned, or a request that never got a response
-/// at all.
+/// Why a catalog request did not produce a parsed body: a status the
+/// vendor returned, or no response at all.
 #[derive(Debug)]
 pub enum CatalogFetchError {
     Transport,
@@ -139,37 +120,29 @@ pub enum CatalogFetchError {
 }
 
 /// One provider this runner knows how to talk to in key+endpoint mode (ADR
-/// 0063 decisions 1, 2 and 4). Every vendor difference lives inside one
-/// implementation; [`resolve_endpoint`] and [`attach_catalog`] call only
-/// these methods and never a vendor's name. Adding a provider is one more
-/// [`registry`] entry and its own module.
+/// 0063 decisions 1, 2, 4). Every vendor difference lives inside one impl;
+/// [`resolve_endpoint`]/[`attach_catalog`] call only these methods, never a
+/// vendor's name. Adding a provider is one more [`registry`] entry.
 #[async_trait]
 pub trait Provider: Send + Sync {
-    /// The value recorded as `ModelProvider`/`requested_model_provider` —
-    /// the wire-level provider name a harness adapter's request carries.
+    /// The value recorded as `ModelProvider`/`requested_model_provider`.
     fn wire_name(&self) -> &'static str;
 
-    /// The `[provider.<name>]` table name and `RunnerConfig::providers` map
-    /// key for this provider.
+    /// The `[provider.<name>]` table name and `RunnerConfig::providers` key.
     fn config_key(&self) -> &'static str;
 
-    /// A human-readable label for `tack runner doctor` and
-    /// [`ProviderEndpoint::display_name`].
+    /// A human-readable label for `tack runner doctor`.
     fn display_name(&self) -> &'static str;
 
-    /// This provider's endpoint for `wire`, or `None` when it does not
-    /// serve that wire at all.
+    /// This provider's endpoint for `wire`, or `None` if it doesn't serve it.
     fn endpoint(&self, wire: Wire) -> Option<KnownEndpoint>;
 
     /// Whether a harness's own init/result line states which model actually
     /// served the request, not just which was requested. The init line is
-    /// emitted before any network call reaches this provider, so it can
-    /// only echo what was configured; whether that is also what answered
-    /// depends on whether anything between harness and model can substitute
-    /// one for another — a gateway can (routing, fallback, aliasing), a
-    /// vendor's own direct API cannot. Defaults to `false` so a provider
-    /// that does not override this is never credited with an unproven
-    /// capability; every provider in [`registry`] sets this explicitly.
+    /// emitted before any network call, so it can only echo what was
+    /// configured — a gateway can substitute a model (routing, fallback), a
+    /// vendor's direct API cannot. Defaults to `false` so an override-less
+    /// provider is never credited with an unproven capability.
     fn confirms_served_model_from_init_line(&self) -> bool {
         false
     }
@@ -281,13 +254,11 @@ pub enum CatalogStatus {
     },
 }
 
-/// Fetches every enabled provider's model catalog and, on success, records
-/// one [`ModelCombination`] per catalog-eligible harness that provider's
-/// endpoint actually reaches — never inventing an entry for a harness this
-/// machine did not probe. Returns one [`CatalogStatus`] per provider, keyed
-/// by [`Provider::config_key`]; a provider whose secret fails to resolve
-/// must not suppress another provider's catalog. Shared by
-/// `bootstrap::build_runtime` and `bootstrap::probe` so both use one path.
+/// Fetches every enabled provider's catalog and, on success, records one
+/// [`ModelCombination`] per catalog-eligible harness the endpoint actually
+/// reaches — never inventing an entry for an unprobed harness. Returns one
+/// [`CatalogStatus`] per provider keyed by `config_key`; one provider's
+/// secret failure must not suppress another's catalog.
 pub async fn attach_catalog<C: Clock>(
     capabilities: &mut RunnerCapabilities,
     providers: &BTreeMap<String, ProviderConfig>,
