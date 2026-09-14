@@ -134,7 +134,6 @@ EXCLUSIONS: dict[tuple[str, str], str] = {
     ("crates/tack-orch/src/execution_retention/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-orch (sleeps, not in its acceptance lines)",
     ("crates/tack-orch/src/lib.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
     ("crates/tack-orch/src/reconciler.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/usage_provenance.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
 
     # --- tack-runner: IX-M8-runner's Budget check names both files by number ---
     ("crates/tack-runner/src/engine/tests.rs", "test_file_lines"): "IX-M8-runner: unmet acceptance line, 2 587 lines, further split rejected",
