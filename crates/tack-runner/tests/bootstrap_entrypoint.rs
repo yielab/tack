@@ -80,7 +80,7 @@ fn spawn_delayed_enrollment_server(respond_after: Duration) -> String {
             }
         }
 
-        std::thread::sleep(respond_after);
+        tack_test_support::poll_until_sync::<()>(respond_after, || None);
 
         let body = fixture("enrollment.response.json");
         let response = format!(
