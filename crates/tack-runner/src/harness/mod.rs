@@ -41,15 +41,10 @@ pub use crate::client::{AttemptJournal, RecoveryObservation};
 
 /// A closed vocabulary for `ActualExecution.model_observation_source`, a
 /// bare `String` on the wire. Two independently implemented adapters
-/// converged on the same three meanings: `codex.rs`'s
-/// `"requested_not_confirmed"` ("cannot observe which model actually ran,
-/// so it echoes the request"); `claude_code.rs`'s `"harness_reported"` (a
-/// real `stream-json` `system`/`init` event named the model) and
-/// `"not_observed"` (neither an observation nor a request value exists —
-/// only reachable by Claude Code, the one adapter that can honor true
-/// auto-selection). This enum changes nothing about what any adapter
-/// reports; it centralizes the three literals so a future adapter cannot
-/// invent an incompatible fourth string for one of these cases.
+/// converged on the same three meanings (`codex.rs`'s
+/// `"requested_not_confirmed"`, `claude_code.rs`'s `"harness_reported"`/
+/// `"not_observed"`); this enum centralizes the three literals so a future
+/// adapter cannot invent an incompatible fourth string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelObservationSource {
     /// The value was read directly from the harness's own output (e.g.
@@ -73,14 +68,12 @@ impl ModelObservationSource {
     }
 }
 
-/// Resolves `request.environment` into concrete `NAME=value` pairs — the
-/// mechanism `claude_code.rs` and `codex.rs` call from both `validate` (to
-/// fail pre-spawn) and `start` (to build the spawned process's real
+/// Resolves `request.environment` into concrete `NAME=value` pairs, called
+/// from both `validate` (fail pre-spawn) and `start` (build the real
 /// environment). A literal `value` is used as-is; a `secret_reference`
-/// resolves through `store`; either way the value is registered with
-/// `secrets` so it is redacted if it surfaces in captured harness output.
-/// A `secret_reference` this store cannot resolve fails typed, naming only
-/// the reference — never a silently-unset variable.
+/// resolves through `store`; either way it is registered with `secrets` so
+/// it is redacted if it surfaces in captured output. An unresolvable
+/// reference fails typed, naming only the reference.
 pub(crate) fn resolve_environment(
     store: &SecretStore,
     request: &ExecutionRequestSnapshot,
@@ -116,20 +109,16 @@ pub(crate) fn resolve_environment(
 }
 
 /// Harness discovery/capability reporting, independent of any specific
-/// claimed attempt — needed because `engine::HarnessAdapter`'s five methods
-/// all take an `ExecutionSpec` or `LocalRunHandle`, which only exist once a
-/// request is claimed, and capability reporting must run before that (ADR
-/// 0066 has the full rationale).
+/// claimed attempt — needed because `engine::HarnessAdapter`'s methods all
+/// take an `ExecutionSpec`/`LocalRunHandle`, which only exist once a request
+/// is claimed (ADR 0066 has the full rationale).
 ///
-/// Capability honesty is inherited directly from the existing,
-/// already-frozen `tack_orch::execution::capabilities` types this trait
-/// returns: [`HarnessCapability`] carries a nullable `probe_error` (so
-/// "this harness could not be probed, because X" is representable without
-/// treating probe failure as this runner's own bug), and every entry in
-/// `FeatureCapabilities` is a `CapabilityValue { support, reason }` with
-/// three explicit levels — never a bare `bool`, never silently omitted to
-/// mean "no". An implementation must fill in real reasons, not leave them
-/// `None` for convenience.
+/// Capability honesty is inherited from the frozen
+/// `tack_orch::execution::capabilities` types this trait returns:
+/// [`HarnessCapability`] carries a nullable `probe_error` (a probe failure
+/// is not this runner's own bug), and every `FeatureCapabilities` entry is a
+/// `CapabilityValue { support, reason }` with three explicit levels, never a
+/// bare `bool`. An implementation must fill in real reasons.
 #[async_trait]
 pub trait HarnessProbe: Send + Sync {
     /// The kind this probe reports for. Kept as a method rather than a
@@ -137,36 +126,29 @@ pub trait HarnessProbe: Send + Sync {
     /// kind it does not itself believe it is reporting for.
     fn harness_kind(&self) -> DomainHarnessKind;
 
-    /// Detects the installed version and reports capabilities. Probing
-    /// itself can fail (binary missing, version string unparseable, ...);
-    /// that failure belongs in the returned `HarnessCapability.probe_error`,
-    /// never as an `Err` — an absent/broken installation is exactly as
-    /// "successful" a probe result as a healthy one, just less capable.
+    /// Detects the installed version and reports capabilities. A probing
+    /// failure (binary missing, unparseable version, ...) belongs in the
+    /// returned `HarnessCapability.probe_error`, never an `Err`.
     async fn probe(&self) -> HarnessCapability;
 
     /// The per-feature support this adapter honestly promises, independent
-    /// of any specific attempt. Each real adapter's `declared_capabilities`
-    /// reuses exactly the same computation `HarnessAdapter::wait` stamps
-    /// onto `ActualExecution.capability_snapshot` after a process runs, so
-    /// there is one source of truth per adapter, not two that could
-    /// diverge.
+    /// of any attempt. Each real adapter reuses exactly the computation
+    /// `HarnessAdapter::wait` stamps onto `ActualExecution.capability_snapshot`
+    /// after a process runs, so there is one source of truth, not two that
+    /// could diverge.
     ///
-    /// [`AdapterRegistry::register_probe`] calls this once, at
-    /// registration, and refuses a probe whose declared `cancel` support
-    /// exceeds [`PROCESS_GROUP_CANCEL_CEILING`] — the honest ceiling for
-    /// the only cancellation primitive this runner has
-    /// (`harness::process::SupervisedProcess::cancel`, a process-group
-    /// SIGTERM/SIGKILL, which cannot reliably reach a descendant a
-    /// harness's own shell tool spawns into a new OS session). A lying
-    /// capability is caught here, before any attempt starts.
+    /// [`AdapterRegistry::register_probe`] calls this once, at registration,
+    /// and refuses a probe whose declared `cancel` support exceeds
+    /// [`PROCESS_GROUP_CANCEL_CEILING`] — a lying capability is caught here,
+    /// before any attempt starts.
     fn declared_capabilities(&self) -> FeatureCapabilities;
 }
 
 /// The cancellation support ceiling for any [`HarnessProbe`] built on
-/// `harness::process::SupervisedProcess::cancel` — see
-/// [`HarnessProbe::declared_capabilities`]. Not a blanket "cancel can never
-/// be `Supported`" rule: an adapter with a genuinely different mechanism
-/// (e.g. walking the full descendant tree by pid) could justify a higher one.
+/// `SupervisedProcess::cancel` (a process-group SIGTERM/SIGKILL, which
+/// cannot reliably reach a descendant that starts its own session) — see
+/// [`HarnessProbe::declared_capabilities`]. Not a blanket rule: an adapter
+/// with a genuinely different mechanism could justify a higher one.
 pub const PROCESS_GROUP_CANCEL_CEILING: CapabilitySupport = CapabilitySupport::Advisory;
 
 /// A probe rejected at registration, before it can back a claimed attempt.
@@ -189,13 +171,12 @@ pub enum HarnessRegistrationError {
 
 /// Dispatches the frozen [`HarnessAdapter`] lifecycle across every
 /// registered harness kind, and aggregates [`HarnessProbe`] reports. Keys
-/// on `tack_orch::execution::HarnessKind`; `registry.rs` separately defines
-/// its own `HarnessKind` enum — the two are not yet unified.
+/// on `tack_orch::execution::HarnessKind`; `registry.rs`'s own
+/// `HarnessKind` enum is not yet unified with this one.
 ///
-/// Implements [`HarnessAdapter`] itself, so `RunnerEngine::new(protocol,
-/// adapter_registry, journal, workspaces)` is a complete, multi-harness
-/// runner with no `engine.rs` changes: adding a harness means registering
-/// it here, never adding a new engine type parameter.
+/// Implements [`HarnessAdapter`] itself, so `RunnerEngine::new(...)` is a
+/// complete, multi-harness runner with no `engine.rs` changes: adding a
+/// harness means registering it here, never a new engine type parameter.
 #[derive(Default)]
 pub struct AdapterRegistry {
     adapters: BTreeMap<String, Box<dyn HarnessAdapter>>,
@@ -219,13 +200,10 @@ impl AdapterRegistry {
         self
     }
 
-    /// Registers a probe, first checking its own [`HarnessProbe::declared_capabilities`]
-    /// against [`PROCESS_GROUP_CANCEL_CEILING`] — a lying capability is
-    /// caught before invocation. A probe that overclaims is
-    /// rejected here and never inserted — `capabilities()`/dispatch never
-    /// see it — rather than silently accepted and only discovered wrong once
-    /// a real cancellation against a live attempt fails to reach a detached
-    /// descendant.
+    /// Registers a probe, first checking its declared capabilities against
+    /// [`PROCESS_GROUP_CANCEL_CEILING`]. An overclaiming probe is rejected
+    /// here and never inserted, rather than discovered wrong only once a
+    /// real cancellation fails to reach a detached descendant.
     pub fn register_probe(
         &mut self,
         probe: Box<dyn HarnessProbe>,

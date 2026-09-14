@@ -1,28 +1,20 @@
 //! A tolerant parser for the Prometheus text exposition format, as emitted
 //! by docket's `GET /metrics` (`docket/serve.py`'s `render_metrics()`).
 //!
-//! Scope is deliberately narrow — this is not a general Prometheus client:
-//! no `# TYPE`/`# HELP` semantics are retained, no histogram/summary
-//! bucket-line reconstruction, no exemplars. It turns each data line into a
-//! flat [`MetricSample`](crate::MetricSample) (`name` + `labels` + `value`) and nothing else,
-//! which is all [`crate::ControlPlane::metrics`] promises callers.
+//! Scope is deliberately narrow — not a general Prometheus client: no `#
+//! TYPE`/`# HELP` semantics, no histogram/summary bucket reconstruction, no
+//! exemplars. Turns each data line into a flat [`MetricSample`](crate::MetricSample)
+//! (`name` + `labels` + `value`), all [`crate::ControlPlane::metrics`] promises.
+//! The metrics-ingestion path reuses this module as-is — do not write a
+//! second parser.
 //!
-//! The metrics-ingestion path reuses this module as-is — **do not write a
-//! second parser**.
+//! Import as `tack_orch::adapters::prometheus::parse` (lives at
+//! `adapters::prometheus`, not the crate root).
 //!
-//! # Public path
-//!
-//! This lives at `adapters::prometheus` (physically
-//! `src/adapters/prometheus.rs`), not at the crate root — import it as
-//! `tack_orch::adapters::prometheus::parse`.
-//!
-//! # Never panics
-//!
-//! Every code path here works over `char`s (via `Peekable<Chars>`), never
-//! raw byte offsets — a raw `&str[a..b]` slice computed from a byte position
-//! that lands mid-UTF-8-codepoint panics, and this parser's whole job is to
-//! survive input it doesn't control. A line (or one label within a line)
-//! that doesn't parse is dropped; it never aborts the rest of the scrape.
+//! **Never panics:** every code path works over `char`s (`Peekable<Chars>`),
+//! never raw byte offsets — a byte-position slice mid-UTF-8-codepoint would
+//! panic, and this parser's job is to survive input it doesn't control. A
+//! line (or one label) that doesn't parse is dropped, never aborting the scrape.
 
 use std::collections::BTreeMap;
 use std::iter::Peekable;

@@ -96,26 +96,14 @@ EXCLUSIONS: dict[tuple[str, str], str] = {
     ("crates/tack-api/tests/wave2_gate.rs", "test_file_lines"): _WAVE2_GATE,
     ("crates/tack-api/tests/wave2_gate.rs", "test_fn_max_lines"): _WAVE2_GATE,
     ("crates/tack-api/tests/wave2_gate.rs", "test_name_max_chars"): _WAVE2_GATE,
-    # comment share is M6's territory, not IX-M8-api's (test-body only) — not recorded
-    ("crates/tack-api/src/dispatcher.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
-    ("crates/tack-api/src/github_sync.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
-    ("crates/tack-api/src/handlers/runner_protocol/retention.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
-    ("crates/tack-api/src/orch_runtime.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
-    ("crates/tack-api/src/router.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
-    ("crates/tack-api/src/server.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
-
-    # --- tack-cli: none of these are on IX-M8-cli's acceptance lines (name-length only) ---
-    ("crates/tack-cli/src/local_enrollment.rs", "src_comment_share"): "unmet, not recorded by IX-M8-cli (comment share, not test-body work)",
-    ("crates/tack-cli/src/local_runner.rs", "src_comment_share"): "unmet, not recorded by IX-M8-cli (comment share, not test-body work)",
 
     # --- tack-db: IX-M8-db's Budget check names both by number, "unmet, not worsened" ---
     ("crates/tack-db/tests/migrations/orch_migrations.rs", "test_file_lines"): "IX-M8-db: 1 190 lines, splitting migration coverage forbidden by the card; every body already <=40",
     ("crates/tack-db/tests/repository/execution_repo.rs", "test_file_lines"): "IX-M8-db: 4 176-line state-machine narrative; splitting forbidden",
     ("crates/tack-db/tests/repository/execution_repo.rs", "test_fn_max_lines"): "IX-M8-db: 38 of 42 bodies still exceed 40 lines (up to 174); each is one race/assertion narrative on shared fixtures",
-    ("crates/tack-db/src/repo/economics.rs", "src_comment_share"): "unmet, not recorded by IX-M8-db (comment share, not test-body work)",
 
     # --- tack-orch: named exclusions + reconciler/tests.rs (Defect 2: forbidden split
-    # reverted, kept as one file), rest is comment share / sleeps IX-M8-orch didn't own ---
+    # reverted, kept as one file) ---
     ("crates/tack-orch/src/reconciler/tests.rs", "test_file_lines"): "IX-M8-orch: kept as one file after reverting a forbidden split (Defect 2); file length is the only unmet line (1 921)",
     ("crates/tack-orch/tests/docket_live_test.rs", "test_sleeps"): _DOCKET_LIVE,
     ("crates/tack-orch/tests/docket_wire_contract_test.rs", "test_fn_max_lines"): _DOCKET_WIRE,
@@ -125,34 +113,10 @@ EXCLUSIONS: dict[tuple[str, str], str] = {
     ("crates/tack-orch/tests/runner_contract/fixtures.rs", "test_name_max_chars"): _RUNNER_CONTRACT,
     ("crates/tack-orch/tests/runner_contract/lifecycle.rs", "test_name_max_chars"): _RUNNER_CONTRACT,
     ("crates/tack-orch/tests/runner_contract/protocol.rs", "test_fn_max_lines"): _RUNNER_CONTRACT,
-    ("crates/tack-orch/src/adapters/docket.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/adapters/legacy_bridge.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/adapters/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/adapters/prometheus.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/adapters/registry.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/execution/capabilities.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/execution/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/execution_retention.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/lib.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/model_policy/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/model_policy/wiring.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/reconciler.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/scheduler/batch.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/scheduler/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/scheduler/types.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/scheduler/wiring.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/usage_provenance.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
 
     # --- tack-runner: IX-M8-runner's Budget check names both files by number ---
     ("crates/tack-runner/src/engine/tests.rs", "test_file_lines"): "IX-M8-runner: unmet acceptance line, 2 587 lines, further split rejected",
     ("crates/tack-runner/src/harness/claude_code/tests.rs", "test_file_lines"): "IX-M8-runner: unmet acceptance line, 1 344 lines",
-    ("crates/tack-runner/src/bootstrap.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
-    ("crates/tack-runner/src/harness/fixtures/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
-    ("crates/tack-runner/src/harness/local_process.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
-    ("crates/tack-runner/src/harness/locate.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
-    ("crates/tack-runner/src/harness/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
-    ("crates/tack-runner/src/harness/redact.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
-    ("crates/tack-runner/src/provider/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
 }
 
 # Per-card budget (plan §2.3): a change may add at most this many tests or test lines,

@@ -1,18 +1,15 @@
 //! Shared executable locator for both harness adapters.
 //!
-//! A plain `PATH` search is correct when the runner is started from an
-//! interactive shell, and wrong for the two other ways it starts: the
-//! desktop app launched from a `.desktop` entry, Finder or the Start menu,
-//! and `tack service` under systemd's user manager. Both inherit a minimal
-//! session `PATH` that does not contain where `claude` and `codex` actually
-//! live on most machines, so a real install reads as "not installed".
+//! A plain `PATH` search is correct when the runner starts from an
+//! interactive shell, and wrong for the desktop app (`.desktop`
+//! entry/Finder/Start menu) and `tack service` under systemd — both inherit
+//! a minimal session `PATH` that lacks where `claude`/`codex` actually live,
+//! so a real install reads as "not installed".
 //!
-//! [`locate`] searches `PATH` first (so a shell-launched runner behaves as a
-//! shell would) and then a fixed, documented list of per-user install
-//! locations. It is pure over its arguments — no `std::env` read —
-//! so tests exercise it without touching the process environment; the only
-//! process-environment read in this crate for this purpose is
-//! [`locate_installed`], the thin impure wrapper both adapters call.
+//! [`locate`] searches `PATH` first, then a fixed list of per-user install
+//! locations. Pure over its arguments — no `std::env` read — so tests
+//! exercise it without touching the environment; [`locate_installed`] is
+//! the only impure wrapper.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -54,18 +51,15 @@ impl std::fmt::Display for NotFound {
 
 impl std::error::Error for NotFound {}
 
-/// Searches `path` (a `PATH`-style, `:`/`;`-separated list, already
-/// snapshotted by the caller) for an executable named `program`, then falls
-/// back to a fixed list of well-known per-user install directories derived
-/// from `home`. First hit wins: a machine whose shell can already see the
-/// install behaves exactly as before this locator existed.
+/// Searches `path` (already snapshotted by the caller) for an executable
+/// named `program`, then falls back to well-known per-user install
+/// directories under `home`. First hit wins, so a shell that can already
+/// see the install behaves exactly as before this locator existed.
 ///
-/// On Unix, a candidate must also carry the executable bit — a `PATH` or
-/// fallback entry can legitimately hold a non-executable file (a stale
-/// download, a doc), and that must not shadow a real install found through
-/// the next remaining entry. Symlinks (nvm installs are symlinks) are
-/// canonicalized so the resolved path is stable across the nvm version they
-/// currently point at.
+/// On Unix a candidate must also carry the executable bit, so a stale
+/// non-executable file doesn't shadow a real install further down the
+/// search. Symlinks (nvm installs are symlinks) are canonicalized so the
+/// resolved path is stable across whichever nvm version they point at.
 pub fn locate(
     program: &str,
     path: Option<&OsStr>,
@@ -75,12 +69,8 @@ pub fn locate(
 
     if let Some(path) = path {
         for dir in std::env::split_paths(path) {
-            // An empty `PATH` entry (a leading, trailing or doubled `:`, or
-            // the whole variable being empty) means "the current directory"
-            // to a shell. It is skipped here on purpose: the runner's working
-            // directory is not a place an operator installs a harness, and
-            // resolving an executable from it would let whatever sits there
-            // stand in for one.
+            // An empty `PATH` entry means "current directory" to a shell;
+            // skipped on purpose since that's not where a harness is installed.
             if dir.as_os_str().is_empty() {
                 continue;
             }

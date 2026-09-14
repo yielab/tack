@@ -1,15 +1,10 @@
-//! Event/artifact retention behavior — one bounded sweep pass.
+//! Event/artifact retention: one bounded sweep pass per call, owning only the
+//! purge *logic* — no background task, cancellation, or metrics.
+//! `execution_runtime.rs`'s `spawn_artifact_and_decision_sweep` is the
+//! recurring caller; nothing here spawns a task or sleeps.
 //!
-//! This module owns the *logic* of what gets purged and how. It
-//! deliberately does **not** own a recurring background task, cancellation,
-//! startup/shutdown wiring, or metrics — `sweep_events`/`sweep_artifacts`
-//! below are plain async functions; `execution_runtime.rs`'s
-//! `spawn_artifact_and_decision_sweep` is the recurring caller that invokes
-//! them on an interval. Nothing here spawns a task or sleeps.
-//!
-//! Two independent policies, matching `limits.json`'s two separate
-//! `retention_*_days_default` fields — an artifact's blob can outlive or be
-//! purged independently of its attempt's event history.
+//! Two independent policies (`limits.json`'s retention_event/artifact_days_default):
+//! a blob can outlive or be purged independently of its attempt's event history.
 
 use chrono::{DateTime, Duration, Utc};
 use tack_db::Repository;
@@ -23,9 +18,8 @@ pub struct RetentionPolicy {
 }
 
 impl Default for RetentionPolicy {
-    /// `docs/contracts/runner-v1/limits.json`'s
-    /// `retention_event_days_default`/`retention_artifact_days_default`
-    /// (both 30).
+    /// Matches `limits.json`'s `retention_event_days_default` and
+    /// `retention_artifact_days_default` (both 30).
     fn default() -> Self {
         Self {
             event_retention: Duration::days(30),
@@ -34,50 +28,30 @@ impl Default for RetentionPolicy {
     }
 }
 
-// `sweep_events`/`sweep_artifacts`/`SweepOutcome` are wired into production:
-// `crates/tack-api/src/execution_runtime.rs`'s
-// `spawn_artifact_and_decision_sweep` is the recurring caller, riding the
-// same `TACK_EXECUTION_RETENTION_*` schedule/gate as
-// `tack_orch::execution_retention`'s replay/event purge. Their own direct
-// tests live in this file's test module below; `runner_protocol/artifact_events.rs`
-// exercises the HTTP upload/download surface instead, never these functions
-// directly. See `crates/tack-db/tests/repository/event_artifact_retention.rs`
-// for the functions this module calls.
+// `sweep_events`/`sweep_artifacts`/`SweepOutcome` are called in production by
+// `execution_runtime.rs` on the `TACK_EXECUTION_RETENTION_*` schedule, tested
+// directly below; `runner_protocol/artifact_events.rs` exercises the HTTP
+// surface instead.
 //
-// The `#[allow(dead_code)]` below exists because `runner_protocol/artifact_events.rs`
-// and `runner_protocol/lifecycle.rs` each load an independent `#[path]` copy
-// of this file (pulling in `runner_protocol.rs` and its submodules) without
-// also loading `execution_runtime.rs`, which lives outside that `#[path]`
-// tree. Dead-code analysis follows the module graph, not the binary — the
-// two copies are distinct items even though both modules now live in the
-// same `runner_protocol` test binary — so each copy alone would otherwise
-// flag every item below as unused even though the real `tack-api` library
-// (and every other test binary that links it normally, e.g.
-// `wiring/execution_sweep.rs`) has a live caller.
-// The same `#[path]` duplication exists in `artifact_download.rs`'s own
-// module-level allow.
+// `#[allow(dead_code)]` below: `artifact_events.rs` and `lifecycle.rs` each load
+// an independent `#[path]` copy of this file without `execution_runtime.rs`, so
+// dead-code analysis (per binary) flags each copy unused despite a live caller
+// in the real `tack-api` library. Same duplication in `artifact_download.rs`.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SweepOutcome {
     pub events_deleted: u64,
     pub artifacts_deleted: u64,
-    /// Count of manifest rows this pass *observed* with no `content_reference`
-    /// at list-time (not an error — see `ArtifactStorage::remove_blob`'s own
-    /// doc comment). Diagnostic, not a promise of deletion: the
-    /// concurrent-upload guard (see
-    /// `Repository::delete_unresolved_execution_artifacts_by_row_ids`'s doc
-    /// comment) means a small number of these may survive this pass rather
-    /// than being purged, if a real upload raced in and set their reference
-    /// between this sweep's read and its delete — they are correctly
-    /// resolved (blob removed, then deleted) on a later pass instead.
+    /// Rows observed with no `content_reference` at list-time (not an error —
+    /// see `ArtifactStorage::remove_blob`). Diagnostic only: the concurrent-
+    /// upload guard can let a few survive this pass if an upload resolves them
+    /// mid-sweep; they are purged on the next pass instead.
     pub artifacts_without_a_blob: u64,
 }
 
-/// One bounded pass over `execution_events` older than `policy.event_retention`
-/// as of `now`. Returns the number of rows deleted this pass — `0` means
-/// "caught up," a non-zero result at exactly `batch_limit` is the caller's
-/// signal to call again (the recurring sweep loop in `execution_runtime.rs`
-/// loops until it sees fewer than `batch_limit`).
+/// One bounded pass over `execution_events` older than `policy.event_retention`.
+/// `0` deleted means caught up; exactly `batch_limit` deleted is the signal to
+/// call again (the loop in `execution_runtime.rs` does, until it sees fewer).
 #[allow(dead_code)] // per-compiled-binary artifact — see SweepOutcome's doc comment above
 pub async fn sweep_events(
     repo: &Repository,
@@ -91,17 +65,11 @@ pub async fn sweep_events(
 }
 
 /// One bounded pass over `execution_artifacts` older than
-/// `policy.artifact_retention`. Two-phase by construction: fetch rows with
-/// their `content_reference`, unlink each blob, only then delete the rows.
-///
-/// The final delete is split in two: rows observed with `Some(reference)`
-/// already had their blob unlinked and are safe to delete unconditionally by
-/// id. Rows observed with `None` are not — a concurrent artifact-content
-/// upload can resolve one between the read above and this function
-/// returning — so those go through
+/// `policy.artifact_retention`: fetch rows, unlink each blob, then delete.
+/// Rows with `Some(reference)` already had their blob unlinked and delete
+/// unconditionally by id. Rows with `None` go through
 /// [`Repository::delete_unresolved_execution_artifacts_by_row_ids`], which
-/// re-checks `content_reference IS NULL` inside the same atomic `DELETE`. A
-/// row that loses that race simply survives to the next pass.
+/// re-checks `content_reference IS NULL` in the same atomic `DELETE`.
 #[allow(dead_code)] // per-compiled-binary artifact — see SweepOutcome's doc comment above
 pub async fn sweep_artifacts(
     repo: &Repository,
