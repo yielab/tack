@@ -1,10 +1,7 @@
-//! The deterministic fleet scheduler.
-//!
-//! A pure decision library, no I/O: given a candidate runner pool and a request, it
-//! returns a selected runner or a typed reason none qualify. It never grants the
-//! authoritative lease itself — only the repository's fenced claim
-//! (`docs/contracts/runner-v1/`) can. [`select::select_runner`] decides one request;
-//! [`batch::schedule`] schedules several sharing a pool, priority then FIFO.
+//! The deterministic fleet scheduler: a pure decision library, no I/O.
+//! Given a candidate pool and a request it returns a selected runner or a
+//! typed reason none qualify — never the authoritative lease itself, only
+//! the repository's fenced claim can.
 
 pub mod batch;
 pub mod select;
