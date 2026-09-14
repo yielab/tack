@@ -118,6 +118,23 @@ async fn get_etag(app: &Router, item_id: Uuid) -> String {
         .to_string()
 }
 
+/// `PATCH`es an item's title with the given `If-Match` value.
+async fn patch_title(
+    app: &Router,
+    item_id: Uuid,
+    title: &str,
+    etag: &str,
+) -> axum::response::Response {
+    req_with_if_match(
+        app,
+        Method::PATCH,
+        &format!("/api/items/{item_id}"),
+        Some(json!({"title": title})),
+        Some(etag),
+    )
+    .await
+}
+
 // ─── GET returns an ETag ────────────────────────────────────────────────
 
 #[tokio::test]
@@ -195,25 +212,11 @@ async fn stale_if_match_is_rejected_with_412_and_standard_envelope() {
     let etag = get_etag(&app, item_id).await;
 
     // First PATCH with the fresh ETag succeeds and moves the version.
-    let res = req_with_if_match(
-        &app,
-        Method::PATCH,
-        &format!("/api/items/{item_id}"),
-        Some(json!({"title": "First edit"})),
-        Some(&etag),
-    )
-    .await;
+    let res = patch_title(&app, item_id, "First edit", &etag).await;
     assert_eq!(res.status(), StatusCode::OK);
 
     // Reusing the now-stale ETag must be rejected, not silently accepted.
-    let res2 = req_with_if_match(
-        &app,
-        Method::PATCH,
-        &format!("/api/items/{item_id}"),
-        Some(json!({"title": "Second edit, stale precondition"})),
-        Some(&etag),
-    )
-    .await;
+    let res2 = patch_title(&app, item_id, "Second edit, stale precondition", &etag).await;
     assert_eq!(
         res2.status(),
         StatusCode::PRECONDITION_FAILED,
@@ -282,14 +285,7 @@ async fn stale_if_match_is_rejected_with_412_with_no_racer() {
 
     // The first PATCH lands and fully completes before the second is even
     // constructed — sequential, not concurrent.
-    let first = req_with_if_match(
-        &app,
-        Method::PATCH,
-        &format!("/api/items/{item_id}"),
-        Some(json!({"title": "First write, using the fresh ETag"})),
-        Some(&etag),
-    )
-    .await;
+    let first = patch_title(&app, item_id, "First write, using the fresh ETag", &etag).await;
     assert_eq!(
         first.status(),
         StatusCode::OK,
@@ -300,14 +296,7 @@ async fn stale_if_match_is_rejected_with_412_with_no_racer() {
     // Reusing the pre-write ETag now must be rejected on its value alone —
     // nothing is racing this request, so there is no CAS-layer coincidence
     // available to explain a 412 away.
-    let second = req_with_if_match(
-        &app,
-        Method::PATCH,
-        &format!("/api/items/{item_id}"),
-        Some(json!({"title": "Second write, stale ETag, no racer"})),
-        Some(&etag),
-    )
-    .await;
+    let second = patch_title(&app, item_id, "Second write, stale ETag, no racer", &etag).await;
     assert_eq!(
         second.status(),
         StatusCode::PRECONDITION_FAILED,
@@ -474,6 +463,35 @@ async fn multi_field_wip_rejection_writes_nothing_no_version_bump() {
     );
 }
 
+fn etag_of(res: &axum::response::Response) -> String {
+    res.headers()
+        .get("etag")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned()
+}
+
+fn assert_etag_version(res: &axum::response::Response, item_id: Uuid, version: u32) {
+    assert_eq!(etag_of(res), format!("\"{item_id}-{version}\""));
+}
+
+async fn patch_fields(
+    app: &Router,
+    item_id: Uuid,
+    fields: Value,
+    etag: &str,
+) -> axum::response::Response {
+    req_with_if_match(
+        app,
+        Method::PATCH,
+        &format!("/api/items/{item_id}"),
+        Some(fields),
+        Some(etag),
+    )
+    .await
+}
+
 #[tokio::test]
 async fn nullable_fields_clear_and_body_etag_match_one_snapshot() {
     let (app, _state) = app_with_state().await;
@@ -481,48 +499,35 @@ async fn nullable_fields_clear_and_body_etag_match_one_snapshot() {
     let item_id = create_item(&app, project_id, "Nullable fields").await;
     let etag = get_etag(&app, item_id).await;
 
-    let seeded = req_with_if_match(
+    let seeded = patch_fields(
         &app,
-        Method::PATCH,
-        &format!("/api/items/{item_id}"),
-        Some(json!({"description": "note", "assignee": "Ada", "estimate": 3.5})),
-        Some(&etag),
+        item_id,
+        json!({"description": "note", "assignee": "Ada", "estimate": 3.5}),
+        &etag,
     )
     .await;
     assert_eq!(seeded.status(), StatusCode::OK);
-    let seed_etag = seeded
-        .headers()
-        .get("etag")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_owned();
+    let seed_etag = etag_of(&seeded);
 
-    let cleared = req_with_if_match(
+    let cleared = patch_fields(
         &app,
-        Method::PATCH,
-        &format!("/api/items/{item_id}"),
-        Some(json!({"description": null, "assignee": null, "estimate": null})),
-        Some(&seed_etag),
+        item_id,
+        json!({"description": null, "assignee": null, "estimate": null}),
+        &seed_etag,
     )
     .await;
     assert_eq!(cleared.status(), StatusCode::OK);
-    assert_eq!(
-        cleared.headers().get("etag").unwrap().to_str().unwrap(),
-        format!("\"{item_id}-3\""),
-        "one multi-field PATCH increments version once"
-    );
+    // One multi-field PATCH increments the version once, not once per field.
+    assert_etag_version(&cleared, item_id, 3);
     let body = body_json(cleared).await;
-    assert!(body["description"].is_null());
-    assert!(body["assignee"].is_null());
-    assert!(body["estimate"].is_null());
+    let all_null = ["description", "assignee", "estimate"]
+        .iter()
+        .all(|f| body[*f].is_null());
+    assert!(all_null, "{body}");
 
+    // GET must observe the same version as the PATCH body/ETag snapshot.
     let fresh = req(&app, Method::GET, &format!("/api/items/{item_id}"), None).await;
-    assert_eq!(
-        fresh.headers().get("etag").unwrap().to_str().unwrap(),
-        format!("\"{item_id}-3\""),
-        "GET observes the same version as the PATCH body/ETag snapshot"
-    );
+    assert_etag_version(&fresh, item_id, 3);
 }
 
 #[tokio::test]
