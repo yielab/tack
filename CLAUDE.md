@@ -166,15 +166,18 @@ notes (workflow validation, auto-status propagation, WebSocket events, attachmen
   compiler will not tell you. `scripts/check-test-hygiene.sh` enforces this (~0.7s, in
   `pre-push` and CI); production code may still use the temp directory and is not scanned.
 - **Tests have a place and a size.** A trailing `#[cfg(test)] mod tests` stays under 150
-  lines or moves to `<module>/tests.rs`; a test body is ≤ 60 lines (target 40), its name
-  ≤ 60 characters and states the claim; a test file's preamble is ≤ 10 lines; variants are
-  rows of one table-driven test; an invariant is pinned at most twice (repository + one
-  router-level test) besides the contract fixtures; no fixed waits; a live or billed test
-  lives under `tests/live/` and is `#[ignore]`d; helpers live in `tests/common` or
-  `tack-test-support`, never per file. Throwaway proof goes in `crates/*/tests/scratch_*.rs`,
-  which is gitignored and never tracked. `scripts/maintainability.py check --changed`
-  measures all of it against a committed baseline: a file may exceed a budget only if it
-  already did and is not worse. Rules, numbers and the plan: `docs/plans/human-maintainability.md`.
+  lines or moves to `<module>/tests.rs`; a test body is ≤ 40 lines, its name
+  ≤ 60 characters and states the claim; a test file's preamble is ≤ 10 lines, the file
+  itself ≤ 1 000 lines; variants are rows of one table-driven test; an invariant is pinned
+  at most twice (repository + one router-level test) besides the contract fixtures; no
+  fixed waits; a live or billed test lives under `tests/live/` and is `#[ignore]`d; a card
+  adds at most 15 tests / 600 test lines (`check --changed`, recorded in the handoff);
+  helpers live in `tests/common` or `tack-test-support`, never per file. Throwaway proof
+  goes in `crates/*/tests/scratch_*.rs`, which is gitignored and never tracked.
+  `scripts/maintainability.py check` is a hard gate at these budgets; a file named in the
+  script's own `EXCLUSIONS` is the one exception and instead ratchets against a committed
+  baseline — it may exceed its budget only if it already did and is not worse. Rules,
+  numbers and the plan: `docs/plans/human-maintainability.md`.
 - **Each board card writes one handoff** in `docs/agent-handoffs/`; corrections are
   appended as amendments, never rewritten.
 - Changing an API response shape updates the matching frontend unit/E2E mocks in the

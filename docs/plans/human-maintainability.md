@@ -35,21 +35,21 @@ next Part.
 
 ## 1. Where things are, and where they should be
 
-| Measure | 2026-09-11 | After the mechanical steps (M1–M2), as planned | **Measured 2026-09-12, after M0–M7** | Target (M8/M9) | Command |
-|---|---|---|---|---|---|
-| Production lines (Rust, no inline tests) | 57 453 | 57 453 | 55 448 (44 455 code) | — | `measure --totals` |
-| Test lines / production lines | 74 014 / **1.29** | 74 014 / 1.29 (moved, not cut) | **71 211 / 1.284** | **≤ 0.8** — or M8's measured landing, named | `measure --totals` |
-| Test lines inside `src/*.rs` | 20 882 in 40 modules over budget | **0 over budget** | 0 in the workspace; 482 in `tack-desktop/src/supervisor.rs` | 0 over 150 | `extract-tests` (dry run) |
-| Unit-test lines in `src/**/tests.rs` (no M4 card owned them) | — | — | 23 070, 747 tests, 74 files | in M8 | `measure --json` |
-| Tests | 1 498 (18.8 s) | 1 498 | 1 413 (16–17 s) | ≈ 1 000 | `nextest run --workspace` |
-| Test bodies over 60 / over 40 lines; names over 60 chars; files over 1 000 lines | — | — | **135** / 353; **207**; **17** | 0 outside M8's exclusions | `measure --json` |
-| Comment lines in production | 13 374 (23 %) | ≈ 12 300 (25 preambles moved) | 10 993 (**19.8 %**) | ≤ 20 %, no file > 35 % | `measure` |
-| Comment blocks over budget | 149 in 104 files | 124 | **0** | 0 | `comment-worklist` |
-| `docs/dev-notes/` notes | 0 | 25 | **0** (directory deleted by IX-M6-dev-notes) | 0 | `find docs/dev-notes -type f` |
-| Near-identical test names across files | 72 pairs | 72 | **49** | 0 | `duplicate-tests` |
-| Fixed waits in test code | 74 `sleep(` (25 ≥ 200 ms) | 74 | 38 `sleep(` (**11** ≥ 200 ms, 11.8 s) | 0 | `measure --totals`; `scripts/list-fixed-waits.py` |
-| Live tests hiding in unit modules | 1 | 0 | 0 | 0 | `measure --json` |
-| Docs `.md` in the read path (no `closed-cycles/`, no generated) | 91 089 | 91 089 | **29 878** (+ 66 302 archived) | ≈ 30 000 | Appendix A |
+| Measure | 2026-09-11 | After the mechanical steps (M1–M2), as planned | **Measured 2026-09-12, after M0–M7** | Target (M8/M9) | **Measured 2026-09-14, after M8–M9** | Command |
+|---|---|---|---|---|---|---|
+| Production lines (Rust, no inline tests) | 57 453 | 57 453 | 55 448 (44 455 code) | — | 55 602 | `measure --totals` |
+| Test lines / production lines | 74 014 / **1.29** | 74 014 / 1.29 (moved, not cut) | **71 211 / 1.284** | **≤ 0.8** — or M8's measured landing, named | **70 098 / 1.261 — locked as the ceiling** | `measure --totals` |
+| Test lines inside `src/*.rs` | 20 882 in 40 modules over budget | **0 over budget** | 0 in the workspace; 482 in `tack-desktop/src/supervisor.rs` | 0 over 150 | unchanged (M9 touched no Rust) | `extract-tests` (dry run) |
+| Unit-test lines in `src/**/tests.rs` (no M4 card owned them) | — | — | 23 070, 747 tests, 74 files | in M8 | closed by M8 | `measure --json` |
+| Tests | 1 498 (18.8 s) | 1 498 | 1 413 (16–17 s) | ≈ 1 000 | 1 407 | `nextest run --workspace` |
+| Test bodies over 60 / over 40 lines; names over 60 chars; files over 1 000 lines | — | — | **135** / 353; **207**; **17** | 0 outside M8's exclusions | **16** / 20; **11**; **12** — all in `EXCLUSIONS` (89 file×budget entries, `scripts/maintainability.py`) | `measure --json` |
+| Comment lines in production | 13 374 (23 %) | ≈ 12 300 (25 preambles moved) | 10 993 (**19.8 %**) | ≤ 20 %, no file > 35 % | 11 144 (**20.0 %**); per-file cap tightened to 30 %, 33 files in `EXCLUSIONS` (M6's scope, never M8's — see IX-M9 handoff) | `measure` |
+| Comment blocks over budget | 149 in 104 files | 124 | **0** | 0 | 0 | `comment-worklist` |
+| `docs/dev-notes/` notes | 0 | 25 | **0** (directory deleted by IX-M6-dev-notes) | 0 | 0 | `find docs/dev-notes -type f` |
+| Near-identical test names across files | 72 pairs | 72 | **49** | 0 | 0 | `duplicate-tests` |
+| Fixed waits in test code | 74 `sleep(` (25 ≥ 200 ms) | 74 | 38 `sleep(` (**11** ≥ 200 ms, 11.8 s) | 0 | 24 `sleep(` in tests, all 24 in `EXCLUSIONS` (unchanged — M9 touched no Rust) | `measure --totals`; `scripts/list-fixed-waits.py` |
+| Live tests hiding in unit modules | 1 | 0 | 0 | 0 | 0 | `measure --json` |
+| Docs `.md` in the read path (no `closed-cycles/`, no generated) | 91 089 | 91 089 | **29 878** (+ 66 302 archived) | ≈ 30 000 | unchanged (M9 touched no docs outside this plan, TESTING.md, CLAUDE.md) | Appendix A |
 
 ## 2. The test system
 
@@ -115,13 +115,15 @@ mechanisms, all checked by a script rather than a prompt:
   scratch file.
 - **A per-card budget.** At most 15 new tests and 600 new test lines per card, measured
   by `scripts/maintainability.py check --changed` and written into the handoff's
-  "Measured numbers". Over budget is a finding for the integrator, not a merge. *Not
-  implemented as of 2026-09-12 — `check` has no such rule; M9 adds it.*
-- **The ratchet.** `check` compares each changed file with
-  `scripts/maintainability-baseline.json`: a file may break a budget only if it was
-  already over it and is not worse. New files must meet every budget. The workspace
-  test : production ratio may not grow. The baseline is re-taken only by a card that
-  deliberately brought files down, never to make a red check green.
+  "Measured numbers". Over budget is a finding for the integrator, not a merge.
+  **Implemented by IX-M9 (2026-09-14).**
+- **The ratchet, now scoped to `EXCLUSIONS`.** Since IX-M9, `check` fails any file over a
+  budget in `BUDGETS` unless its (file, key) pair is listed in `scripts/maintainability.py`'s
+  `EXCLUSIONS`, each with a one-line reason. An excluded pair still ratchets against
+  `scripts/maintainability-baseline.json` — it may exceed its budget only if it was already
+  over it and is not worse; a new file must meet every budget regardless. The workspace
+  test : production ratio may not grow past its baseline. The baseline is re-taken only by
+  a card that deliberately brought files down, never to make a red check green.
 
 ## 3. Comments
 
