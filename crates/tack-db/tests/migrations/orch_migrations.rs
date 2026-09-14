@@ -126,6 +126,21 @@ async fn fresh_db_applies_orch_migrations_019_to_024() {
 
 // ─── Upgrade-in-place from an existing 18-migration database ──────────────
 
+async fn assert_tables_missing(pool: &sqlx::SqlitePool, tables: &[&str]) {
+    for table in tables {
+        assert!(
+            !table_exists(pool, table).await,
+            "table {table} must not exist yet"
+        );
+    }
+}
+
+async fn assert_tables_present(pool: &sqlx::SqlitePool, tables: &[&str]) {
+    for table in tables {
+        assert!(table_exists(pool, table).await, "table {table} must exist");
+    }
+}
+
 #[tokio::test]
 async fn upgrade_from_018_adds_orch_tables_019_to_024() {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
@@ -134,27 +149,15 @@ async fn upgrade_from_018_adds_orch_tables_019_to_024() {
     migrations::run_up_to(&pool, "018_github_links")
         .await
         .expect("apply migrations up to 018");
-
     assert!(
         table_exists(&pool, "github_links").await,
         "018_github_links should have applied"
     );
-    for table in NEW_TABLES {
-        assert!(
-            !table_exists(&pool, table).await,
-            "table {table} must not exist before the upgrade runs"
-        );
-    }
+    assert_tables_missing(&pool, &NEW_TABLES).await;
 
     // Now run the full migration set again, as `tack serve` does on every startup.
     migrations::run_all(&pool).await.expect("upgrade in place");
-
-    for table in NEW_TABLES {
-        assert!(
-            table_exists(&pool, table).await,
-            "table {table} must exist after upgrading an existing db in place"
-        );
-    }
+    assert_tables_present(&pool, &NEW_TABLES).await;
 
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _migrations")
         .fetch_one(&pool)
@@ -166,19 +169,14 @@ async fn upgrade_from_018_adds_orch_tables_019_to_024() {
     // after upgrading in place" (asserted above) is.
     assert!(
         count >= 24,
-        "at least the first 24 migrations should be recorded as applied, got {count}"
+        "at least the first 24 migrations should be recorded, got {count}"
     );
 }
 
 // ─── FK enforcement on the new tables ──────────────────────────────────────
 
-#[tokio::test]
-async fn orphan_fk_insert_rejected_on_orch_link_and_task_tables() {
-    let repo = setup_test_db().await;
-    let plane_id = insert_control_plane(repo.pool()).await;
-    let bogus = Uuid::new_v4();
-
-    let cases = [
+fn fk_violation_cases(plane_id: Uuid, bogus: Uuid) -> Vec<(&'static str, String)> {
+    vec![
         (
             "orch_links.project_id",
             format!(
@@ -216,9 +214,16 @@ async fn orphan_fk_insert_rejected_on_orch_link_and_task_tables() {
                  VALUES ('approval-token-1', '{bogus}')"
             ),
         ),
-    ];
+    ]
+}
 
-    for (label, sql) in cases {
+#[tokio::test]
+async fn orphan_fk_insert_rejected_on_orch_link_and_task_tables() {
+    let repo = setup_test_db().await;
+    let plane_id = insert_control_plane(repo.pool()).await;
+    let bogus = Uuid::new_v4();
+
+    for (label, sql) in fk_violation_cases(plane_id, bogus) {
         let result = sqlx::query(sqlx::AssertSqlSafe(sql))
             .execute(repo.pool())
             .await;
@@ -227,6 +232,20 @@ async fn orphan_fk_insert_rejected_on_orch_link_and_task_tables() {
 }
 
 // ─── Multi-attempt redispatch: composite PK on orch_tasks ─────────────────
+
+async fn insert_task_row(
+    repo: &tack_db::Repository,
+    item_id: Uuid,
+    remote_task_id: &str,
+    attempt: i64,
+) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+    sqlx::query("INSERT INTO orch_tasks (item_id, remote_task_id, attempt) VALUES (?, ?, ?)")
+        .bind(item_id.to_string())
+        .bind(remote_task_id)
+        .bind(attempt)
+        .execute(repo.pool())
+        .await
+}
 
 #[tokio::test]
 async fn orch_tasks_composite_pk_allows_redispatch_same_item() {
@@ -237,32 +256,18 @@ async fn orch_tasks_composite_pk_allows_redispatch_same_item() {
 
     // Same item, two different remote task ids (e.g. a retry) — must both succeed
     // because the PK is (item_id, remote_task_id), not item_id alone.
-    sqlx::query(
-        "INSERT INTO orch_tasks (item_id, remote_task_id, attempt) VALUES (?, 'task-a', 1)",
-    )
-    .bind(item.id.to_string())
-    .execute(repo.pool())
-    .await
-    .expect("first dispatch");
-
-    sqlx::query(
-        "INSERT INTO orch_tasks (item_id, remote_task_id, attempt) VALUES (?, 'task-b', 2)",
-    )
-    .bind(item.id.to_string())
-    .execute(repo.pool())
-    .await
-    .expect("redispatch with a new remote_task_id must succeed");
+    insert_task_row(&repo, item.id, "task-a", 1)
+        .await
+        .expect("first dispatch");
+    insert_task_row(&repo, item.id, "task-b", 2)
+        .await
+        .expect("redispatch must succeed");
 
     // But the same (item_id, remote_task_id) pair twice must collide on the PK.
-    let dup = sqlx::query(
-        "INSERT INTO orch_tasks (item_id, remote_task_id, attempt) VALUES (?, 'task-a', 3)",
-    )
-    .bind(item.id.to_string())
-    .execute(repo.pool())
-    .await;
+    let dup = insert_task_row(&repo, item.id, "task-a", 3).await;
     assert!(
         dup.is_err(),
-        "duplicate (item_id, remote_task_id) must be rejected by the composite primary key"
+        "duplicate (item_id, remote_task_id) must be rejected by the PK"
     );
 
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM orch_tasks WHERE item_id = ?")
@@ -441,6 +446,28 @@ async fn assert_version_backfilled_to_one(
     );
 }
 
+async fn insert_orch_link_row(pool: &sqlx::SqlitePool, project_id: Uuid, plane_id: Uuid) {
+    sqlx::query(
+        "INSERT INTO orch_links (project_id, control_plane_id, remote_project) VALUES (?, ?, 'demo')",
+    )
+    .bind(project_id.to_string())
+    .bind(plane_id.to_string())
+    .execute(pool)
+    .await
+    .expect("insert orch_link");
+}
+
+async fn fetch_plane_config_secrets(
+    pool: &sqlx::SqlitePool,
+    plane_id: Uuid,
+) -> (String, Option<String>) {
+    sqlx::query_as("SELECT config, secrets FROM control_planes WHERE id = ?")
+        .bind(plane_id.to_string())
+        .fetch_one(pool)
+        .await
+        .expect("select control_plane row")
+}
+
 #[tokio::test]
 async fn preexisting_rows_backfill_default_config_and_version() {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
@@ -455,43 +482,19 @@ async fn preexisting_rows_backfill_default_config_and_version() {
 
     let (project_id, item_id) = seed_item(&pool).await;
     let plane_id = insert_control_plane(&pool).await;
-    sqlx::query(
-        "INSERT INTO orch_links (project_id, control_plane_id, remote_project) VALUES (?, ?, 'demo')",
-    )
-    .bind(project_id.to_string())
-    .bind(plane_id.to_string())
-    .execute(&pool)
-    .await
-    .expect("insert orch_link");
+    insert_orch_link_row(&pool, project_id, plane_id).await;
 
     // Now bring every pre-existing row through migrations 032-036.
     migrations::run_all(&pool).await.expect("upgrade in place");
 
-    assert_version_backfilled_to_one(
-        &pool,
-        "SELECT version FROM items WHERE id = ?",
-        &item_id.to_string(),
-        "item",
-    )
-    .await;
-    assert_version_backfilled_to_one(
-        &pool,
-        "SELECT version FROM orch_links WHERE project_id = ?",
-        &project_id.to_string(),
-        "orch_link",
-    )
-    .await;
+    let item_q = "SELECT version FROM items WHERE id = ?";
+    assert_version_backfilled_to_one(&pool, item_q, &item_id.to_string(), "item").await;
+    let link_q = "SELECT version FROM orch_links WHERE project_id = ?";
+    assert_version_backfilled_to_one(&pool, link_q, &project_id.to_string(), "orch_link").await;
+    let plane_q = "SELECT version FROM control_planes WHERE id = ?";
+    assert_version_backfilled_to_one(&pool, plane_q, &plane_id.to_string(), "control_plane").await;
 
-    let (plane_version, plane_config, plane_secrets): (i64, String, Option<String>) =
-        sqlx::query_as("SELECT version, config, secrets FROM control_planes WHERE id = ?")
-            .bind(plane_id.to_string())
-            .fetch_one(&pool)
-            .await
-            .expect("select control_plane row");
-    assert_eq!(
-        plane_version, 1,
-        "a pre-existing control_plane must backfill to version 1, not 0 or NULL"
-    );
+    let (plane_config, plane_secrets) = fetch_plane_config_secrets(&pool, plane_id).await;
     assert_eq!(
         plane_config, "{}",
         "a pre-existing control_plane must backfill config to the empty-object default"
@@ -582,6 +585,30 @@ impl RunFixture037 {
     }
 }
 
+/// One run correlated to an item, one unattributed (the "CLI dispatch" case
+/// migration 022's own comment documents) — both must survive the 037
+/// rebuild with every non-renamed column byte-for-byte intact.
+fn run_fixtures_037(item_id: Uuid) -> [RunFixture037; 2] {
+    [
+        RunFixture037 {
+            run_id: "run-attributed",
+            item_id: Some(item_id),
+            source: "webhook",
+            state: "running",
+            started_at: "2026-01-01T00:00:00+00:00",
+            ended_at: None,
+        },
+        RunFixture037 {
+            run_id: "run-cli",
+            item_id: None,
+            source: "cli",
+            state: "succeeded",
+            started_at: "2026-01-02T00:00:00+00:00",
+            ended_at: Some("2026-01-02T00:10:00+00:00"),
+        },
+    ]
+}
+
 /// Inserts one pre-037 `orch_runs` row per [`RunFixture037::expected`].
 async fn insert_pre_037_run(pool: &sqlx::SqlitePool, plane_id: Uuid, fx: &RunFixture037) {
     sqlx::query(
@@ -649,27 +676,7 @@ async fn migration_037_rebuild_preserves_rows_and_fields() {
     let plane_id = insert_control_plane(&pool).await;
     let (_, item_id) = seed_item(&pool).await;
 
-    // One run correlated to an item, one unattributed (the "CLI dispatch"
-    // case migration 022's own comment documents) — both must survive the
-    // rebuild with every non-renamed column byte-for-byte intact.
-    let fixtures = [
-        RunFixture037 {
-            run_id: "run-attributed",
-            item_id: Some(item_id),
-            source: "webhook",
-            state: "running",
-            started_at: "2026-01-01T00:00:00+00:00",
-            ended_at: None,
-        },
-        RunFixture037 {
-            run_id: "run-cli",
-            item_id: None,
-            source: "cli",
-            state: "succeeded",
-            started_at: "2026-01-02T00:00:00+00:00",
-            ended_at: Some("2026-01-02T00:10:00+00:00"),
-        },
-    ];
+    let fixtures = run_fixtures_037(item_id);
     for fx in &fixtures {
         insert_pre_037_run(&pool, plane_id, fx).await;
     }
@@ -679,12 +686,8 @@ async fn migration_037_rebuild_preserves_rows_and_fields() {
     migrations::run_up_to(&pool, "037_orch_runs_rebuild")
         .await
         .expect("apply migration 037");
-
-    let after_rebuild = count_orch_runs(&pool).await;
-    assert_eq!(
-        after_rebuild, 2,
-        "the rebuild must not drop or duplicate any row"
-    );
+    let after = count_orch_runs(&pool).await;
+    assert_eq!(after, 2, "the rebuild must not drop or duplicate any row");
 
     // Every field compared at once via derived `PartialEq` against the
     // fixture's own backfill rule — a mismatch on any one field prints both
@@ -733,51 +736,50 @@ async fn migration_037_foreign_key_check_is_empty_after_rebuild() {
     );
 }
 
+async fn insert_run_attempt(
+    pool: &sqlx::SqlitePool,
+    plane_id: Uuid,
+    external_run_id: &str,
+    attempt: i64,
+) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO orch_runs (control_plane_id, external_run_id, run_attempt, remote_project) \
+         VALUES (?, ?, ?, 'demo')",
+    )
+    .bind(plane_id.to_string())
+    .bind(external_run_id)
+    .bind(attempt)
+    .execute(pool)
+    .await
+}
+
 #[tokio::test]
 async fn migration_037_pk_uniqueness_enforced_per_attempt() {
     let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
     migrations::run_up_to(&pool, "037_orch_runs_rebuild")
         .await
         .expect("apply migrations through 037");
-
     let plane_id = insert_control_plane(&pool).await;
 
-    sqlx::query(
-        "INSERT INTO orch_runs (control_plane_id, external_run_id, run_attempt, remote_project) \
-         VALUES (?, 'run-dup', 1, 'demo')",
-    )
-    .bind(plane_id.to_string())
-    .execute(&pool)
-    .await
-    .expect("first insert");
+    insert_run_attempt(&pool, plane_id, "run-dup", 1)
+        .await
+        .expect("first insert");
 
-    let dup = sqlx::query(
-        "INSERT INTO orch_runs (control_plane_id, external_run_id, run_attempt, remote_project) \
-         VALUES (?, 'run-dup', 1, 'demo')",
-    )
-    .bind(plane_id.to_string())
-    .execute(&pool)
-    .await;
+    // Same (control_plane_id, external_run_id, run_attempt) — this is exactly
+    // what the old single-column run_id PRIMARY KEY rejected for the same
+    // (plane, run) pair, just expressed over the widened key.
+    let dup = insert_run_attempt(&pool, plane_id, "run-dup", 1).await;
     assert!(
         dup.is_err(),
-        "a second row with the same (control_plane_id, external_run_id, run_attempt) must be \
-         rejected — this is exactly what the old single-column run_id PRIMARY KEY rejected for \
-         the same (plane, run) pair, just expressed over the widened key"
+        "a second row with the same widened key must be rejected"
     );
 
     // A genuinely different attempt of the same external run id is now
     // representable — proving the key was actually widened, not merely renamed.
-    let retry = sqlx::query(
-        "INSERT INTO orch_runs (control_plane_id, external_run_id, run_attempt, remote_project) \
-         VALUES (?, 'run-dup', 2, 'demo')",
-    )
-    .bind(plane_id.to_string())
-    .execute(&pool)
-    .await;
+    let retry = insert_run_attempt(&pool, plane_id, "run-dup", 2).await;
     assert!(
         retry.is_ok(),
-        "a second attempt of the same external_run_id must now be representable — that is the \
-         entire point of widening the primary key: {retry:?}"
+        "a second attempt of the same external_run_id must now work: {retry:?}"
     );
 }
 
@@ -852,16 +854,7 @@ async fn migration_038_control_plane_id_nullable_and_gains_columns() {
     );
 }
 
-#[tokio::test]
-async fn migration_038_rebuild_preserves_rows_and_fields() {
-    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
-    migrations::run_up_to(&pool, "037_orch_runs_rebuild")
-        .await
-        .expect("apply migrations through 037");
-
-    let plane_id = insert_control_plane(&pool).await;
-    let (_, item_id) = seed_item(&pool).await;
-
+async fn insert_pre_038_approval(pool: &sqlx::SqlitePool, plane_id: Uuid, item_id: Uuid) {
     sqlx::query(
         "INSERT INTO orch_approvals
             (token, control_plane_id, item_id, remote_task_id, agent, action, state,
@@ -872,9 +865,21 @@ async fn migration_038_rebuild_preserves_rows_and_fields() {
     )
     .bind(plane_id.to_string())
     .bind(item_id.to_string())
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("insert approval");
+}
+
+#[tokio::test]
+async fn migration_038_rebuild_preserves_rows_and_fields() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+    migrations::run_up_to(&pool, "037_orch_runs_rebuild")
+        .await
+        .expect("apply migrations through 037");
+
+    let plane_id = insert_control_plane(&pool).await;
+    let (_, item_id) = seed_item(&pool).await;
+    insert_pre_038_approval(&pool, plane_id, item_id).await;
 
     migrations::run_up_to(&pool, "038_orch_approvals_rebuild")
         .await
@@ -1095,17 +1100,7 @@ async fn rebuild_failure_at_every_step_rolls_back_and_retries() {
     }
 }
 
-#[tokio::test]
-async fn rebuild_refuses_foreign_key_violation_before_deletion() {
-    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
-    migrations::run_up_to(&pool, "036_control_planes_version")
-        .await
-        .expect("apply pre-rebuild schema");
-
-    // Manufacture legacy corruption on one connection. This is intentionally
-    // outside normal repository behavior: the point is to prove the rebuild
-    // fetches and asserts foreign_key_check rather than merely executing its
-    // PRAGMA and ignoring the returned rows.
+async fn insert_orphaned_legacy_run(pool: &sqlx::SqlitePool) {
     let mut connection = pool.acquire().await.expect("acquire connection");
     sqlx::query("PRAGMA foreign_keys=OFF")
         .execute(&mut *connection)
@@ -1122,7 +1117,20 @@ async fn rebuild_refuses_foreign_key_violation_before_deletion() {
         .execute(&mut *connection)
         .await
         .expect("restore FK enforcement");
-    drop(connection);
+}
+
+#[tokio::test]
+async fn rebuild_refuses_foreign_key_violation_before_deletion() {
+    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
+    migrations::run_up_to(&pool, "036_control_planes_version")
+        .await
+        .expect("apply pre-rebuild schema");
+
+    // Manufacture legacy corruption on one connection. This is intentionally
+    // outside normal repository behavior: the point is to prove the rebuild
+    // fetches and asserts foreign_key_check rather than merely executing its
+    // PRAGMA and ignoring the returned rows.
+    insert_orphaned_legacy_run(&pool).await;
 
     let error = migrations::run_all(&pool)
         .await
