@@ -98,9 +98,17 @@ EXCLUSIONS: dict[tuple[str, str], str] = {
     ("crates/tack-api/tests/wave2_gate.rs", "test_name_max_chars"): _WAVE2_GATE,
 
     # --- tack-db: IX-M8-db's Budget check names both by number, "unmet, not worsened" ---
-    ("crates/tack-db/tests/migrations/orch_migrations.rs", "test_file_lines"): "IX-M8-db: 1 190 lines, splitting migration coverage forbidden by the card; every body already <=40",
-    ("crates/tack-db/tests/repository/execution_repo.rs", "test_file_lines"): "IX-M8-db: 4 176-line state-machine narrative; splitting forbidden",
-    ("crates/tack-db/tests/repository/execution_repo.rs", "test_fn_max_lines"): "IX-M8-db: 38 of 42 bodies still exceed 40 lines (up to 174); each is one race/assertion narrative on shared fixtures",
+    ("crates/tack-db/tests/migrations/orch_migrations.rs", "test_file_lines"): "IX-X3-db: 1 190 lines, every body already <=40; natural section boundaries exist (fresh install / upgrade / FK / redispatch / 032-036 / 037-038 rebuilds) but splitting would relocate shared helpers (table_exists, column_exists, insert_control_plane, seed_item) into tests/common for marginal gain — left as one file",
+    # execution_repo.rs, split by operation under test; the race family shares one file
+    # because its near-identical names read as cross-file duplicates when scattered.
+    ("crates/tack-db/tests/repository/execution_enrollment.rs", "test_fn_max_lines"): "IX-X3-db: 2 of 3 bodies exceed 40 lines (up to 61)",
+    ("crates/tack-db/tests/repository/execution_claim_lease_heartbeat.rs", "test_fn_max_lines"): "IX-X3-db: 3 of 14 bodies exceed 40 lines (up to 67)",
+    ("crates/tack-db/tests/repository/execution_events.rs", "test_fn_max_lines"): "IX-X3-db: 1 of 6 bodies exceed 40 lines (up to 44)",
+    ("crates/tack-db/tests/repository/execution_transitions_completion.rs", "test_fn_max_lines"): "IX-X3-db: 3 of 11 bodies exceed 40 lines (up to 85)",
+    ("crates/tack-db/tests/repository/execution_recovery_requeue.rs", "test_fn_max_lines"): "IX-X3-db: 1 of 8 bodies exceed 40 lines (up to 73)",
+    ("crates/tack-db/tests/repository/execution_decisions_artifacts.rs", "test_fn_max_lines"): "IX-X3-db: 1 of 14 bodies exceed 40 lines (up to 71)",
+    ("crates/tack-db/tests/repository/execution_enqueue.rs", "test_fn_max_lines"): "IX-X3-db: 2 of 5 bodies exceed 40 lines (up to 131, the m060 legacy-migration narrative)",
+    ("crates/tack-db/tests/repository/execution_races.rs", "test_fn_max_lines"): "IX-X3-db: 7 of 8 bodies exceed 40 lines (up to 79) — every test here is one concurrent-duplicate-writer race narrative (tokio::join! + assert exactly one wins)",
 
     # --- tack-orch: named exclusions + reconciler/tests.rs (Defect 2: forbidden split
     # reverted, kept as one file) ---
