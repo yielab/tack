@@ -38,7 +38,7 @@ next Part.
 | Measure | 2026-09-11 | After the mechanical steps (M1–M2), as planned | **Measured 2026-09-12, after M0–M7** | Target (M8/M9) | **Measured 2026-09-14, after M8–M9** | Command |
 |---|---|---|---|---|---|---|
 | Production lines (Rust, no inline tests) | 57 453 | 57 453 | 55 448 (44 455 code) | — | 55 602 | `measure --totals` |
-| Test lines / production lines | 74 014 / **1.29** | 74 014 / 1.29 (moved, not cut) | **71 211 / 1.284** | **≤ 0.8** — or M8's measured landing, named | **70 098 / 1.261 — locked as the ceiling**; 70 045 / 1.274 after the comment trim shrank production lines | `measure --totals` |
+| Test lines / production lines | 74 014 / **1.29** | 74 014 / 1.29 (moved, not cut) | **71 211 / 1.284** | **≤ 0.8** — or M8's measured landing, named | **70 098 / 1.261 — locked as the ceiling**; 69 590 / 1.266 after the comment trim and the execution-repository cut | `measure --totals` |
 | Test lines inside `src/*.rs` | 20 882 in 40 modules over budget | **0 over budget** | 0 in the workspace; 482 in `tack-desktop/src/supervisor.rs` | 0 over 150 | unchanged (M9 touched no Rust) | `extract-tests` (dry run) |
 | Unit-test lines in `src/**/tests.rs` (no M4 card owned them) | — | — | 23 070, 747 tests, 74 files | in M8 | closed by M8 | `measure --json` |
 | Tests | 1 498 (18.8 s) | 1 498 | 1 413 (16–17 s) | ≈ 1 000 | 1 407 | `nextest run --workspace` |

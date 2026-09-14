@@ -162,9 +162,9 @@ fn new_request<'a>(id: &'a str, item_id: &'a str, key: &'a str) -> NewExecutionR
     // `request_snapshot` into `tack_orch::execution::ExecutionRequestSnapshot`
     // and fails the claim if it doesn't round-trip, so this must be a fully
     // well-formed snapshot — mirrors
-    // `crates/tack-db/tests/repository/execution_repo.rs`'s own
-    // `request()` helper template exactly (field-for-field), rather than
-    // inventing a new shape here.
+    // `crates/tack-db/tests/common/execution_fixture.rs`'s own `request()`
+    // helper template exactly (field-for-field), rather than inventing a
+    // new shape here.
     let request_snapshot: &'static str = Box::leak(
         format!(
             r#"{{"request_id":"{id}","item_id":"{item_id}","idempotency_key":"{key}","created_by":{{"source":"test","subject_id":"f1-test"}},"created_at":"2026-08-12T12:00:00Z","selector":{{"kind":"exact_runner","runner_id":"{RUNNER_ID}"}},"agent_profile_id":"{PROFILE_ID}","resolved_agent_profile":{{"name":"P","instructions":"work","tool_policy":{{"mode":"safe"}},"timeout_seconds":60,"budgets":{{}}}},"requested_harness_kind":"codex","requested_model_provider":null,"requested_model_id":null,"repository":{{"kind":"git","remote":"https://example.test/f1.git","base_revision":"abc123","subdirectory":null}},"permission_policy":{{"tools":[],"network":false}},"timeout_seconds":60,"budgets":{{}},"status_map_policy_id":null,"environment":{{}},"metadata":{{}}}}"#
@@ -197,10 +197,9 @@ fn new_request<'a>(id: &'a str, item_id: &'a str, key: &'a str) -> NewExecutionR
 
 /// Claims a fresh attempt (via the real production claim path, `Naive`
 /// selection) and bumps it straight to `running` — the same
-/// state-independent shortcut
-/// `crates/tack-db/tests/repository/execution_repo.rs`'s own tests use,
-/// since decision resolution does not gate on attempt state (only on the
-/// decision row's own `state`/`expires_at`).
+/// state-independent shortcut `tack-db`'s own execution-repository tests
+/// use, since decision resolution does not gate on attempt state (only on
+/// the decision row's own `state`/`expires_at`).
 async fn claim_running_attempt(
     repo: &Repository,
     clock: &FakeClock,
@@ -952,8 +951,8 @@ async fn correct_decision_token_with_valid_principal_resolves() {
 // 17. Concurrency: BEGIN IMMEDIATE serializes competing resolves.
 //
 // Modeled directly on
-// `crates/tack-db/tests/repository/execution_repo.rs`'s
-// `artifact_and_decision_cannot_land_against_concurrently_terminal_attempt`:
+// `crates/tack-db/tests/repository/execution_decisions_artifacts.rs`'s
+// `artifact_and_decision_reject_concurrently_terminal_attempt`:
 // a manually-held `BEGIN IMMEDIATE` transaction forces both racing resolves
 // to queue behind it before either can even read the row, closing the
 // "who reaches SQLite first" nondeterminism `join!`'s poll order alone
