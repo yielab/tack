@@ -637,7 +637,7 @@ async fn max_in_flight_is_clamped_into_range_and_reported_back() {
 /// A project + sprint with 4 items, linked to a control plane whose mock
 /// enqueue is deliberately slow (150ms) — the fixture `max_in_flight`'s
 /// concurrency-bound cases share, varying only the cap.
-async fn setup_slow_dispatch_sprint() -> (Router, Uuid) {
+async fn setup_slow_dispatch_sprint() -> (MockServer, Router, Uuid) {
     let server = MockServer::start().await;
     mock_enqueue_slow(&server, "task-slow", 150).await;
     mock_list_tasks(&server, "task-slow").await;
@@ -650,7 +650,7 @@ async fn setup_slow_dispatch_sprint() -> (Router, Uuid) {
     }
     let cp = create_control_plane(&app, &server.uri()).await;
     link_project(&app, project_id, cp, json!({"dispatch_from": ["Backlog"]})).await;
-    (app, sprint_id)
+    (server, app, sprint_id)
 }
 
 /// A tight cap (2, under the 4-item count) forces at least two sequential
@@ -681,7 +681,7 @@ async fn max_in_flight_bounds_actual_dispatch_concurrency() {
     ];
 
     for (cap, at_least, bound, note) in cases {
-        let (app, sprint_id) = setup_slow_dispatch_sprint().await;
+        let (_server, app, sprint_id) = setup_slow_dispatch_sprint().await;
 
         let start = Instant::now();
         let v = dispatch_sprint(&app, sprint_id, Some(cap)).await;
