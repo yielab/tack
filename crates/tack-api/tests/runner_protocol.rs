@@ -10,6 +10,8 @@ mod common;
 mod artifact_events;
 #[path = "runner_protocol/decisions.rs"]
 mod decisions;
+#[path = "runner_protocol/enrollment.rs"]
+mod enrollment;
 #[path = "runner_protocol/lifecycle.rs"]
 mod lifecycle;
 #[path = "runner_protocol/log_capture.rs"]

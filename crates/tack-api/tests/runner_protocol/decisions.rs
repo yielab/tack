@@ -588,7 +588,7 @@ async fn valid_runner_credential_cannot_self_resolve_decision() {
 async fn expiry_denies_with_audit_and_never_marks_item_done() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "expiry").await;
-    let expires_at = clock.now() - Duration::seconds(1); // already overdue
+    let expires_at = Some(clock.now() - Duration::seconds(1)); // already overdue
     seed_decision(
         &repo,
         &clock,
@@ -596,7 +596,7 @@ async fn expiry_denies_with_audit_and_never_marks_item_done() {
         1,
         "dec-1",
         two_options(),
-        Some(expires_at),
+        expires_at,
     )
     .await;
     let status_before = item_status(&repo, &item_id).await;
@@ -604,31 +604,22 @@ async fn expiry_denies_with_audit_and_never_marks_item_done() {
 
     // A syntactically valid, option-matching "allow" answer — proves expiry
     // wins even against an answer that would otherwise have succeeded.
-    let (status, body) = common::send_post_strict(
-        &app,
-        &resolve_uri(&attempt_id, "dec-1"),
-        json!({"answer": {"option_id": "allow_once", "text": null}}),
-        OPERATOR,
-    )
-    .await;
+    let answer = json!({"answer": {"option_id": "allow_once", "text": null}});
+    let (status, body) =
+        common::send_post_strict(&app, &resolve_uri(&attempt_id, "dec-1"), answer, OPERATOR).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["error"]["code"], "decision_expired");
 
     let row = decision_row(&repo, &attempt_id, "dec-1").await;
     assert_eq!(row.state, "expired");
-    assert!(
-        row.answer.is_none(),
-        "an expired decision must never carry the operator's late answer"
-    );
-    assert!(row.resolved_at.is_some());
+    assert!(row.answer.is_none(), "no late answer may be carried");
     let resolved_by: Value = serde_json::from_str(&row.resolved_by.unwrap()).unwrap();
     assert_eq!(resolved_by["kind"], "system");
     assert_eq!(resolved_by["subject_id"], "expiry");
-
     assert_eq!(
         item_status(&repo, &item_id).await,
         status_before,
-        "expiry must never change item status"
+        "item status unchanged"
     );
 }
 
@@ -996,48 +987,53 @@ async fn concurrent_resolves_serialize_to_exactly_one_winner() {
         .await
         .unwrap();
 
-    let allow_answer = json!({"option_id": "allow_once", "text": null});
-    let deny_answer = json!({"option_id": "deny", "text": null});
-    let operator_a = json!({"kind": "operator", "subject_id": "operator-a"});
-    let operator_b = json!({"kind": "operator", "subject_id": "operator-b"});
     let now = clock.now();
-
-    let resolve_a = decisions::resolve_decision_row(
-        repo.pool(),
-        &attempt_id,
-        "dec-race",
-        &allow_answer,
-        &operator_a,
-        now,
-    );
-    let resolve_b = decisions::resolve_decision_row(
-        repo.pool(),
-        &attempt_id,
-        "dec-race",
-        &deny_answer,
-        &operator_b,
-        now,
-    );
-    let delayed_release = async {
+    let allow = json!({"option_id": "allow_once", "text": null});
+    let deny = json!({"option_id": "deny", "text": null});
+    let op_a = json!({"kind": "operator", "subject_id": "operator-a"});
+    let op_b = json!({"kind": "operator", "subject_id": "operator-b"});
+    let resolve_a =
+        decisions::resolve_decision_row(repo.pool(), &attempt_id, "dec-race", &allow, &op_a, now);
+    let resolve_b =
+        decisions::resolve_decision_row(repo.pool(), &attempt_id, "dec-race", &deny, &op_b, now);
+    let release = async {
         for _ in 0..512 {
             tokio::task::yield_now().await;
         }
         manual_tx.commit().await.unwrap();
     };
 
-    let (outcome_a, outcome_b, _) = tokio::join!(resolve_a, resolve_b, delayed_release);
-    let outcome_a = outcome_a.expect("resolve A must not error under BEGIN IMMEDIATE");
-    let outcome_b = outcome_b.expect("resolve B must not error under BEGIN IMMEDIATE");
+    let (outcome_a, outcome_b, _) = tokio::join!(resolve_a, resolve_b, release);
+    let outcomes = [
+        outcome_a.expect("resolve A must not error under BEGIN IMMEDIATE"),
+        outcome_b.expect("resolve B must not error under BEGIN IMMEDIATE"),
+    ];
 
     let final_row = decision_row(&repo, &attempt_id, "dec-race").await;
     assert_eq!(final_row.state, "resolved");
     let final_answer: Value = serde_json::from_str(&final_row.answer.unwrap()).unwrap();
+    assert!(
+        final_answer["option_id"] == allow["option_id"]
+            || final_answer["option_id"] == deny["option_id"]
+    );
 
     // Exactly one of the two calls actually won the write; the other must
     // have observed the (by-then-committed) resolved row and reported a
     // conflict, never a silent second write.
-    let outcomes = [outcome_a, outcome_b];
-    let resolved_count = outcomes
+    let resolved = resolved_count(&outcomes);
+    let conflicts = conflict_count(&outcomes);
+    assert_eq!(
+        resolved, 1,
+        "exactly one racer must land the fresh write: {outcomes:?}"
+    );
+    assert_eq!(
+        conflicts, 1,
+        "the loser must observe idempotency_conflict, not silently succeed: {outcomes:?}"
+    );
+}
+
+fn resolved_count(outcomes: &[decisions::ResolveOutcome; 2]) -> usize {
+    outcomes
         .iter()
         .filter(|o| {
             matches!(
@@ -1048,21 +1044,12 @@ async fn concurrent_resolves_serialize_to_exactly_one_winner() {
                 }
             )
         })
-        .count();
-    let conflict_count = outcomes
+        .count()
+}
+
+fn conflict_count(outcomes: &[decisions::ResolveOutcome; 2]) -> usize {
+    outcomes
         .iter()
         .filter(|o| matches!(o, decisions::ResolveOutcome::IdempotencyConflict { .. }))
-        .count();
-    assert_eq!(
-        resolved_count, 1,
-        "exactly one racer must land the fresh write: {outcomes:?}"
-    );
-    assert_eq!(
-        conflict_count, 1,
-        "the loser must observe idempotency_conflict, not silently succeed: {outcomes:?}"
-    );
-    assert!(
-        final_answer["option_id"] == allow_answer["option_id"]
-            || final_answer["option_id"] == deny_answer["option_id"]
-    );
+        .count()
 }

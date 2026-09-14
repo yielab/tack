@@ -9,6 +9,8 @@ mod common;
 
 #[path = "security/board_drag_wip_race.rs"]
 mod board_drag_wip_race;
+#[path = "security/chaos_races.rs"]
+mod chaos_races;
 #[path = "security/chaos_recovery.rs"]
 mod chaos_recovery;
 #[path = "security/cors.rs"]
