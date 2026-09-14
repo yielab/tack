@@ -129,11 +129,12 @@ async fn spawn_and_wait_healthy(
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
+    let mut interval = tokio::time::interval(Duration::from_millis(50));
     for _ in 0..50 {
+        interval.tick().await;
         if probe_health(client, base_url).await.is_some() {
             break;
         }
-        tokio::time::sleep(Duration::from_millis(50)).await;
     }
     child
 }
