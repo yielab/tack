@@ -244,17 +244,30 @@ async fn on_failed_moves_item_that_reached_waiting_approval() {
 
 // ─── Human wins ─────────────────────────────────────────────────────────
 
+/// Asserts a single `status_map_skipped_human_override` event, naming
+/// `trigger`/`target`/`current`.
+async fn assert_skip_recorded(
+    repo: &Repository,
+    item_id: Uuid,
+    trigger: &str,
+    target: &str,
+    current: &str,
+) {
+    let events = repo.list_orch_events_for_item(item_id, None).await.unwrap();
+    assert_eq!(events.len(), 1, "the skip must be recorded: {events:?}");
+    assert_eq!(events[0].event_type, "status_map_skipped_human_override");
+    assert_eq!(events[0].payload["trigger"], trigger);
+    assert_eq!(events[0].payload["target_status"], target);
+    assert_eq!(events[0].payload["current_status"], current);
+}
+
 #[tokio::test]
 async fn human_move_blocks_on_succeeded_despite_value_collision() {
-    // on_running parks the item at "In Progress"; a human drags it to "In
-    // Review" — which, deliberately, is also this status_map's own
-    // on_waiting_approval *and* on_failed value (both naming the same
-    // status is a real configuration shape, not just a test artifact). A
-    // naive "is the current status any status_map value" check would
-    // misread this as untouched; the real
-    // check must compare against only the one key this attempt actually
-    // used (on_running, since remote_status is "running", not
-    // "waiting_approval") and correctly see the divergence.
+    // "In Review" is deliberately this status_map's on_waiting_approval AND
+    // on_failed value too (same status, two keys — a real config shape).
+    // The reconciler must compare against only the key this attempt
+    // actually used (on_running), not "is the status any status_map
+    // value", or it would misread the divergence as untouched.
     let (repo, project, item) = test_repo_with_item().await;
     let plane_id = test_plane_id(&repo).await;
     link(
@@ -287,12 +300,7 @@ async fn human_move_blocks_on_succeeded_despite_value_collision() {
         "the human's decision must not be silently reverted to Done"
     );
 
-    let events = repo.list_orch_events_for_item(item.id, None).await.unwrap();
-    assert_eq!(events.len(), 1, "the skip must be recorded: {events:?}");
-    assert_eq!(events[0].event_type, "status_map_skipped_human_override");
-    assert_eq!(events[0].payload["trigger"], "on_succeeded");
-    assert_eq!(events[0].payload["target_status"], "Done");
-    assert_eq!(events[0].payload["current_status"], "In Review");
+    assert_skip_recorded(&repo, item.id, "on_succeeded", "Done", "In Review").await;
 }
 
 #[tokio::test]

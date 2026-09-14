@@ -278,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn require_matching_runner_rejects_impersonation_and_missing_field() {
+    fn require_matching_runner_rejects_impersonation_or_bad_field() {
         let principal = RunnerPrincipal {
             runner_id: "runr_self".into(),
             credential_hash: "irrelevant-for-this-test".into(),
@@ -294,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    fn is_credential_not_recognized_matches_only_the_not_recognized_message() {
+    fn credential_not_recognized_matches_only_that_message() {
         let (_, not_recognized) = protocol_error(
             StatusCode::UNAUTHORIZED,
             StableErrorCode::Unauthorized,

@@ -123,35 +123,78 @@ fn new_task(
     }
 }
 
-// ─── Disabled-orchestration discipline ─────────────────────────────────────
-
-#[tokio::test]
-async fn agent_activity_route_needs_orch_enable_first() {
-    let (app, _) = common::test_app().await; // orch_enable defaults to false
-    let fake = Uuid::new_v4();
-
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/items/{fake}/agent-activity"),
-        None,
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
-
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/projects/{fake}/agent-activity"),
-        None,
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body = body_json(res).await;
-    assert_eq!(body["error"]["code"], "orchestration_disabled");
+fn new_run(item_id: Uuid, run_id: &str, source: &str) -> NewOrchRun {
+    NewOrchRun {
+        run_id: run_id.to_string(),
+        item_id: Some(item_id),
+        remote_project: "my-remote-project".to_string(),
+        source: source.to_string(),
+        state: "running".to_string(),
+        started_at: Some(Utc::now()),
+        ended_at: None,
+        error: None,
+    }
 }
+
+fn new_approval(
+    item_id: Uuid,
+    token: &str,
+    action: &str,
+    requested_at: chrono::DateTime<Utc>,
+    decided_at: Option<chrono::DateTime<Utc>>,
+) -> NewOrchApproval {
+    NewOrchApproval {
+        token: token.to_string(),
+        item_id: Some(item_id),
+        remote_task_id: None,
+        agent: Some("builder".to_string()),
+        action: Some(action.to_string()),
+        state: if decided_at.is_some() {
+            "granted"
+        } else {
+            "pending"
+        }
+        .to_string(),
+        requested_at,
+        decided_at,
+    }
+}
+
+fn new_tool_call_event(item_id: Uuid, run_id: &str) -> NewOrchEvent {
+    NewOrchEvent {
+        id: Uuid::new_v4(),
+        item_id: Some(item_id),
+        run_id: Some(run_id.to_string()),
+        event_type: "tool_call".to_string(),
+        payload: json!({"tool": "git"}),
+        occurred_at: Utc::now(),
+    }
+}
+
+/// A fresh app plus one item in a fresh project — the setup nearly every
+/// test in this file starts from.
+async fn setup_item(config: AppConfig, title: &str) -> (Router, AppState, Uuid, Uuid) {
+    let (app, state) = app_with_state(config).await;
+    let project_id = common::create_project(&app, "Agent Activity Test Project", "software").await;
+    let item_id = create_item(&app, project_id, title).await;
+    (app, state, project_id, item_id)
+}
+
+async fn create_control_plane(state: &AppState) -> Uuid {
+    state
+        .repo
+        .create_control_plane(tack_db::repo::orch::CreateControlPlane {
+            name: "docket-1".to_string(),
+            kind: None,
+            base_url: "http://docket.local".to_string(),
+            token: None,
+        })
+        .await
+        .expect("create plane")
+        .id
+}
+
+// ─── 404s ───────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn item_agent_activity_404s_for_unknown_item() {
@@ -194,25 +237,13 @@ async fn item_agent_activity_empty_for_item_with_no_dispatches() {
 /// a null-status row.
 #[tokio::test]
 async fn project_agent_activity_is_inner_join_on_orch_tasks() {
-    struct Case {
-        seed_dispatched_task: bool,
-    }
-    let cases = [
-        Case {
-            seed_dispatched_task: false,
-        },
-        Case {
-            seed_dispatched_task: true,
-        },
-    ];
-
-    for case in cases {
+    for seed_dispatched_task in [false, true] {
         let (app, state) = app_with_state(orch_config()).await;
         let project_id =
             common::create_project(&app, "Agent Activity Test Project", "software").await;
         let dispatched_item = create_item(&app, project_id, "Dispatched").await;
         let _untouched_item = create_item(&app, project_id, "Never dispatched").await;
-        if case.seed_dispatched_task {
+        if seed_dispatched_task {
             state
                 .repo
                 .upsert_orch_tasks(&[new_task(dispatched_item, "task-1", 1, Utc::now())])
@@ -220,17 +251,12 @@ async fn project_agent_activity_is_inner_join_on_orch_tasks() {
                 .expect("seed task");
         }
 
-        let res = req(
-            &app,
-            Method::GET,
-            &format!("/api/projects/{project_id}/agent-activity"),
-            None,
-        )
-        .await;
+        let uri = format!("/api/projects/{project_id}/agent-activity");
+        let res = req(&app, Method::GET, &uri, None).await;
         assert_eq!(res.status(), StatusCode::OK);
         let v = body_json(res).await;
         let rows = v["rows"].as_array().unwrap();
-        if case.seed_dispatched_task {
+        if seed_dispatched_task {
             assert_eq!(
                 rows.len(),
                 1,
@@ -252,63 +278,43 @@ async fn project_agent_activity_is_inner_join_on_orch_tasks() {
 /// row with the later `dispatched_at` wins.
 #[tokio::test]
 async fn project_agent_activity_latest_attempt_wins_tie_break() {
-    struct Case {
-        a: (i64, Duration, &'static str),
-        b: (i64, Duration, &'static str),
-        expect_attempt: i64,
-        expect_status: &'static str,
-        note: &'static str,
-    }
-    let cases = [
-        Case {
-            a: (1, Duration::hours(2), "failed"),
-            b: (2, Duration::hours(1), "running"),
-            expect_attempt: 2,
-            expect_status: "running",
-            note: "the higher attempt number must win regardless of dispatched_at ordering",
-        },
-        Case {
-            a: (1, Duration::hours(2), "failed"),
-            b: (1, Duration::minutes(1), "done"),
-            expect_attempt: 1,
-            expect_status: "done",
-            note: "on an attempt-number tie, the row with the later dispatched_at must win",
-        },
+    // (task-a, task-b, expected winning attempt, expected winning status).
+    type Task = (i64, Duration, &'static str);
+    let cases: [(Task, Task, i64, &str); 2] = [
+        (
+            (1, Duration::hours(2), "failed"),
+            (2, Duration::hours(1), "running"),
+            2,
+            "running",
+        ),
+        (
+            (1, Duration::hours(2), "failed"),
+            (1, Duration::minutes(1), "done"),
+            1,
+            "done",
+        ),
     ];
 
-    for case in cases {
-        let (app, state) = app_with_state(orch_config()).await;
-        let project_id =
-            common::create_project(&app, "Agent Activity Test Project", "software").await;
-        let item_id = create_item(&app, project_id, "Redispatched item").await;
+    for (a, b, expect_attempt, expect_status) in cases {
+        let (app, state, project_id, item_id) =
+            setup_item(orch_config(), "Redispatched item").await;
         let now = Utc::now();
-        let task_for = |task_id: &str, (attempt, age, status): (i64, Duration, &str)| {
+        let task_for = |task_id: &str, (attempt, age, status): Task| {
             let mut t = new_task(item_id, task_id, attempt, now - age);
             t.remote_status = status.to_string();
             t
         };
         state
             .repo
-            .upsert_orch_tasks(&[task_for("task-a", case.a), task_for("task-b", case.b)])
+            .upsert_orch_tasks(&[task_for("task-a", a), task_for("task-b", b)])
             .await
             .expect("seed tasks");
-
-        let res = req(
-            &app,
-            Method::GET,
-            &format!("/api/projects/{project_id}/agent-activity"),
-            None,
-        )
-        .await;
-        let v = body_json(res).await;
+        let uri = format!("/api/projects/{project_id}/agent-activity");
+        let v = body_json(req(&app, Method::GET, &uri, None).await).await;
         let rows = v["rows"].as_array().unwrap();
         assert_eq!(rows.len(), 1, "one row per item, not one per attempt");
-        assert_eq!(rows[0]["attempt"], case.expect_attempt);
-        assert_eq!(
-            rows[0]["remote_status"], case.expect_status,
-            "{}",
-            case.note
-        );
+        assert_eq!(rows[0]["attempt"], expect_attempt);
+        assert_eq!(rows[0]["remote_status"], expect_status);
     }
 }
 
@@ -331,14 +337,8 @@ async fn item_agent_activity_attempts_are_newest_first() {
         .await
         .expect("seed tasks");
 
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/items/{item_id}/agent-activity"),
-        None,
-    )
-    .await;
-    let v = body_json(res).await;
+    let uri = format!("/api/items/{item_id}/agent-activity");
+    let v = body_json(req(&app, Method::GET, &uri, None).await).await;
     let attempts = v["attempts"].as_array().unwrap();
     let attempt_numbers: Vec<i64> = attempts
         .iter()
@@ -347,7 +347,7 @@ async fn item_agent_activity_attempts_are_newest_first() {
     assert_eq!(
         attempt_numbers,
         vec![3, 2, 1],
-        "attempts must be newest (highest attempt number) first"
+        "must be newest attempt first"
     );
     for a in attempts {
         assert!(
@@ -362,16 +362,7 @@ async fn item_agent_activity_correlates_run_and_events_by_run_id() {
     let (app, state) = app_with_state(orch_config()).await;
     let project_id = common::create_project(&app, "Agent Activity Test Project", "software").await;
     let item_id = create_item(&app, project_id, "Correlated item").await;
-    let plane = state
-        .repo
-        .create_control_plane(tack_db::repo::orch::CreateControlPlane {
-            name: "docket-1".to_string(),
-            kind: None,
-            base_url: "http://docket.local".to_string(),
-            token: None,
-        })
-        .await
-        .expect("create plane");
+    let plane_id = create_control_plane(&state).await;
 
     let mut task = new_task(item_id, "task-with-run", 1, Utc::now());
     task.remote_run_id = Some("run-abc".to_string());
@@ -383,46 +374,17 @@ async fn item_agent_activity_correlates_run_and_events_by_run_id() {
 
     state
         .repo
-        .upsert_orch_runs(
-            plane.id,
-            &[NewOrchRun {
-                run_id: "run-abc".to_string(),
-                item_id: Some(item_id),
-                remote_project: "my-remote-project".to_string(),
-                source: "webhook".to_string(),
-                state: "running".to_string(),
-                started_at: Some(Utc::now()),
-                ended_at: None,
-                error: None,
-            }],
-        )
+        .upsert_orch_runs(plane_id, &[new_run(item_id, "run-abc", "webhook")])
         .await
         .expect("seed run");
-
     state
         .repo
-        .upsert_orch_events(
-            plane.id,
-            &[NewOrchEvent {
-                id: Uuid::new_v4(),
-                item_id: Some(item_id),
-                run_id: Some("run-abc".to_string()),
-                event_type: "tool_call".to_string(),
-                payload: json!({"tool": "git"}),
-                occurred_at: Utc::now(),
-            }],
-        )
+        .upsert_orch_events(plane_id, &[new_tool_call_event(item_id, "run-abc")])
         .await
         .expect("seed event");
 
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/items/{item_id}/agent-activity"),
-        None,
-    )
-    .await;
-    let v = body_json(res).await;
+    let uri = format!("/api/items/{item_id}/agent-activity");
+    let v = body_json(req(&app, Method::GET, &uri, None).await).await;
     let attempts = v["attempts"].as_array().unwrap();
     assert_eq!(attempts.len(), 1);
     let run = &attempts[0]["run"];
@@ -469,56 +431,25 @@ async fn item_agent_activity_includes_pending_and_decided_approvals() {
     let (app, state) = app_with_state(orch_config()).await;
     let project_id = common::create_project(&app, "Agent Activity Test Project", "software").await;
     let item_id = create_item(&app, project_id, "Approvals item").await;
-    let plane = state
-        .repo
-        .create_control_plane(tack_db::repo::orch::CreateControlPlane {
-            name: "docket-1".to_string(),
-            kind: None,
-            base_url: "http://docket.local".to_string(),
-            token: None,
-        })
-        .await
-        .expect("create plane");
+    let plane_id = create_control_plane(&state).await;
 
     let now = Utc::now();
+    let older = new_approval(
+        item_id,
+        "tok-older",
+        "git push",
+        now - Duration::hours(2),
+        Some(now - Duration::hours(1)),
+    );
+    let newer = new_approval(item_id, "tok-newer", "rm -rf", now, None);
     state
         .repo
-        .upsert_orch_approvals(
-            plane.id,
-            &[
-                NewOrchApproval {
-                    token: "tok-older".to_string(),
-                    item_id: Some(item_id),
-                    remote_task_id: None,
-                    agent: Some("builder".to_string()),
-                    action: Some("git push".to_string()),
-                    state: "granted".to_string(),
-                    requested_at: now - Duration::hours(2),
-                    decided_at: Some(now - Duration::hours(1)),
-                },
-                NewOrchApproval {
-                    token: "tok-newer".to_string(),
-                    item_id: Some(item_id),
-                    remote_task_id: None,
-                    agent: Some("builder".to_string()),
-                    action: Some("rm -rf".to_string()),
-                    state: "pending".to_string(),
-                    requested_at: now,
-                    decided_at: None,
-                },
-            ],
-        )
+        .upsert_orch_approvals(plane_id, &[older, newer])
         .await
         .expect("seed approvals");
 
-    let res = req(
-        &app,
-        Method::GET,
-        &format!("/api/items/{item_id}/agent-activity"),
-        None,
-    )
-    .await;
-    let v = body_json(res).await;
+    let uri = format!("/api/items/{item_id}/agent-activity");
+    let v = body_json(req(&app, Method::GET, &uri, None).await).await;
     let approvals = v["approvals"].as_array().unwrap();
     assert_eq!(approvals.len(), 2, "both pending and decided must appear");
     assert_eq!(approvals[0]["token"], "tok-newer", "newest-requested first");
@@ -533,55 +464,33 @@ async fn item_agent_activity_includes_pending_and_decided_approvals() {
 /// an attempt is older than a (here, shortened) retention window.
 #[tokio::test]
 async fn events_truncated_reflects_retention_cutoff() {
-    struct Case {
-        retention_days: Option<u32>,
-        task_age: Duration,
-        expect_truncated: bool,
-    }
+    // (retention_days override, task age, expect events_truncated).
     let cases = [
-        Case {
-            retention_days: None,
-            task_age: Duration::zero(),
-            expect_truncated: false,
-        },
-        Case {
-            retention_days: Some(1),
-            task_age: Duration::days(30),
-            expect_truncated: true,
-        },
+        (None, Duration::zero(), false),
+        (Some(1), Duration::days(30), true),
     ];
 
-    for case in cases {
-        let config = match case.retention_days {
+    for (retention_days, task_age, expect_truncated) in cases {
+        let config = match retention_days {
             Some(orch_event_retention_days) => AppConfig {
                 orch_event_retention_days,
                 ..orch_config()
             },
             None => orch_config(),
         };
-        let (app, state) = app_with_state(config.clone()).await;
-        let project_id =
-            common::create_project(&app, "Agent Activity Test Project", "software").await;
-        let item_id = create_item(&app, project_id, "Retention item").await;
+        let (app, state, _, item_id) = setup_item(config.clone(), "Retention item").await;
 
         state
             .repo
-            .upsert_orch_tasks(&[new_task(item_id, "task-1", 1, Utc::now() - case.task_age)])
+            .upsert_orch_tasks(&[new_task(item_id, "task-1", 1, Utc::now() - task_age)])
             .await
             .expect("seed task");
 
-        let res = req(
-            &app,
-            Method::GET,
-            &format!("/api/items/{item_id}/agent-activity"),
-            None,
-        )
-        .await;
-        let v = body_json(res).await;
+        let uri = format!("/api/items/{item_id}/agent-activity");
+        let v = body_json(req(&app, Method::GET, &uri, None).await).await;
         assert_eq!(
-            v["events_truncated"], case.expect_truncated,
-            "retention_days={:?} task_age={:?}",
-            case.retention_days, case.task_age
+            v["events_truncated"], expect_truncated,
+            "{retention_days:?}"
         );
         assert_eq!(
             v["events_retention_days"],

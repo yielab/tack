@@ -509,7 +509,7 @@ async fn scrub_removes_control_plane_secrets_from_snapshot() {
 // function before the VACUUM runs — meaning a database that has not yet
 // been migrated to 033 could never produce a scrubbed backup at all.
 #[tokio::test]
-async fn scrub_tolerates_a_control_planes_table_without_the_secrets_column() {
+async fn scrub_tolerates_control_planes_table_missing_secrets_column() {
     use sqlx::ConnectOptions;
     use sqlx::Connection;
     use sqlx::sqlite::SqliteConnectOptions;

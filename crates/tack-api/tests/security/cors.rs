@@ -65,6 +65,31 @@ async fn preflight_allow_headers(app: &Router, uri: &str, method: &str) -> Strin
 /// `fetch()` can read it back off a `GET`. Without `expose_headers` naming
 /// `ETag`, a browser can read zero non-safelisted response headers from
 /// this API, full stop.
+/// Asserts a real (non-preflight) GET exposes `ETag` via
+/// `Access-Control-Expose-Headers` — `tower_http`'s CORS layer only
+/// attaches it to a real response, never a preflight.
+async fn assert_etag_exposed(app: &Router) {
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/health")
+        .header(header::ORIGIN, ALLOWED_ORIGIN)
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let expose_headers = resp
+        .headers()
+        .get(header::ACCESS_CONTROL_EXPOSE_HEADERS)
+        .expect("Access-Control-Expose-Headers must be present on a real CORS response")
+        .to_str()
+        .unwrap()
+        .to_ascii_lowercase();
+    assert!(
+        expose_headers.contains("etag"),
+        "etag missing from Access-Control-Expose-Headers: {expose_headers}"
+    );
+}
+
 #[tokio::test]
 async fn preflight_allows_if_match_approval_token_exposes_etag() {
     let (app, _workspace_id) = test_app().await;
@@ -94,29 +119,8 @@ async fn preflight_allows_if_match_approval_token_exposes_etag() {
     );
 
     // (a): ETag must be readable by JS on the real response, not just sent
-    // on the wire. `Access-Control-Expose-Headers` is only attached to
-    // non-preflight responses (`tower_http`'s `Cors::call` applies it in
-    // the `CorsCall` branch, never `PreflightCall`), so this has to be a
-    // plain GET, not another OPTIONS round-trip.
-    let req = Request::builder()
-        .method("GET")
-        .uri("/api/health")
-        .header(header::ORIGIN, ALLOWED_ORIGIN)
-        .body(Body::empty())
-        .unwrap();
-    let resp = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let expose_headers = resp
-        .headers()
-        .get(header::ACCESS_CONTROL_EXPOSE_HEADERS)
-        .expect("Access-Control-Expose-Headers must be present on a real CORS response")
-        .to_str()
-        .unwrap()
-        .to_ascii_lowercase();
-    assert!(
-        expose_headers.contains("etag"),
-        "etag missing from Access-Control-Expose-Headers: {expose_headers}"
-    );
+    // on the wire — this has to be a plain GET, not another OPTIONS round-trip.
+    assert_etag_exposed(&app).await;
 }
 
 /// Negative control: proves `allow_headers` is a fixed, named list (not

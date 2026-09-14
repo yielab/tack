@@ -12,7 +12,7 @@ fn workdir(tag: &str) -> tempfile::TempDir {
 }
 
 #[test]
-fn a_configured_log_path_creates_its_directory_and_splits_into_dir_and_name() {
+fn configured_log_path_creates_dir_and_splits_into_dir_and_name() {
     let dir_guard = workdir("log-target");
     let nested = dir_guard.path().join("logs").join("tack.log");
     assert!(!nested.parent().unwrap().exists());
@@ -197,6 +197,35 @@ impl Drop for EnvRestore {
     }
 }
 
+/// Sets each env var, returning its previous value for `restore_env_vars`.
+///
+/// # Safety
+/// The caller must hold `SERVE_ENV_LOCK` for the whole interval between this
+/// call and the matching `restore_env_vars`.
+unsafe fn set_env_vars(pairs: &[(&'static str, &str)]) -> Vec<(&'static str, Option<String>)> {
+    pairs
+        .iter()
+        .map(|(k, v)| {
+            let previous = std::env::var(k).ok();
+            unsafe { std::env::set_var(k, v) };
+            (*k, previous)
+        })
+        .collect()
+}
+
+/// Restores env vars captured by `set_env_vars`.
+///
+/// # Safety
+/// The caller must hold `SERVE_ENV_LOCK` for the whole guarded interval.
+unsafe fn restore_env_vars(saved: Vec<(&'static str, Option<String>)>) {
+    for (k, v) in saved {
+        match v {
+            Some(v) => unsafe { std::env::set_var(k, v) },
+            None => unsafe { std::env::remove_var(k) },
+        }
+    }
+}
+
 /// Acceptance case for the readiness seam: start the server through
 /// `serve_with_ready`, wait on the oneshot (no sleep, no retry loop),
 /// then make one real HTTP request against the address it reports.
@@ -246,7 +275,7 @@ fn serve_still_takes_no_arguments() {
 
 /// A control whose `start()` records whether it was ever called — the
 /// auto-start check under test in
-/// `a_persisted_enable_preference_never_auto_starts_on_a_non_loopback_bind`
+/// `persisted_enable_pref_never_auto_starts_non_loopback_bind`
 /// below is the only thing calling it in that test.
 struct RecordingControl {
     started: std::sync::atomic::AtomicBool,
@@ -296,31 +325,28 @@ impl LocalRunnerControl for RecordingControl {
 /// absent — a route being unreachable would not by itself prove the
 /// runner never actually started.
 #[tokio::test]
-async fn a_persisted_enable_preference_never_auto_starts_on_a_non_loopback_bind() {
+async fn persisted_enable_pref_never_auto_starts_non_loopback_bind() {
     let _env_guard = SERVE_ENV_LOCK.lock().await;
     let _restore = EnvRestore {
         port: std::env::var("TACK_PORT").ok(),
         database_url: std::env::var("TACK_DATABASE_URL").ok(),
     };
-    let previous_host = std::env::var("TACK_HOST").ok();
-    let previous_enable = std::env::var("TACK_LOCAL_RUNNER_ENABLE").ok();
-    let previous_unauth = std::env::var("TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK").ok();
     // SAFETY: serialized by `SERVE_ENV_LOCK` above.
-    unsafe {
-        std::env::set_var("TACK_PORT", "0");
-        std::env::set_var("TACK_DATABASE_URL", "sqlite::memory:");
-        std::env::set_var("TACK_HOST", "0.0.0.0");
-        std::env::set_var("TACK_LOCAL_RUNNER_ENABLE", "1");
-        std::env::set_var("TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK", "1");
-    }
-
+    let saved = unsafe {
+        set_env_vars(&[
+            ("TACK_PORT", "0"),
+            ("TACK_DATABASE_URL", "sqlite::memory:"),
+            ("TACK_HOST", "0.0.0.0"),
+            ("TACK_LOCAL_RUNNER_ENABLE", "1"),
+            ("TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK", "1"),
+        ])
+    };
     let control = Arc::new(RecordingControl {
         started: std::sync::atomic::AtomicBool::new(false),
     });
     let local_runner: Arc<dyn LocalRunnerControl> = control.clone();
     let (ready_tx, ready_rx) = oneshot::channel();
     let server = tokio::spawn(serve_with_ready_and_local_runner(ready_tx, local_runner));
-
     let addr = ready_rx.await.expect("readiness signal never arrived");
     // The server itself must still come up normally — refusing to
     // *start the runner* is not refusing to *serve*.
@@ -337,18 +363,5 @@ async fn a_persisted_enable_preference_never_auto_starts_on_a_non_loopback_bind(
 
     server.abort();
     // SAFETY: still serialized by `SERVE_ENV_LOCK`.
-    unsafe {
-        match previous_host {
-            Some(v) => std::env::set_var("TACK_HOST", v),
-            None => std::env::remove_var("TACK_HOST"),
-        }
-        match previous_enable {
-            Some(v) => std::env::set_var("TACK_LOCAL_RUNNER_ENABLE", v),
-            None => std::env::remove_var("TACK_LOCAL_RUNNER_ENABLE"),
-        }
-        match previous_unauth {
-            Some(v) => std::env::set_var("TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK", v),
-            None => std::env::remove_var("TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK"),
-        }
-    }
+    unsafe { restore_env_vars(saved) };
 }

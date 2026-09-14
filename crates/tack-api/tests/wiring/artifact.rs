@@ -389,6 +389,21 @@ async fn upload_artifact(label: &str) -> UploadedArtifact {
     }
 }
 
+/// Asserts the uploaded bytes never leaked into the hardcoded default storage dir.
+async fn assert_no_leak_to_default_storage(content: &[u8]) {
+    let default_storage_dir = std::path::Path::new("./storage/execution-artifacts");
+    if default_storage_dir.exists() {
+        for path in &walk_files(default_storage_dir).await {
+            let bytes = tokio::fs::read(path).await.ok();
+            assert_ne!(
+                bytes.as_deref(),
+                Some(content),
+                "artifact bytes leaked into the hardcoded default storage dir"
+            );
+        }
+    }
+}
+
 // ---------------------------------------------------------------------
 // Claim: artifact storage actually follows the operator-configured
 // `storage_dir`, not the hardcoded `./storage` fallback.
@@ -426,17 +441,7 @@ async fn artifact_bytes_land_under_the_configured_storage_dir() {
 
     // Negative control: the bytes must never have leaked into the hardcoded
     // default location either.
-    let default_storage_dir = std::path::Path::new("./storage/execution-artifacts");
-    if default_storage_dir.exists() {
-        for path in &walk_files(default_storage_dir).await {
-            let bytes = tokio::fs::read(path).await.ok();
-            assert_ne!(
-                bytes.as_deref(),
-                Some(uploaded.content.as_slice()),
-                "artifact bytes leaked into the hardcoded default storage dir"
-            );
-        }
-    }
+    assert_no_leak_to_default_storage(&uploaded.content).await;
 
     let _ = tokio::fs::remove_dir_all(&uploaded.storage_dir).await;
 }
@@ -479,8 +484,7 @@ async fn uploaded_artifact_is_downloadable_through_the_real_router() {
         .get("content-type")
         .unwrap()
         .to_str()
-        .unwrap()
-        .to_owned();
+        .unwrap();
     assert_eq!(content_type, "text/x-diff");
     let downloaded = to_bytes(response.into_body(), 1_048_576).await.unwrap();
     assert_eq!(downloaded.as_ref(), uploaded.content.as_slice());

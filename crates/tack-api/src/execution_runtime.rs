@@ -343,7 +343,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn start_then_stop_leaves_nothing_running_and_stop_actually_joins() {
+    async fn start_then_stop_leaves_nothing_running_and_stop_joins() {
         let runtime = ExecutionRuntime::new();
         let repo = test_repo().await;
         runtime
@@ -372,7 +372,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn disabled_config_starts_no_tasks_and_stop_is_still_a_harmless_no_op() {
+    async fn disabled_config_starts_nothing_and_stop_is_a_harmless_no_op() {
         let runtime = ExecutionRuntime::new();
         let repo = test_repo().await;
         runtime

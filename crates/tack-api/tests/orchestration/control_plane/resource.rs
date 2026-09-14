@@ -216,54 +216,44 @@ async fn token_never_appears_in_list_or_get_response() {
 /// it without ever leaking the old or new value in the response.
 #[tokio::test]
 async fn patch_token_field_is_tri_state() {
-    struct Case {
-        initial_token: &'static str,
-        patch_body: Value,
-        expect_token_set: bool,
-        also_check: fn(&Value),
-        note: &'static str,
-    }
-    let cases = [
-        Case {
-            initial_token: "preserve-me",
-            patch_body: json!({"name": "docket-renamed"}),
-            expect_token_set: true,
-            also_check: |v| assert_eq!(v["name"], "docket-renamed"),
-            note: "token must survive a patch that never mentions it",
-        },
-        Case {
-            initial_token: "clear-me",
-            patch_body: json!({"token": null}),
-            expect_token_set: false,
-            also_check: |_| {},
-            note: "an explicit null must clear the stored token",
-        },
-        Case {
-            initial_token: "old-token",
-            patch_body: json!({"token": "new-token"}),
-            expect_token_set: true,
-            also_check: |v| assert_no_token_leak(v, "new-token"),
-            note: "a string value must replace the stored token without leaking it",
-        },
+    // (initial_token, patch_body, expect_token_set, also_check, note).
+    #[allow(clippy::type_complexity)]
+    let cases: [(&str, Value, bool, fn(&Value), &str); 3] = [
+        (
+            "preserve-me",
+            json!({"name": "docket-renamed"}),
+            true,
+            |v| assert_eq!(v["name"], "docket-renamed"),
+            "token must survive a patch that never mentions it",
+        ),
+        (
+            "clear-me",
+            json!({"token": null}),
+            false,
+            |_| {},
+            "an explicit null must clear the stored token",
+        ),
+        (
+            "old-token",
+            json!({"token": "new-token"}),
+            true,
+            |v| assert_no_token_leak(v, "new-token"),
+            "a string value must replace the stored token without leaking it",
+        ),
     ];
 
-    for case in cases {
+    for (initial_token, patch_body, expect_token_set, also_check, note) in cases {
         let (app, _) = common::test_app_with_config(orch_config()).await;
-        let created = create_control_plane(&app, Some(case.initial_token)).await;
+        let created = create_control_plane(&app, Some(initial_token)).await;
         let id = created["id"].as_str().unwrap();
 
-        let res = req(
-            &app,
-            Method::PATCH,
-            &format!("/api/control-planes/{id}"),
-            Some(case.patch_body),
-        )
-        .await;
+        let uri = format!("/api/control-planes/{id}");
+        let res = req(&app, Method::PATCH, &uri, Some(patch_body)).await;
         assert_eq!(res.status(), StatusCode::OK);
         let updated = body_json(res).await;
-        assert_eq!(updated["token_set"], case.expect_token_set, "{}", case.note);
-        assert_no_token_leak(&updated, case.initial_token);
-        (case.also_check)(&updated);
+        assert_eq!(updated["token_set"], expect_token_set, "{note}");
+        assert_no_token_leak(&updated, initial_token);
+        also_check(&updated);
     }
 }
 
@@ -407,9 +397,21 @@ async fn orch_link_get_reflects_saved_link() {
     assert_eq!(v["link"]["control_plane_id"], plane_id);
 }
 
-/// The wire label must come from `legacy_bridge`'s constant, never a
-/// re-typed literal — a copied string would silently stop tracking the
-/// decision if the constant ever changed.
+/// Asserts `v` carries the legacy-docket compatibility label/policy pair,
+/// read from `legacy_bridge`'s own constants rather than a re-typed
+/// literal — a copy would silently stop tracking the decision if the
+/// constant ever changed.
+fn assert_legacy_compat_fields(v: &Value) {
+    assert_eq!(
+        v["compatibility_label"],
+        tack_orch::adapters::legacy_bridge::LEGACY_DOCKET_COMPATIBILITY_LABEL
+    );
+    assert_eq!(
+        v["compatibility_policy"],
+        tack_orch::adapters::legacy_bridge::LEGACY_DOCKET_COMPATIBILITY_POLICY
+    );
+}
+
 #[tokio::test]
 async fn orch_link_carries_the_legacy_docket_compatibility_constants() {
     let (app, _) = common::test_app_with_config(orch_config()).await;
@@ -430,14 +432,7 @@ async fn orch_link_carries_the_legacy_docket_compatibility_constants() {
     .await;
     assert_eq!(put_res.status(), StatusCode::OK);
     let put_body = body_json(put_res).await;
-    assert_eq!(
-        put_body["compatibility_label"],
-        tack_orch::adapters::legacy_bridge::LEGACY_DOCKET_COMPATIBILITY_LABEL
-    );
-    assert_eq!(
-        put_body["compatibility_policy"],
-        tack_orch::adapters::legacy_bridge::LEGACY_DOCKET_COMPATIBILITY_POLICY
-    );
+    assert_legacy_compat_fields(&put_body);
 
     let get_res = req(
         &app,
@@ -447,14 +442,7 @@ async fn orch_link_carries_the_legacy_docket_compatibility_constants() {
     )
     .await;
     let v = body_json(get_res).await;
-    assert_eq!(
-        v["link"]["compatibility_label"],
-        tack_orch::adapters::legacy_bridge::LEGACY_DOCKET_COMPATIBILITY_LABEL
-    );
-    assert_eq!(
-        v["link"]["compatibility_policy"],
-        tack_orch::adapters::legacy_bridge::LEGACY_DOCKET_COMPATIBILITY_POLICY
-    );
+    assert_legacy_compat_fields(&v["link"]);
 }
 
 // ─── Fleet aggregate ────────────────────────────────────────────────────────
@@ -466,6 +454,27 @@ async fn fleet_is_empty_with_no_links() {
     assert_eq!(res.status(), StatusCode::OK);
     let v = body_json(res).await;
     assert_eq!(v["rows"].as_array().unwrap().len(), 0);
+}
+
+async fn fleet_entries(app: &Router) -> Vec<Value> {
+    let res = req(app, Method::GET, "/api/fleet", None).await;
+    body_json(res).await["rows"].as_array().unwrap().clone()
+}
+
+/// Asserts a reachable plane's rollup reports real zeros, not nulls.
+fn assert_reachable_zero_costs(entry: &Value) {
+    assert_eq!(entry["health"], "unknown");
+    assert_eq!(
+        entry["cost_usd_estimated"],
+        json!(0.0),
+        "a reachable plane with nothing dispatched yet must report a real Some(0.0), not null"
+    );
+    assert_eq!(entry["tokens_in"], json!(0));
+    assert_eq!(entry["tokens_out"], json!(0));
+    assert_eq!(entry["pending_approval_count"], json!(0));
+    assert!(entry["last_activity_at"].is_null());
+    assert_eq!(entry["gateway"], "unknown");
+    assert_eq!(entry["roster"], json!([]));
 }
 
 #[tokio::test]
@@ -489,22 +498,9 @@ async fn fleet_listing_reports_a_real_zero_not_an_unreachable_gap() {
 
     // Freshly created plane: health defaults to "unknown" (not yet polled),
     // which is reachable-enough to report a real, current zero.
-    let res = req(&app, Method::GET, "/api/fleet", None).await;
-    let v = body_json(res).await;
-    let entries = v["rows"].as_array().unwrap();
+    let entries = fleet_entries(&app).await;
     assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0]["health"], "unknown");
-    assert_eq!(
-        entries[0]["cost_usd_estimated"],
-        json!(0.0),
-        "a reachable plane with nothing dispatched yet must report a real Some(0.0), not null"
-    );
-    assert_eq!(entries[0]["tokens_in"], json!(0));
-    assert_eq!(entries[0]["tokens_out"], json!(0));
-    assert_eq!(entries[0]["pending_approval_count"], json!(0));
-    assert!(entries[0]["last_activity_at"].is_null());
-    assert_eq!(entries[0]["gateway"], "unknown");
-    assert_eq!(entries[0]["roster"], json!([]));
+    assert_reachable_zero_costs(&entries[0]);
 
     // Now simulate the reconciler marking the plane unreachable.
     state
@@ -513,9 +509,7 @@ async fn fleet_listing_reports_a_real_zero_not_an_unreachable_gap() {
         .await
         .expect("record health");
 
-    let res = req(&app, Method::GET, "/api/fleet", None).await;
-    let v = body_json(res).await;
-    let entries = v["rows"].as_array().unwrap();
+    let entries = fleet_entries(&app).await;
     assert_eq!(entries[0]["health"], "unreachable");
     assert!(
         entries[0]["cost_usd_estimated"].is_null(),
