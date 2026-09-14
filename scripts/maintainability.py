@@ -81,7 +81,6 @@ EXCLUSIONS: dict[tuple[str, str], str] = {
     ("crates/tack-api/tests/handlers/production_router.rs", "test_file_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (1 022)",
     ("crates/tack-api/tests/handlers/production_router.rs", "test_fn_max_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (237)",
     ("crates/tack-api/tests/openapi_contract.rs", "test_name_max_chars"): _OPENAPI_CONTRACT,
-    ("crates/tack-api/tests/orchestration/control_plane/resource.rs", "test_fn_max_lines"): "IX-M8-api reported this file met at 40; now 41 — 1-line drift since integration, see IX-M9 handoff finding",
     ("crates/tack-api/tests/orchestration/dispatch/dual_scheduling.rs", "test_fn_max_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (81)",
     ("crates/tack-api/tests/orchestration/fleet_templates/fleet_membership.rs", "test_fn_max_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (212)",
     ("crates/tack-api/tests/runner_protocol/artifact_events.rs", "test_file_lines"): "IX-M8-api: unmet acceptance line, card did not reach this file (1 154)",
@@ -104,30 +103,16 @@ EXCLUSIONS: dict[tuple[str, str], str] = {
     ("crates/tack-api/src/orch_runtime.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
     ("crates/tack-api/src/router.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
     ("crates/tack-api/src/server.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
-    ("crates/tack-api/src/orch_runtime/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-api (sleep count unchanged from before the card, not in its acceptance lines)",
 
     # --- tack-cli: none of these are on IX-M8-cli's acceptance lines (name-length only) ---
     ("crates/tack-cli/src/local_enrollment.rs", "src_comment_share"): "unmet, not recorded by IX-M8-cli (comment share, not test-body work)",
     ("crates/tack-cli/src/local_runner.rs", "src_comment_share"): "unmet, not recorded by IX-M8-cli (comment share, not test-body work)",
-    ("crates/tack-cli/tests/e6_scheduler_e2e_test.rs", "test_sleeps"): "unmet, not recorded by IX-M8-cli (sleeps, not in its acceptance lines)",
-    ("crates/tack-cli/tests/embedded_runner_live_secret.rs", "test_sleeps"): "unmet, not recorded by IX-M8-cli (sleeps, not in its acceptance lines)",
-    ("crates/tack-cli/tests/embedded_runner_orphaned_credential.rs", "test_sleeps"): "unmet, not recorded by IX-M8-cli (sleeps, not in its acceptance lines)",
-    ("crates/tack-cli/tests/embedded_runner_state_scoping.rs", "test_sleeps"): "unmet, not recorded by IX-M8-cli (sleeps, not in its acceptance lines)",
-
-    # --- tack-core: never carded in Part IX-M8 (orch/runner/api/db/cli/dedup only) ---
-    ("crates/tack-core/src/dependency/tests.rs", "test_name_max_chars"): "unmet, not recorded by IX-M8 (tack-core was never carded)",
-    ("crates/tack-core/src/models/tests.rs", "test_name_max_chars"): "unmet, not recorded by IX-M8 (tack-core was never carded)",
-    ("crates/tack-core/src/workflow/tests.rs", "test_name_max_chars"): "unmet, not recorded by IX-M8 (tack-core was never carded)",
 
     # --- tack-db: IX-M8-db's Budget check names both by number, "unmet, not worsened" ---
     ("crates/tack-db/tests/migrations/orch_migrations.rs", "test_file_lines"): "IX-M8-db: 1 190 lines, splitting migration coverage forbidden by the card; every body already <=40",
     ("crates/tack-db/tests/repository/execution_repo.rs", "test_file_lines"): "IX-M8-db: 4 176-line state-machine narrative; splitting forbidden",
     ("crates/tack-db/tests/repository/execution_repo.rs", "test_fn_max_lines"): "IX-M8-db: 38 of 42 bodies still exceed 40 lines (up to 174); each is one race/assertion narrative on shared fixtures",
     ("crates/tack-db/src/repo/economics.rs", "src_comment_share"): "unmet, not recorded by IX-M8-db (comment share, not test-body work)",
-
-    # --- tack-desktop: IX-M8-cli's named exception covered only supervisor.rs/tests.rs ---
-    ("crates/tack-desktop/src/paths.rs", "test_name_max_chars"): "unmet, not recorded by IX-M8-cli (its tack-desktop exception covered only supervisor.rs)",
-    ("crates/tack-desktop/src/tray.rs", "test_name_max_chars"): "unmet, not recorded by IX-M8-cli (its tack-desktop exception covered only supervisor.rs)",
 
     # --- tack-orch: named exclusions + reconciler/tests.rs (Defect 2: forbidden split
     # reverted, kept as one file), rest is comment share / sleeps IX-M8-orch didn't own ---
@@ -147,9 +132,7 @@ EXCLUSIONS: dict[tuple[str, str], str] = {
     ("crates/tack-orch/src/adapters/registry.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
     ("crates/tack-orch/src/execution/capabilities.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
     ("crates/tack-orch/src/execution/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/execution_observability/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-orch (sleeps, not in its acceptance lines)",
     ("crates/tack-orch/src/execution_retention.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
-    ("crates/tack-orch/src/execution_retention/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-orch (sleeps, not in its acceptance lines)",
     ("crates/tack-orch/src/lib.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
     ("crates/tack-orch/src/model_policy/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
     ("crates/tack-orch/src/model_policy/wiring.rs", "src_comment_share"): "unmet, not recorded by IX-M8-orch (comment share, not test-body work)",
@@ -163,19 +146,13 @@ EXCLUSIONS: dict[tuple[str, str], str] = {
     # --- tack-runner: IX-M8-runner's Budget check names both files by number ---
     ("crates/tack-runner/src/engine/tests.rs", "test_file_lines"): "IX-M8-runner: unmet acceptance line, 2 587 lines, further split rejected",
     ("crates/tack-runner/src/harness/claude_code/tests.rs", "test_file_lines"): "IX-M8-runner: unmet acceptance line, 1 344 lines",
-    ("crates/tack-runner/src/harness/claude_code/tests.rs", "test_fn_max_lines"): "IX-M8-runner: unmet on the interim 40-line target (41, 43), both under the 60 hard cap",
     ("crates/tack-runner/src/bootstrap.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
-    ("crates/tack-runner/src/engine/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-runner (sleeps, not in its acceptance lines)",
-    ("crates/tack-runner/src/git/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-runner (sleeps, not in its acceptance lines)",
-    ("crates/tack-runner/src/harness/claude_code/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-runner (sleeps, not in its acceptance lines)",
     ("crates/tack-runner/src/harness/fixtures/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
     ("crates/tack-runner/src/harness/local_process.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
     ("crates/tack-runner/src/harness/locate.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
     ("crates/tack-runner/src/harness/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
-    ("crates/tack-runner/src/harness/process/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-runner (sleeps, not in its acceptance lines)",
     ("crates/tack-runner/src/harness/redact.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
     ("crates/tack-runner/src/provider/mod.rs", "src_comment_share"): "unmet, not recorded by IX-M8-runner (comment share, not test-body work)",
-    ("crates/tack-runner/tests/bootstrap_entrypoint.rs", "test_sleeps"): "unmet, not recorded by IX-M8-runner (sleeps, not in its acceptance lines)",
 }
 
 # Per-card budget (plan §2.3): a change may add at most this many tests or test lines,
