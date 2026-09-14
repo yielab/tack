@@ -1,27 +1,16 @@
-//! `tack-orch` — the control-plane orchestration client for Tack.
+//! `tack-orch` — the control-plane orchestration client for Tack. Defines
+//! [`ControlPlane`], the trait every agent-fleet backend implements, plus the
+//! DTOs that cross the Tack <-> control-plane boundary; concrete adapters
+//! and the reconciler poll loop build on top of this.
 //!
-//! Defines [`ControlPlane`], the trait every agent-fleet backend implements,
-//! plus the DTOs that cross the Tack <-> control-plane boundary. Concrete
-//! adapters (`adapters::docket`) and the reconciler poll loop (`reconciler`)
-//! build on top of this.
-//!
-//! # Dependency direction
-//!
-//! This crate depends inward on `tack-core` and `tack-db` only and must
-//! never depend on `tack-api`, which depends on it instead. A `tack-api`
-//! type needed from in here should be defined in this crate instead — never
-//! invert the graph.
-//!
-//! # Money is always an estimate
+//! Depends inward on `tack-core`/`tack-db` only, never on `tack-api` (which
+//! depends on it instead) — a `tack-api` type needed here belongs in this crate.
 //!
 //! Every dollar field is named `*_usd_estimated`, never `*_usd` alone —
-//! docket's own driver does not report real spend.
-//!
-//! # Unknown wire values never fail a poll
-//!
-//! [`RunState`], [`RunSource`], [`TaskStatus`], and [`ApprovalState`] each
-//! carry an `Unknown(String)` fallback, so a docket upgrade that adds a new
-//! state degrades to "shown as-is" rather than killing the reconciler.
+//! docket's own driver does not report real spend. [`RunState`],
+//! [`RunSource`], [`TaskStatus`], and [`ApprovalState`] each carry an
+//! `Unknown(String)` fallback, so a docket upgrade that adds a new state
+//! degrades to "shown as-is" rather than killing the reconciler.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -59,8 +48,7 @@ pub enum OrchError {
     NotFound(String),
 
     /// Configured but not reachable right now — distinct from `Http` so a
-    /// caller can degrade a plane's state without treating every failed
-    /// request as one.
+    /// caller can degrade a plane's state without treating every failure that way.
     #[error("control plane unavailable: {0}")]
     Unavailable(String),
 
@@ -69,27 +57,23 @@ pub enum OrchError {
     Disabled,
 
     /// docket's `pre_input` policy gate refused a dispatch — a transport
-    /// *success* carrying a considered "no". `policy_id` is parsed out of
-    /// docket's error text into a typed field.
+    /// success carrying a considered "no"; `policy_id` is parsed from docket's error text.
     #[error("blocked by guardrail policy {policy_id:?}: {message}")]
     PolicyBlocked { policy_id: String, message: String },
 
-    /// Already resolved before our decision reached it (HTTP 409) —
-    /// distinct from [`OrchError::NotFound`] so a caller can drop the stale
-    /// row as an expected race, not a hard error.
+    /// Already resolved before our decision reached it (409) — distinct from
+    /// [`OrchError::NotFound`] so a caller can drop it as an expected race.
     #[error("approval already decided: {0}")]
     AlreadyDecided(String),
 
-    /// The remote resource we tried to create already exists (HTTP 409) —
-    /// distinct from [`OrchError::AlreadyDecided`] so a caller isn't forced
-    /// to pattern-match a message to tell the two conflicts apart.
+    /// The remote resource we tried to create already exists (409) —
+    /// distinct from [`OrchError::AlreadyDecided`] so callers need not pattern-match text.
     #[error("already exists: {0}")]
     AlreadyExists(String),
 }
 
-/// Generates a fieldless enum over a fixed set of wire strings, plus an
-/// `Unknown(String)` fallback with hand-written `Serialize`/`Deserialize` so
-/// an unrecognised value degrades instead of erroring.
+/// Generates a fieldless enum over wire strings plus an `Unknown(String)`
+/// fallback so an unrecognised value degrades instead of erroring.
 macro_rules! remote_string_enum {
     (
         $(#[$meta:meta])*
@@ -269,8 +253,7 @@ pub struct FleetStatus {
     pub total_cost_usd_estimated: f64,
 }
 
-/// One parsed line out of `GET /metrics` (Prometheus text exposition
-/// format). Comment (`#`) lines never produce a sample. The parser lives in
+/// One parsed line out of `GET /metrics`. The parser lives in
 /// `adapters::prometheus` — do not write a second one.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MetricSample {
@@ -370,11 +353,9 @@ pub struct NewRemoteTask {
     pub trusted: bool,
 }
 
-/// `POST /pods` request body, every field but `project` optional. `project`
-/// is never derived from Tack's own project name — the caller names it so a
-/// retry after a partial failure can reuse the same pod. `budget` is
-/// unsuffixed (not `*_usd_estimated`): an operator-set ceiling, not a
-/// derived spend figure.
+/// `POST /pods` request body, every field but `project` optional.
+/// `project` is caller-named so a retry can reuse the same pod; `budget` is
+/// unsuffixed — an operator-set ceiling, not a derived spend figure.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ProvisionPodParams {
     pub project: String,
@@ -410,11 +391,9 @@ pub struct ProvisionedPod {
     pub members: Vec<ProvisionedPodMember>,
 }
 
-/// One page of `GET /traces/{project}?since=`. **`next` is opaque** — Tack
-/// must never parse, decode, or reconstruct it, only store whatever the
-/// control plane minted and hand it back unexamined. A prior client-side
-/// reconstruction of docket's cursor algorithm was one silent server-side
-/// change away from quietly skipping or duplicating events.
+/// One page of `GET /traces/{project}?since=`. `next` is opaque — store and
+/// hand it back unexamined; a prior client-side reconstruction of docket's
+/// cursor algorithm was one silent server-side change from skipping/duplicating events.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct TracesPage {
     pub events: Vec<RemoteEvent>,
@@ -424,10 +403,9 @@ pub struct TracesPage {
     pub next: Option<String>,
 }
 
-/// One trace/event record. Mirrors `core/trace.py`'s JSONL shape exactly,
-/// **including its snake_case field names** — the one docket surface not
-/// camelCase. `event_type` is a plain `String`, not an enum: docket's set
-/// is large and open to growth, and an unknown type must round-trip.
+/// One trace/event record, mirroring `core/trace.py`'s JSONL shape exactly
+/// including its snake_case names (the one docket surface not camelCase).
+/// `event_type` is a plain `String`: unbounded, and unknown must round-trip.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RemoteEvent {
     /// `"YYYY-MM-DDTHH:MM:SSZ"`.
@@ -445,9 +423,8 @@ pub struct RemoteEvent {
     pub duration_ms: Option<i64>,
 }
 
-// A capability is a value the caller reads, never a provider check derived
-// from `kind` — a grep for `kind === 'docket'` in `frontend/src` must stay
-// empty.
+// A capability is a value the caller reads, never derived from `kind` — a
+// grep for `kind === 'docket'` in `frontend/src` must stay empty.
 
 /// Three-state support level for a capability a bare `bool` can't express.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -461,8 +438,8 @@ pub enum Support {
     Supported,
 }
 
-/// How narrowly an adapter's event stream can be scoped. Not a ranking —
-/// `Project` and `Run` are incomparable.
+/// How narrowly an event stream can be scoped; not a ranking — `Project`
+/// and `Run` are incomparable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EventScope {
@@ -512,8 +489,7 @@ pub enum ModelSelection {
 }
 
 /// Pairs a non-boolean capability's level with a human-readable reason, so a
-/// UI can say *why*, not only *that*. `Serialize` only — nothing here
-/// decodes a `Capabilities` back in from JSON.
+/// UI can say *why*, not only *that*. `Serialize` only, never decoded back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Rated<T> {
     pub level: T,
@@ -526,9 +502,8 @@ impl<T> Rated<T> {
     }
 }
 
-/// What one control plane can actually do — derived from the adapter's own
-/// configuration, never guessed from `kind`. Non-boolean fields are
-/// [`Rated`]; boolean fields answer a plain yes/no.
+/// What one control plane can actually do, derived from the adapter's own
+/// config, never guessed from `kind`. Non-boolean fields are [`Rated`].
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Capabilities {
     /// Can this plane accept new work at all?
@@ -552,16 +527,14 @@ pub struct Capabilities {
 }
 
 /// A control plane Tack can read fleet/run/approval/task state from and,
-/// gated behind `TACK_ORCH_ENABLE`, dispatch work to. `docket` is the only
-/// implementor today. **Not frozen** — update every implementor/caller in
-/// the same change as any signature edit.
+/// gated behind `TACK_ORCH_ENABLE`, dispatch work to (`docket` is the only
+/// implementor today). Not frozen — update every caller with any signature edit.
 #[async_trait::async_trait]
 pub trait ControlPlane: Send + Sync {
     fn kind(&self) -> &'static str; // "docket"
 
-    /// **Synchronous and does no I/O** — derived from the adapter's own
-    /// static configuration, so a plane that's currently `unreachable`
-    /// still reports honest capabilities.
+    /// Synchronous, no I/O — derived from static config, so a currently
+    /// `unreachable` plane still reports honest capabilities.
     fn capabilities(&self) -> Capabilities;
 
     async fn health(&self) -> Result<Health, OrchError>;
@@ -571,33 +544,23 @@ pub trait ControlPlane: Send + Sync {
     async fn get_run(&self, run_id: &str) -> Result<RemoteRun, OrchError>;
     async fn list_approvals(&self) -> Result<Vec<RemoteApproval>, OrchError>;
     async fn list_tasks(&self, project: &str) -> Result<Vec<RemoteTask>, OrchError>;
-    /// `since` is the opaque cursor a previous call's [`TracesPage::next`]
-    /// returned (`None` to start from the beginning); persist the returned
-    /// one and pass it back verbatim — never parsed or recomputed.
+    /// `since` is the opaque cursor [`TracesPage::next`] returned (`None` to
+    /// start over); pass the returned one back verbatim, never recomputed.
     async fn traces(&self, project: &str, since: Option<&str>) -> Result<TracesPage, OrchError>;
     // Write side, gated behind TACK_ORCH_ENABLE.
     async fn enqueue_task(&self, project: &str, task: NewRemoteTask) -> Result<String, OrchError>;
-    /// Trigger a full pipeline dispatch for `project` — `POST
-    /// /dispatch/{project}`, `vars` sent as the request body verbatim.
-    /// Success carries the plane's own run id, distinct from
-    /// [`ControlPlane::enqueue_task`]'s pod *task* id. **The id can come
-    /// back before the dispatched work actually runs**: poll
-    /// [`ControlPlane::get_run`] or [`ControlPlane::traces`] to learn
-    /// whether it was accepted; `Err` here only means the plane refused to
-    /// record it, never that the run later failed.
+    /// Trigger a full pipeline dispatch — success (a run id, distinct from
+    /// `enqueue_task`'s task id) can arrive before the work runs; poll
+    /// `get_run`/`traces` for acceptance. `Err` means only a refusal to record it.
     async fn dispatch(&self, project: &str, vars: serde_json::Value) -> Result<String, OrchError>;
-    /// Grant (`grant: true`) or deny (`grant: false`) a pending approval —
-    /// `POST /approvals/{token}`. An already-decided token is
-    /// [`OrchError::AlreadyDecided`], not a panic-worthy failure; an
-    /// unknown or illegally-transitioned one is [`OrchError::NotFound`].
+    /// Grant/deny a pending approval — `POST /approvals/{token}`. An
+    /// already-decided token is [`OrchError::AlreadyDecided`]; unknown or
+    /// illegally-transitioned is [`OrchError::NotFound`].
     async fn decide_approval(&self, token: &str, grant: bool) -> Result<ApprovalState, OrchError>;
 
-    /// Provision a fresh pod from a blueprint — `POST /pods`. See
-    /// [`ProvisionPodParams`]. **Provisions atomically: every member is
-    /// created, or none are** — a failing call tears down whatever it
-    /// started, so a caller never needs to (and cannot — no teardown
-    /// route) undo it. [`OrchError::AlreadyExists`] (HTTP 409) is the one
-    /// exception, raised before anything is touched.
+    /// Provision a fresh pod atomically: every member is created or none
+    /// are, so a failing call tears down whatever it started.
+    /// [`OrchError::AlreadyExists`] (409) is raised before anything is touched.
     async fn provision_pod(&self, params: ProvisionPodParams) -> Result<ProvisionedPod, OrchError>;
 }
 
