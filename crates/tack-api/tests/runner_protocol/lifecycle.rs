@@ -1,27 +1,27 @@
-//! Runner-protocol lifecycle over HTTP: enroll, refresh, claim, heartbeat,
-//! fencing, events, completion, recovery, and the operator/runner
-//! auth non-substitution proof. Each test builds its own router directly
-//! from `runner_protocol::routes`, bypassing the production router.
+//! Runner-protocol claim-through-completion attempt lifecycle over HTTP:
+//! claim, accept/start, heartbeat, fencing, events, decisions, artifacts,
+//! completion and recovery. Enrollment, refresh/credential-rotation and the
+//! operator/runner auth non-substitution proof live in `enrollment.rs` —
+//! split out once this file passed 1000 lines, since those claims never
+//! touch an execution attempt at all. Each test builds its own router
+//! directly from `runner_protocol::routes`, bypassing the production
+//! router.
 
 // Loaded via `#[path]` so `runner_protocol.rs`'s own `mod runner_auth;`
 // resolves and compiles here without registering the auth module in
-// `handlers.rs`. `artifact_events` loads the same file again under its own
-// module path (a second, independent tree clippy's default lints forbid);
-// allowed here since sharing one module would also collapse each file's
-// own colocated unit tests into one, changing this binary's test count.
+// `handlers.rs`. `artifact_events` and `enrollment` load the same file
+// again under their own module paths (further independent trees clippy's
+// default lints forbid); allowed here since sharing one module would also
+// collapse each file's own colocated unit tests into one, changing this
+// binary's test count.
 #[allow(clippy::duplicate_mod)]
 #[path = "../../src/handlers/runner_protocol.rs"]
 mod runner_protocol;
 
-// Loaded read-only (never modified) so the operator/runner auth
-// non-substitution test below can exercise the real operator router.
-#[path = "../../src/handlers/executions.rs"]
-mod executions;
-
 use std::sync::{Arc, Mutex};
 
 use crate::common::send_str_strict as send;
-use crate::log_capture::{CaptureGuard, ensure_global_log_capture_installed};
+use crate::log_capture::ensure_global_log_capture_installed;
 
 use axum::{Router, http::StatusCode};
 use chrono::{DateTime, Duration, TimeZone, Utc};
@@ -29,9 +29,7 @@ use serde_json::{Value, json};
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
     Repository, init_pool, migrations,
-    repo::execution::{
-        EnrollmentToken, ExecutionClock, NewAgentProfile, NewExecutionRequest, NewRunner,
-    },
+    repo::execution::{ExecutionClock, NewAgentProfile, NewExecutionRequest, NewRunner},
 };
 use uuid::Uuid;
 
@@ -69,104 +67,402 @@ impl ExecutionClock for FakeClock {
 }
 
 // ---------------------------------------------------------------------
-// Test setup.
+// Fixture: the router, repo, fake clock and a ready item, plus short
+// methods for the runner-protocol calls this file repeats and the
+// row-count/state queries the writes-nothing assertions check. Every
+// method here corresponds 1:1 to an attempt-lifecycle route this suite
+// exercises against `RUNNER_ID`/`RUNNER_CREDENTIAL`; enrollment and
+// credential rotation live in `enrollment.rs`.
 // ---------------------------------------------------------------------
 
-async fn setup() -> (Router, Repository, FakeClock, String) {
-    // Must run before anything else in every test (see `log_capture.rs`'s
-    // doc comment): it closes the race window between this binary's tests
-    // by making sure no test's HTTP request can reach production handler
-    // code before the one global `tracing` subscriber this binary ever
-    // installs is in place.
-    ensure_global_log_capture_installed();
-    let pool = init_pool("sqlite::memory:").await.expect("pool");
-    migrations::run_all(&pool).await.expect("migrations");
-    let repo = Repository::new(pool);
-    let workspace = Uuid::new_v4();
-    sqlx::query("INSERT INTO workspaces (id,name,default_vocabulary) VALUES (?, 'C2', '{}')")
-        .bind(workspace.to_string())
-        .execute(repo.pool())
-        .await
-        .expect("workspace");
-    let project = repo
-        .create_project(
-            workspace,
-            CreateProject {
-                name: "C2".into(),
-                description: None,
-                project_type: ProjectType::Software,
-                template: None,
+struct Fixture {
+    app: Router,
+    repo: Repository,
+    clock: FakeClock,
+    item_id: String,
+}
+
+impl Fixture {
+    async fn new() -> Self {
+        // Must run before anything else in every test (see `log_capture.rs`'s
+        // doc comment): it closes the race window between this binary's
+        // tests by making sure no test's HTTP request can reach production
+        // handler code before the one global `tracing` subscriber this
+        // binary ever installs is in place.
+        ensure_global_log_capture_installed();
+        let pool = init_pool("sqlite::memory:").await.expect("pool");
+        migrations::run_all(&pool).await.expect("migrations");
+        let repo = Repository::new(pool);
+        let workspace = Uuid::new_v4();
+        sqlx::query("INSERT INTO workspaces (id,name,default_vocabulary) VALUES (?, 'C2', '{}')")
+            .bind(workspace.to_string())
+            .execute(repo.pool())
+            .await
+            .expect("workspace");
+        let project = repo
+            .create_project(
+                workspace,
+                CreateProject {
+                    name: "C2".into(),
+                    description: None,
+                    project_type: ProjectType::Software,
+                    template: None,
+                },
+            )
+            .await
+            .expect("project");
+        let item = repo
+            .create_item(
+                project.id,
+                "To Do",
+                CreateItem {
+                    title: "I".into(),
+                    description: None,
+                    item_type: None,
+                    parent_id: None,
+                    priority: None,
+                    estimate: None,
+                    estimate_unit: None,
+                    tags: None,
+                    due_date: None,
+                    sprint_id: None,
+                    assignee: None,
+                },
+            )
+            .await
+            .expect("item");
+
+        let clock = FakeClock::new(Utc.with_ymd_and_hms(2026, 8, 6, 12, 0, 0).unwrap());
+        let credential_hash = runner_protocol::runner_auth::credential_hash(RUNNER_CREDENTIAL);
+        // `tack_orch::scheduler` is wired into the real claim path, so
+        // `RUNNER_ID` must declare a real harness/model combination — an
+        // empty `"{}"` snapshot would make every claim in this file
+        // eligibility-reject before ever reaching the fencing/idempotency/
+        // replay behavior these tests actually exist to prove.
+        let capability_snapshot = full_capabilities(clock.now(), 2, 2).to_string();
+        repo.register_runner(
+            NewRunner {
+                id: RUNNER_ID,
+                name: "C2 Runner",
+                credential_hash: &credential_hash,
+                labels: "{}",
+                total_capacity: 2,
+                available_capacity: 2,
+                capability_snapshot: &capability_snapshot,
+                protocol_version: 1,
             },
+            &clock,
         )
         .await
-        .expect("project");
-    let item = repo
-        .create_item(
-            project.id,
-            "To Do",
-            CreateItem {
-                title: "I".into(),
-                description: None,
-                item_type: None,
-                parent_id: None,
-                priority: None,
-                estimate: None,
-                estimate_unit: None,
-                tags: None,
-                due_date: None,
-                sprint_id: None,
-                assignee: None,
+        .expect("runner");
+        repo.create_agent_profile(
+            NewAgentProfile {
+                id: "profile-c2",
+                name: "C2 Profile",
+                instructions: "work safely",
+                tool_policy: r#"{"mode":"safe"}"#,
+                limits: r#"{"tokens":1000}"#,
             },
+            &clock,
         )
         .await
-        .expect("item");
+        .expect("profile");
 
-    let clock = FakeClock::new(Utc.with_ymd_and_hms(2026, 8, 6, 12, 0, 0).unwrap());
-    let credential_hash = runner_protocol::runner_auth::credential_hash(RUNNER_CREDENTIAL);
-    // `tack_orch::scheduler` is wired into the real claim path, so
-    // `RUNNER_ID` must declare a real harness/model combination — an empty
-    // `"{}"` snapshot ("not enrolled
-    // yet, doesn't matter") would make every claim in this file
-    // eligibility-reject before ever reaching the fencing/idempotency/replay
-    // behavior these tests actually exist to prove.
-    let capability_snapshot = full_capabilities(clock.now(), 2, 2).to_string();
-    repo.register_runner(
-        NewRunner {
-            id: RUNNER_ID,
-            name: "C2 Runner",
-            credential_hash: &credential_hash,
-            labels: "{}",
-            total_capacity: 2,
-            available_capacity: 2,
-            capability_snapshot: &capability_snapshot,
-            protocol_version: 1,
-        },
-        &clock,
-    )
-    .await
-    .expect("runner");
-    repo.create_agent_profile(
-        NewAgentProfile {
-            id: "profile-c2",
-            name: "C2 Profile",
-            instructions: "work safely",
-            tool_policy: r#"{"mode":"safe"}"#,
-            limits: r#"{"tokens":1000}"#,
-        },
-        &clock,
-    )
-    .await
-    .expect("profile");
+        // This router is tested in isolation from any operator config, so
+        // `usize::MAX` here means "no additional global-config restriction"
+        // — the effective limit still collapses to the fixed 4 MiB protocol
+        // ceiling via `effective_body_limit_bytes`. The min-of-configured-
+        // and-ceiling precedence itself is proven against the real
+        // production router in `handlers/production_router.rs`, not here.
+        let state =
+            runner_protocol::RunnerProtocolState::new(repo.clone(), Arc::new(clock.clone()));
+        let app = runner_protocol::routes(state, usize::MAX);
+        Fixture {
+            app,
+            repo,
+            clock,
+            item_id: item.id.to_string(),
+        }
+    }
 
-    let state = runner_protocol::RunnerProtocolState::new(repo.clone(), Arc::new(clock.clone()));
-    // This router is tested in isolation from any operator
-    // config, so `usize::MAX` here means "no additional global-config
-    // restriction" — the effective limit still collapses to the fixed 4 MiB
-    // protocol ceiling via `effective_body_limit_bytes`. The min-of-configured-and-ceiling
-    // precedence itself is proven against the real production router in
-    // `handlers/production_router.rs`, not here.
-    let app = runner_protocol::routes(state, usize::MAX);
-    (app, repo, clock, item.id.to_string())
+    async fn post(&self, uri: &str, body: String) -> (StatusCode, Value) {
+        send(
+            &self.app,
+            "POST",
+            uri,
+            body,
+            &[("authorization", &format!("Bearer {RUNNER_CREDENTIAL}"))],
+        )
+        .await
+    }
+
+    /// Enqueue a fresh execution request selecting `RUNNER_ID`.
+    async fn enqueue(&self, key: &str) -> String {
+        enqueue_request(
+            &self.repo,
+            &self.clock,
+            &self.item_id,
+            RUNNER_ID,
+            "profile-c2",
+            key,
+        )
+        .await
+    }
+
+    async fn claim(&self, claim_request_id: &str) -> Value {
+        let (_, body) = self
+            .post(
+                "/claim",
+                json!({
+                    "protocol_version": 1, "runner_id": RUNNER_ID, "claim_request_id": claim_request_id,
+                    "available_capacity": 2, "wait_ms": 1000,
+                })
+                .to_string(),
+            )
+            .await;
+        body
+    }
+
+    /// Enqueue and claim in one step: `(request_id, attempt_id, fencing_token)`.
+    async fn enqueue_and_claim(&self, key: &str, claim_request_id: &str) -> (String, String, i64) {
+        let request_id = self.enqueue(key).await;
+        let claimed = self.claim(claim_request_id).await;
+        let attempt_id = claimed["lease"]["attempt_id"].as_str().unwrap().to_owned();
+        let fencing_token = claimed["lease"]["fencing_token"].as_i64().unwrap();
+        (request_id, attempt_id, fencing_token)
+    }
+
+    /// Enqueue, claim, accept and start: the attempt is left `running`, the
+    /// state events/decisions/artifacts/completion require.
+    async fn ready_running(&self, key: &str, claim_request_id: &str) -> (String, String, i64) {
+        let (request_id, attempt_id, fencing_token) =
+            self.enqueue_and_claim(key, claim_request_id).await;
+        self.accept(&attempt_id, fencing_token).await;
+        self.start(&attempt_id, fencing_token, "pid-1").await;
+        (request_id, attempt_id, fencing_token)
+    }
+
+    async fn accept(&self, attempt_id: &str, fencing_token: i64) -> (StatusCode, Value) {
+        self.post(
+            &format!("/attempts/{attempt_id}/accept"),
+            json!({
+                "protocol_version": 1, "runner_id": RUNNER_ID, "attempt_id": attempt_id, "fencing_token": fencing_token,
+                "workspace_id": "ws-1", "base_revision": "abc123def456abc123def456abc123def456abc",
+            })
+            .to_string(),
+        )
+        .await
+    }
+
+    async fn start(
+        &self,
+        attempt_id: &str,
+        fencing_token: i64,
+        process_id: &str,
+    ) -> (StatusCode, Value) {
+        self.post(
+            &format!("/attempts/{attempt_id}/start"),
+            json!({
+                "protocol_version": 1, "runner_id": RUNNER_ID, "attempt_id": attempt_id, "fencing_token": fencing_token,
+                "workspace_id": "ws-1", "base_revision": "abc123def456abc123def456abc123def456abc",
+                "process_id": process_id,
+            })
+            .to_string(),
+        )
+        .await
+    }
+
+    async fn events(
+        &self,
+        attempt_id: &str,
+        fencing_token: i64,
+        checkpoint: &str,
+        previous_checkpoint: Value,
+        events: Value,
+    ) -> (StatusCode, Value) {
+        self.post(
+            &format!("/attempts/{attempt_id}/events"),
+            json!({
+                "protocol_version": 1, "runner_id": RUNNER_ID, "attempt_id": attempt_id, "fencing_token": fencing_token,
+                "previous_checkpoint": previous_checkpoint, "checkpoint": checkpoint, "events": events,
+            })
+            .to_string(),
+        )
+        .await
+    }
+
+    async fn decision(
+        &self,
+        attempt_id: &str,
+        fencing_token: i64,
+        decision_id: &str,
+        prompt: &str,
+    ) -> (StatusCode, Value) {
+        self.post(
+            &format!("/attempts/{attempt_id}/decisions"),
+            json!({
+                "protocol_version": 1, "runner_id": RUNNER_ID, "attempt_id": attempt_id, "fencing_token": fencing_token,
+                "decision_id": decision_id, "kind": "tool_permission", "prompt": prompt,
+                "options": [{"option_id":"allow_once","label":"Allow once"},{"option_id":"deny","label":"Deny"}],
+                "expires_at": Value::Null, "metadata": {"tool": "cargo test"},
+            })
+            .to_string(),
+        )
+        .await
+    }
+
+    async fn poll(&self, attempt_id: &str, fencing_token: i64, after: &str) -> (StatusCode, Value) {
+        self.post(
+            &format!("/attempts/{attempt_id}/decisions/poll"),
+            json!({
+                "protocol_version": 1, "runner_id": RUNNER_ID, "attempt_id": attempt_id,
+                "fencing_token": fencing_token, "after": after,
+            })
+            .to_string(),
+        )
+        .await
+    }
+
+    /// Resolve `decision_id` directly at the row level, standing in for the
+    /// operator decision-resolution endpoint this file does not exercise.
+    async fn resolve_decision(&self, attempt_id: &str, decision_id: &str, option_id: &str) {
+        sqlx::query(
+            "UPDATE execution_decisions SET state='resolved', answer=?, resolved_at=?, resolved_by=?, updated_at=? WHERE attempt_id=? AND decision_id=?",
+        )
+        .bind(json!({"option_id": option_id, "text": Value::Null}).to_string())
+        .bind(self.clock.now().to_rfc3339())
+        .bind(json!({"kind": "operator", "subject_id": "local-admin"}).to_string())
+        .bind(self.clock.now().to_rfc3339())
+        .bind(attempt_id)
+        .bind(decision_id)
+        .execute(self.repo.pool())
+        .await
+        .unwrap();
+    }
+
+    async fn artifact(
+        &self,
+        attempt_id: &str,
+        fencing_token: i64,
+        artifact_id: &str,
+        sha256: &str,
+    ) -> (StatusCode, Value) {
+        self.post(
+            &format!("/attempts/{attempt_id}/artifacts"),
+            artifact_body(RUNNER_ID, attempt_id, fencing_token, artifact_id, sha256),
+        )
+        .await
+    }
+
+    /// The raw completion body [`Fixture::complete_default`] sends: a fixed
+    /// 5-minute duration and no checkpoint, for tests that don't care about
+    /// those values but need the raw string to tamper with.
+    fn default_completion_body(
+        &self,
+        attempt_id: &str,
+        fencing_token: i64,
+        completion_id: &str,
+    ) -> String {
+        let started_at = self.clock.now() - Duration::minutes(5);
+        completion_body(
+            RUNNER_ID,
+            attempt_id,
+            fencing_token,
+            completion_id,
+            started_at,
+            self.clock.now(),
+            None,
+        )
+    }
+
+    async fn complete_default(
+        &self,
+        attempt_id: &str,
+        fencing_token: i64,
+        completion_id: &str,
+    ) -> (StatusCode, Value) {
+        self.post(
+            &format!("/attempts/{attempt_id}/completion"),
+            self.default_completion_body(attempt_id, fencing_token, completion_id),
+        )
+        .await
+    }
+
+    async fn heartbeat(&self, heartbeat_id: &str, capacity: i64) -> (StatusCode, Value) {
+        self.post(
+            "/heartbeat",
+            json!({
+                "protocol_version": 1, "runner_id": RUNNER_ID, "heartbeat_id": heartbeat_id,
+                "sent_at": self.clock.now().to_rfc3339(), "available_capacity": capacity, "active_attempts": [],
+            })
+            .to_string(),
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn recovery_observation(
+        &self,
+        attempt_id: &str,
+        fencing_token: i64,
+        observation: &str,
+        journal_state: &str,
+        process_observed: bool,
+    ) -> (StatusCode, Value) {
+        self.post(
+            &format!("/attempts/{attempt_id}/recovery-observation"),
+            json!({
+                "protocol_version": 1, "runner_id": RUNNER_ID, "attempt_id": attempt_id, "fencing_token": fencing_token,
+                "recovery_key": format!("recovery:{attempt_id}:{fencing_token}:{observation}"),
+                "observation": observation,
+                "details": {"journal_state": journal_state, "process_observed": process_observed},
+            })
+            .to_string(),
+        )
+        .await
+    }
+
+    async fn count(&self, table: &str, attempt_id: &str) -> i64 {
+        sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {table} WHERE attempt_id=?"
+        )))
+        .bind(attempt_id)
+        .fetch_one(self.repo.pool())
+        .await
+        .unwrap()
+    }
+
+    async fn attempt_state(&self, attempt_id: &str) -> String {
+        sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id=?")
+            .bind(attempt_id)
+            .fetch_one(self.repo.pool())
+            .await
+            .unwrap()
+    }
+
+    async fn request_state(&self, request_id: &str) -> String {
+        sqlx::query_scalar("SELECT state FROM execution_requests WHERE id=?")
+            .bind(request_id)
+            .fetch_one(self.repo.pool())
+            .await
+            .unwrap()
+    }
+
+    async fn checkpoint(&self, attempt_id: &str) -> Option<String> {
+        sqlx::query_scalar("SELECT event_checkpoint FROM execution_attempts WHERE id=?")
+            .bind(attempt_id)
+            .fetch_one(self.repo.pool())
+            .await
+            .unwrap()
+    }
+
+    async fn available_capacity(&self) -> i64 {
+        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id=?")
+            .bind(RUNNER_ID)
+            .fetch_one(self.repo.pool())
+            .await
+            .unwrap()
+    }
 }
 
 /// Enqueues an execution request selecting `runner_id`, matching the frozen
@@ -237,52 +533,13 @@ async fn enqueue_request(
     request_id
 }
 
-async fn send_as_runner(
-    app: &Router,
-    method: &str,
-    uri: &str,
-    body: String,
-) -> (StatusCode, Value) {
-    send(
-        app,
-        method,
-        uri,
-        body,
-        &[("authorization", &format!("Bearer {RUNNER_CREDENTIAL}"))],
-    )
-    .await
-}
-
-/// Enqueue a request for `RUNNER_ID` and claim it, returning
-/// `(request_id, attempt_id, fencing_token)`. The shape every test below
-/// needs before it can exercise a leased attempt's routes.
-async fn enqueue_and_claim(
-    app: &Router,
-    repo: &Repository,
-    clock: &FakeClock,
-    item_id: &str,
-    idempotency_key: &str,
-    claim_request_id: &str,
-) -> (String, String, i64) {
-    let request_id = enqueue_request(
-        repo,
-        clock,
-        item_id,
-        RUNNER_ID,
-        "profile-c2",
-        idempotency_key,
-    )
-    .await;
-    let (_, claimed) = send_as_runner(
-        app,
-        "POST",
-        "/claim",
-        json!({"protocol_version":1,"runner_id":RUNNER_ID,"claim_request_id":claim_request_id,"available_capacity":2,"wait_ms":1000}).to_string(),
-    )
-    .await;
-    let attempt_id = claimed["lease"]["attempt_id"].as_str().unwrap().to_owned();
-    let fencing_token = claimed["lease"]["fencing_token"].as_i64().unwrap();
-    (request_id, attempt_id, fencing_token)
+/// One runner-reported event, wrapped in the single-element array shape
+/// every `Fixture::events` call sends.
+fn one_event(event_id: &str, sequence: i64, occurred_at: DateTime<Utc>, payload: &Value) -> Value {
+    json!([{
+        "event_id": event_id, "sequence": sequence, "occurred_at": occurred_at.to_rfc3339(),
+        "source": "runner", "kind": "progress", "payload": payload,
+    }])
 }
 
 /// `harnesses` declares "codex"/"openai"/`REQUESTED_MODEL_ID` — every
@@ -337,6 +594,7 @@ fn artifact_body(
     .to_string()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn completion_body(
     runner_id: &str,
     attempt_id: &str,
@@ -384,215 +642,264 @@ fn completion_body(
 }
 
 // ---------------------------------------------------------------------
-// 1. Full lifecycle, exercised through a fresh enrollment.
+// 1. Accept is idempotent (an exact replay returns the original commit),
+//    and start transitions a `preparing` attempt to `running`.
 // ---------------------------------------------------------------------
 
 #[tokio::test]
-async fn full_runner_protocol_lifecycle_enroll_through_completion() {
-    let (app, repo, clock, item_id) = setup().await;
+async fn accept_is_idempotent_and_start_transitions_to_running() {
+    let fx = Fixture::new().await;
+    let (_, attempt_id, fencing_token) = fx.enqueue_and_claim("accept-key", "claim-accept").await;
 
-    let raw_enrollment_token = "example_lifecycle_enrollment_token";
-    let token_hash = runner_protocol::runner_auth::credential_hash(raw_enrollment_token);
-    repo.create_pending_runner_and_issue_token(
-        NewRunner {
-            id: "runner-lifecycle",
-            name: "Lifecycle Runner",
-            credential_hash: "pending:no-credential",
-            labels: "{}",
-            total_capacity: 1,
-            available_capacity: 1,
-            capability_snapshot: "{}",
-            protocol_version: 1,
-        },
-        EnrollmentToken {
-            id: "tok-lifecycle",
-            runner_id: "runner-lifecycle",
-            token_hash: &token_hash,
-            expires_at: clock.now() + Duration::hours(1),
-        },
-        &clock,
-    )
-    .await
-    .expect("pending runner");
-
-    let enroll_body = json!({
-        "protocol_version": 1,
-        "enrollment_token": raw_enrollment_token,
-        "runner_name": "Lifecycle Runner",
-        "runner_version": "0.1.0",
-        "capabilities": full_capabilities(clock.now(), 1, 1),
-    })
-    .to_string();
-    let (status, enrolled) = send(&app, "POST", "/enroll", enroll_body, &[]).await;
-    assert_eq!(status, StatusCode::OK, "{enrolled}");
-    let runner_id = enrolled["runner_id"].as_str().unwrap().to_owned();
-    let credential = enrolled["runner_credential"].as_str().unwrap().to_owned();
-    assert_ne!(credential, raw_enrollment_token);
-    assert_eq!(enrolled["heartbeat_interval_seconds"], 15);
-    assert_eq!(enrolled["lease_duration_seconds"], 60);
-    let stored_hash: String =
-        sqlx::query_scalar("SELECT credential_hash FROM agent_runners WHERE id=?")
-            .bind(&runner_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    assert_ne!(stored_hash, credential, "only the hash may be stored");
-
-    let auth_header = [("authorization", format!("Bearer {credential}"))];
-    let auth = |uri: &str, body: String| {
-        let (name, value) = auth_header[0].clone();
-        let app = app.clone();
-        let uri = uri.to_string();
-        async move { send(&app, "POST", &uri, body, &[(name, &value)]).await }
-    };
-
-    // Refresh (capability refresh) with rotation.
-    let refresh_body = json!({
-        "protocol_version": 1,
-        "runner_id": runner_id,
-        "runner_name": "Lifecycle Runner",
-        "runner_version": "0.1.1",
-        "rotate_credential": true,
-        "capabilities": full_capabilities(clock.now(), 1, 1),
-    })
-    .to_string();
-    let (status, refreshed) = auth("/refresh", refresh_body).await;
-    assert_eq!(status, StatusCode::OK, "{refreshed}");
-    let rotated_credential = refreshed["runner_credential"].as_str().unwrap().to_owned();
-    assert_ne!(rotated_credential, credential);
-    // The old credential no longer authenticates once rotated.
-    let (old_status, _) = auth(
-        "/refresh",
-        json!({"protocol_version":1,"runner_id":runner_id,"runner_name":"x","runner_version":"x","rotate_credential":false,"capabilities":full_capabilities(clock.now(),1,1)}).to_string(),
-    )
-    .await;
-    assert_eq!(old_status, StatusCode::UNAUTHORIZED);
-
-    let auth_header = [("authorization", format!("Bearer {rotated_credential}"))];
-    let auth = |uri: &str, body: String| {
-        let (name, value) = auth_header[0].clone();
-        let app = app.clone();
-        let uri = uri.to_string();
-        async move { send(&app, "POST", &uri, body, &[(name, &value)]).await }
-    };
-
-    let request_id = enqueue_request(
-        &repo,
-        &clock,
-        &item_id,
-        &runner_id,
-        "profile-c2",
-        "lifecycle-key",
-    )
-    .await;
-
-    // Claim.
-    let claim_body = json!({
-        "protocol_version": 1, "runner_id": runner_id, "claim_request_id": "claim-lifecycle",
-        "available_capacity": 1, "wait_ms": 1000,
-    })
-    .to_string();
-    let (status, claimed) = auth("/claim", claim_body).await;
-    assert_eq!(status, StatusCode::OK, "{claimed}");
-    assert_eq!(claimed["request"]["request_id"], request_id);
-    let attempt_id = claimed["lease"]["attempt_id"].as_str().unwrap().to_owned();
-    let fencing_token = claimed["lease"]["fencing_token"].as_i64().unwrap();
-    assert_eq!(claimed["attempt"]["state"], "leased");
-
-    // Accept (preparing), then an exact replay.
-    let accept_body = json!({
-        "protocol_version": 1, "runner_id": runner_id, "attempt_id": attempt_id, "fencing_token": fencing_token,
-        "workspace_id": "ws-1", "base_revision": "abc123def456abc123def456abc123def456abc",
-    })
-    .to_string();
-    let (status, accepted) = auth(
-        &format!("/attempts/{attempt_id}/accept"),
-        accept_body.clone(),
-    )
-    .await;
+    let (status, accepted) = fx.accept(&attempt_id, fencing_token).await;
     assert_eq!(status, StatusCode::OK, "{accepted}");
     assert_eq!(accepted["state"], "preparing");
     assert_eq!(accepted["replayed"], false);
-    let (status, replayed) = auth(&format!("/attempts/{attempt_id}/accept"), accept_body).await;
+    let (status, replayed) = fx.accept(&attempt_id, fencing_token).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(replayed["replayed"], true);
     assert_eq!(replayed["committed_at"], accepted["committed_at"]);
 
-    // Start (running).
-    let start_body = json!({
-        "protocol_version": 1, "runner_id": runner_id, "attempt_id": attempt_id, "fencing_token": fencing_token,
-        "workspace_id": "ws-1", "base_revision": "abc123def456abc123def456abc123def456abc", "process_id": "pid-123",
-    })
-    .to_string();
-    let (status, started) = auth(&format!("/attempts/{attempt_id}/start"), start_body).await;
+    let (status, started) = fx.start(&attempt_id, fencing_token, "pid-123").await;
     assert_eq!(status, StatusCode::OK, "{started}");
     assert_eq!(started["state"], "running");
+}
 
-    // Event batch.
-    let events_body = json!({
-        "protocol_version": 1, "runner_id": runner_id, "attempt_id": attempt_id, "fencing_token": fencing_token,
-        "previous_checkpoint": Value::Null, "checkpoint": "checkpoint-0001",
-        "events": [{
-            "event_id": "evt-1", "sequence": 1, "occurred_at": clock.now().to_rfc3339(),
-            "source": "runner", "kind": "progress", "payload": {"phase": "testing"},
-        }],
-    })
-    .to_string();
-    let (status, batch) = auth(&format!("/attempts/{attempt_id}/events"), events_body).await;
+// ---------------------------------------------------------------------
+// 2. Stale/expired fence writes nothing and returns `stale_lease`.
+// ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn stale_and_expired_fence_write_nothing() {
+    let fx = Fixture::new().await;
+    let (_, attempt_id, fencing_token) = fx.enqueue_and_claim("stale-key", "claim-stale").await;
+
+    let (status, body) = fx
+        .events(
+            &attempt_id,
+            fencing_token + 1,
+            "cp-1",
+            Value::Null,
+            json!([]),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["error"]["code"], "stale_lease");
+    assert_eq!(
+        fx.count("execution_events", &attempt_id).await,
+        0,
+        "wrong fence writes nothing"
+    );
+
+    // Expired lease, correct fencing token: never heartbeat, just advance
+    // the fake clock past `lease_duration_seconds` (60s).
+    fx.clock.advance(Duration::seconds(61));
+    let (status, body) = fx
+        .events(&attempt_id, fencing_token, "cp-1", Value::Null, json!([]))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["error"]["code"], "stale_lease");
+    assert_eq!(
+        fx.count("execution_events", &attempt_id).await,
+        0,
+        "expired lease writes nothing"
+    );
+    assert_eq!(
+        fx.checkpoint(&attempt_id).await,
+        None,
+        "attempt row is untouched"
+    );
+}
+
+// ---------------------------------------------------------------------
+// 3. Heartbeat replay returns the original success; a same-id retry with
+//    different content is a stable, distinct conflict code. (The
+//    completion analogue of this claim is pinned once, in
+//    `completion_replay_changed_content_is_idempotency_conflict` below —
+//    not duplicated here.)
+// ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn heartbeat_replay_succeeds_conflicting_retry_rejected() {
+    let fx = Fixture::new().await;
+    fx.enqueue_and_claim("replay-key", "claim-replay").await;
+    let (status, first) = fx.heartbeat("hb-replay", 1).await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    let (status, replay) = fx.heartbeat("hb-replay", 1).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        replay["accepted_at"], first["accepted_at"],
+        "exact replay returns the original success"
+    );
+    let (status, conflicting) = fx.heartbeat("hb-replay", 2).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(conflicting["error"]["code"], "idempotency_conflict");
+}
+
+// ---------------------------------------------------------------------
+// 4. Oversized event batch writes nothing at all.
+// ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn oversized_event_batch_writes_nothing() {
+    let fx = Fixture::new().await;
+    let (_, attempt_id, fencing_token) = fx
+        .enqueue_and_claim("oversized-key", "claim-oversized")
+        .await;
+
+    // Over `event_batch_count_max` (100 tiny events), and over the whole-body
+    // byte cap (`json_body_bytes_max` == `event_batch_bytes_max`, both 1
+    // MiB, one oversized-payload event) — both reject with 413 and write
+    // nothing.
+    let too_many_events: Vec<Value> = (0..101)
+        .map(|i| json!({"event_id": format!("evt-{i}"), "sequence": i, "occurred_at": fx.clock.now().to_rfc3339(), "source":"runner","kind":"progress","payload":{}}))
+        .collect();
+    let huge_event = json!([{"event_id":"evt-huge","sequence":1,"occurred_at":fx.clock.now().to_rfc3339(),"source":"runner","kind":"progress","payload":{"blob":"x".repeat(2*1_048_576)}}]);
+
+    for (events, limit_name) in [
+        (json!(too_many_events), Some("event_batch_count_max")),
+        (huge_event, None),
+    ] {
+        let (status, body) = fx
+            .events(&attempt_id, fencing_token, "cp-1", Value::Null, events)
+            .await;
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+        assert_eq!(body["error"]["code"], "payload_too_large");
+        if let Some(limit_name) = limit_name {
+            assert_eq!(body["error"]["details"]["limit"], limit_name);
+        }
+    }
+    assert_eq!(
+        fx.count("execution_events", &attempt_id).await,
+        0,
+        "an oversized batch writes nothing, not just a 413"
+    );
+    assert_eq!(fx.checkpoint(&attempt_id).await, None);
+}
+
+// ---------------------------------------------------------------------
+// 5. Reusing a decision_id/artifact_id with different content is an
+//    idempotency conflict (a compensating check for the
+//    `ON CONFLICT DO NOTHING` inserts). Two claims, same shape, split so
+//    each stays a single-concern test.
+// ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn decision_id_reuse_different_content_is_idempotency_conflict() {
+    let fx = Fixture::new().await;
+    let (_, attempt_id, fencing_token) = fx.ready_running("reuse-key", "claim-reuse").await;
+
+    let (status, first) = fx
+        .decision(&attempt_id, fencing_token, "dec-reuse", "Allow A?")
+        .await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    let (status, exact_replay) = fx
+        .decision(&attempt_id, fencing_token, "dec-reuse", "Allow A?")
+        .await;
+    assert_eq!(status, StatusCode::OK, "an exact replay is not a conflict");
+    assert_eq!(exact_replay["created_at"], first["created_at"]);
+    let (status, conflict) = fx
+        .decision(&attempt_id, fencing_token, "dec-reuse", "Allow B?")
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(conflict["error"]["code"], "idempotency_conflict");
+
+    let stored_prompt: String = sqlx::query_scalar(
+        "SELECT prompt FROM execution_decisions WHERE attempt_id=? AND decision_id='dec-reuse'",
+    )
+    .bind(&attempt_id)
+    .fetch_one(fx.repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(
+        stored_prompt, "Allow A?",
+        "the conflicting retry did not overwrite the original"
+    );
+}
+
+#[tokio::test]
+async fn artifact_id_reuse_different_content_is_idempotency_conflict() {
+    let fx = Fixture::new().await;
+    let (_, attempt_id, fencing_token) = fx.ready_running("reuse-art-key", "claim-reuse-art").await;
+    let sha_a = "a".repeat(64);
+    let sha_b = "b".repeat(64);
+
+    let (status, _) = fx
+        .artifact(&attempt_id, fencing_token, "art-reuse", &sha_a)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, conflict) = fx
+        .artifact(&attempt_id, fencing_token, "art-reuse", &sha_b)
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(conflict["error"]["code"], "idempotency_conflict");
+
+    let stored_sha: String = sqlx::query_scalar(
+        "SELECT sha256 FROM execution_artifacts WHERE attempt_id=? AND artifact_id='art-reuse'",
+    )
+    .bind(&attempt_id)
+    .fetch_one(fx.repo.pool())
+    .await
+    .unwrap();
+    assert_eq!(stored_sha, sha_a);
+}
+
+// ---------------------------------------------------------------------
+// 6. Event batch happy path: commits the checkpoint and persists events.
+// ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn event_batch_commits_checkpoint_and_persists_events() {
+    let fx = Fixture::new().await;
+    let (_, attempt_id, fencing_token) = fx.enqueue_and_claim("events-key", "claim-events").await;
+    let events = json!([{
+        "event_id": "evt-1", "sequence": 1, "occurred_at": fx.clock.now().to_rfc3339(),
+        "source": "runner", "kind": "progress", "payload": {"phase": "testing"},
+    }]);
+
+    let (status, batch) = fx
+        .events(
+            &attempt_id,
+            fencing_token,
+            "checkpoint-0001",
+            Value::Null,
+            events,
+        )
+        .await;
     assert_eq!(status, StatusCode::OK, "{batch}");
     assert_eq!(batch["accepted_event_ids"], json!(["evt-1"]));
     assert_eq!(batch["committed_checkpoint"], "checkpoint-0001");
-    let event_rows: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM execution_events WHERE attempt_id=?")
-            .bind(&attempt_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    assert_eq!(event_rows, 1);
+    assert_eq!(fx.count("execution_events", &attempt_id).await, 1);
+}
 
-    // Decision create then poll: pending, then simulate resolution and poll again.
-    let decision_body = json!({
-        "protocol_version": 1, "runner_id": runner_id, "attempt_id": attempt_id, "fencing_token": fencing_token,
-        "decision_id": "dec-1", "kind": "tool_permission", "prompt": "Allow the harness to run tests?",
-        "options": [{"option_id":"allow_once","label":"Allow once"},{"option_id":"deny","label":"Deny"}],
-        "expires_at": Value::Null, "metadata": {"tool": "cargo test"},
-    })
-    .to_string();
-    let (status, decision) =
-        auth(&format!("/attempts/{attempt_id}/decisions"), decision_body).await;
+// ---------------------------------------------------------------------
+// 7. Decision poll returns the pending decision, then the resolved
+//     answer once it is resolved, advancing `next_after` each time.
+// ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn decision_poll_returns_pending_then_resolved() {
+    let fx = Fixture::new().await;
+    let (_, attempt_id, fencing_token) = fx.ready_running("decision-key", "claim-decision").await;
+    let (status, decision) = fx
+        .decision(&attempt_id, fencing_token, "dec-1", "Allow?")
+        .await;
     assert_eq!(status, StatusCode::OK, "{decision}");
     assert_eq!(decision["state"], "pending");
     let created_at = decision["created_at"].as_str().unwrap().to_owned();
 
-    let poll_body = |after: &str| {
-        json!({"protocol_version":1,"runner_id":runner_id,"attempt_id":attempt_id,"fencing_token":fencing_token,"after":after}).to_string()
-    };
-    let (status, first_poll) = auth(
-        &format!("/attempts/{attempt_id}/decisions/poll"),
-        poll_body(&request_created_before(&clock)),
-    )
-    .await;
+    let before = (fx.clock.now() - Duration::hours(1)).to_rfc3339();
+    let (status, first_poll) = fx.poll(&attempt_id, fencing_token, &before).await;
     assert_eq!(status, StatusCode::OK, "{first_poll}");
     assert_eq!(first_poll["decisions"][0]["decision_id"], "dec-1");
     assert_eq!(first_poll["decisions"][0]["state"], "pending");
     let next_after = first_poll["next_after"].as_str().unwrap().to_owned();
     assert_eq!(next_after, created_at);
 
-    clock.advance(Duration::seconds(30));
-    sqlx::query("UPDATE execution_decisions SET state='resolved', answer=?, resolved_at=?, resolved_by=?, updated_at=? WHERE attempt_id=? AND decision_id='dec-1'")
-        .bind(json!({"option_id":"allow_once","text":Value::Null}).to_string())
-        .bind(clock.now().to_rfc3339())
-        .bind(json!({"kind":"operator","subject_id":"local-admin"}).to_string())
-        .bind(clock.now().to_rfc3339())
-        .bind(&attempt_id)
-        .execute(repo.pool())
-        .await
-        .unwrap();
-    let (status, second_poll) = auth(
-        &format!("/attempts/{attempt_id}/decisions/poll"),
-        poll_body(&next_after),
-    )
-    .await;
+    fx.clock.advance(Duration::seconds(30));
+    fx.resolve_decision(&attempt_id, "dec-1", "allow_once")
+        .await;
+    let (status, second_poll) = fx.poll(&attempt_id, fencing_token, &next_after).await;
     assert_eq!(status, StatusCode::OK, "{second_poll}");
     assert_eq!(second_poll["decisions"][0]["state"], "resolved");
     assert_eq!(
@@ -600,808 +907,171 @@ async fn full_runner_protocol_lifecycle_enroll_through_completion() {
         "allow_once"
     );
     assert_ne!(second_poll["next_after"].as_str().unwrap(), next_after);
+}
 
-    // Artifact manifest.
+// ---------------------------------------------------------------------
+// 8. Artifact manifest is accepted and names a PUT upload target.
+// ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn artifact_manifest_is_accepted_with_put_upload_target() {
+    let fx = Fixture::new().await;
+    let (_, attempt_id, fencing_token) = fx.ready_running("manifest-key", "claim-manifest").await;
     let sha256 = "f".repeat(64);
-    let (status, artifacts) = auth(
-        &format!("/attempts/{attempt_id}/artifacts"),
-        artifact_body(&runner_id, &attempt_id, fencing_token, "art-1", &sha256),
-    )
-    .await;
+    let (status, artifacts) = fx
+        .artifact(&attempt_id, fencing_token, "art-1", &sha256)
+        .await;
     assert_eq!(status, StatusCode::OK, "{artifacts}");
     assert_eq!(artifacts["artifacts"][0]["state"], "manifest_accepted");
     assert_eq!(artifacts["artifacts"][0]["upload"]["method"], "PUT");
+}
 
-    // Completion, then an exact replay.
-    let started_at = clock.now() - Duration::minutes(5);
-    let completion_body_str = completion_body(
-        &runner_id,
-        &attempt_id,
-        fencing_token,
-        "complete-1",
-        started_at,
-        clock.now(),
-        Some("checkpoint-0001"),
-    );
-    let (status, completed) = auth(
-        &format!("/attempts/{attempt_id}/completion"),
-        completion_body_str.clone(),
-    )
-    .await;
+// ---------------------------------------------------------------------
+// 9. Completion is idempotent (exact replay returns the original commit)
+//     and restores the runner's available capacity exactly once.
+// ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn completion_is_idempotent_and_restores_capacity_once() {
+    let fx = Fixture::new().await;
+    let (request_id, attempt_id, fencing_token) = fx
+        .enqueue_and_claim("completion-key", "claim-completion")
+        .await;
+    let (status, completed) = fx
+        .complete_default(&attempt_id, fencing_token, "complete-1")
+        .await;
     assert_eq!(status, StatusCode::OK, "{completed}");
     assert_eq!(completed["state"], "succeeded");
     assert_eq!(completed["replayed"], false);
-    let (status, replayed_completion) = auth(
-        &format!("/attempts/{attempt_id}/completion"),
-        completion_body_str,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(replayed_completion["replayed"], true);
-    assert_eq!(
-        replayed_completion["committed_at"],
-        completed["committed_at"]
-    );
 
-    let request_state: String =
-        sqlx::query_scalar("SELECT state FROM execution_requests WHERE id=?")
-            .bind(&request_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    assert_eq!(request_state, "succeeded");
-    let available_capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id=?")
-            .bind(&runner_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    assert_eq!(available_capacity, 1, "capacity is restored exactly once");
-}
-
-fn request_created_before(clock: &FakeClock) -> String {
-    (clock.now() - Duration::hours(1)).to_rfc3339()
-}
-
-// ---------------------------------------------------------------------
-// Two default-configured runners self-report the identical
-// `runner_name` (both default it from `TACK_RUNNER_ID`). Without the
-// `_runner_name`/removed `name=?` special-casing in
-// `crates/tack-db/src/repo/execution.rs::redeem_enrollment_token`, this
-// would silently overwrite the operator-assigned, uniquely-named
-// pending-runner row and crash the second enrollment on
-// `agent_runners`'s `UNIQUE` `name` constraint (two curl enrollments
-// differing only in token, first 200, second 500). Load-bearing:
-// reverting that change makes this test fail with a 500 on the second
-// enrollment.
-// ---------------------------------------------------------------------
-
-#[tokio::test]
-async fn duplicate_self_reported_runner_name_enrolls_both_runners() {
-    let (app, repo, clock, _item_id) = setup().await;
-
-    // The operator assigns each pending runner a distinct, unique name —
-    // exactly as `create_pending_runner` requires (its own INSERT is
-    // `UNIQUE`-constrained on `name`).
-    const RAW_TOKEN_A: &str = "iii-h7-token-a";
-    const RAW_TOKEN_B: &str = "iii-h7-token-b";
-    let token_hash_a = runner_protocol::runner_auth::credential_hash(RAW_TOKEN_A);
-    let token_hash_b = runner_protocol::runner_auth::credential_hash(RAW_TOKEN_B);
-    repo.create_pending_runner_and_issue_token(
-        NewRunner {
-            id: "runner-h7-a",
-            name: "operator-assigned-a",
-            credential_hash: "pending:no-credential",
-            labels: "{}",
-            total_capacity: 1,
-            available_capacity: 1,
-            capability_snapshot: "{}",
-            protocol_version: 1,
-        },
-        EnrollmentToken {
-            id: "tok-h7-a",
-            runner_id: "runner-h7-a",
-            token_hash: &token_hash_a,
-            expires_at: clock.now() + Duration::hours(1),
-        },
-        &clock,
-    )
-    .await
-    .expect("pending runner a");
-    repo.create_pending_runner_and_issue_token(
-        NewRunner {
-            id: "runner-h7-b",
-            name: "operator-assigned-b",
-            credential_hash: "pending:no-credential",
-            labels: "{}",
-            total_capacity: 1,
-            available_capacity: 1,
-            capability_snapshot: "{}",
-            protocol_version: 1,
-        },
-        EnrollmentToken {
-            id: "tok-h7-b",
-            runner_id: "runner-h7-b",
-            token_hash: &token_hash_b,
-            expires_at: clock.now() + Duration::hours(1),
-        },
-        &clock,
-    )
-    .await
-    .expect("pending runner b");
-
-    // Both enroll bodies differ only in `enrollment_token` and self-report
-    // the identical `runner_name`, the
-    // way two default-configured runners on one host would (both defaulting
-    // it from `TACK_RUNNER_ID`).
-    let enroll_body = |token: &str| {
-        json!({
-            "protocol_version": 1,
-            "enrollment_token": token,
-            "runner_name": "default-runner-id",
-            "runner_version": "0.1.0",
-            "capabilities": full_capabilities(clock.now(), 1, 1),
-        })
-        .to_string()
-    };
-
-    let (status_a, enrolled_a) = send(&app, "POST", "/enroll", enroll_body(RAW_TOKEN_A), &[]).await;
-    assert_eq!(status_a, StatusCode::OK, "{enrolled_a}");
-    let runner_id_a = enrolled_a["runner_id"].as_str().unwrap().to_owned();
-
-    let (status_b, enrolled_b) = send(&app, "POST", "/enroll", enroll_body(RAW_TOKEN_B), &[]).await;
-    assert_eq!(
-        status_b,
-        StatusCode::OK,
-        "second same-self-reported-name enrollment must not 500: {enrolled_b}"
-    );
-    let runner_id_b = enrolled_b["runner_id"].as_str().unwrap().to_owned();
-    assert_ne!(runner_id_a, runner_id_b);
-
-    // The operator-assigned names are untouched by the self-reported value —
-    // it is accepted for protocol-shape validation only, never persisted
-    // over the operator's assignment.
-    let stored_name_a: String = sqlx::query_scalar("SELECT name FROM agent_runners WHERE id=?")
-        .bind(&runner_id_a)
-        .fetch_one(repo.pool())
-        .await
-        .unwrap();
-    let stored_name_b: String = sqlx::query_scalar("SELECT name FROM agent_runners WHERE id=?")
-        .bind(&runner_id_b)
-        .fetch_one(repo.pool())
-        .await
-        .unwrap();
-    assert_eq!(stored_name_a, "operator-assigned-a");
-    assert_eq!(stored_name_b, "operator-assigned-b");
-}
-
-// ---------------------------------------------------------------------
-// 2. Operator auth cannot substitute for runner auth, and vice versa. A
-//    runner therefore cannot reach any PM-mutating (item/execution/runner
-//    admin) route — it can only reach its own report-only endpoints.
-// ---------------------------------------------------------------------
-
-#[tokio::test]
-async fn scoped_routers_reject_substituted_operator_and_runner_auth() {
-    let (runner_app, repo, clock, item_id) = setup().await;
-
-    // An operator-style principal header alone does not authenticate a
-    // runner route: the runner-auth module reads only `Authorization`.
-    let (status, body) = send(
-        &runner_app,
-        "POST",
-        "/heartbeat",
-        json!({"protocol_version":1,"runner_id":RUNNER_ID,"heartbeat_id":"hb-x","sent_at":clock.now().to_rfc3339(),"available_capacity":2,"active_attempts":[]}).to_string(),
-        &[("x-tack-principal", "operator-1")],
-    )
-    .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(body["error"]["code"], "unauthorized");
-
-    // A valid runner bearer credential alone does not authenticate any
-    // operator route: `principal()` in `executions.rs` reads only
-    // `x-tack-principal`. This is the structural proof that a runner cannot
-    // create, cancel, or otherwise mutate a PM execution request.
-    let operator_state = executions::OperatorExecutionState::with_clock(
-        repo.clone(),
-        Arc::new(clock.clone()),
-        Arc::new(|_pool| Box::pin(async { false })),
-    );
-    let operator_app = executions::routes(operator_state);
-    let runner_bearer_value = format!("Bearer {RUNNER_CREDENTIAL}");
-    let runner_bearer: [(&str, &str); 1] = [("authorization", &runner_bearer_value)];
-
-    let create_body = json!({
-        "item_id": item_id, "idempotency_key": "attempt-by-runner", "selector_kind": "exact_runner",
-        "selector_id": RUNNER_ID, "agent_profile_id": "profile-c2", "requested_harness_kind": "codex",
-        "agent_profile_snapshot": {"name":"C2 Profile","instructions":"work safely","tool_policy":{"mode":"safe"},"timeout_seconds":60,"budgets":{"tokens":1000}},
-        "repository_snapshot": {"kind":"git","remote":"https://example.test/c2.git","base_revision":"abc123","subdirectory":null},
-        "permission_policy": {"tools":["shell"],"network":false}, "timeout_seconds":60, "budgets":{"tokens":1000},
-        "environment": {}, "metadata": {},
-    })
-    .to_string();
-    let (status, _) = send(
-        &operator_app,
-        "POST",
-        "/executions",
-        create_body,
-        &runner_bearer,
-    )
-    .await;
-    assert_eq!(
-        status,
-        StatusCode::UNAUTHORIZED,
-        "a runner credential must not create a PM execution request"
-    );
-
-    // `requeue_needs_operator` is another principal-scoped mutation (audited
-    // recovery of a `needs_operator` request); same proof, different route.
-    let (status, _) = send(
-        &operator_app,
-        "POST",
-        "/executions/does-not-exist/requeue",
-        json!({"recovery_key": "k", "reason": "r"}).to_string(),
-        &runner_bearer,
-    )
-    .await;
-    assert_eq!(
-        status,
-        StatusCode::UNAUTHORIZED,
-        "a runner credential must not perform an audited operator requeue either"
-    );
-
-    // runner-admin's simpler mutations (e.g. `revoke_runner`) do not
-    // themselves check `x-tack-principal` — that router leaves
-    // top-level bearer-token gating to the global `require_token` middleware,
-    // so it is not a meaningful non-substitution proof point in
-    // isolation the way the two principal-scoped routes above are.
-}
-
-// ---------------------------------------------------------------------
-// 3. Stale/expired fence writes nothing and returns `stale_lease`.
-// ---------------------------------------------------------------------
-
-#[tokio::test]
-async fn stale_and_expired_fence_write_nothing() {
-    let (app, repo, clock, item_id) = setup().await;
-    let (_, attempt_id, fencing_token) =
-        enqueue_and_claim(&app, &repo, &clock, &item_id, "stale-key", "claim-stale").await;
-
-    // Wrong fencing token on a real attempt.
-    let (status, body) = send_as_runner(
-        &app,
-        "POST",
-        &format!("/attempts/{attempt_id}/events"),
-        json!({"protocol_version":1,"runner_id":RUNNER_ID,"attempt_id":attempt_id,"fencing_token":fencing_token+1,"checkpoint":"cp-1","previous_checkpoint":Value::Null,"events":[]}).to_string(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::CONFLICT);
-    assert_eq!(body["error"]["code"], "stale_lease");
-    let event_rows: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM execution_events WHERE attempt_id=?")
-            .bind(&attempt_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    assert_eq!(event_rows, 0, "a stale-fence write must write nothing");
-
-    // Expired lease with the *correct* fencing token: never heartbeat, just
-    // advance the fake clock past `lease_duration_seconds` (60s).
-    clock.advance(Duration::seconds(61));
-    let (status, body) = send_as_runner(
-        &app,
-        "POST",
-        &format!("/attempts/{attempt_id}/events"),
-        json!({"protocol_version":1,"runner_id":RUNNER_ID,"attempt_id":attempt_id,"fencing_token":fencing_token,"checkpoint":"cp-1","previous_checkpoint":Value::Null,"events":[]}).to_string(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::CONFLICT);
-    assert_eq!(body["error"]["code"], "stale_lease");
-    let event_rows: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM execution_events WHERE attempt_id=?")
-            .bind(&attempt_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    assert_eq!(event_rows, 0, "an expired lease must write nothing either");
-
-    let checkpoint: Option<String> =
-        sqlx::query_scalar("SELECT event_checkpoint FROM execution_attempts WHERE id=?")
-            .bind(&attempt_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    assert_eq!(checkpoint, None, "the attempt row itself is untouched");
-}
-
-// ---------------------------------------------------------------------
-// 4. Idempotent replay returns the original success; a same-key replay with
-//    different content is a stable, distinct conflict code.
-// ---------------------------------------------------------------------
-
-#[tokio::test]
-async fn heartbeat_and_completion_replay_vs_conflict() {
-    let (app, repo, clock, item_id) = setup().await;
-    let (_, attempt_id, fencing_token) =
-        enqueue_and_claim(&app, &repo, &clock, &item_id, "replay-key", "claim-replay").await;
-
-    let heartbeat_body = |capacity: i64| {
-        json!({"protocol_version":1,"runner_id":RUNNER_ID,"heartbeat_id":"hb-replay","sent_at":clock.now().to_rfc3339(),"available_capacity":capacity,"active_attempts":[]}).to_string()
-    };
-    let (status, first) = send_as_runner(&app, "POST", "/heartbeat", heartbeat_body(1)).await;
-    assert_eq!(status, StatusCode::OK, "{first}");
-    let (status, replay) = send_as_runner(&app, "POST", "/heartbeat", heartbeat_body(1)).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        replay["accepted_at"], first["accepted_at"],
-        "exact replay returns the original success"
-    );
-    let (status, conflicting) = send_as_runner(&app, "POST", "/heartbeat", heartbeat_body(2)).await;
-    assert_eq!(status, StatusCode::CONFLICT);
-    assert_eq!(conflicting["error"]["code"], "idempotency_conflict");
-
-    // Completion: exact replay succeeds; a same-id, different-content retry
-    // is rejected and writes nothing new.
-    let started_at = clock.now() - Duration::minutes(1);
-    let completion = completion_body(
-        RUNNER_ID,
-        &attempt_id,
-        fencing_token,
-        "complete-replay",
-        started_at,
-        clock.now(),
-        None,
-    );
-    let (status, committed) = send_as_runner(
-        &app,
-        "POST",
-        &format!("/attempts/{attempt_id}/completion"),
-        completion.clone(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{committed}");
-    let changed = completion.replace("succeeded", "failed");
-    let (status, _conflict) = send_as_runner(
-        &app,
-        "POST",
-        &format!("/attempts/{attempt_id}/completion"),
-        changed,
-    )
-    .await;
-    assert_eq!(status, StatusCode::CONFLICT);
-    let replay_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM execution_completion_replays WHERE attempt_id=?")
-            .bind(&attempt_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    assert_eq!(
-        replay_count, 1,
-        "the conflicting retry wrote no second replay record"
-    );
-    let state: String = sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id=?")
-        .bind(&attempt_id)
-        .fetch_one(repo.pool())
-        .await
-        .unwrap();
-    assert_eq!(
-        state, "succeeded",
-        "the original committed outcome is unchanged"
-    );
-}
-
-// ---------------------------------------------------------------------
-// 5. Oversized event batch writes nothing at all.
-// ---------------------------------------------------------------------
-
-#[tokio::test]
-async fn oversized_event_batch_writes_nothing() {
-    let (app, repo, clock, item_id) = setup().await;
-    let (_, attempt_id, fencing_token) = enqueue_and_claim(
-        &app,
-        &repo,
-        &clock,
-        &item_id,
-        "oversized-key",
-        "claim-oversized",
-    )
-    .await;
-
-    // Over `event_batch_count_max` (100 tiny events), and over the whole-body
-    // byte cap (`json_body_bytes_max` == `event_batch_bytes_max`, both
-    // 1 MiB, one oversized-payload event) — both reject with 413 and write
-    // nothing.
-    let too_many_events: Vec<Value> = (0..101)
-        .map(|i| json!({"event_id": format!("evt-{i}"), "sequence": i, "occurred_at": clock.now().to_rfc3339(), "source":"runner","kind":"progress","payload":{}}))
-        .collect();
-    let huge_payload = json!({"blob": "x".repeat(2 * 1_048_576)});
-    let huge_event = vec![
-        json!({"event_id":"evt-huge","sequence":1,"occurred_at":clock.now().to_rfc3339(),"source":"runner","kind":"progress","payload":huge_payload}),
-    ];
-    for (events, limit_name) in [
-        (too_many_events, Some("event_batch_count_max")),
-        (huge_event, None),
-    ] {
-        let (status, body) = send_as_runner(
-            &app,
-            "POST",
-            &format!("/attempts/{attempt_id}/events"),
-            json!({"protocol_version":1,"runner_id":RUNNER_ID,"attempt_id":attempt_id,"fencing_token":fencing_token,"checkpoint":"cp-1","previous_checkpoint":Value::Null,"events":events}).to_string(),
-        )
+    let (status, replayed) = fx
+        .complete_default(&attempt_id, fencing_token, "complete-1")
         .await;
-        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
-        assert_eq!(body["error"]["code"], "payload_too_large");
-        if let Some(limit_name) = limit_name {
-            assert_eq!(body["error"]["details"]["limit"], limit_name);
-        }
-    }
-    let event_rows: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM execution_events WHERE attempt_id=?")
-            .bind(&attempt_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    assert_eq!(
-        event_rows, 0,
-        "an oversized batch writes nothing, not just a 413"
-    );
-    let checkpoint: Option<String> =
-        sqlx::query_scalar("SELECT event_checkpoint FROM execution_attempts WHERE id=?")
-            .bind(&attempt_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    assert_eq!(checkpoint, None);
-}
-
-// ---------------------------------------------------------------------
-// 6. Reusing a decision_id/artifact_id with different content is an
-//    idempotency conflict (a compensating check for the
-//    `ON CONFLICT DO NOTHING` inserts).
-// ---------------------------------------------------------------------
-
-#[tokio::test]
-async fn decision_and_artifact_id_reuse_is_idempotency_conflict() {
-    let (app, repo, clock, item_id) = setup().await;
-    let (_, attempt_id, fencing_token) =
-        enqueue_and_claim(&app, &repo, &clock, &item_id, "reuse-key", "claim-reuse").await;
-    send_as_runner(
-        &app,
-        "POST",
-        &format!("/attempts/{attempt_id}/accept"),
-        json!({"protocol_version":1,"runner_id":RUNNER_ID,"attempt_id":attempt_id,"fencing_token":fencing_token,"workspace_id":"ws-1","base_revision":"abc123def456abc123def456abc123def456abc"}).to_string(),
-    ).await;
-    send_as_runner(
-        &app,
-        "POST",
-        &format!("/attempts/{attempt_id}/start"),
-        json!({"protocol_version":1,"runner_id":RUNNER_ID,"attempt_id":attempt_id,"fencing_token":fencing_token,"workspace_id":"ws-1","base_revision":"abc123def456abc123def456abc123def456abc","process_id":"pid-1"}).to_string(),
-    ).await;
-
-    let decision_body = |prompt: &str| {
-        json!({"protocol_version":1,"runner_id":RUNNER_ID,"attempt_id":attempt_id,"fencing_token":fencing_token,"decision_id":"dec-reuse","kind":"tool_permission","prompt":prompt,"options":[{"option_id":"allow","label":"Allow"}],"expires_at":Value::Null,"metadata":{}}).to_string()
-    };
-    let (status, first) = send_as_runner(
-        &app,
-        "POST",
-        &format!("/attempts/{attempt_id}/decisions"),
-        decision_body("Allow A?"),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{first}");
-    let (status, exact_replay) = send_as_runner(
-        &app,
-        "POST",
-        &format!("/attempts/{attempt_id}/decisions"),
-        decision_body("Allow A?"),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "an exact replay is not a conflict");
-    assert_eq!(exact_replay["created_at"], first["created_at"]);
-    let (status, conflict) = send_as_runner(
-        &app,
-        "POST",
-        &format!("/attempts/{attempt_id}/decisions"),
-        decision_body("Allow B?"),
-    )
-    .await;
-    assert_eq!(status, StatusCode::CONFLICT);
-    assert_eq!(conflict["error"]["code"], "idempotency_conflict");
-    let stored_prompt: String = sqlx::query_scalar(
-        "SELECT prompt FROM execution_decisions WHERE attempt_id=? AND decision_id='dec-reuse'",
-    )
-    .bind(&attempt_id)
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    assert_eq!(
-        stored_prompt, "Allow A?",
-        "the conflicting retry did not overwrite the original"
-    );
-
-    let sha_a = "a".repeat(64);
-    let sha_b = "b".repeat(64);
-    let (status, _) = send_as_runner(
-        &app,
-        "POST",
-        &format!("/attempts/{attempt_id}/artifacts"),
-        artifact_body(RUNNER_ID, &attempt_id, fencing_token, "art-reuse", &sha_a),
-    )
-    .await;
     assert_eq!(status, StatusCode::OK);
-    let (status, conflict) = send_as_runner(
-        &app,
-        "POST",
-        &format!("/attempts/{attempt_id}/artifacts"),
-        artifact_body(RUNNER_ID, &attempt_id, fencing_token, "art-reuse", &sha_b),
-    )
-    .await;
-    assert_eq!(status, StatusCode::CONFLICT);
-    assert_eq!(conflict["error"]["code"], "idempotency_conflict");
-    let stored_sha: String = sqlx::query_scalar(
-        "SELECT sha256 FROM execution_artifacts WHERE attempt_id=? AND artifact_id='art-reuse'",
-    )
-    .bind(&attempt_id)
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    assert_eq!(stored_sha, sha_a);
+    assert_eq!(replayed["replayed"], true);
+    assert_eq!(replayed["committed_at"], completed["committed_at"]);
+
+    assert_eq!(fx.request_state(&request_id).await, "succeeded");
+    assert_eq!(
+        fx.available_capacity().await,
+        2,
+        "capacity is restored exactly once"
+    );
 }
 
 // ---------------------------------------------------------------------
-// 7. Recovery observation: a proven pre-spawn-stopped observation safely
-//    requeues the request, and replays idempotently.
+// 10. Recovery observation: a proven pre-spawn-stopped observation safely
+//     requeues the request, and replays idempotently.
 // ---------------------------------------------------------------------
 
 #[tokio::test]
 async fn recovery_observation_requeues_and_replays_idempotently() {
-    let (app, repo, clock, item_id) = setup().await;
-    let (request_id, attempt_id, fencing_token) = enqueue_and_claim(
-        &app,
-        &repo,
-        &clock,
-        &item_id,
-        "recovery-key",
-        "claim-recovery",
-    )
-    .await;
+    let fx = Fixture::new().await;
+    let (request_id, attempt_id, fencing_token) =
+        fx.enqueue_and_claim("recovery-key", "claim-recovery").await;
 
-    let recovery_body = json!({
-        "protocol_version": 1, "runner_id": RUNNER_ID, "attempt_id": attempt_id, "fencing_token": fencing_token,
-        "recovery_key": format!("recovery:{attempt_id}:{fencing_token}:process_stopped"),
-        "observation": "process_stopped",
-        "details": {"journal_state": "prepared", "process_observed": false},
-    })
-    .to_string();
-    let (status, applied) = send_as_runner(
-        &app,
-        "POST",
-        &format!("/attempts/{attempt_id}/recovery-observation"),
-        recovery_body.clone(),
-    )
-    .await;
+    let (status, applied) = fx
+        .recovery_observation(
+            &attempt_id,
+            fencing_token,
+            "process_stopped",
+            "prepared",
+            false,
+        )
+        .await;
     assert_eq!(status, StatusCode::OK, "{applied}");
     assert_eq!(applied["disposition"], "safe_pre_spawn_requeue");
     assert_eq!(applied["replayed"], false);
+    assert_eq!(fx.attempt_state(&attempt_id).await, "lost");
+    assert_eq!(fx.request_state(&request_id).await, "queued");
 
-    let attempt_state: String =
-        sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id=?")
-            .bind(&attempt_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    assert_eq!(attempt_state, "lost");
-    let request_state: String =
-        sqlx::query_scalar("SELECT state FROM execution_requests WHERE id=?")
-            .bind(&request_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    assert_eq!(request_state, "queued");
-
-    let (status, replayed) = send_as_runner(
-        &app,
-        "POST",
-        &format!("/attempts/{attempt_id}/recovery-observation"),
-        recovery_body,
-    )
-    .await;
+    let (status, replayed) = fx
+        .recovery_observation(
+            &attempt_id,
+            fencing_token,
+            "process_stopped",
+            "prepared",
+            false,
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(replayed["replayed"], true);
     assert_eq!(replayed["committed_at"], applied["committed_at"]);
 }
 
 // ---------------------------------------------------------------------
-// 8. Logs carry ids only.
-//
-// This is the only test in this module that captures `tracing` output.
-// See `log_capture.rs` for the process-global subscriber this relies on,
-// and why a global default (not a thread-local `set_default`) is what
-// actually makes capture reliable when many tests share this binary.
+// 11. `EventApplyResult` splits two causes that used to collapse into one
+//     `ReplayConflict`: a benign, out-of-order resync (mismatched
+//     `previous_checkpoint`) is the retryable `conflict` code
+//     (`StableErrorCode::retryable`, `crates/tack-orch/src/execution/types.rs`);
+//     reusing the same `(attempt_id, checkpoint)` key with genuinely
+//     different event content is the non-retryable `idempotency_conflict`.
+//     Both write nothing.
 // ---------------------------------------------------------------------
 
-#[tokio::test]
-async fn logs_never_contain_raw_credentials_only_ids() {
-    let (app, repo, clock, _item_id) = setup().await;
-    let raw_enrollment_token = "example_super_secret_enrollment_token_value";
-    let token_hash = runner_protocol::runner_auth::credential_hash(raw_enrollment_token);
-    repo.create_pending_runner_and_issue_token(
-        NewRunner {
-            id: "runner-log",
-            name: "Log Runner",
-            credential_hash: "pending:no-credential",
-            labels: "{}",
-            total_capacity: 1,
-            available_capacity: 1,
-            capability_snapshot: "{}",
-            protocol_version: 1,
-        },
-        EnrollmentToken {
-            id: "tok-log",
-            runner_id: "runner-log",
-            token_hash: &token_hash,
-            expires_at: clock.now() + Duration::hours(1),
-        },
-        &clock,
-    )
-    .await
-    .expect("pending runner");
-
-    let (guard, captured) = CaptureGuard::start();
-
-    let (status, enrolled) = send(
-        &app,
-        "POST",
-        "/enroll",
-        json!({"protocol_version":1,"enrollment_token":raw_enrollment_token,"runner_name":"Log Runner","runner_version":"0.1.0","capabilities":full_capabilities(clock.now(),1,1)}).to_string(),
-        &[],
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{enrolled}");
-    let issued_runner_id = enrolled["runner_id"].as_str().unwrap().to_owned();
-    let issued_credential = enrolled["runner_credential"].as_str().unwrap().to_owned();
-
-    let bogus_credential = "bogus-bearer-credential-value-should-never-log";
-    let (status, _) = send(
-        &app,
-        "POST",
-        "/refresh",
-        json!({"protocol_version":1,"runner_id":issued_runner_id,"runner_name":"x","runner_version":"x","rotate_credential":false,"capabilities":full_capabilities(clock.now(),1,1)}).to_string(),
-        &[("authorization", &format!("Bearer {bogus_credential}"))],
-    )
-    .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-
-    drop(guard);
-    let log_text = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
-    assert!(
-        log_text.contains(&issued_runner_id),
-        "runner_id should be logged for observability: {log_text}"
-    );
-    assert!(
-        !log_text.contains(raw_enrollment_token),
-        "raw enrollment token leaked into logs: {log_text}"
-    );
-    assert!(
-        !log_text.contains(&issued_credential),
-        "raw runner credential leaked into logs: {log_text}"
-    );
-    assert!(
-        !log_text.contains(bogus_credential),
-        "raw bearer credential leaked into logs: {log_text}"
-    );
+struct EventConflictCase {
+    key: &'static str,
+    cp: &'static str,
+    prev: Value,
+    event_id: &'static str,
+    payload: Value,
+    code: &'static str,
 }
-
-// ---------------------------------------------------------------------
-// 9. `EventApplyResult` splits two causes that used to collapse into one
-//    `ReplayConflict`: a benign, out-of-order resync (mismatched
-//    `previous_checkpoint`) is the retryable `conflict` code
-//    (`StableErrorCode::retryable`, `crates/tack-orch/src/execution/types.rs`);
-//    reusing the same `(attempt_id, checkpoint)` key with genuinely
-//    different event content is the non-retryable `idempotency_conflict`.
-//    Both write nothing. Table-driven so the contrast stays explicit — the
-//    gap that let the original collapse survive undetected at the HTTP
-//    layer.
-// ---------------------------------------------------------------------
 
 #[tokio::test]
 async fn event_batch_conflict_vs_idempotency_conflict_retryable() {
-    struct Case {
-        key: &'static str,
-        claim_id: &'static str,
-        checkpoint: &'static str,
-        previous_checkpoint: Value,
-        event_id: &'static str,
-        payload: Value,
-        expected_code: &'static str,
-        expected_retryable: bool,
-    }
+    let fx = Fixture::new().await;
     let cases = [
-        Case {
+        EventConflictCase {
             key: "conflict-retryable-key",
-            claim_id: "claim-conflict-retryable",
-            checkpoint: "cp-2",
-            previous_checkpoint: json!("stale-checkpoint"),
+            cp: "cp-2",
+            prev: json!("stale-checkpoint"),
             event_id: "evt-2",
             payload: json!({}),
-            expected_code: "conflict",
-            expected_retryable: true,
+            code: "conflict",
         },
-        Case {
+        EventConflictCase {
             key: "event-idempotency-key",
-            claim_id: "claim-event-idem",
-            checkpoint: "cp-1",
-            previous_checkpoint: Value::Null,
+            cp: "cp-1",
+            prev: Value::Null,
             event_id: "evt-1",
             payload: json!({"note": "CHANGED"}),
-            expected_code: "idempotency_conflict",
-            expected_retryable: false,
+            code: "idempotency_conflict",
         },
     ];
 
     for case in cases {
-        let (app, repo, clock, item_id) = setup().await;
-        let (_, attempt_id, fencing_token) =
-            enqueue_and_claim(&app, &repo, &clock, &item_id, case.key, case.claim_id).await;
+        let claim_id = format!("claim-{}", case.key);
+        let (_, attempt_id, fencing_token) = fx.enqueue_and_claim(case.key, &claim_id).await;
+        let first = one_event("evt-1", 1, fx.clock.now(), &json!({"note": "original"}));
+        let (status, body) = fx
+            .events(&attempt_id, fencing_token, "cp-1", Value::Null, first)
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
 
-        // First batch commits checkpoint "cp-1" with one event.
-        let (status, first) = send_as_runner(
-            &app,
-            "POST",
-            &format!("/attempts/{attempt_id}/events"),
-            json!({"protocol_version":1,"runner_id":RUNNER_ID,"attempt_id":attempt_id,"fencing_token":fencing_token,"checkpoint":"cp-1","previous_checkpoint":Value::Null,"events":[{"event_id":"evt-1","sequence":1,"occurred_at":clock.now().to_rfc3339(),"source":"runner","kind":"progress","payload":{"note":"original"}}]}).to_string(),
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK, "{first}");
-
-        let (status, body) = send_as_runner(
-            &app,
-            "POST",
-            &format!("/attempts/{attempt_id}/events"),
-            json!({"protocol_version":1,"runner_id":RUNNER_ID,"attempt_id":attempt_id,"fencing_token":fencing_token,"checkpoint":case.checkpoint,"previous_checkpoint":case.previous_checkpoint,"events":[{"event_id":case.event_id,"sequence":2,"occurred_at":clock.now().to_rfc3339(),"source":"runner","kind":"progress","payload":case.payload}]}).to_string(),
-        )
-        .await;
+        let retry = one_event(case.event_id, 2, fx.clock.now(), &case.payload);
+        let (status, body) = fx
+            .events(&attempt_id, fencing_token, case.cp, case.prev, retry)
+            .await;
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
-        assert_eq!(body["error"]["code"], case.expected_code);
+        assert_eq!(body["error"]["code"], case.code);
         assert_eq!(
-            body["error"]["retryable"], case.expected_retryable,
-            "{}: retryable must be {}: {body}",
-            case.expected_code, case.expected_retryable
+            body["error"]["retryable"],
+            case.code == "conflict",
+            "{}",
+            case.code
         );
-        assert_eq!(body["error"]["request_id"], "req_runner");
-
-        // Nothing new was written: still exactly the one, first event, and
-        // the committed checkpoint is unchanged.
-        let event_rows: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM execution_events WHERE attempt_id=?")
-                .bind(&attempt_id)
-                .fetch_one(repo.pool())
-                .await
-                .unwrap();
-        assert_eq!(event_rows, 1, "the rejected second batch wrote no events");
-        let checkpoint: Option<String> =
-            sqlx::query_scalar("SELECT event_checkpoint FROM execution_attempts WHERE id=?")
-                .bind(&attempt_id)
-                .fetch_one(repo.pool())
-                .await
-                .unwrap();
-        assert_eq!(checkpoint.as_deref(), Some("cp-1"));
-        let stored_payload: String = sqlx::query_scalar(
-            "SELECT payload FROM execution_events WHERE attempt_id=? AND event_id='evt-1'",
-        )
-        .bind(&attempt_id)
-        .fetch_one(repo.pool())
-        .await
-        .unwrap();
-        assert!(
-            stored_payload.contains("original"),
-            "the original event content is unchanged: {stored_payload}"
+        assert_eq!(
+            fx.count("execution_events", &attempt_id).await,
+            1,
+            "no new events"
         );
+        assert_eq!(fx.checkpoint(&attempt_id).await.as_deref(), Some("cp-1"));
     }
 }
 
 // ---------------------------------------------------------------------
-// 11. The completion analogue of test 10: reusing the same
+// 12. The completion analogue of test 5: reusing the same
 //     idempotency-scoped `(attempt_id, completion_id)` key with genuinely
 //     different terminal content is `idempotency_conflict`
 //     (`retryable: false`), distinct from the benign, retryable `conflict`
@@ -1411,410 +1081,103 @@ async fn event_batch_conflict_vs_idempotency_conflict_retryable() {
 
 #[tokio::test]
 async fn completion_replay_changed_content_is_idempotency_conflict() {
-    let (app, repo, clock, item_id) = setup().await;
-    let (_, attempt_id, fencing_token) = enqueue_and_claim(
-        &app,
-        &repo,
-        &clock,
-        &item_id,
-        "completion-idempotency-key",
-        "claim-completion-idem",
-    )
-    .await;
+    let fx = Fixture::new().await;
+    let (_, attempt_id, fencing_token) = fx
+        .enqueue_and_claim("completion-idempotency-key", "claim-completion-idem")
+        .await;
 
-    let started_at = clock.now() - Duration::minutes(1);
-    let completion = completion_body(
-        RUNNER_ID,
-        &attempt_id,
-        fencing_token,
-        "completion-idem",
-        started_at,
-        clock.now(),
-        None,
-    );
-    let (status, committed) = send_as_runner(
-        &app,
-        "POST",
-        &format!("/attempts/{attempt_id}/completion"),
-        completion.clone(),
-    )
-    .await;
+    let (status, committed) = fx
+        .complete_default(&attempt_id, fencing_token, "completion-idem")
+        .await;
     assert_eq!(status, StatusCode::OK, "{committed}");
 
-    // Same `completion_id`, but a changed `terminal_state`: reusing the key
-    // with different content.
-    let changed = completion.replace("succeeded", "failed");
-    let (status, body) = send_as_runner(
-        &app,
-        "POST",
-        &format!("/attempts/{attempt_id}/completion"),
-        changed,
-    )
-    .await;
+    // Same `completion_id`, but a changed `terminal_state`.
+    let changed = fx
+        .default_completion_body(&attempt_id, fencing_token, "completion-idem")
+        .replace("succeeded", "failed");
+    let (status, body) = fx
+        .post(&format!("/attempts/{attempt_id}/completion"), changed)
+        .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["error"]["code"], "idempotency_conflict");
     assert_eq!(
         body["error"]["retryable"], false,
-        "idempotency_conflict must be non-retryable per \
-         docs/contracts/runner-v1/errors/idempotency-conflict.json: {body}"
+        "must be non-retryable: {body}"
     );
-
-    let replay_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM execution_completion_replays WHERE attempt_id=?")
-            .bind(&attempt_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
     assert_eq!(
-        replay_count, 1,
-        "the conflicting retry wrote no second replay record"
-    );
-    let state: String = sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id=?")
-        .bind(&attempt_id)
-        .fetch_one(repo.pool())
-        .await
-        .unwrap();
-    assert_eq!(
-        state, "succeeded",
-        "the original committed outcome is unchanged"
-    );
-}
-
-// ---------------------------------------------------------------------
-// 12. Credential rotation uses a compare-and-set
-//     `Repository::rotate_runner_credential`. A rotation whose
-//     `expected_credential_hash` no longer matches the runner's current
-//     credential (because a prior rotation already won) is rejected as a
-//     retryable `conflict`, not silently applied last-writer-wins.
-// ---------------------------------------------------------------------
-
-#[tokio::test]
-async fn concurrent_refresh_rotations_exactly_one_wins() {
-    let (app, repo, clock, _item_id) = setup().await;
-
-    // Two concurrent `/refresh` rotations, both still authenticated against
-    // the same currently-valid `RUNNER_CREDENTIAL` bearer — the realistic
-    // shape of the race this test proves is fixed: a retried or duplicated
-    // rotation request. Each generates its own new raw credential
-    // internally; only one write can win the CAS.
-    //
-    // A manual `BEGIN IMMEDIATE` no-op write against the runner row, held
-    // open until both rotation tasks are spawned, forces both to reach
-    // their own blocked read/write before it releases: a bare `tokio::join!`
-    // or a single `yield_now` lets one task's entire rotation complete
-    // before the other is even polled, so the loser sees a plain
-    // `unauthorized` (already-rotated hash) rather than the `conflict` this
-    // test exists to prove.
-    let mut holder = repo
-        .pool()
-        .begin_with("BEGIN IMMEDIATE")
-        .await
-        .expect("hold the runner row");
-    sqlx::query("UPDATE agent_runners SET updated_at=updated_at WHERE id=?")
-        .bind(RUNNER_ID)
-        .execute(&mut *holder)
-        .await
-        .expect("no-op hold write");
-
-    let rotate_body = || {
-        json!({"protocol_version":1,"runner_id":RUNNER_ID,"runner_name":"r","runner_version":"1","rotate_credential":true,"capabilities":full_capabilities(clock.now(),2,2)}).to_string()
-    };
-    let app_a = app.clone();
-    let body_a = rotate_body();
-    let task_a =
-        tokio::spawn(async move { send_as_runner(&app_a, "POST", "/refresh", body_a).await });
-    let app_b = app.clone();
-    let body_b = rotate_body();
-    let task_b =
-        tokio::spawn(async move { send_as_runner(&app_b, "POST", "/refresh", body_b).await });
-
-    // A bounded cooperative-yield loop (not a fixed wall-clock wait) gives
-    // the executor enough turns to drive both spawned tasks onto their own
-    // blocked read/write before the hold below releases.
-    for _ in 0..512 {
-        tokio::task::yield_now().await;
-    }
-    holder.commit().await.expect("release the hold");
-
-    let a = task_a.await.expect("rotation task a did not panic");
-    let b = task_b.await.expect("rotation task b did not panic");
-    let results = [a, b];
-    let ok: Vec<_> = results
-        .iter()
-        .filter(|(status, _)| *status == StatusCode::OK)
-        .collect();
-    let conflicts: Vec<_> = results
-        .iter()
-        .filter(|(status, _)| *status == StatusCode::CONFLICT)
-        .collect();
-    assert_eq!(
-        ok.len(),
+        fx.count("execution_completion_replays", &attempt_id).await,
         1,
-        "exactly one concurrent rotation must win: {results:?}"
+        "no 2nd replay row"
     );
     assert_eq!(
-        conflicts.len(),
-        1,
-        "the loser must be rejected, not silently overwritten: {results:?}"
-    );
-    let (_, conflict_body) = conflicts[0];
-    assert_eq!(conflict_body["error"]["code"], "conflict");
-    assert_eq!(
-        conflict_body["error"]["retryable"], true,
-        "HashMismatch maps to the retryable `conflict` code, matching \
-         docs/contracts/runner-v1/errors/conflict.json: {conflict_body}"
-    );
-
-    // The stored credential is exactly the winner's, never the loser's
-    // (which was never persisted at all — a rejected rotation returns no
-    // `runner_credential` for a caller to mistakenly treat as live).
-    let (_, winner_body) = ok[0];
-    let winner_credential = winner_body["runner_credential"].as_str().unwrap();
-    let stored_hash: String =
-        sqlx::query_scalar("SELECT credential_hash FROM agent_runners WHERE id=?")
-            .bind(RUNNER_ID)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    assert_eq!(
-        stored_hash,
-        runner_protocol::runner_auth::credential_hash(winner_credential),
-        "the stored credential is exactly the winner's"
-    );
-
-    // The original bearer credential (captured by both requests' successful
-    // `authenticate()` calls, before either write) is now stale either way —
-    // proving the old credential was not left simultaneously valid alongside
-    // the new one.
-    let (old_status, _) = send_as_runner(
-        &app,
-        "POST",
-        "/refresh",
-        json!({"protocol_version":1,"runner_id":RUNNER_ID,"runner_name":"r","runner_version":"1","rotate_credential":false,"capabilities":full_capabilities(clock.now(),2,2)}).to_string(),
-    )
-    .await;
-    assert_eq!(
-        old_status,
-        StatusCode::UNAUTHORIZED,
-        "the pre-race credential no longer authenticates once either rotation committed"
+        fx.attempt_state(&attempt_id).await,
+        "succeeded",
+        "outcome unchanged"
     );
 }
 
 // ---------------------------------------------------------------------
-// 12b. The same defect, reproduced deterministically instead of by
-//     timing/luck. The test above (12) drives two rotations through a
-//     genuinely concurrent SQLite lock race, which is realistic but, as its
-//     own comment documents, cannot force a specific interleaving — locally
-//     it lands on the CAS-level `HashMismatch` -> `conflict` outcome far more
-//     often than the earlier, authenticate-level failure this test actually
-//     targets, which is why CI's
-//     more contended scheduler saw it and a local run of 32 iterations did
-//     not.
-//
-//     The server has no way to distinguish "this stale credential belongs to
-//     a request that lost a real concurrent race" from "this stale
-//     credential is simply being reused after a rotation already committed"
-//     — both hit the exact same code path: `authenticate`'s `SELECT ...
-//     WHERE credential_hash=?` finds no row, because the only record of the
-//     old hash was overwritten in place by the rotation UPDATE (see
-//     `runner_auth::is_credential_not_recognized`'s doc comment). So this
-//     test reproduces the identical defect without any lock or sleep, purely
-//     sequentially: rotate once (the request that would have "won" a race),
-//     then present the now-superseded original credential again with
-//     `rotate_credential: true` (standing in for the request that would have
-//     "lost" it) and assert the documented, retryable outcome.
-// ---------------------------------------------------------------------
-
-#[tokio::test]
-async fn superseded_credential_refresh_returns_conflict_not_401() {
-    let (app, repo, clock, _item_id) = setup().await;
-
-    // The winner: rotates first and commits, exactly like task A above.
-    let (winner_status, winner_body) = send_as_runner(
-        &app,
-        "POST",
-        "/refresh",
-        json!({"protocol_version":1,"runner_id":RUNNER_ID,"runner_name":"r","runner_version":"1","rotate_credential":true,"capabilities":full_capabilities(clock.now(),2,2)}).to_string(),
-    )
-    .await;
-    assert_eq!(winner_status, StatusCode::OK, "the first rotation must win");
-    let stored_hash_after_winner: String =
-        sqlx::query_scalar("SELECT credential_hash FROM agent_runners WHERE id=?")
-            .bind(RUNNER_ID)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-
-    // The loser: presents the pre-rotation `RUNNER_CREDENTIAL` (still what a
-    // client would hold if its rotation request lost the race) and also asks
-    // to rotate. `authenticate`'s hash lookup finds no row for it at all —
-    // the exact failure `reclassify_refresh_auth_error` reclassifies.
-    let (loser_status, loser_body) = send(
-        &app,
-        "POST",
-        "/refresh",
-        json!({"protocol_version":1,"runner_id":RUNNER_ID,"runner_name":"r","runner_version":"1","rotate_credential":true,"capabilities":full_capabilities(clock.now(),2,2)}).to_string(),
-        &[("authorization", &format!("Bearer {RUNNER_CREDENTIAL}"))],
-    )
-    .await;
-
-    assert_eq!(
-        loser_status,
-        StatusCode::CONFLICT,
-        "a superseded credential attempting to rotate must be told it can retry, \
-         not that it is permanently unauthorized: {loser_body}"
-    );
-    assert_eq!(loser_body["error"]["code"], "conflict");
-    assert_eq!(
-        loser_body["error"]["retryable"], true,
-        "must match docs/contracts/runner-v1/errors/conflict.json: {loser_body}"
-    );
-    assert!(
-        loser_body.get("runner_credential").is_none(),
-        "a rejected rotation returns no credential for a caller to mistakenly treat as live"
-    );
-
-    // Writes nothing: the credential stored after the winner's rotation is
-    // unchanged by the loser's rejected attempt.
-    let stored_hash_after_loser: String =
-        sqlx::query_scalar("SELECT credential_hash FROM agent_runners WHERE id=?")
-            .bind(RUNNER_ID)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    assert_eq!(
-        stored_hash_after_winner, stored_hash_after_loser,
-        "the rejected rotation must not have written anything"
-    );
-    assert_eq!(
-        stored_hash_after_loser,
-        runner_protocol::runner_auth::credential_hash(
-            winner_body["runner_credential"].as_str().unwrap()
-        ),
-        "the stored credential remains exactly the winner's"
-    );
-}
-
-// ---------------------------------------------------------------------
-// 13. State-gate alignment. `submit_artifacts` must reject `lost`
-//     and `needs_operator` attempts exactly like `create_decision` already
-//     does — not just the three purely-terminal states. Both states exist
-//     precisely to mean "stop trusting this runner's reports"; in both
-//     cases here the lease itself has not expired (the
+// 13. State-gate alignment, table-driven over the two non-terminal
+//     "stop trusting this runner" states: `submit_artifacts` must reject
+//     `lost` and `needs_operator` attempts exactly like `create_decision`
+//     already does. In both cases the lease itself has not expired (the
 //     fake clock never advances), so a rejection can only come from the
 //     state gate, not `stale_lease`.
 // ---------------------------------------------------------------------
 
+struct BlockedStateCase {
+    key: &'static str,
+    observation: &'static str,
+    journal_state: &'static str,
+    process_observed: bool,
+    disposition: &'static str,
+    state: &'static str,
+}
+
 #[tokio::test]
 async fn submit_artifacts_rejects_lost_and_needs_operator_states() {
-    let (app, repo, clock, item_id) = setup().await;
+    let fx = Fixture::new().await;
+    let cases = [
+        BlockedStateCase {
+            key: "lost-key",
+            observation: "process_stopped",
+            journal_state: "prepared",
+            process_observed: false,
+            disposition: "safe_pre_spawn_requeue",
+            state: "lost",
+        },
+        BlockedStateCase {
+            key: "needs-operator-key",
+            observation: "process_running",
+            journal_state: "process_observed_running",
+            process_observed: true,
+            disposition: "needs_operator",
+            state: "needs_operator",
+        },
+    ];
 
-    // Attempt A: a proven pre-spawn-stopped recovery observation -> `lost`.
-    enqueue_request(&repo, &clock, &item_id, RUNNER_ID, "profile-c2", "lost-key").await;
-    let (_, claimed_a) = send_as_runner(
-        &app,
-        "POST",
-        "/claim",
-        json!({"protocol_version":1,"runner_id":RUNNER_ID,"claim_request_id":"claim-lost","available_capacity":2,"wait_ms":1000}).to_string(),
-    )
-    .await;
-    let attempt_a = claimed_a["lease"]["attempt_id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let fence_a = claimed_a["lease"]["fencing_token"].as_i64().unwrap();
-    let (status, recovered_a) = send_as_runner(
-        &app,
-        "POST",
-        &format!("/attempts/{attempt_a}/recovery-observation"),
-        json!({
-            "protocol_version": 1, "runner_id": RUNNER_ID, "attempt_id": attempt_a, "fencing_token": fence_a,
-            "recovery_key": format!("recovery:{attempt_a}:{fence_a}:process_stopped"),
-            "observation": "process_stopped",
-            "details": {"journal_state": "prepared", "process_observed": false},
-        })
-        .to_string(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{recovered_a}");
-    assert_eq!(recovered_a["disposition"], "safe_pre_spawn_requeue");
-    let state_a: String = sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id=?")
-        .bind(&attempt_a)
-        .fetch_one(repo.pool())
-        .await
-        .unwrap();
-    assert_eq!(state_a, "lost");
+    for case in cases {
+        let claim_id = format!("claim-{}", case.key);
+        let (_, attempt_id, fencing_token) = fx.enqueue_and_claim(case.key, &claim_id).await;
+        let (obs, journal, observed) =
+            (case.observation, case.journal_state, case.process_observed);
+        let (status, recovered) = fx
+            .recovery_observation(&attempt_id, fencing_token, obs, journal, observed)
+            .await;
+        assert_eq!(status, StatusCode::OK, "{recovered}");
+        assert_eq!(recovered["disposition"], case.disposition);
+        assert_eq!(fx.attempt_state(&attempt_id).await, case.state);
 
-    // Attempt B: an ambiguous/running-process recovery observation ->
-    // `needs_operator`.
-    enqueue_request(
-        &repo,
-        &clock,
-        &item_id,
-        RUNNER_ID,
-        "profile-c2",
-        "needs-operator-key",
-    )
-    .await;
-    let (_, claimed_b) = send_as_runner(
-        &app,
-        "POST",
-        "/claim",
-        json!({"protocol_version":1,"runner_id":RUNNER_ID,"claim_request_id":"claim-needs-operator","available_capacity":2,"wait_ms":1000}).to_string(),
-    )
-    .await;
-    let attempt_b = claimed_b["lease"]["attempt_id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let fence_b = claimed_b["lease"]["fencing_token"].as_i64().unwrap();
-    let (status, recovered_b) = send_as_runner(
-        &app,
-        "POST",
-        &format!("/attempts/{attempt_b}/recovery-observation"),
-        json!({
-            "protocol_version": 1, "runner_id": RUNNER_ID, "attempt_id": attempt_b, "fencing_token": fence_b,
-            "recovery_key": format!("recovery:{attempt_b}:{fence_b}:process_running"),
-            "observation": "process_running",
-            "details": {"journal_state": "process_observed_running", "process_observed": true},
-        })
-        .to_string(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{recovered_b}");
-    assert_eq!(recovered_b["disposition"], "needs_operator");
-    let state_b: String = sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id=?")
-        .bind(&attempt_b)
-        .fetch_one(repo.pool())
-        .await
-        .unwrap();
-    assert_eq!(state_b, "needs_operator");
-
-    for (attempt_id, fencing_token) in [(&attempt_a, fence_a), (&attempt_b, fence_b)] {
-        let (status, body) = send_as_runner(
-            &app,
-            "POST",
-            &format!("/attempts/{attempt_id}/artifacts"),
-            artifact_body(
-                RUNNER_ID,
-                attempt_id,
-                fencing_token,
-                "art-blocked",
-                &"c".repeat(64),
-            ),
-        )
-        .await;
+        let (status, body) = fx
+            .artifact(&attempt_id, fencing_token, "art-blocked", &"c".repeat(64))
+            .await;
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
         assert_eq!(body["error"]["code"], "conflict", "{body}");
-        let count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM execution_artifacts WHERE attempt_id=?")
-                .bind(attempt_id)
-                .fetch_one(repo.pool())
-                .await
-                .unwrap();
         assert_eq!(
-            count, 0,
-            "no artifact must be written for attempt {attempt_id} in state that rejects writes"
+            fx.count("execution_artifacts", &attempt_id).await,
+            0,
+            "{}",
+            case.state
         );
     }
 }
