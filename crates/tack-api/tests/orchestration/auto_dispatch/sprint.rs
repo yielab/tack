@@ -299,7 +299,7 @@ async fn mock_list_tasks_many(server: &MockServer, task_ids: &[&str]) {
         .await;
 }
 
-fn item_by_id<'a>(items: &'a [Value], id: Uuid) -> &'a Value {
+fn item_by_id(items: &[Value], id: Uuid) -> &Value {
     items
         .iter()
         .find(|i| i["item_id"] == id.to_string())

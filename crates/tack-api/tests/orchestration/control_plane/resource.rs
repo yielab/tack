@@ -217,6 +217,7 @@ async fn token_never_appears_in_list_or_get_response() {
 #[tokio::test]
 async fn patch_token_field_is_tri_state() {
     // (initial_token, patch_body, expect_token_set, also_check, note).
+    #[allow(clippy::type_complexity)]
     let cases: [(&str, Value, bool, fn(&Value), &str); 3] = [
         (
             "preserve-me",
