@@ -57,3 +57,11 @@ fix (a `tracing::subscriber::set_default` guard, or stopping the other two from
 calling `serve_inner`) touches `server.rs` production code — outside this card's
 scope. nextest (one process per test, the repo's actual runner) never hits it.
 Recommend a follow-up card.
+
+## Amendment — integration
+
+The log-file race was fixed before merge instead of carded: `init_tracing` now installs
+the subscriber built by `tracing_subscriber_for`, and the test scopes that subscriber to
+its own thread with `tracing::subscriber::with_default`, so it no longer competes with
+the in-process server tests for the global slot. Four runs of plain
+`cargo test -p tack-api -p tack-orch -p tack-runner -p tack-cli --lib --tests`: clean.

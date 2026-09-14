@@ -40,12 +40,11 @@ fn a_path_naming_no_file_is_refused_rather_than_guessed() {
     assert!(log_file_target("..").is_none());
 }
 
-/// The whole point of the setting: after `init_tracing` has read a config
-/// carrying a log path, a line logged through the global subscriber has to
-/// land in that file. Asserting that a layer was constructed would have
-/// passed for the entire time this setting silently did nothing. This test
-/// installs the process-wide subscriber, so it must stay the only test in
-/// this binary that does.
+/// The whole point of the setting: a line logged through the subscriber built
+/// from a config carrying a log path has to land in that file. Asserting that a
+/// layer was constructed would have passed for the entire time this setting
+/// silently did nothing. The subscriber is scoped to this thread: the global
+/// slot goes to whichever in-process server test starts first.
 #[test]
 fn a_configured_log_file_receives_the_lines_that_are_logged() {
     let dir_guard = workdir("log-write");
@@ -57,9 +56,9 @@ fn a_configured_log_file_receives_the_lines_that_are_logged() {
         log_json: false,
         ..AppConfig::default()
     };
-    init_tracing(&config);
-
-    tracing::error!(marker = "written-to-the-file", "log file smoke line");
+    tracing::subscriber::with_default(tracing_subscriber_for(&config), || {
+        tracing::error!(marker = "written-to-the-file", "log file smoke line");
+    });
 
     let written = fs::read_to_string(&path).expect("the log file must exist");
     assert!(
