@@ -1,7 +1,7 @@
 //! Attempt lifecycle transitions (preparing/running) and completion
 //! reporting, including the idempotency/terminal-lock invariants they share.
 
-use crate::common::execution_fixture::{Fixture, completion_input, count_where};
+use crate::common::execution_fixture::{Fixture, completion_input};
 
 use chrono::Duration;
 use sqlx::Row;
@@ -150,117 +150,6 @@ async fn attempt_start_rejects_wrong_order_and_stale_authority() {
     assert!(row.get::<Option<String>, _>("process_id").is_none());
     assert!(row.get::<Option<String>, _>("prepared_at").is_none());
     assert!(row.get::<Option<String>, _>("started_at").is_none());
-}
-
-// Concurrency regressions: an independent audit of every transaction in this
-// module found the same deferred-reader-upgrade deadlock hazard (SQLITE_LOCKED
-// "database is deadlocked") in three more functions, each hit by a plausible
-// duplicate/retry caller (a runner or operator resending an unacknowledged
-// request). The fencing-token/state WHERE clauses on their writes guard the
-// *result*, not the SQLite lock-upgrade race, so each needed the same
-// BEGIN IMMEDIATE fix as redeem_enrollment_token and
-// claim_execution_idempotent_with_snapshot. These tests assert both
-// concurrent branches succeed at the sqlx level (a raw Err is a hard
-// failure) and that exactly one is authoritative.
-#[tokio::test]
-async fn concurrent_duplicate_completions_have_one_committed_writer() {
-    let fx = Fixture::new().await;
-    let fence = fx
-        .ready_completion_attempt("request-concurrent-complete", "attempt-concurrent-complete")
-        .await;
-    let completion = completion_input(
-        "attempt-concurrent-complete",
-        fence,
-        "completion-concurrent",
-        None,
-    );
-    let (a, b) = tokio::join!(
-        fx.complete_result(completion.clone()),
-        fx.complete_result(completion),
-    );
-    let a = a.expect("first completion report must succeed at the sqlx level");
-    let b = b.expect("second completion report must succeed at the sqlx level");
-
-    let committed = count_where([&a, &b], |r| matches!(r, CompletionResult::Committed(_)));
-    let replayed = count_where([&a, &b], |r| matches!(r, CompletionResult::Replayed(_)));
-    assert_eq!(
-        committed, 1,
-        "exactly one duplicate report commits: {a:?} / {b:?}"
-    );
-    assert_eq!(
-        replayed, 1,
-        "the other duplicate report replays: {a:?} / {b:?}"
-    );
-
-    // Capacity is restored by the terminal transition exactly once, even
-    // though both branches raced to report the same completion.
-    assert_eq!(fx.capacity().await, 1, "capacity is restored exactly once");
-}
-
-#[tokio::test]
-async fn concurrent_duplicate_transitions_have_one_applied_writer() {
-    let fx = Fixture::new().await;
-    fx.enqueue(
-        "request-concurrent-transition",
-        "key-concurrent-transition",
-        "same",
-    )
-    .await;
-    let lease = fx
-        .claim("attempt-concurrent-transition", Duration::seconds(60))
-        .await
-        .unwrap();
-    let preparing = AttemptTransitionInput {
-        runner_id: "runner-a",
-        attempt_id: "attempt-concurrent-transition",
-        fencing_token: lease.fencing_token,
-        phase: AttemptTransitionPhase::Preparing,
-        workspace_id: "workspace-1",
-        base_revision: "abc123",
-        process_id: None,
-    };
-    let (a, b) = tokio::join!(
-        fx.transition_result(preparing.clone()),
-        fx.transition_result(preparing),
-    );
-    let a = a.expect("first transition report must succeed at the sqlx level");
-    let b = b.expect("second transition report must succeed at the sqlx level");
-
-    let applied = count_where([&a, &b], |r| {
-        matches!(r, AttemptTransitionResult::Applied(_))
-    });
-    let replayed = count_where([&a, &b], |r| {
-        matches!(r, AttemptTransitionResult::Replayed(_))
-    });
-    assert_eq!(
-        applied, 1,
-        "exactly one duplicate report applies: {a:?} / {b:?}"
-    );
-    assert_eq!(
-        replayed, 1,
-        "the other duplicate report replays: {a:?} / {b:?}"
-    );
-
-    let committed_at = |r: &AttemptTransitionResult| match r {
-        AttemptTransitionResult::Applied(resp) | AttemptTransitionResult::Replayed(resp) => {
-            resp.committed_at.clone()
-        }
-        other => panic!("expected applied/replayed, got {other:?}"),
-    };
-    assert_eq!(
-        committed_at(&a),
-        committed_at(&b),
-        "both branches observe the single committed timestamp"
-    );
-
-    let row = sqlx::query(
-        "SELECT state,prepared_at FROM execution_attempts WHERE id='attempt-concurrent-transition'",
-    )
-    .fetch_one(fx.repo.pool())
-    .await
-    .unwrap();
-    assert_eq!(row.get::<String, _>("state"), "preparing");
-    assert!(row.get::<Option<String>, _>("prepared_at").is_some());
 }
 
 #[tokio::test]
@@ -487,38 +376,6 @@ async fn completion_replay_restores_capacity_once_and_never_above_cap() {
     let after_replay = fx.capacity().await;
     assert_eq!(after_commit, 1);
     assert_eq!(after_replay, 1);
-}
-
-#[tokio::test]
-async fn completion_replay_insert_failure_rolls_back_terminal() {
-    let fx = Fixture::new().await;
-    let fence = fx
-        .ready_completion_attempt("request-completion-rollback", "attempt-completion-rollback")
-        .await;
-    sqlx::query("CREATE TRIGGER fail_completion_replay BEFORE INSERT ON execution_completion_replays BEGIN SELECT RAISE(ABORT, 'forced completion replay failure'); END")
-        .execute(fx.repo.pool())
-        .await
-        .unwrap();
-    let completion = completion_input(
-        "attempt-completion-rollback",
-        fence,
-        "completion-rollback",
-        None,
-    );
-    let error = fx
-        .repo
-        .complete_execution_result(completion, &fx.clock)
-        .await;
-    assert!(error.is_err());
-    assert_eq!(
-        fx.attempt_state("attempt-completion-rollback").await,
-        "leased"
-    );
-    assert_eq!(
-        fx.request_state("request-completion-rollback").await,
-        "leased"
-    );
-    assert_eq!(fx.capacity().await, 0);
 }
 
 #[tokio::test]

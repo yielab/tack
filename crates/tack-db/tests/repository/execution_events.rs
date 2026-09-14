@@ -1,6 +1,6 @@
 //! Structured event batch replay under a claimed attempt's fence.
 
-use crate::common::execution_fixture::{Fixture, count_where};
+use crate::common::execution_fixture::Fixture;
 
 use chrono::Duration;
 use tack_db::repo::execution::{EventApplyResult, EventBatch, NewEvent};
@@ -243,85 +243,4 @@ async fn event_replay_is_idempotent_under_one_fence() {
         "same checkpoint is a replay"
     );
     assert_eq!(fx.count("execution_events", "attempt-a").await, 1);
-}
-
-#[tokio::test]
-async fn concurrent_duplicate_event_batches_have_one_writer() {
-    let fx = Fixture::new().await;
-    let fence = fx
-        .ready_completion_attempt("request-concurrent-events", "attempt-concurrent-events")
-        .await;
-    let events = vec![NewEvent {
-        id: "event-row-concurrent",
-        event_id: "event-concurrent",
-        sequence: 1,
-        source: "runner",
-        kind: "log",
-        payload: r#"{"line":"hello"}"#,
-        occurred_at: fx.clock.now(),
-    }];
-    let batch = EventBatch {
-        runner_id: "runner-a",
-        attempt_id: "attempt-concurrent-events",
-        fencing_token: fence,
-        previous_checkpoint: None,
-        checkpoint: "checkpoint-concurrent",
-    };
-    let (a, b) = tokio::join!(
-        fx.apply_events_result(batch.clone(), &events),
-        fx.apply_events_result(batch, &events),
-    );
-    let a = a.expect("first event batch report must succeed at the sqlx level");
-    let b = b.expect("second event batch report must succeed at the sqlx level");
-
-    let fresh = count_where(
-        [&a, &b],
-        |r| matches!(r, EventApplyResult::Applied(result) if !result.replayed),
-    );
-    let replayed = count_where(
-        [&a, &b],
-        |r| matches!(r, EventApplyResult::Applied(result) if result.replayed),
-    );
-    assert_eq!(
-        fresh, 1,
-        "exactly one duplicate event batch applies fresh: {a:?} / {b:?}"
-    );
-    assert_eq!(
-        replayed, 1,
-        "the other duplicate event batch replays: {a:?} / {b:?}"
-    );
-
-    let result = |r: &EventApplyResult| match r {
-        EventApplyResult::Applied(result) => result.clone(),
-        other => panic!("expected applied, got {other:?}"),
-    };
-    let a_result = result(&a);
-    let b_result = result(&b);
-    assert_eq!(a_result.accepted_event_ids, b_result.accepted_event_ids);
-    assert_eq!(a_result.duplicate_event_ids, b_result.duplicate_event_ids);
-    assert_eq!(a_result.committed_checkpoint, b_result.committed_checkpoint);
-    assert_eq!(
-        a_result.accepted_event_ids,
-        vec!["event-concurrent".to_string()]
-    );
-    assert_eq!(
-        fx.count("execution_events", "attempt-concurrent-events")
-            .await,
-        1,
-        "the event is persisted exactly once"
-    );
-
-    let checkpoint: String = sqlx::query_scalar(
-        "SELECT event_checkpoint FROM execution_attempts WHERE id='attempt-concurrent-events'",
-    )
-    .fetch_one(fx.repo.pool())
-    .await
-    .unwrap();
-    assert_eq!(checkpoint, "checkpoint-concurrent");
-    assert_eq!(
-        fx.count("execution_event_batch_replays", "attempt-concurrent-events")
-            .await,
-        1,
-        "exactly one durable replay record is written"
-    );
 }

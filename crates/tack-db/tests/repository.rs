@@ -3,7 +3,8 @@
 //! operation under test into `execution_enrollment`,
 //! `execution_claim_lease_heartbeat`, `execution_events`,
 //! `execution_transitions_completion`, `execution_recovery_requeue`,
-//! `execution_decisions_artifacts`, `execution_enqueue`, plus
+//! `execution_decisions_artifacts`, `execution_enqueue`, and the
+//! concurrent-duplicate-writer race family in `execution_races`, plus
 //! `execution_retention` and `event_artifact_retention`), the agent-fleet
 //! control-plane repository (`orch_repo`), and the two concurrency-sensitive
 //! write paths (`status_update_checked`, `version_concurrency`).
@@ -22,6 +23,8 @@ mod execution_enqueue;
 mod execution_enrollment;
 #[path = "repository/execution_events.rs"]
 mod execution_events;
+#[path = "repository/execution_races.rs"]
+mod execution_races;
 #[path = "repository/execution_recovery_requeue.rs"]
 mod execution_recovery_requeue;
 #[path = "repository/execution_retention.rs"]

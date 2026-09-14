@@ -2,11 +2,14 @@
 //! attempt (including the lease-expiry and concurrent-terminal races).
 
 use crate::common::execution_fixture::{
-    Fixture, cancellation_input, count_where, expect_cancelled, expect_replayed_cancellation,
+    Fixture, cancellation_input, completion_input, expect_cancelled, expect_replayed_cancellation,
+    recovery_input,
 };
 
 use chrono::Duration;
-use tack_db::repo::execution::{CancellationObservation, CancellationObservationInput};
+use tack_db::repo::execution::{
+    CancellationObservation, CancellationObservationInput, RecoveryObservation,
+};
 
 #[tokio::test]
 async fn cancellation_observation_replays_after_first_success() {
@@ -204,6 +207,29 @@ async fn cancellation_capacity_restore_is_capped_and_replay_safe() {
 }
 
 #[tokio::test]
+async fn recovery_capacity_release_is_capped_and_replay_safe() {
+    let fx = Fixture::new().await;
+    let fence = fx
+        .ready_completion_attempt("request-recovery-cap", "attempt-recovery-cap")
+        .await;
+    sqlx::query(
+        "UPDATE agent_runners SET available_capacity = total_capacity WHERE id = 'runner-a'",
+    )
+    .execute(fx.repo.pool())
+    .await
+    .unwrap();
+    let input = recovery_input(
+        "attempt-recovery-cap",
+        fence,
+        "recovery-cap",
+        RecoveryObservation::Ambiguous,
+    );
+    fx.recover(input.clone()).await;
+    fx.recover(input).await;
+    assert_eq!(fx.capacity().await, 1);
+}
+
+#[tokio::test]
 async fn cancellation_replay_insert_failure_rolls_back_terminal() {
     let fx = Fixture::new().await;
     let fence = fx
@@ -236,6 +262,66 @@ async fn cancellation_replay_insert_failure_rolls_back_terminal() {
     );
     assert_eq!(
         fx.request_state("request-cancellation-rollback").await,
+        "leased"
+    );
+    assert_eq!(fx.capacity().await, 0);
+}
+
+#[tokio::test]
+async fn completion_replay_insert_failure_rolls_back_terminal() {
+    let fx = Fixture::new().await;
+    let fence = fx
+        .ready_completion_attempt("request-completion-rollback", "attempt-completion-rollback")
+        .await;
+    sqlx::query("CREATE TRIGGER fail_completion_replay BEFORE INSERT ON execution_completion_replays BEGIN SELECT RAISE(ABORT, 'forced completion replay failure'); END")
+        .execute(fx.repo.pool())
+        .await
+        .unwrap();
+    let completion = completion_input(
+        "attempt-completion-rollback",
+        fence,
+        "completion-rollback",
+        None,
+    );
+    let error = fx
+        .repo
+        .complete_execution_result(completion, &fx.clock)
+        .await;
+    assert!(error.is_err());
+    assert_eq!(
+        fx.attempt_state("attempt-completion-rollback").await,
+        "leased"
+    );
+    assert_eq!(
+        fx.request_state("request-completion-rollback").await,
+        "leased"
+    );
+    assert_eq!(fx.capacity().await, 0);
+}
+
+#[tokio::test]
+async fn recovery_replay_insert_failure_rolls_back_lifecycle() {
+    let fx = Fixture::new().await;
+    let fence = fx
+        .ready_completion_attempt("request-recovery-rollback", "attempt-recovery-rollback")
+        .await;
+    sqlx::query("CREATE TRIGGER fail_recovery_replay BEFORE INSERT ON execution_recovery_audits BEGIN SELECT RAISE(ABORT, 'forced recovery replay failure'); END")
+        .execute(fx.repo.pool())
+        .await
+        .unwrap();
+    let input = recovery_input(
+        "attempt-recovery-rollback",
+        fence,
+        "recovery-rollback",
+        RecoveryObservation::Ambiguous,
+    );
+    assert!(fx.repo.recover_attempt(input, &fx.clock).await.is_err());
+    assert_eq!(
+        fx.attempt_state("attempt-recovery-rollback").await,
+        "leased"
+    );
+    assert_eq!(
+        fx.request_state("request-recovery-rollback").await,
         "leased"
     );
     assert_eq!(fx.capacity().await, 0);
@@ -277,72 +363,6 @@ async fn cancellation_on_terminal_or_missing_request_is_not_success() {
         CancellationObservation::AlreadyTerminal {
             state: "succeeded".into()
         }
-    );
-}
-
-#[tokio::test]
-async fn concurrent_duplicate_cancellations_have_one_writer() {
-    let fx = Fixture::new().await;
-    let fence = fx
-        .ready_completion_attempt("request-concurrent-cancel", "attempt-concurrent-cancel")
-        .await;
-    fx.request_cancellation("request-concurrent-cancel").await;
-    let input = cancellation_input(
-        "attempt-concurrent-cancel",
-        fence,
-        "cancel-concurrent",
-        fx.clock.now(),
-    );
-    let (a, b) = tokio::join!(
-        fx.observe_cancellation_result(input.clone()),
-        fx.observe_cancellation_result(input),
-    );
-    let a = a.expect("first cancellation report must succeed at the sqlx level");
-    let b = b.expect("second cancellation report must succeed at the sqlx level");
-
-    let cancelled = count_where([&a, &b], |r| {
-        matches!(r, CancellationObservation::Cancelled(_))
-    });
-    let replayed = count_where([&a, &b], |r| {
-        matches!(r, CancellationObservation::Replayed(_))
-    });
-    assert_eq!(
-        cancelled, 1,
-        "exactly one duplicate cancellation report is authoritative: {a:?} / {b:?}"
-    );
-    assert_eq!(
-        replayed, 1,
-        "the other duplicate cancellation report replays: {a:?} / {b:?}"
-    );
-
-    let response = |r: &CancellationObservation| match r {
-        CancellationObservation::Cancelled(resp) | CancellationObservation::Replayed(resp) => {
-            resp.clone()
-        }
-        other => panic!("expected cancelled/replayed, got {other:?}"),
-    };
-    assert_eq!(
-        response(&a),
-        response(&b),
-        "both branches observe the single committed cancellation response"
-    );
-
-    assert_eq!(
-        fx.attempt_state("attempt-concurrent-cancel").await,
-        "cancelled"
-    );
-
-    // Capacity is restored by the terminal transition exactly once, even
-    // though both branches raced to report the same duplicate observation.
-    assert_eq!(fx.capacity().await, 1, "capacity is restored exactly once");
-    assert_eq!(
-        fx.count(
-            "execution_cancellation_replays",
-            "attempt-concurrent-cancel"
-        )
-        .await,
-        1,
-        "exactly one durable replay record is written"
     );
 }
 
