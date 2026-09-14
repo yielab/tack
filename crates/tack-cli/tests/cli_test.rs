@@ -240,14 +240,33 @@ async fn bearer_token_is_forwarded() {
 
 // ── config save / load round-trip ─────────────────────────────────────────────
 
+/// Overrides `HOME` for the guard's lifetime and restores the prior value
+/// (or absence) on drop.
+// SAFETY: single-threaded test; no concurrent env reads in this process.
+struct HomeOverride(Option<String>);
+
+impl HomeOverride {
+    fn set(new_home: &std::path::Path) -> Self {
+        let original = std::env::var("HOME").ok();
+        unsafe { std::env::set_var("HOME", new_home) };
+        Self(original)
+    }
+}
+
+impl Drop for HomeOverride {
+    fn drop(&mut self) {
+        match &self.0 {
+            Some(h) => unsafe { std::env::set_var("HOME", h) },
+            None => unsafe { std::env::remove_var("HOME") },
+        }
+    }
+}
+
 #[test]
 fn config_save_and_reload() {
-    // Write to a temp file by temporarily overriding HOME
     let guard = tempfile::tempdir().expect("temporary directory");
     let tmp = guard.path();
-    let original_home = std::env::var("HOME").ok();
-    // SAFETY: single-threaded test; no concurrent env reads in this process.
-    unsafe { std::env::set_var("HOME", tmp) };
+    let _home = HomeOverride::set(tmp);
 
     config::save("http://test:9999", Some("tok123")).unwrap();
 
@@ -274,13 +293,6 @@ fn config_save_and_reload() {
             mode & 0o777
         );
     }
-
-    // Restore HOME
-    match original_home {
-        Some(h) => unsafe { std::env::set_var("HOME", h) },
-        None => unsafe { std::env::remove_var("HOME") },
-    }
-    let _ = std::fs::remove_dir_all(tmp);
 }
 
 // ── vocab fetch falls back gracefully when project 404s ───────────────────────

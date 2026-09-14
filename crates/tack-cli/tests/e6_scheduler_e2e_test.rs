@@ -271,8 +271,7 @@ fn create_agent_profile(server: &ServerGuard) -> String {
 const BASE_REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
 
 #[allow(clippy::too_many_arguments)]
-fn create_execution_via_cli(
-    server: &ServerGuard,
+fn create_execution_args(
     item_id: &str,
     agent_profile_id: &str,
     selector_flag: &str,
@@ -280,7 +279,7 @@ fn create_execution_via_cli(
     idempotency_key: &str,
     model_provider: Option<&str>,
     model_id: Option<&str>,
-) -> Value {
+) -> Vec<String> {
     let mut args = vec![
         "execution".to_string(),
         "create".to_string(),
@@ -312,8 +311,88 @@ fn create_execution_via_cli(
         args.push("--model-id".to_string());
         args.push(id.to_string());
     }
+    args
+}
+
+#[allow(clippy::too_many_arguments)]
+fn create_execution_via_cli(
+    server: &ServerGuard,
+    item_id: &str,
+    agent_profile_id: &str,
+    selector_flag: &str,
+    selector_value: &str,
+    idempotency_key: &str,
+    model_provider: Option<&str>,
+    model_id: Option<&str>,
+) -> Value {
+    let args = create_execution_args(
+        item_id,
+        agent_profile_id,
+        selector_flag,
+        selector_value,
+        idempotency_key,
+        model_provider,
+        model_id,
+    );
     let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
     tack(server, &args_ref)
+}
+
+/// A queued request for an exact runner, on the "openai" provider — the
+/// shape every scheduler-behavior test below needs, differing only in
+/// which model id the runner declared vs. the request asks for.
+fn queue_request_for_runner(
+    server: &ServerGuard,
+    item_id: &str,
+    agent_profile_id: &str,
+    runner_id: &str,
+    idempotency_key: &str,
+    model_id: &str,
+) -> Value {
+    create_execution_via_cli(
+        server,
+        item_id,
+        agent_profile_id,
+        "runner",
+        runner_id,
+        idempotency_key,
+        Some("openai"),
+        Some(model_id),
+    )
+}
+
+/// The project/item/agent-profile setup every test in this file starts
+/// from, differing only in the project name used to tell test runs apart.
+fn setup(server: &ServerGuard, project_name: &str) -> (String, String) {
+    let (_project_id, item_id) = create_project_and_item(server, project_name);
+    let agent_profile_id = create_agent_profile(server);
+    (item_id, agent_profile_id)
+}
+
+/// Queues a request for `runner_id` and immediately claims it, returning
+/// the request id and whatever claim result came back.
+#[allow(clippy::too_many_arguments)]
+fn queue_and_claim(
+    server: &ServerGuard,
+    item_id: &str,
+    agent_profile_id: &str,
+    runner_id: &str,
+    credential: &str,
+    idempotency_key: &str,
+    claim_request_id: &str,
+    model_id: &str,
+) -> (String, Option<String>) {
+    let created = queue_request_for_runner(
+        server,
+        item_id,
+        agent_profile_id,
+        runner_id,
+        idempotency_key,
+        model_id,
+    );
+    let request_id = created["request_id"].as_str().unwrap().to_owned();
+    let claimed = claim_once(server, runner_id, credential, claim_request_id);
+    (request_id, claimed)
 }
 
 // =======================================================================
@@ -330,15 +409,13 @@ fn eligible_runner_claims_request_and_cli_sees_it_leased() {
     let (runner_id, credential) =
         enroll_runner_via_cli_and_protocol(&server, "healthy-runner", 1, "opaque/model-healthy");
 
-    let created = create_execution_via_cli(
+    let created = queue_request_for_runner(
         &server,
         &item_id,
         &agent_profile_id,
-        "runner",
         &runner_id,
         "healthy-key",
-        Some("openai"),
-        Some("opaque/model-healthy"),
+        "opaque/model-healthy",
     );
     let request_id = created["request_id"].as_str().unwrap().to_owned();
     assert_eq!(created["state"], "queued");
@@ -366,42 +443,30 @@ fn eligible_runner_claims_request_and_cli_sees_it_leased() {
 #[test]
 fn a_saturated_runner_leaves_a_second_request_queued() {
     let server = start_server();
-    let (_project_id, item_id) = create_project_and_item(&server, "E6 CLI saturation");
-    let agent_profile_id = create_agent_profile(&server);
+    let (item_id, agent_profile_id) = setup(&server, "E6 CLI saturation");
     let (runner_id, credential) = enroll_runner_via_cli_and_protocol(
         &server,
         "saturated-runner",
         1,
         "opaque/model-saturated",
     );
+    let queue = |key: &str, claim_id: &str| {
+        queue_and_claim(
+            &server,
+            &item_id,
+            &agent_profile_id,
+            &runner_id,
+            &credential,
+            key,
+            claim_id,
+            "opaque/model-saturated",
+        )
+    };
 
-    let first = create_execution_via_cli(
-        &server,
-        &item_id,
-        &agent_profile_id,
-        "runner",
-        &runner_id,
-        "saturation-key-1",
-        Some("openai"),
-        Some("opaque/model-saturated"),
-    );
-    let first_id = first["request_id"].as_str().unwrap().to_owned();
-    let first_claim = claim_once(&server, &runner_id, &credential, "saturation-claim-1");
+    let (first_id, first_claim) = queue("saturation-key-1", "saturation-claim-1");
     assert_eq!(first_claim.as_deref(), Some(first_id.as_str()));
 
-    let second = create_execution_via_cli(
-        &server,
-        &item_id,
-        &agent_profile_id,
-        "runner",
-        &runner_id,
-        "saturation-key-2",
-        Some("openai"),
-        Some("opaque/model-saturated"),
-    );
-    let second_id = second["request_id"].as_str().unwrap().to_owned();
-
-    let second_claim = claim_once(&server, &runner_id, &credential, "saturation-claim-2");
+    let (second_id, second_claim) = queue("saturation-key-2", "saturation-claim-2");
     assert_eq!(
         second_claim, None,
         "the runner's one slot is already in use; the scheduler must not double-lease it"
@@ -430,15 +495,13 @@ fn exact_runner_selector_excludes_every_other_runner() {
     let (_other_runner_id, other_credential) =
         enroll_runner_via_cli_and_protocol(&server, "exact-bystander", 1, "opaque/model-exact");
 
-    let created = create_execution_via_cli(
+    let created = queue_request_for_runner(
         &server,
         &item_id,
         &agent_profile_id,
-        "runner",
         &target_runner_id,
         "exact-runner-key",
-        Some("openai"),
-        Some("opaque/model-exact"),
+        "opaque/model-exact",
     );
     let request_id = created["request_id"].as_str().unwrap().to_owned();
 
@@ -478,15 +541,13 @@ fn a_request_for_an_undeclared_model_is_never_claimed() {
         "opaque/model-declared",
     );
 
-    let created = create_execution_via_cli(
+    let created = queue_request_for_runner(
         &server,
         &item_id,
         &agent_profile_id,
-        "runner",
         &runner_id,
         "unsupported-model-key",
-        Some("openai"),
-        Some("opaque/model-not-declared-by-any-runner"),
+        "opaque/model-not-declared-by-any-runner",
     );
     let request_id = created["request_id"].as_str().unwrap().to_owned();
     assert_eq!(
@@ -524,50 +585,29 @@ fn changed_payload_replay_returns_idempotency_conflict() {
     let (runner_id, _credential) =
         enroll_runner_via_cli_and_protocol(&server, "conflict-runner", 1, "opaque/model-conflict");
 
-    let _first = create_execution_via_cli(
+    let _first = queue_request_for_runner(
         &server,
+        &item_id,
+        &agent_profile_id,
+        &runner_id,
+        "conflict-key",
+        "opaque/model-conflict",
+    );
+
+    // Same idempotency key, different requested model — must be a named,
+    // stable `idempotency_conflict`, not a generic failure, and the CLI
+    // process itself must exit non-zero.
+    let replay_args = create_execution_args(
         &item_id,
         &agent_profile_id,
         "runner",
         &runner_id,
         "conflict-key",
         Some("openai"),
-        Some("opaque/model-conflict"),
+        Some("opaque/model-a-different-one"),
     );
-
-    // Same idempotency key, different requested model — must be a named,
-    // stable `idempotency_conflict`, not a generic failure, and the CLI
-    // process itself must exit non-zero.
-    let (success, stdout, stderr) = tack_allow_failure(
-        &server,
-        &[
-            "execution",
-            "create",
-            &item_id,
-            "--idempotency-key",
-            "conflict-key",
-            "--runner",
-            &runner_id,
-            "--agent-profile",
-            &agent_profile_id,
-            "--harness",
-            "codex",
-            "--model-provider",
-            "openai",
-            "--model-id",
-            "opaque/model-a-different-one",
-            "--agent-profile-snapshot",
-            r#"{"name":"profile","instructions":"work safely","tool_policy":{},"timeout_seconds":60,"budgets":{}}"#,
-            "--repository",
-            &format!(
-                r#"{{"kind":"git","remote":"https://example.test/e6-cli.git","base_revision":"{BASE_REVISION}"}}"#
-            ),
-            "--permission-policy",
-            r#"{"tools":["shell"],"network":false}"#,
-            "--timeout-seconds",
-            "60",
-        ],
-    );
+    let replay_args_ref: Vec<&str> = replay_args.iter().map(String::as_str).collect();
+    let (success, stdout, stderr) = tack_allow_failure(&server, &replay_args_ref);
     assert!(
         !success,
         "a changed-payload replay must fail, not succeed silently"
