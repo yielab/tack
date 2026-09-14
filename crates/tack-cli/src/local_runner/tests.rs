@@ -59,7 +59,7 @@ fn unreachable_database_url() -> tack_api::config::AppConfig {
 }
 
 #[tokio::test]
-async fn ensure_runner_credential_leaves_a_manual_credential_untouched() {
+async fn ensure_runner_credential_leaves_manual_one_untouched() {
     let state_dir_guard = unique_temp_dir("manual");
     let state_dir = state_dir_guard.path();
     let mut runner_config = RunnerConfig {
@@ -87,7 +87,7 @@ async fn ensure_runner_credential_leaves_a_manual_credential_untouched() {
 }
 
 #[tokio::test]
-async fn ensure_runner_credential_reuses_a_stored_session_without_self_provisioning() {
+async fn ensure_runner_credential_reuses_session_no_self_provisioning() {
     let state_dir_guard = unique_temp_dir("stored-session");
     let state_dir = state_dir_guard.path();
     std::fs::write(state_dir.join("session.json"), "{}").expect("write session.json");
@@ -115,7 +115,7 @@ async fn ensure_runner_credential_reuses_a_stored_session_without_self_provision
 }
 
 #[tokio::test]
-async fn ensure_runner_credential_attempts_self_provisioning_when_nothing_else_is_available() {
+async fn ensure_runner_credential_self_provisions_with_nothing_else() {
     let state_dir_guard = unique_temp_dir("no-session");
     let state_dir = state_dir_guard.path();
     let mut runner_config = RunnerConfig {
@@ -151,6 +151,30 @@ fn control_with_state_dir(state_dir: &Path) -> EmbeddedRunnerControl {
     }
 }
 
+async fn vercel_provider_enabled(control: &EmbeddedRunnerControl) -> bool {
+    control
+        .state
+        .lock()
+        .await
+        .runner_config
+        .providers
+        .get(tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY)
+        .expect("seeded provider entry")
+        .enabled
+}
+
+async fn set_vercel_provider_enabled(control: &EmbeddedRunnerControl, enabled: bool) {
+    control
+        .state
+        .lock()
+        .await
+        .runner_config
+        .providers
+        .get_mut(tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY)
+        .expect("seeded provider entry")
+        .enabled = enabled;
+}
+
 #[tokio::test]
 async fn a_fresh_control_reports_stopped_with_no_since() {
     let dir = unique_temp_dir("status-fresh");
@@ -177,7 +201,7 @@ async fn start_fails_typed_before_the_bound_address_is_known() {
 }
 
 #[tokio::test]
-async fn a_disabled_provider_reports_not_configured_with_no_network_call() {
+async fn a_disabled_provider_reports_not_configured_no_network_call() {
     let dir = unique_temp_dir("catalog-disabled");
     let control = control_with_state_dir(dir.path());
 
@@ -216,7 +240,7 @@ fn fake_running(stopped: Arc<std::sync::atomic::AtomicBool>) -> Running {
 /// the test also pin that a failed restart leaves the control honestly
 /// `Stopped` rather than pretending the old task still serves.
 #[tokio::test]
-async fn setting_a_provider_secret_while_running_stops_the_old_task_before_anything_else() {
+async fn setting_provider_secret_while_running_stops_old_task_first() {
     let dir = unique_temp_dir("restart-on-provider-secret");
     let control = control_with_state_dir(dir.path());
     let stopped = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -254,7 +278,7 @@ async fn setting_a_provider_secret_while_running_stops_the_old_task_before_anyth
 /// A secret no configured provider resolves is read live by whatever
 /// requests reference it, so the running task keeps serving untouched.
 #[tokio::test]
-async fn setting_an_unrelated_secret_while_running_leaves_the_task_alone() {
+async fn setting_unrelated_secret_while_running_leaves_task_alone() {
     let dir = unique_temp_dir("no-restart-on-unrelated-secret");
     let control = control_with_state_dir(dir.path());
     let stopped = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -296,7 +320,7 @@ async fn removing_a_provider_secret_while_running_stops_the_old_task() {
 }
 
 #[tokio::test]
-async fn set_then_list_then_remove_a_secret_round_trips_with_a_recorded_set_at() {
+async fn set_list_remove_secret_round_trips_with_a_recorded_set_at() {
     let dir = unique_temp_dir("secret-round-trip");
     // Forces the file backend (`SecretStore::open`'s own fallback path)
     // so this test never touches a real keychain.
@@ -344,23 +368,14 @@ async fn setting_the_default_vercel_secret_enables_that_provider() {
         .await
         .expect("set_secret");
 
-    let enabled = control
-        .state
-        .lock()
-        .await
-        .runner_config
-        .providers
-        .get(tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY)
-        .expect("seeded provider entry")
-        .enabled;
     assert!(
-        enabled,
+        vercel_provider_enabled(&control).await,
         "the default provider must be enabled once its secret is set"
     );
 }
 
 #[tokio::test]
-async fn removing_the_default_vercel_secret_disables_a_provider_it_alone_enabled() {
+async fn removing_default_vercel_secret_disables_provider_it_enabled() {
     let dir = unique_temp_dir("secret-removal-disables");
     unsafe {
         std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "/dev/null");
@@ -376,17 +391,8 @@ async fn removing_the_default_vercel_secret_disables_a_provider_it_alone_enabled
         .await
         .expect("remove_secret");
 
-    let enabled = control
-        .state
-        .lock()
-        .await
-        .runner_config
-        .providers
-        .get(tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY)
-        .expect("seeded provider entry")
-        .enabled;
     assert!(
-        !enabled,
+        !vercel_provider_enabled(&control).await,
         "removing the only secret that enabled this provider must leave it exactly \
          as it was before the set: disabled"
     );
@@ -402,7 +408,7 @@ async fn removing_the_default_vercel_secret_disables_a_provider_it_alone_enabled
 }
 
 #[tokio::test]
-async fn removing_the_default_vercel_secret_leaves_an_operator_enabled_provider_on() {
+async fn removing_default_vercel_secret_leaves_operator_enabled_on() {
     let dir = unique_temp_dir("secret-removal-preserves-operator-enable");
     unsafe {
         std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "/dev/null");
@@ -412,15 +418,7 @@ async fn removing_the_default_vercel_secret_leaves_an_operator_enabled_provider_
     // `TACK_RUNNER_PROVIDER_VERCEL_AI_GATEWAY_ENABLED`) turning the
     // provider on before any key was ever pasted through this control —
     // never something `set_secret` itself did.
-    control
-        .state
-        .lock()
-        .await
-        .runner_config
-        .providers
-        .get_mut(tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY)
-        .expect("seeded provider entry")
-        .enabled = true;
+    set_vercel_provider_enabled(&control, true).await;
 
     control
         .set_secret(tack_runner::config::DEFAULT_VERCEL_AI_GATEWAY_SECRET, "shh")
@@ -431,55 +429,29 @@ async fn removing_the_default_vercel_secret_leaves_an_operator_enabled_provider_
         .await
         .expect("remove_secret");
 
-    let enabled = control
-        .state
-        .lock()
-        .await
-        .runner_config
-        .providers
-        .get(tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY)
-        .expect("seeded provider entry")
-        .enabled;
     assert!(
-        enabled,
+        vercel_provider_enabled(&control).await,
         "a provider the operator enabled directly must never be turned off by a \
          later key removal through this route"
     );
 }
 
 #[tokio::test]
-async fn removing_a_non_default_secret_never_touches_the_providers_enabled_flag() {
+async fn removing_non_default_secret_never_touches_enabled_flag() {
     let dir = unique_temp_dir("secret-removal-narrow-name");
     unsafe {
         std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "/dev/null");
     }
     let control = control_with_state_dir(dir.path());
-    control
-        .state
-        .lock()
-        .await
-        .runner_config
-        .providers
-        .get_mut(tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY)
-        .expect("seeded provider entry")
-        .enabled = true;
+    set_vercel_provider_enabled(&control, true).await;
 
     control
         .remove_secret("some-other-secret-name")
         .await
         .expect("remove_secret");
 
-    let enabled = control
-        .state
-        .lock()
-        .await
-        .runner_config
-        .providers
-        .get(tack_runner::config::VERCEL_AI_GATEWAY_CONFIG_KEY)
-        .expect("seeded provider entry")
-        .enabled;
     assert!(
-        enabled,
+        vercel_provider_enabled(&control).await,
         "removing a secret under any name other than the default must never touch \
          this provider's enabled flag — mirrors set_secret's own narrow scope"
     );
@@ -525,14 +497,22 @@ fn embedded_default_state_dir_nests_under_storage_dir() {
     );
 }
 
+/// Serializes every `with_cwd` call in this process: `cargo llvm-cov`'s
+/// instrumented run (and plain `cargo test`) puts every test in this file
+/// on threads of one shared process, unlike `nextest`'s one-process-per-test
+/// — without this, two `migrate_legacy_state_dir_*` tests racing each
+/// other's `set_current_dir` intermittently fail under either of those,
+/// even though each test's own directories never collide.
+static CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Changes the process's current directory for the duration of a
 /// closure, restoring it afterward even if the closure panics — needed
 /// by every test below that exercises [`migrate_legacy_state_dir`],
 /// since its legacy side is the crate's bare, cwd-relative default.
-/// Sound under this crate's own rule for mutating process-global state
-/// in tests: nextest gives each test its own process, so no sibling
-/// test's thread observes this change.
 fn with_cwd<T>(dir: &Path, body: impl FnOnce() -> T) -> T {
+    let _guard = CWD_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let original = std::env::current_dir().expect("current dir");
     std::env::set_current_dir(dir).expect("set cwd");
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(body));
@@ -544,7 +524,7 @@ fn with_cwd<T>(dir: &Path, body: impl FnOnce() -> T) -> T {
 }
 
 #[test]
-fn migrate_legacy_state_dir_moves_an_existing_legacy_directory_once() {
+fn migrate_legacy_state_dir_moves_legacy_directory_once() {
     let cwd_guard = unique_temp_dir("migrate-cwd");
     let target_root = unique_temp_dir("migrate-target");
     let new_dir = target_root.path().join("storage").join("runner");
@@ -573,7 +553,7 @@ fn migrate_legacy_state_dir_moves_an_existing_legacy_directory_once() {
 }
 
 #[test]
-fn migrate_legacy_state_dir_never_touches_an_already_provisioned_new_directory() {
+fn migrate_legacy_state_dir_never_touches_provisioned_dir() {
     let cwd_guard = unique_temp_dir("migrate-cwd-noop");
     let target_root = unique_temp_dir("migrate-target-noop");
     let new_dir = target_root.path().join("runner");
@@ -601,7 +581,7 @@ fn migrate_legacy_state_dir_never_touches_an_already_provisioned_new_directory()
 }
 
 #[test]
-fn migrate_legacy_state_dir_is_a_no_op_when_neither_directory_exists() {
+fn migrate_legacy_state_dir_is_noop_when_neither_dir_exists() {
     let cwd_guard = unique_temp_dir("migrate-cwd-fresh");
     let target_root = unique_temp_dir("migrate-target-fresh");
     let new_dir = target_root.path().join("storage").join("runner");

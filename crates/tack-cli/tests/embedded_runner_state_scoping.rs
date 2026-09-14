@@ -156,6 +156,21 @@ fn assert_server_enrolled(
     (runner_id, state_dir)
 }
 
+/// Boots one server rooted under a fresh temp dir prefixed `prefix`, waits
+/// for its own embedded runner to enroll, and drops it before returning —
+/// so the caller needs only one server on disk at a time.
+fn boot_and_enroll(shared_cwd: &Path, prefix: &str, label: &str) -> (String, PathBuf) {
+    let root = tempfile::Builder::new()
+        .prefix(prefix)
+        .tempdir()
+        .expect("install root");
+    let root_path = root.path().to_path_buf();
+    let server = start_server_with_runner(shared_cwd, root);
+    let result = assert_server_enrolled(&server, &root_path, label);
+    drop(server);
+    result
+}
+
 /// Two servers, each against its own database and `storage_dir`, started in
 /// turn from the same working directory: each must enroll its own runner,
 /// under its own state directory, and neither may fall back to the shared
@@ -169,23 +184,10 @@ fn each_server_sees_only_its_own_runner_enrollment() {
         .tempdir()
         .expect("shared cwd");
 
-    let root_a = tempfile::Builder::new()
-        .prefix("embedded-scope-install-a")
-        .tempdir()
-        .expect("install a root");
-    let root_a_path = root_a.path().to_path_buf();
-    let server_a = start_server_with_runner(shared_cwd.path(), root_a);
-    let (runner_id_a, state_dir_a) = assert_server_enrolled(&server_a, &root_a_path, "A");
-    drop(server_a);
-
-    let root_b = tempfile::Builder::new()
-        .prefix("embedded-scope-install-b")
-        .tempdir()
-        .expect("install b root");
-    let root_b_path = root_b.path().to_path_buf();
-    let server_b = start_server_with_runner(shared_cwd.path(), root_b);
-    let (runner_id_b, state_dir_b) = assert_server_enrolled(&server_b, &root_b_path, "B");
-    drop(server_b);
+    let (runner_id_a, state_dir_a) =
+        boot_and_enroll(shared_cwd.path(), "embedded-scope-install-a", "A");
+    let (runner_id_b, state_dir_b) =
+        boot_and_enroll(shared_cwd.path(), "embedded-scope-install-b", "B");
 
     assert_ne!(
         runner_id_a, runner_id_b,

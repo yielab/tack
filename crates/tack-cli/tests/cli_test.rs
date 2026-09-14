@@ -242,7 +242,6 @@ async fn bearer_token_is_forwarded() {
 
 #[test]
 fn config_save_and_reload() {
-    // Write to a temp file by temporarily overriding HOME
     let guard = tempfile::tempdir().expect("temporary directory");
     let tmp = guard.path();
     let original_home = std::env::var("HOME").ok();
@@ -255,11 +254,8 @@ fn config_save_and_reload() {
     assert_eq!(cfg.base_url, "http://test:9999");
     assert_eq!(cfg.token.as_deref(), Some("tok123"));
 
-    // `~/.tackrc` carries `TACK_API_TOKEN` — a credential — so
-    // `config::save` goes through `secure_fs::write_owner_only_atomic`
-    // instead of a plain `fs::write`. Prove that end-to-end through the real
-    // save path, not just against the isolated `secure_fs` unit tests: the
-    // file this test just read back from must itself be owner-only.
+    // `~/.tackrc` carries a credential, so `config::save` writes it
+    // owner-only — prove that end-to-end through the real save path.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -275,12 +271,10 @@ fn config_save_and_reload() {
         );
     }
 
-    // Restore HOME
     match original_home {
         Some(h) => unsafe { std::env::set_var("HOME", h) },
         None => unsafe { std::env::remove_var("HOME") },
     }
-    let _ = std::fs::remove_dir_all(tmp);
 }
 
 // ── vocab fetch falls back gracefully when project 404s ───────────────────────
