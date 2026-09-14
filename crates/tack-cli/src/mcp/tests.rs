@@ -60,10 +60,7 @@ fn mcp_tool_names() -> Vec<String> {
 
 #[test]
 fn tools_list_advertises_all_fifteen() {
-    // The original 8 item/project tools plus 7 execution/fleet/
-    // profile tools (list_fleets, list_agent_profiles,
-    // list_model_profiles, list_executions, get_execution,
-    // cancel_execution, create_execution).
+    // The original 8 item/project tools plus 7 execution/fleet/profile tools.
     let names = mcp_tool_names();
     assert_eq!(names.len(), 15);
     for expected in [
@@ -82,9 +79,7 @@ fn tools_list_advertises_all_fifteen() {
     }
 }
 
-/// This module deliberately keeps admin/secret-bearing actions off the MCP
-/// surface (see the dispatch-time doc comment) — pin their absence so a
-/// future edit can't add them without a second look.
+/// Admin/secret-bearing actions are deliberately kept off the MCP surface.
 #[test]
 fn tools_list_excludes_admin_and_secret_actions() {
     let names = mcp_tool_names();

@@ -492,9 +492,7 @@ fn dispatch_via_gateway(
         .to_owned()
 }
 
-/// The runner is serving before the key exists — the shape this test is
-/// about — and its boot fetched no catalog: the provider was disabled and
-/// there was no key to fetch with. Returns the active runner's id.
+/// The runner is serving before the key exists, and its boot fetched no catalog.
 fn assert_active_with_no_catalog_fetch(
     client: &reqwest::blocking::Client,
     base_url: &str,
@@ -510,10 +508,7 @@ fn assert_active_with_no_catalog_fetch(
     runner
 }
 
-/// The runner serving the next dispatch booted with the key: its enrollment
-/// snapshot advertises the fake gateway's model, which it could only have
-/// fetched with that key. Asserts it is the same runner that was already
-/// active, and that the gateway actually saw an authorized hit.
+/// The same runner now advertises the gateway's model and served an authorized hit.
 fn assert_now_advertises_model(
     client: &reqwest::blocking::Client,
     base_url: &str,
@@ -535,9 +530,8 @@ fn assert_now_advertises_model(
     runner_after
 }
 
-/// Seeds a dispatch target, dispatches through the gateway-advertising
-/// runner, and asserts the attempt succeeds with the fake harness's own
-/// version and the gateway provider recorded on completion.
+/// Dispatches through `runner_id`, asserts success via the gateway, and
+/// that the spawn environment was pointed at that same gateway.
 fn dispatch_and_assert_success(
     client: &reqwest::blocking::Client,
     base_url: &str,
@@ -575,11 +569,8 @@ fn dispatch_and_assert_success(
             .and_then(Value::as_str),
         Some("vercel-ai-gateway")
     );
-}
 
-/// The harness was pointed at the fake gateway's per-harness endpoint — the
-/// spawn environment carried the provider the key enabled.
-fn assert_spawn_pointed_at_gateway(env: &LiveSecretEnv) {
+    // The harness was pointed at the fake gateway's per-harness endpoint.
     let invoked = std::fs::read_to_string(env.shim_dir.join("invoked"))
         .expect("the fake claude records the base URL it was spawned with");
     assert_eq!(
@@ -608,7 +599,6 @@ fn key_stored_while_running_reaches_next_dispatch() {
     let runner_after = assert_now_advertises_model(&client, &base_url, &env, &runner_before);
 
     dispatch_and_assert_success(&client, &base_url, &env, &runner_after);
-    assert_spawn_pointed_at_gateway(&env);
 
     drop(server);
 }
