@@ -39,7 +39,8 @@ wire-body builders are test-only lines with no prod-code counterpart).
 ## Coverage
 
 `cargo llvm-cov -p tack-api --summary-only`, TOTAL Cover column: **69.26% before,
-69.26% after** (identical line/region/function counts — no production code changed).
+69.26–69.28% after** (line/function counts identical; region count moves ±2 run to
+run from concurrent-test scheduling — no production code changed, not a regression).
 
 ## Deletion (named, per the rule)
 
@@ -48,8 +49,7 @@ heartbeat replay-vs-conflict proof (kept, renamed
 `heartbeat_replay_returns_original_success_conflicting_retry_rejected`) and a
 completion replay-vs-conflict proof with fewer assertions than the file's own
 `completion_replay_changed_content_is_idempotency_conflict` (same claim, same layer,
-already pinned there in full: `idempotency_conflict` code, `retryable: false`,
-replay-count, unchanged state). Dropped the weaker duplicate, not flagged by
+pinned there already in full). Dropped the weaker duplicate — not flagged by
 `duplicate-tests` (whole-body similarity, not sub-section).
 
 ## Unmet (documented in EXCLUSIONS with these reasons)
