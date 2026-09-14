@@ -97,13 +97,6 @@ EXCLUSIONS: dict[tuple[str, str], str] = {
     ("crates/tack-api/tests/wave2_gate.rs", "test_file_lines"): _WAVE2_GATE,
     ("crates/tack-api/tests/wave2_gate.rs", "test_fn_max_lines"): _WAVE2_GATE,
     ("crates/tack-api/tests/wave2_gate.rs", "test_name_max_chars"): _WAVE2_GATE,
-    # comment share is M6's territory, not IX-M8-api's (test-body only) — not recorded
-    ("crates/tack-api/src/dispatcher.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
-    ("crates/tack-api/src/github_sync.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
-    ("crates/tack-api/src/handlers/runner_protocol/retention.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
-    ("crates/tack-api/src/orch_runtime.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
-    ("crates/tack-api/src/router.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
-    ("crates/tack-api/src/server.rs", "src_comment_share"): "unmet, not recorded by IX-M8-api (comment share, not test-body work)",
     ("crates/tack-api/src/orch_runtime/tests.rs", "test_sleeps"): "unmet, not recorded by IX-M8-api (sleep count unchanged from before the card, not in its acceptance lines)",
 
     # --- tack-cli: none of these are on IX-M8-cli's acceptance lines (name-length only) ---

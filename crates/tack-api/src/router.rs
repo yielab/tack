@@ -91,7 +91,6 @@ fn content_security_policy(config: &AppConfig) -> HeaderValue {
 /// reachable while the feature is off — see that route's own comment.
 fn orch_routes(state: AppState) -> Router<AppState> {
     Router::new()
-        // ─── Control planes ───────────────────────────
         .route(
             "/control-planes",
             post(orch::create_control_plane).get(orch::list_control_planes),
@@ -102,16 +101,12 @@ fn orch_routes(state: AppState) -> Router<AppState> {
                 .patch(orch::update_control_plane)
                 .delete(orch::delete_control_plane),
         )
-        // ─── Project ↔ control-plane link ─────────────
         .route(
             "/projects/{id}/orch-link",
             get(orch::get_orch_link).put(orch::put_orch_link),
         )
-        // ─── Fleet view aggregate ──────────────────────
         .route("/fleet", get(orch::get_fleet))
-        // ─── Metrics ──────────────────────────────────────────────
         .route("/metrics", get(orch::get_metrics))
-        // ─── Item/project agent activity ───────────────────────────
         .route(
             "/items/{id}/agent-activity",
             get(orch::get_item_agent_activity),
@@ -120,14 +115,12 @@ fn orch_routes(state: AppState) -> Router<AppState> {
             "/projects/{id}/agent-activity",
             get(orch::get_project_agent_activity),
         )
-        // ─── Dispatch ─────────────────────────────────────────────
         .route("/items/{id}/dispatch", post(orch::dispatch_item))
         .route("/sprints/{id}/dispatch", post(orch::dispatch_sprint))
         .route(
             "/sprints/{id}/dispatch/dry-run",
             get(orch::dry_run_sprint_dispatch),
         )
-        // ─── Approvals + provisioning ───────────────────────────────
         .route("/approvals", get(orch::list_pending_approvals)) // fleet-wide inbox, read-only
         .route("/approvals/{token}", post(orch::decide_approval)) // also gated on TACK_ORCH_APPROVAL_TOKEN (checked inside the handler, not this layer)
         .route(
@@ -331,29 +324,23 @@ pub fn build_router(state: AppState) -> Router {
 
     // ── API routes ───────────────────────────────────────────────────────────
     let api = Router::new()
-        // ─── OpenAPI contract (public — no auth to read the schema) ──────
         .route("/openapi.json", get(crate::openapi::openapi_json))
-        // ─── Health & Debug (always public) ──────────────────────────────
         .route("/health", get(debug::health))
         .route("/debug/info", get(debug::debug_info))
         .route("/debug/db-stats", get(debug::db_stats))
-        // ─── Backup / restore ────────────────────────────────────────────
         .route("/backup", get(backup::get_backup))
         .route(
             "/restore",
             post(backup::post_restore.layer(DefaultBodyLimit::max(ATTACH_LIMIT))),
         )
-        // ─── Remote cloud backup ──────────────────────────────────────────
         .route("/backup/remote", post(backup::post_remote_backup))
         .route("/backup/remote", get(backup::get_remote_backups))
         .route("/backup/remote/restore", post(backup::post_remote_restore))
         .route("/backup/remote/verify", post(backup::post_remote_verify))
-        // ─── Cloud backup settings (UI-editable) ──────────────────────────
         .route(
             "/settings/backup",
             get(settings::get_backup_settings).put(settings::put_backup_settings),
         )
-        // ─── Orchestration settings (UI-editable) ──────────────────────────
         // Deliberately **outside** `orch_routes`'/`require_orch_enabled`'s
         // gate: this is the one orchestration-adjacent endpoint that must
         // stay reachable while orchestration is off — it's how an operator
@@ -363,13 +350,11 @@ pub fn build_router(state: AppState) -> Router {
             "/settings/orchestration",
             get(settings::get_orch_settings).put(settings::put_orch_settings),
         )
-        // ─── Projects ────────────────────────────────────────────────────
         .route("/projects", post(projects::create_project))
         .route("/projects", get(projects::list_projects))
         .route("/projects/{id}", get(projects::get_project))
         .route("/projects/{id}", patch(projects::update_project))
         .route("/projects/{id}", delete(projects::delete_project))
-        // ─── Export/Import ───────────────────────────────────────────────
         .route("/projects/{id}/export", get(export::export_project))
         .route("/projects/import", post(export::import_project))
         .route("/projects/{id}/import-csv", post(export::import_csv))
@@ -381,7 +366,6 @@ pub fn build_router(state: AppState) -> Router {
             "/projects/{id}/import-linear",
             post(import_linear::import_linear),
         )
-        // ─── Items ───────────────────────────────────────────────────────
         .route("/projects/{project_id}/items", post(items::create_item))
         .route("/projects/{project_id}/items", get(items::list_items))
         .route(
@@ -393,7 +377,6 @@ pub fn build_router(state: AppState) -> Router {
         .route("/items/{id}", get(items::get_item))
         .route("/items/{id}", patch(items::update_item))
         .route("/items/{id}", delete(items::delete_item))
-        // ─── Sprints ─────────────────────────────────────────────────────
         .route(
             "/projects/{project_id}/sprints",
             post(sprints::create_sprint),
@@ -404,7 +387,6 @@ pub fn build_router(state: AppState) -> Router {
             get(sprints::get_sprint).patch(sprints::update_sprint),
         )
         .route("/sprints/{id}/status", patch(sprints::update_sprint_status))
-        // ─── Roles ───────────────────────────────────────────────────────
         .route("/projects/{project_id}/roles", post(roles::create_role))
         .route("/projects/{project_id}/roles", get(roles::list_roles))
         .route("/roles/{id}", delete(roles::delete_role))
@@ -413,10 +395,8 @@ pub fn build_router(state: AppState) -> Router {
             "/items/{item_id}/roles/{role_id}",
             delete(roles::remove_role),
         )
-        // ─── Comments ────────────────────────────────────────────────────
         .route("/items/{item_id}/comments", post(comments::create_comment))
         .route("/items/{item_id}/comments", get(comments::list_comments))
-        // ─── Dependencies ────────────────────────────────────────────────
         .route(
             "/items/{item_id}/dependencies",
             post(dependencies::create_dependency),
@@ -429,7 +409,6 @@ pub fn build_router(state: AppState) -> Router {
             "/items/{item_id}/dependencies/{dep_id}",
             delete(dependencies::delete_dependency),
         )
-        // ─── Attachments (upload has its own higher body limit) ──────────
         .route(
             "/items/{item_id}/attachments",
             post(attachments::upload_attachment.layer(DefaultBodyLimit::max(ATTACH_LIMIT)))
@@ -437,7 +416,6 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/attachments/{id}", get(attachments::download_attachment))
         .route("/attachments/{id}", delete(attachments::delete_attachment))
-        // ─── Project Templates ───────────────────────────────────────────
         .route("/templates", post(templates::create_template))
         .route("/templates", get(templates::list_templates))
         .route("/templates/{id}", get(templates::get_template))
@@ -450,7 +428,6 @@ pub fn build_router(state: AppState) -> Router {
             "/projects/{id}/save-as-template",
             post(templates::save_project_as_template),
         )
-        // ─── Custom Fields ───────────────────────────────────────────────
         .route(
             "/projects/{project_id}/custom-fields",
             post(custom_fields::create_field),
@@ -478,7 +455,6 @@ pub fn build_router(state: AppState) -> Router {
             "/items/{item_id}/custom-fields",
             get(custom_fields::get_all_field_values),
         )
-        // ─── Multiple Boards ─────────────────────────────────────────────
         .route(
             "/projects/{project_id}/boards",
             post(boards_multi::create_board),
@@ -492,7 +468,6 @@ pub fn build_router(state: AppState) -> Router {
         .route("/boards/{id}", patch(boards_multi::update_board))
         .route("/boards/{id}", delete(boards_multi::delete_board))
         .route("/boards/{id}/view", get(boards_multi::get_board_view))
-        // ─── Orchestration control center (gated) ──────────────────────────
         // Every orchestration route is batched into `orch_routes` below
         // rather than restructuring this file. `require_orch_enabled` returns a 409
         // with `error.code: "orchestration_disabled"` for every route here
@@ -512,7 +487,6 @@ pub fn build_router(state: AppState) -> Router {
         // `require_token` below. See `operator_execution_routes`'s doc
         // comment for why this is a `merge`, not a `nest`. ───────────────
         .merge(operator_execution_routes(&state))
-        // ─── Auth token gate ──────────────────────────────────────
         .layer(middleware::from_fn_with_state(state.clone(), require_token))
         // ─── Unmatched-route 404 — added after the auth layer above
         // so it is never itself gated behind a token (an unmatched path

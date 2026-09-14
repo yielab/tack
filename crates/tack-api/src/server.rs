@@ -67,10 +67,8 @@ async fn serve_inner(
     ready_tx: Option<oneshot::Sender<SocketAddr>>,
     local_runner: Option<Arc<dyn LocalRunnerControl>>,
 ) -> anyhow::Result<()> {
-    // Load configuration
     let config = AppConfig::load();
 
-    // Initialize logging/tracing
     init_tracing(&config);
 
     // Reject unsafe exposure before opening a database or listener.
@@ -87,18 +85,14 @@ async fn serve_inner(
     // Apply any staged restore before opening the pool.
     apply_staged_restore(&config);
 
-    // Initialize database
     let pool = init_pool(&config.database_url).await?;
     migrations::run_all(&pool).await?;
     repo::templates::seed_builtin_templates(&pool).await?;
 
-    // Ensure a default workspace exists
     let workspace_id = ensure_default_workspace(&pool).await?;
-
-    // Build application state
     let repo = Repository::new(pool);
 
-    // Create broadcast channel for WebSocket updates (capacity: 100 messages)
+    // WebSocket update fan-out; capacity 100 messages.
     let (broadcast_tx, _) = tokio::sync::broadcast::channel(100);
 
     let webhook = config.webhook_url.clone().map(|url| {
@@ -116,14 +110,11 @@ async fn serve_inner(
         local_runner: local_runner.clone(),
     };
 
-    // Spawn background task: automatic remote backup on configured interval.
-    // Guard the interval: `tokio::time::interval` panics on a zero duration, and
-    // anything under a minute would hammer the object store, so clamp low values.
-    //
-    // The interval itself is env-only (`TACK_BACKUP_INTERVAL_SECS`), but whether
-    // the destination is *configured* can also come from UI-saved settings, so
-    // spawn whenever an interval is set and re-check the effective config each
-    // tick — a UI-only cloud config still schedules.
+    // Automatic remote backup on a configured interval, clamped to a 60s floor
+    // (`tokio::time::interval` panics on zero, and anything faster would hammer
+    // the object store). The interval is env-only (`TACK_BACKUP_INTERVAL_SECS`),
+    // but the destination can come from UI-saved settings too, so this spawns
+    // whenever an interval is set and re-checks the effective config each tick.
     if let Some(interval_secs) = config.backup_interval_secs {
         const MIN_BACKUP_INTERVAL_SECS: u64 = 60;
         let interval_secs = if interval_secs < MIN_BACKUP_INTERVAL_SECS {
@@ -163,29 +154,21 @@ async fn serve_inner(
     }
 
     // Start the orchestration reconciler, one task per registered control
-    // plane, polling `/health` + `/status.json` — if the *effective*
-    // setting says to. Off by default; the effective
-    // value is the `app_meta`-stored flag if the UI has ever set one, else
-    // `TACK_ORCH_ENABLE`'s startup value — same precedence Cloud Backup
-    // already uses for its own settings. Unlike Cloud Backup, this one also
-    // has a runtime toggle: `PUT /api/settings/orchestration`
-    // (`handlers/settings.rs`) calls `state.orch_runtime.start`/`.stop`
-    // directly, so an operator can turn this on or off without a restart —
-    // this boot-time call is just what makes the *initial* state agree with
-    // whatever was last saved (or the env default, on a first-ever boot).
+    // plane polling `/health` + `/status.json`, if the *effective* setting
+    // says to (the `app_meta`-stored flag if the UI set one, else
+    // `TACK_ORCH_ENABLE`'s startup value — same precedence as Cloud Backup).
+    // Unlike Cloud Backup this also has a runtime toggle
+    // (`PUT /api/settings/orchestration` calls `state.orch_runtime.start`/
+    // `.stop` directly); this boot-time call only sets the *initial* state.
     if effective_orch_enabled(&state).await {
-        // The store gets a clone of the
-        // same broadcast sender every WebSocket subscriber shares, so it can
-        // emit `BoardEvent::AgentRunUpdated`/`ApprovalPending` straight from
-        // its `upsert_runs`/`upsert_approvals` — see orch_store.rs's module
-        // doc for why the emit lives there and not in the reconciler.
+        // The store gets a clone of the broadcast sender every WebSocket
+        // subscriber shares, so it can emit `BoardEvent::AgentRunUpdated`/
+        // `ApprovalPending` straight from `upsert_runs`/`upsert_approvals`
+        // (see orch_store.rs's module doc for why the emit lives there).
         //
-        // `with_app_context`
-        // hands the store the rest of what `AppState` carries, so
+        // `with_app_context` hands the store the rest of `AppState`, so
         // `upsert_runs` can run `dispatcher::apply_mapped_status` — the
-        // workflow engine — when a run reaches a terminal state, exactly
-        // like a human-driven PATCH. See orch_store.rs's own doc comments
-        // for the "human wins" design and why it's optional everywhere else.
+        // workflow engine — on a terminal run, like a human-driven PATCH.
         let store = build_control_plane_store(&state);
         state
             .orch_runtime
@@ -193,22 +176,17 @@ async fn serve_inner(
                 store,
                 reconciler::ReconcilerConfig {
                     poll_secs: config.orch_poll_secs,
-                    // Trace ingestion's event_retention_days must be the same
-                    // cutoff `spawn_retention_sweep` uses
-                    // (config.orch_event_retention_days both places) —
-                    // persist_events' retention-composition guard depends on
-                    // the two agreeing. See reconciler.rs's `ReconcilerConfig`
-                    // doc comment.
+                    // Trace ingestion's event_retention_days must equal
+                    // `spawn_retention_sweep`'s cutoff (both read
+                    // `config.orch_event_retention_days`) — see `ReconcilerConfig`.
                     event_retention_days: config.orch_event_retention_days,
                     ..Default::default()
                 },
             )
             .await;
-        // Resolved before the `info!` call, not inline in its arguments: an
-        // `.await` inside a tracing macro's argument list holds a non-`Send`
-        // formatting temporary across the await point, which makes the
-        // enclosing function's future non-`Send` — fatal for a caller that
-        // wants to `tokio::spawn` the server rather than only `block_on` it.
+        // Resolved before `info!`, not inline in its args: an `.await` inside
+        // a tracing macro's arg list holds a non-`Send` temporary across the
+        // await, making the future non-`Send` — fatal for a `tokio::spawn` caller.
         let control_planes = state.orch_runtime.live_task_count().await;
         info!(
             control_planes,
@@ -217,37 +195,27 @@ async fn serve_inner(
         );
     }
 
-    // Start the execution-domain retention sweep, the artifact/event sweep +
-    // decision-expiry sweep, and the health watch — three cancellable
-    // background tasks gated by two flags
-    // (`TACK_EXECUTION_RETENTION_ENABLE`/`TACK_EXECUTION_HEALTH_ENABLE`): the
+    // Start the execution-domain retention sweep (artifact/event + decision-
+    // expiry) and the health watch — cancellable background tasks gated by
+    // `TACK_EXECUTION_RETENTION_ENABLE`/`TACK_EXECUTION_HEALTH_ENABLE`. The
     // artifact/event/decision sweep shares `retention_enable` with the
-    // replay/idempotency purge above it, on purpose — see
-    // `execution_runtime.rs::spawn_artifact_and_decision_sweep`'s own doc
-    // comment for why artifact deletion must never be gated any more loosely
-    // than that purge already is. Health defaults on (read-only: no outbound
-    // call, no new API surface, just logging a `warn!` on a stale
-    // lease/`needs_operator` request). Retention defaults **off** (see
-    // `config.rs#default_execution_retention_enable`'s doc comment): it
-    // deletes rows, so — unlike health — it needs an explicit operator
-    // opt-in, the same posture `TACK_ORCH_ENABLE` already establishes for
-    // this codebase. See `execution_runtime.rs`'s own doc comment for why
-    // this isn't stored on `AppState`: `stop()` is called once below, after
-    // the HTTP server itself has already stopped accepting requests, and
-    // nothing in the current API surface needs to toggle it at runtime.
+    // replay/idempotency purge above it on purpose (see
+    // `spawn_artifact_and_decision_sweep`'s doc for why deletion must never
+    // be gated more loosely than that purge). Health defaults on (read-only:
+    // just a `warn!` on a stale lease/`needs_operator` request); retention
+    // defaults **off** (it deletes rows, same opt-in posture as
+    // `TACK_ORCH_ENABLE`). Not stored on `AppState`: `stop()` runs once
+    // below, after the HTTP server stops accepting requests.
     let execution_runtime = crate::execution_runtime::ExecutionRuntime::new();
     execution_runtime
         .start(state.repo.clone(), (&config).into())
         .await;
 
-    // A cheap `Clone` (mostly `Arc`s and a `Uuid`/`AppConfig` underneath),
-    // kept only so the auto-start check below — after the listener binds,
-    // below `build_router` moving `state` into the router it builds — still
-    // has a live `AppState` to read `app_meta` through. `tack-cli` must
-    // never open the database itself (`CLAUDE.md`'s crate map), so this
-    // effective-enabled check has to happen here, not in the composing
-    // binary, even though the binary is what decided whether to embed a
-    // runner at all.
+    // A cheap `Clone` (`Arc`s + a `Uuid`/`AppConfig`), kept only so the
+    // auto-start check below — after `build_router` moves `state` into the
+    // router — still has a live `AppState` to read `app_meta` through.
+    // `tack-cli` must never open the database itself, so this
+    // effective-enabled check happens here, not in the composing binary.
     let state_for_local_runner = state.clone();
 
     // Build router
@@ -259,33 +227,26 @@ async fn serve_inner(
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
-    // `bind` already puts the socket in the listening state, so a
-    // connection attempt against `bound_addr` succeeds from this point on
-    // even before `axum::serve` below starts its accept loop — the kernel
-    // queues it. That makes here, not function entry, the earliest correct
-    // place to signal readiness.
+    // `bind` already puts the socket in listening state, so a connection to
+    // `bound_addr` succeeds even before `axum::serve` starts its accept loop
+    // (the kernel queues it) — the earliest correct place to signal ready.
     let bound_addr = listener.local_addr()?;
     if let Some(tx) = ready_tx {
         let _ = tx.send(bound_addr);
     }
 
-    // Bring a wired-in embedded runner up to whatever its persisted
-    // preference (or the `--with-runner`/`TACK_LOCAL_RUNNER_ENABLE` default,
-    // where the UI has never overridden it) already says — the exact same
-    // `LocalRunnerControl::start` call `PUT /api/local-runner` makes later,
-    // so a boot-time start and a UI-triggered one are one code path, not
-    // two. Loopback is re-checked here against the *persisted* preference,
-    // separately from `local_runner.rs::ensure_loopback`'s check against
-    // this boot's own flag: a preference saved from an earlier loopback
-    // session must never auto-start a runner on a server now bound
-    // elsewhere — it is silently not honored, matching
-    // `router::build_router`'s identical rule for the route's own
-    // existence, rather than erroring on an ordinary deployment that
-    // happens to carry a stale row. A start failure while genuinely on
-    // loopback takes the whole server down (loud, matching
-    // `local_runner.rs`'s existing "either side dying kills the process"
-    // posture for the `--with-runner` flag specifically) rather than
-    // leaving it serving with the preference on but nothing running.
+    // Bring a wired-in embedded runner up per its persisted preference (or
+    // the `--with-runner`/`TACK_LOCAL_RUNNER_ENABLE` default where the UI
+    // never overrode it) — the same `LocalRunnerControl::start` call
+    // `PUT /api/local-runner` makes later, so boot-time and UI-triggered
+    // starts are one code path. Loopback is re-checked against the
+    // *persisted* preference (separate from `local_runner.rs::ensure_loopback`'s
+    // check against this boot's flag): a preference saved on an earlier
+    // loopback session is silently not honored on a server now bound
+    // elsewhere, matching `build_router`'s rule for the route's own
+    // existence. A start failure while genuinely on loopback takes the
+    // whole server down, matching the "either side dying kills the process"
+    // posture of `--with-runner` itself.
     if let Some(control) = &local_runner
         && state_for_local_runner.config.binds_loopback()
         && effective_local_runner_enabled(&state_for_local_runner).await
