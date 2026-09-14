@@ -656,11 +656,7 @@ async fn token_guards_and_operator_requeue_are_idempotent() {
         .execute(repo.pool())
         .await
         .unwrap();
-    let capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id='runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let capacity = runner_capacity(&repo).await;
     use tack_db::repo::execution::OperatorRequeueResult;
     assert_eq!(
         repo.operator_requeue_needs_operator(
@@ -700,11 +696,7 @@ async fn token_guards_and_operator_requeue_are_idempotent() {
     .await
     .unwrap();
     assert_eq!(audits, 2);
-    let after: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id='runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let after = runner_capacity(&repo).await;
     assert_eq!(capacity, after);
 }
 
@@ -746,16 +738,8 @@ async fn operator_requeue_rejects_without_authoritative_recovery() {
         .unwrap(),
         OperatorRequeueResult::InvalidTransition
     );
-    let state: String =
-        sqlx::query_scalar("SELECT state FROM execution_requests WHERE id='request-r'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    let capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id='runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let state = request_state(&repo, "request-r").await;
+    let capacity = runner_capacity(&repo).await;
     assert_eq!(state, "needs_operator");
     assert_eq!(capacity, 0);
 }
@@ -1098,6 +1082,41 @@ async fn m060_quarantines_all_nonterminal_malformed_legacy_snapshots() {
     assert_eq!(claimed.lease.request_id, "legacy-valid");
 }
 
+/// How many of the two racing results in `items` satisfy `pred` — used by
+/// the `concurrent_duplicate_*` tests to prove exactly one of a duplicate
+/// pair committed while the other replayed.
+fn count_where<T>(items: [&T; 2], pred: impl Fn(&T) -> bool) -> usize {
+    items.into_iter().filter(|r| pred(r)).count()
+}
+
+/// `agent_runners.available_capacity` for `"runner-a"`, the sole runner every
+/// test in this file registers — queried by dozens of tests proving capacity
+/// is restored (or held) exactly once around a terminal transition.
+async fn runner_capacity(repo: &Repository) -> i64 {
+    sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
+        .fetch_one(repo.pool())
+        .await
+        .unwrap()
+}
+
+/// `execution_attempts.state` for `attempt_id`.
+async fn attempt_state(repo: &Repository, attempt_id: &str) -> String {
+    sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id = ?")
+        .bind(attempt_id)
+        .fetch_one(repo.pool())
+        .await
+        .unwrap()
+}
+
+/// `execution_requests.state` for `request_id`.
+async fn request_state(repo: &Repository, request_id: &str) -> String {
+    sqlx::query_scalar("SELECT state FROM execution_requests WHERE id = ?")
+        .bind(request_id)
+        .fetch_one(repo.pool())
+        .await
+        .unwrap()
+}
+
 async fn ready_completion_attempt(
     repo: &Repository,
     item_id: &str,
@@ -1171,6 +1190,24 @@ fn cancellation_input<'a>(
     }
 }
 
+fn expect_cancelled(
+    obs: CancellationObservation,
+) -> tack_db::repo::execution::CancellationResponse {
+    match obs {
+        CancellationObservation::Cancelled(r) => r,
+        other => panic!("expected Cancelled, got {other:?}"),
+    }
+}
+
+fn expect_replayed_cancellation(
+    obs: CancellationObservation,
+) -> tack_db::repo::execution::CancellationResponse {
+    match obs {
+        CancellationObservation::Replayed(r) => r,
+        other => panic!("expected Replayed, got {other:?}"),
+    }
+}
+
 fn recovery_input<'a>(
     attempt_id: &'a str,
     fencing_token: i64,
@@ -1229,18 +1266,8 @@ async fn recovery_stopped_without_start_requeues_fence_and_replays() {
         repo.recover_attempt(changed, &clock).await.unwrap(),
         RecoveryObservationResult::Conflict
     );
-    let attempt_state: String = sqlx::query_scalar(
-        "SELECT state FROM execution_attempts WHERE id = 'attempt-recovery-safe'",
-    )
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    let request_state: String = sqlx::query_scalar(
-        "SELECT state FROM execution_requests WHERE id = 'request-recovery-safe'",
-    )
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
+    let attempt_state = attempt_state(&repo, "attempt-recovery-safe").await;
+    let request_state = request_state(&repo, "request-recovery-safe").await;
     assert_eq!(attempt_state, "lost");
     assert_eq!(request_state, "queued");
 }
@@ -1448,11 +1475,7 @@ async fn recovery_capacity_release_is_capped_and_replay_safe() {
     );
     repo.recover_attempt(input.clone(), &clock).await.unwrap();
     repo.recover_attempt(input, &clock).await.unwrap();
-    let capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let capacity = runner_capacity(&repo).await;
     assert_eq!(capacity, 1);
 }
 
@@ -1484,23 +1507,9 @@ async fn recovery_replay_insert_failure_rolls_back_lifecycle() {
         .await
         .is_err()
     );
-    let attempt_state: String = sqlx::query_scalar(
-        "SELECT state FROM execution_attempts WHERE id = 'attempt-recovery-rollback'",
-    )
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    let request_state: String = sqlx::query_scalar(
-        "SELECT state FROM execution_requests WHERE id = 'request-recovery-rollback'",
-    )
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    let capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let attempt_state = attempt_state(&repo, "attempt-recovery-rollback").await;
+    let request_state = request_state(&repo, "request-recovery-rollback").await;
+    let capacity = runner_capacity(&repo).await;
     assert_eq!(attempt_state, "leased");
     assert_eq!(request_state, "leased");
     assert_eq!(capacity, 0);
@@ -1533,9 +1542,7 @@ async fn cancellation_response_loss_replays_after_time_advance() {
         .observe_cancellation(input.clone(), &clock)
         .await
         .unwrap();
-    let CancellationObservation::Cancelled(first) = first else {
-        panic!("first cancellation observation must commit");
-    };
+    let first = expect_cancelled(first);
     clock.advance(Duration::seconds(61));
     let semantic_retry = CancellationObservationInput {
         details: r#"{"detail":{"a":1,"b":2}}"#,
@@ -1546,10 +1553,7 @@ async fn cancellation_response_loss_replays_after_time_advance() {
         .observe_cancellation(semantic_retry, &clock)
         .await
         .unwrap();
-    let CancellationObservation::Replayed(replay) = replay else {
-        panic!("lost response retry must replay");
-    };
-    assert_eq!(replay, first);
+    assert_eq!(expect_replayed_cancellation(replay), first);
 }
 
 #[tokio::test]
@@ -1589,11 +1593,7 @@ async fn cancellation_changed_same_id_conflicts_without_write() {
     .fetch_one(repo.pool())
     .await
     .unwrap();
-    let capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let capacity = runner_capacity(&repo).await;
     assert_eq!(completion_id, "cancellation-conflict");
     assert_eq!(capacity, 1);
 }
@@ -1685,12 +1685,7 @@ async fn cancellation_requires_exact_process_stopped_observation() {
         )
     };
     assert!(repo.observe_cancellation(invalid, &clock).await.is_err());
-    let attempt_state: String = sqlx::query_scalar(
-        "SELECT state FROM execution_attempts WHERE id = 'attempt-cancellation-observation'",
-    )
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
+    let attempt_state = attempt_state(&repo, "attempt-cancellation-observation").await;
     let replay_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM execution_cancellation_replays WHERE attempt_id = 'attempt-cancellation-observation'",
     )
@@ -1731,11 +1726,7 @@ async fn cancellation_capacity_restore_is_capped_and_replay_safe() {
         .await
         .unwrap();
     repo.observe_cancellation(input, &clock).await.unwrap();
-    let capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let capacity = runner_capacity(&repo).await;
     assert_eq!(capacity, 1);
 }
 
@@ -1770,23 +1761,9 @@ async fn cancellation_replay_insert_failure_rolls_back_terminal() {
         .await
         .is_err()
     );
-    let attempt_state: String = sqlx::query_scalar(
-        "SELECT state FROM execution_attempts WHERE id = 'attempt-cancellation-rollback'",
-    )
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    let request_state: String = sqlx::query_scalar(
-        "SELECT state FROM execution_requests WHERE id = 'request-cancellation-rollback'",
-    )
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    let capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let attempt_state = attempt_state(&repo, "attempt-cancellation-rollback").await;
+    let request_state = request_state(&repo, "request-cancellation-rollback").await;
+    let capacity = runner_capacity(&repo).await;
     assert_eq!(attempt_state, "leased");
     assert_eq!(request_state, "leased");
     assert_eq!(capacity, 0);
@@ -1876,11 +1853,7 @@ async fn heartbeat_rejects_false_free_capacity_during_active_lease() {
         .unwrap(),
         HeartbeatBatchResult::Conflict
     );
-    let capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let capacity = runner_capacity(&repo).await;
     assert_eq!(capacity, 0);
 }
 
@@ -2162,11 +2135,7 @@ async fn expired_unrecovered_attempt_blocks_capacity_and_claims() {
         .unwrap(),
         HeartbeatBatchResult::Conflict
     );
-    let capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let capacity = runner_capacity(&repo).await;
     assert_eq!(capacity, 0);
     let mut blocked = request(
         "request-heartbeat-blocked",
@@ -2411,12 +2380,7 @@ async fn completion_and_idempotency_conflicts_are_distinguished() {
             .unwrap(),
         CompletionResult::Conflict
     );
-    let state: String = sqlx::query_scalar(
-        "SELECT state FROM execution_attempts WHERE id = 'attempt-completion-conflict'",
-    )
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
+    let state = attempt_state(&repo, "attempt-completion-conflict").await;
     assert_eq!(state, "leased");
     repo.complete_execution_result(base.clone(), &clock)
         .await
@@ -2513,11 +2477,7 @@ async fn completion_replay_restores_capacity_once_and_never_above_cap() {
     repo.complete_execution_result(completion, &clock)
         .await
         .unwrap();
-    let capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let capacity = runner_capacity(&repo).await;
     assert_eq!(capacity, 1);
 
     let second_fence = ready_completion_attempt(
@@ -2537,19 +2497,11 @@ async fn completion_replay_restores_capacity_once_and_never_above_cap() {
     repo.complete_execution_result(second.clone(), &clock)
         .await
         .unwrap();
-    let after_commit: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let after_commit = runner_capacity(&repo).await;
     repo.complete_execution_result(second, &clock)
         .await
         .unwrap();
-    let after_replay: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let after_replay = runner_capacity(&repo).await;
     assert_eq!(after_commit, 1);
     assert_eq!(after_replay, 1);
 }
@@ -2581,23 +2533,9 @@ async fn completion_replay_insert_failure_rolls_back_terminal() {
         )
         .await;
     assert!(error.is_err());
-    let attempt_state: String = sqlx::query_scalar(
-        "SELECT state FROM execution_attempts WHERE id = 'attempt-completion-rollback'",
-    )
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    let request_state: String = sqlx::query_scalar(
-        "SELECT state FROM execution_requests WHERE id = 'request-completion-rollback'",
-    )
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    let capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let attempt_state = attempt_state(&repo, "attempt-completion-rollback").await;
+    let request_state = request_state(&repo, "request-completion-rollback").await;
+    let capacity = runner_capacity(&repo).await;
     assert_eq!(attempt_state, "leased");
     assert_eq!(request_state, "leased");
     assert_eq!(capacity, 0);
@@ -2924,21 +2862,13 @@ async fn concurrent_claimers_receive_exactly_one_valid_lease() {
     // survives. If the loser's capacity decrement (or its now-rolled-back
     // request CAS) leaked outside its transaction, this would read 0 instead
     // of 1 even though total_capacity started at 2.
-    let available_capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = 'runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let available_capacity = runner_capacity(&repo).await;
     assert_eq!(
         available_capacity, 1,
         "only the winning claim consumes a capacity slot"
     );
 
-    let request_state: String =
-        sqlx::query_scalar("SELECT state FROM execution_requests WHERE id = 'request-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let request_state = request_state(&repo, "request-a").await;
     assert_eq!(request_state, "leased");
 
     let attempt_count: i64 = sqlx::query_scalar(
@@ -3025,11 +2955,7 @@ async fn foreign_keys_and_expiry_recovery_fail_closed() {
         RecoveryObservationResult::Applied(response)
             if response.disposition == RecoveryDisposition::NeedsOperator
     ));
-    let state: String = sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id = ?")
-        .bind(&lease.attempt_id)
-        .fetch_one(repo.pool())
-        .await
-        .unwrap();
+    let state = attempt_state(&repo, &lease.attempt_id).await;
     assert_eq!(state, "needs_operator");
 }
 
@@ -3278,11 +3204,7 @@ async fn artifact_and_decision_reject_concurrently_terminal_attempt() {
     assert_eq!(artifact_count, 0, "no artifact row may exist");
     assert_eq!(decision_count, 0, "no decision row may exist");
 
-    let state: String =
-        sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id='attempt-race-terminal'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let state = attempt_state(&repo, "attempt-race-terminal").await;
     assert_eq!(state, "succeeded");
 }
 
@@ -3586,14 +3508,8 @@ async fn concurrent_duplicate_completions_have_one_committed_writer() {
     let a = a.expect("first completion report must succeed at the sqlx level");
     let b = b.expect("second completion report must succeed at the sqlx level");
 
-    let committed = [&a, &b]
-        .into_iter()
-        .filter(|r| matches!(r, CompletionResult::Committed(_)))
-        .count();
-    let replayed = [&a, &b]
-        .into_iter()
-        .filter(|r| matches!(r, CompletionResult::Replayed(_)))
-        .count();
+    let committed = count_where([&a, &b], |r| matches!(r, CompletionResult::Committed(_)));
+    let replayed = count_where([&a, &b], |r| matches!(r, CompletionResult::Replayed(_)));
     assert_eq!(
         committed, 1,
         "exactly one duplicate report commits: {a:?} / {b:?}"
@@ -3605,12 +3521,11 @@ async fn concurrent_duplicate_completions_have_one_committed_writer() {
 
     // Capacity is restored by the terminal transition exactly once, even
     // though both branches raced to report the same completion.
-    let available_capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id='runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
-    assert_eq!(available_capacity, 1, "capacity is restored exactly once");
+    assert_eq!(
+        runner_capacity(&repo).await,
+        1,
+        "capacity is restored exactly once"
+    );
 }
 
 #[tokio::test]
@@ -3687,12 +3602,7 @@ async fn concurrent_duplicate_requeues_have_one_writer() {
         "exactly one duplicate requeue is authoritative: {a:?} / {b:?}"
     );
 
-    let request_state: String = sqlx::query_scalar(
-        "SELECT state FROM execution_requests WHERE id='request-concurrent-requeue'",
-    )
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
+    let request_state = request_state(&repo, "request-concurrent-requeue").await;
     assert_eq!(request_state, "queued");
 
     // One audit from recover_attempt, one from the winning requeue; the
@@ -3748,14 +3658,12 @@ async fn concurrent_duplicate_transitions_have_one_applied_writer() {
     let a = a.expect("first transition report must succeed at the sqlx level");
     let b = b.expect("second transition report must succeed at the sqlx level");
 
-    let applied = [&a, &b]
-        .into_iter()
-        .filter(|r| matches!(r, AttemptTransitionResult::Applied(_)))
-        .count();
-    let replayed = [&a, &b]
-        .into_iter()
-        .filter(|r| matches!(r, AttemptTransitionResult::Replayed(_)))
-        .count();
+    let applied = count_where([&a, &b], |r| {
+        matches!(r, AttemptTransitionResult::Applied(_))
+    });
+    let replayed = count_where([&a, &b], |r| {
+        matches!(r, AttemptTransitionResult::Replayed(_))
+    });
     assert_eq!(
         applied, 1,
         "exactly one duplicate report applies: {a:?} / {b:?}"
@@ -3831,14 +3739,8 @@ async fn concurrent_duplicate_heartbeats_have_one_writer() {
     let a = a.expect("first heartbeat report must succeed at the sqlx level");
     let b = b.expect("second heartbeat report must succeed at the sqlx level");
 
-    let accepted = [&a, &b]
-        .into_iter()
-        .filter(|r| matches!(r, HeartbeatBatchResult::Accepted(_)))
-        .count();
-    let replayed = [&a, &b]
-        .into_iter()
-        .filter(|r| matches!(r, HeartbeatBatchResult::Replayed(_)))
-        .count();
+    let accepted = count_where([&a, &b], |r| matches!(r, HeartbeatBatchResult::Accepted(_)));
+    let replayed = count_where([&a, &b], |r| matches!(r, HeartbeatBatchResult::Replayed(_)));
     assert_eq!(
         accepted, 1,
         "exactly one duplicate heartbeat accepts: {a:?} / {b:?}"
@@ -3860,11 +3762,7 @@ async fn concurrent_duplicate_heartbeats_have_one_writer() {
 
     // Capacity is set exactly once, even though both branches raced to
     // report the same duplicate heartbeat.
-    let available_capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id='runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let available_capacity = runner_capacity(&repo).await;
     assert_eq!(available_capacity, 0);
 
     let replay_rows: i64 = sqlx::query_scalar(
@@ -3905,14 +3803,12 @@ async fn concurrent_duplicate_recoveries_have_one_writer() {
     let a = a.expect("first recovery report must succeed at the sqlx level");
     let b = b.expect("second recovery report must succeed at the sqlx level");
 
-    let applied = [&a, &b]
-        .into_iter()
-        .filter(|r| matches!(r, RecoveryObservationResult::Applied(_)))
-        .count();
-    let replayed = [&a, &b]
-        .into_iter()
-        .filter(|r| matches!(r, RecoveryObservationResult::Replayed(_)))
-        .count();
+    let applied = count_where([&a, &b], |r| {
+        matches!(r, RecoveryObservationResult::Applied(_))
+    });
+    let replayed = count_where([&a, &b], |r| {
+        matches!(r, RecoveryObservationResult::Replayed(_))
+    });
     assert_eq!(
         applied, 1,
         "exactly one duplicate recovery report applies: {a:?} / {b:?}"
@@ -3939,21 +3835,12 @@ async fn concurrent_duplicate_recoveries_have_one_writer() {
         RecoveryDisposition::NeedsOperator
     );
 
-    let attempt_state: String = sqlx::query_scalar(
-        "SELECT state FROM execution_attempts WHERE id='attempt-concurrent-recovery'",
-    )
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
+    let attempt_state = attempt_state(&repo, "attempt-concurrent-recovery").await;
     assert_eq!(attempt_state, "needs_operator");
 
     // Capacity is restored by the recovery transition exactly once, even
     // though both branches raced to report the same duplicate observation.
-    let available_capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id='runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let available_capacity = runner_capacity(&repo).await;
     assert_eq!(available_capacity, 1, "capacity is restored exactly once");
 
     let audits: i64 = sqlx::query_scalar(
@@ -3994,14 +3881,12 @@ async fn concurrent_duplicate_cancellations_have_one_writer() {
     let a = a.expect("first cancellation report must succeed at the sqlx level");
     let b = b.expect("second cancellation report must succeed at the sqlx level");
 
-    let cancelled = [&a, &b]
-        .into_iter()
-        .filter(|r| matches!(r, CancellationObservation::Cancelled(_)))
-        .count();
-    let replayed = [&a, &b]
-        .into_iter()
-        .filter(|r| matches!(r, CancellationObservation::Replayed(_)))
-        .count();
+    let cancelled = count_where([&a, &b], |r| {
+        matches!(r, CancellationObservation::Cancelled(_))
+    });
+    let replayed = count_where([&a, &b], |r| {
+        matches!(r, CancellationObservation::Replayed(_))
+    });
     assert_eq!(
         cancelled, 1,
         "exactly one duplicate cancellation report is authoritative: {a:?} / {b:?}"
@@ -4023,21 +3908,12 @@ async fn concurrent_duplicate_cancellations_have_one_writer() {
         "both branches observe the single committed cancellation response"
     );
 
-    let attempt_state: String = sqlx::query_scalar(
-        "SELECT state FROM execution_attempts WHERE id='attempt-concurrent-cancel'",
-    )
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
+    let attempt_state = attempt_state(&repo, "attempt-concurrent-cancel").await;
     assert_eq!(attempt_state, "cancelled");
 
     // Capacity is restored by the terminal transition exactly once, even
     // though both branches raced to report the same duplicate observation.
-    let available_capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id='runner-a'")
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let available_capacity = runner_capacity(&repo).await;
     assert_eq!(available_capacity, 1, "capacity is restored exactly once");
 
     let replay_rows: i64 = sqlx::query_scalar(
@@ -4080,14 +3956,8 @@ async fn concurrent_duplicate_enqueues_have_one_authoritative_writer() {
     let a = a.expect("first enqueue report must succeed at the sqlx level");
     let b = b.expect("second enqueue report must succeed at the sqlx level");
 
-    let created = [&a, &b]
-        .into_iter()
-        .filter(|r| matches!(r, EnqueueResult::Created(_)))
-        .count();
-    let replayed = [&a, &b]
-        .into_iter()
-        .filter(|r| matches!(r, EnqueueResult::Replayed(_)))
-        .count();
+    let created = count_where([&a, &b], |r| matches!(r, EnqueueResult::Created(_)));
+    let replayed = count_where([&a, &b], |r| matches!(r, EnqueueResult::Replayed(_)));
     assert_eq!(
         created, 1,
         "exactly one duplicate enqueue creates: {a:?} / {b:?}"
@@ -4153,14 +4023,14 @@ async fn concurrent_duplicate_event_batches_have_one_writer() {
     let a = a.expect("first event batch report must succeed at the sqlx level");
     let b = b.expect("second event batch report must succeed at the sqlx level");
 
-    let fresh = [&a, &b]
-        .into_iter()
-        .filter(|r| matches!(r, EventApplyResult::Applied(result) if !result.replayed))
-        .count();
-    let replayed = [&a, &b]
-        .into_iter()
-        .filter(|r| matches!(r, EventApplyResult::Applied(result) if result.replayed))
-        .count();
+    let fresh = count_where(
+        [&a, &b],
+        |r| matches!(r, EventApplyResult::Applied(result) if !result.replayed),
+    );
+    let replayed = count_where(
+        [&a, &b],
+        |r| matches!(r, EventApplyResult::Applied(result) if result.replayed),
+    );
     assert_eq!(
         fresh, 1,
         "exactly one duplicate event batch applies fresh: {a:?} / {b:?}"
@@ -4246,14 +4116,12 @@ async fn concurrent_credential_rotations_have_exactly_one_winner() {
     let a = a.expect("first rotation must succeed at the sqlx level");
     let b = b.expect("second rotation must succeed at the sqlx level");
 
-    let rotated = [&a, &b]
-        .into_iter()
-        .filter(|r| matches!(r, CredentialRotationResult::Rotated(_)))
-        .count();
-    let mismatched = [&a, &b]
-        .into_iter()
-        .filter(|r| matches!(r, CredentialRotationResult::HashMismatch))
-        .count();
+    let rotated = count_where([&a, &b], |r| {
+        matches!(r, CredentialRotationResult::Rotated(_))
+    });
+    let mismatched = count_where([&a, &b], |r| {
+        matches!(r, CredentialRotationResult::HashMismatch)
+    });
     assert_eq!(
         rotated, 1,
         "exactly one concurrent rotation against the same expected hash wins: {a:?} / {b:?}"
