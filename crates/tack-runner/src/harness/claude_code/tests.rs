@@ -1172,15 +1172,11 @@ async fn reconcile_reports_running_for_a_still_running_harness() {
     let pid: u32 = handle.process_id.parse().expect("numeric pid");
 
     let journal = journal_with_process(Some(&handle.process_id));
-    let mut observation = None;
-    for _ in 0..80 {
+    let observation = tack_test_support::poll_until(Duration::from_secs(2), async || {
         let latest = adapter.reconcile(&journal).await.expect("reconcile");
-        if latest == RecoveryObservation::ProcessRunning {
-            observation = Some(latest);
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
+        (latest == RecoveryObservation::ProcessRunning).then_some(latest)
+    })
+    .await;
     assert_eq!(observation, Some(RecoveryObservation::ProcessRunning));
 
     // This adapter's own `cancel` stops the process (and its backgrounded

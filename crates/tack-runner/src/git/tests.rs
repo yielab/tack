@@ -470,13 +470,14 @@ fn stand_in_program(directory: &Path, name: &str, body: &str) -> PathBuf {
     )
     .expect("stand-in program");
     fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).expect("executable");
-    for _ in 0..200 {
+    tack_test_support::poll_until_sync(Duration::from_secs(2), || {
         match SyncCommand::new(&program).arg("--probe").status() {
-            Ok(status) if status.success() => return program,
-            _ => std::thread::sleep(Duration::from_millis(10)),
+            Ok(status) if status.success() => Some(()),
+            _ => None,
         }
-    }
-    panic!("stand-in program never became executable");
+    })
+    .unwrap_or_else(|| panic!("stand-in program never became executable"));
+    program
 }
 
 /// Deterministic proof of the timeout, independent of how fast real git

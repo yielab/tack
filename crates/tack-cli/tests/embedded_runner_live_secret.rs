@@ -15,9 +15,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde_json::{Value, json};
+use tack_test_support::poll_until_sync as poll_until;
 
 mod common;
 use common::free_port;
@@ -176,21 +177,6 @@ exit 0
             .expect("chmod fake claude");
     }
     script
-}
-
-/// Calls `attempt` every 50ms until it returns `Some`, or gives up once
-/// `timeout` has elapsed since the first call, returning `None`.
-fn poll_until<T>(timeout: Duration, mut attempt: impl FnMut() -> Option<T>) -> Option<T> {
-    let deadline = Instant::now() + timeout;
-    loop {
-        if let Some(value) = attempt() {
-            return Some(value);
-        }
-        if Instant::now() > deadline {
-            return None;
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
 }
 
 fn git_fixture_repo(dir: &Path) -> String {

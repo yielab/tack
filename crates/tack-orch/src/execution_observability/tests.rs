@@ -119,13 +119,11 @@ impl ExecutionObservabilityStore for FakeStore {
 }
 
 async fn wait_for(mut condition: impl FnMut() -> bool) {
-    for _ in 0..200 {
-        if condition() {
-            return;
-        }
-        tokio::time::sleep(StdDuration::from_millis(10)).await;
-    }
-    panic!("condition not met within the 2s test timeout");
+    tack_test_support::poll_until(StdDuration::from_secs(2), async || {
+        condition().then_some(())
+    })
+    .await
+    .expect("condition not met within the 2s test timeout");
 }
 
 #[tokio::test]
@@ -143,7 +141,8 @@ async fn disabled_health_watch_never_queries_the_store() {
     );
     assert!(handle.is_none());
 
-    tokio::time::sleep(StdDuration::from_millis(30)).await;
+    // No task is ever spawned when disabled (see the early `return None`
+    // above), so there is nothing to wait for before checking silence.
     assert!(store.calls.lock().unwrap().is_empty());
 }
 
