@@ -1,13 +1,9 @@
 //! Priority/fairness scheduling across several requests sharing one
-//! candidate pool.
-//!
-//! [`select_runner`](super::select::select_runner) answers "which runner for
-//! *this* request" in isolation. [`schedule`] answers the question a real
-//! dispatch pass actually has: several queued requests, a shared, finite
-//! pool of runners, deciding who goes first. It is still pure — no I/O, no
-//! lease granted, `now` supplied by the caller — and still deterministic:
-//! ordering never depends on the input slices' arrival order, only their
-//! content.
+//! candidate pool. [`select_runner`](super::select::select_runner) answers
+//! "which runner for *this* request" in isolation; [`schedule`] answers the
+//! real dispatch question — several queued requests, a shared finite pool,
+//! deciding who goes first. Still pure and deterministic: ordering never
+//! depends on the input slices' arrival order, only their content.
 
 use std::collections::BTreeMap;
 
@@ -18,11 +14,8 @@ use super::types::{RunnerCandidate, SchedulingRequest, SelectionOutcome};
 use crate::execution::{ExecutionRequestId, RunnerId};
 
 /// Schedules every request in `requests` against the shared `candidates`
-/// pool, honoring [`super::types::Priority`] and FIFO fairness within a
-/// priority tier. Requests are processed highest priority first; within a
-/// priority, oldest `created_at` first; any remaining tie is broken by
-/// `request_id`, so processing order never depends on `requests`' input
-/// slice order.
+/// pool: highest [`super::types::Priority`] first, then oldest `created_at`,
+/// then `request_id` — so processing order never depends on input order.
 ///
 /// **Capacity is consumed within the batch, but only here.** A runner
 /// [`select_runner`] selects for an earlier request has its
