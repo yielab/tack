@@ -114,7 +114,6 @@ EXCLUSIONS: dict[tuple[str, str], str] = {
     ("crates/tack-db/tests/migrations/orch_migrations.rs", "test_file_lines"): "IX-M8-db: 1 190 lines, splitting migration coverage forbidden by the card; every body already <=40",
     ("crates/tack-db/tests/repository/execution_repo.rs", "test_file_lines"): "IX-M8-db: 4 176-line state-machine narrative; splitting forbidden",
     ("crates/tack-db/tests/repository/execution_repo.rs", "test_fn_max_lines"): "IX-M8-db: 38 of 42 bodies still exceed 40 lines (up to 174); each is one race/assertion narrative on shared fixtures",
-    ("crates/tack-db/src/repo/economics.rs", "src_comment_share"): "unmet, not recorded by IX-M8-db (comment share, not test-body work)",
 
     # --- tack-desktop: IX-M8-cli's named exception covered only supervisor.rs/tests.rs ---
     ("crates/tack-desktop/src/paths.rs", "test_name_max_chars"): "unmet, not recorded by IX-M8-cli (its tack-desktop exception covered only supervisor.rs)",
