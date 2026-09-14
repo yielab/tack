@@ -30,6 +30,23 @@ async fn req(app: &Router, method: Method, uri: &str, body: Value) -> axum::resp
         .unwrap()
 }
 
+async fn create_template(app: &Router, body: Value) -> axum::response::Response {
+    req(app, Method::POST, "/api/templates", body).await
+}
+
+async fn get_template(app: &Router, template_id: &str) -> axum::response::Response {
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/api/templates/{template_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+}
+
 async fn body_json(res: axum::response::Response) -> Value {
     let bytes = to_bytes(res.into_body(), 4 * 1024 * 1024).await.unwrap();
     serde_json::from_slice(&bytes).unwrap()
@@ -97,11 +114,10 @@ async fn create_template_rejects_unknown_status_map_name() {
 /// `dispatch_from` at "Backlog" must succeed; pointing it at "To Do" (a
 /// `simple_workflow()` name that isn't in *this* template's workflow) must
 /// fail.
-#[tokio::test]
-async fn create_template_validates_status_map_against_own_workflow() {
-    let (app, _workspace_id) = common::test_app().await;
-
-    let custom_workflow = json!({
+/// A kanban workflow whose only statuses are Backlog/Building/Shipped —
+/// deliberately not `simple_workflow()`'s To Do/In Progress/Done names.
+fn custom_kanban_workflow() -> Value {
+    json!({
         "workflow_type": "kanban",
         "statuses": [
             { "name": "Backlog", "category": "todo", "wip_limit": null, "order": 0 },
@@ -109,14 +125,18 @@ async fn create_template_validates_status_map_against_own_workflow() {
             { "name": "Shipped", "category": "done", "wip_limit": null, "order": 2 },
         ],
         "transitions": null,
-    });
+    })
+}
+
+#[tokio::test]
+async fn create_template_validates_status_map_against_own_workflow() {
+    let (app, _workspace_id) = common::test_app().await;
+    let custom_workflow = custom_kanban_workflow();
 
     // References a status that exists only in `simple_workflow()`, not in
     // this template's own custom workflow -> rejected.
-    let bad = req(
+    let bad = create_template(
         &app,
-        Method::POST,
-        "/api/templates",
         json!({
             "name": "Custom Workflow, Wrong Status Map",
             "project_type": "software",
@@ -128,10 +148,8 @@ async fn create_template_validates_status_map_against_own_workflow() {
     assert_eq!(bad.status(), StatusCode::BAD_REQUEST);
 
     // References a status that IS in this template's own workflow -> ok.
-    let good = req(
+    let good = create_template(
         &app,
-        Method::POST,
-        "/api/templates",
         json!({
             "name": "Custom Workflow, Right Status Map",
             "project_type": "software",
@@ -179,10 +197,8 @@ async fn create_template_rejects_unparseable_pipeline_yaml() {
 async fn create_template_with_valid_orchestration_round_trips() {
     let (app, _workspace_id) = common::test_app().await;
 
-    let res = req(
+    let res = create_template(
         &app,
-        Method::POST,
-        "/api/templates",
         json!({
             "name": "Agentic Product Template",
             "project_type": "software",
@@ -211,17 +227,7 @@ async fn create_template_with_valid_orchestration_round_trips() {
     assert_eq!(orch["status_map"]["dispatch_from"][0], "To Do");
 
     let template_id = created["id"].as_str().unwrap();
-    let get_res = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method(Method::GET)
-                .uri(format!("/api/templates/{template_id}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let get_res = get_template(&app, template_id).await;
     assert_eq!(get_res.status(), StatusCode::OK);
     let fetched = body_json(get_res).await;
     assert_eq!(fetched["orchestration"]["blueprint"], "agentic-product");
